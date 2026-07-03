@@ -156,11 +156,21 @@ struct FileManagerWindowRoutingReducer {
                 let shouldResetLastTabContent = state.contentTabs.previousActiveTabID == tabID
                     && state.contentTabs.activeTabID == tabID
                 let shouldResyncContentNavigation = shouldRestorePreviousActiveTab || shouldResetLastTabContent
+                let isAiChatProcessingTabClose = shouldResyncContentNavigation
+                    && (state.content.aiChat.executionPhase.isProcessing
+                        || state.content.aiChat.pendingRequestStart != nil)
                 if isRemovedTab {
                     state.recentlyClosedNavigationRoute = navigationRouteForClosingTab(tabID, state: state)
                 }
                 if shouldResyncContentNavigation {
-                    prepareContentForActiveTabHandoff(state: &state.content)
+                    if isAiChatProcessingTabClose {
+                        if let aiChatSessionID = state.content.aiChat.sessionID {
+                            state.addBackgroundAiChatState(sessionID: aiChatSessionID, state: state.content)
+                        }
+                        prepareContentForActiveTabHandoff(state: &state.content, skipAiChatCleanup: true)
+                    } else {
+                        prepareContentForActiveTabHandoff(state: &state.content)
+                    }
                 }
                 if isRemovedTab {
                     state.removeContentState(for: tabID)
@@ -182,6 +192,7 @@ struct FileManagerWindowRoutingReducer {
                         shouldResyncContentNavigation,
                         state: state,
                         aiConnectionsFileClient: aiConnectionsFileClient,
+                        skipAiChatCancel: isAiChatProcessingTabClose,
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
@@ -261,6 +272,12 @@ struct FileManagerWindowRoutingReducer {
                 }
                 state.pendingContentTabClose?.didReceiveWriteBackNavigationState = true
                 return finalizePendingContentTabCloseIfWriteBackEffectsCompleted(state: &state)
+
+            case let .content(.aiChat(aiChatAction)):
+                return routeBackgroundAiChatAction(aiChatAction, state: &state)
+
+            case let .backgroundAiChat(aiChatAction):
+                return routeBackgroundAiChatAction(aiChatAction, state: &state)
 
             case .content(.collection(.saveCompleted(.failure))):
                 guard state.pendingContentTabClose != nil else {
@@ -461,9 +478,14 @@ private func navigationRouteForClosingTab(
     return state.tabContentStates[tabID]?.navigation.navigationState
 }
 
-private func prepareContentForActiveTabHandoff(state: inout FileManagerContentFeature.State) {
+private func prepareContentForActiveTabHandoff(
+    state: inout FileManagerContentFeature.State,
+    skipAiChatCleanup: Bool = false,
+) {
     clearInFlightComposerStateOnTabSwitch(state: &state.composer)
-    clearInFlightAiChatStateOnTabSwitch(state: &state.aiChat)
+    if !skipAiChatCleanup {
+        clearInFlightAiChatStateOnTabSwitch(state: &state.aiChat)
+    }
     state.entryViewLayout.entryOperations.isLoading = false
     state.entryViewLayout.entryOperations.isReloading = false
 }
@@ -511,12 +533,13 @@ private func activeTabHandoffEffect(
     _ shouldResyncContentNavigation: Bool,
     state: FileManagerWindowState,
     aiConnectionsFileClient: AIConnectionsFileClient,
+    skipAiChatCancel: Bool = false,
 ) -> Effect<FileManagerWindowAction> {
     guard shouldResyncContentNavigation else {
         return .none
     }
     return .merge(
-        cancelInFlightContentEffectsOnTabSwitch(state: state),
+        cancelInFlightContentEffectsOnTabSwitch(state: state, skipAiChatCancel: skipAiChatCancel),
         resyncContentNavigationEffect(state: state),
         restartAiChatProviderLoadOnTabRestoreEffect(
             state: state,
@@ -525,7 +548,10 @@ private func activeTabHandoffEffect(
     )
 }
 
-private func cancelInFlightContentEffectsOnTabSwitch(state: FileManagerWindowState) -> Effect<FileManagerWindowAction> {
+private func cancelInFlightContentEffectsOnTabSwitch(
+    state: FileManagerWindowState,
+    skipAiChatCancel: Bool = false,
+) -> Effect<FileManagerWindowAction> {
     .merge(
         .cancel(id: OpenCollectionFileCancelID(
             windowID: state.content.entryViewLayout.entryOperations.windowID,
@@ -538,7 +564,7 @@ private func cancelInFlightContentEffectsOnTabSwitch(state: FileManagerWindowSta
         state.contentTabs.previousActiveTabID
             .map { .cancel(id: HomeAiChatOpenCancelID(tabID: $0)) }
             ?? .none,
-        contentPaneAiChatCancelEffect(state: state),
+        skipAiChatCancel ? .none : contentPaneAiChatCancelEffect(state: state),
     )
 }
 
@@ -698,5 +724,60 @@ private extension ContentTabPageAnchor {
         } else {
             false
         }
+    }
+}
+
+private func routeBackgroundAiChatAction(
+    _ aiChatAction: AiChatAction,
+    state: inout FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    guard let sessionID = backgroundAiChatSessionID(for: aiChatAction, state: state),
+          var backgroundContent = state.backgroundAiChatStates[sessionID]
+    else { return .none }
+
+    let effect = AiChatFeature()
+        .reduce(into: &backgroundContent.aiChat, action: aiChatAction)
+        .map { FileManagerWindowAction.backgroundAiChat($0) }
+
+    if shouldRemoveBackgroundAiChatState(after: aiChatAction) {
+        state.removeBackgroundAiChatState(sessionID: sessionID)
+    } else {
+        state.backgroundAiChatStates[sessionID] = backgroundContent
+    }
+
+    return effect
+}
+
+private func backgroundAiChatSessionID(
+    for aiChatAction: AiChatAction,
+    state: FileManagerWindowState,
+) -> AiChatSessionID? {
+    switch aiChatAction {
+    case let .executionEvent(event):
+        aiChatEventSessionID(event)
+    case let .persistenceFailed(lock, _),
+         let .persistenceRecoverySucceeded(lock),
+         let .persistenceRecoveryRetryFailed(lock, _):
+        lock.context.sessionID
+    case let .sessionSnapshotSaved(summary):
+        summary.sessionID
+    case .cancelInFlightWork:
+        state.backgroundAiChatStates.keys.first
+    default:
+        nil
+    }
+}
+
+private func shouldRemoveBackgroundAiChatState(after aiChatAction: AiChatAction) -> Bool {
+    switch aiChatAction {
+    case let .executionEvent(event):
+        if case .failed = event { true } else { false }
+    case .sessionSnapshotSaved,
+         .persistenceRecoverySucceeded,
+         .persistenceRecoveryRetryFailed,
+         .cancelInFlightWork:
+        true
+    default:
+        false
     }
 }
