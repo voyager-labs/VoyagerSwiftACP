@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
@@ -14,6 +15,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
 
     case request(WindowCommand)
     case content(FileManagerContentFeature.Action)
+    case backgroundAiChat(AiChatAction)
     case sidebar(FileManagerSidebarFeature.Action)
     case inspector(FileManagerInspectorFeature.Action)
     case navigation(ContentPageNavigationFeature.Action)

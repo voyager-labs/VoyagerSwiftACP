@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
@@ -9,6 +10,7 @@ import VoyagerShared
 public struct FileManagerWindowState: Equatable {
     public var content: FileManagerContentFeature.State
     public var tabContentStates: [ContentTabID: FileManagerContentFeature.State]
+    public var backgroundAiChatStates: [AiChatSessionID: FileManagerContentFeature.State]
     public var sidebar: FileManagerSidebarFeature.State
     public var inspector: FileManagerInspectorFeature.State
     public var contentTabs: ContentTabState
@@ -21,6 +23,7 @@ public struct FileManagerWindowState: Equatable {
         inspector = .init()
         contentTabs = .withHomeTab()
         tabContentStates = [:]
+        backgroundAiChatStates = [:]
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
         if let activeTabID = contentTabs.activeTabID {
@@ -216,6 +219,20 @@ extension FileManagerWindowState {
 
         contentTabs.recentlyClosed = recentlyClosed
         syncContentTabSidebarItems()
+    }
+
+    mutating func addBackgroundAiChatState(sessionID: AiChatSessionID, state: FileManagerContentFeature.State) {
+        guard state.aiChat.executionPhase.isProcessing || state.aiChat.pendingRequestStart != nil else { return }
+        backgroundAiChatStates[sessionID] = state
+    }
+
+    @discardableResult
+    mutating func removeBackgroundAiChatState(sessionID: AiChatSessionID) -> FileManagerContentFeature.State? {
+        backgroundAiChatStates.removeValue(forKey: sessionID)
+    }
+
+    func backgroundAiChatState(for sessionID: AiChatSessionID) -> FileManagerContentFeature.State? {
+        backgroundAiChatStates[sessionID]
     }
 
     func canPinContentTab(_ tabID: ContentTabID) -> Bool {
