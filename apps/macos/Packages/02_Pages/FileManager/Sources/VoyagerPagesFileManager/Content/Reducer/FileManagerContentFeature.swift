@@ -84,6 +84,14 @@ public struct FileManagerContentFeature {
                 else { return .none }
                 return .send(.delegate(.aiChatSessionRestored(requestedSessionID)))
 
+            case let .aiChat(.sessionRowTapped(sessionID)):
+                guard state.aiChat.executionPhase.isProcessing,
+                      state.aiChat.mode == .chat,
+                      state.aiChat.sessionID == sessionID,
+                      case .aiChatSessions = state.navigation.navigationState
+                else { return .none }
+                return .send(.delegate(.aiChatSessionRestored(sessionID)))
+
             case let .internal(.setAutomaticRefreshFeedbackSuppressed(isSuppressed)):
                 state.suppressAutomaticRefreshFeedback = isSuppressed
                 return .none

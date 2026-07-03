@@ -3345,6 +3345,149 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    /// CTM-005-ai_chat_mode_switching: 진행 중인 현재 세션 row 선택 시 Chat route로 승격됨
+    /// History에서 현재 실행 중인 세션을 다시 선택하는 shortcut도 parent navigation anchor를 `.aiChat`으로 확정해야 한다.
+    /// - 검증 내용: current processing session tap이 restore 성공과 동일한 route/anchor 갱신 체인을 방출함
+    /// - 사전 조건: `.aiChatSessions(current)` route와 processing 상태의 현재 AI Chat 세션
+    /// - 기대 결과: Chat mode 전환 후 active tab anchor와 navigation state가 `.aiChat(current)`로 승격
+    func testAiChatProcessingSessionTapPromotesRouteFromSessionsToChat() async throws {
+        let tabID = ContentTabID()
+        let currentUUID = try XCTUnwrap(UUID(uuidString: "E621E1F8-C36C-495A-93FC-0C247A3E6E5F"))
+        let currentSessionID = currentUUID.uuidString
+        let currentAiSessionID = AiChatSessionID(rawValue: currentUUID)
+        let modelHandle = AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini")
+        let catalogRow = AiModelCatalogRow(
+            handle: modelHandle,
+            displayName: "GPT-4.1 Mini",
+            authMethod: .apiKey,
+            sortOrder: 10,
+        )
+        let requestID =
+            try AiChatRequestID(rawValue: XCTUnwrap(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")))
+        let runID = try AiChatRunID(rawValue: XCTUnwrap(UUID(uuidString: "BBBBBBBB-CCCC-DDDD-EEEE-FFFFFFFFFFFF")))
+        let requestContext = AiChatRequestContextSnapshot(
+            sessionID: currentAiSessionID,
+            requestID: requestID,
+            runID: runID,
+            provider: .openai,
+            model: modelHandle,
+            selectedModel: AiProviderModel(
+                id: modelHandle,
+                provider: .openai,
+                rawModelID: "gpt-4.1-mini",
+                displayName: "GPT-4.1 Mini",
+                providerDisplayName: "OpenAI",
+                thinkingCapability: .unknown(reason: .init(message: "Not loaded")),
+            ),
+            selectedModelRow: catalogRow,
+            sessionStatus: .active,
+            promptSummary: "continue",
+            submittedAtMs: 1234,
+        )
+        let request = AiChatRequest(
+            context: requestContext,
+            messages: [AiChatMessage(role: .user, content: "continue")],
+        )
+        let requestLock = AiChatRequestLock(
+            kind: .submit,
+            requestID: requestID,
+            runID: runID,
+            context: requestContext,
+            request: request,
+            selectedModelHandle: modelHandle,
+            selectedModelRow: catalogRow,
+            assistantReplacementIndex: nil,
+        )
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .aiChat,
+                anchor: .aiChat(sessionID: currentSessionID),
+                isPinned: false,
+                title: "AI Chat",
+                iconName: "message",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content.navigation.navigationState = .aiChatSessions(currentSessionID)
+        state.content.aiChat.mode = .sessions
+        state.content.aiChat.sessionID = currentAiSessionID
+        state.content.aiChat.sessionStatus = .active
+        state.content.aiChat.executionPhase = .processing(requestLock)
+        state.content.aiChat.sessionList.allRows = [
+            AiChatSessionSummary(
+                sessionID: currentAiSessionID,
+                title: "Current session",
+                messageCount: 1,
+                provider: .openai,
+                model: modelHandle,
+                createdAtMs: 1,
+                updatedAtMs: 2,
+                status: .active,
+            ),
+        ]
+        state.content.aiChat.sessionList.rows = state.content.aiChat.sessionList.allRows
+        state.tabContentStates = [tabID: state.content]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+        }
+        store.exhaustivity = .off
+
+        await store.send(.content(.aiChat(.sessionRowTapped(currentAiSessionID)))) { state in
+            state.content.aiChat.mode = .chat
+        }
+        await store.receive { action in
+            guard case let .content(.delegate(.aiChatSessionRestored(receivedSessionID))) = action else { return false }
+            return receivedSessionID == currentAiSessionID
+        }
+        await store.receive { action in
+            guard case let .navigation(.view(.showAiChat(receivedSessionID))) = action else { return false }
+            return receivedSessionID == currentSessionID
+        }
+        await store.receive { action in
+            guard case let .contentTabs(.updateActivePageAnchor(receivedTabID, .aiChat(receivedSessionID))) = action
+            else { return false }
+            return receivedTabID == tabID && receivedSessionID == currentSessionID
+        }
+        await store.receive { action in
+            guard case let .navigation(.internal(.performShowAiChat(receivedSessionID))) = action else { return false }
+            return receivedSessionID == currentSessionID
+        }
+        await store.receive { action in
+            guard case let .navigation(.delegate(.navigateToState(.aiChat(receivedSessionID)))) = action else {
+                return false
+            }
+            return receivedSessionID == currentSessionID
+        }
+        await store.receive { action in
+            guard case let .content(.internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action else {
+                return false
+            }
+            return receivedSessionID == currentSessionID
+        }
+        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receive(\.content.entryViewLayout.internal.applyClearSelection)
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.receive { action in
+            guard case let .content(.aiChat(.routeToChatSession(receivedSessionID))) = action else { return false }
+            return receivedSessionID == currentAiSessionID
+        }
+
+        XCTAssertEqual(store.state.content.navigation.navigationState, .aiChat(currentSessionID))
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.anchor, .aiChat(sessionID: currentSessionID))
+        XCTAssertEqual(store.state.content.aiChat.mode, .chat)
+        XCTAssertEqual(store.state.content.aiChat.executionPhase, .processing(requestLock))
+        await store.finish()
+    }
+
     /// ContentPane AI Chat Settings 버튼 delegate가 Window delegate까지 전달됨
     /// provider 미연결 empty state의 Open Settings 버튼은 AiChatFeature delegate를 거쳐
     /// FileManagerContentFeature와 WindowCommandRoutingReducer를 통과해야 실제 Settings를 연다.
