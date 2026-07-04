@@ -34,8 +34,6 @@ struct AppLifecycleFeature {
     var accountSessionClient
     @Dependency(\.accessStatusSnapshotClient)
     var snapshotClient
-    @Dependency(\.unlockSurfaceWindowClient)
-    var unlockSurfaceWindowClient
     @Dependency(\.date)
     var date
     @Dependency(\.continuousClock)
@@ -143,12 +141,12 @@ struct AppLifecycleFeature {
                         await send(.accountAccessGate(.accountAccessGranted(snapshot: snapshot)))
                     }
                 } else {
-                    return .send(.accountAccessGate(.showUnlockSurface))
+                    return .send(.delegate(.openInitialWindowIfNeeded))
                 }
 
             case let .accountAccessGate(.accessStatusResponse(.failure(error))):
                 guard error == .networkFailure else {
-                    return .send(.accountAccessGate(.showUnlockSurface))
+                    return .send(.delegate(.openInitialWindowIfNeeded))
                 }
                 let snapshotClient = snapshotClient
                 let accountSessionClient = accountSessionClient
@@ -159,7 +157,7 @@ struct AppLifecycleFeature {
                           dateNow.timeIntervalSince(cached.fetchedAt) <= 24 * 3600,
                           cached.currentPeriodEnd.map({ dateNow < $0 }) ?? true
                     else {
-                        await send(.accountAccessGate(.showUnlockSurface))
+                        await send(.delegate(.openInitialWindowIfNeeded))
                         return
                     }
                     // session은 token file 기반으로 access_status 캐시와 무관하게
@@ -174,14 +172,6 @@ struct AppLifecycleFeature {
                         sessionExpiresAt: sessionExpiresAt,
                     )
                     await send(.accountAccessGate(.accountAccessGranted(snapshot: restored)))
-                }
-
-            case .accountAccessGate(.showUnlockSurface):
-                state.isCheckingAccountAccess = false
-                state.accountAccessGateResolved = true
-                let unlockSurfaceClient = unlockSurfaceWindowClient
-                return .run { _ in
-                    await unlockSurfaceClient.showWindow()
                 }
 
             case let .accountAccessGate(.accountAccessGranted(snapshot)):
@@ -311,6 +301,11 @@ struct AppLifecycleFeature {
                     .cancel(id: CancelID.helperMonitor),
                     .cancel(id: CancelID.sessionExpirationObserver),
                 )
+
+            case .delegate(.openInitialWindowIfNeeded):
+                state.isCheckingAccountAccess = false
+                state.accountAccessGateResolved = true
+                return .none
 
             case .delegate(.startHelperIfNeeded):
                 return .none

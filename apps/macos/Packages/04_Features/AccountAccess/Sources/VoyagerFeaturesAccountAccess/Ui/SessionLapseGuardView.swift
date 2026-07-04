@@ -83,14 +83,12 @@ public struct SessionLapseGuardView: View {
 
                 if shouldShow {
                     ZStack {
-                        // Semi-opaque blur background (NSVisualEffectView)
                         VisualEffectView(
                             material: .fullScreenUI,
                             blendingMode: .behindWindow,
                         )
                         .edgesIgnoringSafeArea(.all)
 
-                        // Centered reauth dialog
                         VStack(spacing: 16) {
                             Image(systemName: "lock.shield")
                                 .font(.system(size: 40))

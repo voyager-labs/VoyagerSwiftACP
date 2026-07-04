@@ -237,12 +237,8 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // 온보딩 창이 켜져 있으면 온보딩 흐름(AccountAccessFeature)으로 라우팅,
-        // 아니면 unlock surface로 폴백 (메인 Voyager.app AppDelegate와 동일 패턴)
-        if VoyagerPagesOnboarding.routeAuthCallbackToOnboardingIfPresent(url) {
-            return
-        }
-        VoyagerPagesOnboarding.routeAuthCallbackToUnlockSurface(url)
+        // 온보딩 창이 켜져 있으면 온보딩 흐름(AccountAccessFeature)으로 라우팅
+        _ = VoyagerPagesOnboarding.routeAuthCallbackToOnboardingIfPresent(url)
     }
 
     private func makeOnboardingWindowClient() -> OnboardingWindowClient {
