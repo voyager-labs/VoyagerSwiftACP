@@ -324,9 +324,87 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         XCTAssertEqual(status, .voyagerIsDefault)
     }
 
+    /// Finder 복구 후 LS RoleAll이 stale Voyager로 남아도 NSFileViewer 기준으로 복구 상태를 판정한다.
+    func testDiagnoseFinderWhenNSFileViewerRestoredButLSHandlerIsStaleVoyager() async {
+        let values = SET010DefaultsRecorder(initialValue: nil)
+        let entryOpenClient = makeEntryOpenClient(
+            defaultApplication: { _ in
+                ApplicationInfo(
+                    id: "voyager",
+                    name: "Voyager",
+                    bundleID: DefaultFileViewerClient.voyagerBundleID,
+                )
+            },
+        )
+
+        let status = await DefaultFileViewerLive.diagnose(
+            appBundleID: DefaultFileViewerClient.voyagerBundleID,
+            entryOpenClient: entryOpenClient,
+            defaultsStore: values.store,
+        )
+
+        XCTAssertEqual(status, .finderIsDefault)
+    }
+
+    /// 타 앱 기본 설정은 LS RoleAll이 stale이어도 NSFileViewer 기준으로 타 앱 상태를 표시한다.
+    func testDiagnoseOtherWhenNSFileViewerIsThirdPartyButLSHandlerIsStale() async {
+        let values = SET010DefaultsRecorder(initialValue: "com.example.OtherFileManager")
+        let entryOpenClient = makeEntryOpenClient(
+            defaultApplication: { _ in
+                ApplicationInfo(
+                    id: "voyager",
+                    name: "Voyager",
+                    bundleID: DefaultFileViewerClient.voyagerBundleID,
+                )
+            },
+        )
+
+        let status = await DefaultFileViewerLive.diagnose(
+            appBundleID: DefaultFileViewerClient.voyagerBundleID,
+            entryOpenClient: entryOpenClient,
+            defaultsStore: values.store,
+        )
+
+        XCTAssertEqual(
+            status,
+            .otherIsDefault(
+                appBundleID: "com.example.OtherFileManager",
+                appDisplayName: "com.example.OtherFileManager",
+            ),
+        )
+    }
+
+    /// NSFileViewer가 비어 있어도 LS가 명시적 타 앱이면 타 앱 상태를 표시한다.
+    func testDiagnoseOtherWhenNSFileViewerIsEmptyButLSHandlerIsThirdParty() async {
+        let values = SET010DefaultsRecorder(initialValue: nil)
+        let entryOpenClient = makeEntryOpenClient(
+            defaultApplication: { _ in
+                ApplicationInfo(
+                    id: "other",
+                    name: "OtherFileManager",
+                    bundleID: "com.example.OtherFileManager",
+                )
+            },
+        )
+
+        let status = await DefaultFileViewerLive.diagnose(
+            appBundleID: DefaultFileViewerClient.voyagerBundleID,
+            entryOpenClient: entryOpenClient,
+            defaultsStore: values.store,
+        )
+
+        XCTAssertEqual(
+            status,
+            .otherIsDefault(
+                appBundleID: "com.example.OtherFileManager",
+                appDisplayName: "com.example.OtherFileManager",
+            ),
+        )
+    }
+
     /// NSFileViewer 읽기 실패처럼 모르는 값이면 Finder LSHandler만으로 정상 복구 상태로 오진하지 않는다.
     func testDiagnoseUnknownWhenNSFileViewerReadIsIndeterminate() async {
-        let values = SET010DefaultsRecorder(initialValue: "__read_failed__")
+        let values = SET010DefaultsRecorder(initialValue: set010ReadFailedSentinel)
         let entryOpenClient = makeEntryOpenClient(
             defaultApplication: { _ in
                 ApplicationInfo(id: "finder", name: "Finder", bundleID: "com.apple.finder")
