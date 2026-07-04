@@ -140,19 +140,30 @@ final class AppRootFeatureContractTests: XCTestCase {
 
     // MARK: - FMW-003: Cold Start URL Buffering
 
-    /// Cold state(창 없음)에서 receiveExternalURL 수신 시 pendingExternalURLs에 순서대로 저장됨을 검증
-    func testReceiveExternalURLBuffersAllWhenNoWindows() async throws {
-        let url1 = try XCTUnwrap(URL(string: "voyager://open?url=file:///Users/test-1"))
-        let url2 = try XCTUnwrap(URL(string: "voyager://open?url=file:///Users/test-2"))
+    /// Cold state(창 없음)에서 receiveExternalURL 수신 시 pending 저장 후 lifecycle flush를 요청함을 검증.
+    func testReceiveExternalURLRequestsLifecycleFlushWhenNoWindows() async throws {
+        let url = try XCTUnwrap(URL(string: "voyager://open?url=file:///Users/test-1"))
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
+        } withDependencies: {
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: false, isDirectory: false)
+            }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
         }
+        store.exhaustivity = .off
 
-        await store.send(.receiveExternalURL(url1)) {
-            $0.pendingExternalURLs = [url1]
+        await store.send(.receiveExternalURL(url)) {
+            $0.pendingExternalURLs = [url]
         }
-        await store.send(.receiveExternalURL(url2)) {
-            $0.pendingExternalURLs = [url1, url2]
+        await store.receive { action in
+            guard case .lifecycle(.delegate(.openInitialWindowIfNeeded)) = action else { return false }
+            return true
+        }
+        XCTAssertTrue(store.state.pendingExternalURLs.isEmpty)
+        await store.receive { action in
+            guard case let .externalFileRouter(.receive(receivedURL)) = action else { return false }
+            return receivedURL == url
         }
     }
 
@@ -268,6 +279,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         let windowID = UUID()
 
         var initialState = AppRootFeature.State()
+        initialState.pendingExternalURLs = [url1, url2]
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
         } withDependencies: {
@@ -281,8 +293,6 @@ final class AppRootFeatureContractTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.receiveExternalURL(url1))
-        await store.send(.receiveExternalURL(url2))
         XCTAssertEqual(store.state.pendingExternalURLs, [url1, url2])
 
         await store.send(.windowManager(.file(.newWindow(path: nil))))
