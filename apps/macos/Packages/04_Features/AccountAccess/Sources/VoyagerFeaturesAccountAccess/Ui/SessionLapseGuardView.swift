@@ -27,6 +27,53 @@ private struct SessionLapseGuardObservedState: Equatable {
     let errorMessage: String?
 }
 
+// MARK: - Interaction shield
+
+private struct SessionLapseGuardInteractionShield: NSViewRepresentable {
+    func makeNSView(context _: Context) -> SessionLapseGuardInteractionShieldView {
+        SessionLapseGuardInteractionShieldView(frame: .zero)
+    }
+
+    func updateNSView(_: SessionLapseGuardInteractionShieldView, context _: Context) {}
+}
+
+final class SessionLapseGuardInteractionShieldView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        nil
+    }
+
+    override var acceptsFirstResponder: Bool {
+        true
+    }
+
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
+        true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard !isHidden, alphaValue > 0, bounds.contains(point) else { return nil }
+        return self
+    }
+
+    override func draggingEntered(_: any NSDraggingInfo) -> NSDragOperation {
+        []
+    }
+
+    override func draggingUpdated(_: any NSDraggingInfo) -> NSDragOperation {
+        []
+    }
+
+    override func performDragOperation(_: any NSDraggingInfo) -> Bool {
+        true
+    }
+}
+
 /// ACC-003-guard_session_lapse: 세션 만료 또는 로그아웃 상태에서 현재 window 콘텐츠를
 /// 보호하는 blur 오버레이 + 재인증 다이얼로그.
 ///
@@ -88,6 +135,10 @@ public struct SessionLapseGuardView: View {
                             blendingMode: .behindWindow,
                         )
                         .edgesIgnoringSafeArea(.all)
+
+                        SessionLapseGuardInteractionShield()
+                            .edgesIgnoringSafeArea(.all)
+                            .accessibilityHidden(true)
 
                         VStack(spacing: 16) {
                             Image(systemName: "lock.shield")

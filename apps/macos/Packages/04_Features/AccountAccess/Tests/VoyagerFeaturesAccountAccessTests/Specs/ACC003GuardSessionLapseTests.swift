@@ -1,3 +1,4 @@
+import AppKit
 @testable import VoyagerFeaturesAccountAccess
 import XCTest
 
@@ -130,5 +131,12 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
                 isSignInInProgress: state.isSignInInProgress,
             ),
         )
+    }
+
+    func testInteractionShieldBlocksHitTestsAndFileDrops() {
+        let shield = SessionLapseGuardInteractionShieldView(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
+
+        XCTAssertIdentical(shield.hitTest(NSPoint(x: 10, y: 10)), shield)
+        XCTAssertTrue(shield.registeredDraggedTypes.contains(.fileURL))
     }
 }
