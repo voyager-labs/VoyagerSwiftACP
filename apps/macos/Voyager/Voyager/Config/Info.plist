@@ -60,7 +60,7 @@
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Voyager로 열기</string>
+				<string>Open with Voyager</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>openInVoyagerService</string>
