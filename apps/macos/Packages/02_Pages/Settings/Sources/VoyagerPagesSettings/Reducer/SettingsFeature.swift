@@ -8,9 +8,6 @@ public struct SettingsFeature {
     public typealias State = SettingsState
     public typealias Action = SettingsAction
 
-    @Dependency(\.accessStatusSnapshotClient)
-    private var accessStatusSnapshotClient
-
     public init() {}
 
     public var body: some Reducer<State, Action> {
@@ -28,15 +25,24 @@ public struct SettingsFeature {
         }
 
         Reduce { state, action in
-            if case .onAppear = action {
+            // ponytail: launch 해당만 수행. AppRoot가
+            //   .bootstrapLocalPreferences (General/Appearance load)
+            //   .appLifecycleAccessSnapshotReady (accessStatus/Account snapshot)
+            // 로 1회씩 전달한다. onAppear는 UI lifecycle 전용.
+            if case .bootstrapLocalPreferences = action {
                 return .merge(
                     .send(.general(.loadSettings)),
                     .send(.appearance(.loadSettings)),
-                    .run { [accessStatusSnapshotClient] send in
-                        let snapshot = await accessStatusSnapshotClient.load()
-                        await send(.accessStatusLoaded(snapshot?.status ?? .none))
-                    },
                 )
+            }
+
+            if case let .appLifecycleAccessSnapshotReady(snapshot) = action {
+                state.accessStatus = snapshot.status
+                return .send(.account(.access(.hydrateLaunchSnapshot(snapshot))))
+            }
+
+            if case .onAppear = action {
+                return .none
             }
 
             if case let .selectSection(section) = action {

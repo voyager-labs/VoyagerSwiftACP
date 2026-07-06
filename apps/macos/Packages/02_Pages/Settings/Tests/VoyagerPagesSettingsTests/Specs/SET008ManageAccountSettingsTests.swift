@@ -217,7 +217,7 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
         // 새 결제/갱신 case가 추가되면 이 목록이 업데이트되어야 하며,
         // 추가 즉시 아래 forbidden keyword 검사에 걸려 테스트가 실패한다.
         let contractActions: [AccountSettingsAction] = [
-            .access(.onAppear),
+            .access(.hydrateLaunchSnapshot(AccessStatusSnapshot(status: .none))),
             .signOutTapped,
             .signOutConfirmed,
             .signOutCancelled,
@@ -250,7 +250,7 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
     /// - 기대 결과: 어느 case name에도 session-lapse recovery keyword가 포함되지 않는다.
     func testAccountSettingsActionHasNoSessionLapseRecoveryCases() {
         let contractActions: [AccountSettingsAction] = [
-            .access(.onAppear),
+            .access(.hydrateLaunchSnapshot(AccessStatusSnapshot(status: .none))),
             .signOutTapped,
             .signOutConfirmed,
             .signOutCancelled,
@@ -444,7 +444,7 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
 
     /// B6: SettingsAction.account(AccountSettingsAction) 케이스가 존재하고 패턴 매칭으로 접근 가능하다.
     func testSettingsActionHasAccountCase() {
-        let action = SettingsAction.account(.access(.onAppear))
+        let action = SettingsAction.account(.access(.hydrateLaunchSnapshot(AccessStatusSnapshot(status: .none))))
         if case .account = action {
             // 컴파일 타임 검증: account 케이스가 존재하면 통과
         } else {
@@ -454,6 +454,7 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
 
     /// B6: Settings.onAppear는 AccountAccessFeature를 eager bootstrap 하지 않는다.
     /// Account tab이 실제 표시될 때 AccountSettingsView가 access 상태를 초기화한다.
+    /// T2c: snapshot load도 상위(AppRoot)로 이동해서 onAppear는 완전 no-op.
     func testSettingsOnAppearDoesNotEagerlySendAccountAccessOnAppear() async {
         let store = TestStore(initialState: SettingsFeature.State()) {
             SettingsFeature()
@@ -462,18 +463,9 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
             $0.launchAtLoginClient = .testValue
             $0.directorySelectionClient = .testValue
             $0.appearanceSettingsClient = .testValue
-            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
-                load: { nil },
-                save: { _ in },
-                remove: {},
-            )
         }
-        store.exhaustivity = .off
 
         await store.send(.onAppear)
-        await store.receive(\.general.loadSettings)
-        await store.receive(\.appearance.loadSettings)
-        await store.receive(\.accessStatusLoaded)
         await store.finish()
     }
 
@@ -481,5 +473,83 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
     /// account 섹션이 ai 다음에 위치하여 탭 순서가 일관되게 유지된다.
     func testSettingsSectionAccountIsAfterAI() {
         XCTAssertEqual(SettingsSection.allCases, [.general, .appearance, .ai, .account])
+    }
+
+    // MARK: - Launch Snapshot Hydration (Task 12)
+
+    /// SET-008-manage_account_settings: launch snapshot hydration이
+    /// Settings → AccountSettings → AccountAccessFeature를 통해 전달되어
+    /// hasAccountSession=true로 파생되는지 end-to-end 검증.
+    /// - 검증: `.appLifecycleAccessSnapshotReady(snapshot with sessionExpiresAt)` send →
+    ///   `.account(.access(.hydrateLaunchSnapshot(snapshot)))` receive →
+    ///   `hasAccountSession == true`, `setAuthState == .signedIn`.
+    /// - 사전 조건: Settings root 상태는 기본 상태 (session 없음).
+    /// - 기대 결과: hydration 후 sessionExpiresAt != nil → hasAccountSession=true,
+    ///   파생 setAuthState == .signedIn.
+    func testHydrateLaunchSnapshotWithSessionSetsHasAccountSessionTrue() async {
+        let store = TestStore(initialState: SettingsFeature.State()) {
+            SettingsFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0.launchAtLoginClient = .testValue
+            $0.directorySelectionClient = .testValue
+            $0.appearanceSettingsClient = .testValue
+        }
+        store.exhaustivity = .off
+
+        let sessionExpiry = Date(timeIntervalSince1970: 4_102_444_800)
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: nil,
+            fetchedAt: Date(timeIntervalSince1970: 0),
+            sessionExpiresAt: sessionExpiry,
+        )
+        await store.send(.appLifecycleAccessSnapshotReady(snapshot)) { state in
+            state.accessStatus = .coreLicenseActive
+        }
+        await store.receive(\.account.access.hydrateLaunchSnapshot)
+
+        // sessionExpiresAt != nil → hasAccountSession=true (Task 6 hydration)
+        XCTAssertTrue(store.state.accountSettings.access.hasAccountSession)
+        XCTAssertEqual(store.state.accountSettings.access.sessionExpiresAt, sessionExpiry)
+        // 파생 auth state: signed-in = session 존재
+        XCTAssertEqual(store.state.accountSettings.setAuthState, .signedIn)
+    }
+
+    /// SET-008-manage_account_settings: sessionExpiresAt == nil snapshot hydration 시
+    /// hasAccountSession=false, setAuthState=.signedOut 파생 검증.
+    /// - 검증: `.appLifecycleAccessSnapshotReady(snapshot without sessionExpiresAt)` send →
+    ///   `.account(.access(.hydrateLaunchSnapshot(snapshot)))` receive →
+    ///   `hasAccountSession == false`, `setAuthState == .signedOut`.
+    /// - 사전 조건: Settings root 상태는 기본 상태.
+    /// - 기대 결과: hydration 후 sessionExpiresAt == nil → hasAccountSession=false,
+    ///   파생 setAuthState == .signedOut (가짜 세션 주입 금지).
+    func testHydrateLaunchSnapshotWithoutSessionSetsHasAccountSessionFalse() async {
+        let store = TestStore(initialState: SettingsFeature.State()) {
+            SettingsFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0.launchAtLoginClient = .testValue
+            $0.directorySelectionClient = .testValue
+            $0.appearanceSettingsClient = .testValue
+        }
+        store.exhaustivity = .off
+
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: nil,
+            fetchedAt: Date(timeIntervalSince1970: 0),
+            // sessionExpiresAt defaults to nil → hasSession == false
+        )
+        await store.send(.appLifecycleAccessSnapshotReady(snapshot)) { state in
+            state.accessStatus = .coreLicenseActive
+        }
+        await store.receive(\.account.access.hydrateLaunchSnapshot)
+
+        // sessionExpiresAt == nil → hasAccountSession=false (가짜 세션 주입 금지)
+        XCTAssertFalse(store.state.accountSettings.access.hasAccountSession)
+        XCTAssertNil(store.state.accountSettings.access.sessionExpiresAt)
+        // 파생 auth state: session 없음 → signedOut
+        XCTAssertEqual(store.state.accountSettings.setAuthState, .signedOut)
     }
 }

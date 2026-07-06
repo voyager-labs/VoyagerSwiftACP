@@ -9,10 +9,12 @@ public struct SettingsState: Equatable {
     var appearanceSettings = AppearanceSettingsState()
     var aiSettings = AiSettingsState()
     var accountSettings = AccountSettingsState()
-    // Settings content gate: access_status != full일 때 SettingsView가 locked overlay를 render한다.
     public var accessStatus: AccessStatus = .none
+
+    /// SettingsView 호환용 shim.
+    /// Settings 창은 accessStatus에 따라 잠기지 않으므로 항상 false를 유지한다.
     public var isContentLocked: Bool {
-        !accessStatus.isActive
+        false
     }
 
     public init() {}
