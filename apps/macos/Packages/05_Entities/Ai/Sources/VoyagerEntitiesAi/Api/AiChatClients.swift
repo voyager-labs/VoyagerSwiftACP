@@ -85,8 +85,16 @@ public actor AiChatSessionFileStore: AiChatSessionPersistenceClientProtocol {
 
     public func saveSession(_ snapshot: AiChatSessionSnapshot) async throws {
         try withExclusiveLock {
+            let fileURL = sessionFileURL(for: snapshot.sessionID)
+            if fileManager.fileExists(atPath: fileURL.path),
+               let existingSnapshot = try loadSnapshotIfValid(at: fileURL),
+               existingSnapshot.updatedAtMs > snapshot.updatedAtMs
+            {
+                return
+            }
+
             let data = try encoder.encode(snapshot)
-            try replaceSessionFile(at: sessionFileURL(for: snapshot.sessionID), with: data)
+            try replaceSessionFile(at: fileURL, with: data)
         }
     }
 
