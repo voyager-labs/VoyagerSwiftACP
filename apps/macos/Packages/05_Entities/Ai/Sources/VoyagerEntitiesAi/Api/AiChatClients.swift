@@ -88,7 +88,7 @@ public actor AiChatSessionFileStore: AiChatSessionPersistenceClientProtocol {
             let fileURL = sessionFileURL(for: snapshot.sessionID)
             if fileManager.fileExists(atPath: fileURL.path),
                let existingSnapshot = try loadSnapshotIfValid(at: fileURL),
-               existingSnapshot.updatedAtMs > snapshot.updatedAtMs
+               shouldKeepExistingSnapshot(existingSnapshot, over: snapshot)
             {
                 return
             }
@@ -143,6 +143,25 @@ private extension AiChatSessionFileStore {
     func isSessionFileURL(_ fileURL: URL) -> Bool {
         guard fileURL.pathExtension == "json" else { return false }
         return UUID(uuidString: fileURL.deletingPathExtension().lastPathComponent) != nil
+    }
+
+    func shouldKeepExistingSnapshot(
+        _ existingSnapshot: AiChatSessionSnapshot,
+        over snapshot: AiChatSessionSnapshot,
+    ) -> Bool {
+        if existingSnapshot.updatedAtMs != snapshot.updatedAtMs {
+            return existingSnapshot.updatedAtMs > snapshot.updatedAtMs
+        }
+        if existingSnapshot.transcriptHistory.count != snapshot.transcriptHistory.count {
+            return existingSnapshot.transcriptHistory.count > snapshot.transcriptHistory.count
+        }
+        if existingSnapshot.lastRunID != nil, snapshot.lastRunID == nil {
+            return true
+        }
+        if existingSnapshot.lastRequestContext != nil, snapshot.lastRequestContext == nil {
+            return true
+        }
+        return false
     }
 
     func loadSnapshotIfValid(at fileURL: URL) throws -> AiChatSessionSnapshot? {
