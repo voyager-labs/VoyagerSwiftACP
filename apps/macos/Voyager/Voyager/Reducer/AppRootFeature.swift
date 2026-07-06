@@ -15,9 +15,6 @@ struct AppRootFeature {
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
 
-    @Dependency(\.accessStatusSnapshotClient)
-    private var accessStatusSnapshotClient
-
     private enum CancelID {
         static let appDidBecomeActiveObserver = "appDidBecomeActiveObserver"
     }
@@ -60,19 +57,15 @@ struct AppRootFeature {
     ) -> Effect<Action> {
         switch action {
         case .lifecycle(.launch(.willFinishLaunching)):
-            startLaunchObservers()
+            // ponytail: launch 1회 bootstrap — General/Appearance load를 SettingsFeature가 담당.
+            .merge(
+                startLaunchObservers(),
+                .send(.settings(.bootstrapLocalPreferences)),
+                .send(.settings(.ai(.onAppear))),
+            )
 
         case let .lifecycle(.delegate(delegateAction)):
-            switch delegateAction {
-            case .openInitialWindowIfNeeded:
-                .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
-
-            case let .reopenWindowIfNeeded(hasVisibleWindows):
-                .send(.windowManager(.lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: hasVisibleWindows))))
-
-            case .startHelperIfNeeded:
-                .none
-            }
+            reduceLifecycleDelegate(delegateAction)
 
         case .lifecycle(.termination(.willTerminate)):
             .cancel(id: CancelID.appDidBecomeActiveObserver)
@@ -83,10 +76,30 @@ struct AppRootFeature {
         case let .lifecycle(.sessionLapseGuard(.delegate(.unlocked(snapshot)))):
             .send(.settings(.accessStatusLoaded(snapshot.status)))
 
+        case let .lifecycle(.accountAccessGate(.accountAccessGranted(snapshot))):
+            // ponytail: AppLifecycle이 fetch한 launch snapshot을 Settings hydration으로 1회 전달 +
+            // AI bootstrap은 launch 시점으로 이동. didBootstrap가 탭 렌더 중복 send를 no-op 처리한다.
+            .send(.settings(.appLifecycleAccessSnapshotReady(snapshot)))
+
         case .appDidBecomeActive:
             .none
 
         default:
+            .none
+        }
+    }
+
+    private func reduceLifecycleDelegate(
+        _ delegateAction: AppLifecycleAction.Delegate,
+    ) -> Effect<Action> {
+        switch delegateAction {
+        case .openInitialWindowIfNeeded:
+            .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
+
+        case let .reopenWindowIfNeeded(hasVisibleWindows):
+            .send(.windowManager(.lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: hasVisibleWindows))))
+
+        case .startHelperIfNeeded:
             .none
         }
     }
@@ -125,17 +138,19 @@ struct AppRootFeature {
             return .send(.openAISettings)
 
         case .openAISettings:
-            // Programmatic Settings gate: access_status != full이면 AI tab 딥링크를 차단한다.
-            // Native Settings window는 여전히 열리지만, content-level gate가 locked overlay를 보여준다.
-            return .run { [accessStatusSnapshotClient] send in
-                let snapshot = await accessStatusSnapshotClient.load()
-                if snapshot?.status.isActive == true {
-                    await send(.settings(.selectSection(.ai)))
-                }
-                await MainActor.run {
-                    openNativeSettingsScene()
-                }
-            }
+            // ponytail: in-state gate. AppLifecycle snapshot hydration이 이미 state를 채움.
+            // 활성 상태일 때만 AI tab 딥링크 선택. native Settings scene은 항상 오픈.
+            let selectAI: Effect<Action> = state.settings.accessStatus.isActive
+                ? .send(.settings(.selectSection(.ai)))
+                : .none
+            return .merge(
+                selectAI,
+                .run { _ in
+                    await MainActor.run {
+                        openNativeSettingsScene()
+                    }
+                },
+            )
 
         case let .settings(.delegate(.aiConnectionsFileUpdated(file))):
             return .send(.windowManager(.lifecycle(.aiConnectionsFileUpdated(file))))

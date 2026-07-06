@@ -30,6 +30,8 @@ struct AppLifecycleFeature {
     var uuid
     @Dependency(\.authNetworkClient)
     var authNetwork
+    @Dependency(\.accountSessionClient)
+    var accountSessionClient
     @Dependency(\.accessStatusSnapshotClient)
     var snapshotClient
     @Dependency(\.unlockSurfaceWindowClient)
@@ -116,13 +118,21 @@ struct AppLifecycleFeature {
                 state.accountAccessGateResolved = true
 
                 if accessStatus.isActive {
-                    let now = date.now
-                    let snapshot = AccessStatusSnapshot(
-                        status: accessStatus,
-                        currentPeriodEnd: response.currentPeriodEnd,
-                        fetchedAt: now,
-                    )
-                    return .send(.accountAccessGate(.accountAccessGranted(snapshot: snapshot)))
+                    // 활성 접근 권한: 스냅샷 생성 시 세션 만료 시점을 함께 반영한다.
+                    // authNetwork가 반환한 accessStatus를 그대로 사용하며,
+                    // 세션 읽기 실패/미존재는 access gate에 영향을 주지 않는다 (sessionExpiresAt == nil).
+                    let accountSessionClient = accountSessionClient
+                    let dateNow = date.now
+                    return .run { send in
+                        let sessionExpiresAt = await (try? accountSessionClient.read())?.expiresAt
+                        let snapshot = AccessStatusSnapshot(
+                            status: accessStatus,
+                            currentPeriodEnd: response.currentPeriodEnd,
+                            fetchedAt: dateNow,
+                            sessionExpiresAt: sessionExpiresAt,
+                        )
+                        await send(.accountAccessGate(.accountAccessGranted(snapshot: snapshot)))
+                    }
                 } else {
                     return .send(.accountAccessGate(.showUnlockSurface))
                 }
@@ -132,6 +142,7 @@ struct AppLifecycleFeature {
                     return .send(.accountAccessGate(.showUnlockSurface))
                 }
                 let snapshotClient = snapshotClient
+                let accountSessionClient = accountSessionClient
                 let dateNow = date.now
                 return .run { send in
                     guard let cached = await snapshotClient.load(),
@@ -142,7 +153,18 @@ struct AppLifecycleFeature {
                         await send(.accountAccessGate(.showUnlockSurface))
                         return
                     }
-                    await send(.accountAccessGate(.accountAccessGranted(snapshot: cached)))
+                    // session은 token file 기반으로 access_status 캐시와 무관하게
+                    // 변경될 수 있어 복원 시점에 다시 읽는다. status/currentPeriodEnd/
+                    // fetchedAt은 캐시 값을 유지하고 sessionExpiresAt 축만 최신화.
+                    // read 실패/미존재는 success path와 동일하게 nil로 흡수 → gate 정책은 그대로 유지.
+                    let sessionExpiresAt = await (try? accountSessionClient.read())?.expiresAt
+                    let restored = AccessStatusSnapshot(
+                        status: cached.status,
+                        currentPeriodEnd: cached.currentPeriodEnd,
+                        fetchedAt: cached.fetchedAt,
+                        sessionExpiresAt: sessionExpiresAt,
+                    )
+                    await send(.accountAccessGate(.accountAccessGranted(snapshot: restored)))
                 }
 
             case .accountAccessGate(.showUnlockSurface):
