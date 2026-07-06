@@ -182,7 +182,6 @@ final class AppRootCompositionTests: XCTestCase {
             state.settings.accountSettings.access.hasAccountSession = false
             state.settings.accountSettings.access.didSignInFail = true
             state.settings.accountSettings.access.isSessionExpired = true
-            state.settings.accountSettings.access.fetchGeneration += 1
             state.settings.accountSettings.access.sessionExpiresAt = nil
         }
 
@@ -190,6 +189,60 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertEqual(store.state.settings.accountSettings.setAuthState, .signInFailed)
         XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementUnknown)
         XCTAssertFalse(store.state.settings.accountSettings.isManageAccountAvailable)
+    }
+
+    /// 사용자 명시적 로그아웃(reason == .explicitSignOut)은 Settings top-level만 clear 한다.
+    /// Account child는 이미 `.delegate(.signedOut)`로 처리되므로 만료 액션으로 덮어쓰지 않는다.
+    func testExplicitSignOutOnlyClearsSettingsTopLevel() async {
+        var initialState = AppRootFeature.State()
+        initialState.settings.accessStatus = .coreLicenseActive
+        initialState.settings.accountSettings.access.hasAccountSession = true
+
+        let store = makeAccountAccessGrantedStore(initialState: initialState)
+
+        await store.send(.lifecycle(.sessionExpiredDetected(reason: .explicitSignOut)))
+
+        await store.receive(\.settings.accessStatusLoaded) { state in
+            state.settings.accessStatus = .none
+        }
+
+        // Account child는 만료 액션을 받지 않아 signed-in 상태가 유지된다.
+        XCTAssertTrue(store.state.settings.accountSettings.access.hasAccountSession)
+        XCTAssertFalse(store.state.settings.accountSettings.access.didSignInFail)
+        await store.finish()
+    }
+
+    /// guard 재로그인 성공 시 Settings top-level accessStatus와 Account 탭 child access 상태를 함께 복원한다.
+    /// AccountSettingsView는 child state로 렌더링되므로 top-level만 갱신하면 재로그인 후에도 signed-out으로 남는다.
+    func testSessionLapseGuardUnlockedHydratesSettingsAccountChild() async {
+        let expiry = Date(timeIntervalSince1970: 4_102_444_800)
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            sessionExpiresAt: expiry,
+        )
+        var initialState = AppRootFeature.State()
+        // AppLifecycleFeature가 unlocked delegate를 정상 처리하려면 sessionLapseGuard
+        // child state가 non-nil이어야 한다 (ifLet reducer가 action을 받을 수 있게).
+        initialState.lifecycle.sessionLapseGuard = AccountAccessFeature.State()
+        let store = makeAccountAccessGrantedStore(initialState: initialState)
+
+        await store.send(.lifecycle(.sessionLapseGuard(.delegate(.unlocked(snapshot)))))
+
+        await store.receive(\.settings.accessStatusLoaded) { state in
+            state.settings.accessStatus = .coreLicenseActive
+        }
+        await store.receive(\.settings.account.access.hydrateLaunchSnapshot) { state in
+            state.settings.accountSettings.access.status = .coreLicenseActive
+            state.settings.accountSettings.access.snapshot = snapshot
+            state.settings.accountSettings.access.sessionExpiresAt = expiry
+            state.settings.accountSettings.access.hasAccountSession = true
+            state.settings.accountSettings.access.didBootstrap = true
+        }
+
+        XCTAssertEqual(store.state.settings.accessStatus, .coreLicenseActive)
+        XCTAssertEqual(store.state.settings.accountSettings.setAuthState, .signedIn)
+        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementActive)
+        await store.finish()
     }
 
     /// T2c GREEN: openAISettings gate는 accessStatusSnapshotClient.load() 없이
@@ -237,6 +290,7 @@ final class AppRootCompositionTests: XCTestCase {
             $0.helperAppClient.start = {}
             $0.helperAppClient.stop = {}
             $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
             $0.accountSessionClient.delete = { _ in }
             $0.accessStatusSnapshotClient.remove = {}
             // T11: 직접 XCTest 실행 시 도달하는 전이 의존성의 testValue가 fatalError라

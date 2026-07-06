@@ -70,14 +70,29 @@ struct AppRootFeature {
         case .lifecycle(.termination(.willTerminate)):
             .cancel(id: CancelID.appDidBecomeActiveObserver)
 
-        case .lifecycle(.sessionExpiredDetected):
-            .merge(
-                .send(.settings(.accessStatusLoaded(.none))),
-                .send(.settings(.account(.access(._sessionExpiredDetected)))),
-            )
+        case let .lifecycle(.sessionExpiredDetected(reason)):
+            // 명시적 로그아웃(reason == .explicitSignOut)은 이미 Account child가
+            // `.delegate(.signedOut)`로 처리하므로 만료 액션으로 덮어쓰지 않는다.
+            // 세션 만료(reason == .sessionExpired 또는 nil)만 top-level clear +
+            // child `_sessionExpiredDetected`로 라우팅한다.
+            if reason == .explicitSignOut {
+                .send(.settings(.accessStatusLoaded(.none)))
+            } else {
+                .merge(
+                    .send(.settings(.accessStatusLoaded(.none))),
+                    .send(.settings(.account(.access(._sessionExpiredDetected)))),
+                )
+            }
 
         case let .lifecycle(.sessionLapseGuard(.delegate(.unlocked(snapshot)))):
-            .send(.settings(.accessStatusLoaded(snapshot.status)))
+            // guard 재로그인 성공 시 Settings top-level accessStatus와 Account 탭
+            // child access 상태를 함께 복원한다. AccountSettingsView는 child state로
+            // 렌더링되므로 top-level만 갱신하면 재로그인 후에도 signed-out 상태로 남는다.
+            // `.appLifecycleAccessSnapshotReady`와 동일한 child hydration 경로를 사용한다.
+            .merge(
+                .send(.settings(.accessStatusLoaded(snapshot.status))),
+                .send(.settings(.account(.access(.hydrateLaunchSnapshot(snapshot))))),
+            )
 
         case let .lifecycle(.accountAccessGate(.accountAccessGranted(snapshot))):
             // ponytail: AppLifecycle이 fetch한 launch snapshot을 Settings hydration으로 1회 전달 +
