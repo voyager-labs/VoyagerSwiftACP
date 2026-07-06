@@ -105,7 +105,9 @@ struct FileManagerWindowRoutingReducer {
                 if shouldResyncContentNavigation {
                     prepareContentForActiveTabHandoff(state: &state.content)
                     state.saveCurrentContentStateForPreviousActiveTab()
+                    state.saveCurrentInspectorStateForPreviousActiveTab()
                     state.restoreContentStateForActiveTab()
+                    state.restoreInspectorStateForActiveTab()
                 }
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
@@ -127,12 +129,14 @@ struct FileManagerWindowRoutingReducer {
                 if shouldResyncContentNavigation {
                     prepareContentForActiveTabHandoff(state: &state.content)
                     state.saveCurrentContentStateForPreviousActiveTab()
+                    state.saveCurrentInspectorStateForPreviousActiveTab()
                     if state.activeTabContentStateMissing {
                         let activeAnchor = state.contentTabs.activeTabID
                             .flatMap { state.contentTabs.tabs[id: $0]?.anchor }
                         state.content = contentState(for: activeAnchor, inheritingWindowContextFrom: state.content)
                         state.syncActiveTabContentState()
                     }
+                    state.restoreInspectorStateForActiveTab()
                 }
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
@@ -156,6 +160,10 @@ struct FileManagerWindowRoutingReducer {
                 let shouldResetLastTabContent = state.contentTabs.previousActiveTabID == tabID
                     && state.contentTabs.activeTabID == tabID
                 let shouldResyncContentNavigation = shouldRestorePreviousActiveTab || shouldResetLastTabContent
+                let shouldPreserveAiChatRequestLifecycle = shouldResyncContentNavigation
+                    && (state.content.aiChat.executionPhase.isProcessing
+                        || state.content.aiChat.executionPhase.isCompleted
+                        || state.content.aiChat.pendingRequestStart != nil)
                 let isAiChatProcessingTabClose = shouldResyncContentNavigation
                     && (state.content.aiChat.executionPhase.isProcessing
                         || state.content.aiChat.pendingRequestStart != nil)
@@ -173,16 +181,22 @@ struct FileManagerWindowRoutingReducer {
                     }
                 }
                 if isRemovedTab {
+                    state.addBackgroundInspectorAiChatState(for: tabID)
                     state.removeContentState(for: tabID)
+                    state.removeInspectorState(for: tabID)
                     if shouldRestorePreviousActiveTab {
                         state.restoreContentStateForActiveTab()
+                        state.restoreInspectorStateForActiveTab()
                     }
                 } else if shouldResetLastTabContent {
+                    state.addBackgroundInspectorAiChatState(for: tabID)
                     state.content = contentState(
                         for: state.contentTabs.tabs[id: tabID]?.anchor,
                         inheritingWindowContextFrom: state.content,
                     )
+                    state.inspector = .init()
                     state.syncActiveTabContentState()
+                    state.syncActiveTabInspectorState()
                     shouldCloseWindow = true
                 }
                 state.syncContentTabSidebarItems()
@@ -192,7 +206,7 @@ struct FileManagerWindowRoutingReducer {
                         shouldResyncContentNavigation,
                         state: state,
                         aiConnectionsFileClient: aiConnectionsFileClient,
-                        skipAiChatCancel: isAiChatProcessingTabClose,
+                        skipAiChatCancel: shouldPreserveAiChatRequestLifecycle,
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
@@ -207,7 +221,9 @@ struct FileManagerWindowRoutingReducer {
                 if shouldResyncContentNavigation {
                     prepareContentForActiveTabHandoff(state: &state.content)
                     state.saveCurrentContentStateForPreviousActiveTab()
+                    state.saveCurrentInspectorStateForPreviousActiveTab()
                     state.restoreContentStateForActiveTab()
+                    state.restoreInspectorStateForActiveTab()
                     if let restoredRoute = state.recentlyClosedNavigationRoute {
                         state.content.navigation.navigationState = restoredRoute
                         state.syncActiveTabContentState()
@@ -279,6 +295,9 @@ struct FileManagerWindowRoutingReducer {
             case let .backgroundAiChat(aiChatAction):
                 return routeBackgroundAiChatAction(aiChatAction, state: &state)
 
+            case let .inspector(.aiChat(aiChatAction)):
+                return routeInactiveInspectorAiChatAction(aiChatAction, state: &state)
+
             case .content(.collection(.saveCompleted(.failure))):
                 guard state.pendingContentTabClose != nil else {
                     return .none
@@ -312,6 +331,7 @@ private extension FileManagerWindowRoutingReducer {
         if let activeTabID = state.contentTabs.activeTabID, activeTabID != pendingClose.tabID {
             state.contentTabs.tabs.remove(id: activeTabID)
             state.removeContentState(for: activeTabID)
+            state.removeInspectorState(for: activeTabID)
         }
         keepPendingContentTabCloseFocused(pendingClose, state: &state)
         return true
@@ -332,6 +352,7 @@ private extension FileManagerWindowRoutingReducer {
         state.contentTabs.activeTabID = pendingClose.tabID
         state.contentTabs.previousActiveTabID = pendingClose.previousActiveTabID
         state.syncActiveTabContentState()
+        state.syncActiveTabInspectorState()
         state.syncContentTabSidebarItems()
         syncSidebarSelectionForActiveContentTab(state: &state)
     }
@@ -369,6 +390,8 @@ private extension FileManagerWindowRoutingReducer {
                 previousActiveTabID: isActiveTarget ? nil : state.contentTabs.activeTabID,
                 previousActiveContent: isActiveTarget ? nil : state.content,
                 targetContent: isActiveTarget ? nil : targetState,
+                previousActiveInspector: isActiveTarget ? nil : state.inspector,
+                targetInspector: isActiveTarget ? nil : state.inspectorState(for: tabID),
             )
             return .run { send in
                 let choice = await collectionAlertClient.showUnsavedNavigationAlert()
@@ -442,11 +465,16 @@ private extension FileManagerWindowRoutingReducer {
         }
         if let previousActiveTabID = pendingClose.previousActiveTabID {
             state.tabContentStates[previousActiveTabID] = state.content
+            state.tabInspectorStates[previousActiveTabID] = state.inspector.tabSnapshot()
             state.contentTabs.previousActiveTabID = previousActiveTabID
             state.contentTabs.activeTabID = pendingClose.tabID
         }
         state.content = targetContent
+        if let targetInspector = pendingClose.targetInspector {
+            state.inspector = targetInspector.tabSnapshot()
+        }
         state.syncActiveTabContentState()
+        state.syncActiveTabInspectorState()
     }
 
     func restorePreviousActiveContentIfNeeded(
@@ -458,12 +486,17 @@ private extension FileManagerWindowRoutingReducer {
         }
         if pendingClose.targetContent != nil {
             state.tabContentStates[pendingClose.tabID] = state.content
+            state.tabInspectorStates[pendingClose.tabID] = state.inspector.tabSnapshot()
         }
         state.content = previousActiveContent
+        if let previousActiveInspector = pendingClose.previousActiveInspector {
+            state.inspector = previousActiveInspector.tabSnapshot()
+        }
         if let previousActiveTabID = pendingClose.previousActiveTabID {
             state.contentTabs.previousActiveTabID = pendingClose.tabID
             state.contentTabs.activeTabID = previousActiveTabID
             state.tabContentStates[previousActiveTabID] = previousActiveContent
+            state.tabInspectorStates[previousActiveTabID] = state.inspector.tabSnapshot()
         }
     }
 }
@@ -727,6 +760,16 @@ private extension ContentTabPageAnchor {
     }
 }
 
+private extension AiChatExecutionPhase {
+    var isCompleted: Bool {
+        if case .completed = self {
+            true
+        } else {
+            false
+        }
+    }
+}
+
 private func routeBackgroundAiChatAction(
     _ aiChatAction: AiChatAction,
     state: inout FileManagerWindowState,
@@ -739,6 +782,14 @@ private func routeBackgroundAiChatAction(
         .reduce(into: &backgroundContent.aiChat, action: aiChatAction)
         .map { FileManagerWindowAction.backgroundAiChat($0) }
 
+    if let summary = sessionSnapshotSavedSummary(from: aiChatAction) {
+        refreshAiChatSnapshotsFromBackgroundIfNeeded(
+            summary: summary,
+            backgroundAiChat: backgroundContent.aiChat,
+            state: &state,
+        )
+    }
+
     if shouldRemoveBackgroundAiChatState(after: aiChatAction) {
         state.removeBackgroundAiChatState(sessionID: sessionID)
     } else {
@@ -746,6 +797,221 @@ private func routeBackgroundAiChatAction(
     }
 
     return effect
+}
+
+private func sessionSnapshotSavedSummary(from aiChatAction: AiChatAction) -> AiChatSessionSummary? {
+    if case let .sessionSnapshotSaved(summary) = aiChatAction {
+        summary
+    } else {
+        nil
+    }
+}
+
+private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
+    summary: AiChatSessionSummary,
+    backgroundAiChat: AiChatFeature.State,
+    state: inout FileManagerWindowState,
+) {
+    if state.content.aiChat.canRefreshFromBackground(sessionID: summary.sessionID) {
+        state.content.aiChat.applyBackgroundSnapshot(
+            summary: summary,
+            backgroundAiChat: backgroundAiChat,
+        )
+        state.syncActiveTabContentState()
+    }
+
+    for tabID in state.tabContentStates.keys {
+        guard tabID != state.contentTabs.activeTabID else { continue }
+        guard state.tabContentStates[tabID]?.aiChat.canRefreshFromBackground(sessionID: summary.sessionID) == true
+        else {
+            continue
+        }
+        state.tabContentStates[tabID]?.aiChat.applyBackgroundSnapshot(
+            summary: summary,
+            backgroundAiChat: backgroundAiChat,
+        )
+    }
+
+    if state.inspector.aiChat.canRefreshFromBackground(sessionID: summary.sessionID) {
+        state.inspector.aiChat.applyBackgroundSnapshot(
+            summary: summary,
+            backgroundAiChat: backgroundAiChat,
+        )
+        state.syncActiveTabInspectorState()
+    }
+
+    for tabID in state.tabInspectorStates.keys {
+        guard tabID != state.contentTabs.activeTabID else { continue }
+        guard state.tabInspectorStates[tabID]?.aiChat.canRefreshFromBackground(sessionID: summary.sessionID) == true
+        else {
+            continue
+        }
+        state.tabInspectorStates[tabID]?.aiChat.applyBackgroundSnapshot(
+            summary: summary,
+            backgroundAiChat: backgroundAiChat,
+        )
+    }
+}
+
+private extension AiChatFeature.State {
+    func canRefreshFromBackground(sessionID: AiChatSessionID) -> Bool {
+        self.sessionID == sessionID
+            && !executionPhase.isProcessing
+            && pendingRequestStart == nil
+    }
+
+    mutating func applyBackgroundSnapshot(
+        summary: AiChatSessionSummary,
+        backgroundAiChat: AiChatFeature.State,
+    ) {
+        transcriptHistory = backgroundAiChat.transcriptHistory
+        streamingAssistantDraft = nil
+        transcriptAutoScrollVersion += 1
+        lockedModelHandle = nil
+        lastExecutionFailure = nil
+        lastRequestContext = backgroundAiChat.lastRequestContext
+        lastRequestContextModelHandle = backgroundAiChat.lastRequestContextModelHandle
+        selectedModelHandle = backgroundAiChat.selectedModelHandle
+        selectedThinking = backgroundAiChat.selectedThinking
+        sessionStatus = .active
+        executionPhase = backgroundAiChat.executionPhase
+
+        guard !sessionList.deletedSessionIDs.contains(summary.sessionID) else { return }
+        sessionList.replaceRow(summary)
+        if restoreSessionID == nil || restoreSessionID == summary.sessionID {
+            sessionList.selectedSessionID = summary.sessionID
+        }
+        if mode == .chat {
+            sessionList.unreadCompletedSessionIDs.remove(summary.sessionID)
+        } else {
+            sessionList.unreadCompletedSessionIDs.insert(summary.sessionID)
+        }
+        sessionList.errorMessage = nil
+    }
+}
+
+private func routeInactiveInspectorAiChatAction(
+    _ aiChatAction: AiChatAction,
+    state: inout FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    if let effect = routeBackgroundInspectorAiChatAction(aiChatAction, state: &state) {
+        return effect
+    }
+
+    guard let tabID = inactiveInspectorTabID(for: aiChatAction, state: state),
+          var inspectorState = state.tabInspectorStates[tabID]
+    else {
+        if let summary = sessionSnapshotSavedSummary(from: aiChatAction),
+           state.inspector.aiChat.canRefreshFromBackground(sessionID: summary.sessionID)
+        {
+            refreshAiChatSnapshotsFromBackgroundIfNeeded(
+                summary: summary,
+                backgroundAiChat: state.inspector.aiChat,
+                state: &state,
+            )
+        }
+        return .none
+    }
+
+    let effect = AiChatFeature()
+        .reduce(into: &inspectorState.aiChat, action: aiChatAction)
+        .map { FileManagerWindowAction.inspector(.aiChat($0)) }
+
+    state.tabInspectorStates[tabID] = inspectorState.tabSnapshot()
+    if let summary = sessionSnapshotSavedSummary(from: aiChatAction) {
+        refreshAiChatSnapshotsFromBackgroundIfNeeded(
+            summary: summary,
+            backgroundAiChat: inspectorState.aiChat,
+            state: &state,
+        )
+    }
+    return effect
+}
+
+private func routeBackgroundInspectorAiChatAction(
+    _ aiChatAction: AiChatAction,
+    state: inout FileManagerWindowState,
+) -> Effect<FileManagerWindowAction>? {
+    guard let sessionID = inspectorAiChatSessionID(for: aiChatAction),
+          var inspectorState = state.backgroundInspectorAiChatStates[sessionID]
+    else { return nil }
+
+    let effect = AiChatFeature()
+        .reduce(into: &inspectorState.aiChat, action: aiChatAction)
+        .map { FileManagerWindowAction.inspector(.aiChat($0)) }
+
+    if let summary = sessionSnapshotSavedSummary(from: aiChatAction) {
+        refreshAiChatSnapshotsFromBackgroundIfNeeded(
+            summary: summary,
+            backgroundAiChat: inspectorState.aiChat,
+            state: &state,
+        )
+    }
+
+    if shouldRemoveBackgroundAiChatState(after: aiChatAction) {
+        state.removeBackgroundInspectorAiChatState(sessionID: sessionID)
+    } else {
+        state.backgroundInspectorAiChatStates[sessionID] = inspectorState.tabSnapshot()
+    }
+
+    return effect
+}
+
+private func inactiveInspectorTabID(
+    for aiChatAction: AiChatAction,
+    state: FileManagerWindowState,
+) -> ContentTabID? {
+    guard let sessionID = inspectorAiChatSessionID(for: aiChatAction) else { return nil }
+    return state.tabInspectorStates.first { tabID, inspectorState in
+        tabID != state.contentTabs.activeTabID
+            && inspectorState.ownsSessionOrRequest(sessionID: sessionID, action: aiChatAction)
+    }?.key
+}
+
+private func inspectorAiChatSessionID(for aiChatAction: AiChatAction) -> AiChatSessionID? {
+    switch aiChatAction {
+    case let .executionEvent(event):
+        aiChatEventSessionID(event)
+    case let .persistenceFailed(lock, _),
+         let .persistenceRecoverySucceeded(lock),
+         let .persistenceRecoveryRetryFailed(lock, _):
+        lock.context.sessionID
+    case let .sessionSnapshotSaved(summary):
+        summary.sessionID
+    case let .sessionSnapshotUpdated(summary, _, _):
+        summary.sessionID
+    default:
+        nil
+    }
+}
+
+private extension FileManagerInspectorFeature.State {
+    func ownsSessionOrRequest(sessionID: AiChatSessionID, action: AiChatAction) -> Bool {
+        if aiChat.sessionID == sessionID { return true }
+        if aiChat.executionPhase.lock?.context.sessionID == sessionID { return true }
+        if aiChat.backgroundExecutionPhases.values.contains(where: { $0.lock?.context.sessionID == sessionID }) {
+            return true
+        }
+        if case let .executionEvent(event) = action,
+           let requestID = aiChatEventRequestID(event),
+           aiChat.backgroundExecutionPhases[requestID] != nil
+        {
+            return true
+        }
+        return false
+    }
+}
+
+private func aiChatEventRequestID(_ event: AiChatEvent) -> AiChatRequestID? {
+    switch event {
+    case let .started(context),
+         let .delta(context, _),
+         let .failed(context, _):
+        context.requestID
+
+    case let .final(response):
+        response.context.requestID
+    }
 }
 
 private func backgroundAiChatSessionID(

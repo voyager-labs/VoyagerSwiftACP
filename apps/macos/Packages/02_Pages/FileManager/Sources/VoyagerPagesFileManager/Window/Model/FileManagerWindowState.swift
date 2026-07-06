@@ -10,7 +10,9 @@ import VoyagerShared
 public struct FileManagerWindowState: Equatable {
     public var content: FileManagerContentFeature.State
     public var tabContentStates: [ContentTabID: FileManagerContentFeature.State]
+    public var tabInspectorStates: [ContentTabID: FileManagerInspectorFeature.State]
     public var backgroundAiChatStates: [AiChatSessionID: FileManagerContentFeature.State]
+    public var backgroundInspectorAiChatStates: [AiChatSessionID: FileManagerInspectorFeature.State]
     public var sidebar: FileManagerSidebarFeature.State
     public var inspector: FileManagerInspectorFeature.State
     public var contentTabs: ContentTabState
@@ -23,7 +25,9 @@ public struct FileManagerWindowState: Equatable {
         inspector = .init()
         contentTabs = .withHomeTab()
         tabContentStates = [:]
+        tabInspectorStates = [:]
         backgroundAiChatStates = [:]
+        backgroundInspectorAiChatStates = [:]
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
         if let activeTabID = contentTabs.activeTabID {
@@ -48,6 +52,7 @@ public struct FileManagerWindowState: Equatable {
         }
 
         state.syncActiveTabContentState()
+        state.restoreInspectorStateForActiveTab()
         state.syncContentTabSidebarItems()
         return state
     }
@@ -77,6 +82,7 @@ public struct FileManagerWindowState: Equatable {
         }
 
         state.syncActiveTabContentState()
+        state.restoreInspectorStateForActiveTab()
         state.syncContentTabSidebarItems()
         return state
     }
@@ -87,6 +93,8 @@ public struct PendingContentTabClose: Equatable {
     public let previousActiveTabID: ContentTabID?
     public let previousActiveContent: FileManagerContentFeature.State?
     public let targetContent: FileManagerContentFeature.State?
+    public let previousActiveInspector: FileManagerInspectorFeature.State?
+    public let targetInspector: FileManagerInspectorFeature.State?
     public var didReceiveWriteBackNavigationState: Bool
     public var didReceiveWriteBackComposerSync: Bool
 
@@ -95,6 +103,8 @@ public struct PendingContentTabClose: Equatable {
         previousActiveTabID: ContentTabID? = nil,
         previousActiveContent: FileManagerContentFeature.State? = nil,
         targetContent: FileManagerContentFeature.State? = nil,
+        previousActiveInspector: FileManagerInspectorFeature.State? = nil,
+        targetInspector: FileManagerInspectorFeature.State? = nil,
         didReceiveWriteBackNavigationState: Bool = false,
         didReceiveWriteBackComposerSync: Bool = false,
     ) {
@@ -102,6 +112,8 @@ public struct PendingContentTabClose: Equatable {
         self.previousActiveTabID = previousActiveTabID
         self.previousActiveContent = previousActiveContent
         self.targetContent = targetContent
+        self.previousActiveInspector = previousActiveInspector
+        self.targetInspector = targetInspector
         self.didReceiveWriteBackNavigationState = didReceiveWriteBackNavigationState
         self.didReceiveWriteBackComposerSync = didReceiveWriteBackComposerSync
     }
@@ -117,6 +129,13 @@ public extension FileManagerWindowState {
 }
 
 extension FileManagerWindowState {
+    var activeTabInspectorStateMissing: Bool {
+        guard let activeTabID = contentTabs.activeTabID,
+              supportsInspector(tabID: activeTabID)
+        else { return false }
+        return tabInspectorStates[activeTabID] == nil
+    }
+
     var activeTabContentStateMissing: Bool {
         guard let activeTabID = contentTabs.activeTabID else { return false }
         return tabContentStates[activeTabID] == nil
@@ -134,6 +153,90 @@ extension FileManagerWindowState {
     mutating func syncActiveTabContentState() {
         guard let activeTabID = contentTabs.activeTabID else { return }
         tabContentStates[activeTabID] = content
+    }
+
+    mutating func syncActiveTabInspectorState() {
+        guard let activeTabID = contentTabs.activeTabID else { return }
+        guard supportsInspector(tabID: activeTabID) else {
+            tabInspectorStates[activeTabID] = nil
+            return
+        }
+        tabInspectorStates[activeTabID] = inspector.tabSnapshot()
+    }
+
+    mutating func saveCurrentInspectorStateForPreviousActiveTab() {
+        guard let previousActiveTabID = contentTabs.previousActiveTabID else { return }
+        guard supportsInspector(tabID: previousActiveTabID) else {
+            tabInspectorStates[previousActiveTabID] = nil
+            return
+        }
+        tabInspectorStates[previousActiveTabID] = inspector.tabSnapshot()
+    }
+
+    mutating func restoreInspectorStateForActiveTab() {
+        guard let activeTabID = contentTabs.activeTabID else {
+            inspector = .init()
+            return
+        }
+        guard supportsInspector(tabID: activeTabID) else {
+            inspector = .init()
+            tabInspectorStates[activeTabID] = nil
+            return
+        }
+        if let savedInspector = tabInspectorStates[activeTabID] {
+            inspector = savedInspector.tabSnapshot()
+        } else {
+            inspector = .init()
+            tabInspectorStates[activeTabID] = inspector.tabSnapshot()
+        }
+    }
+
+    mutating func removeInspectorState(for tabID: ContentTabID) {
+        tabInspectorStates[tabID] = nil
+    }
+
+    mutating func addBackgroundInspectorAiChatState(for tabID: ContentTabID) {
+        let inspectorState = if contentTabs.previousActiveTabID == tabID || contentTabs.activeTabID == tabID {
+            inspector
+        } else {
+            tabInspectorStates[tabID]
+        }
+
+        guard let inspectorState else { return }
+        addBackgroundInspectorAiChatState(state: inspectorState)
+    }
+
+    mutating func addBackgroundInspectorAiChatState(state inspectorState: FileManagerInspectorFeature.State) {
+        guard inspectorState.shouldPreserveAiChatInBackground else { return }
+        guard let sessionID = inspectorState.aiChat.sessionID ?? inspectorState.aiChat.executionPhase.lock?.context
+            .sessionID
+        else {
+            return
+        }
+        backgroundInspectorAiChatStates[sessionID] = inspectorState.tabSnapshot()
+    }
+
+    @discardableResult
+    mutating func removeBackgroundInspectorAiChatState(
+        sessionID: AiChatSessionID,
+    ) -> FileManagerInspectorFeature.State? {
+        backgroundInspectorAiChatStates.removeValue(forKey: sessionID)
+    }
+
+    func backgroundInspectorAiChatState(for sessionID: AiChatSessionID) -> FileManagerInspectorFeature.State? {
+        backgroundInspectorAiChatStates[sessionID]
+    }
+
+    func inspectorState(for tabID: ContentTabID) -> FileManagerInspectorFeature.State? {
+        if contentTabs.activeTabID == tabID {
+            return inspector
+        }
+        return tabInspectorStates[tabID]
+    }
+
+    func supportsInspector(tabID: ContentTabID) -> Bool {
+        guard let anchor = contentTabs.tabs[id: tabID]?.anchor else { return false }
+        return anchor.supportsInspector
     }
 
     mutating func saveCurrentContentStateForPreviousActiveTab() {
@@ -189,6 +292,7 @@ extension FileManagerWindowState {
 
         for removedID in currentPinnedIDs.subtracting(restoredTabIDs) where contentTabs.tabs[id: removedID] == nil {
             tabContentStates[removedID] = nil
+            tabInspectorStates[removedID] = nil
         }
         let changedPinnedTabIDs = Set(
             restoredPinnedTabs.compactMap { tab in
@@ -197,11 +301,13 @@ extension FileManagerWindowState {
         )
         for changedID in changedPinnedTabIDs {
             tabContentStates[changedID] = nil
+            tabInspectorStates[changedID] = nil
         }
 
         if contentTabs.tabs.isEmpty {
             contentTabs = .withHomeTab()
             restoreContentStateForActiveTab()
+            restoreInspectorStateForActiveTab()
         } else if let activeTabID = contentTabs.activeTabID,
                   let activeTab = contentTabs.tabs[id: activeTabID]
         {
@@ -210,11 +316,14 @@ extension FileManagerWindowState {
                 && changedPinnedTabIDs.contains(activeTabID)
             if activePinnedAnchorDidChange {
                 tabContentStates[activeTabID] = nil
+                tabInspectorStates[activeTabID] = nil
                 restoreContentStateForActiveTab()
+                restoreInspectorStateForActiveTab()
             }
         } else {
             contentTabs.activeTabID = mergedPinnedTabs.first?.id ?? currentUnpinnedTabs.first?.id
             restoreContentStateForActiveTab()
+            restoreInspectorStateForActiveTab()
         }
 
         contentTabs.recentlyClosed = recentlyClosed
@@ -276,6 +385,34 @@ extension FileManagerWindowState {
             return false
         }
         return contentState.openedCollectionURLExists
+    }
+}
+
+extension FileManagerInspectorFeature.State {
+    var shouldPreserveAiChatInBackground: Bool {
+        if aiChat.executionPhase.isProcessing || aiChat.pendingRequestStart != nil { return true }
+        if case .completed = aiChat.executionPhase { return true }
+        return false
+    }
+
+    func tabSnapshot() -> Self {
+        var snapshot = self
+        snapshot.inspectorPaneExists = false
+        return snapshot
+    }
+}
+
+private extension ContentTabPageAnchor {
+    var supportsInspector: Bool {
+        switch self {
+        case .directory,
+             .collectionFile,
+             .virtualCollection:
+            true
+        case .homeDefault,
+             .aiChat:
+            false
+        }
     }
 }
 
