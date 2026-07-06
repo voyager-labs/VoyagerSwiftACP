@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
@@ -207,13 +208,9 @@ extension FileManagerWindowState {
     }
 
     mutating func addBackgroundInspectorAiChatState(state inspectorState: FileManagerInspectorFeature.State) {
-        guard inspectorState.shouldPreserveAiChatInBackground else { return }
-        guard let sessionID = inspectorState.aiChat.sessionID ?? inspectorState.aiChat.executionPhase.lock?.context
-            .sessionID
-        else {
-            return
+        for sessionID in inspectorState.aiChat.lifecycleSessionIDsToPreserve {
+            backgroundInspectorAiChatStates[sessionID] = inspectorState.tabSnapshot()
         }
-        backgroundInspectorAiChatStates[sessionID] = inspectorState.tabSnapshot()
     }
 
     @discardableResult
@@ -402,15 +399,31 @@ extension FileManagerWindowState {
 
 extension FileManagerInspectorFeature.State {
     var shouldPreserveAiChatInBackground: Bool {
-        if aiChat.executionPhase.isProcessing || aiChat.pendingRequestStart != nil { return true }
-        if case .completed = aiChat.executionPhase { return true }
-        return false
+        !aiChat.lifecycleSessionIDsToPreserve.isEmpty
     }
 
     func tabSnapshot() -> Self {
         var snapshot = self
         snapshot.inspectorPaneExists = false
         return snapshot
+    }
+}
+
+private extension AiChatFeature.State {
+    var lifecycleSessionIDsToPreserve: [AiChatSessionID] {
+        var sessionIDs: [AiChatSessionID] = []
+        let isCompleted = if case .completed = executionPhase { true } else { false }
+        if executionPhase.isProcessing || pendingRequestStart != nil || isCompleted,
+           let sessionID
+        {
+            sessionIDs.append(sessionID)
+        }
+        for phase in backgroundExecutionPhases.values {
+            if let sessionID = phase.lock?.context.sessionID {
+                sessionIDs.append(sessionID)
+            }
+        }
+        return Array(Set(sessionIDs))
     }
 }
 

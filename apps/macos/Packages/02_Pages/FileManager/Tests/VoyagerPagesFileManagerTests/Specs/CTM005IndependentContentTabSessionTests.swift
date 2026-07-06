@@ -5036,6 +5036,80 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    func testClosingInspectorTabPreservesBackgroundExecutionPhases() async {
+        let directoryTabID = ContentTabID()
+        let homeTabID = ContentTabID()
+        let inspectorSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: inspectorSessionID)
+
+        var directoryContent = FileManagerContentFeature.State()
+        directoryContent.navigation.seedInitialFolderPath("/Users/test/Documents")
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath("/Users/test/Home")
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: directoryTabID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Documents"),
+                    isPinned: false,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: directoryTabID,
+            recentlyClosed: nil,
+        )
+        state.content = directoryContent
+        state.tabContentStates = [
+            directoryTabID: directoryContent,
+            homeTabID: homeContent,
+        ]
+        state.inspector.inspectorVisible = true
+        state.inspector.activeMode = .chat
+        state.inspector.aiChat.sessionID = nil
+        state.inspector.aiChat.executionPhase = .idle
+        state.inspector.aiChat.backgroundExecutionPhases[requestLock.requestID] = .processing(requestLock)
+        state.syncActiveTabInspectorState()
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryWatchingClient.startWatchingDirectory = { _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.close(directoryTabID)))
+        await store.receive(\.content.internal.applyNavigationState)
+        await store.skipReceivedActions()
+
+        let backgroundInspector = store.state.backgroundInspectorAiChatStates[inspectorSessionID]
+        XCTAssertNotNil(backgroundInspector)
+        XCTAssertEqual(
+            backgroundInspector?.aiChat.backgroundExecutionPhases[requestLock.requestID],
+            .processing(requestLock),
+        )
+        XCTAssertNil(backgroundInspector?.aiChat.sessionID)
+        await store.finish()
+    }
+
     func testClosedInspectorTabFinalEventSavesSnapshotThroughBackgroundState() async {
         let directoryTabID = ContentTabID()
         let homeTabID = ContentTabID()
