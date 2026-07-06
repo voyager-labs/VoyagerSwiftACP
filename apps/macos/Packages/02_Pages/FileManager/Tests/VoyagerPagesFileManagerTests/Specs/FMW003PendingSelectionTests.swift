@@ -10,9 +10,8 @@ import XCTest
 ///
 /// `FileManagerContentEntryOpsCoordinator.handleItemsLoaded`가 다음 동작을 수행하는지 검증:
 /// 1. pendingSelectEntryID가 nil이면 no-op (기존 동작 유지)
-/// 2. pendingSelectEntryID를 즉시 nil로 clear (매칭 여부와 무관)
-/// 3. 로드된 entries 중 매칭 ID가 있으면 setSelectionState 발행
-/// 4. 매칭 ID가 없으면 selection 발행 없이 pending만 clear
+/// 2. 로드된 entries 중 매칭 ID가 있으면 pendingSelectEntryID clear 후 selection state 즉시 반영
+/// 3. 매칭 ID가 없으면 다음 itemsLoaded 재시도를 위해 pendingSelectEntryID 유지
 @MainActor
 final class FMW003PendingSelectionTests: XCTestCase {
     // MARK: - Helpers
@@ -48,11 +47,10 @@ final class FMW003PendingSelectionTests: XCTestCase {
 
     // MARK: - Tests
 
-    /// FMW-003: pendingSelectEntryID와 매칭되는 엔트리가 itemsLoaded에 포함된 경우 setSelectionState 발행 검증.
+    /// FMW-003: pendingSelectEntryID와 매칭되는 엔트리가 itemsLoaded에 포함된 경우 selection state 즉시 반영 검증.
     /// - 사전 조건: pendingSelectEntryID == "/test/doc.txt", entries에 동일 fullPath 보유
-    /// - 기대 결과: pendingSelectEntryID nil clear + setSelectionState(ids/lastSelectedId/rangeAnchorId = targetID, scroll
-    /// = true) 발행
-    func test_handleItemsLoaded_matchingEntry_sendsSetSelectionState() async {
+    /// - 기대 결과: pendingSelectEntryID nil clear + selectedIds/lastSelectedId/rangeAnchorId = targetID, scroll = true
+    func test_handleItemsLoaded_matchingEntry_appliesSelectionImmediately() async {
         let targetID = "/test/doc.txt"
         let entries = [Self.makeEntry(fullPath: targetID)]
 
@@ -63,29 +61,59 @@ final class FMW003PendingSelectionTests: XCTestCase {
         // pendingSelectEntryID와 무관한 state 필드의 부수 변경 검증을 제외하기 위해
         store.exhaustivity = .off
 
-        await store.send(.bridge(.loading(.itemsLoaded(entries))))
+        await store.send(.bridge(.loading(.itemsLoaded(entries)))) {
+            $0.content.pendingSelectEntryID = nil
+            $0.content.entryViewLayout.selectedIds = Set([targetID])
+            $0.content.entryViewLayout.lastSelectedId = targetID
+            $0.content.entryViewLayout.rangeAnchorId = targetID
+            $0.content.entryViewLayout.shouldScrollToSelection = true
+        }
 
-        // 매칭 엔트리 발견 → coordinator가 setSelectionState 발행
+        // 매칭 엔트리 발견 → selectionChanged delegate 발행
         await store.receive { action in
-            guard case let .forwarded(.entryViewLayout(.internal(.setSelectionState(
-                ids, lastSelectedId, rangeAnchorId, shouldScrollToSelection,
-            )))) = action else { return false }
-            return ids == Set([targetID])
-                && lastSelectedId == targetID
-                && rangeAnchorId == targetID
-                && shouldScrollToSelection
+            guard case .forwarded(.entryViewLayout(.delegate(.selectionChanged))) = action else { return false }
+            return true
         }
         await store.finish()
     }
 
-    /// FMW-003: pendingSelectEntryID가 로드된 entries와 매칭되지 않는 경우 pending만 clear, selection 발행 없음.
+    /// FMW-003: /tmp deep link와 /private/tmp 로드 결과가 symlink 기준으로 동일하면 실제 entry ID를 선택한다.
+    /// - 사전 조건: pendingSelectEntryID는 /tmp 경로, entries는 FileManager가 반환한 /private/tmp 경로
+    /// - 기대 결과: 매칭 성공 + UI가 찾을 수 있는 loaded entry ID로 selection state 반영
+    func test_handleItemsLoaded_symlinkEquivalentEntry_selectsLoadedEntryID() async {
+        let pendingID = "/tmp/voyager-qa-folder/sample.txt"
+        let loadedEntryID = "/private/tmp/voyager-qa-folder/sample.txt"
+        let entries = [Self.makeEntry(fullPath: loadedEntryID)]
+
+        let store = TestStore(initialState: makeBridgeState(pendingSelectEntryID: pendingID)) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bridge(.loading(.itemsLoaded(entries)))) {
+            $0.content.pendingSelectEntryID = nil
+            $0.content.entryViewLayout.selectedIds = Set([loadedEntryID])
+            $0.content.entryViewLayout.lastSelectedId = loadedEntryID
+            $0.content.entryViewLayout.rangeAnchorId = loadedEntryID
+            $0.content.entryViewLayout.shouldScrollToSelection = true
+        }
+
+        await store.receive { action in
+            guard case .forwarded(.entryViewLayout(.delegate(.selectionChanged))) = action else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
+    /// FMW-003: pendingSelectEntryID가 로드된 entries와 매칭되지 않는 경우 pending을 유지한다.
     /// - 사전 조건: pendingSelectEntryID == "/test/other.txt", entries는 "/test/doc.txt"만 보유
-    /// - 기대 결과: pendingSelectEntryID nil clear + 어떤 action도 수신하지 않음
-    func test_handleItemsLoaded_nonMatchingEntry_clearsPendingNoSelection() async {
+    /// - 기대 결과: selection 발행 없음 + 다음 itemsLoaded 재시도를 위해 pendingSelectEntryID 유지
+    func test_handleItemsLoaded_nonMatchingEntry_preservesPendingNoSelection() async {
+        let targetID = "/test/other.txt"
         let entries = [Self.makeEntry(fullPath: "/test/doc.txt")]
 
         let store = TestStore(
-            initialState: makeBridgeState(pendingSelectEntryID: "/test/other.txt"),
+            initialState: makeBridgeState(pendingSelectEntryID: targetID),
         ) {
             LifecycleBridgeHarness()
         }
@@ -93,8 +121,61 @@ final class FMW003PendingSelectionTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.bridge(.loading(.itemsLoaded(entries))))
+        XCTAssertEqual(store.state.content.pendingSelectEntryID, targetID)
         // 매칭 엔트리 없음 → 수신 액션 없음
         await store.finish()
+    }
+
+    /// FMW-003: 첫 로드에서 매칭되지 않아도 이후 로드에서 대상 엔트리를 선택한다.
+    /// - 사전 조건: 첫 itemsLoaded에는 대상 없음, 다음 itemsLoaded에는 대상 포함
+    /// - 기대 결과: 첫 로드 후 pending 유지 + 다음 로드에서 selection 반영 후 pending clear
+    func test_handleItemsLoaded_nonMatchingThenMatchingEntry_selectsOnRetry() async {
+        let targetID = "/test/other.txt"
+        let firstEntries = [Self.makeEntry(fullPath: "/test/doc.txt")]
+        let secondEntries = [Self.makeEntry(fullPath: targetID)]
+
+        let store = TestStore(
+            initialState: makeBridgeState(pendingSelectEntryID: targetID),
+        ) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bridge(.loading(.itemsLoaded(firstEntries))))
+        XCTAssertEqual(store.state.content.pendingSelectEntryID, targetID)
+
+        await store.send(.bridge(.loading(.itemsLoaded(secondEntries)))) {
+            $0.content.pendingSelectEntryID = nil
+            $0.content.entryViewLayout.selectedIds = Set([targetID])
+            $0.content.entryViewLayout.lastSelectedId = targetID
+            $0.content.entryViewLayout.rangeAnchorId = targetID
+            $0.content.entryViewLayout.shouldScrollToSelection = true
+        }
+        await store.receive { action in
+            guard case .forwarded(.entryViewLayout(.delegate(.selectionChanged))) = action else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
+    /// FMW-003: 전체 FileManagerContentFeature에서 itemsLoaded action pass 안에 pending selection이 반영된다.
+    /// - 기대 결과: EntryViewLayoutFeature.updateEntriesAndReapply가 빈 selection으로 되돌리지 않음
+    func test_contentFeature_itemsLoaded_appliesPendingSelectionBeforeEntryLayoutReconcile() async {
+        let targetID = "/test/doc.txt"
+        let entries = [Self.makeEntry(fullPath: targetID)]
+        var state = FileManagerContentState()
+        state.pendingSelectEntryID = targetID
+
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(entries))))) {
+            $0.pendingSelectEntryID = nil
+            $0.entryViewLayout.selectedIds = Set([targetID])
+            $0.entryViewLayout.lastSelectedId = targetID
+            $0.entryViewLayout.rangeAnchorId = targetID
+            $0.entryViewLayout.shouldScrollToSelection = true
+        }
     }
 
     /// FMW-003: pendingSelectEntryID가 nil인 경우 기존 동작 유지 (no-op).

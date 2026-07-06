@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
@@ -60,6 +61,28 @@ enum FileManagerContentEntryOpsCoordinator {
         }
     }
 
+    /// itemsLoaded reconcile 전에 pending selection을 동기 반영한다.
+    @discardableResult
+    static func applyPendingSelectionForLoadedEntries(
+        entries: [EntryModel],
+        state: inout FileManagerContentState,
+    ) -> Bool {
+        guard let selectID = state.pendingSelectEntryID else { return false }
+        let normalizedSelectID = normalizedPath(selectID)
+        guard let matchedID = entries.first(where: { normalizedPath($0.id) == normalizedSelectID })?.id else {
+            return false
+        }
+
+        let selectedIds = Set([matchedID])
+        let didChangeSelection = state.entryViewLayout.selectedIds != selectedIds
+        state.pendingSelectEntryID = nil
+        state.entryViewLayout.selectedIds = selectedIds
+        state.entryViewLayout.lastSelectedId = matchedID
+        state.entryViewLayout.rangeAnchorId = matchedID
+        state.entryViewLayout.shouldScrollToSelection = true
+        return didChangeSelection
+    }
+
     private static func handleEntryActionCompleted(
         _ record: EntryActionRecord,
         state: FileManagerContentState,
@@ -119,15 +142,14 @@ enum FileManagerContentEntryOpsCoordinator {
         entries: [EntryModel],
         state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
-        guard let selectID = state.pendingSelectEntryID else { return .none }
-        state.pendingSelectEntryID = nil
-        guard entries.contains(where: { $0.id == selectID }) else { return .none }
-        return .send(.entryViewLayout(.internal(.setSelectionState(
-            ids: Set([selectID]),
-            lastSelectedId: selectID,
-            rangeAnchorId: selectID,
-            shouldScrollToSelection: true,
-        ))))
+        guard applyPendingSelectionForLoadedEntries(entries: entries, state: &state) else {
+            return .none
+        }
+        return .send(.entryViewLayout(.delegate(.selectionChanged)))
+    }
+
+    private static func normalizedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().path
     }
 
     private static func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<FileManagerContentAction> {

@@ -36,6 +36,10 @@ public struct FileManagerContentFeature {
             EntryViewLayoutFeature()
         }
 
+        Reduce { state, action in
+            handlePendingSelectionAfterEntryLayoutLoaded(action, state: &state)
+        }
+
         FileManagerContentComposerReducer()
 
         FileManagerContentNavigationBridgeReducer()
@@ -70,5 +74,21 @@ public struct FileManagerContentFeature {
                 return .none
             }
         }
+    }
+
+    private func handlePendingSelectionAfterEntryLayoutLoaded(
+        _ action: Action,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(entries)))) = action else {
+            return .none
+        }
+        guard FileManagerContentEntryOpsCoordinator.applyPendingSelectionForLoadedEntries(
+            entries: entries,
+            state: &state,
+        ) else {
+            return .none
+        }
+        return .send(.entryViewLayout(.delegate(.selectionChanged)))
     }
 }
