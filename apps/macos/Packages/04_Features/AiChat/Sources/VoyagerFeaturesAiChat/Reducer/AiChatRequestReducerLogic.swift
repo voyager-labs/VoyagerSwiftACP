@@ -139,7 +139,7 @@ extension AiChatFeature {
                 await send(.sessionSnapshotUpdateFailed(requestID: lock.requestID, runID: lock.runID))
             }
         }
-        .cancellable(id: CancelID.requestStartPersistence, cancelInFlight: true)
+        .cancellable(id: CancelID.requestStartPersistence(lock.requestID), cancelInFlight: true)
     }
 
     private func makeRequestStartSnapshot(state: State, lock: AiChatRequestLock) -> AiChatSessionSnapshot {
@@ -322,7 +322,7 @@ extension AiChatFeature {
                 await send(.executionEvent(event))
             }
         }
-        .cancellable(id: CancelID.request, cancelInFlight: true)
+        .cancellable(id: CancelID.request(request.context.requestID), cancelInFlight: false)
     }
 
     func applyFinal(response: AiChatResponse, lock: AiChatRequestLock, state: inout State) {
@@ -460,18 +460,56 @@ extension AiChatFeature {
         state.resolvedModelRow(for: state.selectedModelHandle)
     }
 
-    func cancelRequestLifecycle() -> Effect<Action> {
+    func moveVisibleProcessingToBackgroundIfNeeded(state: inout State, targetSessionID: AiChatSessionID?) {
+        guard case let .processing(lock) = state.executionPhase,
+              lock.context.sessionID != targetSessionID
+        else { return }
+        state.backgroundExecutionPhases[lock.requestID] = .processing(lock)
+        state.executionPhase = .idle
+        state.lockedModelHandle = nil
+        state.streamingAssistantDraft = nil
+    }
+
+    func cancelRequestLifecycle(for lock: AiChatRequestLock) -> Effect<Action> {
         .merge(
-            .cancel(id: CancelID.request),
-            .cancel(id: CancelID.requestContextResolution),
-            .cancel(id: CancelID.requestStartPersistence),
-            .cancel(id: CancelID.requestFinalPersistence),
+            .cancel(id: CancelID.request(lock.requestID)),
+            .cancel(id: CancelID.requestStartPersistence(lock.requestID)),
+            .cancel(id: CancelID.requestFinalPersistence(lock.requestID)),
         )
     }
 
-    func cancelAllInFlightWork() -> Effect<Action> {
+    func cancelRequestLifecycle(for sessionID: AiChatSessionID, state: inout State) -> Effect<Action>? {
+        var effects: [Effect<Action>] = []
+        if let lock = state.executionPhase.lock, lock.context.sessionID == sessionID {
+            effects.append(cancelRequestLifecycle(for: lock))
+        }
+
+        let backgroundLocks = state.backgroundExecutionPhases.values.compactMap(\.lock)
+            .filter { $0.context.sessionID == sessionID }
+        for lock in backgroundLocks {
+            state.backgroundExecutionPhases[lock.requestID] = nil
+            effects.append(cancelRequestLifecycle(for: lock))
+        }
+
+        guard !effects.isEmpty else { return nil }
+        return .merge(effects)
+    }
+
+    func cancelAllRequestLifecycleWork(state: inout State) -> Effect<Action> {
+        var effects: [Effect<Action>] = [.cancel(id: CancelID.requestContextResolution)]
+        if let lock = state.executionPhase.lock {
+            effects.append(cancelRequestLifecycle(for: lock))
+        }
+        for lock in state.backgroundExecutionPhases.values.compactMap(\.lock) {
+            effects.append(cancelRequestLifecycle(for: lock))
+        }
+        state.backgroundExecutionPhases = [:]
+        return .merge(effects)
+    }
+
+    func cancelAllInFlightWork(state: inout State) -> Effect<Action> {
         .merge(
-            cancelRequestLifecycle(),
+            cancelAllRequestLifecycleWork(state: &state),
             .cancel(id: CancelID.restore),
             .cancel(id: CancelID.persistenceRecovery),
             .cancel(id: CancelID.modelList),
@@ -496,7 +534,7 @@ extension AiChatFeature {
             failure: .cancelled,
             wasCancelled: true,
         ))
-        return cancelRequestLifecycle()
+        return cancelRequestLifecycle(for: lock)
     }
 
     func handleResetTapped(state: inout State) -> Effect<Action> {
@@ -511,7 +549,7 @@ extension AiChatFeature {
         state.lastExecutionFailure = nil
         state.lockedModelHandle = nil
         state.executionPhase = .idle
-        return cancelAllInFlightWork()
+        return cancelAllInFlightWork(state: &state)
     }
 
     func handleTeardownRequested(state: inout State) -> Effect<Action> {
@@ -519,7 +557,7 @@ extension AiChatFeature {
         state.streamingAssistantDraft = nil
         state.lockedModelHandle = nil
         state.executionPhase = .idle
-        return cancelAllInFlightWork()
+        return cancelAllInFlightWork(state: &state)
     }
 }
 

@@ -282,7 +282,7 @@ struct AiChatStateDisplayModelBuilder {
     }
 
     private var hasInFlightRequest: Bool {
-        state.executionPhase.isProcessing
+        visibleProcessingLock != nil
     }
 
     private func isVisibleRequest(lock: AiChatRequestLock) -> Bool {

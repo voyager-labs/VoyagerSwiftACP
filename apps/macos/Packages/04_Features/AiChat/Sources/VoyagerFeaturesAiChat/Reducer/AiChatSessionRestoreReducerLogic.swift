@@ -114,6 +114,10 @@ extension AiChatFeature {
     }
 
     func apply(setup: AiChatSetupState, to state: inout State) {
+        moveVisibleProcessingToBackgroundIfNeeded(
+            state: &state,
+            targetSessionID: setup.sessionID ?? setup.restoreSessionID,
+        )
         applySetupSession(setup, to: &state)
         applySetupModelState(setup, to: &state)
         clearSetupRuntimeState(&state)

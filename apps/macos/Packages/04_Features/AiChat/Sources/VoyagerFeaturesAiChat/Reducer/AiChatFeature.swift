@@ -9,10 +9,10 @@ public struct AiChatFeature {
     public typealias Action = AiChatAction
 
     enum CancelID: Hashable {
-        case request
+        case request(AiChatRequestID)
         case requestContextResolution
-        case requestStartPersistence
-        case requestFinalPersistence
+        case requestStartPersistence(AiChatRequestID)
+        case requestFinalPersistence(AiChatRequestID)
         case restore
         case persistenceRecovery
         case modelList
@@ -424,7 +424,7 @@ public struct AiChatFeature {
                 return handleResetTapped(state: &state)
 
             case .cancelInFlightWork:
-                return cancelAllInFlightWork()
+                return cancelAllInFlightWork(state: &state)
 
             case .teardownRequested:
                 return handleTeardownRequested(state: &state)

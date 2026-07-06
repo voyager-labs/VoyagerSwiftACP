@@ -1058,7 +1058,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
 
         await store.send(.newChatTapped) { state in
             applySessionListNewChatStarted(&state, sessionID: newSessionID)
-            state.executionPhase = .processing(lock)
+            state.backgroundExecutionPhases[lock.requestID] = .processing(lock)
         }
 
         let newChatSnapshot = makeSessionListEmptySnapshot(
@@ -1067,8 +1067,19 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         )
         await store.receive(.newChatCreated(newChatSnapshot)) { state in
             applySessionListNewChatCreated(&state, snapshot: newChatSnapshot)
-            state.executionPhase = .processing(lock)
+            state.backgroundExecutionPhases[lock.requestID] = .processing(lock)
         }
+
+        await store.send(.selectedModelChanged(selectedHandle)) { state in
+            state.selectedModelHandle = selectedHandle
+            state.unavailableSelectedModelHandle = nil
+        }
+        await store.send(.draftTextChanged("Question in new chat")) { state in
+            state.draftText = "Question in new chat"
+        }
+        XCTAssertTrue(store.state.canSubmit)
+        XCTAssertTrue(store.state.chatInputDisplayModel.canSubmit)
+        XCTAssertEqual(store.state.backgroundExecutionPhases[lock.requestID], .processing(lock))
 
         let assistantMessage = AiChatMessage(role: .assistant, content: "Original request completed")
         let finalResponse = AiChatResponse(
@@ -1081,9 +1092,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
 
         let finalizedLock = lock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
         await store.receive(.executionEvent(.final(response: finalResponse))) { state in
-            state.lockedModelHandle = nil
-            state.lastExecutionFailure = nil
-            state.executionPhase = .completed(finalizedLock)
+            state.backgroundExecutionPhases[finalizedLock.requestID] = nil
         }
 
         let expectedOriginalSnapshot = AiChatSessionSnapshot(

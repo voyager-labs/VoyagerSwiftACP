@@ -17,11 +17,7 @@ extension AiChatFeature {
     }
 
     private func handleStartedEvent(_ context: AiChatRequestContextSnapshot, state: inout State) -> Effect<Action> {
-        guard case let .processing(lock) = state.executionPhase,
-              matches(lock: lock, context: context)
-        else {
-            return .none
-        }
+        guard processingLock(matching: context, state: state) != nil else { return .none }
         return .none
     }
 
@@ -30,41 +26,44 @@ extension AiChatFeature {
         text: String,
         state: inout State,
     ) -> Effect<Action> {
-        guard case let .processing(lock) = state.executionPhase,
-              matches(lock: lock, context: context)
-        else {
+        guard let matched = processingLock(matching: context, state: state) else { return .none }
+        let updatedLock = matched.lock.recordingDelta(at: currentTimestampMs())
+        if matched.isBackground {
+            state.backgroundExecutionPhases[updatedLock.requestID] = .processing(updatedLock)
             return .none
         }
-        let updatedLock = lock.recordingDelta(at: currentTimestampMs())
+
         state.executionPhase = .processing(updatedLock)
-        guard isVisibleRequest(lock: lock, state: state) else {
-            return .none
-        }
+        guard isVisibleRequest(lock: updatedLock, state: state) else { return .none }
         state.streamingAssistantDraft = (state.streamingAssistantDraft ?? "") + text
         state.transcriptAutoScrollVersion += 1
         return .none
     }
 
     private func handleFinalEvent(_ response: AiChatResponse, state: inout State) -> Effect<Action> {
-        guard case let .processing(lock) = state.executionPhase,
-              matches(lock: lock, context: response.context)
-        else {
-            return .none
-        }
+        guard let matched = processingLock(matching: response.context, state: state) else { return .none }
 
         let terminalTimestampMs = currentTimestampMs()
-        state.streamingAssistantDraft = nil
         let normalizedResponse = AiChatResponse(
             context: response.context,
             assistantMessage: response.assistantMessage,
             completedAtMs: terminalTimestampMs,
         )
-        let finalizedLock = lock.recordingTerminal(at: terminalTimestampMs, failure: nil, wasCancelled: false)
+        let finalizedLock = matched.lock.recordingTerminal(at: terminalTimestampMs, failure: nil, wasCancelled: false)
         let snapshot: AiChatSessionSnapshot
-        if isVisibleRequest(lock: lock, state: state) {
+        if matched.isBackground {
+            state.backgroundExecutionPhases[finalizedLock.requestID] = nil
+            snapshot = makeOffscreenFinalSnapshot(
+                response: normalizedResponse,
+                lock: finalizedLock,
+                updatedAtMs: terminalTimestampMs,
+            )
+        } else if isVisibleRequest(lock: finalizedLock, state: state) {
+            state.streamingAssistantDraft = nil
             applyFinal(response: normalizedResponse, lock: finalizedLock, state: &state)
             snapshot = makeSessionSnapshot(state: state, lock: finalizedLock, updatedAtMs: terminalTimestampMs)
         } else {
+            state.streamingAssistantDraft = nil
             state.lockedModelHandle = nil
             state.lastExecutionFailure = nil
             state.executionPhase = .completed(finalizedLock)
@@ -75,6 +74,21 @@ extension AiChatFeature {
             )
         }
         return saveFinalSnapshot(snapshot, finalizedLock: finalizedLock)
+    }
+
+    private func processingLock(
+        matching context: AiChatRequestContextSnapshot,
+        state: State,
+    ) -> (lock: AiChatRequestLock, isBackground: Bool)? {
+        if case let .processing(lock) = state.executionPhase, matches(lock: lock, context: context) {
+            return (lock, false)
+        }
+        if case let .processing(lock) = state.backgroundExecutionPhases[context.requestID],
+           matches(lock: lock, context: context)
+        {
+            return (lock, true)
+        }
+        return nil
     }
 
     private func isVisibleRequest(lock: AiChatRequestLock, state: State) -> Bool {
@@ -129,9 +143,9 @@ extension AiChatFeature {
                     await send(.persistenceFailed(finalizedLock, .unknown))
                 }
             }
-            .cancellable(id: CancelID.requestFinalPersistence, cancelInFlight: true),
-            .cancel(id: CancelID.request),
-            .cancel(id: CancelID.requestStartPersistence),
+            .cancellable(id: CancelID.requestFinalPersistence(finalizedLock.requestID), cancelInFlight: true),
+            .cancel(id: CancelID.request(finalizedLock.requestID)),
+            .cancel(id: CancelID.requestStartPersistence(finalizedLock.requestID)),
         )
     }
 
@@ -140,33 +154,37 @@ extension AiChatFeature {
         reason: AiChatExecutionFailure,
         state: inout State,
     ) -> Effect<Action> {
-        guard case let .processing(lock) = state.executionPhase,
-              matches(lock: lock, context: context)
-        else {
-            return .none
-        }
+        guard let matched = processingLock(matching: context, state: state) else { return .none }
 
-        let failedLock = lock.recordingTerminal(
+        let failedLock = matched.lock.recordingTerminal(
             at: currentTimestampMs(),
             failure: reason,
             wasCancelled: false,
         )
-        state.executionPhase = .failed(failedLock, reason)
-        guard isVisibleRequest(lock: lock, state: state) else {
-            state.lockedModelHandle = nil
+        if matched.isBackground {
+            state.backgroundExecutionPhases[failedLock.requestID] = nil
             return .merge(
-                .cancel(id: CancelID.request),
-                .cancel(id: CancelID.requestStartPersistence),
+                .cancel(id: CancelID.request(failedLock.requestID)),
+                .cancel(id: CancelID.requestStartPersistence(failedLock.requestID)),
             )
         }
 
-        clearStreamingDraftIfEmpty(lock: lock, state: &state)
+        state.executionPhase = .failed(failedLock, reason)
+        guard isVisibleRequest(lock: failedLock, state: state) else {
+            state.lockedModelHandle = nil
+            return .merge(
+                .cancel(id: CancelID.request(failedLock.requestID)),
+                .cancel(id: CancelID.requestStartPersistence(failedLock.requestID)),
+            )
+        }
+
+        clearStreamingDraftIfEmpty(lock: failedLock, state: &state)
         state.lockedModelHandle = nil
         state.lastExecutionFailure = reason
         state.transcriptAutoScrollVersion += 1
         return .merge(
-            .cancel(id: CancelID.request),
-            .cancel(id: CancelID.requestStartPersistence),
+            .cancel(id: CancelID.request(failedLock.requestID)),
+            .cancel(id: CancelID.requestStartPersistence(failedLock.requestID)),
         )
     }
 

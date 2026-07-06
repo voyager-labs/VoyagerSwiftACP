@@ -190,6 +190,7 @@ public struct AiChatState: Equatable, Sendable {
     public var lastRequestContextModelHandle: AiModelHandle?
     public var pendingRequestStart: AiChatPendingRequestStart?
     public var executionPhase: AiChatExecutionPhase
+    public var backgroundExecutionPhases: [AiChatRequestID: AiChatExecutionPhase]
     public var modelListRequestID: UUID?
     public var modelListProvider: AiProvider?
     public var modelListProviderOrder: [AiProvider]
@@ -230,6 +231,7 @@ public struct AiChatState: Equatable, Sendable {
         lastRequestContextModelHandle: AiModelHandle? = nil,
         pendingRequestStart: AiChatPendingRequestStart? = nil,
         executionPhase: AiChatExecutionPhase = .idle,
+        backgroundExecutionPhases: [AiChatRequestID: AiChatExecutionPhase] = [:],
         modelListRequestID: UUID? = nil,
         modelListProvider: AiProvider? = nil,
         modelListProviderOrder: [AiProvider] = [],
@@ -270,6 +272,7 @@ public struct AiChatState: Equatable, Sendable {
         self.lastRequestContextModelHandle = lastRequestContextModelHandle
         self.pendingRequestStart = pendingRequestStart
         self.executionPhase = executionPhase
+        self.backgroundExecutionPhases = backgroundExecutionPhases
         self.modelListRequestID = modelListRequestID
         self.modelListProvider = modelListProvider
         self.modelListProviderOrder = modelListProviderOrder
