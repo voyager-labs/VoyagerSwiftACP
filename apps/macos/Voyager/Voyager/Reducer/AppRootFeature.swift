@@ -71,7 +71,10 @@ struct AppRootFeature {
             .cancel(id: CancelID.appDidBecomeActiveObserver)
 
         case .lifecycle(.sessionExpiredDetected):
-            .send(.settings(.accessStatusLoaded(.none)))
+            .merge(
+                .send(.settings(.accessStatusLoaded(.none))),
+                .send(.settings(.account(.access(._sessionExpiredDetected)))),
+            )
 
         case let .lifecycle(.sessionLapseGuard(.delegate(.unlocked(snapshot)))):
             .send(.settings(.accessStatusLoaded(snapshot.status)))

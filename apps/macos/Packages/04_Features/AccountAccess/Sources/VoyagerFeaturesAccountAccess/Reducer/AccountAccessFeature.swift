@@ -429,6 +429,7 @@ private extension AccountAccessFeature {
             status: accessStatus,
             currentPeriodEnd: response.currentPeriodEnd,
             fetchedAt: date(),
+            sessionExpiresAt: state.sessionExpiresAt,
         )
         state.snapshot = snapshot
 

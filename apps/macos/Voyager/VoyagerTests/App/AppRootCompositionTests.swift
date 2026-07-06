@@ -153,6 +153,45 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
+    /// session 만료 감지 시 Settings top-level accessStatus와 Account 탭 child access 상태를 함께 정리한다.
+    /// AccountSettingsView는 child access를 렌더링하므로 top-level만 비우면 stale Signed in UI가 남는다.
+    func testSessionExpiredDetectedClearsSettingsAccountChildAccessState() async {
+        let expiry = Date(timeIntervalSince1970: 4_102_444_800)
+        var initialState = AppRootFeature.State()
+        initialState.settings.accessStatus = .coreLicenseActive
+        initialState.settings.accountSettings.access.status = .coreLicenseActive
+        initialState.settings.accountSettings.access.snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            sessionExpiresAt: expiry,
+        )
+        initialState.settings.accountSettings.access.isComplete = true
+        initialState.settings.accountSettings.access.hasAccountSession = true
+        initialState.settings.accountSettings.access.sessionExpiresAt = expiry
+
+        let store = makeAccountAccessGrantedStore(initialState: initialState)
+
+        await store.send(.lifecycle(.sessionExpiredDetected(reason: .sessionExpired)))
+
+        await store.receive(\.settings.accessStatusLoaded) { state in
+            state.settings.accessStatus = .none
+        }
+        await store.receive(\.settings.account.access._sessionExpiredDetected) { state in
+            state.settings.accountSettings.access.status = nil
+            state.settings.accountSettings.access.snapshot = nil
+            state.settings.accountSettings.access.isComplete = false
+            state.settings.accountSettings.access.hasAccountSession = false
+            state.settings.accountSettings.access.didSignInFail = true
+            state.settings.accountSettings.access.isSessionExpired = true
+            state.settings.accountSettings.access.fetchGeneration += 1
+            state.settings.accountSettings.access.sessionExpiresAt = nil
+        }
+
+        XCTAssertEqual(store.state.settings.accessStatus, .none)
+        XCTAssertEqual(store.state.settings.accountSettings.setAuthState, .signInFailed)
+        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementUnknown)
+        XCTAssertFalse(store.state.settings.accountSettings.isManageAccountAvailable)
+    }
+
     /// T2c GREEN: openAISettings gate는 accessStatusSnapshotClient.load() 없이
     /// `state.settings.accessStatus.isActive`를 읽어 AI tab 딥링크를 결정한다.
     /// - active 상태: `.settings(.selectSection(.ai))` 전송.
@@ -189,13 +228,17 @@ final class AppRootCompositionTests: XCTestCase {
     /// `accountAccessGranted` 경로 테스트용 TestStore.
     /// `OnboardingWindowClient.testValue`/`HelperAppClient.testValue.start`가 fatalError라
     /// 테스트-로컬 `withDependencies` override로만 우회. 글로벌 testValue는 미변경.
-    private func makeAccountAccessGrantedStore() -> TestStore<AppRootFeature.State, AppRootFeature.Action> {
-        let store = TestStore(initialState: AppRootFeature.State()) {
+    private func makeAccountAccessGrantedStore(
+        initialState: AppRootFeature.State = AppRootFeature.State(),
+    ) -> TestStore<AppRootFeature.State, AppRootFeature.Action> {
+        let store = TestStore(initialState: initialState) {
             AppRootFeature()
         } withDependencies: {
             $0.helperAppClient.start = {}
             $0.helperAppClient.stop = {}
             $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.accountSessionClient.delete = { _ in }
+            $0.accessStatusSnapshotClient.remove = {}
             // T11: 직접 XCTest 실행 시 도달하는 전이 의존성의 testValue가 fatalError라
             // 테스트-로컬 deterministic override로만 우회. 글로벌 testValue는 미변경.
             // - WindowManagerFeature: @Dependency(\.uuid)

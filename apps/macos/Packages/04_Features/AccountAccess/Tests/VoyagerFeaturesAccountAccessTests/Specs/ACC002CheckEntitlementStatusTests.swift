@@ -609,6 +609,42 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         XCTAssertEqual(store.state.status, .coreLicenseActive)
     }
 
+    /// ACC-002: 성공 snapshot 저장 시 sessionExpiresAt를 보존한다.
+    /// 이후 networkFailure fallback이 저장 snapshot의 session 축을 사용하므로 TTL 소유권을 잃지 않는다.
+    /// - 검증 내용: success 응답 → snapshotClient.save(snapshot.sessionExpiresAt == state.sessionExpiresAt)
+    /// - 사전 조건: fetchGeneration=1, sessionExpiresAt가 있는 signed-in 상태
+    /// - 기대 결과: 저장 snapshot에 sessionExpiresAt 보존, fallback signed-in semantics 유지 가능
+    func testAccessStatusSuccessPersistsSessionExpiryInSnapshot() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
+        nonisolated(unsafe) var savedSnapshot: AccessStatusSnapshot?
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        state.hasAccountSession = true
+        state.sessionExpiresAt = sessionExpiry
+        let store = makeTestStore(
+            snapshotClient: AccessStatusSnapshotClient(
+                load: { nil },
+                save: { snapshot in savedSnapshot = snapshot },
+                remove: {},
+            ),
+            initialState: state,
+        )
+        store.exhaustivity = .off
+
+        let response = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            source: "polar",
+        )
+        await store.send(.accessStatusResponse(generation: 1, result: .success(response)))
+
+        XCTAssertEqual(savedSnapshot?.sessionExpiresAt, sessionExpiry)
+        XCTAssertEqual(savedSnapshot?.status, .coreLicenseActive)
+        XCTAssertEqual(store.state.snapshot?.sessionExpiresAt, sessionExpiry)
+    }
+
     // MARK: - ACC-002-check_entitlement_status (retry logic)
 
     /// ACC-002-check_entitlement_status: networkFailure 시 fetchRetryCount가 increase되고
