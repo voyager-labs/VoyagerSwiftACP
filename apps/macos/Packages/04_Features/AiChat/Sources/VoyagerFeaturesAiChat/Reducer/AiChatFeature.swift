@@ -10,7 +10,7 @@ public struct AiChatFeature {
 
     enum CancelID: Hashable {
         case request(AiChatRequestID)
-        case requestContextResolution
+        case requestContextResolution(UUID)
         case requestStartPersistence(AiChatRequestID)
         case requestFinalPersistence(AiChatRequestID)
         case restore

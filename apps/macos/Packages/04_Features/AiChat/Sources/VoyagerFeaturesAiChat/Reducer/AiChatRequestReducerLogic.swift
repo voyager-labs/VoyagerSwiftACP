@@ -115,7 +115,7 @@ extension AiChatFeature {
             let resolvedContext = await aiChatContextPartResolverClient.resolve(input)
             await send(.requestContextResolved(resolutionID, resolvedContext))
         }
-        .cancellable(id: CancelID.requestContextResolution, cancelInFlight: true)
+        .cancellable(id: CancelID.requestContextResolution(resolutionID), cancelInFlight: true)
     }
 
     private func saveRequestStartSnapshotIfNeeded(
@@ -496,7 +496,10 @@ extension AiChatFeature {
     }
 
     func cancelAllRequestLifecycleWork(state: inout State) -> Effect<Action> {
-        var effects: [Effect<Action>] = [.cancel(id: CancelID.requestContextResolution)]
+        var effects: [Effect<Action>] = []
+        if let pendingRequestStart = state.pendingRequestStart {
+            effects.append(.cancel(id: CancelID.requestContextResolution(pendingRequestStart.resolutionID)))
+        }
         if let lock = state.executionPhase.lock {
             effects.append(cancelRequestLifecycle(for: lock))
         }
@@ -522,9 +525,9 @@ extension AiChatFeature {
     }
 
     func handleCancelTapped(state: inout State) -> Effect<Action> {
-        if state.pendingRequestStart != nil {
+        if let pendingRequestStart = state.pendingRequestStart {
             state.pendingRequestStart = nil
-            return .cancel(id: CancelID.requestContextResolution)
+            return .cancel(id: CancelID.requestContextResolution(pendingRequestStart.resolutionID))
         }
         guard let lock = state.executionPhase.lock, state.executionPhase.isProcessing else { return .none }
         state.lockedModelHandle = nil
