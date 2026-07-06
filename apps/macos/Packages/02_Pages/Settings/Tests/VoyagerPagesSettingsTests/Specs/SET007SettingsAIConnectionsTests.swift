@@ -938,7 +938,7 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
 
     // MARK: - SET-007-bootstrap_phase
 
-/// `.idle` 초기 상태에서 rows는 `catalogRows()`로 즉시 채워진다.
+    /// `.idle` 초기 상태에서 rows는 `catalogRows()`로 즉시 채워진다.
     /// UI가 spinner 없이 placeholder rows를 표시할 수 있음을 보장.
     func testIdleState_hasNonEmptyRows_allNotVerified() {
         let state = AiSettingsState()
@@ -1101,7 +1101,7 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
 
     // MARK: - SET-007-bootstrap_end_to_end
 
-/// End-to-end: onAppear → file load → `.bootstrapCompleted`(initial) →
+    /// End-to-end: onAppear → file load → `.bootstrapCompleted`(initial) →
     /// `.bootstrapVerificationCompleted` → 최종 `.loaded`. 3 provider 각각 다른
     /// verification 결과(connected/expired/connected)가 row에 정확히 반영되는지 검증.
     /// - 검증 내용: full pipeline, rows 3개 보존, 최종 connectionState, phase `.loaded`
@@ -1320,7 +1320,6 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
         XCTAssertEqual(store.state.rows[id: .openai]?.statusReason, .networkUnavailable)
         XCTAssertEqual(store.state.rows[id: .anthropic]?.connectionState, .connected)
     }
-
 }
 
 // MARK: - Bootstrap fixtures
@@ -1389,4 +1388,3 @@ private extension SET007SettingsAIConnectionsTests {
         )
     }
 }
-
