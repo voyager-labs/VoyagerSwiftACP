@@ -16,6 +16,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case request(WindowCommand)
     case content(FileManagerContentFeature.Action)
     case backgroundAiChat(AiChatAction)
+    case backgroundInspectorAiChat(AiChatAction)
     case sidebar(FileManagerSidebarFeature.Action)
     case inspector(FileManagerInspectorFeature.Action)
     case navigation(ContentPageNavigationFeature.Action)

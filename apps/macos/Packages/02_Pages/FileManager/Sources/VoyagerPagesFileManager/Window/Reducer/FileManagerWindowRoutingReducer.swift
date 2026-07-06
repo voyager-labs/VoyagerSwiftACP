@@ -299,6 +299,9 @@ struct FileManagerWindowRoutingReducer {
             case let .inspector(.aiChat(aiChatAction)):
                 return routeInactiveInspectorAiChatAction(aiChatAction, state: &state)
 
+            case let .backgroundInspectorAiChat(aiChatAction):
+                return routeInactiveInspectorAiChatAction(aiChatAction, state: &state)
+
             case .content(.collection(.saveCompleted(.failure))):
                 guard state.pendingContentTabClose != nil else {
                     return .none
@@ -916,7 +919,7 @@ private func routeInactiveInspectorAiChatAction(
 
     let effect = AiChatFeature()
         .reduce(into: &inspectorState.aiChat, action: aiChatAction)
-        .map { FileManagerWindowAction.inspector(.aiChat($0)) }
+        .map { FileManagerWindowAction.backgroundInspectorAiChat($0) }
 
     state.tabInspectorStates[tabID] = inspectorState.tabSnapshot()
     if let summary = sessionSnapshotSavedSummary(from: aiChatAction) {
@@ -933,13 +936,13 @@ private func routeBackgroundInspectorAiChatAction(
     _ aiChatAction: AiChatAction,
     state: inout FileManagerWindowState,
 ) -> Effect<FileManagerWindowAction>? {
-    guard let sessionID = inspectorAiChatSessionID(for: aiChatAction),
+    guard let sessionID = backgroundInspectorAiChatSessionID(for: aiChatAction, state: state),
           var inspectorState = state.backgroundInspectorAiChatStates[sessionID]
     else { return nil }
 
     let effect = AiChatFeature()
         .reduce(into: &inspectorState.aiChat, action: aiChatAction)
-        .map { FileManagerWindowAction.inspector(.aiChat($0)) }
+        .map { FileManagerWindowAction.backgroundInspectorAiChat($0) }
 
     if let summary = sessionSnapshotSavedSummary(from: aiChatAction) {
         refreshAiChatSnapshotsFromBackgroundIfNeeded(
@@ -962,11 +965,31 @@ private func inactiveInspectorTabID(
     for aiChatAction: AiChatAction,
     state: FileManagerWindowState,
 ) -> ContentTabID? {
+    if case let .requestContextResolved(resolutionID, _) = aiChatAction {
+        return state.tabInspectorStates.first { tabID, inspectorState in
+            tabID != state.contentTabs.activeTabID
+                && inspectorState.aiChat.pendingRequestStart?.resolutionID == resolutionID
+        }?.key
+    }
+
     guard let sessionID = inspectorAiChatSessionID(for: aiChatAction) else { return nil }
     return state.tabInspectorStates.first { tabID, inspectorState in
         tabID != state.contentTabs.activeTabID
             && inspectorState.ownsSessionOrRequest(sessionID: sessionID, action: aiChatAction)
     }?.key
+}
+
+private func backgroundInspectorAiChatSessionID(
+    for aiChatAction: AiChatAction,
+    state: FileManagerWindowState,
+) -> AiChatSessionID? {
+    if case let .requestContextResolved(resolutionID, _) = aiChatAction {
+        return state.backgroundInspectorAiChatStates.first { _, inspectorState in
+            inspectorState.aiChat.pendingRequestStart?.resolutionID == resolutionID
+        }?.key
+    }
+
+    return inspectorAiChatSessionID(for: aiChatAction)
 }
 
 private func inspectorAiChatSessionID(for aiChatAction: AiChatAction) -> AiChatSessionID? {
