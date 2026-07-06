@@ -164,14 +164,15 @@ struct FileManagerWindowRoutingReducer {
                     && (state.content.aiChat.executionPhase.isProcessing
                         || state.content.aiChat.executionPhase.isCompleted
                         || state.content.aiChat.pendingRequestStart != nil)
-                let isAiChatProcessingTabClose = shouldResyncContentNavigation
+                let isAiChatLifecyclePreservingTabClose = shouldResyncContentNavigation
                     && (state.content.aiChat.executionPhase.isProcessing
+                        || state.content.aiChat.executionPhase.isCompleted
                         || state.content.aiChat.pendingRequestStart != nil)
                 if isRemovedTab {
                     state.recentlyClosedNavigationRoute = navigationRouteForClosingTab(tabID, state: state)
                 }
                 if shouldResyncContentNavigation {
-                    if isAiChatProcessingTabClose {
+                    if isAiChatLifecyclePreservingTabClose {
                         if let aiChatSessionID = state.content.aiChat.sessionID {
                             state.addBackgroundAiChatState(sessionID: aiChatSessionID, state: state.content)
                         }
@@ -1016,7 +1017,7 @@ private func aiChatEventRequestID(_ event: AiChatEvent) -> AiChatRequestID? {
 
 private func backgroundAiChatSessionID(
     for aiChatAction: AiChatAction,
-    state _: FileManagerWindowState,
+    state: FileManagerWindowState,
 ) -> AiChatSessionID? {
     switch aiChatAction {
     case let .executionEvent(event):
@@ -1027,6 +1028,10 @@ private func backgroundAiChatSessionID(
         lock.context.sessionID
     case let .sessionSnapshotSaved(summary):
         summary.sessionID
+    case let .requestContextResolved(resolutionID, _):
+        state.backgroundAiChatStates.first { _, backgroundContent in
+            backgroundContent.aiChat.pendingRequestStart?.resolutionID == resolutionID
+        }?.key
     default:
         nil
     }

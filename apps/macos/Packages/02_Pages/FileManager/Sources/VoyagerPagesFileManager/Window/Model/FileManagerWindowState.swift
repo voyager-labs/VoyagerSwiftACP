@@ -331,7 +331,15 @@ extension FileManagerWindowState {
     }
 
     mutating func addBackgroundAiChatState(sessionID: AiChatSessionID, state: FileManagerContentFeature.State) {
-        guard state.aiChat.executionPhase.isProcessing || state.aiChat.pendingRequestStart != nil else { return }
+        let isCompleted = if case .completed = state.aiChat.executionPhase {
+            true
+        } else {
+            false
+        }
+        guard state.aiChat.executionPhase.isProcessing
+            || isCompleted
+            || state.aiChat.pendingRequestStart != nil
+        else { return }
         backgroundAiChatStates[sessionID] = state
     }
 
