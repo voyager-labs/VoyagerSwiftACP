@@ -116,6 +116,9 @@ public struct AccountAccessFeature {
             case let ._cachedSnapshotRestored(snapshot):
                 return handleCachedSnapshotRestored(&state, snapshot: snapshot)
 
+            case let .hydrateLaunchSnapshot(snapshot):
+                return handleHydrateLaunchSnapshot(&state, snapshot: snapshot)
+
             case let ._fetchRetryScheduled(retryStep):
                 return handleFetchRetryScheduled(&state, retryStep: retryStep)
 
@@ -128,8 +131,10 @@ public struct AccountAccessFeature {
         }
     }
 
-    private func handleOnAppear(_: inout State) -> Effect<Action> {
-        .merge(
+    private func handleOnAppear(_ state: inout State) -> Effect<Action> {
+        guard !state.didBootstrap else { return .none }
+        state.didBootstrap = true
+        return .merge(
             .run { [sessionClient] send in
                 let session = try? await sessionClient.read()
                 await send(._onAppearSessionRestored(session))
@@ -522,10 +527,23 @@ private extension AccountAccessFeature {
             return .none
         }
 
+        // entitlement 축: 캐시된 access status로 복원. 기존 정책 미변경.
         state.status = snapshot.status
         state.snapshot = snapshot
         state.isComplete = snapshot.isActive
         state.errorMessage = "일시적인 네트워크 오류"
+
+        // session 축: snapshot 기반으로 signed-in semantics 설정.
+        // handleHydrateLaunchSnapshot와 동일한 ownership path를 따르되,
+        // networkFailure fallback 경로이므로 fetchAccessStatusEffect는 호출하지 않는다.
+        // sessionExpiresAt == nil이면 hasAccountSession=false (가짜 세션 주입 금지).
+        state.hasAccountSession = snapshot.hasSession
+        state.sessionExpiresAt = snapshot.sessionExpiresAt
+
+        // bootstrap 완료 표시: 캐시 복원으로 초기 상태가 확정되었으므로
+        // 이후 handleOnAppear가 중복 session read/fetch를 수행하지 않도록 차단.
+        state.didBootstrap = true
+
         return .none
     }
 
@@ -547,6 +565,45 @@ private extension AccountAccessFeature {
         case .networkFailure: "Network error. Please check your connection and try again."
         case .none: "Access denied."
         default: "An unexpected status was returned."
+        }
+    }
+
+    /// launch snapshot hydration: AppLifecycle accountAccessGate fetch 결과를
+    /// entitlement 축과 session 축 모두에 1회 반영한다.
+    /// handleOnAppearSessionRestored/handleHandoffExchangeCompleted와 동일한 session ownership path를 따르되
+    /// 네트워크 재조회(fetchAccessStatusEffect)는 수행하지 않는다 — launch snapshot이 곧 초기 상태.
+    private func handleHydrateLaunchSnapshot(
+        _ state: inout State,
+        snapshot: AccessStatusSnapshot,
+    ) -> Effect<Action> {
+        // entitlement 축: snapshot의 access status/trial 기간을 display 상태에 반영
+        state.status = snapshot.status
+        state.snapshot = snapshot
+        state.trialExpiresAt = snapshot.currentPeriodEnd
+
+        // session 축: snapshot.hasSession 기반으로 signed-in semantics 설정.
+        // sessionExpiresAt == nil이면 hasAccountSession=false (가짜 세션 주입 금지).
+        state.hasAccountSession = snapshot.hasSession
+        state.sessionExpiresAt = snapshot.sessionExpiresAt
+        state.isSessionExpired = false
+
+        // bootstrap 완료 표시: 이후 handleOnAppear가 중복 session read/fetch를 수행하지 않도록 차단.
+        state.didBootstrap = true
+
+        // stale in-flight fetch 무효화: generation 증가로 이전 fetch 응답이 거부된다.
+        state.fetchGeneration += 1
+
+        if snapshot.hasSession {
+            // 유효 세션: TTL 타이머 시작. handleOnAppearSessionRestored success path와 동일 패턴.
+            state.ttlTimerActive = true
+            return .merge(
+                startTtlTimer(),
+                .cancel(id: CancelID.fetchStatus),
+            )
+        } else {
+            // 세션 없음: TTL 타이머 비활성화. entitlement 축은 display-only로 유지.
+            state.ttlTimerActive = false
+            return .cancel(id: CancelID.fetchStatus)
         }
     }
 

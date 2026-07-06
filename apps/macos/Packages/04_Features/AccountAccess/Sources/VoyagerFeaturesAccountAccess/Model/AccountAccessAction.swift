@@ -25,6 +25,7 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case _sessionExpiredDetected
     case _fetchRetryScheduled(Int)
     case _cachedSnapshotRestored(AccessStatusSnapshot?)
+    case hydrateLaunchSnapshot(AccessStatusSnapshot)
     case signOut
     case delegate(Delegate)
 

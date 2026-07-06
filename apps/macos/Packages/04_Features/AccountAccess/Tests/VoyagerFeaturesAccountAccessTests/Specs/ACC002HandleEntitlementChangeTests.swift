@@ -282,6 +282,40 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
         await store.finish()
     }
 
+    // MARK: - Pattern C — Hydration (entitlement + session 축 통합 매핑)
+
+    /// ACC-002-handle_entitlement_change: `.coreLicenseActive + sessionExpiresAt` snapshot hydration 시
+    /// entitlement 축은 active/step complete로, session 축은 signedIn으로 동시에 파생된다.
+    /// launch snapshot hydration 한 번에 두 축이 모두 채워지는지 검증한다.
+    /// - 검증 내용: hydrateLaunchSnapshot(.coreLicenseActive + sessionExpiresAt) →
+    ///   status == .coreLicenseActive, accountAccessStepState == .complete,
+    ///   accountAccessAuthAxis == .signedIn, hasAccountSession == true
+    /// - 사전 조건: 빈 초기 상태
+    /// - 기대 결과: 두 축 모두 active/signedIn으로 파생. session 기반 auth 단언 (status.isActive에서 추론하지 않음)
+    func testHydrateLaunchSnapshotWithCoreLicenseActiveSessionMapsToCompleteAndSignedIn() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: referenceDate.addingTimeInterval(86400),
+            fetchedAt: referenceDate,
+            sessionExpiresAt: sessionExpiry,
+        )
+
+        let store = makeTestStore()
+        store.exhaustivity = .off
+
+        await store.send(.hydrateLaunchSnapshot(snapshot))
+
+        // entitlement 축: active → step complete
+        XCTAssertEqual(store.state.status, .coreLicenseActive)
+        XCTAssertEqual(store.state.accountAccessStepState, .complete)
+        // session 축: sessionExpiresAt != nil → signedIn 파생 (가짜 세션 금지)
+        XCTAssertEqual(store.state.accountAccessAuthAxis, .signedIn)
+        XCTAssertTrue(store.state.hasAccountSession)
+        XCTAssertEqual(store.state.sessionExpiresAt, sessionExpiry)
+        await store.finish()
+    }
+
     // MARK: - Integration
 
     /// ACC-002 Integration: appDidBecomeActive → fetchGeneration 증가 → fetchAccessStatus → delegate(.unlocked) 전체 파이프라인을

@@ -10,6 +10,7 @@ public struct AccountAccessState: Equatable {
     public var isComplete: Bool = false
     public var trialExpiresAt: Date?
     public var hasAccountSession: Bool = false
+    public var didBootstrap: Bool = false
     public var isSignInInProgress: Bool = false
     public var didSignInFail: Bool = false
     public var fetchGeneration: Int = 0
