@@ -163,8 +163,28 @@ struct AppRootFeature {
         case let .settings(.general(.toggleAutomaticUpdate(enabled))):
             return .send(.updater(.setAutomaticUpdate(enabled)))
 
-        case let .externalFileRouter(.delegate(delegateAction)):
+        case let .externalFileRouter(action):
+            return reduceExternalFileRouter(into: &state, action)
+
+        default:
+            return .none
+        }
+    }
+
+    private func reduceExternalFileRouter(
+        into state: inout State,
+        _ action: ExternalFileRouterAction,
+    ) -> Effect<Action> {
+        switch action {
+        case let .delegate(delegateAction):
             return reduceExternalFileRouterDelegate(into: &state, delegateAction)
+
+        case let .failed(error, context: _):
+            if case .urlValidationError = error {
+                state.isExternalURLFlushDelegateScheduled = false
+                state.isExternalURLRouteInFlightWithoutWindow = false
+            }
+            return .none
 
         default:
             return .none

@@ -302,6 +302,23 @@ final class AppRootFeatureContractTests: XCTestCase {
         XCTAssertTrue(store.state.windowManager.windows.isEmpty)
     }
 
+    func testExternalURLValidationErrorClearsNoWindowRouteInFlight() async throws {
+        let url = try XCTUnwrap(URL(string: "https://example.com/not-a-file"))
+        var state = AppRootFeature.State()
+        state.isExternalURLFlushDelegateScheduled = true
+        state.isExternalURLRouteInFlightWithoutWindow = true
+
+        let store = TestStore(initialState: state) {
+            AppRootFeature()
+        }
+
+        await store.send(.externalFileRouter(.failed(.urlValidationError(url)))) {
+            $0.externalFileRouter.currentStatus = .urlValidationError
+            $0.isExternalURLFlushDelegateScheduled = false
+            $0.isExternalURLRouteInFlightWithoutWindow = false
+        }
+    }
+
     func testLifecycleDelegateFlushesPendingExternalFileRouteWithoutOpeningBlankInitialWindow() async {
         let url = URL(fileURLWithPath: "/tmp/voyager-cold-file.txt")
         var state = AppRootFeature.State()
