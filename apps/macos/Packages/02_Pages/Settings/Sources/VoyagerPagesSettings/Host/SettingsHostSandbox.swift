@@ -75,6 +75,7 @@ public enum SettingsHostSandbox {
         dependencies.accessStatusSnapshotClient = makeAccessStatusSnapshotClient(
             accountAuthBox: accountAuthBox,
             failureLatency: scenario.failureLatency,
+            sessionExpiresAt: scenario.sessionExpiresAt,
         )
         dependencies.authNetworkClient = makeAuthNetworkClient(
             accountAuthBox: accountAuthBox,
@@ -220,6 +221,7 @@ public enum SettingsHostSandbox {
     private static func makeAccessStatusSnapshotClient(
         accountAuthBox: SettingsHostAccountAuthBox,
         failureLatency: FailureLatencyScenario,
+        sessionExpiresAt: Date?,
     ) -> AccessStatusSnapshotClient {
         AccessStatusSnapshotClient(
             load: {
@@ -233,12 +235,14 @@ public enum SettingsHostSandbox {
                         status: .coreLicenseActive,
                         currentPeriodEnd: Date(timeIntervalSince1970: 1_800_000_000),
                         fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                        sessionExpiresAt: sessionExpiresAt,
                     )
                 case .authExpired:
                     return AccessStatusSnapshot(
                         status: .trialExpired,
                         currentPeriodEnd: Date(timeIntervalSince1970: -1),
                         fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                        sessionExpiresAt: sessionExpiresAt,
                     )
                 }
             },

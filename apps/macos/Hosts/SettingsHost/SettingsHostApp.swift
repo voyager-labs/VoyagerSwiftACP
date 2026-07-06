@@ -234,12 +234,15 @@ private final class SettingsHostStoreContainer: ObservableObject {
     ) -> StoreOf<SettingsHostFeature> {
         switch authMode {
         case .mock:
-            Store(initialState: SettingsHostState()) {
+            // mock: preset-derived 초기 Settings 상태 주입. Host는 child internals를 직접 건드리지 않고
+            // Settings package-owned factory만 호출한다 (boundary).
+            Store(initialState: SettingsHostState(settings: .hostPreset(for: preset.scenario))) {
                 SettingsHostFeature()
             } withDependencies: { dependencies in
                 SettingsHostSandbox.configure(&dependencies, for: preset.scenario)
             }
         case .live:
+            // live: 실제 user data를 덮어쓰지 않도록 safe default (.init()) 유지.
             Store(initialState: SettingsHostState()) {
                 SettingsHostFeature()
             }

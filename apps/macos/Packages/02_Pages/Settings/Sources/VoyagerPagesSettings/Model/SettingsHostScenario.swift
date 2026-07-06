@@ -90,12 +90,23 @@ public enum SettingsHostGateClassification: Sendable, Equatable {
     case negative
 }
 
+public extension Date {
+    /// 프리셋 deterministic 기준 시각. 테스트 wall-clock 의존 제거용.
+    /// 2100-01-01 00:00:00 UTC.
+    static let sessionExpiryFuture = Date(timeIntervalSince1970: 4_102_444_800)
+    /// 1970-01-01 00:00:00 UTC. 만료 의미 고정값.
+    static let sessionExpiryPast = Date(timeIntervalSince1970: 0)
+}
+
 public struct SettingsHostScenario: Sendable, Equatable {
     public let accountAuth: AccountAuthScenario
     public let aiConnection: AIConnectionScenario
     public let permissions: PermissionScenario
     public let persistence: PersistenceScenario
     public let failureLatency: FailureLatencyScenario
+    /// 세션 만료 사실축. nil = 세션 없음(signedOut/loading/error).
+    /// signedIn → 미래 시각, authExpired → 과거 시각(만료 의미).
+    public let sessionExpiresAt: Date?
 
     public init(
         accountAuth: AccountAuthScenario,
@@ -103,12 +114,14 @@ public struct SettingsHostScenario: Sendable, Equatable {
         permissions: PermissionScenario,
         persistence: PersistenceScenario,
         failureLatency: FailureLatencyScenario,
+        sessionExpiresAt: Date? = nil,
     ) {
         self.accountAuth = accountAuth
         self.aiConnection = aiConnection
         self.permissions = permissions
         self.persistence = persistence
         self.failureLatency = failureLatency
+        self.sessionExpiresAt = sessionExpiresAt
     }
 
     public var id: String {
@@ -194,6 +207,7 @@ public enum SettingsHostPreset: String, Sendable, Equatable, CaseIterable {
                 permissions: .allGranted,
                 persistence: .clean,
                 failureLatency: .none,
+                sessionExpiresAt: .sessionExpiryFuture,
             )
         case .fullAccess:
             SettingsHostScenario(
@@ -202,6 +216,7 @@ public enum SettingsHostPreset: String, Sendable, Equatable, CaseIterable {
                 permissions: .allGranted,
                 persistence: .populated,
                 failureLatency: .none,
+                sessionExpiresAt: .sessionExpiryFuture,
             )
         case .signedOut:
             SettingsHostScenario(
@@ -218,6 +233,7 @@ public enum SettingsHostPreset: String, Sendable, Equatable, CaseIterable {
                 permissions: .allGranted,
                 persistence: .populated,
                 failureLatency: .none,
+                sessionExpiresAt: .sessionExpiryFuture,
             )
         case .aiNotConfigured:
             SettingsHostScenario(
@@ -226,6 +242,7 @@ public enum SettingsHostPreset: String, Sendable, Equatable, CaseIterable {
                 permissions: .allGranted,
                 persistence: .populated,
                 failureLatency: .none,
+                sessionExpiresAt: .sessionExpiryFuture,
             )
         case .authExpired:
             SettingsHostScenario(
@@ -234,6 +251,7 @@ public enum SettingsHostPreset: String, Sendable, Equatable, CaseIterable {
                 permissions: .allGranted,
                 persistence: .populated,
                 failureLatency: .none,
+                sessionExpiresAt: .sessionExpiryPast,
             )
         case .accountLoading:
             SettingsHostScenario(
@@ -258,6 +276,7 @@ public enum SettingsHostPreset: String, Sendable, Equatable, CaseIterable {
                 permissions: .allGranted,
                 persistence: .populated,
                 failureLatency: .none,
+                sessionExpiresAt: .sessionExpiryFuture,
             )
         case .aiConnectionError:
             SettingsHostScenario(
@@ -266,6 +285,7 @@ public enum SettingsHostPreset: String, Sendable, Equatable, CaseIterable {
                 permissions: .allGranted,
                 persistence: .populated,
                 failureLatency: .error,
+                sessionExpiresAt: .sessionExpiryFuture,
             )
         case .permissionsDenied:
             SettingsHostScenario(
@@ -274,6 +294,7 @@ public enum SettingsHostPreset: String, Sendable, Equatable, CaseIterable {
                 permissions: .denied,
                 persistence: .populated,
                 failureLatency: .none,
+                sessionExpiresAt: .sessionExpiryFuture,
             )
         case .errorStates:
             SettingsHostScenario(

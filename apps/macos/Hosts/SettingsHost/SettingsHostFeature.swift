@@ -7,6 +7,12 @@ public struct SettingsHostState: Equatable {
     public var settings: SettingsState = .init()
 
     public init() {}
+
+    /// preset-derived Settings 초기 상태 주입용. Host는 child internals를 직접 건드리지 않고
+    /// `SettingsState.hostPreset(for:)` 팩토리에서 만들어진 인스턴스만 받는다.
+    public init(settings: SettingsState) {
+        self.settings = settings
+    }
 }
 
 @CasePathable
