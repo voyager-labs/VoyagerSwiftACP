@@ -2466,8 +2466,185 @@ extension CTM005IndependentContentTabSessionTests {
         XCTAssertNil(savedAiChatState.streamingAssistantDraft)
         XCTAssertNil(savedAiChatState.restoreSessionID)
         XCTAssertEqual(savedAiChatState.sessionStatus, .active)
+        XCTAssertFalse(store.state.inspector.inspectorVisible)
+        XCTAssertNil(store.state.tabInspectorStates[homeID])
+        await store.finish()
+    }
+
+    /// Home tab은 Inspector를 지원하지 않고, 디렉토리 tab의 Inspector 상태는 해당 tab으로 돌아올 때 복원된다.
+    func testHomeTabHidesInspectorAndDirectoryTabRestoresOwnInspectorState() async {
+        let directoryID = ContentTabID()
+        let homeID = ContentTabID()
+        let inspectorSessionID = AiChatSessionID(rawValue: UUID())
+        var directoryContent = FileManagerContentFeature.State()
+        directoryContent.navigation.seedInitialFolderPath("/Users/test/Documents")
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.navigationState = .home
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: directoryID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Documents"),
+                    isPinned: false,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: directoryID,
+            recentlyClosed: nil,
+        )
+        state.content = directoryContent
+        state.tabContentStates = [
+            directoryID: directoryContent,
+            homeID: homeContent,
+        ]
+        state.inspector.inspectorVisible = true
+        state.inspector.inspectorPaneExists = true
+        state.inspector.activeMode = .chat
+        state.inspector.aiChat.sessionID = inspectorSessionID
+        state.inspector.aiChat.sessionStatus = .active
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryWatchingClient.startWatchingDirectory = { _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(homeID)))
+
+        XCTAssertFalse(store.state.inspector.inspectorVisible)
+        XCTAssertNil(store.state.tabInspectorStates[homeID])
+        XCTAssertEqual(store.state.tabInspectorStates[directoryID]?.inspectorVisible, true)
+        XCTAssertEqual(store.state.tabInspectorStates[directoryID]?.inspectorPaneExists, false)
+        XCTAssertEqual(store.state.tabInspectorStates[directoryID]?.aiChat.sessionID, inspectorSessionID)
+
+        await store.send(.contentTabs(.setCurrent(directoryID)))
+
         XCTAssertTrue(store.state.inspector.inspectorVisible)
+        XCTAssertFalse(store.state.inspector.inspectorPaneExists)
         XCTAssertEqual(store.state.inspector.activeMode, .chat)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, inspectorSessionID)
+        await store.finish()
+    }
+
+    /// Fresh Inspector contextual chat은 nil session setup이어도 provider/model refresh를 반드시 실행한다.
+    func testFreshInspectorOpenWithNilSessionLoadsProviderModelsAndEnablesSubmitAfterSelection() async throws {
+        let directoryID = ContentTabID()
+        let directoryPath = "/Users/test/Desktop"
+        let modelHandle = AiModelHandle(provider: .openai, rawValue: "gpt-test")
+        let model = AiProviderModel(
+            id: modelHandle,
+            provider: .openai,
+            rawModelID: "gpt-test",
+            displayName: "GPT Test",
+            providerDisplayName: "OpenAI",
+            thinkingCapability: .unsupported(reason: AiThinkingUnavailableReason(message: "unsupported")),
+        )
+        let credential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-test"))
+        let connectionsFile = AIConnectionsFile(
+            updatedAtMs: 1,
+            lastUsedProviderId: .openai,
+            providers: [
+                AiProvider.openai.rawValue: ProviderRecordFile(
+                    providerId: .openai,
+                    authMethod: .apiKey,
+                    credential: credential,
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                ),
+            ],
+        )
+        let modelListRequestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000000"))
+
+        var directoryContent = FileManagerContentFeature.State()
+        directoryContent.navigation.seedInitialFolderPath(directoryPath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: directoryID,
+                    page: .directory,
+                    anchor: .directory(path: directoryPath),
+                    isPinned: false,
+                    title: "Desktop",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: directoryID,
+            recentlyClosed: nil,
+        )
+        state.content = directoryContent
+        state.tabContentStates = [directoryID: directoryContent]
+        state.syncContentTabSidebarItems()
+
+        let setup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: directoryContent)
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.aiProviderModelListClient = AiProviderModelListClient(loadModels: { provider, receivedCredential in
+                XCTAssertEqual(provider, .openai)
+                XCTAssertEqual(receivedCredential, credential)
+                return [model]
+            })
+        }
+        store.exhaustivity = .off
+
+        await store.send(.inspector(.openChat(setup, connectionsFile))) { state in
+            state.inspector.inspectorVisible = true
+            state.inspector.activeMode = .chat
+        }
+        await store.receive(\.inspector.aiChat.setup)
+        await store.receive(\.inspector.aiChat.providerConnectionsUpdated)
+        await store.receive { action in
+            guard case let .inspector(.aiChat(.modelListLoading(requestID, provider, receivedCredential))) = action
+            else {
+                return false
+            }
+            return requestID == modelListRequestID
+                && provider == .openai
+                && receivedCredential == credential
+        }
+        await store.receive { action in
+            guard case let .inspector(.aiChat(.modelListLoaded(requestID, provider, models))) = action else {
+                return false
+            }
+            return requestID == modelListRequestID
+                && provider == .openai
+                && models == [model]
+        }
+
+        await store.send(.inspector(.aiChat(.selectedModelChanged(modelHandle)))) { state in
+            state.inspector.aiChat.selectedModelHandle = modelHandle
+        }
+        await store.send(.inspector(.aiChat(.draftTextChanged("Question from fresh inspector")))) { state in
+            state.inspector.aiChat.draftText = "Question from fresh inspector"
+        }
+
+        XCTAssertEqual(store.state.inspector.aiChat.modelListState, .loaded([model]))
+        XCTAssertEqual(store.state.inspector.aiChat.chatInputDisplayModel.modelLabel, "GPT Test")
+        XCTAssertTrue(store.state.inspector.aiChat.canSubmit)
+        XCTAssertTrue(store.state.inspector.aiChat.chatInputDisplayModel.canSubmit)
         await store.finish()
     }
 
@@ -3586,9 +3763,8 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
-    /// 다른 page/tab에서 열린 Inspector Chat은 ContentPane AI Chat으로 진입할 때 닫힌다.
-    /// 같은 화면에 두 AI Chat surface가 겹치면 사용자가 ContentPane Chat으로 이동해도 Inspector가 계속 유지된다.
-    func testSwitchingToAiChatTabClosesOpenInspectorChat() async {
+    /// AI Chat tab은 Inspector를 지원하지 않으므로 active Inspector projection을 숨긴다.
+    func testSwitchingToAiChatTabHidesOpenInspectorChat() async {
         let homeID = ContentTabID()
         let aiChatID = ContentTabID()
         var homeContent = FileManagerContentFeature.State()
@@ -3638,16 +3814,9 @@ extension CTM005IndependentContentTabSessionTests {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.setCurrent(aiChatID)))
-        await store.receive { action in
-            guard case .inspector(.closeChat) = action else { return false }
-            return true
-        } assert: { state in
-            state.inspector.inspectorVisible = false
-        }
-        await store.receive { action in
-            guard case .inspector(.aiChat(.teardownRequested)) = action else { return false }
-            return true
-        }
+
+        XCTAssertFalse(store.state.inspector.inspectorVisible)
+        XCTAssertNil(store.state.tabInspectorStates[aiChatID])
         XCTAssertEqual(store.state.content.aiChat.mode, .chat)
         await store.finish()
     }
@@ -3913,7 +4082,7 @@ extension CTM005IndependentContentTabSessionTests {
 
 @MainActor
 extension CTM005IndependentContentTabSessionTests {
-    func testInspectorCloseCancelsInspectorGenerationWhileContentAiChatIsProcessing() async {
+    func testInspectorClosePreservesInspectorGenerationWhileContentAiChatIsProcessing() async {
         let contentSessionID = AiChatSessionID(rawValue: UUID())
         let inspectorSessionID = AiChatSessionID(rawValue: UUID())
         let contentLock = makeRequestLock(sessionID: contentSessionID)
@@ -3932,6 +4101,7 @@ extension CTM005IndependentContentTabSessionTests {
         state.inspector.aiChat.sessionID = inspectorSessionID
         state.inspector.aiChat.sessionStatus = .active
         state.inspector.aiChat.executionPhase = .processing(inspectorLock)
+        state.inspector.aiChat.lockedModelHandle = inspectorLock.selectedModelHandle
 
         let homeID = ContentTabID()
         state.contentTabs = ContentTabState(
@@ -3959,17 +4129,11 @@ extension CTM005IndependentContentTabSessionTests {
             state.inspector.inspectorVisible = false
         }
 
-        await store.receive { action in
-            guard case .inspector(.aiChat(.teardownRequested)) = action else { return false }
-            return true
-        } assert: { state in
-            state.inspector.aiChat.executionPhase = .idle
-            state.inspector.aiChat.lockedModelHandle = nil
-            state.inspector.aiChat.streamingAssistantDraft = nil
-        }
-
         XCTAssertTrue(store.state.content.aiChat.executionPhase.isProcessing)
         XCTAssertEqual(store.state.content.aiChat.sessionID, contentSessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.executionPhase, .processing(inspectorLock))
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, inspectorSessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.lockedModelHandle, inspectorLock.selectedModelHandle)
 
         await store.finish()
     }
@@ -4035,6 +4199,9 @@ extension CTM005IndependentContentTabSessionTests {
         aiChatContent.aiChat.sessionStatus = .active
         aiChatContent.aiChat.executionPhase = .processing(requestLock)
         aiChatContent.aiChat.lockedModelHandle = requestLock.selectedModelHandle
+        aiChatContent.aiChat.transcriptHistory = [
+            AiChatMessage(role: .user, content: "test"),
+        ]
 
         let homeContent = FileManagerContentFeature.State()
 
@@ -4108,7 +4275,460 @@ extension CTM005IndependentContentTabSessionTests {
         let snapshots = savedSnapshots.value
         XCTAssertEqual(snapshots.count, 1)
         XCTAssertEqual(snapshots.first?.sessionID, aiSessionID)
+        XCTAssertEqual(snapshots.first?.transcriptHistory.map(\.content), ["test", "done"])
         XCTAssertFalse(store.state.content.aiChat.sessionList.rows.contains { $0.sessionID == aiSessionID })
+        XCTAssertNil(store.state.backgroundAiChatStates[aiSessionID])
+    }
+
+    func testBackgroundAiChatFinalSaveRefreshesActiveSameSessionTranscript() async {
+        let aiChatTabID = ContentTabID()
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+        let snapshot = AiChatSessionSnapshot(
+            sessionID: aiSessionID,
+            status: .active,
+            provider: .openai,
+            model: requestLock.selectedModelHandle,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "test"),
+                AiChatMessage(role: .assistant, content: "done"),
+            ],
+            updatedAtMs: 1_234_567_891_000,
+        )
+        let summary = AiChatSessionSummary(snapshot: snapshot)
+
+        var activeContent = FileManagerContentFeature.State()
+        activeContent.navigation.navigationState = .aiChat(aiSessionID.rawValue.uuidString)
+        activeContent.aiChat.mode = .chat
+        activeContent.aiChat.sessionID = aiSessionID
+        activeContent.aiChat.sessionStatus = .active
+        activeContent.aiChat.transcriptHistory = [
+            AiChatMessage(role: .user, content: "test"),
+        ]
+
+        var backgroundContent = activeContent
+        backgroundContent.aiChat.executionPhase = .completed(requestLock)
+        backgroundContent.aiChat.transcriptHistory = snapshot.transcriptHistory
+        backgroundContent.aiChat.selectedModelHandle = requestLock.selectedModelHandle
+        backgroundContent.aiChat.lastRequestContextModelHandle = requestLock.selectedModelHandle
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: aiChatTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: aiSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "message",
+                ),
+            ],
+            activeTabID: aiChatTabID,
+            recentlyClosed: nil,
+        )
+        state.content = activeContent
+        state.tabContentStates = [aiChatTabID: activeContent]
+        state.backgroundAiChatStates[aiSessionID] = backgroundContent
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.backgroundAiChat(.sessionSnapshotSaved(summary))) { state in
+            state.content.aiChat.transcriptHistory = snapshot.transcriptHistory
+            state.content.aiChat.executionPhase = .completed(requestLock)
+            state.content.aiChat.selectedModelHandle = requestLock.selectedModelHandle
+            state.content.aiChat.lastRequestContextModelHandle = requestLock.selectedModelHandle
+            state.content.aiChat.sessionList.replaceRow(summary)
+            state.content.aiChat.sessionList.selectedSessionID = aiSessionID
+            state.tabContentStates[aiChatTabID] = state.content
+            state.backgroundAiChatStates.removeValue(forKey: aiSessionID)
+        }
+
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory.map(\.content), ["test", "done"])
+        XCTAssertEqual(
+            store.state.tabContentStates[aiChatTabID]?.aiChat.transcriptHistory.map(\.content),
+            ["test", "done"],
+        )
+        XCTAssertNil(store.state.backgroundAiChatStates[aiSessionID])
+        await store.finish()
+    }
+
+    func testBackgroundAiChatFinalSaveRefreshesInactiveSameSessionTabSnapshot() async {
+        let homeTabID = ContentTabID()
+        let aiChatTabID = ContentTabID()
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+        let snapshot = AiChatSessionSnapshot(
+            sessionID: aiSessionID,
+            status: .active,
+            provider: .openai,
+            model: requestLock.selectedModelHandle,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "test"),
+                AiChatMessage(role: .assistant, content: "done"),
+            ],
+            updatedAtMs: 1_234_567_891_000,
+        )
+        let summary = AiChatSessionSummary(snapshot: snapshot)
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath("/Users/test/Home")
+
+        var staleAiChatContent = FileManagerContentFeature.State()
+        staleAiChatContent.navigation.navigationState = .aiChat(aiSessionID.rawValue.uuidString)
+        staleAiChatContent.aiChat.mode = .chat
+        staleAiChatContent.aiChat.sessionID = aiSessionID
+        staleAiChatContent.aiChat.sessionStatus = .active
+        staleAiChatContent.aiChat.transcriptHistory = [
+            AiChatMessage(role: .user, content: "test"),
+        ]
+
+        var backgroundContent = staleAiChatContent
+        backgroundContent.aiChat.executionPhase = .completed(requestLock)
+        backgroundContent.aiChat.transcriptHistory = snapshot.transcriptHistory
+        backgroundContent.aiChat.selectedModelHandle = requestLock.selectedModelHandle
+        backgroundContent.aiChat.lastRequestContextModelHandle = requestLock.selectedModelHandle
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: aiChatTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: aiSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "message",
+                ),
+            ],
+            activeTabID: homeTabID,
+            recentlyClosed: nil,
+        )
+        state.content = homeContent
+        state.tabContentStates = [
+            homeTabID: homeContent,
+            aiChatTabID: staleAiChatContent,
+        ]
+        state.backgroundAiChatStates[aiSessionID] = backgroundContent
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.backgroundAiChat(.sessionSnapshotSaved(summary))) { state in
+            var refreshedAiChatContent = staleAiChatContent
+            refreshedAiChatContent.aiChat.transcriptHistory = snapshot.transcriptHistory
+            refreshedAiChatContent.aiChat.transcriptAutoScrollVersion += 1
+            refreshedAiChatContent.aiChat.executionPhase = .completed(requestLock)
+            refreshedAiChatContent.aiChat.selectedModelHandle = requestLock.selectedModelHandle
+            refreshedAiChatContent.aiChat.lastRequestContextModelHandle = requestLock.selectedModelHandle
+            refreshedAiChatContent.aiChat.sessionList.replaceRow(summary)
+            refreshedAiChatContent.aiChat.sessionList.selectedSessionID = aiSessionID
+            state.tabContentStates[aiChatTabID] = refreshedAiChatContent
+            state.backgroundAiChatStates.removeValue(forKey: aiSessionID)
+        }
+
+        XCTAssertNil(store.state.content.aiChat.sessionID)
+        XCTAssertEqual(
+            store.state.tabContentStates[aiChatTabID]?.aiChat.transcriptHistory.map(\.content),
+            ["test", "done"],
+        )
+        XCTAssertEqual(
+            store.state.tabContentStates[aiChatTabID]?.aiChat.executionPhase,
+            .completed(requestLock),
+        )
+        XCTAssertNil(store.state.backgroundAiChatStates[aiSessionID])
+        await store.finish()
+    }
+
+    func testClosedInspectorTabFinalEventSavesSnapshotThroughBackgroundState() async {
+        let directoryTabID = ContentTabID()
+        let homeTabID = ContentTabID()
+        let inspectorSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: inspectorSessionID)
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+
+        var directoryContent = FileManagerContentFeature.State()
+        directoryContent.navigation.seedInitialFolderPath("/Users/test/Documents")
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath("/Users/test/Home")
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: directoryTabID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Documents"),
+                    isPinned: false,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: directoryTabID,
+            recentlyClosed: nil,
+        )
+        state.content = directoryContent
+        state.tabContentStates = [
+            directoryTabID: directoryContent,
+            homeTabID: homeContent,
+        ]
+        state.inspector.inspectorVisible = true
+        state.inspector.activeMode = .chat
+        state.inspector.aiChat.sessionID = inspectorSessionID
+        state.inspector.aiChat.sessionStatus = .active
+        state.inspector.aiChat.executionPhase = .processing(requestLock)
+        state.inspector.aiChat.lockedModelHandle = requestLock.selectedModelHandle
+        state.inspector.aiChat.transcriptHistory = [
+            AiChatMessage(role: .user, content: "test"),
+        ]
+        state.syncActiveTabInspectorState()
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.entryWatchingClient.startWatchingDirectory = { _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.close(directoryTabID)))
+        await store.receive(\.content.internal.applyNavigationState)
+        await store.skipReceivedActions()
+
+        XCTAssertNotNil(store.state.backgroundInspectorAiChatStates[inspectorSessionID])
+        XCTAssertEqual(
+            store.state.backgroundInspectorAiChatStates[inspectorSessionID]?.aiChat.executionPhase,
+            .processing(requestLock),
+        )
+
+        let response = AiChatResponse(
+            context: requestLock.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "done"),
+            completedAtMs: 1_234_567_891_000,
+        )
+
+        await store.send(.inspector(.aiChat(.executionEvent(.final(response: response)))))
+
+        await store.receive { action in
+            guard case let .inspector(.aiChat(.sessionSnapshotSaved(summary))) = action else { return false }
+            return summary.sessionID == inspectorSessionID
+        } assert: { state in
+            state.backgroundInspectorAiChatStates.removeValue(forKey: inspectorSessionID)
+        }
+
+        await store.finish()
+
+        let snapshots = savedSnapshots.value
+        XCTAssertEqual(snapshots.count, 1)
+        XCTAssertEqual(snapshots.first?.sessionID, inspectorSessionID)
+        XCTAssertEqual(snapshots.first?.transcriptHistory.map(\.content), ["test", "done"])
+        XCTAssertNil(store.state.backgroundInspectorAiChatStates[inspectorSessionID])
+    }
+
+    func testBackgroundInspectorFinalSaveRefreshesInactiveSameSessionInspectorSnapshot() async {
+        let homeTabID = ContentTabID()
+        let directoryTabID = ContentTabID()
+        let inspectorSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: inspectorSessionID)
+        let snapshot = AiChatSessionSnapshot(
+            sessionID: inspectorSessionID,
+            status: .active,
+            provider: .openai,
+            model: requestLock.selectedModelHandle,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "test"),
+                AiChatMessage(role: .assistant, content: "done"),
+            ],
+            updatedAtMs: 1_234_567_891_000,
+        )
+        let summary = AiChatSessionSummary(snapshot: snapshot)
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath("/Users/test/Home")
+
+        var directoryContent = FileManagerContentFeature.State()
+        directoryContent.navigation.seedInitialFolderPath("/Users/test/Documents")
+
+        var staleInspector = FileManagerInspectorFeature.State()
+        staleInspector.inspectorVisible = true
+        staleInspector.activeMode = .chat
+        staleInspector.aiChat.sessionID = inspectorSessionID
+        staleInspector.aiChat.sessionStatus = .active
+        staleInspector.aiChat.transcriptHistory = [
+            AiChatMessage(role: .user, content: "test"),
+        ]
+
+        var backgroundInspector = staleInspector
+        backgroundInspector.aiChat.executionPhase = .completed(requestLock)
+        backgroundInspector.aiChat.transcriptHistory = snapshot.transcriptHistory
+        backgroundInspector.aiChat.selectedModelHandle = requestLock.selectedModelHandle
+        backgroundInspector.aiChat.lastRequestContextModelHandle = requestLock.selectedModelHandle
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: directoryTabID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Documents"),
+                    isPinned: false,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: homeTabID,
+            recentlyClosed: nil,
+        )
+        state.content = homeContent
+        state.tabContentStates = [
+            homeTabID: homeContent,
+            directoryTabID: directoryContent,
+        ]
+        state.tabInspectorStates[directoryTabID] = staleInspector.tabSnapshot()
+        state.backgroundInspectorAiChatStates[inspectorSessionID] = backgroundInspector.tabSnapshot()
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.inspector(.aiChat(.sessionSnapshotSaved(summary)))) { state in
+            var refreshedInspector = staleInspector.tabSnapshot()
+            refreshedInspector.aiChat.transcriptHistory = snapshot.transcriptHistory
+            refreshedInspector.aiChat.transcriptAutoScrollVersion += 1
+            refreshedInspector.aiChat.executionPhase = .completed(requestLock)
+            refreshedInspector.aiChat.selectedModelHandle = requestLock.selectedModelHandle
+            refreshedInspector.aiChat.lastRequestContextModelHandle = requestLock.selectedModelHandle
+            refreshedInspector.aiChat.sessionList.replaceRow(summary)
+            refreshedInspector.aiChat.sessionList.selectedSessionID = inspectorSessionID
+            refreshedInspector.aiChat.sessionList.unreadCompletedSessionIDs.insert(inspectorSessionID)
+            state.tabInspectorStates[directoryTabID] = refreshedInspector
+            state.backgroundInspectorAiChatStates.removeValue(forKey: inspectorSessionID)
+        }
+
+        XCTAssertNil(store.state.inspector.aiChat.sessionID)
+        XCTAssertEqual(
+            store.state.tabInspectorStates[directoryTabID]?.aiChat.transcriptHistory.map(\.content),
+            ["test", "done"],
+        )
+        XCTAssertEqual(
+            store.state.tabInspectorStates[directoryTabID]?.aiChat.executionPhase,
+            .completed(requestLock),
+        )
+        XCTAssertNil(store.state.backgroundInspectorAiChatStates[inspectorSessionID])
+        await store.finish()
+    }
+
+    func testCompletedAiChatPageCloseDoesNotCancelFinalPersistence() async {
+        let aiChatTabID = ContentTabID()
+        let homeTabID = ContentTabID()
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+
+        var aiChatContent = FileManagerContentFeature.State()
+        aiChatContent.aiChat.sessionID = aiSessionID
+        aiChatContent.aiChat.sessionStatus = .active
+        aiChatContent.aiChat.executionPhase = .completed(requestLock)
+        aiChatContent.aiChat.transcriptHistory = [
+            AiChatMessage(role: .user, content: "test"),
+            AiChatMessage(role: .assistant, content: "done"),
+        ]
+
+        let homeContent = FileManagerContentFeature.State()
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: aiChatTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: aiSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "message",
+                ),
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: aiChatTabID,
+            recentlyClosed: nil,
+        )
+        state.content = aiChatContent
+        state.tabContentStates = [homeTabID: homeContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.entryWatchingClient.startWatchingDirectory = { _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.close(aiChatTabID)))
+        await store.receive(\.content.internal.applyNavigationState)
+        await store.skipReceivedActions()
+        await store.finish()
+
         XCTAssertNil(store.state.backgroundAiChatStates[aiSessionID])
     }
 }
