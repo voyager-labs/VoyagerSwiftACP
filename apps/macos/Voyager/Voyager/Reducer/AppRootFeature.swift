@@ -87,7 +87,12 @@ struct AppRootFeature {
             switch delegateAction {
             case .openInitialWindowIfNeeded:
                 if hasPendingExternalRoutes(state) {
+                    state.isExternalURLFlushDelegateScheduled = false
                     return flushPendingExternalRoutes(state: &state)
+                }
+                if state.isExternalURLRouteInFlightWithoutWindow {
+                    state.isExternalURLFlushDelegateScheduled = false
+                    return .none
                 }
                 return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
 
@@ -159,7 +164,7 @@ struct AppRootFeature {
             return .send(.updater(.setAutomaticUpdate(enabled)))
 
         case let .externalFileRouter(.delegate(delegateAction)):
-            return reduceExternalFileRouterDelegate(delegateAction)
+            return reduceExternalFileRouterDelegate(into: &state, delegateAction)
 
         default:
             return .none
@@ -167,38 +172,42 @@ struct AppRootFeature {
     }
 
     private func reduceExternalFileRouterDelegate(
+        into state: inout State,
         _ action: ExternalFileRouterAction.Delegate,
     ) -> Effect<Action> {
         switch action {
         case .openAppFallback:
-            .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
+            return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
 
         case let .openFolder(path):
             // ExternalFileRouter가 폴더 열기 요청 — 새 File Manager Window로 라우팅
-            .send(.windowManager(.file(.newWindow(path: path))))
+            return .send(.windowManager(.file(.newWindow(path: path))))
 
         case let .openParentFolder(path, selectEntryPath):
             // ExternalFileRouter가 부모 폴더 열기 요청 — 새 File Manager Window로 라우팅
-            .send(.windowManager(.file(.newWindow(path: path, selectEntryID: selectEntryPath))))
+            return .send(.windowManager(.file(.newWindow(path: path, selectEntryID: selectEntryPath))))
 
         case let .routeToAuthCallback(url):
-            // ACC-001 소유의 OAuth callback — FMW-003가 가로채지 않음
-            .send(.receiveAuthCallbackURL(url))
+            state.isExternalURLRouteInFlightWithoutWindow = false
+            // ACC-001 소유의 OAuth callback — FMW 라우터가 소유하지 않음
+            return .send(.receiveAuthCallbackURL(url))
 
         case .showInvalidPathError:
-            showExternalFileOpenError(
+            state.isExternalURLRouteInFlightWithoutWindow = false
+            return showExternalFileOpenError(
                 title: "Voyager에서 위치를 열 수 없습니다",
                 message: "선택한 위치를 찾을 수 없습니다. 경로를 확인한 뒤 다시 시도해 주세요.",
             )
 
         case let .showPermissionDeniedError(path):
-            showExternalFileOpenError(
+            state.isExternalURLRouteInFlightWithoutWindow = false
+            return showExternalFileOpenError(
                 title: "Voyager에서 위치를 열 수 없습니다",
                 message: "접근 권한이 없어 \(path)를 열 수 없습니다. macOS 시스템 설정에서 Voyager의 파일 및 폴더 접근 권한을 확인해 주세요.",
             )
 
         case .selectEntryCompleted:
-            .none
+            return .none
         }
     }
 
@@ -224,11 +233,14 @@ struct AppRootFeature {
     ) -> Effect<Action> {
         switch action {
         case let .receiveExternalURL(url):
-            // 창이 없으면 버퍼링한다. launch 완료 전에는 didFinishLaunching delegate가 flush하고,
-            // 이미 launch가 끝난 no-window 상태에서는 직접 initial window 경로를 요청한다.
+            // 창이 없으면 버퍼링한다. launch delegate나 예약된 flush delegate가 pending만 소비하게 한다.
             guard !state.windowManager.windows.isEmpty else {
                 state.pendingExternalURLs.append(url)
-                guard state.lifecycle.didFinishLaunching else { return .none }
+                state.isExternalURLRouteInFlightWithoutWindow = true
+                guard state.lifecycle.didFinishLaunching,
+                      !state.isExternalURLFlushDelegateScheduled
+                else { return .none }
+                state.isExternalURLFlushDelegateScheduled = true
                 return .send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
             }
             // 창이 열려 있는 상태에서 ExternalFileRouter로 URL 전달
@@ -297,6 +309,9 @@ struct AppRootFeature {
         let hasWindowsAfterAction = !state.windowManager.windows.isEmpty
         let didOpenFirstWindow = !hadWindowsBeforeAction && hasWindowsAfterAction
         state.windowPresenceBeforeWindowManagerAction = nil
+        if hasWindowsAfterAction {
+            state.isExternalURLRouteInFlightWithoutWindow = false
+        }
         return didOpenFirstWindow ? flushPendingExternalRoutes(state: &state) : .none
     }
 

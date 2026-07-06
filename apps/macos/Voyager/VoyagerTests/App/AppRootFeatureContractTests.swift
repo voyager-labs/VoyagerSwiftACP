@@ -149,6 +149,7 @@ final class AppRootFeatureContractTests: XCTestCase {
 
         await store.send(.receiveExternalURL(url)) {
             $0.pendingExternalURLs = [url]
+            $0.isExternalURLRouteInFlightWithoutWindow = true
         }
     }
 
@@ -169,6 +170,8 @@ final class AppRootFeatureContractTests: XCTestCase {
 
         await store.send(.receiveExternalURL(url)) {
             $0.pendingExternalURLs = [url]
+            $0.isExternalURLFlushDelegateScheduled = true
+            $0.isExternalURLRouteInFlightWithoutWindow = true
         }
         await store.receive { action in
             guard case .lifecycle(.delegate(.openInitialWindowIfNeeded)) = action else { return false }
@@ -266,6 +269,37 @@ final class AppRootFeatureContractTests: XCTestCase {
             guard case let .externalFileRouter(.receive(receivedURL)) = action else { return false }
             return receivedURL == url
         }
+    }
+
+    func testReceiveExternalURLDoesNotScheduleDuplicateFlushDelegate() async throws {
+        let url = try XCTUnwrap(URL(string: "voyager://open?url=file:///tmp/voyager-duplicate-schedule"))
+        var state = AppRootFeature.State()
+        state.lifecycle.didFinishLaunching = true
+        state.isExternalURLFlushDelegateScheduled = true
+        state.isExternalURLRouteInFlightWithoutWindow = true
+
+        let store = TestStore(initialState: state) {
+            AppRootFeature()
+        }
+
+        await store.send(.receiveExternalURL(url)) {
+            $0.pendingExternalURLs = [url]
+        }
+    }
+
+    func testLifecycleDelegateDuringExternalURLRouteInFlightDoesNotOpenBlankInitialWindow() async {
+        var state = AppRootFeature.State()
+        state.isExternalURLFlushDelegateScheduled = true
+        state.isExternalURLRouteInFlightWithoutWindow = true
+
+        let store = TestStore(initialState: state) {
+            AppRootFeature()
+        }
+
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded))) {
+            $0.isExternalURLFlushDelegateScheduled = false
+        }
+        XCTAssertTrue(store.state.windowManager.windows.isEmpty)
     }
 
     func testLifecycleDelegateFlushesPendingExternalFileRouteWithoutOpeningBlankInitialWindow() async {
