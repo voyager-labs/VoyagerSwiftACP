@@ -195,7 +195,7 @@ extension AiChatFeature {
     }
 
     func applyRestoredSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
-        let preservedExecutionPhase = preservedNavigationExecutionPhase(for: snapshot.sessionID, state: state)
+        let preservedExecutionPhase = promotedNavigationExecutionPhase(for: snapshot.sessionID, state: &state)
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .active
         state.currentSessionCustomTitle = snapshot.customTitle
@@ -212,22 +212,28 @@ extension AiChatFeature {
         state.selectedThinking = snapshot.selectedThinking
     }
 
-    private func preservedNavigationExecutionPhase(
-        for _: AiChatSessionID,
-        state: State,
+    func promotedNavigationExecutionPhase(
+        for sessionID: AiChatSessionID,
+        state: inout State,
     ) -> AiChatExecutionPhase? {
         switch state.executionPhase {
-        case let .processing(lock):
-            .processing(lock)
-        case let .failed(lock, failure):
-            .failed(lock, failure)
-        case .idle, .completed, .cancelled, .persistenceRecovery:
-            nil
+        case let .processing(lock) where lock.context.sessionID == sessionID:
+            return .processing(lock)
+        case let .failed(lock, failure) where lock.context.sessionID == sessionID:
+            return .failed(lock, failure)
+        default:
+            break
         }
+
+        guard let match = state.backgroundExecutionPhases.first(where: { _, phase in
+            phase.lock?.context.sessionID == sessionID
+        }) else { return nil }
+        state.backgroundExecutionPhases[match.key] = nil
+        return match.value
     }
 
     func applyNewSessionSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
-        let preservedExecutionPhase = preservedNavigationExecutionPhase(for: snapshot.sessionID, state: state)
+        let preservedExecutionPhase = promotedNavigationExecutionPhase(for: snapshot.sessionID, state: &state)
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .idle
         state.currentSessionCustomTitle = snapshot.customTitle

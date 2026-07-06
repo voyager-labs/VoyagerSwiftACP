@@ -75,6 +75,9 @@ extension AiChatFeature {
             }
             state.restoreOutcome = nil
             state.restoreFailure = nil
+            if let promotedExecutionPhase = promotedNavigationExecutionPhase(for: sessionID, state: &state) {
+                state.executionPhase = promotedExecutionPhase
+            }
             state.mode = .chat
             return .cancel(id: CancelID.restore)
         }

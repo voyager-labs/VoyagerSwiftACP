@@ -1127,6 +1127,71 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertTrue(savedSnapshots.value.contains(expectedOriginalSnapshot))
     }
 
+    func testRouteToChatSessionPromotesBackgroundExecutionPhaseToVisible() async {
+        let catalogRows = makeCatalogRows()
+        let sessionID = makeCBW005SessionID("11111111-2222-3333-4444-555555555555")
+        let requestID = AiChatRequestID(rawValue: makeUUID("11111111-2222-3333-4444-555555555556"))
+        let runID = AiChatRunID(rawValue: makeUUID("11111111-2222-3333-4444-555555555557"))
+        let requestContext = makeRequestContext(
+            sessionID: sessionID,
+            requestID: requestID,
+            runID: runID,
+            model: catalogRows[0].handle,
+            selectedRow: catalogRows[0],
+            selectedModel: makeProviderModels()[0],
+            promptSummary: "Background request",
+        )
+        let request = AiChatRequest(
+            context: requestContext,
+            messages: [AiChatMessage(role: .user, content: "Background question")],
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: catalogRows[0].handle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(
+                allRows: [makeCBW005SessionSummary(sessionID: sessionID, title: "Background chat")],
+                rows: [makeCBW005SessionSummary(sessionID: sessionID, title: "Background chat")],
+                selectedSessionID: sessionID,
+            ),
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Current docs"),
+            transcriptHistory: [AiChatMessage(role: .user, content: "Background question")],
+            catalogRows: catalogRows,
+            modelListState: .loaded(makeProviderModels()),
+            selectedModelHandle: catalogRows[0].handle,
+            executionPhase: .idle,
+            backgroundExecutionPhases: [lock.requestID: .processing(lock)],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.date = .constant(makeFixedDate(milliseconds: fixedTimestampMs))
+            $0.uuid = .incrementing
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.routeToChatSession(sessionID)) { state in
+            state.executionPhase = .processing(lock)
+            state.backgroundExecutionPhases = [:]
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.mode = .chat
+        }
+
+        await store.send(.executionEvent(.delta(context: requestContext, text: "partial")))
+
+        XCTAssertEqual(store.state.streamingAssistantDraft, "partial")
+        XCTAssertEqual(store.state.backgroundExecutionPhases, [:])
+        await store.finish()
+    }
+
     /// CBW-005-start_chat_conversation_session: rebind required recovery에서 시작한 New Chat도 durable unselected snapshot을
     /// 저장한다.
     /// rebind required recovery에서 시작한 New Chat도 durable unselected snapshot을 저장한다. 경로의 회귀 contract를 유지하는지 검증합니다.
