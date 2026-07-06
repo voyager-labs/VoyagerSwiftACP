@@ -1016,7 +1016,7 @@ private func aiChatEventRequestID(_ event: AiChatEvent) -> AiChatRequestID? {
 
 private func backgroundAiChatSessionID(
     for aiChatAction: AiChatAction,
-    state: FileManagerWindowState,
+    state _: FileManagerWindowState,
 ) -> AiChatSessionID? {
     switch aiChatAction {
     case let .executionEvent(event):
@@ -1027,8 +1027,6 @@ private func backgroundAiChatSessionID(
         lock.context.sessionID
     case let .sessionSnapshotSaved(summary):
         summary.sessionID
-    case .cancelInFlightWork:
-        state.backgroundAiChatStates.keys.first
     default:
         nil
     }
@@ -1040,8 +1038,7 @@ private func shouldRemoveBackgroundAiChatState(after aiChatAction: AiChatAction)
         if case .failed = event { true } else { false }
     case .sessionSnapshotSaved,
          .persistenceRecoverySucceeded,
-         .persistenceRecoveryRetryFailed,
-         .cancelInFlightWork:
+         .persistenceRecoveryRetryFailed:
         true
     default:
         false
