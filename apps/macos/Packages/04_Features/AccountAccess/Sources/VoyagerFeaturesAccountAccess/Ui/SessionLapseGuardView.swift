@@ -169,10 +169,9 @@ public struct SessionLapseGuardView: View {
                                     .controlSize(.small)
                             }
                         }
-                        .padding(32)
-                        .background(Color(nsColor: .windowBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .shadow(radius: 8)
+                        .padding(.vertical, 40)
+                        .padding(.horizontal, 48)
+                        .frame(minWidth: 360)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
