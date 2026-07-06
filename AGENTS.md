@@ -64,7 +64,7 @@ Agents must never silence lint/type warnings with inline suppression comments or
 
 ## Validation
 
-Run the commands that match your change scope.
+Run the commands that match your change scope. Swift 파일 진단은 `lsp_diagnostics` 대신 **XcodeBuildMCP**를 사용한다 — 상세 라우팅은 `.agents/rules/00-core/02-verification.md` 참조.
 
 ### Backend (Python/FastAPI)
 

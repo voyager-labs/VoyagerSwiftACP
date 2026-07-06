@@ -35,7 +35,19 @@ alwaysApply: true
 - Mixed changes:
     - Run both backend and macOS checks relevant to touched code.
 
+## Diagnostics tool routing
+
+Route language diagnostics through the toolchain configured for this repository:
+
+| Language                            | Diagnostic tool                            | Reason                                                                                                                                                   |
+| ----------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Swift** (`apps/macos/**/*.swift`) | **XcodeBuildMCP** `build_sim` / `test_sim` | `sourcekit-lsp` is disabled in `opencode.json`; `lsp_diagnostics` returns only `No such module` noise. XcodeBuildMCP provides real compiler diagnostics. |
+| **Python** (`apps/backend/**/*.py`) | **`lsp_diagnostics`**                      | pyright/pylsp provides accurate type and syntax diagnostics.                                                                                             |
+
+Never call `lsp_diagnostics` for Swift files.
+
 ## Must not
 
 - Skip verification for non-trivial changes.
 - Claim success without command evidence.
+- Call `lsp_diagnostics` on Swift files (`apps/macos/**/*.swift`).
