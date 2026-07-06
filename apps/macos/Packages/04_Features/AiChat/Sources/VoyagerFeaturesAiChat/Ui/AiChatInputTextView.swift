@@ -35,6 +35,7 @@ struct AiChatInputTextView: NSViewRepresentable {
         }
 
         textView.isEditable = !isDisabled
+        textView.isSelectable = !isDisabled
         textView.textColor = isDisabled ? .disabledControlTextColor : .labelColor
         textView.font = Self.textFont
         updateTextContainerWidth(for: textView, in: scrollView)
@@ -84,6 +85,9 @@ struct AiChatInputTextView: NSViewRepresentable {
 
     private func updateTextContainerWidth(for textView: NSTextView, in scrollView: NSScrollView?) {
         let availableWidth = scrollView?.contentSize.width ?? textView.bounds.width
+        if textView.frame.width != availableWidth {
+            textView.frame.size.width = availableWidth
+        }
         let textWidth = max(0, availableWidth - Self.trailingReservedWidth)
         textView.textContainer?.containerSize = NSSize(
             width: textWidth,
@@ -119,6 +123,10 @@ struct AiChatInputTextView: NSViewRepresentable {
     final class AttachmentDroppingTextView: NSTextView {
         var onAttachmentsDropped: (([URL]) -> Void)?
 
+        override var acceptsFirstResponder: Bool {
+            isEditable && isSelectable
+        }
+
         init() {
             let textStorage = NSTextStorage()
             let layoutManager = NSLayoutManager()
@@ -137,6 +145,13 @@ struct AiChatInputTextView: NSViewRepresentable {
         @available(*, unavailable)
         required init?(coder _: NSCoder) {
             nil
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            if isEditable, isSelectable, window?.firstResponder !== self {
+                window?.makeFirstResponder(self)
+            }
+            super.mouseDown(with: event)
         }
 
         override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
