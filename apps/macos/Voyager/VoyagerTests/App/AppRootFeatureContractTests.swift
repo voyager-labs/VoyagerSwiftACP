@@ -140,10 +140,24 @@ final class AppRootFeatureContractTests: XCTestCase {
 
     // MARK: - FMW-003: Cold Start URL Buffering
 
-    /// Cold state(창 없음)에서 receiveExternalURL 수신 시 pending 저장 후 lifecycle flush를 요청함을 검증.
-    func testReceiveExternalURLRequestsLifecycleFlushWhenNoWindows() async throws {
+    /// Launch 완료 전 cold state에서 receiveExternalURL 수신 시 pending만 유지함을 검증.
+    func testReceiveExternalURLBuffersWhenNoWindowsBeforeLaunchFinishes() async throws {
         let url = try XCTUnwrap(URL(string: "voyager://open?url=file:///Users/test-1"))
         let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+
+        await store.send(.receiveExternalURL(url)) {
+            $0.pendingExternalURLs = [url]
+        }
+    }
+
+    /// Launch 완료 후 no-window 상태에서 receiveExternalURL 수신 시 initial window 경로를 요청함을 검증.
+    func testReceiveExternalURLRequestsLifecycleFlushWhenNoWindowsAfterLaunchFinishes() async throws {
+        let url = try XCTUnwrap(URL(string: "voyager://open?url=file:///Users/test-1"))
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.didFinishLaunching = true
+        let store = TestStore(initialState: initialState) {
             AppRootFeature()
         } withDependencies: {
             $0.pathProbeClient.probeExistence = { _ in
@@ -228,6 +242,29 @@ final class AppRootFeatureContractTests: XCTestCase {
                 return false
             }
             return true
+        }
+    }
+
+    func testLifecycleDelegateFlushesPendingExternalURLWithoutOpeningBlankInitialWindow() async throws {
+        let url = try XCTUnwrap(URL(string: "voyager://open?url=file:///tmp/voyager-cold-url"))
+        var state = AppRootFeature.State()
+        state.pendingExternalURLs = [url]
+
+        let store = TestStore(initialState: state) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: false, isDirectory: false)
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded))) {
+            $0.pendingExternalURLs = []
+        }
+        await store.receive { action in
+            guard case let .externalFileRouter(.receive(receivedURL)) = action else { return false }
+            return receivedURL == url
         }
     }
 

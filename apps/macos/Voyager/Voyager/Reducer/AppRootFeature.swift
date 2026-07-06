@@ -224,9 +224,11 @@ struct AppRootFeature {
     ) -> Effect<Action> {
         switch action {
         case let .receiveExternalURL(url):
-            // 창이 없으면 버퍼링 후 기존 lifecycle flush 경로를 즉시 태운다.
+            // 창이 없으면 버퍼링한다. launch 완료 전에는 didFinishLaunching delegate가 flush하고,
+            // 이미 launch가 끝난 no-window 상태에서는 직접 initial window 경로를 요청한다.
             guard !state.windowManager.windows.isEmpty else {
                 state.pendingExternalURLs.append(url)
+                guard state.lifecycle.didFinishLaunching else { return .none }
                 return .send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
             }
             // 창이 열려 있는 상태에서 ExternalFileRouter로 URL 전달
