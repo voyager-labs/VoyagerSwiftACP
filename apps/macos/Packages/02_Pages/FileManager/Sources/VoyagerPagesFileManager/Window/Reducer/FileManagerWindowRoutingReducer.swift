@@ -160,20 +160,17 @@ struct FileManagerWindowRoutingReducer {
                 let shouldResetLastTabContent = state.contentTabs.previousActiveTabID == tabID
                     && state.contentTabs.activeTabID == tabID
                 let shouldResyncContentNavigation = shouldRestorePreviousActiveTab || shouldResetLastTabContent
+                let aiChatLifecycleSessionIDs = aiChatLifecycleSessionIDsToPreserve(state.content.aiChat)
                 let shouldPreserveAiChatRequestLifecycle = shouldResyncContentNavigation
-                    && (state.content.aiChat.executionPhase.isProcessing
-                        || state.content.aiChat.executionPhase.isCompleted
-                        || state.content.aiChat.pendingRequestStart != nil)
+                    && !aiChatLifecycleSessionIDs.isEmpty
                 let isAiChatLifecyclePreservingTabClose = shouldResyncContentNavigation
-                    && (state.content.aiChat.executionPhase.isProcessing
-                        || state.content.aiChat.executionPhase.isCompleted
-                        || state.content.aiChat.pendingRequestStart != nil)
+                    && !aiChatLifecycleSessionIDs.isEmpty
                 if isRemovedTab {
                     state.recentlyClosedNavigationRoute = navigationRouteForClosingTab(tabID, state: state)
                 }
                 if shouldResyncContentNavigation {
                     if isAiChatLifecyclePreservingTabClose {
-                        if let aiChatSessionID = state.content.aiChat.sessionID {
+                        for aiChatSessionID in aiChatLifecycleSessionIDs {
                             state.addBackgroundAiChatState(sessionID: aiChatSessionID, state: state.content)
                         }
                         prepareContentForActiveTabHandoff(state: &state.content, skipAiChatCleanup: true)
@@ -774,6 +771,25 @@ private extension AiChatExecutionPhase {
     }
 }
 
+private func aiChatLifecycleSessionIDsToPreserve(_ state: AiChatFeature.State) -> [AiChatSessionID] {
+    var sessionIDs: [AiChatSessionID] = []
+    func append(_ sessionID: AiChatSessionID?) {
+        guard let sessionID, !sessionIDs.contains(sessionID) else { return }
+        sessionIDs.append(sessionID)
+    }
+
+    if state.executionPhase.isProcessing
+        || state.executionPhase.isCompleted
+        || state.pendingRequestStart != nil
+    {
+        append(state.sessionID)
+    }
+    for phase in state.backgroundExecutionPhases.values {
+        append(phase.lock?.context.sessionID)
+    }
+    return sessionIDs
+}
+
 private func routeBackgroundAiChatAction(
     _ aiChatAction: AiChatAction,
     state: inout FileManagerWindowState,
@@ -816,7 +832,7 @@ private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
     backgroundAiChat: AiChatFeature.State,
     state: inout FileManagerWindowState,
 ) {
-    if state.content.aiChat.canRefreshFromBackground(sessionID: summary.sessionID) {
+    if state.content.aiChat.canRefreshFromBackground(summary: summary) {
         state.content.aiChat.applyBackgroundSnapshot(
             summary: summary,
             backgroundAiChat: backgroundAiChat,
@@ -826,7 +842,7 @@ private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
 
     for tabID in state.tabContentStates.keys {
         guard tabID != state.contentTabs.activeTabID else { continue }
-        guard state.tabContentStates[tabID]?.aiChat.canRefreshFromBackground(sessionID: summary.sessionID) == true
+        guard state.tabContentStates[tabID]?.aiChat.canRefreshFromBackground(summary: summary) == true
         else {
             continue
         }
@@ -836,7 +852,7 @@ private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
         )
     }
 
-    if state.inspector.aiChat.canRefreshFromBackground(sessionID: summary.sessionID) {
+    if state.inspector.aiChat.canRefreshFromBackground(summary: summary) {
         state.inspector.aiChat.applyBackgroundSnapshot(
             summary: summary,
             backgroundAiChat: backgroundAiChat,
@@ -846,7 +862,7 @@ private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
 
     for tabID in state.tabInspectorStates.keys {
         guard tabID != state.contentTabs.activeTabID else { continue }
-        guard state.tabInspectorStates[tabID]?.aiChat.canRefreshFromBackground(sessionID: summary.sessionID) == true
+        guard state.tabInspectorStates[tabID]?.aiChat.canRefreshFromBackground(summary: summary) == true
         else {
             continue
         }
@@ -858,10 +874,30 @@ private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
 }
 
 private extension AiChatFeature.State {
-    func canRefreshFromBackground(sessionID: AiChatSessionID) -> Bool {
-        self.sessionID == sessionID
+    func canRefreshFromBackground(summary: AiChatSessionSummary) -> Bool {
+        sessionID == summary.sessionID
             && !executionPhase.isProcessing
             && pendingRequestStart == nil
+            && !hasNewerSnapshotThanBackground(summary)
+    }
+
+    private func hasNewerSnapshotThanBackground(_ summary: AiChatSessionSummary) -> Bool {
+        if let currentRow = sessionList.allRows.first(where: { $0.sessionID == summary.sessionID }),
+           currentRow.isNewerThanBackground(summary)
+        {
+            return true
+        }
+        if transcriptHistory.count > summary.messageCount {
+            return true
+        }
+        if let lock = executionPhase.lock,
+           lock.context.sessionID == summary.sessionID,
+           let terminalAtMs = lock.observabilitySummary.terminalAtMs,
+           terminalAtMs > summary.updatedAtMs
+        {
+            return true
+        }
+        return false
     }
 
     mutating func applyBackgroundSnapshot(
@@ -894,6 +930,18 @@ private extension AiChatFeature.State {
     }
 }
 
+private extension AiChatSessionSummary {
+    func isNewerThanBackground(_ backgroundSummary: AiChatSessionSummary) -> Bool {
+        if updatedAtMs != backgroundSummary.updatedAtMs {
+            return updatedAtMs > backgroundSummary.updatedAtMs
+        }
+        if messageCount != backgroundSummary.messageCount {
+            return messageCount > backgroundSummary.messageCount
+        }
+        return false
+    }
+}
+
 private func routeInactiveInspectorAiChatAction(
     _ aiChatAction: AiChatAction,
     state: inout FileManagerWindowState,
@@ -906,7 +954,7 @@ private func routeInactiveInspectorAiChatAction(
           var inspectorState = state.tabInspectorStates[tabID]
     else {
         if let summary = sessionSnapshotSavedSummary(from: aiChatAction),
-           state.inspector.aiChat.canRefreshFromBackground(sessionID: summary.sessionID)
+           state.inspector.aiChat.canRefreshFromBackground(summary: summary)
         {
             refreshAiChatSnapshotsFromBackgroundIfNeeded(
                 summary: summary,

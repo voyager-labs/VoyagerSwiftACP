@@ -336,9 +336,13 @@ extension FileManagerWindowState {
         } else {
             false
         }
+        let hasBackgroundExecutionPhase = state.aiChat.backgroundExecutionPhases.values.contains {
+            $0.lock?.context.sessionID == sessionID
+        }
         guard state.aiChat.executionPhase.isProcessing
             || isCompleted
             || state.aiChat.pendingRequestStart != nil
+            || hasBackgroundExecutionPhase
         else { return }
         backgroundAiChatStates[sessionID] = state
     }
