@@ -548,6 +548,7 @@ extension AiChatFeature {
     }
 
     func handleResetTapped(state: inout State) -> Effect<Action> {
+        let cancellationEffect = cancelAllInFlightWork(state: &state)
         state.pendingRequestStart = nil
         state.emptyDraftSessionID = nil
         state.restoreSessionID = nil
@@ -559,15 +560,16 @@ extension AiChatFeature {
         state.lastExecutionFailure = nil
         state.lockedModelHandle = nil
         state.executionPhase = .idle
-        return cancelAllInFlightWork(state: &state)
+        return cancellationEffect
     }
 
     func handleTeardownRequested(state: inout State) -> Effect<Action> {
+        let cancellationEffect = cancelAllInFlightWork(state: &state)
         state.pendingRequestStart = nil
         state.streamingAssistantDraft = nil
         state.lockedModelHandle = nil
         state.executionPhase = .idle
-        return cancelAllInFlightWork(state: &state)
+        return cancellationEffect
     }
 }
 

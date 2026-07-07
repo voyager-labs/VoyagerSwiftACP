@@ -843,7 +843,7 @@ private func routeBackgroundAiChatAction(
     let effect = AiChatFeature()
         .reduce(into: &backgroundContent.aiChat, action: aiChatAction)
         .map { action in
-            if case let .sessionSnapshotSaved(summary) = action,
+            if case let .sessionSnapshotSaved(summary, _, _, _) = action,
                let context = finalSnapshotContext,
                let snapshot = makeOffscreenFinalSnapshot(summary: summary, context: context)
             {
@@ -870,7 +870,7 @@ private func routeBackgroundAiChatAction(
 }
 
 private func sessionSnapshotSavedSummary(from aiChatAction: AiChatAction) -> AiChatSessionSummary? {
-    if case let .sessionSnapshotSaved(summary) = aiChatAction {
+    if case let .sessionSnapshotSaved(summary, _, _, _) = aiChatAction {
         summary
     } else {
         nil
@@ -1125,7 +1125,7 @@ private func routeInactiveInspectorAiChatAction(
     let effect = AiChatFeature()
         .reduce(into: &inspectorState.aiChat, action: aiChatAction)
         .map { action in
-            if case let .sessionSnapshotSaved(summary) = action,
+            if case let .sessionSnapshotSaved(summary, _, _, _) = action,
                let context = finalSnapshotContext,
                let snapshot = makeOffscreenFinalSnapshot(summary: summary, context: context)
             {
@@ -1160,7 +1160,7 @@ private func routeBackgroundInspectorAiChatAction(
     let effect = AiChatFeature()
         .reduce(into: &inspectorState.aiChat, action: aiChatAction)
         .map { action in
-            if case let .sessionSnapshotSaved(summary) = action,
+            if case let .sessionSnapshotSaved(summary, _, _, _) = action,
                let context = finalSnapshotContext,
                let snapshot = makeOffscreenFinalSnapshot(summary: summary, context: context)
             {
@@ -1225,7 +1225,7 @@ private func inspectorAiChatSessionID(for aiChatAction: AiChatAction) -> AiChatS
          let .persistenceRecoverySucceeded(lock),
          let .persistenceRecoveryRetryFailed(lock, _):
         lock.context.sessionID
-    case let .sessionSnapshotSaved(summary):
+    case let .sessionSnapshotSaved(summary, _, _, _):
         summary.sessionID
     case let .sessionSnapshotUpdated(summary, _, _):
         summary.sessionID
@@ -1274,7 +1274,7 @@ private func backgroundAiChatSessionID(
          let .persistenceRecoverySucceeded(lock),
          let .persistenceRecoveryRetryFailed(lock, _):
         lock.context.sessionID
-    case let .sessionSnapshotSaved(summary):
+    case let .sessionSnapshotSaved(summary, _, _, _):
         summary.sessionID
     case let .requestContextResolved(resolutionID, _):
         state.backgroundAiChatStates.first { _, backgroundContent in

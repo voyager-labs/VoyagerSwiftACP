@@ -51,7 +51,12 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case sessionRenameFailed(AiChatSessionID, String)
     case sessionSnapshotUpdated(AiChatSessionSummary, requestID: AiChatRequestID, runID: AiChatRunID)
     case sessionSnapshotUpdateFailed(requestID: AiChatRequestID, runID: AiChatRunID)
-    case sessionSnapshotSaved(AiChatSessionSummary)
+    case sessionSnapshotSaved(
+        AiChatSessionSummary,
+        snapshot: AiChatSessionSnapshot? = nil,
+        requestID: AiChatRequestID? = nil,
+        runID: AiChatRunID? = nil,
+    )
     case newChatCreated(AiChatSessionSnapshot)
     case newChatFailed(String)
     case setup(AiChatSetupState)

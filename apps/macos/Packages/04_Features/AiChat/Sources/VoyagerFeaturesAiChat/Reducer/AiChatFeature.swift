@@ -192,8 +192,14 @@ public struct AiChatFeature {
                 else { return .none }
                 return .none
 
-            case let .sessionSnapshotSaved(summary):
-                applySessionSnapshotSaved(summary: summary, state: &state)
+            case let .sessionSnapshotSaved(summary, snapshot, requestID, runID):
+                applySessionSnapshotSaved(
+                    summary: summary,
+                    snapshot: snapshot,
+                    requestID: requestID,
+                    runID: runID,
+                    state: &state,
+                )
                 return .none
 
             case .backToSessionsTapped:

@@ -342,8 +342,32 @@ extension AiChatFeature {
         )
     }
 
-    func applySessionSnapshotSaved(summary: AiChatSessionSummary, state: inout State) {
+    func applySessionSnapshotSaved(
+        summary: AiChatSessionSummary,
+        snapshot: AiChatSessionSnapshot?,
+        requestID: AiChatRequestID?,
+        runID: AiChatRunID?,
+        state: inout State,
+    ) {
         guard !state.sessionList.deletedSessionIDs.contains(summary.sessionID) else { return }
+        if let requestID,
+           let runID,
+           let backgroundLock = state.backgroundExecutionPhases[requestID]?.lock,
+           backgroundLock.runID == runID
+        {
+            state.backgroundExecutionPhases[requestID] = nil
+        }
+        if let snapshot,
+           state.mode == .chat,
+           state.sessionID == snapshot.sessionID,
+           case let .completed(lock) = state.executionPhase,
+           lock.requestID == requestID,
+           lock.runID == runID,
+           needsVisibleSavedSnapshotRefresh(snapshot, state: state)
+        {
+            applyVisibleSavedSnapshot(snapshot, state: &state)
+            state.executionPhase = .completed(lock)
+        }
         state.sessionList.replaceRow(summary)
         if state.restoreSessionID == nil || state.restoreSessionID == summary.sessionID {
             state.sessionList.selectedSessionID = summary.sessionID
@@ -354,6 +378,28 @@ extension AiChatFeature {
             state.sessionList.unreadCompletedSessionIDs.insert(summary.sessionID)
         }
         state.sessionList.errorMessage = nil
+    }
+
+    private func needsVisibleSavedSnapshotRefresh(_ snapshot: AiChatSessionSnapshot, state: State) -> Bool {
+        state.transcriptHistory != snapshot.transcriptHistory
+            || state.lastRequestContext != snapshot.lastRequestContext
+            || state.selectedModelHandle != snapshot.model
+            || state.selectedThinking != snapshot.selectedThinking
+    }
+
+    private func applyVisibleSavedSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
+        state.sessionID = snapshot.sessionID
+        state.sessionStatus = snapshot.status
+        state.currentSessionCustomTitle = snapshot.customTitle
+        state.transcriptHistory = snapshot.transcriptHistory
+        state.streamingAssistantDraft = nil
+        state.lockedModelHandle = nil
+        state.lastExecutionFailure = nil
+        state.lastRequestContext = snapshot.lastRequestContext
+        state.lastRequestContextModelHandle = snapshot.lastRequestContext == nil ? nil : snapshot.model
+        state.selectedModelHandle = snapshot.model
+        state.selectedThinking = snapshot.selectedThinking
+        state.transcriptAutoScrollVersion += 1
     }
 
     func applyNewChatCreated(snapshot: AiChatSessionSnapshot, state: inout State) {

@@ -4495,7 +4495,12 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.backgroundAiChat(.sessionSnapshotSaved(staleBackgroundSummary)))
+        await store.send(.backgroundAiChat(.sessionSnapshotSaved(
+            staleBackgroundSummary,
+            snapshot: nil,
+            requestID: nil,
+            runID: nil,
+        )))
         await store.finish()
 
         XCTAssertEqual(store.state.content.aiChat.transcriptHistory.map(\.content), [
@@ -4845,7 +4850,12 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.backgroundAiChat(.sessionSnapshotSaved(summary))) { state in
+        await store.send(.backgroundAiChat(.sessionSnapshotSaved(
+            summary,
+            snapshot: snapshot,
+            requestID: requestLock.requestID,
+            runID: requestLock.runID,
+        ))) { state in
             state.content.aiChat.transcriptHistory = snapshot.transcriptHistory
             state.content.aiChat.executionPhase = .completed(requestLock)
             state.content.aiChat.selectedModelHandle = requestLock.selectedModelHandle
@@ -4939,7 +4949,12 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.backgroundAiChat(.sessionSnapshotSaved(summary))) { state in
+        await store.send(.backgroundAiChat(.sessionSnapshotSaved(
+            summary,
+            snapshot: snapshot,
+            requestID: requestLock.requestID,
+            runID: requestLock.runID,
+        ))) { state in
             var refreshedAiChatContent = staleAiChatContent
             refreshedAiChatContent.aiChat.transcriptHistory = snapshot.transcriptHistory
             refreshedAiChatContent.aiChat.transcriptAutoScrollVersion += 1
@@ -5381,7 +5396,12 @@ extension CTM005IndependentContentTabSessionTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.backgroundInspectorAiChat(.sessionSnapshotSaved(summary))) { state in
+        await store.send(.backgroundInspectorAiChat(.sessionSnapshotSaved(
+            summary,
+            snapshot: snapshot,
+            requestID: requestLock.requestID,
+            runID: requestLock.runID,
+        ))) { state in
             var refreshedInspector = staleInspector.tabSnapshot()
             refreshedInspector.aiChat.transcriptHistory = snapshot.transcriptHistory
             refreshedInspector.aiChat.transcriptAutoScrollVersion += 1

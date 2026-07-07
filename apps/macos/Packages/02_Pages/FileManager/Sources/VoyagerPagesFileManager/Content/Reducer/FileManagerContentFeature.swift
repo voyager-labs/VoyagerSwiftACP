@@ -80,7 +80,7 @@ public struct FileManagerContentFeature {
             case let .aiChat(.persistenceRecoveryRetryFailed(lock, _)):
                 return handleBackgroundAiChatPersistenceEvent(sessionID: lock.context.sessionID, state: &state)
 
-            case let .aiChat(.sessionSnapshotSaved(summary)):
+            case let .aiChat(.sessionSnapshotSaved(summary, _, _, _)):
                 return handleBackgroundAiChatPersistenceEvent(sessionID: summary.sessionID, state: &state)
 
             case .aiChat(.cancelInFlightWork):

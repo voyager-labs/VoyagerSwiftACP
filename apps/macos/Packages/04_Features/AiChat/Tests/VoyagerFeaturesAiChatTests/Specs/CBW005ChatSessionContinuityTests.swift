@@ -1094,7 +1094,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
 
         let finalizedLock = lock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
         await store.receive(.executionEvent(.final(response: finalResponse))) { state in
-            state.backgroundExecutionPhases[finalizedLock.requestID] = nil
+            state.backgroundExecutionPhases[finalizedLock.requestID] = .completed(finalizedLock)
         }
 
         let expectedOriginalSnapshot = AiChatSessionSnapshot(
@@ -1113,7 +1113,13 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             lastRequestContext: lock.context.requestContext,
             updatedAtMs: fixedMs,
         )
-        await store.receive(.sessionSnapshotSaved(AiChatSessionSummary(snapshot: expectedOriginalSnapshot))) { state in
+        await store.receive(.sessionSnapshotSaved(
+            AiChatSessionSummary(snapshot: expectedOriginalSnapshot),
+            snapshot: expectedOriginalSnapshot,
+            requestID: finalizedLock.requestID,
+            runID: finalizedLock.runID,
+        )) { state in
+            state.backgroundExecutionPhases[finalizedLock.requestID] = nil
             state.sessionList.replaceRow(AiChatSessionSummary(snapshot: expectedOriginalSnapshot))
             state.sessionList.unreadCompletedSessionIDs = [oldSessionID]
             state.sessionList.errorMessage = nil
@@ -2800,7 +2806,12 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             updatedAtMs: fixedMs,
         )
         let expectedFinalSummary = AiChatSessionSummary(snapshot: expectedFinalSnapshot)
-        await store.receive(.sessionSnapshotSaved(expectedFinalSummary)) { state in
+        await store.receive(.sessionSnapshotSaved(
+            expectedFinalSummary,
+            snapshot: expectedFinalSnapshot,
+            requestID: finalizedLock.requestID,
+            runID: finalizedLock.runID,
+        )) { state in
             state.sessionList.allRows = [expectedFinalSummary]
             state.sessionList.rows = [expectedFinalSummary]
             state.sessionList.selectedSessionID = sessionID

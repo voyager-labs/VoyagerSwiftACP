@@ -42,15 +42,23 @@ extension AiChatFeature {
         switch state.executionPhase {
         case let .completed(currentLock):
             guard currentLock.requestID == lock.requestID else { return .none }
+            state.executionPhase = .persistenceRecovery(lock, failure)
+            state.lastExecutionFailure = failure
+            return .none
+
         case let .persistenceRecovery(currentLock, _):
             guard currentLock.requestID == lock.requestID else { return .none }
+            state.executionPhase = .persistenceRecovery(lock, failure)
+            state.lastExecutionFailure = failure
+            return .none
+
         default:
+            guard let backgroundLock = state.backgroundExecutionPhases[lock.requestID]?.lock,
+                  backgroundLock.runID == lock.runID
+            else { return .none }
+            state.backgroundExecutionPhases[lock.requestID] = .persistenceRecovery(lock, failure)
             return .none
         }
-
-        state.executionPhase = .persistenceRecovery(lock, failure)
-        state.lastExecutionFailure = failure
-        return .none
     }
 
     func handlePersistenceRecoverySucceeded(lock: AiChatRequestLock, state: inout State) -> Effect<Action> {

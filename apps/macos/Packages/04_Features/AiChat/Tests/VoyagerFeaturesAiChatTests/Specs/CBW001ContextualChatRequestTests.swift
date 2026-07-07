@@ -1816,7 +1816,12 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             updatedAtMs: fixedMs,
         )
         let expectedOriginalSummary = AiChatSessionSummary(snapshot: expectedOriginalSnapshot)
-        await store.receive(.sessionSnapshotSaved(AiChatSessionSummary(snapshot: expectedOriginalSnapshot))) { state in
+        await store.receive(.sessionSnapshotSaved(
+            AiChatSessionSummary(snapshot: expectedOriginalSnapshot),
+            snapshot: expectedOriginalSnapshot,
+            requestID: finalizedLock.requestID,
+            runID: finalizedLock.runID,
+        )) { state in
             state.sessionList.replaceRow(expectedOriginalSummary)
             state.sessionList.selectedSessionID = activeSessionID
             state.sessionList.unreadCompletedSessionIDs = []

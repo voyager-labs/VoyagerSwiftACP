@@ -184,6 +184,36 @@ public struct AiChatRequestLock: Equatable, Sendable {
         self.observabilitySummary = observabilitySummary
     }
 
+    public init(
+        kind: AiChatRequestKind,
+        requestID: AiChatRequestID,
+        runID: AiChatRunID,
+        context: AiChatRequestContextSnapshot,
+        request: AiChatRequest,
+        selectedModelHandle: AiModelHandle,
+        selectedModelRow: AiModelCatalogRow?,
+        assistantReplacementIndex: Int?,
+        historyTruncation: AiChatHistoryTruncationMetadata = .init(
+            includedMessageCount: 0,
+            excludedMessageCount: 0,
+            budget: 24000,
+            truncationReason: nil,
+        ),
+        observabilitySummary: AiChatRequestObservabilitySummary = .init(submittedAtMs: 0),
+    ) {
+        self.kind = kind
+        self.requestID = requestID
+        self.runID = runID
+        self.context = context
+        self.request = request
+        self.selectedModelHandle = selectedModelHandle
+        self.selectedModelRow = selectedModelRow
+        self.assistantReplacementIndex = assistantReplacementIndex
+        customTitle = nil
+        self.historyTruncation = historyTruncation
+        self.observabilitySummary = observabilitySummary
+    }
+
     public func recordingDelta(at timestampMs: Int64) -> Self {
         Self(
             kind: kind,

@@ -52,7 +52,7 @@ extension AiChatFeature {
         let finalizedLock = matched.lock.recordingTerminal(at: terminalTimestampMs, failure: nil, wasCancelled: false)
         let snapshot: AiChatSessionSnapshot
         if matched.isBackground {
-            state.backgroundExecutionPhases[finalizedLock.requestID] = nil
+            state.backgroundExecutionPhases[finalizedLock.requestID] = .completed(finalizedLock)
             snapshot = makeOffscreenFinalSnapshot(
                 response: normalizedResponse,
                 lock: finalizedLock,
@@ -137,7 +137,12 @@ extension AiChatFeature {
             .run { [aiChatSessionPersistenceClient] send in
                 do {
                     try await aiChatSessionPersistenceClient.saveSession(snapshot)
-                    await send(.sessionSnapshotSaved(AiChatSessionSummary(snapshot: snapshot)))
+                    await send(.sessionSnapshotSaved(
+                        AiChatSessionSummary(snapshot: snapshot),
+                        snapshot: snapshot,
+                        requestID: finalizedLock.requestID,
+                        runID: finalizedLock.runID,
+                    ))
                 } catch is CancellationError {
                     return
                 } catch {
