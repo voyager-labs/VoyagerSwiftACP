@@ -1,7 +1,6 @@
 import AppKit
 import ComposableArchitecture
 import VoyagerEntitiesCollection
-import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesOnboarding
@@ -129,15 +128,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func routeAuthCallback(_ url: URL) {
         MainActor.assumeIsolated {
-            Voyager.routeAuthCallback(
-                url,
-                routeToOnboarding: { VoyagerPagesOnboarding.routeAuthCallbackToOnboardingIfPresent($0) },
-                routeToSessionLapseGuard: { callbackURL in
-                    self.withAppRootStore {
-                        _ = $0.send(.lifecycle(.sessionLapseGuard(.loginCallbackReceived(callbackURL))))
-                    }
-                },
-            )
+            _ = VoyagerPagesOnboarding.routeAuthCallbackToOnboardingIfPresent(url)
         }
     }
 
@@ -173,15 +164,4 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return operation(appRootStore)
     }
-}
-
-@MainActor
-func routeAuthCallback(
-    _ url: URL,
-    routeToOnboarding: @escaping (URL) -> Bool,
-    routeToSessionLapseGuard: ((URL) -> Void)? = nil,
-) {
-    // 온보딩이 콜백을 처리하면 종료. 미처리 시 sessionLapseGuard 폴백.
-    if routeToOnboarding(url) { return }
-    routeToSessionLapseGuard?(url)
 }
