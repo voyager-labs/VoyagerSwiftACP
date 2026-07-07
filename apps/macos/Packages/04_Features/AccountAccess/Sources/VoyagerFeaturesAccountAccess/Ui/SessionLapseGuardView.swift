@@ -22,7 +22,7 @@ struct VisualEffectView: NSViewRepresentable {
 
 private struct SessionLapseGuardObservedState: Equatable {
     let didSignInFail: Bool
-    let hasAccountSession: Bool
+    let accountAccessStepState: AccountAccessStepState
     let isSignInInProgress: Bool
     let errorMessage: String?
 }
@@ -32,7 +32,8 @@ private struct SessionLapseGuardObservedState: Equatable {
 ///
 /// ## 표시 조건
 /// - `didSignInFail == true` (session_expired): "세션이 만료되었습니다" + 로그인 CTA
-/// - `!hasAccountSession && !isSignInInProgress` (logged_out): "로그인이 필요합니다" + 로그인 CTA
+/// - accountAccessStepState가 `.complete`가 될 때만 guard 해제
+/// - pending/blocked/error와 로그인 진행 중 상태는 overlay 유지
 ///
 /// ## Integration (FileManager 윈도우 오버레이)
 /// - 각 FileManager 윈도우의 FileManagerWindowSplitCoordinator가 IfLetStore 기반 오버레이로
@@ -64,20 +65,19 @@ public struct SessionLapseGuardView: View {
             observe: { state in
                 SessionLapseGuardObservedState(
                     didSignInFail: state.didSignInFail,
-                    hasAccountSession: state.hasAccountSession,
+                    accountAccessStepState: state.accountAccessStepState,
                     isSignInInProgress: state.isSignInInProgress,
                     errorMessage: state.errorMessage,
                 )
             },
             content: { viewStore in
                 let didSignInFail = viewStore.didSignInFail
-                let hasAccountSession = viewStore.hasAccountSession
+                let accountAccessStepState = viewStore.accountAccessStepState
                 let isSignInInProgress = viewStore.isSignInInProgress
                 let errorMessage = viewStore.errorMessage
 
                 let shouldShow = Self.shouldShow(
-                    didSignInFail: didSignInFail,
-                    hasAccountSession: hasAccountSession,
+                    accountAccessStepState: accountAccessStepState,
                     isSignInInProgress: isSignInInProgress,
                 )
 
@@ -142,10 +142,9 @@ public struct SessionLapseGuardView: View {
     }
 
     static func shouldShow(
-        didSignInFail: Bool,
-        hasAccountSession: Bool,
+        accountAccessStepState: AccountAccessStepState,
         isSignInInProgress: Bool,
     ) -> Bool {
-        didSignInFail || !hasAccountSession || isSignInInProgress
+        isSignInInProgress || accountAccessStepState != .complete
     }
 }

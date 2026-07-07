@@ -16,7 +16,7 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
 
         XCTAssertEqual(state.accountAccessAuthAxis, .signInFailed)
         XCTAssertTrue(state.didSignInFail)
-        // guard 표시 조건: didSignInFail || !hasAccountSession || isSignInInProgress
+        // guard 표시 조건: accountAccessStepState != .complete || isSignInInProgress
         XCTAssertTrue(state.didSignInFail, "session_expired → guard 표시")
     }
 
@@ -47,7 +47,7 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
 
         XCTAssertEqual(state.accountAccessAuthAxis, .signedOut)
         XCTAssertTrue(state.canStartLogin, "logged_out → 로그인 CTA 활성화")
-        // guard 표시 조건: didSignInFail || !hasAccountSession || isSignInInProgress
+        // guard 표시 조건: accountAccessStepState != .complete || isSignInInProgress
         XCTAssertFalse(state.hasAccountSession, "logged_out → hasAccountSession == false")
         XCTAssertFalse(state.isSignInInProgress, "logged_out → isSignInInProgress == false")
     }
@@ -60,8 +60,7 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
     func testSignInInProgressKeepsOverlayVisible() {
         XCTAssertTrue(
             SessionLapseGuardView.shouldShow(
-                didSignInFail: false,
-                hasAccountSession: false,
+                accountAccessStepState: .pending,
                 isSignInInProgress: true,
             ),
             "sign-in progress → guard 유지",
@@ -69,8 +68,7 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
 
         XCTAssertTrue(
             SessionLapseGuardView.shouldShow(
-                didSignInFail: false,
-                hasAccountSession: true,
+                accountAccessStepState: .complete,
                 isSignInInProgress: true,
             ),
             "sign-in progress → session 복원 전에도 guard 유지",
@@ -78,12 +76,71 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
 
         XCTAssertFalse(
             SessionLapseGuardView.shouldShow(
-                didSignInFail: false,
-                hasAccountSession: true,
+                accountAccessStepState: .complete,
                 isSignInInProgress: false,
             ),
             "success state → guard 해제",
         )
+    }
+
+    /// ACC-003-guard_session_lapse: signed-in 이지만 status가 pending/blocked/error면 overlay가 유지된다.
+    /// access status가 complete가 되기 전까지 guard가 계속 보이는지 검증한다.
+    /// - 검증 내용: signed-in + nil status는 pending, inactive/refunded/revoked/none/networkFailure는 non-complete
+    /// - 사전 조건: hasAccountSession == true, isSignInInProgress == false
+    /// - 기대 결과: pending/blocked/error 상태에서는 guard 유지
+    func testSignedInNonCompleteStatesKeepOverlayVisible() {
+        var pendingState = AccountAccessFeature.State()
+        pendingState.hasAccountSession = true
+        pendingState.status = nil
+
+        XCTAssertEqual(pendingState.accountAccessStepState, .pending)
+        XCTAssertTrue(
+            SessionLapseGuardView.shouldShow(
+                accountAccessStepState: pendingState.accountAccessStepState,
+                isSignInInProgress: pendingState.isSignInInProgress,
+            ),
+            "status 없음 → pending 유지",
+        )
+
+        let inactiveStatuses: [AccessStatus] = [.none, .trialExpired, .revoked, .refunded, .networkFailure]
+        for status in inactiveStatuses {
+            var state = AccountAccessFeature.State()
+            state.hasAccountSession = true
+            state.status = status
+
+            XCTAssertNotEqual(state.accountAccessStepState, .complete, "\(status) → complete 아님")
+            XCTAssertTrue(
+                SessionLapseGuardView.shouldShow(
+                    accountAccessStepState: state.accountAccessStepState,
+                    isSignInInProgress: state.isSignInInProgress,
+                ),
+                "\(status) → guard 유지",
+            )
+        }
+    }
+
+    /// ACC-003-guard_session_lapse: active access가 complete일 때만 overlay가 해제된다.
+    /// active 상태가 guard 해제의 유일한 경로인지 검증한다.
+    /// - 검증 내용: active statuses는 stepState == .complete, guard == false
+    /// - 사전 조건: hasAccountSession == true, isSignInInProgress == false
+    /// - 기대 결과: active/complete만 overlay 해제
+    func testActiveCompleteStateDismissesOverlay() {
+        let activeStatuses: [AccessStatus] = [.coreLicenseActive, .trialActive, .internalTestActive]
+
+        for status in activeStatuses {
+            var state = AccountAccessFeature.State()
+            state.hasAccountSession = true
+            state.status = status
+
+            XCTAssertEqual(state.accountAccessStepState, .complete, "\(status) → complete")
+            XCTAssertFalse(
+                SessionLapseGuardView.shouldShow(
+                    accountAccessStepState: state.accountAccessStepState,
+                    isSignInInProgress: state.isSignInInProgress,
+                ),
+                "\(status) → guard 해제",
+            )
+        }
     }
 
     /// ACC-003-guard_session_lapse: 로그인 CTA 선택 시 ACC-001-start_account_sign_in 호출이 가능하다.
@@ -124,10 +181,18 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
         // 재인증 완료 (ACC-001-exchange_handoff_token → logged_in)
         state.hasAccountSession = true
         state.didSignInFail = false
+        state.status = .coreLicenseActive
 
         XCTAssertEqual(state.accountAccessAuthAxis, .signedIn)
-        // guard 표시 조건: didSignInFail || !hasAccountSession || isSignInInProgress
-        // 재인증 완료 후 didSignInFail=false, hasAccountSession=true → guard 해제
+        XCTAssertEqual(state.accountAccessStepState, .complete)
+        XCTAssertFalse(
+            SessionLapseGuardView.shouldShow(
+                accountAccessStepState: state.accountAccessStepState,
+                isSignInInProgress: state.isSignInInProgress,
+            ),
+            "재인증 완료 + active 권한 → guard 해제",
+        )
+        // guard 표시 조건: accountAccessStepState != .complete || isSignInInProgress
         XCTAssertFalse(state.didSignInFail, "재인증 완료 → didSignInFail 해제")
         XCTAssertTrue(state.hasAccountSession, "재인증 완료 → hasAccountSession 복원")
     }
