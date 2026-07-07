@@ -557,6 +557,42 @@ final class AppRootCompositionTests: XCTestCase {
             state.accountAccessGateResolved = false
         }
 
+        await store.finish()
+    }
+
+    // MARK: - PR #295 Codex P1: sessionLapseGuard appReopen 복구
+
+    /// sessionLapseGuard가 있고 accountAccessGateResolved=false여도 appReopen이
+    /// reopen delegate를 보내 FileManager 창을 띄워 가드 오버레이를 마운트한다.
+    /// 빈 창 상태에서 세션 만료/로그아웃 후 Dock 재활성화로 가드가 보여야 한다.
+    func testAppReopenReopensWindowWhenSessionLapseGuardPresentAndGateUnresolved() async {
+        var initialState = AppLifecycleFeature.State()
+        initialState.accountAccessGateResolved = false
+        initialState.sessionLapseGuard = AccountAccessFeature.State()
+
+        let store = TestStore(initialState: initialState) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { false }
+        }
+
+        await store.send(.launch(.appReopen(hasVisibleWindows: false)))
+        await store.receive(\.delegate.reopenWindowIfNeeded)
+        await store.finish()
+    }
+
+    /// sessionLapseGuard가 없고 accountAccessGateResolved=false면 appReopen은
+    /// reopen delegate를 보내지 않고 그대로 차단된다. (locked/no-session/no-active-access)
+    func testAppReopenStaysBlockedWhenNoSessionLapseGuardAndGateUnresolved() async {
+        var initialState = AppLifecycleFeature.State()
+        initialState.accountAccessGateResolved = false
+
+        let store = TestStore(initialState: initialState) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { false }
+        }
+
         await store.send(.launch(.appReopen(hasVisibleWindows: false)))
         await store.finish()
     }

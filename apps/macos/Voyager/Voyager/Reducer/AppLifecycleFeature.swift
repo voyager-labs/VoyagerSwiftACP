@@ -86,6 +86,11 @@ struct AppLifecycleFeature {
                 if onboardingWindowClient.showIfNeeded() {
                     return .none
                 }
+                // PR #295: sessionLapseGuard가 있으면 오버레이를 마운트할 FileManager 창이 필요하다.
+                // accountAccessGateResolved=false 경로가 이를 차단하면 빈 창에서 가드가 보이지 않는다.
+                if state.sessionLapseGuard != nil {
+                    return .send(.delegate(.reopenWindowIfNeeded(hasVisibleWindows: flag)))
+                }
                 if !state.accountAccessGateResolved {
                     return .none
                 }
