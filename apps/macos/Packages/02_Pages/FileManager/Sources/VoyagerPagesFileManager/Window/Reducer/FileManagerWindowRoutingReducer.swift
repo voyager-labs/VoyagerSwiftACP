@@ -310,6 +310,18 @@ struct FileManagerWindowRoutingReducer {
                 state.pendingContentTabClose?.didReceiveWriteBackNavigationState = true
                 return finalizePendingContentTabCloseIfWriteBackEffectsCompleted(state: &state)
 
+            case let .content(.aiChat(.deleteSessionTapped(sessionID))),
+                 let .inspector(.aiChat(.deleteSessionTapped(sessionID))):
+                return cancelAndRemoveBackgroundAiChatOwners(sessionID: sessionID, state: &state)
+
+            case let .content(.aiChat(.sessionDeleteSucceeded(sessionID))),
+                 let .inspector(.aiChat(.sessionDeleteSucceeded(sessionID))),
+                 let .content(.aiChat(.sessionDeleteFailed(sessionID, _))),
+                 let .inspector(.aiChat(.sessionDeleteFailed(sessionID, _))):
+                state.removeBackgroundAiChatState(sessionID: sessionID)
+                state.removeBackgroundInspectorAiChatState(sessionID: sessionID)
+                return .none
+
             case let .content(.aiChat(aiChatAction)):
                 return routeBackgroundAiChatAction(aiChatAction, state: &state)
 
@@ -830,6 +842,28 @@ private func aiChatLifecycleSessionIDsToPreserve(_ state: AiChatFeature.State) -
     return sessionIDs
 }
 
+private func cancelAndRemoveBackgroundAiChatOwners(
+    sessionID: AiChatSessionID,
+    state: inout FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    var effects: [Effect<FileManagerWindowAction>] = []
+    if var backgroundContent = state.removeBackgroundAiChatState(sessionID: sessionID) {
+        effects.append(
+            AiChatFeature()
+                .reduce(into: &backgroundContent.aiChat, action: .cancelInFlightWork)
+                .map { FileManagerWindowAction.backgroundAiChat($0) },
+        )
+    }
+    if var backgroundInspector = state.removeBackgroundInspectorAiChatState(sessionID: sessionID) {
+        effects.append(
+            AiChatFeature()
+                .reduce(into: &backgroundInspector.aiChat, action: .cancelInFlightWork)
+                .map { FileManagerWindowAction.backgroundInspectorAiChat($0) },
+        )
+    }
+    return .merge(effects)
+}
+
 private func routeBackgroundAiChatAction(
     _ aiChatAction: AiChatAction,
     state: inout FileManagerWindowState,
@@ -1069,7 +1103,12 @@ private extension AiChatFeature.State {
         selectedModelHandle = snapshot?.model ?? backgroundAiChat.selectedModelHandle
         selectedThinking = snapshot?.selectedThinking ?? backgroundAiChat.selectedThinking
         sessionStatus = snapshot?.status ?? .active
-        executionPhase = backgroundAiChat.executionPhase
+        if let executionPhaseToApply = backgroundAiChat.executionPhase.matchingBackgroundSnapshot(
+            summary: summary,
+            snapshot: snapshot,
+        ) {
+            executionPhase = executionPhaseToApply
+        }
 
         guard !sessionList.deletedSessionIDs.contains(summary.sessionID) else { return }
         sessionList.replaceRow(summary)
@@ -1085,6 +1124,22 @@ private extension AiChatFeature.State {
     }
 }
 
+private extension AiChatExecutionPhase {
+    func matchingBackgroundSnapshot(
+        summary: AiChatSessionSummary,
+        snapshot: AiChatSessionSnapshot?,
+    ) -> Self? {
+        guard let lock, lock.context.sessionID == summary.sessionID else { return nil }
+        if let requestID = snapshot?.lastRequestID, lock.requestID != requestID {
+            return nil
+        }
+        if let runID = snapshot?.lastRunID, lock.runID != runID {
+            return nil
+        }
+        return self
+    }
+}
+
 private extension AiChatSessionSummary {
     func isNewerThanBackground(_ backgroundSummary: AiChatSessionSummary) -> Bool {
         if updatedAtMs != backgroundSummary.updatedAtMs {
@@ -1096,6 +1151,7 @@ private extension AiChatSessionSummary {
         return false
     }
 }
+
 
 private func routeInactiveInspectorAiChatAction(
     _ aiChatAction: AiChatAction,
