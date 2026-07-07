@@ -82,7 +82,6 @@ public struct AccountAccessFeature {
                 return handleRefreshAccessTapped(&state)
 
             case .appDidBecomeActive:
-                // 세션이 있을 때만 status 갱신 (불필요한 네트워크 요청 방지)
                 guard state.hasAccountSession else {
                     return .none
                 }
@@ -147,12 +146,8 @@ public struct AccountAccessFeature {
         state.hasAccountSession = session != nil
 
         guard let session else {
-            // VOY-397: 세션 없이 onAppear 복원 시 이전 persist된 active entitlement fact를 제거한다.
-            // 방치 시 Access Unlock 화면이 Active chip + Sign In 버튼 + Next CTA를 동시에 그리는 regression 발생.
             clearStaleActiveAccessFacts(&state)
             resetSessionRetryBudget(&state)
-            // VOY-397: 세션 축 소실 시 in-flight access_status 응답이 stale active fact를 재주입하지 못하도록
-            // fetchGeneration을 무효화하고 진행 중 fetch effect를 취소한다.
             state.fetchGeneration += 1
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
@@ -167,7 +162,6 @@ public struct AccountAccessFeature {
         resetSessionRetryBudget(&state)
         state.fetchGeneration += 1
 
-        // TTL 타이머 시작: 세션이 복원되면 access token 만료를 추적한다.
         state.ttlTimerActive = true
         let ttlEffect = startTtlTimer()
 
@@ -237,7 +231,13 @@ public struct AccountAccessFeature {
             state.handoffPendingState = handoffState
             return .none
 
-        case .failure, .cancelled:
+        case .failure:
+            state.isSignInInProgress = false
+            state.didSignInFail = true
+            state.errorMessage = "Check your network connection and try again."
+            return .none
+
+        case .cancelled:
             state.isSignInInProgress = false
             state.didSignInFail = true
             return .none
@@ -245,12 +245,10 @@ public struct AccountAccessFeature {
     }
 
     private func handleLoginCallbackReceived(_ state: inout State, url: URL) -> Effect<Action> {
-        // real handoff callback: AppHandoffCallback이 파싱되면 exchange 경로
         if let callback = AppHandoffCallback(url: url, expectedScheme: appHandoffTarget.callbackScheme) {
             return handleRealHandoffCallback(&state, callback: callback)
         }
 
-        // legacy mock callback: 기존 scheme/host/path + query 없음 → restoreSession 경로
         guard isValidAuthCallback(url, expectedScheme: appHandoffTarget.callbackScheme), !hasQueryItems(url) else {
             state.isSignInInProgress = false
             state.didSignInFail = true
@@ -305,8 +303,6 @@ public struct AccountAccessFeature {
             state.didSignInFail = false
             state.isSessionExpired = false
             resetSessionRetryBudget(&state)
-            // handoff 성공 시 sessionExpiresAt/ttlTimerActive를 설정하고 TTL 타이머를 시작한다.
-            // handleOnAppearSessionRestored와 동일한 ownership path를 따른다.
             state.sessionExpiresAt = session.expiresAt
             state.ttlTimerActive = true
             state.fetchGeneration += 1
@@ -316,7 +312,6 @@ public struct AccountAccessFeature {
             )
 
         case .failure:
-            // sign-in 실패 (exchange/persist 오류). session expired와 구분한다.
             state.isSignInInProgress = false
             state.didSignInFail = true
             state.hasAccountSession = false
@@ -598,13 +593,17 @@ private extension AccountAccessFeature {
             // 유효 세션: TTL 타이머 시작. handleOnAppearSessionRestored success path와 동일 패턴.
             state.ttlTimerActive = true
             return .merge(
-                startTtlTimer(),
                 .cancel(id: CancelID.fetchStatus),
+                .cancel(id: CancelID.ttlTimer),
+                startTtlTimer(),
             )
         } else {
             // 세션 없음: TTL 타이머 비활성화. entitlement 축은 display-only로 유지.
             state.ttlTimerActive = false
-            return .cancel(id: CancelID.fetchStatus)
+            return .merge(
+                .cancel(id: CancelID.fetchStatus),
+                .cancel(id: CancelID.ttlTimer),
+            )
         }
     }
 
@@ -659,6 +658,14 @@ private extension AccountAccessFeature {
         case let .success(session):
             state.consecutiveRefreshFailures = 0
             state.sessionExpiresAt = session.expiresAt
+            if let snapshot = state.snapshot {
+                state.snapshot = AccessStatusSnapshot(
+                    status: snapshot.status,
+                    currentPeriodEnd: snapshot.currentPeriodEnd,
+                    fetchedAt: snapshot.fetchedAt,
+                    sessionExpiresAt: session.expiresAt,
+                )
+            }
             return .none
 
         case let .failure(error):
@@ -686,6 +693,7 @@ private extension AccountAccessFeature {
         guard state.hasAccountSession else { return .none }
         state.hasAccountSession = false
         state.didSignInFail = false
+        state.isSessionExpired = true
         clearStaleActiveAccessFacts(&state)
         state.ttlTimerActive = false
         state.sessionExpiresAt = nil
@@ -731,8 +739,6 @@ private extension AccountAccessFeature {
         )
     }
 
-    /// VOY-397: 세션 부재/만료 시 이전 active entitlement fact를 제거한다.
-    /// 방치 시 Active chip + Login 버튼 + Next CTA 동시 표시 regression 방지.
     private func clearStaleActiveAccessFacts(_ state: inout State) {
         state.status = nil
         state.snapshot = nil
@@ -745,24 +751,18 @@ private extension AccountAccessFeature {
         state.fetchRetryCount = 0
     }
 
-    // MARK: - 외부 URL 리다이렉트
-
-    /// 체크아웃(구매) 페이지를 브라우저에서 연다.
     private func handleOpenCheckout(_: inout State) -> Effect<Action> {
         openWebURL(makeURL: checkoutURLClient.checkoutURL)
     }
 
-    /// 요금제 페이지를 브라우저에서 연다.
     private func handleOpenPricing(_: inout State) -> Effect<Action> {
         openWebURL(makeURL: checkoutURLClient.pricingURL)
     }
 
-    /// 접근 권한 도움 페이지를 브라우저에서 연다.
     private func handleOpenAccessHelp(_: inout State) -> Effect<Action> {
         openWebURL(makeURL: checkoutURLClient.supportURL)
     }
 
-    /// 베타 코드 도움 페이지를 브라우저에서 연다.
     private func handleOpenBetaCodeHelp(_: inout State) -> Effect<Action> {
         openWebURL(makeURL: checkoutURLClient.supportURL)
     }

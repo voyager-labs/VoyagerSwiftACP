@@ -360,6 +360,34 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
         await store.finish()
     }
 
+    /// ACC-003-guard_session_lapse.md:66, 74, 89 / SessionLapseGuardView.swift:101-106
+    /// signInHandoffCompleted(.failure) 는 네트워크 안내 메시지를 설정하고 실패 상태를 고정한다.
+    func testSignInHandoffCompletedFailureSetsNetworkErrorMessage() async {
+        let store = makeTestStore(initialState: awaitingCallbackState())
+
+        await store.send(.signInHandoffCompleted(.failure)) { state in
+            state.isSignInInProgress = false
+            state.didSignInFail = true
+            state.errorMessage = "Check your network connection and try again."
+        }
+
+        await store.finish()
+    }
+
+    /// ACC-003-guard_session_lapse.md:66, 74, 89 / SessionLapseGuardView.swift:101-106
+    /// signInHandoffCompleted(.cancelled) 는 errorMessage 없이 현재 취소 상태만 반영한다.
+    func testSignInHandoffCompletedCancelledKeepsErrorMessageNil() async {
+        let store = makeTestStore(initialState: awaitingCallbackState())
+
+        await store.send(.signInHandoffCompleted(.cancelled)) { state in
+            state.isSignInInProgress = false
+            state.didSignInFail = true
+            state.errorMessage = nil
+        }
+
+        await store.finish()
+    }
+
     /// voyager-onboarding-host:// scheme 콜백이 올바르게 파싱되는지 검증한다.
     func testOnboardingHostSchemeParsesSuccessfully() throws {
         let url =

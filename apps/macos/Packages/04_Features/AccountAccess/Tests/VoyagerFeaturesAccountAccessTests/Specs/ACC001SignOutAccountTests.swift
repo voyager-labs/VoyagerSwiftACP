@@ -195,6 +195,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.didSignInFail = false
             state.status = nil
             state.snapshot = nil
+            state.isSessionExpired = true
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 1
@@ -224,6 +225,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
 
         await store.send(.signOut) { state in
             state.hasAccountSession = false
+            state.isSessionExpired = true
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 1
@@ -241,6 +243,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
 
         await store.send(.signOut) { state in
             state.hasAccountSession = false
+            state.isSessionExpired = true
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 1
@@ -274,6 +277,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.didSignInFail = false
             state.status = nil
             state.snapshot = nil
+            state.isSessionExpired = true
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 1
@@ -309,6 +313,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.trialExpiresAt = nil
             state.isComplete = false
             state.errorMessage = nil
+            state.isSessionExpired = true
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 1
@@ -341,6 +346,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.didSignInFail = false
             state.status = nil
             state.snapshot = nil
+            state.isSessionExpired = true
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 6
@@ -395,6 +401,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.didSignInFail = false
             state.status = nil
             state.snapshot = nil
+            state.isSessionExpired = true
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 6
@@ -403,6 +410,35 @@ final class ACC001SignOutAccountTests: XCTestCase {
         await store.receive(\.delegate.signedOut)
 
         await clock.advance(by: .seconds(2))
+        await store.finish()
+    }
+
+    /// ACC-001-sign_out_account: signOut은 isSessionExpired를 true로 올리고, 뒤늦은 _sessionExpiredDetected는 무시된다.
+    /// - spec citations: auth_session_contract.toml:49-53, :140-144, :171-174
+    /// - 사전 조건: hasAccountSession=true
+    /// - 기대 결과: signOut 후 isSessionExpired=true, didSignInFail=false 유지, late _sessionExpiredDetected가 didSignInFail을
+    /// true로 바꾸지 않음
+    func testReducerSignOutMarksSessionExpiredAndIgnoresLateSessionExpiredDetected() async {
+        let store = makeTestStore(initialState: signedInState())
+
+        await store.send(.signOut) { state in
+            state.hasAccountSession = false
+            state.didSignInFail = false
+            state.status = nil
+            state.snapshot = nil
+            state.isSessionExpired = true
+            state.ttlTimerActive = false
+            state.sessionExpiresAt = nil
+            state.fetchGeneration = 1
+        }
+
+        await store.receive(\.delegate.signedOut)
+
+        await store.send(._sessionExpiredDetected)
+
+        XCTAssertFalse(store.state.didSignInFail, "late _sessionExpiredDetected must stay ignored after signOut")
+        XCTAssertTrue(store.state.isSessionExpired, "signOut should keep dedup guard armed")
+        XCTAssertFalse(store.state.hasAccountSession)
         await store.finish()
     }
 

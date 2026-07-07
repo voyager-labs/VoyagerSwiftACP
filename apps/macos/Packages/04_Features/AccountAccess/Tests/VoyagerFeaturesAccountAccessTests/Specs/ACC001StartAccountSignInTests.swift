@@ -102,6 +102,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         await store.receive(\.signInHandoffCompleted) { state in
             state.isSignInInProgress = false
             state.didSignInFail = true
+            state.errorMessage = "Check your network connection and try again."
         }
         await store.finish()
     }

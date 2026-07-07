@@ -85,6 +85,92 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         await store.finish()
     }
 
+    /// ACC-001-restore_account_session: refreshToken 성공 시 기존 snapshot의 session 축만 갱신된다.
+    /// snapshot이 이미 있을 때 refresh 성공이 sessionExpiresAt만 동기화하고 entitlement 축은 보존하는지 검증한다.
+    /// - 검증 내용: _refreshTokenResult(.success) → state.sessionExpiresAt 갱신, snapshot.status/currentPeriodEnd/fetchedAt
+    /// 보존
+    /// - 사전 조건: 기존 snapshot이 존재하고 sessionExpiresAt가 오래된 값이다.
+    /// - 기대 결과: snapshot.sessionExpiresAt만 새 만료 시각으로 교체된다.
+    func testRefreshTokenSuccessSyncsExistingSnapshotSessionExpiry() async {
+        let oldExpiry = referenceDate.addingTimeInterval(300)
+        let newExpiry = referenceDate.addingTimeInterval(3600)
+        let initialSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: referenceDate.addingTimeInterval(86400),
+            fetchedAt: referenceDate,
+            sessionExpiresAt: oldExpiry,
+        )
+        let expectedSnapshot = AccessStatusSnapshot(
+            status: initialSnapshot.status,
+            currentPeriodEnd: initialSnapshot.currentPeriodEnd,
+            fetchedAt: initialSnapshot.fetchedAt,
+            sessionExpiresAt: newExpiry,
+        )
+
+        var initialState = AccountAccessFeature.State()
+        initialState.hasAccountSession = true
+        initialState.ttlTimerActive = true
+        initialState.sessionExpiresAt = oldExpiry
+        initialState.status = initialSnapshot.status
+        initialState.trialExpiresAt = initialSnapshot.currentPeriodEnd
+        initialState.snapshot = initialSnapshot
+        initialState.consecutiveRefreshFailures = 2
+
+        let store = makeTestStore(initialState: initialState)
+
+        await store.send(._refreshTokenResult(.success(
+            AccountSession(
+                accessToken: "refreshed-token",
+                status: .coreLicenseActive,
+                expiresAt: newExpiry,
+            ),
+        ))) { state in
+            state.consecutiveRefreshFailures = 0
+            state.sessionExpiresAt = newExpiry
+            state.snapshot = expectedSnapshot
+        }
+
+        XCTAssertEqual(store.state.sessionExpiresAt, newExpiry)
+        XCTAssertEqual(store.state.snapshot, expectedSnapshot)
+        await store.finish()
+    }
+
+    /// ACC-001-restore_account_session: refreshToken 성공 시 snapshot이 없으면 새 snapshot을 만들지 않는다.
+    /// snapshot nil 상태에서 refresh 성공이 sessionExpiresAt만 갱신하고 snapshot은 nil로 유지하는지 검증한다.
+    /// - 검증 내용: _refreshTokenResult(.success) → state.sessionExpiresAt 갱신, state.snapshot은 nil 유지
+    /// - 사전 조건: snapshot이 nil이고 sessionExpiresAt가 존재한다.
+    /// - 기대 결과: session 만료 시각만 갱신되고 snapshot은 생성되지 않는다.
+    func testRefreshTokenSuccessDoesNotCreateSnapshotWhenMissing() async {
+        let oldExpiry = referenceDate.addingTimeInterval(300)
+        let newExpiry = referenceDate.addingTimeInterval(3600)
+
+        var initialState = AccountAccessFeature.State()
+        initialState.hasAccountSession = true
+        initialState.ttlTimerActive = true
+        initialState.sessionExpiresAt = oldExpiry
+        initialState.status = .coreLicenseActive
+        initialState.trialExpiresAt = referenceDate.addingTimeInterval(86400)
+        initialState.snapshot = nil
+        initialState.consecutiveRefreshFailures = 2
+
+        let store = makeTestStore(initialState: initialState)
+
+        await store.send(._refreshTokenResult(.success(
+            AccountSession(
+                accessToken: "refreshed-token",
+                status: .coreLicenseActive,
+                expiresAt: newExpiry,
+            ),
+        ))) { state in
+            state.consecutiveRefreshFailures = 0
+            state.sessionExpiresAt = newExpiry
+        }
+
+        XCTAssertEqual(store.state.sessionExpiresAt, newExpiry)
+        XCTAssertNil(store.state.snapshot)
+        await store.finish()
+    }
+
     // (Task 14 제거) testValidSessionRestoreResetsStaleFetchRetryCount
     // "새 session boundary가 과거 retry budget을 0으로 초기화" 불변식은 onAppear 전환 시나리오에만
     // 의미가 있었다. launch hydration은 앱 최초 상태이므로 초기화할 과거 budget이 없고,
@@ -191,6 +277,54 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             .blocked,
             "session 없음 → accountAccessStepState=.blocked",
         )
+        await store.finish()
+    }
+
+    /// ACC-001-restore_account_session: launch snapshot hydration은 이전 TTL timer를 취소한다.
+    /// spec citations: auth_session_contract.toml:34-41, 001-auth-token-refresh-storage-policy.md
+    /// - 검증 내용: session-present hydrate로 TTL timer를 시작한 뒤 session-absent hydrate가 기존 timer를 cancel한다.
+    /// - 사전 조건: first hydrate는 session-present, second hydrate는 session-absent.
+    /// - 기대 결과: second hydrate 후 ttlTimerActive=false, stale _ttlTimerTicked가 남아 있지 않아 finish()가 통과한다.
+    func testHydrateLaunchSnapshotCancelsPreviousTtlTimer() async {
+        let signedInSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: referenceDate.addingTimeInterval(86400),
+            fetchedAt: referenceDate,
+            sessionExpiresAt: referenceDate.addingTimeInterval(3600),
+        )
+        let loggedOutSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: referenceDate.addingTimeInterval(86400),
+            fetchedAt: referenceDate,
+            sessionExpiresAt: nil,
+        )
+
+        let store = makeTestStore()
+
+        await store.send(.hydrateLaunchSnapshot(signedInSnapshot)) { state in
+            state.status = signedInSnapshot.status
+            state.snapshot = signedInSnapshot
+            state.trialExpiresAt = signedInSnapshot.currentPeriodEnd
+            state.hasAccountSession = true
+            state.sessionExpiresAt = signedInSnapshot.sessionExpiresAt
+            state.isSessionExpired = false
+            state.didBootstrap = true
+            state.fetchGeneration = 1
+            state.ttlTimerActive = true
+        }
+
+        await store.send(.hydrateLaunchSnapshot(loggedOutSnapshot)) { state in
+            state.status = loggedOutSnapshot.status
+            state.snapshot = loggedOutSnapshot
+            state.trialExpiresAt = loggedOutSnapshot.currentPeriodEnd
+            state.hasAccountSession = false
+            state.sessionExpiresAt = nil
+            state.isSessionExpired = false
+            state.didBootstrap = true
+            state.fetchGeneration = 2
+            state.ttlTimerActive = false
+        }
+
         await store.finish()
     }
 
