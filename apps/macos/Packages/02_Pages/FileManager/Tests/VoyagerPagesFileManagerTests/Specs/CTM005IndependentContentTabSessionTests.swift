@@ -5132,6 +5132,9 @@ extension CTM005IndependentContentTabSessionTests {
         backgroundContent.aiChat.lastExecutionFailure = .unknown
 
         var state = FileManagerFeature.State()
+        state.content.aiChat.sessionID = aiSessionID
+        state.content.aiChat.sessionStatus = .active
+        state.content.aiChat.transcriptHistory = [AiChatMessage(role: .user, content: "active")]
         state.backgroundAiChatStates[aiSessionID] = backgroundContent
 
         let store = TestStore(initialState: state) {
@@ -5150,6 +5153,7 @@ extension CTM005IndependentContentTabSessionTests {
             store.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase,
             .persistenceRecovery(oldRecoveryLock, .unknown),
         )
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory.map(\.content), ["active"])
 
         await store.send(.backgroundAiChat(.persistenceRecoverySucceeded(newLock)))
 
