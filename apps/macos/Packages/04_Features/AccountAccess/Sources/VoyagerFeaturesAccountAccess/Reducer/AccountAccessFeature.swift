@@ -39,6 +39,7 @@ public struct AccountAccessFeature {
         static let fetchRetry = "accountAccessFetchRetry"
         static let appDidBecomeActiveObserver = "accountAccessAppDidBecomeActiveObserver"
         static let signInHandoff = "accountAccessSignInHandoff"
+        static let refreshToken = "accountAccessRefreshToken"
         static let ttlTimer = "accountAccessTtlTimer"
     }
 
@@ -368,26 +369,30 @@ public struct AccountAccessFeature {
         }
     }
 
-    /// Token refresh → persist session (network + file I/O cross-seam).
     private func performTokenRefresh() -> Effect<Action> {
         .run { [authNetwork, sessionClient] send in
-            let session = try await authNetwork.refreshToken()
-            try await sessionClient.persist(session)
-            await send(._refreshTokenResult(.success(session)))
-        } catch: { error, send in
-            let mappedError: AccessError = if let accessError = error as? AccessError {
-                accessError
-            } else {
-                .networkFailure
+            do {
+                let session = try await authNetwork.refreshToken()
+                try Task.checkCancellation()
+                try await sessionClient.persist(session)
+                try Task.checkCancellation()
+                await send(._refreshTokenResult(.success(session)))
+            } catch is CancellationError {
+                return
+            } catch {
+                let mappedError: AccessError = if let accessError = error as? AccessError {
+                    accessError
+                } else {
+                    .networkFailure
+                }
+                await send(._refreshTokenResult(.failure(mappedError)))
             }
-            await send(._refreshTokenResult(.failure(mappedError)))
         }
+        .cancellable(id: CancelID.refreshToken, cancelInFlight: true)
     }
 }
 
 private extension AccountAccessFeature {
-    // MARK: - ONB-002-start_access_unlock_recovery
-
     private func handleRefreshAccessTapped(_ state: inout State) -> Effect<Action> {
         guard state.canRefreshAccess else {
             return .none
@@ -601,8 +606,6 @@ private extension AccountAccessFeature {
         }
     }
 
-    // MARK: - Foreground 활성화 관찰
-
     /// 앱이 foreground로 돌아올 때 access_status를 자동 갱신한다.
     private func observeAppDidBecomeActive() -> Effect<Action> {
         .run { [notificationCenterClient] send in
@@ -615,8 +618,6 @@ private extension AccountAccessFeature {
         }
         .cancellable(id: CancelID.appDidBecomeActiveObserver, cancelInFlight: true)
     }
-
-    // MARK: - TTL 타이머
 
     /// 60초 간격으로 TTL을 확인하는 타이머를 시작한다.
     private func startTtlTimer() -> Effect<Action> {
@@ -681,8 +682,7 @@ private extension AccountAccessFeature {
         }
     }
 
-    /// 사용자 로그아웃 처리. session 삭제, snapshot 제거, 상태 초기화, TTL 타이머 중단, delegate 전송.
-    /// ACC-001: 서버 오류는 사용자에게 미표시 (best-effort delete).
+    /// 사용자 로그아웃 처리.
     private func handleSignOut(_ state: inout State) -> Effect<Action> {
         guard state.hasAccountSession else { return .none }
         state.hasAccountSession = false
@@ -701,22 +701,21 @@ private extension AccountAccessFeature {
             .cancel(id: CancelID.ttlTimer),
             .cancel(id: CancelID.fetchStatus),
             .cancel(id: CancelID.fetchRetry),
+            .cancel(id: CancelID.refreshToken),
         )
     }
 
-    /// 세션 만료 처리. dedup guard: 이미 만료 상태면 무시.
+    /// 세션 만료 처리.
     private func handleSessionExpiredDetected(_ state: inout State) -> Effect<Action> {
         guard !state.isSessionExpired else { return .none }
 
         state.hasAccountSession = false
         state.didSignInFail = true
         state.isSessionExpired = true
-        // VOY-397: 세션 만료 시에도 이전 active entitlement fact를 제거한다.
-        // 방치 시 Active chip + Sign In 버튼 + Next CTA 동시 표시 regression (nil-session 복원과 동일 원인).
+        // VOY-397: 세션 만료 시 stale active facts 제거.
         clearStaleActiveAccessFacts(&state)
         resetSessionRetryBudget(&state)
-        // VOY-397: 세션 만료 시 in-flight access_status 응답이 stale active fact를 재주입하지 못하도록
-        // fetchGeneration을 무효화하고 진행 중 fetch effect를 취소한다.
+        // VOY-397: 세션 만료 시 in-flight access_status 응답 재주입 방지.
         state.fetchGeneration += 1
         state.ttlTimerActive = false
         state.sessionExpiresAt = nil
@@ -730,6 +729,7 @@ private extension AccountAccessFeature {
             .cancel(id: CancelID.fetchStatus),
             .cancel(id: CancelID.ttlTimer),
             .cancel(id: CancelID.fetchRetry),
+            .cancel(id: CancelID.refreshToken),
         )
     }
 

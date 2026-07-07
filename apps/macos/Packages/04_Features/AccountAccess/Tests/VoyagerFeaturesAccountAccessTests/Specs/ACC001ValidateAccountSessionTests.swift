@@ -1,5 +1,3 @@
-// swiftlint:disable force_unwrapping
-
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
 import XCTest
@@ -241,6 +239,62 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         XCTAssertFalse(store.state.ttlTimerActive)
     }
 
+    /// ACC-001-sign_out_account: signOut은 진행 중인 refresh를 취소해 늦은 persist를 막는다.
+    func testSignOutCancelsInFlightRefreshBeforePersistingSession() async {
+        nonisolated(unsafe) var refreshContinuation: CheckedContinuation<AccountSession, Never>?
+        nonisolated(unsafe) var persistCalled = false
+
+        let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: { nil },
+                persist: { _ in persistCalled = true },
+                delete: { _ in },
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                refreshToken: {
+                    await withCheckedContinuation { refreshContinuation = $0 }
+                },
+            ),
+            initialState: sessionNearExpiryState(),
+        )
+        store.exhaustivity = .off
+
+        await store.send(AccountAccessAction._ttlTimerTicked)
+        for _ in 0 ..< 10 where refreshContinuation == nil {
+            await Task.yield()
+        }
+        XCTAssertNotNil(refreshContinuation)
+
+        await store.send(.signOut) { state in
+            state.hasAccountSession = false
+            state.didSignInFail = false
+            state.status = nil
+            state.snapshot = nil
+            state.isSessionExpired = true
+            state.ttlTimerActive = false
+            state.sessionExpiresAt = nil
+            state.fetchGeneration = 1
+        }
+        await store.receive(\.delegate.signedOut)
+
+        refreshContinuation?.resume(
+            returning: AccountSession(
+                accessToken: "rotated-token",
+                status: .coreLicenseActive,
+                refreshToken: "rotated-refresh-token",
+                expiresAt: referenceDate.addingTimeInterval(3600),
+            ),
+        )
+        await Task.yield()
+
+        XCTAssertFalse(persistCalled)
+        XCTAssertFalse(store.state.hasAccountSession)
+        XCTAssertTrue(store.state.isSessionExpired)
+        await store.finish()
+    }
+
     /// ACC-001-validate_account_session: 3회 연속 네트워크 오류 발생 시 세션이 만료 처리된다.
     /// consecutiveRefreshFailures가 threshold(3)에 도달하면 _sessionExpiredDetected가 트리거되는지 검증한다.
     /// - 검증 내용: 3회 연속 networkFailure → _sessionExpiredDetected → 세션 만료 상태로 전환된다.
@@ -307,5 +361,3 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         }
     }
 }
-
-// swiftlint:enable force_unwrapping
