@@ -161,6 +161,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
         } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { false }
             $0.pathProbeClient.probeExistence = { _ in
                 PathProbeResult(exists: false, isDirectory: false)
             }
@@ -256,6 +257,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: state) {
             AppRootFeature()
         } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { false }
             $0.pathProbeClient.probeExistence = { _ in
                 PathProbeResult(exists: false, isDirectory: false)
             }
@@ -263,6 +265,45 @@ final class AppRootFeatureContractTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded))) {
+            $0.pendingExternalURLs = []
+        }
+        await store.receive { action in
+            guard case let .externalFileRouter(.receive(receivedURL)) = action else { return false }
+            return receivedURL == url
+        }
+    }
+
+    func testLifecycleDelegateKeepsPendingExternalURLWhenOnboardingRequired() async throws {
+        let url = try XCTUnwrap(URL(string: "voyager://open?url=file:///tmp/voyager-onboarding-url"))
+        let windowID = UUID()
+        var state = AppRootFeature.State()
+        state.pendingExternalURLs = [url]
+        state.isExternalURLFlushDelegateScheduled = true
+
+        let store = TestStore(initialState: state) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { true }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: false, isDirectory: false)
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded))) {
+            $0.isExternalURLFlushDelegateScheduled = false
+        }
+        XCTAssertEqual(store.state.pendingExternalURLs, [url])
+
+        await store.send(.windowManager(.file(.newWindow(path: nil)))) {
+            $0.windowManager.windows = [
+                WindowSessionState(id: windowID, window: .makeInitial(path: nil)),
+            ]
+            $0.windowManager.focusedWindowID = windowID
             $0.pendingExternalURLs = []
         }
         await store.receive { action in
@@ -329,6 +370,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: state) {
             AppRootFeature()
         } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { false }
             $0.pathProbeClient.probeExistence = { _ in
                 PathProbeResult(exists: false, isDirectory: false)
             }
@@ -436,6 +478,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
         } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { false }
             $0.pathProbeClient.probeExistence = { _ in
                 PathProbeResult(exists: false, isDirectory: false)
             }

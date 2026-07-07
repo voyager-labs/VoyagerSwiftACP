@@ -5,6 +5,7 @@ import VoyagerEntitiesCollection
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesFileManager
+import VoyagerPagesOnboarding
 import VoyagerPagesSettings
 import VoyagerShared
 
@@ -17,6 +18,8 @@ struct AppRootFeature {
     private var collectionAlertClient
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
+    @Dependency(\.onboardingWindowClient)
+    private var onboardingWindowClient
 
     private enum CancelID {
         static let appDidBecomeActiveObserver = "appDidBecomeActiveObserver"
@@ -88,6 +91,7 @@ struct AppRootFeature {
             case .openInitialWindowIfNeeded:
                 if hasPendingExternalRoutes(state) {
                     state.isExternalURLFlushDelegateScheduled = false
+                    guard !onboardingWindowClient.isRequired() else { return .none }
                     return flushPendingExternalRoutes(state: &state)
                 }
                 if state.isExternalURLRouteInFlightWithoutWindow {
