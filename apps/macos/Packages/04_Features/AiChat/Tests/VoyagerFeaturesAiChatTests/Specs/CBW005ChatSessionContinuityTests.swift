@@ -1316,7 +1316,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             state.sessionList.errorMessage = nil
         }
 
-        await store.send(.persistenceFailed(renamedFinalLock, .unknown)) { state in
+        await store.send(.persistenceFailed(finalLock, .unknown)) { state in
             state.backgroundExecutionPhases[finalizedLock.requestID] = AiChatExecutionPhase.persistenceRecovery(
                 renamedFinalLock,
                 .unknown,

@@ -37,14 +37,18 @@ extension AiChatFeature {
     {
         switch state.executionPhase {
         case let .completed(currentLock):
-            guard currentLock.requestID == lock.requestID else { return .none }
-            state.executionPhase = .persistenceRecovery(lock, failure)
+            guard currentLock.requestID == lock.requestID,
+                  currentLock.runID == lock.runID
+            else { return .none }
+            state.executionPhase = .persistenceRecovery(currentLock, failure)
             state.lastExecutionFailure = failure
             return .none
 
         case let .persistenceRecovery(currentLock, _):
-            guard currentLock.requestID == lock.requestID else { return .none }
-            state.executionPhase = .persistenceRecovery(lock, failure)
+            guard currentLock.requestID == lock.requestID,
+                  currentLock.runID == lock.runID
+            else { return .none }
+            state.executionPhase = .persistenceRecovery(currentLock, failure)
             state.lastExecutionFailure = failure
             return .none
 
@@ -53,16 +57,17 @@ extension AiChatFeature {
                   let backgroundLock = backgroundPhase.lock,
                   backgroundLock.runID == lock.runID
             else { return .none }
-            state.backgroundExecutionPhases[lock.requestID] = .persistenceRecovery(lock, failure)
+            state.backgroundExecutionPhases[lock.requestID] = .persistenceRecovery(backgroundLock, failure)
             return .none
         }
     }
 
     func handlePersistenceRecoverySucceeded(lock: AiChatRequestLock, state: inout State) -> Effect<Action> {
         if case let .persistenceRecovery(currentLock, _) = state.executionPhase,
-           currentLock.requestID == lock.requestID
+           currentLock.requestID == lock.requestID,
+           currentLock.runID == lock.runID
         {
-            state.executionPhase = .completed(lock)
+            state.executionPhase = .completed(currentLock)
             state.lastExecutionFailure = nil
             return .none
         }
@@ -71,7 +76,7 @@ extension AiChatFeature {
               let backgroundLock = backgroundPhase.lock,
               backgroundLock.runID == lock.runID
         else { return .none }
-        state.backgroundExecutionPhases[lock.requestID] = .completed(lock)
+        state.backgroundExecutionPhases[lock.requestID] = .completed(backgroundLock)
         return .none
     }
 
@@ -81,9 +86,10 @@ extension AiChatFeature {
         state: inout State,
     ) -> Effect<Action> {
         if case let .persistenceRecovery(currentLock, _) = state.executionPhase,
-           currentLock.requestID == lock.requestID
+           currentLock.requestID == lock.requestID,
+           currentLock.runID == lock.runID
         {
-            state.executionPhase = .persistenceRecovery(lock, failure)
+            state.executionPhase = .persistenceRecovery(currentLock, failure)
             state.lastExecutionFailure = failure
             return .none
         }
@@ -92,7 +98,7 @@ extension AiChatFeature {
               let backgroundLock = backgroundPhase.lock,
               backgroundLock.runID == lock.runID
         else { return .none }
-        state.backgroundExecutionPhases[lock.requestID] = .persistenceRecovery(lock, failure)
+        state.backgroundExecutionPhases[lock.requestID] = .persistenceRecovery(backgroundLock, failure)
         return .none
     }
 

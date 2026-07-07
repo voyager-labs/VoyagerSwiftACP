@@ -1436,7 +1436,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         await store.receive(.persistenceFailed(finalizedLockWithSnapshot, .unknown)) { state in
             state.lastExecutionFailure = .unknown
-            state.executionPhase = .persistenceRecovery(finalizedLockWithSnapshot, .unknown)
+            state.executionPhase = .persistenceRecovery(finalizedLock, .unknown)
         }
 
         XCTAssertEqual(store.state.transcriptHistory, [

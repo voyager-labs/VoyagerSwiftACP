@@ -97,7 +97,16 @@ public actor AiChatSessionFileStore: AiChatSessionPersistenceClientProtocol {
                 return
             }
 
-            let data = try encoder.encode(snapshot)
+            let snapshotToSave: AiChatSessionSnapshot = if fileManager.fileExists(atPath: fileURL.path),
+                                                           let existingSnapshot = try loadSnapshotIfValid(at: fileURL),
+                                                           let mergedSnapshot = snapshot
+                                                           .mergingExistingIndependentMetadata(from: existingSnapshot)
+            {
+                mergedSnapshot
+            } else {
+                snapshot
+            }
+            let data = try encoder.encode(snapshotToSave)
             try replaceSessionFile(at: fileURL, with: data)
         }
     }
@@ -272,6 +281,30 @@ private extension AiChatSessionSnapshot {
             sessionID: sessionID,
             status: status,
             customTitle: snapshot.customTitle,
+            provider: provider,
+            model: model,
+            selectedModelRow: selectedModelRow,
+            selectedThinking: selectedThinking,
+            transcriptHistory: transcriptHistory,
+            lastRequestID: lastRequestID,
+            lastRunID: lastRunID,
+            lastRequestContext: lastRequestContext,
+            updatedAtMs: updatedAtMs,
+        )
+    }
+
+    func mergingExistingIndependentMetadata(from existingSnapshot: AiChatSessionSnapshot) -> AiChatSessionSnapshot? {
+        guard sessionID == existingSnapshot.sessionID,
+              existingSnapshot.representsMetadataOnlyChange(from: self),
+              existingSnapshot.customTitle != customTitle
+        else {
+            return nil
+        }
+
+        return AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: status,
+            customTitle: existingSnapshot.customTitle,
             provider: provider,
             model: model,
             selectedModelRow: selectedModelRow,
