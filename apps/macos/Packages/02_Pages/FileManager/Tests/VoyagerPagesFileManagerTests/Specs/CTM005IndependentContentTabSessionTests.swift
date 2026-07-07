@@ -4776,6 +4776,128 @@ extension CTM005IndependentContentTabSessionTests {
         )
     }
 
+    func testBackgroundSnapshotPersistedRemovesOnlyMatchingRequestOwner() async {
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let oldLock = makeRequestLock(sessionID: sessionID)
+        let newLock = makeRequestLock(sessionID: sessionID)
+        let oldSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: nil,
+            model: nil,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "old"),
+                AiChatMessage(role: .assistant, content: "old done"),
+            ],
+            lastRequestID: oldLock.requestID,
+            lastRunID: oldLock.runID,
+            lastRequestContext: oldLock.context.requestContext,
+            updatedAtMs: 1_234_567_890_000,
+        )
+        let newSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: nil,
+            model: nil,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "new"),
+                AiChatMessage(role: .assistant, content: "new done"),
+            ],
+            lastRequestID: newLock.requestID,
+            lastRunID: newLock.runID,
+            lastRequestContext: newLock.context.requestContext,
+            updatedAtMs: 1_234_567_891_000,
+        )
+        let oldOwner = oldLock.recordingFinalSnapshot(oldSnapshot)
+        let newOwner = newLock.recordingFinalSnapshot(newSnapshot)
+
+        var backgroundContent = FileManagerContentFeature.State()
+        backgroundContent.aiChat.sessionID = sessionID
+        backgroundContent.aiChat.executionPhase = .persistenceRecovery(oldOwner, .unknown)
+        backgroundContent.aiChat.backgroundExecutionPhases[newLock.requestID] = .completed(newOwner)
+
+        var state = FileManagerFeature.State()
+        state.backgroundAiChatStates[sessionID] = backgroundContent
+
+        let store: TestStore<FileManagerFeature.State, FileManagerWindowAction> = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_891))
+            $0.uuid = .incrementing
+        }
+        store.exhaustivity = .off
+
+        await store.send(.backgroundAiChatSnapshotPersisted(newSnapshot))
+        await store.finish()
+
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[sessionID]?.aiChat.executionPhase,
+            .persistenceRecovery(oldOwner, .unknown),
+        )
+        XCTAssertNil(store.state.backgroundAiChatStates[sessionID]?.aiChat.backgroundExecutionPhases[newLock.requestID])
+        XCTAssertNotNil(store.state.backgroundAiChatStates[sessionID])
+    }
+
+    func testAddBackgroundAiChatStatePreservesExistingPendingResolver() throws {
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let oldLock = makeRequestLock(sessionID: aiSessionID)
+        let newLock = makeRequestLock(sessionID: aiSessionID)
+        let oldModel = try XCTUnwrap(oldLock.context.selectedModel)
+        let newModel = try XCTUnwrap(newLock.context.selectedModel)
+        let oldResolutionID = UUID()
+        let newResolutionID = UUID()
+
+        func pendingRequest(
+            resolutionID: UUID,
+            lock: AiChatRequestLock,
+            selectedModel: AiProviderModel,
+        ) -> AiChatPendingRequestStart {
+            AiChatPendingRequestStart(
+                resolutionID: resolutionID,
+                kind: .submit,
+                sessionID: aiSessionID,
+                selectedModel: selectedModel,
+                selectedRow: lock.selectedModelRow,
+                preparedRequest: AiChatPreparedRequest(
+                    prompt: "test",
+                    messages: lock.request.messages,
+                    assistantReplacementIndex: nil,
+                    historyTruncation: AiChatHistoryTruncationMetadata(
+                        includedMessageCount: lock.request.messages.count,
+                        excludedMessageCount: 0,
+                        budget: 24000,
+                        truncationReason: nil,
+                    ),
+                ),
+            )
+        }
+
+        var existingContent = FileManagerContentFeature.State()
+        existingContent.aiChat.sessionID = aiSessionID
+        existingContent.aiChat.pendingRequestStart = pendingRequest(
+            resolutionID: oldResolutionID,
+            lock: oldLock,
+            selectedModel: oldModel,
+        )
+
+        var newContent = FileManagerContentFeature.State()
+        newContent.aiChat.sessionID = aiSessionID
+        newContent.aiChat.pendingRequestStart = pendingRequest(
+            resolutionID: newResolutionID,
+            lock: newLock,
+            selectedModel: newModel,
+        )
+
+        var state = FileManagerFeature.State()
+        state.backgroundAiChatStates[aiSessionID] = existingContent
+        state.addBackgroundAiChatState(sessionID: aiSessionID, state: newContent)
+
+        XCTAssertEqual(
+            state.backgroundAiChatStates[aiSessionID]?.aiChat.pendingRequestStart?.resolutionID,
+            oldResolutionID,
+        )
+    }
+
     func testAiChatTabSwitchStoresPendingRequestUnderPendingSessionID() async throws {
         let aiChatTabID = ContentTabID()
         let homeTabID = ContentTabID()

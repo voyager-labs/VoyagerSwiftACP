@@ -434,8 +434,10 @@ extension FileManagerInspectorFeature.State {
 
 private extension AiChatFeature.State {
     mutating func mergeBackgroundLifecycleOwners(from existingState: Self) {
-        if pendingRequestStart == nil {
-            pendingRequestStart = existingState.pendingRequestStart
+        if let existingPendingRequestStart = existingState.pendingRequestStart,
+           pendingRequestStart?.resolutionID != existingPendingRequestStart.resolutionID
+        {
+            pendingRequestStart = existingPendingRequestStart
         }
         mergeBackgroundLifecycleOwner(existingState.executionPhase)
         for phase in existingState.backgroundExecutionPhases.values {

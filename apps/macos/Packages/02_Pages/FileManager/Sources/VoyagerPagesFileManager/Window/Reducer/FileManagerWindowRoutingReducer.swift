@@ -1065,14 +1065,24 @@ private func handleBackgroundAiChatSnapshotPersisted(
     state: inout FileManagerWindowState,
 ) {
     let summary = AiChatSessionSummary(snapshot: snapshot)
-    guard let backgroundAiChat = state.backgroundAiChatStates[snapshot.sessionID]?.aiChat else { return }
+    guard var backgroundContent = state.backgroundAiChatStates[snapshot.sessionID] else { return }
+    let ownerRemoval = backgroundAiChatOwnerRemoval(
+        requestID: snapshot.lastRequestID,
+        runID: snapshot.lastRunID,
+        backgroundAiChat: backgroundContent.aiChat,
+    )
     refreshAiChatSnapshotsFromBackgroundIfNeeded(
         summary: summary,
         snapshot: snapshot,
-        backgroundAiChat: backgroundAiChat,
+        backgroundAiChat: backgroundContent.aiChat,
         state: &state,
     )
-    state.removeBackgroundAiChatState(sessionID: snapshot.sessionID)
+    backgroundContent.aiChat.removeBackgroundOwner(ownerRemoval)
+    if backgroundContent.aiChat.hasRemainingBackgroundLifecycleOwner {
+        state.backgroundAiChatStates[snapshot.sessionID] = backgroundContent
+    } else {
+        state.removeBackgroundAiChatState(sessionID: snapshot.sessionID)
+    }
 }
 
 private func handleBackgroundInspectorAiChatSnapshotPersisted(
@@ -1080,14 +1090,24 @@ private func handleBackgroundInspectorAiChatSnapshotPersisted(
     state: inout FileManagerWindowState,
 ) {
     let summary = AiChatSessionSummary(snapshot: snapshot)
-    guard let inspectorState = state.backgroundInspectorAiChatStates[snapshot.sessionID] else { return }
+    guard var inspectorState = state.backgroundInspectorAiChatStates[snapshot.sessionID] else { return }
+    let ownerRemoval = backgroundAiChatOwnerRemoval(
+        requestID: snapshot.lastRequestID,
+        runID: snapshot.lastRunID,
+        backgroundAiChat: inspectorState.aiChat,
+    )
     refreshAiChatSnapshotsFromBackgroundIfNeeded(
         summary: summary,
         snapshot: snapshot,
         backgroundAiChat: inspectorState.aiChat,
         state: &state,
     )
-    state.removeBackgroundInspectorAiChatState(sessionID: snapshot.sessionID)
+    inspectorState.aiChat.removeBackgroundOwner(ownerRemoval)
+    if inspectorState.aiChat.hasRemainingBackgroundLifecycleOwner {
+        state.backgroundInspectorAiChatStates[snapshot.sessionID] = inspectorState.tabSnapshot()
+    } else {
+        state.removeBackgroundInspectorAiChatState(sessionID: snapshot.sessionID)
+    }
 }
 
 private struct BackgroundFinalSnapshotContext {
