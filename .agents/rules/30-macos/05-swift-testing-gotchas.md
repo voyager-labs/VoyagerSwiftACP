@@ -14,7 +14,6 @@ globs: "apps/macos/**/*.swift"
 
 - Do not use bare `.none` in test assertions when the type is optional-compatible and has a `.none` case — it will resolve to `Optional.none`.
 - Do not attempt `Set<T>` when `T` is not `Hashable`.
-- Do not write tests that read Swift source files to assert literal strings, view type names, or declaration order as behavior proof — they couple tests to source text, not behavior. Verify observable behavior instead: TCA action/state/effect assertions, accessibility, hitTest/drop behavior, dependency-call assertions. Fixture/data-file assertions remain allowed when behavior genuinely depends on fixture content.
 
 ## Execution steps
 
