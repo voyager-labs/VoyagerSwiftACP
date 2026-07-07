@@ -75,8 +75,11 @@ public struct SessionLapseGuardView: View {
                 let isSignInInProgress = viewStore.isSignInInProgress
                 let errorMessage = viewStore.errorMessage
 
-                let shouldShow = didSignInFail
-                    || (!hasAccountSession && !isSignInInProgress)
+                let shouldShow = Self.shouldShow(
+                    didSignInFail: didSignInFail,
+                    hasAccountSession: hasAccountSession,
+                    isSignInInProgress: isSignInInProgress,
+                )
 
                 if shouldShow {
                     ZStack {
@@ -136,5 +139,13 @@ public struct SessionLapseGuardView: View {
             return "Session expired. Log in again to continue."
         }
         return "Log in to continue."
+    }
+
+    static func shouldShow(
+        didSignInFail: Bool,
+        hasAccountSession: Bool,
+        isSignInInProgress: Bool,
+    ) -> Bool {
+        didSignInFail || !hasAccountSession || isSignInInProgress
     }
 }

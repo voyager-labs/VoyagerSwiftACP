@@ -1,5 +1,3 @@
-// swiftlint:disable force_unwrapping
-
 @testable import VoyagerFeaturesAccountAccess
 import XCTest
 
@@ -18,7 +16,7 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
 
         XCTAssertEqual(state.accountAccessAuthAxis, .signInFailed)
         XCTAssertTrue(state.didSignInFail)
-        // guard 표시 조건: didSignInFail || (!hasAccountSession && !isSignInInProgress)
+        // guard 표시 조건: didSignInFail || !hasAccountSession || isSignInInProgress
         XCTAssertTrue(state.didSignInFail, "session_expired → guard 표시")
     }
 
@@ -38,7 +36,7 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
     }
 
     /// ACC-003-guard_session_lapse: logged_out 상태에서 로그인필요 다이얼로그가 표시된다.
-    /// hasAccountSession=false, isSignInInProgress=false일 때 guard 표시 조건을 검증한다.
+    /// hasAccountSession=false일 때 guard 표시 조건을 검증한다.
     /// - 검증 내용: accountAccessAuthAxis == .signedOut, canStartLogin == true
     /// - 사전 조건: !hasAccountSession && !isSignInInProgress
     /// - 기대 결과: 로그인 필요 다이얼로그 표시 조건 충족
@@ -49,9 +47,43 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
 
         XCTAssertEqual(state.accountAccessAuthAxis, .signedOut)
         XCTAssertTrue(state.canStartLogin, "logged_out → 로그인 CTA 활성화")
-        // guard 표시 조건: !hasAccountSession && !isSignInInProgress
+        // guard 표시 조건: didSignInFail || !hasAccountSession || isSignInInProgress
         XCTAssertFalse(state.hasAccountSession, "logged_out → hasAccountSession == false")
         XCTAssertFalse(state.isSignInInProgress, "logged_out → isSignInInProgress == false")
+    }
+
+    /// ACC-003-guard_session_lapse: 로그인 진행 중에는 overlay가 계속 표시된다.
+    /// isSignInInProgress == true 인 동안 guard가 즉시 해제되지 않는지 검증한다.
+    /// - 검증 내용: shouldShow == true during sign-in progress
+    /// - 사전 조건: isSignInInProgress == true
+    /// - 기대 결과: 로그인 진행 중에는 guard 유지, 성공 후에만 해제
+    func testSignInInProgressKeepsOverlayVisible() {
+        XCTAssertTrue(
+            SessionLapseGuardView.shouldShow(
+                didSignInFail: false,
+                hasAccountSession: false,
+                isSignInInProgress: true,
+            ),
+            "sign-in progress → guard 유지",
+        )
+
+        XCTAssertTrue(
+            SessionLapseGuardView.shouldShow(
+                didSignInFail: false,
+                hasAccountSession: true,
+                isSignInInProgress: true,
+            ),
+            "sign-in progress → session 복원 전에도 guard 유지",
+        )
+
+        XCTAssertFalse(
+            SessionLapseGuardView.shouldShow(
+                didSignInFail: false,
+                hasAccountSession: true,
+                isSignInInProgress: false,
+            ),
+            "success state → guard 해제",
+        )
     }
 
     /// ACC-003-guard_session_lapse: 로그인 CTA 선택 시 ACC-001-start_account_sign_in 호출이 가능하다.
@@ -94,8 +126,8 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
         state.didSignInFail = false
 
         XCTAssertEqual(state.accountAccessAuthAxis, .signedIn)
-        // guard 표시 조건: didSignInFail || (!hasAccountSession && !isSignInInProgress)
-        // 두 조건 모두 false → guard 해제
+        // guard 표시 조건: didSignInFail || !hasAccountSession || isSignInInProgress
+        // 재인증 완료 후 didSignInFail=false, hasAccountSession=true → guard 해제
         XCTAssertFalse(state.didSignInFail, "재인증 완료 → didSignInFail 해제")
         XCTAssertTrue(state.hasAccountSession, "재인증 완료 → hasAccountSession 복원")
     }
@@ -141,9 +173,8 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
 
         // view는 호출 측에서 각 window에 추가해야 함 (covers_all_windows)
         // state 레벨에서는 두 window 모두 동일한 표시 조건을 가짐
-        XCTAssertEqual(
+        XCTAssertTrue(
             expiredState.accountAccessAuthAxis == .signInFailed || loggedOutState.accountAccessAuthAxis == .signedOut,
-            true,
             "모든 window가 동일한 guard 조건을 충족",
         )
     }
@@ -252,5 +283,3 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
         XCTAssertEqual(loggedOutState.accountAccessAuthAxis, .signedOut)
     }
 }
-
-// swiftlint:enable force_unwrapping
