@@ -322,6 +322,15 @@ struct FileManagerWindowRoutingReducer {
                 state.removeBackgroundInspectorAiChatState(sessionID: sessionID)
                 return .none
 
+            case let .content(.aiChat(.sessionRenameSucceeded(summary, customTitle))),
+                 let .inspector(.aiChat(.sessionRenameSucceeded(summary, customTitle))):
+                refreshBackgroundAiChatCustomTitle(
+                    sessionID: summary.sessionID,
+                    customTitle: customTitle,
+                    state: &state,
+                )
+                return .none
+
             case let .content(.aiChat(aiChatAction)):
                 return routeBackgroundAiChatAction(aiChatAction, state: &state)
 
@@ -864,6 +873,21 @@ private func cancelAndRemoveBackgroundAiChatOwners(
     return .merge(effects)
 }
 
+private func refreshBackgroundAiChatCustomTitle(
+    sessionID: AiChatSessionID,
+    customTitle: String?,
+    state: inout FileManagerWindowState,
+) {
+    if var backgroundContent = state.backgroundAiChatStates[sessionID] {
+        backgroundContent.aiChat.refreshExecutionOwnerCustomTitle(sessionID: sessionID, customTitle: customTitle)
+        state.backgroundAiChatStates[sessionID] = backgroundContent
+    }
+    if var backgroundInspector = state.backgroundInspectorAiChatStates[sessionID] {
+        backgroundInspector.aiChat.refreshExecutionOwnerCustomTitle(sessionID: sessionID, customTitle: customTitle)
+        state.backgroundInspectorAiChatStates[sessionID] = backgroundInspector.tabSnapshot()
+    }
+}
+
 private func routeBackgroundAiChatAction(
     _ aiChatAction: AiChatAction,
     state: inout FileManagerWindowState,
@@ -1152,7 +1176,6 @@ private extension AiChatSessionSummary {
     }
 }
 
-
 private func routeInactiveInspectorAiChatAction(
     _ aiChatAction: AiChatAction,
     state: inout FileManagerWindowState,
@@ -1321,6 +1344,38 @@ private func aiChatEventRequestID(_ event: AiChatEvent) -> AiChatRequestID? {
     }
 }
 
+private extension AiChatFeature.State {
+    mutating func refreshExecutionOwnerCustomTitle(sessionID: AiChatSessionID, customTitle: String?) {
+        executionPhase = executionPhase.refreshingCustomTitle(sessionID: sessionID, customTitle: customTitle)
+        for (requestID, phase) in backgroundExecutionPhases {
+            backgroundExecutionPhases[requestID] = phase.refreshingCustomTitle(
+                sessionID: sessionID,
+                customTitle: customTitle,
+            )
+        }
+    }
+}
+
+private extension AiChatExecutionPhase {
+    func refreshingCustomTitle(sessionID: AiChatSessionID, customTitle: String?) -> Self {
+        guard lock?.context.sessionID == sessionID else { return self }
+        switch self {
+        case .idle:
+            return .idle
+        case let .processing(lock):
+            return .processing(lock.recordingCustomTitle(customTitle))
+        case let .completed(lock):
+            return .completed(lock.recordingCustomTitle(customTitle))
+        case let .failed(lock, failure):
+            return .failed(lock.recordingCustomTitle(customTitle), failure)
+        case let .cancelled(lock):
+            return .cancelled(lock.recordingCustomTitle(customTitle))
+        case let .persistenceRecovery(lock, failure):
+            return .persistenceRecovery(lock.recordingCustomTitle(customTitle), failure)
+        }
+    }
+}
+
 private func backgroundAiChatSessionID(
     for aiChatAction: AiChatAction,
     state: FileManagerWindowState,
@@ -1348,9 +1403,10 @@ private func shouldRemoveBackgroundAiChatState(after aiChatAction: AiChatAction)
     case let .executionEvent(event):
         if case .failed = event { true } else { false }
     case .sessionSnapshotSaved,
-         .persistenceRecoverySucceeded,
-         .persistenceRecoveryRetryFailed:
+         .persistenceRecoverySucceeded:
         true
+    case .persistenceRecoveryRetryFailed:
+        false
     default:
         false
     }

@@ -462,13 +462,19 @@ extension AiChatFeature {
     }
 
     func moveVisibleProcessingToBackgroundIfNeeded(state: inout State, targetSessionID: AiChatSessionID?) {
-        guard case let .processing(lock) = state.executionPhase,
+        guard let lock = state.executionPhase.lock,
               lock.context.sessionID != targetSessionID
         else { return }
-        state.backgroundExecutionPhases[lock.requestID] = .processing(lock)
-        state.executionPhase = .idle
-        state.lockedModelHandle = nil
-        state.streamingAssistantDraft = nil
+
+        switch state.executionPhase {
+        case .processing, .completed, .persistenceRecovery:
+            state.backgroundExecutionPhases[lock.requestID] = state.executionPhase
+            state.executionPhase = .idle
+            state.lockedModelHandle = nil
+            state.streamingAssistantDraft = nil
+        case .idle, .failed, .cancelled:
+            break
+        }
     }
 
     func cancelRequestLifecycle(for lock: AiChatRequestLock) -> Effect<Action> {

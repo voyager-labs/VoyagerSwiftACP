@@ -5701,6 +5701,119 @@ extension CTM005IndependentContentTabSessionTests {
             backgroundContent.aiChat.executionPhase.lock?.finalSnapshot?.transcriptHistory.map(\.content),
             ["test", "done"],
         )
+
+        func testBackgroundAiChatRenameRefreshesClosedOwnerCustomTitle() async {
+            let aiSessionID = AiChatSessionID(rawValue: UUID())
+            let finalSnapshot = AiChatSessionSnapshot(
+                sessionID: aiSessionID,
+                status: .active,
+                provider: nil,
+                model: nil,
+                selectedModelRow: nil,
+                selectedThinking: nil,
+                transcriptHistory: [
+                    AiChatMessage(role: .user, content: "test"),
+                    AiChatMessage(role: .assistant, content: "done"),
+                ],
+                lastRequestID: nil,
+                lastRunID: nil,
+                lastRequestContext: nil,
+                updatedAtMs: 1_234_567_890_000,
+            )
+            let requestLock = makeRequestLock(sessionID: aiSessionID)
+                .recordingFinalSnapshot(finalSnapshot)
+            var backgroundContent = FileManagerContentFeature.State()
+            backgroundContent.aiChat.sessionID = aiSessionID
+            backgroundContent.aiChat.executionPhase = .completed(requestLock)
+
+            var renamedSnapshot = finalSnapshot
+            renamedSnapshot = AiChatSessionSnapshot(
+                sessionID: aiSessionID,
+                status: .active,
+                customTitle: "Renamed while closed",
+                provider: finalSnapshot.provider,
+                model: finalSnapshot.model,
+                selectedModelRow: finalSnapshot.selectedModelRow,
+                selectedThinking: finalSnapshot.selectedThinking,
+                transcriptHistory: finalSnapshot.transcriptHistory,
+                lastRequestID: finalSnapshot.lastRequestID,
+                lastRunID: finalSnapshot.lastRunID,
+                lastRequestContext: finalSnapshot.lastRequestContext,
+                updatedAtMs: finalSnapshot.updatedAtMs,
+            )
+            let renamedSummary = AiChatSessionSummary(snapshot: renamedSnapshot)
+            let expectedLock = requestLock.recordingCustomTitle("Renamed while closed")
+
+            var state = FileManagerFeature.State()
+            state.backgroundAiChatStates[aiSessionID] = backgroundContent
+
+            let store = TestStore(initialState: state) {
+                FileManagerFeature()
+            }
+            store.exhaustivity = .off
+
+            await store.send(.content(.aiChat(.sessionRenameSucceeded(
+                renamedSummary,
+                customTitle: "Renamed while closed",
+            ))))
+
+            XCTAssertEqual(
+                store.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase,
+                .completed(expectedLock),
+            )
+            XCTAssertEqual(
+                store.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase.lock?.finalSnapshot?.customTitle,
+                "Renamed while closed",
+            )
+            await store.finish()
+        }
+
+        func testBackgroundAiChatRecoveryRetryFailedKeepsClosedOwner() async {
+            let aiSessionID = AiChatSessionID(rawValue: UUID())
+            let finalSnapshot = AiChatSessionSnapshot(
+                sessionID: aiSessionID,
+                status: .active,
+                provider: nil,
+                model: nil,
+                selectedModelRow: nil,
+                selectedThinking: nil,
+                transcriptHistory: [
+                    AiChatMessage(role: .user, content: "test"),
+                    AiChatMessage(role: .assistant, content: "done"),
+                ],
+                lastRequestID: nil,
+                lastRunID: nil,
+                lastRequestContext: nil,
+                updatedAtMs: 1_234_567_890_000,
+            )
+            let requestLock = makeRequestLock(sessionID: aiSessionID)
+                .recordingFinalSnapshot(finalSnapshot)
+            var backgroundContent = FileManagerContentFeature.State()
+            backgroundContent.aiChat.sessionID = aiSessionID
+            backgroundContent.aiChat.executionPhase = .persistenceRecovery(requestLock, .unknown)
+            backgroundContent.aiChat.lastExecutionFailure = .unknown
+
+            var state = FileManagerFeature.State()
+            state.backgroundAiChatStates[aiSessionID] = backgroundContent
+
+            let store = TestStore(initialState: state) {
+                FileManagerFeature()
+            }
+            store.exhaustivity = .off
+
+            await store.send(.backgroundAiChat(.persistenceRecoveryRetryFailed(requestLock, .unknown)))
+
+            XCTAssertEqual(
+                store.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase,
+                .persistenceRecovery(requestLock, .unknown),
+            )
+            XCTAssertEqual(
+                store.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase.lock?.finalSnapshot?
+                    .transcriptHistory.map(\.content),
+                ["test", "done"],
+            )
+            await store.finish()
+        }
     }
 }
 
