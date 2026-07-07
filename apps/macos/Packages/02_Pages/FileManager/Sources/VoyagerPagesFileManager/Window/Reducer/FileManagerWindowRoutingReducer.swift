@@ -891,10 +891,10 @@ private func aiChatLifecycleSessionIDsToPreserve(_ state: AiChatFeature.State) -
 
     if state.executionPhase.isProcessing
         || state.executionPhase.shouldPreserveLifecycleOwner
-        || state.pendingRequestStart != nil
     {
         append(state.sessionID)
     }
+    append(state.pendingRequestStart?.sessionID)
     for phase in state.backgroundExecutionPhases.values {
         append(phase.lock?.context.sessionID)
     }
@@ -968,9 +968,10 @@ private func routeBackgroundAiChatAction(
             return FileManagerWindowAction.backgroundAiChat(action)
         }
 
-    if let summary = sessionSnapshotSavedSummary(from: aiChatAction) {
+    if let payload = sessionSnapshotSavedPayload(from: aiChatAction) {
         refreshAiChatSnapshotsFromBackgroundIfNeeded(
-            summary: summary,
+            summary: payload.summary,
+            snapshot: payload.snapshot,
             backgroundAiChat: backgroundContent.aiChat,
             state: &state,
         )
@@ -1381,7 +1382,11 @@ private extension AiChatFeature.State {
         snapshot: AiChatSessionSnapshot? = nil,
         backgroundAiChat: AiChatFeature.State,
     ) {
-        currentSessionCustomTitle = snapshot?.customTitle ?? backgroundAiChat.currentSessionCustomTitle
+        if let snapshot {
+            currentSessionCustomTitle = snapshot.customTitle
+        } else {
+            currentSessionCustomTitle = backgroundAiChat.currentSessionCustomTitle
+        }
         transcriptHistory = snapshot?.transcriptHistory ?? backgroundAiChat.transcriptHistory
         streamingAssistantDraft = nil
         transcriptAutoScrollVersion += 1

@@ -267,6 +267,7 @@ extension AiChatFeature {
         lock: AiChatRequestLock,
         state: inout State,
     ) {
+        preserveFinalPersistenceOwnerBeforeRequestStart(newLock: lock, state: &state)
         state.selectedModelHandle = selectedHandle
         state.lockedModelHandle = selectedHandle
         state.lastExecutionFailure = nil
@@ -284,6 +285,27 @@ extension AiChatFeature {
                 state.sessionList.replaceRow(processingSessionSummary(prompt: prompt, lock: lock, sessionID: sessionID))
             }
             state.transcriptAutoScrollVersion += 1
+        }
+    }
+
+    private func preserveFinalPersistenceOwnerBeforeRequestStart(
+        newLock: AiChatRequestLock,
+        state: inout State,
+    ) {
+        guard let currentLock = state.executionPhase.lock,
+              currentLock.context.sessionID == newLock.context.sessionID,
+              currentLock.requestID != newLock.requestID
+        else { return }
+
+        switch state.executionPhase {
+        case .completed,
+             .persistenceRecovery:
+            state.backgroundExecutionPhases[currentLock.requestID] = state.executionPhase
+        case .idle,
+             .processing,
+             .failed,
+             .cancelled:
+            break
         }
     }
 

@@ -4737,6 +4737,140 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    func testAiChatTabSwitchStoresPendingRequestUnderPendingSessionID() async throws {
+        let aiChatTabID = ContentTabID()
+        let homeTabID = ContentTabID()
+        let pendingSessionID = AiChatSessionID(rawValue: UUID())
+        let visibleSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: pendingSessionID)
+        let selectedModel = try XCTUnwrap(requestLock.context.selectedModel)
+        let resolutionID = UUID()
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: pendingSessionID,
+            selectedModel: selectedModel,
+            selectedRow: requestLock.selectedModelRow,
+            preparedRequest: AiChatPreparedRequest(
+                prompt: "test",
+                messages: requestLock.request.messages,
+                assistantReplacementIndex: nil,
+                historyTruncation: AiChatHistoryTruncationMetadata(
+                    includedMessageCount: requestLock.request.messages.count,
+                    excludedMessageCount: 0,
+                    budget: 24000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+
+        var aiChatContent = FileManagerContentFeature.State()
+        aiChatContent.aiChat.sessionID = visibleSessionID
+        aiChatContent.aiChat.sessionStatus = .active
+        aiChatContent.aiChat.pendingRequestStart = pendingRequest
+        aiChatContent.aiChat.modelListState = .loaded([selectedModel])
+        aiChatContent.aiChat.selectedModelHandle = selectedModel.id
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: aiChatTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: visibleSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "message",
+                ),
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: aiChatTabID,
+            recentlyClosed: nil,
+        )
+        state.content = aiChatContent
+        state.tabContentStates = [homeTabID: FileManagerContentFeature.State()]
+        state.syncContentTabSidebarItems()
+
+        let store: TestStore<FileManagerFeature.State, FileManagerWindowAction> = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(homeTabID)))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[pendingSessionID]?.aiChat.pendingRequestStart?.resolutionID,
+            resolutionID,
+        )
+        XCTAssertNil(store.state.backgroundAiChatStates[visibleSessionID]?.aiChat.pendingRequestStart)
+        await store.finish()
+    }
+
+    func testBackgroundSnapshotRefreshAppliesNilCustomTitle() async {
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: sessionID).recordingTerminal(
+            at: 1_234_567_890_000,
+            failure: nil,
+            wasCancelled: false,
+        )
+        let finalSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: requestLock.context.provider,
+            model: requestLock.context.model,
+            selectedModelRow: requestLock.selectedModelRow,
+            transcriptHistory: requestLock.request.messages + [AiChatMessage(role: .assistant, content: "done")],
+            lastRequestID: requestLock.requestID,
+            lastRunID: requestLock.runID,
+            lastRequestContext: requestLock.context.requestContext,
+            updatedAtMs: 1_234_567_890_000,
+        )
+        var backgroundContent = FileManagerContentFeature.State()
+        backgroundContent.aiChat.sessionID = sessionID
+        backgroundContent.aiChat.currentSessionCustomTitle = "Old title"
+        backgroundContent.aiChat.executionPhase = .completed(requestLock.recordingFinalSnapshot(finalSnapshot))
+
+        var activeContent = FileManagerContentFeature.State()
+        activeContent.navigation.navigationState = .aiChat(sessionID.rawValue.uuidString)
+        activeContent.aiChat.sessionID = sessionID
+        activeContent.aiChat.currentSessionCustomTitle = "Old title"
+        activeContent.aiChat.transcriptHistory = requestLock.request.messages
+
+        var state = FileManagerFeature.State()
+        state.content = activeContent
+        state.backgroundAiChatStates[sessionID] = backgroundContent
+
+        let store: TestStore<FileManagerFeature.State, FileManagerWindowAction> = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+        }
+        store.exhaustivity = .off
+
+        await store.send(.backgroundAiChat(.sessionSnapshotSaved(
+            AiChatSessionSummary(snapshot: finalSnapshot),
+            snapshot: finalSnapshot,
+            requestID: requestLock.requestID,
+            runID: requestLock.runID,
+        )))
+
+        XCTAssertNil(store.state.content.aiChat.currentSessionCustomTitle)
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory.map(\.content), ["test", "done"])
+        await store.finish()
+    }
+
     func testClosedPendingAiChatContextResolutionStartsBackgroundRequest() async throws {
         let aiChatTabID = ContentTabID()
         let homeTabID = ContentTabID()

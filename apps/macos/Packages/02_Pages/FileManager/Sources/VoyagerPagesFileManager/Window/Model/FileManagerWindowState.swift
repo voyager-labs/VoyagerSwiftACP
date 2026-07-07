@@ -434,10 +434,13 @@ private extension AiChatFeature.State {
         default:
             false
         }
-        if executionPhase.isProcessing || pendingRequestStart != nil || shouldPreserveOwner,
+        if executionPhase.isProcessing || shouldPreserveOwner,
            let sessionID
         {
             sessionIDs.append(sessionID)
+        }
+        if let pendingSessionID = pendingRequestStart?.sessionID {
+            sessionIDs.append(pendingSessionID)
         }
         for phase in backgroundExecutionPhases.values {
             if let sessionID = phase.lock?.context.sessionID {
