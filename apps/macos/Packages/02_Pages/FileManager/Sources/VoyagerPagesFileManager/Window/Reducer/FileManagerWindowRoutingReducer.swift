@@ -1495,9 +1495,12 @@ private func backgroundInspectorAiChatSessionID(
     state: FileManagerWindowState,
 ) -> AiChatSessionID? {
     if case let .requestContextResolved(resolutionID, _) = aiChatAction {
-        return state.backgroundInspectorAiChatStates.first { _, inspectorState in
-            inspectorState.aiChat.pendingRequestStart?.resolutionID == resolutionID
-        }?.key
+        return state.backgroundInspectorAiChatStates.values.compactMap { inspectorState in
+            let pendingRequestStart = inspectorState.aiChat.pendingRequestStart
+            return pendingRequestStart?.resolutionID == resolutionID
+                ? pendingRequestStart?.sessionID
+                : nil
+        }.first
     }
 
     return inspectorAiChatSessionID(for: aiChatAction)
@@ -1595,9 +1598,12 @@ private func backgroundAiChatSessionID(
     case let .sessionSnapshotSaved(summary, _, _, _):
         summary.sessionID
     case let .requestContextResolved(resolutionID, _):
-        state.backgroundAiChatStates.first { _, backgroundContent in
-            backgroundContent.aiChat.pendingRequestStart?.resolutionID == resolutionID
-        }?.key
+        state.backgroundAiChatStates.values.compactMap { backgroundContent in
+            let pendingRequestStart = backgroundContent.aiChat.pendingRequestStart
+            return pendingRequestStart?.resolutionID == resolutionID
+                ? pendingRequestStart?.sessionID
+                : nil
+        }.first
     default:
         nil
     }
