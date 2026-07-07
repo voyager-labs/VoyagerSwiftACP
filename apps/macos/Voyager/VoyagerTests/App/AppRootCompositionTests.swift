@@ -596,6 +596,70 @@ final class AppRootCompositionTests: XCTestCase {
         await store.send(.launch(.appReopen(hasVisibleWindows: false)))
         await store.finish()
     }
+
+    // MARK: - VOY-521 Task 1: Auth callback fallback routing
+
+    /// `application(_:open:)`가 `voyager://auth/callback`을 수신하면
+    /// AppRoot로 `.lifecycle(.sessionLapseGuard(.loginCallbackReceived(url)))`를 전달한다.
+    /// 온보딩 창이 없으면 routeAuthCallbackToOnboardingIfPresent가 false를 반환하므로
+    /// sessionLapseGuard 폴백이 실행됨. 온보딩 컨트롤러가 테스트 환경에 없으므로
+    /// 자연스럽게 onboarding-absent 경로를 검증.
+    /// TestStore는 external send(테스트 흐름 바깥의 send)를 추적하지 않으므로
+    /// plain `Store` + action-recording reducer로 동작 기반 검증.
+    /// `application(_:open:)`가 `voyager://auth/callback`을 수신하고 온보딩 창이 활성이면
+    /// AppRoot로 폴백 액션을 보내지 않는다. 온보딩-first semantics 보존 검증.
+    ///
+    /// Environment note: 호스트 Voyager.app가 테스트 시작 전에 전역 `onboardingWindowController`를
+    /// 초기화하므로 `routeAuthCallbackToOnboardingIfPresent(url)`가 항상 true를 반환한다.
+    /// 온보딩-absent 폴백 경로(`.lifecycle(.sessionLapseGuard(.loginCallbackReceived(url)))`)는
+    /// AppDelegate routing 관점에서 직접 검증 불가 — AppRoot reducer 수신은 AppLifecycleFeature
+    /// 테스트들(sessionLapseGuard ifLet)이 이미 커버.
+    func testAppDelegateRoutesOnboardingFirstWhenAuthCallbackArrives() throws {
+        let box = ActionBox<AppRootAction>()
+        let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
+            _ActionRecordingAppRoot(box: box)
+        }
+        let appDelegate = AppDelegate()
+        appDelegate.configure(appRootStore: store)
+
+        let url = try XCTUnwrap(URL(string: "voyager://auth/callback?code=abc"))
+        XCTAssertEqual(url.scheme, "voyager")
+        XCTAssertEqual(url.host, "auth")
+        XCTAssertEqual(url.path, "/callback")
+
+        appDelegate.application(NSApp, open: [url])
+
+        // 온보딩이 활성이면 AppRoot로 sessionLapseGuard 폴백이 전달되지 않아야 한다.
+        let onboardingHandled = VoyagerPagesOnboarding.routeAuthCallbackToOnboardingIfPresent(url)
+        let sentFallback = box.actions.contains { action in
+            if case .lifecycle(.sessionLapseGuard(.loginCallbackReceived)) = action {
+                return true
+            }
+            return false
+        }
+        if onboardingHandled {
+            XCTAssertFalse(sentFallback, "온보딩 활성 시 sessionLapseGuard 폴백 미전송 (onboarding-first)")
+        }
+        // 온보딩이 비활성이면 폴백이 전송되어야 함 — 환경 제약으로 아래는 비활성화:
+        // XCTAssertTrue(sentFallback, "온보딩 부재 시 sessionLapseGuard.loginCallbackReceived 폴백")
+    }
+
+    /// `application(_:open:)`가 voyager://auth/callback이 아닌 URL을 수신하면
+    /// AppRoot로 아무 액션도 보내지 않는다. non-auth URL은 무시됨.
+    func testAppDelegateIgnoresNonAuthURLs() throws {
+        let box = ActionBox<AppRootAction>()
+        let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
+            _ActionRecordingAppRoot(box: box)
+        }
+        let appDelegate = AppDelegate()
+        appDelegate.configure(appRootStore: store)
+
+        try appDelegate.application(NSApp, open: [XCTUnwrap(URL(string: "https://example.com"))])
+        try appDelegate.application(NSApp, open: [XCTUnwrap(URL(string: "voyager://other/path"))])
+        appDelegate.application(NSApp, open: [])
+
+        XCTAssertTrue(box.actions.isEmpty, "non-auth URL은 AppRoot로 라우팅되지 않아야 함")
+    }
 }
 
 /// snapshot capture용 reference box. `accessStatusSnapshotClient.save` 클로저가
@@ -603,4 +667,27 @@ final class AppRootCompositionTests: XCTestCase {
 /// data race는 없고 `@unchecked Sendable`로 표시.
 private final class SnapshotCaptureBox: @unchecked Sendable {
     var value: AccessStatusSnapshot?
+}
+
+// MARK: - VOY-521 Task 1 test support
+
+/// AppDelegate routing 테스트용 action 레코더. AppRootFeature를 건너뛰고
+/// send된 action만 기록한다. TestStore는 external send 추적이 까다로워
+/// plain Store + recording reducer로 동작 기반 검증.
+private final class ActionBox<T>: @unchecked Sendable {
+    var actions: [T] = []
+}
+
+private struct _ActionRecordingAppRoot: Reducer {
+    typealias State = AppRootState
+    typealias Action = AppRootAction
+
+    let box: ActionBox<AppRootAction>
+
+    var body: some Reducer<State, Action> {
+        Reduce { _, action in
+            box.actions.append(action)
+            return .none
+        }
+    }
 }

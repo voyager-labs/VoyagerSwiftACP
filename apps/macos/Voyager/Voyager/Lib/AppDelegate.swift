@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesOnboarding
@@ -128,7 +129,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func routeAuthCallback(_ url: URL) {
         MainActor.assumeIsolated {
-            _ = VoyagerPagesOnboarding.routeAuthCallbackToOnboardingIfPresent(url)
+            // 온보딩 창이 활성이면 onboarding의 accessUnlock(AccountAccessFeature)로 처리.
+            // 온보딩 창이 없으면 AppRoot sessionLapseGuard로 폴백 —
+            // guard state가 nil이면 AppLifecycleFeature의 ifLet가 action을 무시.
+            guard VoyagerPagesOnboarding.routeAuthCallbackToOnboardingIfPresent(url) else {
+                withAppRootStore {
+                    $0.send(.lifecycle(.sessionLapseGuard(.loginCallbackReceived(url))))
+                }
+                return
+            }
         }
     }
 
