@@ -53,8 +53,6 @@
 		F20000000000000000000041 /* VoyagerFeaturesUpdateVersion in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */; };
 		F20000000000000000000042 /* VoyagerFeaturesComposer in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001D /* VoyagerFeaturesComposer */; };
 		F20000000000000000000043 /* VoyagerFeaturesComposer in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001D /* VoyagerFeaturesComposer */; };
-		F20000000000000000000062 /* VoyagerFeaturesExternalFileRouter in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000061 /* VoyagerFeaturesExternalFileRouter */; };
-		F20000000000000000000063 /* VoyagerFeaturesExternalFileRouter in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000061 /* VoyagerFeaturesExternalFileRouter */; };
 		A70000000000000000000010 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
 		A70000000000000000000011 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
@@ -221,7 +219,6 @@
 				F2000000000000000000003F /* VoyagerFeaturesContentPageNavigation in Frameworks */,
 				F20000000000000000000041 /* VoyagerFeaturesUpdateVersion in Frameworks */,
 				F20000000000000000000042 /* VoyagerFeaturesComposer in Frameworks */,
-				F20000000000000000000062 /* VoyagerFeaturesExternalFileRouter in Frameworks */,
 				F20000000000000000000052 /* VoyagerFeaturesAiChat in Frameworks */,
 				F2000000000000000000003B /* VoyagerEntitiesEntry in Frameworks */,
 				F2000000000000000000003C /* Dependencies in Frameworks */,
@@ -258,7 +255,6 @@
 				F2000000000000000000003A /* Dependencies in Frameworks */,
 				F20000000000000000000040 /* VoyagerFeaturesContentPageNavigation in Frameworks */,
 				F20000000000000000000043 /* VoyagerFeaturesComposer in Frameworks */,
-				F20000000000000000000063 /* VoyagerFeaturesExternalFileRouter in Frameworks */,
 				F20000000000000000000053 /* VoyagerFeaturesAiChat in Frameworks */,
 				F20000000000000000000054 /* VoyagerEntitiesAi in Frameworks */,
 				F20000000000000000000055 /* VoyagerWidgetsEntryViewLayout in Frameworks */,
@@ -401,7 +397,6 @@
 				F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */,
 				F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */,
 				F2000000000000000000001D /* VoyagerFeaturesComposer */,
-				F20000000000000000000061 /* VoyagerFeaturesExternalFileRouter */,
 				F2000000000000000000001E /* VoyagerPagesFileManager */,
 				F20000000000000000000051 /* VoyagerFeaturesAiChat */,
 				F2000000000000000000001F /* VoyagerWidgetsEntryViewLayout */,
@@ -456,7 +451,6 @@
 				F21000000000000000000012 /* OrderedCollections */,
 				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
 				F2000000000000000000001D /* VoyagerFeaturesComposer */,
-				F20000000000000000000061 /* VoyagerFeaturesExternalFileRouter */,
 				F20000000000000000000051 /* VoyagerFeaturesAiChat */,
 				F20000000000000000000047 /* VoyagerEntitiesAi */,
 				F2000000000000000000001F /* VoyagerWidgetsEntryViewLayout */,
@@ -640,7 +634,6 @@
 				F2000000000000000000000A /* XCLocalSwiftPackageReference "05_Entities/Entry" */,
 				F2000000000000000000000C /* XCLocalSwiftPackageReference "04_Features/UpdateVersion" */,
 				F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */,
-				F20000000000000000000060 /* XCLocalSwiftPackageReference "04_Features/ExternalFileRouter" */,
 				F2000000000000000000000E /* XCLocalSwiftPackageReference "02_Pages/FileManager" */,
 				F20000000000000000000050 /* XCLocalSwiftPackageReference "04_Features/AiChat" */,
 				F2000000000000000000000F /* XCLocalSwiftPackageReference "03_Widgets/EntryViewLayout" */,
@@ -1049,8 +1042,8 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				AUTOMATION_APPLE_EVENTS = YES;
-				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
@@ -1067,7 +1060,7 @@
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Voyager/Config/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Voyager (Debug)";
+				INFOPLIST_KEY_CFBundleDisplayName = "Voyager$(VOYAGER_APP_SUFFIX) (Debug)";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1075,13 +1068,14 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.7.1;
+				MARKETING_VERSION = 0.7.2;
 				"OTHER_LDFLAGS[arch=*]" = (
 					"-Xlinker",
 					"-interposable",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_MODULE_NAME = Voyager;
+				PRODUCT_NAME = "$(TARGET_NAME)$(VOYAGER_APP_SUFFIX)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
@@ -1106,7 +1100,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
+				CODE_SIGN_IDENTITY = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 0;
@@ -1132,7 +1126,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.7.1;
+				MARKETING_VERSION = 0.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1151,13 +1145,14 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.7.1;
+				MARKETING_VERSION = 0.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1166,7 +1161,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Voyager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Voyager";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Voyager$(VOYAGER_APP_SUFFIX).app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Voyager$(VOYAGER_APP_SUFFIX)";
 			};
 			name = Debug;
 		};
@@ -1180,7 +1175,7 @@
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.7.1;
+				MARKETING_VERSION = 0.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1196,12 +1191,13 @@
 		7E14EDF62E86622E005AC834 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.7.1;
+				MARKETING_VERSION = 0.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1222,7 +1218,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.7.1;
+				MARKETING_VERSION = 0.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1242,8 +1238,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = YES;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
@@ -1269,7 +1265,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.7.1;
+				MARKETING_VERSION = 0.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1296,7 +1292,7 @@
 				APP_ENV = prod;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
+				CODE_SIGN_IDENTITY = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 0;
@@ -1323,7 +1319,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.7.1;
+				MARKETING_VERSION = 0.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1342,14 +1338,14 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.7.1;
+				MARKETING_VERSION = 0.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1372,7 +1368,7 @@
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.7.1;
+				MARKETING_VERSION = 0.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1389,8 +1385,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = dev;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNR9C79D99;
@@ -1400,7 +1396,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.7.1;
+				MARKETING_VERSION = 0.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.FilterSearchXPC;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1416,7 +1412,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = prod;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
+				CODE_SIGN_IDENTITY = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
@@ -1428,7 +1424,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.7.1;
+				MARKETING_VERSION = 0.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.FilterSearchXPC;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1564,10 +1560,6 @@
 		F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/04_Features/Composer;
-		};
-		F20000000000000000000060 /* XCLocalSwiftPackageReference "04_Features/ExternalFileRouter" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../Packages/04_Features/ExternalFileRouter;
 		};
 		F2000000000000000000000E /* XCLocalSwiftPackageReference "02_Pages/FileManager" */ = {
 			isa = XCLocalSwiftPackageReference;
@@ -1866,11 +1858,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */;
 			productName = VoyagerFeaturesComposer;
-		};
-		F20000000000000000000061 /* VoyagerFeaturesExternalFileRouter */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = F20000000000000000000060 /* XCLocalSwiftPackageReference "04_Features/ExternalFileRouter" */;
-			productName = VoyagerFeaturesExternalFileRouter;
 		};
 		F2000000000000000000001E /* VoyagerPagesFileManager */ = {
 			isa = XCSwiftPackageProductDependency;
