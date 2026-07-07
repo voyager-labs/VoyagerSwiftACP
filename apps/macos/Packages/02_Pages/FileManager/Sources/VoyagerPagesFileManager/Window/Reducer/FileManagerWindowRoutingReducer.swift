@@ -918,9 +918,9 @@ private func routeBackgroundAiChatAction(
             backgroundAiChat: backgroundContent.aiChat,
             state: &state,
         )
-    } else if let failedSessionID = failedAiChatSessionID(from: aiChatAction) {
+    } else if let failedContext = failedAiChatContext(from: aiChatAction) {
         refreshAiChatFailureFromBackgroundIfNeeded(
-            sessionID: failedSessionID,
+            context: failedContext,
             backgroundAiChat: backgroundContent.aiChat,
             state: &state,
         )
@@ -943,9 +943,9 @@ private func sessionSnapshotSavedSummary(from aiChatAction: AiChatAction) -> AiC
     }
 }
 
-private func failedAiChatSessionID(from aiChatAction: AiChatAction) -> AiChatSessionID? {
+private func failedAiChatContext(from aiChatAction: AiChatAction) -> AiChatRequestContextSnapshot? {
     guard case let .executionEvent(.failed(context, _)) = aiChatAction else { return nil }
-    return context.sessionID
+    return context
 }
 
 private func handleBackgroundAiChatSnapshotPersisted(
@@ -1046,12 +1046,14 @@ private func makeOffscreenFinalSnapshot(
 }
 
 private func refreshAiChatFailureFromBackgroundIfNeeded(
-    sessionID: AiChatSessionID,
+    context: AiChatRequestContextSnapshot,
     backgroundAiChat: AiChatFeature.State,
     state: inout FileManagerWindowState,
 ) {
+    guard let sessionID = context.sessionID else { return }
+
     if state.content.aiChat.canRefreshFailureFromBackground(sessionID: sessionID) {
-        state.content.aiChat.applyBackgroundFailure(backgroundAiChat: backgroundAiChat)
+        state.content.aiChat.applyBackgroundFailure(context: context, backgroundAiChat: backgroundAiChat)
         state.syncActiveTabContentState()
     }
 
@@ -1059,11 +1061,14 @@ private func refreshAiChatFailureFromBackgroundIfNeeded(
         guard tabID != state.contentTabs.activeTabID else { continue }
         guard state.tabContentStates[tabID]?.aiChat.canRefreshFailureFromBackground(sessionID: sessionID) == true
         else { continue }
-        state.tabContentStates[tabID]?.aiChat.applyBackgroundFailure(backgroundAiChat: backgroundAiChat)
+        state.tabContentStates[tabID]?.aiChat.applyBackgroundFailure(
+            context: context,
+            backgroundAiChat: backgroundAiChat,
+        )
     }
 
     if state.inspector.aiChat.canRefreshFailureFromBackground(sessionID: sessionID) {
-        state.inspector.aiChat.applyBackgroundFailure(backgroundAiChat: backgroundAiChat)
+        state.inspector.aiChat.applyBackgroundFailure(context: context, backgroundAiChat: backgroundAiChat)
         state.syncActiveTabInspectorState()
     }
 
@@ -1071,7 +1076,10 @@ private func refreshAiChatFailureFromBackgroundIfNeeded(
         guard tabID != state.contentTabs.activeTabID else { continue }
         guard state.tabInspectorStates[tabID]?.aiChat.canRefreshFailureFromBackground(sessionID: sessionID) == true
         else { continue }
-        state.tabInspectorStates[tabID]?.aiChat.applyBackgroundFailure(backgroundAiChat: backgroundAiChat)
+        state.tabInspectorStates[tabID]?.aiChat.applyBackgroundFailure(
+            context: context,
+            backgroundAiChat: backgroundAiChat,
+        )
     }
 }
 
@@ -1133,12 +1141,20 @@ private extension AiChatFeature.State {
             && pendingRequestStart == nil
     }
 
-    mutating func applyBackgroundFailure(backgroundAiChat: AiChatFeature.State) {
-        guard case .failed = backgroundAiChat.executionPhase else { return }
-        executionPhase = backgroundAiChat.executionPhase
+    mutating func applyBackgroundFailure(
+        context: AiChatRequestContextSnapshot,
+        backgroundAiChat: AiChatFeature.State,
+    ) {
+        guard let matchingPhase = backgroundAiChat.backgroundExecutionPhases[context.requestID]?
+            .matchingFailure(context: context)
+            ?? backgroundAiChat.executionPhase.matchingFailure(context: context)
+        else { return }
+        executionPhase = matchingPhase
         streamingAssistantDraft = nil
         lockedModelHandle = nil
-        lastExecutionFailure = backgroundAiChat.lastExecutionFailure
+        if case let .failed(_, failure) = matchingPhase {
+            lastExecutionFailure = failure
+        }
     }
 
     func canRefreshFromBackground(summary: AiChatSessionSummary) -> Bool {
@@ -1204,6 +1220,16 @@ private extension AiChatFeature.State {
 }
 
 private extension AiChatExecutionPhase {
+    func matchingFailure(context: AiChatRequestContextSnapshot) -> Self? {
+        guard let lock,
+              lock.context.sessionID == context.sessionID,
+              lock.requestID == context.requestID,
+              lock.runID == context.runID,
+              case .failed = self
+        else { return nil }
+        return self
+    }
+
     func matchingBackgroundSnapshot(
         summary: AiChatSessionSummary,
         snapshot: AiChatSessionSnapshot?,
@@ -1311,9 +1337,9 @@ private func routeBackgroundInspectorAiChatAction(
             backgroundAiChat: inspectorState.aiChat,
             state: &state,
         )
-    } else if let failedSessionID = failedAiChatSessionID(from: aiChatAction) {
+    } else if let failedContext = failedAiChatContext(from: aiChatAction) {
         refreshAiChatFailureFromBackgroundIfNeeded(
-            sessionID: failedSessionID,
+            context: failedContext,
             backgroundAiChat: inspectorState.aiChat,
             state: &state,
         )

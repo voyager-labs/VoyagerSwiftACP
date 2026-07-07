@@ -5818,7 +5818,14 @@ extension CTM005IndependentContentTabSessionTests {
 
     func testBackgroundAiChatFailureKeepsOwnerAndRefreshesActiveSession() async {
         let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let otherSessionID = AiChatSessionID(rawValue: UUID())
         let requestLock = makeRequestLock(sessionID: aiSessionID)
+        let unrelatedLock = makeRequestLock(sessionID: otherSessionID)
+        let unrelatedFailedLock = unrelatedLock.recordingTerminal(
+            at: 1_234_567_889_000,
+            failure: .unknown,
+            wasCancelled: false,
+        )
         var activeContent = FileManagerContentFeature.State()
         activeContent.aiChat.sessionID = aiSessionID
         activeContent.aiChat.sessionStatus = .active
@@ -5828,7 +5835,8 @@ extension CTM005IndependentContentTabSessionTests {
         var backgroundContent = FileManagerContentFeature.State()
         backgroundContent.aiChat.sessionID = aiSessionID
         backgroundContent.aiChat.sessionStatus = .active
-        backgroundContent.aiChat.executionPhase = .processing(requestLock)
+        backgroundContent.aiChat.executionPhase = .failed(unrelatedFailedLock, .unknown)
+        backgroundContent.aiChat.backgroundExecutionPhases[requestLock.requestID] = .processing(requestLock)
 
         var state = FileManagerFeature.State()
         state.content = activeContent
@@ -5843,19 +5851,22 @@ extension CTM005IndependentContentTabSessionTests {
 
         await store.send(.backgroundAiChat(.executionEvent(.failed(context: requestLock.context, reason: .network))))
 
+        let expectedFailedLock = requestLock.recordingTerminal(
+            at: 1_234_567_890_000,
+            failure: .network,
+            wasCancelled: false,
+        )
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[aiSessionID]?.aiChat.backgroundExecutionPhases[requestLock.requestID],
+            .failed(expectedFailedLock, .network),
+        )
         XCTAssertEqual(
             store.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase,
-            .failed(
-                requestLock.recordingTerminal(at: 1_234_567_890_000, failure: .network, wasCancelled: false),
-                .network,
-            ),
+            .failed(unrelatedFailedLock, .unknown),
         )
         XCTAssertEqual(
             store.state.content.aiChat.executionPhase,
-            .failed(
-                requestLock.recordingTerminal(at: 1_234_567_890_000, failure: .network, wasCancelled: false),
-                .network,
-            ),
+            .failed(expectedFailedLock, .network),
         )
         await store.finish()
     }

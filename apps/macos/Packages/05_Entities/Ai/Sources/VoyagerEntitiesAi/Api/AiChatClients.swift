@@ -90,6 +90,10 @@ public actor AiChatSessionFileStore: AiChatSessionPersistenceClientProtocol {
                let existingSnapshot = try loadSnapshotIfValid(at: fileURL),
                shouldKeepExistingSnapshot(existingSnapshot, over: snapshot)
             {
+                if let mergedSnapshot = existingSnapshot.mergingIndependentMetadata(from: snapshot) {
+                    let data = try encoder.encode(mergedSnapshot)
+                    try replaceSessionFile(at: fileURL, with: data)
+                }
                 return
             }
 
@@ -252,6 +256,32 @@ private extension AiChatSessionFileStore {
         guard flock(descriptor, LOCK_EX) == 0 else { throw POSIXLockError.lockFailed(errno) }
         defer { flock(descriptor, LOCK_UN) }
         return try operation()
+    }
+}
+
+private extension AiChatSessionSnapshot {
+    func mergingIndependentMetadata(from snapshot: AiChatSessionSnapshot) -> AiChatSessionSnapshot? {
+        guard snapshot.sessionID == sessionID,
+              let customTitle = snapshot.customTitle,
+              customTitle != self.customTitle
+        else {
+            return nil
+        }
+
+        return AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: status,
+            customTitle: customTitle,
+            provider: provider,
+            model: model,
+            selectedModelRow: selectedModelRow,
+            selectedThinking: selectedThinking,
+            transcriptHistory: transcriptHistory,
+            lastRequestID: lastRequestID,
+            lastRunID: lastRunID,
+            lastRequestContext: lastRequestContext,
+            updatedAtMs: updatedAtMs,
+        )
     }
 }
 
