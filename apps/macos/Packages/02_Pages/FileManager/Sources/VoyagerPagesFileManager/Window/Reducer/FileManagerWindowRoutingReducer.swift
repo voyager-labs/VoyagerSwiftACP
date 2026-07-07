@@ -898,6 +898,10 @@ private func routeBackgroundAiChatAction(
           var backgroundContent = state.backgroundAiChatStates[sessionID]
     else { return .none }
 
+    let shouldRemoveBackgroundState = shouldRemoveBackgroundAiChatState(
+        after: aiChatAction,
+        backgroundAiChat: backgroundContent.aiChat,
+    )
     let finalSnapshotContext = backgroundFinalSnapshotContext(
         from: aiChatAction,
         backgroundAiChat: backgroundContent.aiChat,
@@ -934,7 +938,7 @@ private func routeBackgroundAiChatAction(
         )
     }
 
-    if shouldRemoveBackgroundAiChatState(after: aiChatAction) {
+    if shouldRemoveBackgroundState {
         state.removeBackgroundAiChatState(sessionID: sessionID)
     } else {
         state.backgroundAiChatStates[sessionID] = backgroundContent
@@ -1217,6 +1221,11 @@ private extension AiChatFeature.State {
         }
     }
 
+    func hasBackgroundOwnerMatching(requestID: AiChatRequestID, runID: AiChatRunID?) -> Bool {
+        executionPhase.matchesOwner(requestID: requestID, runID: runID)
+            || backgroundExecutionPhases[requestID]?.matchesOwner(requestID: requestID, runID: runID) == true
+    }
+
     func canRefreshFailureFromBackground(sessionID: AiChatSessionID) -> Bool {
         self.sessionID == sessionID
             && !executionPhase.isProcessing
@@ -1302,6 +1311,14 @@ private extension AiChatFeature.State {
 }
 
 private extension AiChatExecutionPhase {
+    func matchesOwner(requestID: AiChatRequestID, runID: AiChatRunID?) -> Bool {
+        guard let lock else { return false }
+        if let runID {
+            return lock.requestID == requestID && lock.runID == runID
+        }
+        return lock.requestID == requestID
+    }
+
     func matchingRecovery(lock expectedLock: AiChatRequestLock) -> Self? {
         guard let lock,
               lock.context.sessionID == expectedLock.context.sessionID,
@@ -1371,7 +1388,6 @@ private func routeInactiveInspectorAiChatAction(
         }
         return .none
     }
-
     let finalSnapshotContext = backgroundFinalSnapshotContext(
         from: aiChatAction,
         backgroundAiChat: inspectorState.aiChat,
@@ -1407,6 +1423,10 @@ private func routeBackgroundInspectorAiChatAction(
           var inspectorState = state.backgroundInspectorAiChatStates[sessionID]
     else { return nil }
 
+    let shouldRemoveBackgroundState = shouldRemoveBackgroundAiChatState(
+        after: aiChatAction,
+        backgroundAiChat: inspectorState.aiChat,
+    )
     let finalSnapshotContext = backgroundFinalSnapshotContext(
         from: aiChatAction,
         backgroundAiChat: inspectorState.aiChat,
@@ -1443,7 +1463,7 @@ private func routeBackgroundInspectorAiChatAction(
         )
     }
 
-    if shouldRemoveBackgroundAiChatState(after: aiChatAction) {
+    if shouldRemoveBackgroundState {
         state.removeBackgroundInspectorAiChatState(sessionID: sessionID)
     } else {
         state.backgroundInspectorAiChatStates[sessionID] = inspectorState.tabSnapshot()
@@ -1583,16 +1603,33 @@ private func backgroundAiChatSessionID(
     }
 }
 
-private func shouldRemoveBackgroundAiChatState(after aiChatAction: AiChatAction) -> Bool {
+private func shouldRemoveBackgroundAiChatState(
+    after aiChatAction: AiChatAction,
+    backgroundAiChat: AiChatFeature.State,
+) -> Bool {
     switch aiChatAction {
     case .executionEvent:
         false
-    case .sessionSnapshotSaved,
-         .persistenceRecoverySucceeded:
-        true
+    case let .sessionSnapshotSaved(_, _, requestID, runID):
+        shouldRemoveBackgroundAiChatState(
+            requestID: requestID,
+            runID: runID,
+            backgroundAiChat: backgroundAiChat,
+        )
+    case let .persistenceRecoverySucceeded(lock):
+        backgroundAiChat.hasBackgroundOwnerMatching(requestID: lock.requestID, runID: lock.runID)
     case .persistenceRecoveryRetryFailed:
         false
     default:
         false
     }
+}
+
+private func shouldRemoveBackgroundAiChatState(
+    requestID: AiChatRequestID?,
+    runID: AiChatRunID?,
+    backgroundAiChat: AiChatFeature.State,
+) -> Bool {
+    guard let requestID else { return true }
+    return backgroundAiChat.hasBackgroundOwnerMatching(requestID: requestID, runID: runID)
 }

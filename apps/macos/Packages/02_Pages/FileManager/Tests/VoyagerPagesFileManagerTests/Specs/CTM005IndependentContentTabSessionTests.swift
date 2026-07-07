@@ -5018,6 +5018,71 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    func testBackgroundAiChatFollowUpKeepsMismatchedRequestOwner() async {
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let oldLock = makeRequestLock(sessionID: aiSessionID)
+        let newLock = makeRequestLock(sessionID: aiSessionID)
+        let finalSnapshot = AiChatSessionSnapshot(
+            sessionID: aiSessionID,
+            status: .active,
+            provider: nil,
+            model: nil,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "old"),
+                AiChatMessage(role: .assistant, content: "done"),
+            ],
+            updatedAtMs: 1_234_567_890_000,
+        )
+        let oldRecoveryLock = oldLock.recordingFinalSnapshot(finalSnapshot)
+        let newSnapshot = AiChatSessionSnapshot(
+            sessionID: aiSessionID,
+            status: .active,
+            provider: nil,
+            model: nil,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "new"),
+                AiChatMessage(role: .assistant, content: "done"),
+            ],
+            lastRequestID: newLock.requestID,
+            lastRunID: newLock.runID,
+            updatedAtMs: 1_234_567_891_000,
+        )
+        let newSummary = AiChatSessionSummary(snapshot: newSnapshot)
+
+        var backgroundContent = FileManagerContentFeature.State()
+        backgroundContent.aiChat.sessionID = aiSessionID
+        backgroundContent.aiChat.executionPhase = .persistenceRecovery(oldRecoveryLock, .unknown)
+        backgroundContent.aiChat.lastExecutionFailure = .unknown
+
+        var state = FileManagerFeature.State()
+        state.backgroundAiChatStates[aiSessionID] = backgroundContent
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.backgroundAiChat(.sessionSnapshotSaved(
+            newSummary,
+            snapshot: newSnapshot,
+            requestID: newLock.requestID,
+            runID: newLock.runID,
+        )))
+
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase,
+            .persistenceRecovery(oldRecoveryLock, .unknown),
+        )
+
+        await store.send(.backgroundAiChat(.persistenceRecoverySucceeded(newLock)))
+
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase,
+            .persistenceRecovery(oldRecoveryLock, .unknown),
+        )
+        await store.finish()
+    }
+
     func testBackgroundAiChatDeleteSessionRemovesClosedOwner() async {
         let aiSessionID = AiChatSessionID(rawValue: UUID())
         let otherSessionID = AiChatSessionID(rawValue: UUID())

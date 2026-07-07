@@ -289,7 +289,19 @@ private extension AiChatSessionSnapshot {
             && model == existingSnapshot.model
             && selectedModelRow == existingSnapshot.selectedModelRow
             && selectedThinking == existingSnapshot.selectedThinking
+            && canMergeIndependentMetadata(over: existingSnapshot)
             && existingSnapshot.transcriptHistory.starts(with: transcriptHistory)
+    }
+
+    func canMergeIndependentMetadata(over existingSnapshot: AiChatSessionSnapshot) -> Bool {
+        guard hasRequestLifecycleMetadata else { return true }
+        return lastRequestID == existingSnapshot.lastRequestID
+            && lastRunID == existingSnapshot.lastRunID
+            && lastRequestContext == existingSnapshot.lastRequestContext
+    }
+
+    var hasRequestLifecycleMetadata: Bool {
+        lastRequestID != nil || lastRunID != nil || lastRequestContext != nil
     }
 }
 
