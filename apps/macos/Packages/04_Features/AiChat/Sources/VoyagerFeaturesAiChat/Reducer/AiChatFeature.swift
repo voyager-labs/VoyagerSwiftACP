@@ -162,6 +162,11 @@ public struct AiChatFeature {
 
             case let .sessionRenameSucceeded(summary, customTitle):
                 state.sessionList.replaceRow(summary)
+                refreshCustomTitleInExecutionOwners(
+                    sessionID: summary.sessionID,
+                    customTitle: customTitle,
+                    state: &state,
+                )
                 if state.sessionID == summary.sessionID {
                     state.currentSessionCustomTitle = customTitle
                 }

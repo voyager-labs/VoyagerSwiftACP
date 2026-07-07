@@ -276,6 +276,43 @@ public struct AiChatRequestLock: Equatable, Sendable {
             observabilitySummary: observabilitySummary,
         )
     }
+
+    public func recordingCustomTitle(_ customTitle: String?) -> Self {
+        Self(
+            kind: kind,
+            requestID: requestID,
+            runID: runID,
+            context: context,
+            request: request,
+            selectedModelHandle: selectedModelHandle,
+            selectedModelRow: selectedModelRow,
+            assistantReplacementIndex: assistantReplacementIndex,
+            customTitle: customTitle,
+            finalSnapshot: finalSnapshot.map { Self.snapshot($0, customTitle: customTitle) },
+            historyTruncation: historyTruncation,
+            observabilitySummary: observabilitySummary,
+        )
+    }
+
+    private static func snapshot(
+        _ snapshot: AiChatSessionSnapshot,
+        customTitle: String?,
+    ) -> AiChatSessionSnapshot {
+        AiChatSessionSnapshot(
+            sessionID: snapshot.sessionID,
+            status: snapshot.status,
+            customTitle: customTitle,
+            provider: snapshot.provider,
+            model: snapshot.model,
+            selectedModelRow: snapshot.selectedModelRow,
+            selectedThinking: snapshot.selectedThinking,
+            transcriptHistory: snapshot.transcriptHistory,
+            lastRequestID: snapshot.lastRequestID,
+            lastRunID: snapshot.lastRunID,
+            lastRequestContext: snapshot.lastRequestContext,
+            updatedAtMs: snapshot.updatedAtMs,
+        )
+    }
 }
 
 public enum AiChatExecutionPhase: Equatable, Sendable {

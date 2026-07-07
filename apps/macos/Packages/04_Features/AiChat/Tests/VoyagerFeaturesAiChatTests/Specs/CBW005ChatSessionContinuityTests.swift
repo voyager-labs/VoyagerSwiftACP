@@ -204,6 +204,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         )) {
             AiChatFeature()
         } withDependencies: {
+            $0.uuid = .incrementing
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
                 saveSession: { _ in },
@@ -1207,6 +1208,161 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         }
 
         XCTAssertEqual(persistence.snapshots, [finalSnapshot])
+        await store.finish()
+    }
+
+    func testRenameSessionRefreshesBackgroundFinalSnapshotCustomTitle() async {
+        let persistence = AiChatSessionPersistenceSpy()
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let sessionID = makeCBW005SessionID("15151515-1515-1515-1515-151515151515")
+        let fixedMs: Int64 = 1_700_000_001_515
+        let userMessage = AiChatMessage(role: .user, content: "Rename while background final pending")
+        let assistantMessage = AiChatMessage(role: .assistant, content: "Final answer after rename")
+        let request = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: sessionID,
+                requestID: AiChatRequestID(rawValue: makeUUID("15151515-1515-1515-1515-151515151516")),
+                runID: AiChatRunID(rawValue: makeUUID("15151515-1515-1515-1515-151515151517")),
+                model: selectedHandle,
+                selectedRow: catalogRows[0],
+            ),
+            messages: [userMessage],
+        )
+        let finalizedLock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+            customTitle: nil,
+        )
+        .recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
+        let finalSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: nil,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [userMessage, assistantMessage],
+            lastRequestID: finalizedLock.requestID,
+            lastRunID: finalizedLock.runID,
+            lastRequestContext: finalizedLock.context.requestContext,
+            updatedAtMs: fixedMs,
+        )
+        let finalLock = finalizedLock.recordingFinalSnapshot(finalSnapshot)
+        let renamedSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: "Renamed while pending",
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [userMessage],
+            lastRequestID: finalizedLock.requestID,
+            lastRunID: finalizedLock.runID,
+            lastRequestContext: finalizedLock.context.requestContext,
+            updatedAtMs: fixedMs - 1,
+        )
+        let renamedSummary = AiChatSessionSummary(snapshot: renamedSnapshot)
+        let renamedFinalSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: "Renamed while pending",
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [userMessage, assistantMessage],
+            lastRequestID: finalizedLock.requestID,
+            lastRunID: finalizedLock.runID,
+            lastRequestContext: finalizedLock.context.requestContext,
+            updatedAtMs: fixedMs,
+        )
+        let renamedFinalLock = finalizedLock
+            .recordingFinalSnapshot(finalSnapshot)
+            .recordingCustomTitle("Renamed while pending")
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionList: .init(allRows: [AiChatSessionSummary(snapshot: finalSnapshot)]),
+            sessionID: makeCBW005SessionID("15151515-1515-1515-1515-151515151518"),
+            sessionStatus: .idle,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [],
+            draftText: "",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            backgroundExecutionPhases: [
+                finalizedLock.requestID: AiChatExecutionPhase.completed(finalLock),
+            ],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { requestedSessionID in
+                    requestedSessionID == sessionID ? renamedSnapshot : nil
+                },
+                saveSession: { snapshot in
+                    await persistence.save(snapshot)
+                },
+                deleteSession: { _ in },
+            )
+        }
+
+        await store.send(.sessionRenameSucceeded(renamedSummary, customTitle: "Renamed while pending")) { state in
+            state.sessionList.replaceRow(renamedSummary)
+            state.backgroundExecutionPhases[finalizedLock.requestID] = AiChatExecutionPhase.completed(renamedFinalLock)
+            state.sessionList.errorMessage = nil
+        }
+
+        await store.send(.persistenceFailed(renamedFinalLock, .unknown)) { state in
+            state.backgroundExecutionPhases[finalizedLock.requestID] = AiChatExecutionPhase.persistenceRecovery(
+                renamedFinalLock,
+                .unknown,
+            )
+        }
+
+        await store.send(.routeToChatSession(sessionID)) { state in
+            state.sessionList.selectedSessionID = sessionID
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.restoreSessionID = sessionID
+            state.mode = .sessions
+        }
+        await store.receive(.restoreOutcome(
+            requestedSessionID: sessionID,
+            .restored(snapshot: renamedSnapshot),
+            restoreFailure: nil,
+        )) { state in
+            state.sessionID = sessionID
+            state.sessionStatus = .active
+            state.currentSessionCustomTitle = renamedSnapshot.customTitle
+            state.transcriptHistory = renamedSnapshot.transcriptHistory
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = renamedSnapshot.lastRequestContext
+            state.lastRequestContextModelHandle = renamedSnapshot.model
+            state.addedAttachments = []
+            state.currentContextFolderStructureModes = [:]
+            state.executionPhase = AiChatExecutionPhase.persistenceRecovery(renamedFinalLock, .unknown)
+            state.backgroundExecutionPhases[finalizedLock.requestID] = nil
+            state.selectedModelHandle = renamedSnapshot.model
+            state.selectedThinking = renamedSnapshot.selectedThinking
+            state.restoreOutcome = .restored(snapshot: renamedSnapshot)
+            state.restoreFailure = nil
+            state.mode = .chat
+            state.sessionList.errorMessage = nil
+        }
+
+        await store.send(.errorRecoveryTapped)
+        await store.receive(.persistenceRecoverySucceeded(renamedFinalLock)) { state in
+            state.lastExecutionFailure = nil
+            state.executionPhase = AiChatExecutionPhase.completed(renamedFinalLock)
+        }
+
+        XCTAssertEqual(persistence.snapshots, [renamedFinalSnapshot])
         await store.finish()
     }
 

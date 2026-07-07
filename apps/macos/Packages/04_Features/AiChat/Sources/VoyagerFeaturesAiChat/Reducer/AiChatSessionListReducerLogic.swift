@@ -177,6 +177,47 @@ extension AiChatFeature {
         )
     }
 
+    func refreshCustomTitleInExecutionOwners(
+        sessionID: AiChatSessionID,
+        customTitle: String?,
+        state: inout State,
+    ) {
+        state.executionPhase = executionPhase(
+            state.executionPhase,
+            updatingCustomTitle: customTitle,
+            for: sessionID,
+        )
+        for (requestID, phase) in state.backgroundExecutionPhases {
+            state.backgroundExecutionPhases[requestID] = executionPhase(
+                phase,
+                updatingCustomTitle: customTitle,
+                for: sessionID,
+            )
+        }
+    }
+
+    private func executionPhase(
+        _ phase: AiChatExecutionPhase,
+        updatingCustomTitle customTitle: String?,
+        for sessionID: AiChatSessionID,
+    ) -> AiChatExecutionPhase {
+        guard phase.lock?.context.sessionID == sessionID else { return phase }
+        switch phase {
+        case .idle:
+            return .idle
+        case let .processing(lock):
+            return .processing(lock.recordingCustomTitle(customTitle))
+        case let .completed(lock):
+            return .completed(lock.recordingCustomTitle(customTitle))
+        case let .failed(lock, failure):
+            return .failed(lock.recordingCustomTitle(customTitle), failure)
+        case let .cancelled(lock):
+            return .cancelled(lock.recordingCustomTitle(customTitle))
+        case let .persistenceRecovery(lock, failure):
+            return .persistenceRecovery(lock.recordingCustomTitle(customTitle), failure)
+        }
+    }
+
     func deleteSession(_ sessionID: AiChatSessionID) -> Effect<Action> {
         .run { [aiChatSessionPersistenceClient] send in
             do {
