@@ -133,6 +133,8 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
         )
     }
 
+    /// ACC-003-guard_session_lapse: guard overlay는 FileManager 클릭/파일 drop을 기저 view로 통과시키지 않는다.
+    /// shield view가 hit-test 대상이 되고 fileURL drag type을 등록하는지 검증한다.
     func testInteractionShieldBlocksHitTestsAndFileDrops() {
         let shield = SessionLapseGuardInteractionShieldView(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
 
@@ -140,6 +142,7 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
         XCTAssertTrue(shield.registeredDraggedTypes.contains(.fileURL))
     }
 
+    /// ACC-003-guard_session_lapse: 복수 window에서도 overlay 표시는 state 기준으로 동일해야 한다.
     func testMultipleWindowsAllShowOverlay() {
         var expiredState = AccountAccessFeature.State()
         expiredState.didSignInFail = true
