@@ -163,6 +163,8 @@ Capture a compact table before implementation starts:
 
 The table is a guardrail, not documentation polish. If a row cannot identify the surviving assertion path, do not delete that test yet.
 
+When a test stays but its assertions are weakened, use the same accounting at assertion level. Record each removed or loosened assertion, the replacement owner-level assertion that preserves the behavior, and any accepted coverage gap. Do not treat a weaker assertion as cleanup unless that mapping exists.
+
 ### Do / Don't
 
 - Do extract repeated setup after the coverage map identifies stable patterns.
