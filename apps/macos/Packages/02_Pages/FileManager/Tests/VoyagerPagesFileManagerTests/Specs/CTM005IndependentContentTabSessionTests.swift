@@ -594,6 +594,65 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    func testInactiveAiChatTabCloseMovesLifecycleOwnerToBackground() async {
+        let homeID = ContentTabID()
+        let aiChatID = ContentTabID()
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath("/Users/test/HomeSession")
+
+        var aiChatContent = FileManagerContentFeature.State()
+        aiChatContent.navigation.navigationState = .aiChat(aiSessionID.rawValue.uuidString)
+        aiChatContent.aiChat.sessionID = aiSessionID
+        aiChatContent.aiChat.sessionStatus = .active
+        aiChatContent.aiChat.executionPhase = .processing(requestLock)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: aiChatID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: aiSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "Chat",
+                    iconName: "message",
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        state.content = homeContent
+        state.tabContentStates = [homeID: homeContent, aiChatID: aiChatContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.close(aiChatID)))
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, homeID)
+        XCTAssertNil(store.state.tabContentStates[aiChatID])
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase,
+            .processing(requestLock),
+        )
+        XCTAssertEqual(store.state.content.navigation.currentPath, "/Users/test/HomeSession")
+        await store.finish()
+    }
+
     /// CTM-005-independent_content_tab_session: 마지막 content tab close 시 window close 요청을 발생시킴
     /// 단일 active tab을 닫으면 tab reducer는 Home reset을 유지하고, window routing은 실제 window close를 요청한다.
     /// - 검증 내용: close 후 `.closeWindow` action 수신

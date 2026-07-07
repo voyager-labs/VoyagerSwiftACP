@@ -259,6 +259,19 @@ extension FileManagerWindowState {
         tabContentStates[tabID] = nil
     }
 
+    mutating func addBackgroundAiChatState(for tabID: ContentTabID) {
+        let contentState = if contentTabs.previousActiveTabID == tabID || contentTabs.activeTabID == tabID {
+            content
+        } else {
+            tabContentStates[tabID]
+        }
+
+        guard let contentState else { return }
+        for sessionID in contentState.aiChat.lifecycleSessionIDsToPreserve {
+            addBackgroundAiChatState(sessionID: sessionID, state: contentState)
+        }
+    }
+
     mutating func syncContentTabSidebarItems() {
         sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: contentTabs)
     }

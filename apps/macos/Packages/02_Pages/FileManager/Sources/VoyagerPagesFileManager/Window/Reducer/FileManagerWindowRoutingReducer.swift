@@ -195,6 +195,7 @@ struct FileManagerWindowRoutingReducer {
                     handoffCleanupEffect = .none
                 }
                 if isRemovedTab {
+                    state.addBackgroundAiChatState(for: tabID)
                     state.addBackgroundInspectorAiChatState(for: tabID)
                     state.removeContentState(for: tabID)
                     state.removeInspectorState(for: tabID)
@@ -203,6 +204,7 @@ struct FileManagerWindowRoutingReducer {
                         state.restoreInspectorStateForActiveTab()
                     }
                 } else if shouldResetLastTabContent {
+                    state.addBackgroundAiChatState(for: tabID)
                     state.addBackgroundInspectorAiChatState(for: tabID)
                     state.content = contentState(
                         for: state.contentTabs.tabs[id: tabID]?.anchor,

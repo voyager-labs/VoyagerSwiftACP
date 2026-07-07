@@ -289,9 +289,6 @@ private extension AiChatSessionSnapshot {
             && model == existingSnapshot.model
             && selectedModelRow == existingSnapshot.selectedModelRow
             && selectedThinking == existingSnapshot.selectedThinking
-            && lastRequestID == existingSnapshot.lastRequestID
-            && lastRunID == existingSnapshot.lastRunID
-            && lastRequestContext == existingSnapshot.lastRequestContext
             && existingSnapshot.transcriptHistory.starts(with: transcriptHistory)
     }
 }
