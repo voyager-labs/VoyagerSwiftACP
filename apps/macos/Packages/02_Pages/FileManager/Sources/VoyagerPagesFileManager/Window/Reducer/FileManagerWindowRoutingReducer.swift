@@ -102,10 +102,22 @@ struct FileManagerWindowRoutingReducer {
                 }
                 let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
                     || state.activeTabContentStateMissing
-                let handoffCleanupEffect: Effect<Action> = if shouldResyncContentNavigation {
-                    prepareContentForActiveTabHandoff(state: &state.content)
+                let handoffCleanupEffect: Effect<Action>
+                if shouldResyncContentNavigation {
+                    let aiChatLifecycleSessionIDs = aiChatLifecycleSessionIDsToPreserve(state.content.aiChat)
+                    if aiChatLifecycleSessionIDs.isEmpty {
+                        handoffCleanupEffect = prepareContentForActiveTabHandoff(state: &state.content)
+                    } else {
+                        for aiChatSessionID in aiChatLifecycleSessionIDs {
+                            state.addBackgroundAiChatState(sessionID: aiChatSessionID, state: state.content)
+                        }
+                        handoffCleanupEffect = prepareContentForActiveTabHandoff(
+                            state: &state.content,
+                            skipAiChatCleanup: true,
+                        )
+                    }
                 } else {
-                    .none
+                    handoffCleanupEffect = .none
                 }
                 if shouldResyncContentNavigation {
                     state.saveCurrentContentStateForPreviousActiveTab()
@@ -132,10 +144,22 @@ struct FileManagerWindowRoutingReducer {
                 }
                 let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
                     || state.activeTabContentStateMissing
-                let handoffCleanupEffect: Effect<Action> = if shouldResyncContentNavigation {
-                    prepareContentForActiveTabHandoff(state: &state.content)
+                let handoffCleanupEffect: Effect<Action>
+                if shouldResyncContentNavigation {
+                    let aiChatLifecycleSessionIDs = aiChatLifecycleSessionIDsToPreserve(state.content.aiChat)
+                    if aiChatLifecycleSessionIDs.isEmpty {
+                        handoffCleanupEffect = prepareContentForActiveTabHandoff(state: &state.content)
+                    } else {
+                        for aiChatSessionID in aiChatLifecycleSessionIDs {
+                            state.addBackgroundAiChatState(sessionID: aiChatSessionID, state: state.content)
+                        }
+                        handoffCleanupEffect = prepareContentForActiveTabHandoff(
+                            state: &state.content,
+                            skipAiChatCleanup: true,
+                        )
+                    }
                 } else {
-                    .none
+                    handoffCleanupEffect = .none
                 }
                 if shouldResyncContentNavigation {
                     state.saveCurrentContentStateForPreviousActiveTab()
@@ -235,10 +259,22 @@ struct FileManagerWindowRoutingReducer {
                 }
                 let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
                     || state.activeTabContentStateMissing
-                let handoffCleanupEffect: Effect<Action> = if shouldResyncContentNavigation {
-                    prepareContentForActiveTabHandoff(state: &state.content)
+                let handoffCleanupEffect: Effect<Action>
+                if shouldResyncContentNavigation {
+                    let aiChatLifecycleSessionIDs = aiChatLifecycleSessionIDsToPreserve(state.content.aiChat)
+                    if aiChatLifecycleSessionIDs.isEmpty {
+                        handoffCleanupEffect = prepareContentForActiveTabHandoff(state: &state.content)
+                    } else {
+                        for aiChatSessionID in aiChatLifecycleSessionIDs {
+                            state.addBackgroundAiChatState(sessionID: aiChatSessionID, state: state.content)
+                        }
+                        handoffCleanupEffect = prepareContentForActiveTabHandoff(
+                            state: &state.content,
+                            skipAiChatCleanup: true,
+                        )
+                    }
                 } else {
-                    .none
+                    handoffCleanupEffect = .none
                 }
                 if shouldResyncContentNavigation {
                     state.saveCurrentContentStateForPreviousActiveTab()
@@ -1345,6 +1381,7 @@ private extension AiChatFeature.State {
         snapshot: AiChatSessionSnapshot? = nil,
         backgroundAiChat: AiChatFeature.State,
     ) {
+        currentSessionCustomTitle = snapshot?.customTitle ?? backgroundAiChat.currentSessionCustomTitle
         transcriptHistory = snapshot?.transcriptHistory ?? backgroundAiChat.transcriptHistory
         streamingAssistantDraft = nil
         transcriptAutoScrollVersion += 1
