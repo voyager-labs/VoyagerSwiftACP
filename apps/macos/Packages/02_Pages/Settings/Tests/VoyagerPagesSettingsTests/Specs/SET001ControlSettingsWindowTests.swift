@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerFeaturesAccountAccess
 @testable import VoyagerPagesSettings
 import XCTest
 
@@ -26,11 +27,12 @@ import XCTest
 
 @MainActor
 final class SET001ControlSettingsWindowTests: XCTestCase {
-    /// SET-001-open_settings_window: Settings window가 표시될 때 General/Appearance section load action을 라우팅한다.
-    /// Settings root가 처음 나타나는 시점에 두 하위 section의 현재 설정을 로드할 준비가 되는지 검증한다.
-    /// - 검증 내용: `.onAppear`가 `general.loadSettings`와 `appearance.loadSettings`를 순서대로 방출한다.
+    /// SET-001-open_settings_window: Settings window가 표시될 때 더 이상 General/Appearance load를 직접 trigger하지 않는다.
+    /// General/Appearance load는 AppRoot가 launch(.willFinishLaunching)에서 1회 보내는
+    /// `.bootstrapLocalPreferences`로 이동했다 (T2b). 본 테스트는 onAppear가 완전 no-op임을 검증한다.
+    /// - 검증 내용: `.onAppear`는 아무 effect도 방출하지 않는다 (T2c: snapshot load도 상위로 이동).
     /// - 사전 조건: Settings root 상태는 기본 section과 기본 child state로 시작한다.
-    /// - 기대 결과: General은 시작 디렉터리 `/`, Appearance는 `.system` theme 상태로 로드된다.
+    /// - 기대 결과: 상태 갱신 없음, effect 방출 없음.
     func testOpenSettingsWindowOnAppearLoadsGeneralAndAppearance() async {
         let store = TestStore(initialState: SettingsFeature.State()) {
             SettingsFeature()
@@ -40,16 +42,23 @@ final class SET001ControlSettingsWindowTests: XCTestCase {
             $0.directorySelectionClient = .testValue
             $0.appearanceSettingsClient = .testValue
         }
-        // store.exhaustivity = .off: loadSettings가 다수 필드를 동시 갱신하나 검증 대상은 일부 필드만 해당
-        store.exhaustivity = .off
 
         await store.send(.onAppear)
-        await store.receive(\.general.loadSettings) { state in
-            state.generalSettings.startingDirectory = "/"
+        await store.finish()
+    }
+
+    func testOpenSettingsWindowDoesNotEagerlyBootstrapHiddenTabs() async {
+        let store = TestStore(initialState: SettingsFeature.State()) {
+            SettingsFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0.launchAtLoginClient = .testValue
+            $0.directorySelectionClient = .testValue
+            $0.appearanceSettingsClient = .testValue
         }
-        await store.receive(\.appearance.loadSettings) { state in
-            state.appearanceSettings.theme = .system
-        }
+
+        await store.send(.onAppear)
+        await store.finish()
     }
 
     /// SET-001-switch_setting_tabs: General/Appearance section 전환은 현재 선택 section만 바꾸고 child state를 보존한다.
@@ -106,4 +115,185 @@ final class SET001ControlSettingsWindowTests: XCTestCase {
     // - 검증 내용: 실제 앱 런타임에서 close control/⌘W가 현재 Settings window를 닫는지 확인한다.
     // - 사전 조건: 실제 앱 런타임에서 Settings window가 key window로 열린 상태여야 한다.
     // - 기대 결과: 닫기 control 또는 ⌘W 입력 후 현재 Settings window가 닫히고 다음 fresh reopen은 General로 시작한다.
+
+    // MARK: - T2a RED: launch bootstrap contract (onAppear reload를 launch 시점 1회로 대체)
+
+    /// T2a RED: AppRoot가 launch에서 1회 보내는 `.bootstrapLocalPreferences`가
+    /// General/Appearance load action을 merge로 실행한다.
+    /// - 검증 내용: `.bootstrapLocalPreferences` 수신 시 `.general(.loadSettings)`와 `.appearance(.loadSettings)`가 순서대로 방출된다.
+    /// - 사전 조건: Settings root 상태는 기본 child state로 시작한다.
+    /// - 기대 결과: General은 시작 디렉터리 `/`, Appearance는 `.system` theme으로 로드된다.
+    func testSettingsBootstrapLocalPreferencesRoutesGeneralAndAppearanceLoad() async {
+        let store = TestStore(initialState: SettingsFeature.State()) {
+            SettingsFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0.launchAtLoginClient = .testValue
+            $0.directorySelectionClient = .testValue
+            $0.appearanceSettingsClient = .testValue
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bootstrapLocalPreferences)
+        await store.receive(\.general.loadSettings) { state in
+            state.generalSettings.startingDirectory = "/"
+        }
+        await store.receive(\.appearance.loadSettings) { state in
+            state.appearanceSettings.theme = .system
+        }
+        await store.finish()
+    }
+
+    // MARK: - Settings Access Status Hydration (no whole-window lock)
+
+    // 정책: access_status != full이어도 Settings 창 자체는 닫히거나 잠기지 않는다.
+    // entitlement-dependent action gating은 Account/개별 feature가 소유한다.
+    // SettingsState.accessStatus는 Account tab 표시와 AppRoot hydration 흐름을 지원하기만 한다.
+
+    /// access_status != full인 상태에서도 Settings content는 그대로 렌더링된다.
+    /// - 사전 조건: 기본 상태(accessStatus = .none)에서 launch snapshot이 trialExpired로 도착.
+    /// - 기대: state.accessStatus가 snapshot.status로 갱신되고 Settings 창은 잠기지 않는다.
+    ///   SettingsView는 더 이상 isContentLocked 분기를 가지지 않는다.
+    func testSettingsContentStaysRenderedWhenAccessStatusNotFull() async {
+        let store = TestStore(initialState: SettingsFeature.State()) {
+            SettingsFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0.launchAtLoginClient = .testValue
+            $0.directorySelectionClient = .testValue
+            $0.appearanceSettingsClient = .testValue
+        }
+        store.exhaustivity = .off
+
+        let snapshot = AccessStatusSnapshot(
+            status: .trialExpired,
+            currentPeriodEnd: nil,
+            fetchedAt: Date(timeIntervalSince1970: 0),
+        )
+        await store.send(.appLifecycleAccessSnapshotReady(snapshot)) { state in
+            state.accessStatus = .trialExpired
+        }
+        await store.receive(\.account.access.hydrateLaunchSnapshot)
+
+        XCTAssertEqual(store.state.accessStatus, .trialExpired)
+    }
+
+    /// T2c GREEN: launch snapshot hydration이 access status를 채우고
+    /// Account owning reducer hydration action을 자식으로 전달한다.
+    /// - 검증 내용: `.appLifecycleAccessSnapshotReady(snapshot)` 수신 시
+    ///   state.accessStatus가 snapshot.status로 갱신되고,
+    ///   `.account(.access(.hydrateLaunchSnapshot(snapshot)))`가 방출된다.
+    /// - 사전 조건: Settings root 상태는 기본 상태.
+    /// - 기대 결과: accessStatus 갱신 + Account 하위 hydration action 방출.
+    func testAppLifecycleAccessSnapshotReadyHydratesSettingsAndAccount() async {
+        let store = TestStore(initialState: SettingsFeature.State()) {
+            SettingsFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0.launchAtLoginClient = .testValue
+            $0.directorySelectionClient = .testValue
+            $0.appearanceSettingsClient = .testValue
+        }
+        store.exhaustivity = .off
+
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: nil,
+            fetchedAt: Date(timeIntervalSince1970: 0),
+        )
+        await store.send(.appLifecycleAccessSnapshotReady(snapshot)) { state in
+            state.accessStatus = .coreLicenseActive
+        }
+        await store.receive(\.account.access.hydrateLaunchSnapshot) { state in
+            state.accountSettings.access.status = .coreLicenseActive
+            state.accountSettings.access.snapshot = snapshot
+        }
+        await store.finish()
+    }
+
+    /// Task 13: launch snapshot hydration이 session 축까지 end-to-end 전달되는지 검증.
+    /// 기존 `testAppLifecycleAccessSnapshotReadyHydratesSettingsAndAccount`는
+    /// sessionExpiresAt 없는 snapshot을 써서 access status 축만 검증하고 `finish()`로
+    /// clean termination까지 증명한다. 본 테스트는 session 축이 있는 snapshot에서
+    /// SettingsFeature가 `.account(.access(.hydrateLaunchSnapshot(snapshot)))`를 전달하고
+    /// 최종 `accountSettings.access.hasAccountSession == true`로 파생되는지 확인한다.
+    /// - 검증 내용: `.appLifecycleAccessSnapshotReady(snapshot with sessionExpiresAt)` 수신 시
+    ///   state.accessStatus가 snapshot.status로 갱신되고,
+    ///   `.account(.access(.hydrateLaunchSnapshot(snapshot)))`가 방출된다.
+    /// - 사전 조건: Settings root 상태는 기본 상태 (session 없음).
+    /// - 기대 결과: hydration 후 `hasAccountSession == true`, `sessionExpiresAt == sessionExpiry`.
+    /// - 비고: session 축이 있으면 AccountAccessFeature가 startTtlTimer()를 시작하므로
+    ///   `await store.finish()` 없이 TestStore 해제로 timer effect를 자연 정리한다 (Task 12 패턴).
+    func testAppLifecycleAccessSnapshotReadyWithSessionForwardsAccountHydration() async {
+        let store = TestStore(initialState: SettingsFeature.State()) {
+            SettingsFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0.launchAtLoginClient = .testValue
+            $0.directorySelectionClient = .testValue
+            $0.appearanceSettingsClient = .testValue
+        }
+        store.exhaustivity = .off
+
+        let sessionExpiry = Date(timeIntervalSince1970: 4_102_444_800)
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: nil,
+            fetchedAt: Date(timeIntervalSince1970: 0),
+            sessionExpiresAt: sessionExpiry,
+        )
+        await store.send(.appLifecycleAccessSnapshotReady(snapshot)) { state in
+            state.accessStatus = .coreLicenseActive
+        }
+        await store.receive(\.account.access.hydrateLaunchSnapshot)
+
+        // sessionExpiresAt != nil → hasAccountSession=true 파생 (Task 6 hydration)
+        XCTAssertTrue(store.state.accountSettings.access.hasAccountSession)
+        XCTAssertEqual(store.state.accountSettings.access.sessionExpiresAt, sessionExpiry)
+    }
+
+    // MARK: - Settings Already-Open / Access Status Updates
+
+    // Settings 창이 열려 있는 동안 access_status가 바뀌어도 창 자체는 닫히지 않는다.
+    // 상위(AppRoot 등)가 `.accessStatusLoaded`로 push하는 상태 갱신만 Settings가 수용한다.
+
+    /// Settings 창이 열려 있는 동안 access_status가 full → non-full로 바뀌어도
+    /// state.accessStatus만 갱신될 뿐 창이 잠기지 않는다.
+    /// - 시나리오: 초기 full access → 런타임 중 상위가 `.accessStatusLoaded(.trialExpired)` push.
+    /// - 계약: SettingsFeature는 런타임 lapse 전파를 `.accessStatusLoaded` 액션으로만 수용한다.
+    func testSettingsAccessStatusLapseUpdatesStateWhileOpen() async {
+        var initialState = SettingsFeature.State()
+        initialState.accessStatus = .coreLicenseActive
+        let store = TestStore(initialState: initialState) {
+            SettingsFeature()
+        }
+
+        await store.send(.accessStatusLoaded(.trialExpired)) { state in
+            state.accessStatus = .trialExpired
+        }
+
+        XCTAssertEqual(store.state.accessStatus, .trialExpired)
+    }
+
+    /// Account access delegate가 전달하는 상태 변화를 Settings가 반영한다.
+    /// signedOut → accessStatus = .none, unlocked(snapshot) → snapshot.status.
+    func testSettingsAccessStatusUpdatesFromAccountAccessDelegatesWhileOpen() async {
+        var initialState = SettingsFeature.State()
+        initialState.accessStatus = .coreLicenseActive
+        let store = TestStore(initialState: initialState) {
+            SettingsFeature()
+        }
+
+        await store.send(.account(.access(.delegate(.signedOut)))) { state in
+            state.accessStatus = .none
+        }
+        XCTAssertEqual(store.state.accessStatus, .none)
+
+        await store.send(.account(.access(.delegate(.unlocked(
+            AccessStatusSnapshot(status: .coreLicenseActive),
+        ))))) { state in
+            state.accessStatus = .coreLicenseActive
+        }
+        XCTAssertEqual(store.state.accessStatus, .coreLicenseActive)
+    }
 }

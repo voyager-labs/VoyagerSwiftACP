@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import ComposableArchitecture
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
@@ -10,6 +11,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
     public let windowID: UUID
     public let windowUndoManager: UndoManager
     public let store: StoreOf<FileManagerFeature>
+    private let sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>?
     private let onBecameKey: (@MainActor (UUID) -> Void)?
     private let onResignedKey: (@MainActor (UUID) -> Void)?
     private let onWillClose: (@MainActor (UUID) -> Void)?
@@ -21,6 +23,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         store: StoreOf<FileManagerFeature>,
         windowUndoManager: UndoManager,
         path: String? = nil,
+        sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>? = nil,
         onBecameKey: (@MainActor (UUID) -> Void)? = nil,
         onResignedKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
@@ -30,6 +33,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         self.windowID = windowID
         self.store = store
         self.windowUndoManager = windowUndoManager
+        self.sessionLapseGuardStore = sessionLapseGuardStore
         self.onBecameKey = onBecameKey
         self.onResignedKey = onResignedKey
         self.onWillClose = onWillClose
@@ -38,6 +42,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         let window = Self.makeWindow(
             store: store,
             path: path,
+            sessionLapseGuardStore: sessionLapseGuardStore,
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
         )
@@ -51,6 +56,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         registryClient: RegistryClient,
         path: String? = nil,
         duplicateState: FileManagerFeature.State? = nil,
+        sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>? = nil,
         onBecameKey: (@MainActor (UUID) -> Void)? = nil,
         onResignedKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
@@ -75,6 +81,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         self.windowID = windowID
         self.store = store
         windowUndoManager = undoManager
+        self.sessionLapseGuardStore = sessionLapseGuardStore
         self.onBecameKey = onBecameKey
         self.onResignedKey = onResignedKey
         self.onWillClose = onWillClose
@@ -83,6 +90,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         let window = Self.makeWindow(
             store: store,
             path: path,
+            sessionLapseGuardStore: sessionLapseGuardStore,
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
         )
@@ -130,6 +138,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
     private static func makeWindow(
         store: StoreOf<FileManagerFeature>,
         path: String?,
+        sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>?,
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)?,
         initialWindowSizeProvider: (() -> NSSize?)?,
     ) -> NSWindow {
@@ -139,6 +148,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
             FileManagerWindowSplitCoordinator(
                 store: store,
                 isDark: FileManagerWindowChrome.currentIsDark,
+                sessionLapseGuardStore: sessionLapseGuardStore,
             )
         }
 

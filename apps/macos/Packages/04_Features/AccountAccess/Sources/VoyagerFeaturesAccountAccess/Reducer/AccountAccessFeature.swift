@@ -22,6 +22,9 @@ public struct AccountAccessFeature {
     @Dependency(\.date)
     var date
 
+    @Dependency(\.continuousClock)
+    var continuousClock
+
     @Dependency(\.checkoutURLClient)
     var checkoutURLClient
 
@@ -33,8 +36,10 @@ public struct AccountAccessFeature {
 
     private enum CancelID {
         static let fetchStatus = "accountAccessFetchStatus"
+        static let fetchRetry = "accountAccessFetchRetry"
         static let appDidBecomeActiveObserver = "accountAccessAppDidBecomeActiveObserver"
         static let signInHandoff = "accountAccessSignInHandoff"
+        static let refreshToken = "accountAccessRefreshToken"
         static let ttlTimer = "accountAccessTtlTimer"
     }
 
@@ -78,7 +83,6 @@ public struct AccountAccessFeature {
                 return handleRefreshAccessTapped(&state)
 
             case .appDidBecomeActive:
-                // 세션이 있을 때만 status 갱신 (불필요한 네트워크 요청 방지)
                 guard state.hasAccountSession else {
                     return .none
                 }
@@ -112,8 +116,14 @@ public struct AccountAccessFeature {
             case let ._cachedSnapshotRestored(snapshot):
                 return handleCachedSnapshotRestored(&state, snapshot: snapshot)
 
+            case let .hydrateLaunchSnapshot(snapshot):
+                return handleHydrateLaunchSnapshot(&state, snapshot: snapshot)
+
             case let ._fetchRetryScheduled(retryStep):
                 return handleFetchRetryScheduled(&state, retryStep: retryStep)
+
+            case .signOut:
+                return handleSignOut(&state)
 
             case .delegate:
                 return .none
@@ -121,8 +131,10 @@ public struct AccountAccessFeature {
         }
     }
 
-    private func handleOnAppear(_: inout State) -> Effect<Action> {
-        .merge(
+    private func handleOnAppear(_ state: inout State) -> Effect<Action> {
+        guard !state.didBootstrap else { return .none }
+        state.didBootstrap = true
+        return .merge(
             .run { [sessionClient] send in
                 let session = try? await sessionClient.read()
                 await send(._onAppearSessionRestored(session))
@@ -135,12 +147,8 @@ public struct AccountAccessFeature {
         state.hasAccountSession = session != nil
 
         guard let session else {
-            // VOY-397: 세션 없이 onAppear 복원 시 이전 persist된 active entitlement fact를 제거한다.
-            // 방치 시 Access Unlock 화면이 Active chip + Sign In 버튼 + Next CTA를 동시에 그리는 regression 발생.
             clearStaleActiveAccessFacts(&state)
             resetSessionRetryBudget(&state)
-            // VOY-397: 세션 축 소실 시 in-flight access_status 응답이 stale active fact를 재주입하지 못하도록
-            // fetchGeneration을 무효화하고 진행 중 fetch effect를 취소한다.
             state.fetchGeneration += 1
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
@@ -155,7 +163,6 @@ public struct AccountAccessFeature {
         resetSessionRetryBudget(&state)
         state.fetchGeneration += 1
 
-        // TTL 타이머 시작: 세션이 복원되면 access token 만료를 추적한다.
         state.ttlTimerActive = true
         let ttlEffect = startTtlTimer()
 
@@ -188,9 +195,10 @@ public struct AccountAccessFeature {
 
         state.isSignInInProgress = true
         state.didSignInFail = false
+        let requestedContext = state.handoffContext
 
         return .run { [signInHandoffClient] send in
-            let result = await signInHandoffClient.performHandoff()
+            let result = await signInHandoffClient.performHandoff(requestedContext)
             await send(.signInHandoffCompleted(result))
         }
         .cancellable(id: CancelID.signInHandoff, cancelInFlight: true)
@@ -225,7 +233,13 @@ public struct AccountAccessFeature {
             state.handoffPendingState = handoffState
             return .none
 
-        case .failure, .cancelled:
+        case .failure:
+            state.isSignInInProgress = false
+            state.didSignInFail = true
+            state.errorMessage = "Check your network connection and try again."
+            return .none
+
+        case .cancelled:
             state.isSignInInProgress = false
             state.didSignInFail = true
             return .none
@@ -233,12 +247,10 @@ public struct AccountAccessFeature {
     }
 
     private func handleLoginCallbackReceived(_ state: inout State, url: URL) -> Effect<Action> {
-        // real handoff callback: AppHandoffCallback이 파싱되면 exchange 경로
         if let callback = AppHandoffCallback(url: url, expectedScheme: appHandoffTarget.callbackScheme) {
             return handleRealHandoffCallback(&state, callback: callback)
         }
 
-        // legacy mock callback: 기존 scheme/host/path + query 없음 → restoreSession 경로
         guard isValidAuthCallback(url, expectedScheme: appHandoffTarget.callbackScheme), !hasQueryItems(url) else {
             state.isSignInInProgress = false
             state.didSignInFail = true
@@ -269,8 +281,7 @@ public struct AccountAccessFeature {
             return .none
         }
 
-        let expectedContext: AppHandoffContext = .onboarding
-        guard callback.context == expectedContext else {
+        guard callback.context == state.handoffContext else {
             state.isSignInInProgress = false
             state.didSignInFail = true
             state.handoffPendingState = nil
@@ -293,8 +304,6 @@ public struct AccountAccessFeature {
             state.didSignInFail = false
             state.isSessionExpired = false
             resetSessionRetryBudget(&state)
-            // handoff 성공 시 sessionExpiresAt/ttlTimerActive를 설정하고 TTL 타이머를 시작한다.
-            // handleOnAppearSessionRestored와 동일한 ownership path를 따른다.
             state.sessionExpiresAt = session.expiresAt
             state.ttlTimerActive = true
             state.fetchGeneration += 1
@@ -304,7 +313,6 @@ public struct AccountAccessFeature {
             )
 
         case .failure:
-            // sign-in 실패 (exchange/persist 오류). session expired와 구분한다.
             state.isSignInInProgress = false
             state.didSignInFail = true
             state.hasAccountSession = false
@@ -361,26 +369,30 @@ public struct AccountAccessFeature {
         }
     }
 
-    /// Token refresh → persist session (network + file I/O cross-seam).
     private func performTokenRefresh() -> Effect<Action> {
         .run { [authNetwork, sessionClient] send in
-            let session = try await authNetwork.refreshToken()
-            try await sessionClient.persist(session)
-            await send(._refreshTokenResult(.success(session)))
-        } catch: { error, send in
-            let mappedError: AccessError = if let accessError = error as? AccessError {
-                accessError
-            } else {
-                .networkFailure
+            do {
+                let session = try await authNetwork.refreshToken()
+                try Task.checkCancellation()
+                try await sessionClient.persist(session)
+                try Task.checkCancellation()
+                await send(._refreshTokenResult(.success(session)))
+            } catch is CancellationError {
+                return
+            } catch {
+                let mappedError: AccessError = if let accessError = error as? AccessError {
+                    accessError
+                } else {
+                    .networkFailure
+                }
+                await send(._refreshTokenResult(.failure(mappedError)))
             }
-            await send(._refreshTokenResult(.failure(mappedError)))
         }
+        .cancellable(id: CancelID.refreshToken, cancelInFlight: true)
     }
 }
 
 private extension AccountAccessFeature {
-    // MARK: - ONB-002-start_access_unlock_recovery
-
     private func handleRefreshAccessTapped(_ state: inout State) -> Effect<Action> {
         guard state.canRefreshAccess else {
             return .none
@@ -417,6 +429,7 @@ private extension AccountAccessFeature {
             status: accessStatus,
             currentPeriodEnd: response.currentPeriodEnd,
             fetchedAt: date(),
+            sessionExpiresAt: state.sessionExpiresAt,
         )
         state.snapshot = snapshot
 
@@ -472,12 +485,28 @@ private extension AccountAccessFeature {
 
     private func handleFetchRetryScheduled(_ state: inout State, retryStep: Int) -> Effect<Action> {
         // fetchRetryCount는 handleAccessStatusResponse에서 이미 증가함
-        let delay = Double(1 << retryStep) // 1s, 2s, 4s
+        let delay = Duration.seconds(1 << retryStep) // 1s, 2s, 4s
         let generation = state.fetchGeneration
-        return .run { _ in
-            try? await Task.sleep(for: .seconds(delay))
+        return .run { [continuousClock, authNetwork] send in
+            do {
+                try await continuousClock.sleep(for: delay)
+
+                let result: Result<AccessStatusResponse, AccessError>
+                do {
+                    let response = try await authNetwork.fetchAccessStatus()
+                    result = .success(response)
+                } catch let error as AccessError {
+                    result = .failure(error)
+                } catch {
+                    result = .failure(.networkFailure)
+                }
+
+                await send(.accessStatusResponse(generation: generation, result: result))
+            } catch {
+                // retry effect cancelled
+            }
         }
-        .concatenate(with: fetchAccessStatusEffect(generation: generation))
+        .cancellable(id: CancelID.fetchRetry, cancelInFlight: true)
     }
 
     /// 캐시된 snapshot의 최대 허용 보관 기간.
@@ -499,10 +528,23 @@ private extension AccountAccessFeature {
             return .none
         }
 
+        // entitlement 축: 캐시된 access status로 복원. 기존 정책 미변경.
         state.status = snapshot.status
         state.snapshot = snapshot
         state.isComplete = snapshot.isActive
         state.errorMessage = "일시적인 네트워크 오류"
+
+        // session 축: snapshot 기반으로 signed-in semantics 설정.
+        // handleHydrateLaunchSnapshot와 동일한 ownership path를 따르되,
+        // networkFailure fallback 경로이므로 fetchAccessStatusEffect는 호출하지 않는다.
+        // sessionExpiresAt == nil이면 hasAccountSession=false (가짜 세션 주입 금지).
+        state.hasAccountSession = snapshot.hasSession
+        state.sessionExpiresAt = snapshot.sessionExpiresAt
+
+        // bootstrap 완료 표시: 캐시 복원으로 초기 상태가 확정되었으므로
+        // 이후 handleOnAppear가 중복 session read/fetch를 수행하지 않도록 차단.
+        state.didBootstrap = true
+
         return .none
     }
 
@@ -527,7 +569,42 @@ private extension AccountAccessFeature {
         }
     }
 
-    // MARK: - Foreground 활성화 관찰
+    /// handleOnAppearSessionRestored/handleHandoffExchangeCompleted와 동일한 session ownership path를 따르되
+    /// 네트워크 재조회(fetchAccessStatusEffect)는 수행하지 않는다 — launch snapshot이 곧 초기 상태.
+    private func handleHydrateLaunchSnapshot(
+        _ state: inout State,
+        snapshot: AccessStatusSnapshot,
+    ) -> Effect<Action> {
+        state.status = snapshot.status
+        state.snapshot = snapshot
+        state.trialExpiresAt = snapshot.currentPeriodEnd
+        clearStaleSignInState(&state)
+
+        state.hasAccountSession = snapshot.hasSession
+        state.sessionExpiresAt = snapshot.sessionExpiresAt
+        state.isSessionExpired = false
+
+        state.didBootstrap = true
+
+        state.fetchGeneration += 1
+
+        if snapshot.hasSession {
+            state.ttlTimerActive = true
+            return .merge(
+                observeAppDidBecomeActive(),
+                .cancel(id: CancelID.fetchStatus),
+                .cancel(id: CancelID.ttlTimer),
+                startTtlTimer(),
+            )
+        } else {
+            state.ttlTimerActive = false
+            return .merge(
+                .cancel(id: CancelID.fetchStatus),
+                .cancel(id: CancelID.ttlTimer),
+                .cancel(id: CancelID.appDidBecomeActiveObserver),
+            )
+        }
+    }
 
     /// 앱이 foreground로 돌아올 때 access_status를 자동 갱신한다.
     private func observeAppDidBecomeActive() -> Effect<Action> {
@@ -541,8 +618,6 @@ private extension AccountAccessFeature {
         }
         .cancellable(id: CancelID.appDidBecomeActiveObserver, cancelInFlight: true)
     }
-
-    // MARK: - TTL 타이머
 
     /// 60초 간격으로 TTL을 확인하는 타이머를 시작한다.
     private func startTtlTimer() -> Effect<Action> {
@@ -578,6 +653,14 @@ private extension AccountAccessFeature {
         case let .success(session):
             state.consecutiveRefreshFailures = 0
             state.sessionExpiresAt = session.expiresAt
+            if let snapshot = state.snapshot {
+                state.snapshot = AccessStatusSnapshot(
+                    status: snapshot.status,
+                    currentPeriodEnd: snapshot.currentPeriodEnd,
+                    fetchedAt: snapshot.fetchedAt,
+                    sessionExpiresAt: session.expiresAt,
+                )
+            }
             return .none
 
         case let .failure(error):
@@ -599,32 +682,57 @@ private extension AccountAccessFeature {
         }
     }
 
-    /// 세션 만료 처리. dedup guard: 이미 만료 상태면 무시.
+    /// 사용자 로그아웃 처리.
+    private func handleSignOut(_ state: inout State) -> Effect<Action> {
+        guard state.hasAccountSession else { return .none }
+        state.hasAccountSession = false
+        state.didSignInFail = false
+        state.isSessionExpired = true
+        clearStaleActiveAccessFacts(&state)
+        state.ttlTimerActive = false
+        state.sessionExpiresAt = nil
+        state.fetchGeneration += 1
+        return .merge(
+            .run { [sessionClient, snapshotClient] send in
+                try? await sessionClient.delete(.explicitSignOut)
+                await snapshotClient.remove()
+                await send(.delegate(.signedOut))
+            },
+            .cancel(id: CancelID.ttlTimer),
+            .cancel(id: CancelID.fetchStatus),
+            .cancel(id: CancelID.fetchRetry),
+            .cancel(id: CancelID.refreshToken),
+        )
+    }
+
+    /// 세션 만료 처리.
     private func handleSessionExpiredDetected(_ state: inout State) -> Effect<Action> {
         guard !state.isSessionExpired else { return .none }
 
         state.hasAccountSession = false
         state.didSignInFail = true
         state.isSessionExpired = true
-        // VOY-397: 세션 만료 시에도 이전 active entitlement fact를 제거한다.
-        // 방치 시 Active chip + Sign In 버튼 + Next CTA 동시 표시 regression (nil-session 복원과 동일 원인).
+        // VOY-397: 세션 만료 시 stale active facts 제거.
         clearStaleActiveAccessFacts(&state)
         resetSessionRetryBudget(&state)
-        // VOY-397: 세션 만료 시 in-flight access_status 응답이 stale active fact를 재주입하지 못하도록
-        // fetchGeneration을 무효화하고 진행 중 fetch effect를 취소한다.
+        // VOY-397: 세션 만료 시 in-flight access_status 응답 재주입 방지.
         state.fetchGeneration += 1
         state.ttlTimerActive = false
         state.sessionExpiresAt = nil
         state.consecutiveRefreshFailures = 0
 
         return .merge(
+            .run { [sessionClient, snapshotClient] _ in
+                try? await sessionClient.delete(.sessionExpired)
+                await snapshotClient.remove()
+            },
             .cancel(id: CancelID.fetchStatus),
             .cancel(id: CancelID.ttlTimer),
+            .cancel(id: CancelID.fetchRetry),
+            .cancel(id: CancelID.refreshToken),
         )
     }
 
-    /// VOY-397: 세션 부재/만료 시 이전 active entitlement fact를 제거한다.
-    /// 방치 시 Active chip + Login 버튼 + Next CTA 동시 표시 regression 방지.
     private func clearStaleActiveAccessFacts(_ state: inout State) {
         state.status = nil
         state.snapshot = nil
@@ -633,28 +741,29 @@ private extension AccountAccessFeature {
         state.errorMessage = nil
     }
 
+    private func clearStaleSignInState(_ state: inout State) {
+        state.isSignInInProgress = false
+        state.didSignInFail = false
+        state.handoffPendingState = nil
+        state.errorMessage = nil
+    }
+
     private func resetSessionRetryBudget(_ state: inout State) {
         state.fetchRetryCount = 0
     }
 
-    // MARK: - 외부 URL 리다이렉트
-
-    /// 체크아웃(구매) 페이지를 브라우저에서 연다.
     private func handleOpenCheckout(_: inout State) -> Effect<Action> {
         openWebURL(makeURL: checkoutURLClient.checkoutURL)
     }
 
-    /// 요금제 페이지를 브라우저에서 연다.
     private func handleOpenPricing(_: inout State) -> Effect<Action> {
         openWebURL(makeURL: checkoutURLClient.pricingURL)
     }
 
-    /// 접근 권한 도움 페이지를 브라우저에서 연다.
     private func handleOpenAccessHelp(_: inout State) -> Effect<Action> {
         openWebURL(makeURL: checkoutURLClient.supportURL)
     }
 
-    /// 베타 코드 도움 페이지를 브라우저에서 연다.
     private func handleOpenBetaCodeHelp(_: inout State) -> Effect<Action> {
         openWebURL(makeURL: checkoutURLClient.supportURL)
     }

@@ -1,5 +1,6 @@
 // swiftlint:disable force_unwrapping
 
+import Clocks
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
 import XCTest
@@ -28,7 +29,8 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         checkoutURLClient: CheckoutURLClient = .testValue,
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
-        TestStore(initialState: initialState) {
+        let clock = TestClock()
+        return TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
             $0.accountSessionClient = accountSessionClient
@@ -36,6 +38,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             $0.accessStatusSnapshotClient = snapshotClient
             $0.checkoutURLClient = checkoutURLClient
             $0.date = .constant(referenceDate)
+            $0.continuousClock = clock
         }
     }
 
@@ -54,7 +57,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                     AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
                 },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
@@ -81,6 +84,49 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         XCTAssertTrue(fetchCalled)
     }
 
+    func testOnAppearIsIdempotentOnReentry() async throws {
+        nonisolated(unsafe) var sessionReadCount = 0
+        nonisolated(unsafe) var fetchCount = 0
+        let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: {
+                    sessionReadCount += 1
+                    return AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
+                },
+                persist: { _ in },
+                delete: { _ in },
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: {
+                    fetchCount += 1
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
+                },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+        )
+        store.exhaustivity = .off
+
+        await store.send(.onAppear)
+        await store.receive(\._onAppearSessionRestored)
+
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(sessionReadCount, 1)
+        XCTAssertEqual(fetchCount, 1)
+
+        await store.send(.onAppear)
+
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(sessionReadCount, 1)
+        XCTAssertEqual(fetchCount, 1)
+    }
+
     /// ACC-002-check_entitlement_status: pricing URL 설정 누락은 앱 crash가 아니라 error projection으로 처리된다.
     /// PUBLIC_WEB_BASE_URL missing/invalid 상황에서 fatalError 없이 Retry 가능한 오류 상태로 남는지 검증한다.
     /// - 검증 내용: `.openPricingTapped` → `._webURLResult(.failure(.notConfigured))`, status=nil, errorMessage 설정.
@@ -97,6 +143,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                 checkoutURL: { throw AccessError.notConfigured },
                 pricingURL: { throw AccessError.notConfigured },
                 supportURL: { throw AccessError.notConfigured },
+                accountURL: { URL(string: "http://test.test/account")! },
             ),
             initialState: state,
         )
@@ -347,6 +394,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             state.snapshot = cachedSnapshot
             state.isComplete = true
             state.errorMessage = "일시적인 네트워크 오류"
+            state.didBootstrap = true
         }
     }
 
@@ -462,6 +510,80 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         XCTAssertEqual(store.state.accountAccessStepState, .error)
     }
 
+    /// ACC-002: 캐시 복원 시 snapshot.sessionExpiresAt가 있으면 session 축이 복원된다.
+    /// networkFailure 3회 + 캐시 수락 → hasAccountSession=true, sessionExpiresAt=snapshot 값, didBootstrap=true.
+    /// - 검증 내용: sessionExpiresAt 있는 snapshot → session 축 복원
+    /// - 사전 조건: fetchRetryCount=3, fetchGeneration=1, snapshot.sessionExpiresAt=과거 미래 어느 쪽이든 non-nil
+    /// - 기대 결과: hasAccountSession=true, sessionExpiresAt==snapshot.sessionExpiresAt, didBootstrap=true
+    func testCachedSnapshotRestoredWithSessionExpiresAtRestoresSessionAxis() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
+        let cachedSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: nil,
+            fetchedAt: referenceDate,
+            sessionExpiresAt: sessionExpiry,
+        )
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        state.fetchRetryCount = 3
+        let store = makeTestStore(
+            snapshotClient: AccessStatusSnapshotClient(
+                load: { cachedSnapshot },
+                save: { _ in },
+                remove: {},
+            ),
+            initialState: state,
+        )
+        store.exhaustivity = .off
+
+        await store.send(.accessStatusResponse(generation: 1, result: .failure(.networkFailure)))
+        await store.receive(\._cachedSnapshotRestored)
+
+        XCTAssertTrue(store.state.hasAccountSession)
+        XCTAssertEqual(store.state.sessionExpiresAt, sessionExpiry)
+        XCTAssertTrue(store.state.didBootstrap)
+        XCTAssertEqual(store.state.status, .coreLicenseActive)
+        XCTAssertEqual(store.state.snapshot, cachedSnapshot)
+        XCTAssertTrue(store.state.isComplete)
+        XCTAssertEqual(store.state.errorMessage, "일시적인 네트워크 오류")
+    }
+
+    /// ACC-002: 캐시 복원 시 snapshot.sessionExpiresAt가 nil이면 session 축을 만들지 않는다.
+    /// access status가 active여도 sessionExpiresAt == nil이면 hasAccountSession=false.
+    /// isActive가 가짜 세션을 주입하지 않는지 검증 (signed-in = session 기반, not status 기반).
+    /// - 검증 내용: active snapshot + sessionExpiresAt=nil → hasAccountSession=false, sessionExpiresAt=nil
+    /// - 사전 조건: fetchRetryCount=3, fetchGeneration=1, snapshot(active, sessionExpiresAt=nil)
+    /// - 기대 결과: hasAccountSession=false, sessionExpiresAt=nil, didBootstrap=true, isComplete=snapshot.isActive
+    func testCachedSnapshotRestoredWithoutSessionDoesNotFakeSession() async {
+        let cachedSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: nil,
+            fetchedAt: referenceDate,
+            sessionExpiresAt: nil,
+        )
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        state.fetchRetryCount = 3
+        let store = makeTestStore(
+            snapshotClient: AccessStatusSnapshotClient(
+                load: { cachedSnapshot },
+                save: { _ in },
+                remove: {},
+            ),
+            initialState: state,
+        )
+        store.exhaustivity = .off
+
+        await store.send(.accessStatusResponse(generation: 1, result: .failure(.networkFailure)))
+        await store.receive(\._cachedSnapshotRestored)
+
+        XCTAssertFalse(store.state.hasAccountSession)
+        XCTAssertNil(store.state.sessionExpiresAt)
+        XCTAssertTrue(store.state.didBootstrap)
+        XCTAssertTrue(store.state.isComplete)
+        XCTAssertEqual(store.state.status, .coreLicenseActive)
+    }
+
     /// ACC-002: 성공적인 fetch 후 fetchRetryCount가 0으로 리셋된다.
     /// 연속 실패 후 성공하면 retry count를 초기화하여 다음 실패 사이클을 올바르게 시작한다.
     /// - 검증 내용: success 응답 → fetchRetryCount=0
@@ -485,6 +607,42 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
 
         XCTAssertEqual(store.state.fetchRetryCount, 0)
         XCTAssertEqual(store.state.status, .coreLicenseActive)
+    }
+
+    /// ACC-002: 성공 snapshot 저장 시 sessionExpiresAt를 보존한다.
+    /// 이후 networkFailure fallback이 저장 snapshot의 session 축을 사용하므로 TTL 소유권을 잃지 않는다.
+    /// - 검증 내용: success 응답 → snapshotClient.save(snapshot.sessionExpiresAt == state.sessionExpiresAt)
+    /// - 사전 조건: fetchGeneration=1, sessionExpiresAt가 있는 signed-in 상태
+    /// - 기대 결과: 저장 snapshot에 sessionExpiresAt 보존, fallback signed-in semantics 유지 가능
+    func testAccessStatusSuccessPersistsSessionExpiryInSnapshot() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
+        nonisolated(unsafe) var savedSnapshot: AccessStatusSnapshot?
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        state.hasAccountSession = true
+        state.sessionExpiresAt = sessionExpiry
+        let store = makeTestStore(
+            snapshotClient: AccessStatusSnapshotClient(
+                load: { nil },
+                save: { snapshot in savedSnapshot = snapshot },
+                remove: {},
+            ),
+            initialState: state,
+        )
+        store.exhaustivity = .off
+
+        let response = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            source: "polar",
+        )
+        await store.send(.accessStatusResponse(generation: 1, result: .success(response)))
+
+        XCTAssertEqual(savedSnapshot?.sessionExpiresAt, sessionExpiry)
+        XCTAssertEqual(savedSnapshot?.status, .coreLicenseActive)
+        XCTAssertEqual(store.state.snapshot?.sessionExpiresAt, sessionExpiry)
     }
 
     // MARK: - ACC-002-check_entitlement_status (retry logic)
@@ -532,6 +690,76 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         XCTAssertFalse(store.state.isComplete)
     }
 
+    // MARK: - ACC-002-check_entitlement_status (hydration mapping)
+
+    /// ACC-002-check_entitlement_status: `.trialExpired + sessionExpiresAt` snapshot hydration 시
+    /// session 축은 signedIn을 유지하면서 entitlement 축은 inactive/blocked 상태로 파생된다.
+    /// launch snapshot hydration이 session 축과 entitlement 축을 독립적으로 매핑하는지 검증한다.
+    /// - 검증 내용: hydrateLaunchSnapshot(.trialExpired + sessionExpiresAt) →
+    ///   hasAccountSession == true, status == .trialExpired,
+    ///   accountAccessStepState == .blocked, accountAccessAuthAxis == .signedIn
+    /// - 사전 조건: 빈 초기 상태
+    /// - 기대 결과: auth signedIn이면서 entitlement inactive — session 기반 auth 단언 (status.isActive에서 추론하지 않음)
+    func testHydrateLaunchSnapshotWithTrialExpiredSessionMapsToBlockedAndSignedIn() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
+        let snapshot = AccessStatusSnapshot(
+            status: .trialExpired,
+            currentPeriodEnd: nil,
+            fetchedAt: referenceDate,
+            sessionExpiresAt: sessionExpiry,
+        )
+
+        let store = makeTestStore()
+        store.exhaustivity = .off
+
+        await store.send(.hydrateLaunchSnapshot(snapshot))
+
+        // session 축: sessionExpiresAt != nil → signedIn 파생 (상태와 무관)
+        XCTAssertTrue(store.state.hasAccountSession, "session 존재 → hasAccountSession=true")
+        XCTAssertEqual(store.state.sessionExpiresAt, sessionExpiry)
+        XCTAssertEqual(store.state.accountAccessAuthAxis, .signedIn)
+        // entitlement 축: trialExpired → blocked
+        XCTAssertEqual(store.state.status, .trialExpired)
+        XCTAssertEqual(store.state.accountAccessStepState, .blocked)
+        XCTAssertFalse(store.state.status?.isActive == true, "trialExpired는 active가 아님")
+        await store.finish()
+    }
+
+    /// ACC-002-check_entitlement_status: `.networkFailure + sessionExpiresAt` snapshot hydration 시
+    /// session 축은 signedIn을 유지하면서 entitlement 축은 error 상태로 파생된다.
+    /// auth signedIn과 error 표시가 독립적으로 동작하는지 검증한다.
+    /// - 검증 내용: hydrateLaunchSnapshot(.networkFailure + sessionExpiresAt) →
+    ///   hasAccountSession == true, status == .networkFailure,
+    ///   accountAccessStepState == .error, accountAccessAuthAxis == .signedIn,
+    ///   showsRetry == true
+    /// - 사전 조건: 빈 초기 상태
+    /// - 기대 결과: auth signedIn이면서 entitlement error — retry 가능 상태 유지
+    func testHydrateLaunchSnapshotWithNetworkFailureSessionMapsToErrorAndSignedIn() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
+        let snapshot = AccessStatusSnapshot(
+            status: .networkFailure,
+            currentPeriodEnd: nil,
+            fetchedAt: referenceDate,
+            sessionExpiresAt: sessionExpiry,
+        )
+
+        let store = makeTestStore()
+        store.exhaustivity = .off
+
+        await store.send(.hydrateLaunchSnapshot(snapshot))
+
+        // session 축: sessionExpiresAt != nil → signedIn 파생 (상태와 무관)
+        XCTAssertTrue(store.state.hasAccountSession, "session 존재 → hasAccountSession=true")
+        XCTAssertEqual(store.state.sessionExpiresAt, sessionExpiry)
+        XCTAssertEqual(store.state.accountAccessAuthAxis, .signedIn)
+        // entitlement 축: networkFailure → error + retry
+        XCTAssertEqual(store.state.status, .networkFailure)
+        XCTAssertEqual(store.state.accountAccessStepState, .error)
+        XCTAssertTrue(store.state.showsRetry)
+        XCTAssertFalse(store.state.status?.isActive == true, "networkFailure는 active가 아님")
+        await store.finish()
+    }
+
     // MARK: - Integration
 
     /// ACC-002 Integration: onAppear → session restore → fetchAccessStatus → delegate(.unlocked) 전체 파이프라인을 검증한다.
@@ -546,7 +774,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                     AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
                 },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
@@ -645,6 +873,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             state.snapshot = cachedSnapshot
             state.isComplete = true
             state.errorMessage = "일시적인 네트워크 오류"
+            state.didBootstrap = true
         }
     }
 

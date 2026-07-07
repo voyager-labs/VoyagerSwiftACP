@@ -14,6 +14,14 @@ import XCTest
  AppHandoffCallback 파식 테스트와 reducer 통합 테스트를 모두 포함한다.
  */
 
+private let activeAccessStatusResponse = AccessStatusResponse(
+    hasAccess: true,
+    status: "active",
+    reason: "active_entitlement",
+    productKey: "core",
+    source: "polar",
+)
+
 @MainActor
 final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     private let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
@@ -54,12 +62,14 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     }
 
     /// handoffPendingState가 설정된 signInInProgress 상태 (callback 대기 중)
-    private func awaitingCallbackState(pendingState: String = ACC001CompleteAuthHandoffCallbackTests
-        .validState) -> AccountAccessFeature.State
-    {
+    private func awaitingCallbackState(
+        pendingState: String = ACC001CompleteAuthHandoffCallbackTests.validState,
+        handoffContext: AppHandoffContext = .onboarding,
+    ) -> AccountAccessFeature.State {
         var state = AccountAccessFeature.State()
         state.isSignInInProgress = true
         state.handoffPendingState = pendingState
+        state.handoffContext = handoffContext
         return state
     }
 
@@ -208,7 +218,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { ticket, state, context in
@@ -218,15 +228,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     XCTAssertEqual(context, .onboarding)
                     return AccountSession(accessToken: "exchanged-token", status: .coreLicenseActive)
                 },
-                fetchAccessStatus: {
-                    AccessStatusResponse(
-                        hasAccess: true,
-                        status: "active",
-                        reason: "active_entitlement",
-                        productKey: "core",
-                        source: "polar",
-                    )
-                },
+                fetchAccessStatus: { activeAccessStatusResponse },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(),
@@ -271,7 +273,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in
@@ -315,6 +317,98 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
         await store.finish()
     }
 
+    /// ACC-001-complete_auth_handoff_callback: pending context와 다른 callback context는 exchange를 차단한다.
+    /// pending handoff가 paywall context로 시작된 경우 onboarding callback이 거부되는지 검증한다.
+    /// - 검증 내용: exchangeAppHandoff 미호출, didSignInFail=true, handoffPendingState=nil
+    /// - 사전 조건: handoffContext=.paywall 상태에서 context=onboarding callback URL 수신
+    /// - 기대 결과: exchangeAppHandoff 미호출, didSignInFail=true
+    func testMismatchedCallbackContextRejectedAgainstPendingContext() async {
+        nonisolated(unsafe) var exchangeCalled = false
+        let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: { nil },
+                persist: { _ in },
+                delete: { _ in },
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in
+                    exchangeCalled = true
+                    return AccountSession(accessToken: "should-not-reach", status: .coreLicenseActive)
+                },
+                fetchAccessStatus: {
+                    AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
+                },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: awaitingCallbackState(handoffContext: .paywall),
+        )
+
+        let mismatchedCallbackURL = callbackURL(context: "onboarding")
+
+        await store.send(.loginCallbackReceived(mismatchedCallbackURL)) { state in
+            state.isSignInInProgress = false
+            state.didSignInFail = true
+            state.handoffPendingState = nil
+        }
+
+        XCTAssertFalse(exchangeCalled, "pending context와 다른 callback은 exchange를 차단해야 함")
+        await store.finish()
+    }
+
+    /// ACC-001-complete_auth_handoff_callback: pending context와 일치하는 callback context는 정상 exchange로 이어진다.
+    /// paywall 경로에서 시작된 handoff가 paywall callback을 받을 때 기존 onboarding 흐름과 동일하게 성공하는지 검증한다.
+    /// - 검증 내용: state/context 일치 시 exchangeAppHandoff 호출, hasAccountSession=true
+    /// - 사전 조건: handoffContext=.paywall 상태에서 context=paywall callback URL 수신
+    /// - 기대 결과: exchangeAppHandoff 호출, _handoffExchangeCompleted 수신, hasAccountSession=true
+    func testMatchingPendingCallbackContextProcessedNormally() async {
+        nonisolated(unsafe) var exchangeCalled = false
+        let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: { nil },
+                persist: { _ in },
+                delete: { _ in },
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { ticket, state, context in
+                    exchangeCalled = true
+                    XCTAssertEqual(ticket, "abc123")
+                    XCTAssertEqual(state, "xyz789")
+                    XCTAssertEqual(context, .paywall)
+                    return AccountSession(accessToken: "paywall-token", status: .coreLicenseActive)
+                },
+                fetchAccessStatus: { activeAccessStatusResponse },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: awaitingCallbackState(handoffContext: .paywall),
+        )
+
+        let callback = callbackURL(context: "paywall")
+
+        await store.send(.loginCallbackReceived(callback)) { state in
+            state.handoffPendingState = nil
+        }
+
+        await store.receive(\._handoffExchangeCompleted) { state in
+            state.isSignInInProgress = false
+            state.hasAccountSession = true
+            state.didSignInFail = false
+            state.ttlTimerActive = true
+            state.fetchGeneration = 1
+        }
+
+        XCTAssertTrue(exchangeCalled, "matching callback context should reach exchange")
+        store.exhaustivity = .off
+        await store.receive(\.accessStatusResponse)
+        await store.receive(\.delegate.unlocked)
+        await store.finish()
+    }
+
     /// ACC-001-complete_auth_handoff_callback: state 불일치 callback이 인증 흐름을 중단시킨다.
     /// 무효화된(재실행으로 대체된) 인증 흐름의 callback이 exchange 미호출 및 실패 처리되는지 검증한다.
     /// - 검증 내용: exchangeAppHandoff 미호출, didSignInFail=true, handoffPendingState=nil
@@ -326,7 +420,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in
@@ -357,6 +451,34 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
         }
 
         XCTAssertFalse(exchangeCalled, "무효화된 흐름의 callback → exchange 미호출")
+        await store.finish()
+    }
+
+    /// ACC-003-guard_session_lapse.md:66, 74, 89 / SessionLapseGuardView.swift:101-106
+    /// signInHandoffCompleted(.failure) 는 네트워크 안내 메시지를 설정하고 실패 상태를 고정한다.
+    func testSignInHandoffCompletedFailureSetsNetworkErrorMessage() async {
+        let store = makeTestStore(initialState: awaitingCallbackState())
+
+        await store.send(.signInHandoffCompleted(.failure)) { state in
+            state.isSignInInProgress = false
+            state.didSignInFail = true
+            state.errorMessage = "Check your network connection and try again."
+        }
+
+        await store.finish()
+    }
+
+    /// ACC-003-guard_session_lapse.md:66, 74, 89 / SessionLapseGuardView.swift:101-106
+    /// signInHandoffCompleted(.cancelled) 는 errorMessage 없이 현재 취소 상태만 반영한다.
+    func testSignInHandoffCompletedCancelledKeepsErrorMessageNil() async {
+        let store = makeTestStore(initialState: awaitingCallbackState())
+
+        await store.send(.signInHandoffCompleted(.cancelled)) { state in
+            state.isSignInInProgress = false
+            state.didSignInFail = true
+            state.errorMessage = nil
+        }
+
         await store.finish()
     }
 
@@ -394,7 +516,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in
@@ -447,7 +569,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in

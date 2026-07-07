@@ -10,8 +10,11 @@ public struct AccountAccessState: Equatable {
     public var isComplete: Bool = false
     public var trialExpiresAt: Date?
     public var hasAccountSession: Bool = false
+    public var didBootstrap: Bool = false
     public var isSignInInProgress: Bool = false
     public var didSignInFail: Bool = false
+    /// 현재 sign-in handoff에 사용해야 하는 컨텍스트.
+    public var handoffContext: AppHandoffContext = .onboarding
     public var fetchGeneration: Int = 0
     /// fetchAccessStatus 재시도 횟수 (최대 3). 성공 시 0으로 리셋.
     public var fetchRetryCount: Int = 0

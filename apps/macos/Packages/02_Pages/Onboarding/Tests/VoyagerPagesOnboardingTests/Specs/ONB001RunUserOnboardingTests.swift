@@ -1080,7 +1080,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.accountSessionClient = AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             )
         }
         // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
@@ -1155,7 +1155,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.accountSessionClient = AccountSessionClient(
                 read: { AccountSession(accessToken: "test-token", status: .coreLicenseActive) },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             )
             $0.authNetworkClient = AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },

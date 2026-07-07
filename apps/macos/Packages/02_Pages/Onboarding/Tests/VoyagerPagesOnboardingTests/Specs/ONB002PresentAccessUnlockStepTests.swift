@@ -53,6 +53,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// - 기대 결과: child state는 retry 가능한 오류 상태가 되고 저장된 access snapshot은 없습니다.
     func testErrorAccessResultDoesNotSaveSnapshotOrEmitSurfaceDelegate() async {
         let recorder = AccessSnapshotRecorder()
+        let clock = TestClock()
 
         let store = TestStore(initialState: UnlockSurfaceFeature.State()) {
             UnlockSurfaceFeature()
@@ -64,6 +65,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
                 openMainWindow: { _ in true },
                 onUnlocked: { _ in },
             )
+            $0.continuousClock = clock
         }
         store.exhaustivity = .off
 
@@ -224,7 +226,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
-            $0.signInHandoffClient = SignInHandoffClient { .failure }
+            $0.signInHandoffClient = SignInHandoffClient { _ in .failure }
         }
 
         // accessUnlock step으로 이동
@@ -248,6 +250,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         await store.receive(\.accessUnlock.signInHandoffCompleted) { state in
             state.accessUnlock.isSignInInProgress = false
             state.accessUnlock.didSignInFail = true
+            state.accessUnlock.errorMessage = "Check your network connection and try again."
         }
 
         await store.finish()
@@ -351,7 +354,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         let store = TestStore(initialState: AccountAccessFeature.State()) {
             AccountAccessFeature()
         } withDependencies: {
-            $0.signInHandoffClient = SignInHandoffClient { .failure }
+            $0.signInHandoffClient = SignInHandoffClient { _ in .failure }
         }
 
         let originalStatus = store.state.status
@@ -370,6 +373,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         await store.receive(\.signInHandoffCompleted) { state in
             state.isSignInInProgress = false
             state.didSignInFail = true
+            state.errorMessage = "Check your network connection and try again."
         }
 
         await store.finish()
@@ -496,7 +500,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
-            $0.signInHandoffClient = SignInHandoffClient {
+            $0.signInHandoffClient = SignInHandoffClient { _ in
                 .success(callbackURL: callbackURL)
             }
         }

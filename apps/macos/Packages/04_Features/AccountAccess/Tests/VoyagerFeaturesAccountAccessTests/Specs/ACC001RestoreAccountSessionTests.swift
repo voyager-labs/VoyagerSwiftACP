@@ -1,5 +1,7 @@
+import Combine
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
+import VoyagerShared
 import XCTest
 
 /*
@@ -7,110 +9,214 @@ import XCTest
 
  interaction_id: ACC-001-restore_account_session
 
+ 본 테스트 파일은 Task 14에서 launch hydration 경로로 마이그레이션되었다.
+ 과거 .onAppear -> sessionClient.read() -> _onAppearSessionRestored(session) 체인이
+ 주 복원 경로였으나, 이제 .hydrateLaunchSnapshot(snapshot) 단일 경로가
+ launch 시점 session restore의 source of truth가 된다 (Task 6/8 참고).
+
  auth_state 매핑:
  - logged_out     → AccountAccessState 기본 상태 (hasAccountSession=false, didSignInFail=false)
  - session_expired → didSignInFail=true (재로그인 필요 상태)
  - logged_in      → hasAccountSession=true
+
+ 마이그레이션 참고:
+ - _onAppearSessionRestored(nil) action handler 자체는 Task 8 DEFER 정책에 따라
+   프로덕션 코드에 잔존. VOY-397 regression 테스트 2종은 해당 핸들러의
+   clearStaleActiveAccessFacts 동작을 직접 단언하므로 마이그레이션 대상이 아니다.
+ - testValidSessionRestoreResetsStaleFetchRetryCount 제거:
+   launch snapshot은 최초 상태이므로 "이전 retry budget 초기화" 비즈니스 의미가
+   적용되지 않는다 (초기화할 과거 budget이 없음).
  */
 
 @MainActor
 final class ACC001RestoreAccountSessionTests: XCTestCase {
     private let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
 
+    private static func makeNotificationCenterClient(
+        notifications: @escaping @Sendable (Notification.Name, NSObject?) -> AsyncStream<Notification> = { _, _ in
+            AsyncStream { continuation in
+                continuation.finish()
+            }
+        },
+    ) -> NotificationCenterClient {
+        NotificationCenterClient(
+            notifications: notifications,
+            addObserver: { _, _, _ in NSObject() },
+            removeObserver: { _ in },
+            publisher: { _ in NotificationCenter.default.publisher(for: .init("")) },
+            post: { _, _, _ in },
+        )
+    }
+
     private func makeTestStore(
         accountSessionClient: AccountSessionClient = .testValue,
         authNetworkClient: AuthNetworkClient = .testValue,
+        notificationCenterClient: NotificationCenterClient? = nil,
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
-        TestStore(initialState: initialState) {
+        let notificationCenterClient = notificationCenterClient ?? Self.makeNotificationCenterClient()
+        return TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
             $0.accountSessionClient = accountSessionClient
             $0.authNetworkClient = authNetworkClient
+            $0.notificationCenterClient = notificationCenterClient
             $0.date = .constant(referenceDate)
         }
     }
 
     // MARK: - ACC-001-restore_account_session
 
-    /// ACC-001-restore_account_session: 저장된 유효 session이 onAppear에서 logged_in으로 복원된다.
-    /// 유효한 session이 저장되어 있을 때 onAppear에서 hasAccountSession=true로 복원되는지 검증한다.
-    /// - 검증 내용: restoreSession이 session 반환 → hasAccountSession=true, fetchAccessStatus 트리거
-    /// - 사전 조건: sessionClient.read가 유효한 AccountSession 반환
-    /// - 기대 결과: hasAccountSession=true, accountAccessAuthAxis=.signedIn, fetchCalled=true
-    func testValidSessionRestoresAsLoggedIn() async {
-        nonisolated(unsafe) var fetchCalled = false
-        let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: {
-                    AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
-                },
-                persist: { _ in },
-                delete: {},
-            ),
-            authNetworkClient: AuthNetworkClient(
-                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                fetchAccessStatus: {
-                    fetchCalled = true
-                    return AccessStatusResponse(
-                        hasAccess: true,
-                        status: "active",
-                        reason: "active_entitlement",
-                        productKey: "core",
-                        source: "polar",
-                    )
-                },
-                refreshToken: { throw AccessError.notConfigured },
-            ),
+    /// ACC-001-restore_account_session: sessionExpiresAt가 있는 launch snapshot hydration 시 logged_in으로 복원된다.
+    /// Task 14 마이그레이션: 기존 .onAppear -> sessionClient.read() -> _onAppearSessionRestored 경로 대신
+    /// .hydrateLaunchSnapshot(snapshot with sessionExpiresAt) 경로로 logged_in 복원을 검증한다.
+    /// - 검증 내용: hydrateLaunchSnapshot(snapshot with future sessionExpiresAt)
+    ///   → hasAccountSession=true, sessionExpiresAt=expiry, derived accountAccessAuthAxis=.signedIn
+    /// - 사전 조건: sessionExpiresAt가 미래 시점인 AccessStatusSnapshot
+    /// - 기대 결과: hasAccountSession=true, sessionExpiresAt == snapshot.sessionExpiresAt,
+    ///   accountAccessAuthAxis=.signedIn
+    /// - 비고: launch snapshot이 곧 초기 상태이므로 hydrate 경로는 fetchAccessStatusEffect를 호출하지 않는다.
+    func testHydrateLaunchSnapshotWithSessionRestoresAsLoggedIn() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: referenceDate.addingTimeInterval(86400),
+            fetchedAt: referenceDate,
+            sessionExpiresAt: sessionExpiry,
         )
-        // store.exhaustivity = .off: _onAppearSessionRestored가 내부적으로 다수 필드를 갱신하나 검증 대상은
-        // hasAccountSession/accountAccessAuthAxis/fetchCalled만 해당
-        store.exhaustivity = .off
 
-        await store.send(.onAppear)
-
-        await store.receive(\._onAppearSessionRestored)
-
-        XCTAssertTrue(store.state.hasAccountSession)
-        XCTAssertEqual(store.state.accountAccessAuthAxis, .signedIn)
-        XCTAssertTrue(fetchCalled)
-    }
-
-    /// ACC-001-restore_account_session: 새 session 복원 시 이전 session의 access fetch retry budget을 초기화한다.
-    /// 이전 session에서 누적된 fetchRetryCount가 새 session의 첫 access status 조회에 누수되지 않는지 검증한다.
-    /// - 검증 내용: fetchRetryCount=3 상태에서 session 복원 → fetchRetryCount=0
-    /// - 사전 조건: 저장된 유효 session이 있고 이전 retry budget이 소진된 상태
-    /// - 기대 결과: 새 session boundary에서 retry budget이 0으로 재설정된다.
-    func testValidSessionRestoreResetsStaleFetchRetryCount() async {
         var initialState = AccountAccessFeature.State()
-        initialState.fetchRetryCount = 3
+        initialState.didSignInFail = true
+        initialState.isSignInInProgress = true
+        initialState.errorMessage = "Sign in failed"
+        initialState.handoffPendingState = "stale-handoff"
 
-        let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: {
-                    AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
-                },
-                persist: { _ in },
-                delete: {},
-            ),
-            authNetworkClient: AuthNetworkClient(
-                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                fetchAccessStatus: {
-                    throw AccessError.notConfigured
-                },
-                refreshToken: { throw AccessError.notConfigured },
-            ),
-            initialState: initialState,
-        )
-        store.exhaustivity = .off
+        let store = makeTestStore(initialState: initialState)
 
-        await store.send(.onAppear)
-
-        await store.receive(\._onAppearSessionRestored) { state in
-            state.fetchRetryCount = 0
+        await store.send(.hydrateLaunchSnapshot(snapshot)) { state in
+            state.status = snapshot.status
+            state.snapshot = snapshot
+            state.trialExpiresAt = snapshot.currentPeriodEnd
+            state.isSignInInProgress = false
+            state.didSignInFail = false
+            state.handoffPendingState = nil
+            state.errorMessage = nil
+            state.hasAccountSession = true
+            state.sessionExpiresAt = sessionExpiry
+            state.isSessionExpired = false
+            state.didBootstrap = true
+            state.fetchGeneration = 1
+            state.ttlTimerActive = true
         }
-        await store.receive(\.accessStatusResponse)
+
+        XCTAssertTrue(store.state.hasAccountSession, "session 존재 → hasAccountSession=true")
+        XCTAssertFalse(store.state.isSignInInProgress, "stale sign-in progress 초기화")
+        XCTAssertFalse(store.state.didSignInFail, "stale sign-in failure 초기화")
+        XCTAssertNil(store.state.errorMessage, "stale sign-in errorMessage 초기화")
+        XCTAssertEqual(
+            store.state.sessionExpiresAt,
+            sessionExpiry,
+            "sessionExpiresAt == snapshot.sessionExpiresAt",
+        )
+        XCTAssertEqual(
+            store.state.accountAccessAuthAxis,
+            .signedIn,
+            "session 존재 → derived accountAccessAuthAxis=.signedIn",
+        )
+        await store.skipInFlightEffects()
     }
+
+    /// ACC-001-restore_account_session: refreshToken 성공 시 기존 snapshot의 session 축만 갱신된다.
+    /// snapshot이 이미 있을 때 refresh 성공이 sessionExpiresAt만 동기화하고 entitlement 축은 보존하는지 검증한다.
+    /// - 검증 내용: _refreshTokenResult(.success) → state.sessionExpiresAt 갱신, snapshot.status/currentPeriodEnd/fetchedAt
+    /// 보존
+    /// - 사전 조건: 기존 snapshot이 존재하고 sessionExpiresAt가 오래된 값이다.
+    /// - 기대 결과: snapshot.sessionExpiresAt만 새 만료 시각으로 교체된다.
+    func testRefreshTokenSuccessSyncsExistingSnapshotSessionExpiry() async {
+        let oldExpiry = referenceDate.addingTimeInterval(300)
+        let newExpiry = referenceDate.addingTimeInterval(3600)
+        let initialSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: referenceDate.addingTimeInterval(86400),
+            fetchedAt: referenceDate,
+            sessionExpiresAt: oldExpiry,
+        )
+        let expectedSnapshot = AccessStatusSnapshot(
+            status: initialSnapshot.status,
+            currentPeriodEnd: initialSnapshot.currentPeriodEnd,
+            fetchedAt: initialSnapshot.fetchedAt,
+            sessionExpiresAt: newExpiry,
+        )
+
+        var initialState = AccountAccessFeature.State()
+        initialState.hasAccountSession = true
+        initialState.ttlTimerActive = true
+        initialState.sessionExpiresAt = oldExpiry
+        initialState.status = initialSnapshot.status
+        initialState.trialExpiresAt = initialSnapshot.currentPeriodEnd
+        initialState.snapshot = initialSnapshot
+        initialState.consecutiveRefreshFailures = 2
+
+        let store = makeTestStore(initialState: initialState)
+
+        await store.send(._refreshTokenResult(.success(
+            AccountSession(
+                accessToken: "refreshed-token",
+                status: .coreLicenseActive,
+                expiresAt: newExpiry,
+            ),
+        ))) { state in
+            state.consecutiveRefreshFailures = 0
+            state.sessionExpiresAt = newExpiry
+            state.snapshot = expectedSnapshot
+        }
+
+        XCTAssertEqual(store.state.sessionExpiresAt, newExpiry)
+        XCTAssertEqual(store.state.snapshot, expectedSnapshot)
+        await store.finish()
+    }
+
+    /// ACC-001-restore_account_session: refreshToken 성공 시 snapshot이 없으면 새 snapshot을 만들지 않는다.
+    /// snapshot nil 상태에서 refresh 성공이 sessionExpiresAt만 갱신하고 snapshot은 nil로 유지하는지 검증한다.
+    /// - 검증 내용: _refreshTokenResult(.success) → state.sessionExpiresAt 갱신, state.snapshot은 nil 유지
+    /// - 사전 조건: snapshot이 nil이고 sessionExpiresAt가 존재한다.
+    /// - 기대 결과: session 만료 시각만 갱신되고 snapshot은 생성되지 않는다.
+    func testRefreshTokenSuccessDoesNotCreateSnapshotWhenMissing() async {
+        let oldExpiry = referenceDate.addingTimeInterval(300)
+        let newExpiry = referenceDate.addingTimeInterval(3600)
+
+        var initialState = AccountAccessFeature.State()
+        initialState.hasAccountSession = true
+        initialState.ttlTimerActive = true
+        initialState.sessionExpiresAt = oldExpiry
+        initialState.status = .coreLicenseActive
+        initialState.trialExpiresAt = referenceDate.addingTimeInterval(86400)
+        initialState.snapshot = nil
+        initialState.consecutiveRefreshFailures = 2
+
+        let store = makeTestStore(initialState: initialState)
+
+        await store.send(._refreshTokenResult(.success(
+            AccountSession(
+                accessToken: "refreshed-token",
+                status: .coreLicenseActive,
+                expiresAt: newExpiry,
+            ),
+        ))) { state in
+            state.consecutiveRefreshFailures = 0
+            state.sessionExpiresAt = newExpiry
+        }
+
+        XCTAssertEqual(store.state.sessionExpiresAt, newExpiry)
+        XCTAssertNil(store.state.snapshot)
+        await store.finish()
+    }
+
+    // (Task 14 제거) testValidSessionRestoreResetsStaleFetchRetryCount
+    // "새 session boundary가 과거 retry budget을 0으로 초기화" 불변식은 onAppear 전환 시나리오에만
+    // 의미가 있었다. launch hydration은 앱 최초 상태이므로 초기화할 과거 budget이 없고,
+    // handleHydrateLaunchSnapshot은 resetSessionRetryBudget을 호출하지 않는다.
+    // fetchRetryCount delta 검증은 ACC002 네트워크 실패/재시도 테스트에서 담당.
 
     /// ACC-001-restore_account_session: session 만료 후 자동 갱신 성공 시 logged_in을 유지한다.
     /// T6 token refresh logic 구현 후 활성화되는 테스트로 현재는 skip 처리한다.
@@ -137,7 +243,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
@@ -176,46 +282,91 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         await store.finish()
     }
 
-    /// ACC-001-restore_account_session: 저장된 session이 없으면 onAppear에서 logged_out으로 진입한다.
-    /// restoreSession=nil일 때 onAppear에서 logged_out 상태로 진입하는지 검증한다.
-    /// - 검증 내용: restoreSession=nil → hasAccountSession=false, fetchAccessStatus 미호출
-    /// - 사전 조건: sessionClient.read가 nil 반환
-    /// - 기대 결과: hasAccountSession=false, accountAccessAuthAxis=.signedOut, fetchCalled=false
-    func testNoStoredSessionShowsLoggedOut() async {
-        nonisolated(unsafe) var fetchCalled = false
-        let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: {},
-            ),
-            authNetworkClient: AuthNetworkClient(
-                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                fetchAccessStatus: {
-                    fetchCalled = true
-                    return AccessStatusResponse(
-                        hasAccess: true,
-                        status: "active",
-                        reason: "active_entitlement",
-                        productKey: "core",
-                        source: "polar",
-                    )
-                },
-                refreshToken: { throw AccessError.notConfigured },
-            ),
+    /// ACC-001-restore_account_session: sessionExpiresAt가 nil인 launch snapshot hydration 시 logged_out으로 진입한다.
+    /// Task 14 마이그레이션: 기존 .onAppear -> sessionClient.read() -> _onAppearSessionRestored(nil) 경로 대신
+    /// .hydrateLaunchSnapshot(snapshot with sessionExpiresAt=nil) 경로로 logged_out 진입을 검증한다.
+    /// - 검증 내용: hydrateLaunchSnapshot(snapshot with nil sessionExpiresAt)
+    ///   → hasAccountSession=false, sessionExpiresAt=nil, derived auth axis=.signedOut, stepState=.blocked
+    /// - 사전 조건: sessionExpiresAt가 nil인 AccessStatusSnapshot
+    /// - 기대 결과: hasAccountSession=false, accountAccessAuthAxis=.signedOut,
+    ///   accountAccessStepState=.blocked, sessionExpiresAt=nil
+    /// - 비고: launch snapshot이 곧 초기 상태이므로 hydrate 경로는 fetchAccessStatusEffect를 호출하지 않는다.
+    func testHydrateLaunchSnapshotWithoutSessionShowsLoggedOut() async {
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: referenceDate.addingTimeInterval(86400),
+            fetchedAt: referenceDate,
+            sessionExpiresAt: nil,
         )
-        // store.exhaustivity = .off: _onAppearSessionRestored가 다수 필드를 갱신하나 검증 대상은
-        // hasAccountSession/accountAccessAuthAxis/accountAccessStepState/fetchCalled만 해당
+
+        let store = makeTestStore()
+        // exhaustivity=.off: handleHydrateLaunchSnapshot가 다수 필드를 갱신하나
+        // 검증 대상은 session 축 및 derived step state만 해당.
         store.exhaustivity = .off
 
-        await store.send(.onAppear)
+        await store.send(.hydrateLaunchSnapshot(snapshot))
 
-        await store.receive(\._onAppearSessionRestored)
+        XCTAssertFalse(store.state.hasAccountSession, "session 없음 → hasAccountSession=false")
+        XCTAssertNil(store.state.sessionExpiresAt, "sessionExpiresAt=nil 유지")
+        XCTAssertEqual(
+            store.state.accountAccessAuthAxis,
+            .signedOut,
+            "session 없음 → derived accountAccessAuthAxis=.signedOut",
+        )
+        XCTAssertEqual(
+            store.state.accountAccessStepState,
+            .blocked,
+            "session 없음 → accountAccessStepState=.blocked",
+        )
+        await store.finish()
+    }
 
-        XCTAssertFalse(store.state.hasAccountSession)
-        XCTAssertEqual(store.state.accountAccessAuthAxis, .signedOut)
-        XCTAssertEqual(store.state.accountAccessStepState, .blocked)
-        XCTAssertFalse(fetchCalled)
+    /// ACC-001-restore_account_session: launch snapshot hydration은 이전 TTL timer를 취소한다.
+    /// spec citations: auth_session_contract.toml:34-41, 001-auth-token-refresh-storage-policy.md
+    /// - 검증 내용: session-present hydrate로 TTL timer를 시작한 뒤 session-absent hydrate가 기존 timer를 cancel한다.
+    /// - 사전 조건: first hydrate는 session-present, second hydrate는 session-absent.
+    /// - 기대 결과: second hydrate 후 ttlTimerActive=false, stale _ttlTimerTicked가 남아 있지 않아 finish()가 통과한다.
+    func testHydrateLaunchSnapshotCancelsPreviousTtlTimer() async {
+        let signedInSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: referenceDate.addingTimeInterval(86400),
+            fetchedAt: referenceDate,
+            sessionExpiresAt: referenceDate.addingTimeInterval(3600),
+        )
+        let loggedOutSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: referenceDate.addingTimeInterval(86400),
+            fetchedAt: referenceDate,
+            sessionExpiresAt: nil,
+        )
+
+        let store = makeTestStore()
+
+        await store.send(.hydrateLaunchSnapshot(signedInSnapshot)) { state in
+            state.status = signedInSnapshot.status
+            state.snapshot = signedInSnapshot
+            state.trialExpiresAt = signedInSnapshot.currentPeriodEnd
+            state.hasAccountSession = true
+            state.sessionExpiresAt = signedInSnapshot.sessionExpiresAt
+            state.isSessionExpired = false
+            state.didBootstrap = true
+            state.fetchGeneration = 1
+            state.ttlTimerActive = true
+        }
+
+        await store.send(.hydrateLaunchSnapshot(loggedOutSnapshot)) { state in
+            state.status = loggedOutSnapshot.status
+            state.snapshot = loggedOutSnapshot
+            state.trialExpiresAt = loggedOutSnapshot.currentPeriodEnd
+            state.hasAccountSession = false
+            state.sessionExpiresAt = nil
+            state.isSessionExpired = false
+            state.didBootstrap = true
+            state.fetchGeneration = 2
+            state.ttlTimerActive = false
+        }
+
+        await store.finish()
     }
 
     /// ACC-001-restore_account_session: 손상된 token 파일은 logged_out으로 처리된다.
@@ -227,7 +378,8 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         let fixture = try TemporaryHomeFixture()
         let fileStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
 
-        try Data("{ invalid json }".utf8).write(to: fixture.accountTokensFileURL)
+        let corruptedData = Data("{ invalid json }".utf8)
+        try corruptedData.write(to: fixture.accountTokensFileURL)
 
         let result = try await fileStore.read()
         XCTAssertNil(result, "손상된 session 파일은 nil 반환")
@@ -270,7 +422,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             initialState: initialState,
         )
@@ -322,7 +474,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             initialState: initialState,
         )

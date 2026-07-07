@@ -7,16 +7,18 @@ import VoyagerShared
 /// Mock 경로에서는 즉시 callback URL을 반환하고,
 /// 실제 live 경로에서는 외부 브라우저를 열고 콜백 대기 상태로 진입한다.
 public struct SignInHandoffClient: Sendable {
-    public var performHandoff: @Sendable () async -> SignInHandoffResult
+    public var performHandoff: @Sendable (_ context: AppHandoffContext) async -> SignInHandoffResult
 
-    nonisolated public init(performHandoff: @escaping @Sendable () async -> SignInHandoffResult) {
+    nonisolated public init(
+        performHandoff: @escaping @Sendable (_ context: AppHandoffContext) async -> SignInHandoffResult,
+    ) {
         self.performHandoff = performHandoff
     }
 }
 
 extension SignInHandoffClient: DependencyKey {
     nonisolated public static var liveValue: SignInHandoffClient {
-        SignInHandoffClient {
+        SignInHandoffClient { requestedContext in
             @Dependency(\.appHandoffTarget)
             var appTarget
 
@@ -26,7 +28,7 @@ extension SignInHandoffClient: DependencyKey {
             }
 
             let state = AppHandoffStateGenerator.generate()
-            let context = AppHandoffContext.onboarding
+            let context = requestedContext
 
             let builder = AppHandoffURLBuilder(
                 webBaseURL: webBaseURL,
@@ -53,11 +55,11 @@ extension SignInHandoffClient: DependencyKey {
     }
 
     nonisolated public static var testValue: SignInHandoffClient {
-        SignInHandoffClient { .failure }
+        SignInHandoffClient { _ in .failure }
     }
 
     nonisolated public static var previewValue: SignInHandoffClient {
-        SignInHandoffClient { .failure }
+        SignInHandoffClient { _ in .failure }
     }
 }
 

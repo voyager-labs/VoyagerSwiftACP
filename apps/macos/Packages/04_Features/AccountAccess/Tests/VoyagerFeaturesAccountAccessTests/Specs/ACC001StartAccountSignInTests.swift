@@ -19,7 +19,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
     private let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
 
     private func makeTestStore(
-        signInHandoffClient: SignInHandoffClient = SignInHandoffClient { .failure },
+        signInHandoffClient: SignInHandoffClient = SignInHandoffClient { _ in .failure },
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         TestStore(initialState: initialState) {
@@ -49,7 +49,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
     func testLoggedOutLoginCTATriggersBrowserLoginURL() async {
         nonisolated(unsafe) var handoffCalled = false
         let store = makeTestStore(
-            signInHandoffClient: SignInHandoffClient {
+            signInHandoffClient: SignInHandoffClient { _ in
                 handoffCalled = true
                 return .awaitingCallback(state: "test-state-123")
             },
@@ -80,7 +80,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
     func testSessionExpiredLoginCTAStartsLogin() async {
         nonisolated(unsafe) var handoffCalled = false
         let store = makeTestStore(
-            signInHandoffClient: SignInHandoffClient {
+            signInHandoffClient: SignInHandoffClient { _ in
                 handoffCalled = true
                 return .failure
             },
@@ -102,6 +102,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         await store.receive(\.signInHandoffCompleted) { state in
             state.isSignInInProgress = false
             state.didSignInFail = true
+            state.errorMessage = "Check your network connection and try again."
         }
         await store.finish()
     }
@@ -113,7 +114,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
     /// - 기대 결과: hasAccountSession=false, status=nil 유지
     func testAuthStateUnchangedUntilCallbackAndTokenExchange() async {
         let store = makeTestStore(
-            signInHandoffClient: SignInHandoffClient {
+            signInHandoffClient: SignInHandoffClient { _ in
                 .awaitingCallback(state: "pending-state-abc")
             },
         )
@@ -152,7 +153,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         initialState.isSignInInProgress = true
 
         let store = makeTestStore(
-            signInHandoffClient: SignInHandoffClient {
+            signInHandoffClient: SignInHandoffClient { _ in
                 handoffCallCount += 1
                 return .failure
             },
@@ -179,6 +180,36 @@ final class ACC001StartAccountSignInTests: XCTestCase {
             state.isSignInInProgress = false
             state.didSignInFail = false
             state.handoffPendingState = nil
+        }
+
+        await store.finish()
+    }
+
+    /// ACC-001-start_account_sign_in: handoffContext가 설정되면 loginTapped가 그 컨텍스트를 signInHandoffClient에 전달한다.
+    /// paywall 경로에서 loginTapped가 performHandoff(context:) 호출 시 설정된 context를 사용하는지 검증한다.
+    /// - 검증 내용: performHandoff에 .paywall 전달, handoffPendingState 저장
+    /// - 사전 조건: AccountAccessFeature.State.handoffContext = .paywall
+    /// - 기대 결과: capturedContext == .paywall, handoffPendingState 저장
+    func testLoginTappedPassesConfiguredHandoffContext() async {
+        nonisolated(unsafe) var capturedContext: AppHandoffContext?
+        var initialState = AccountAccessFeature.State()
+        initialState.handoffContext = .paywall
+        let store = makeTestStore(
+            signInHandoffClient: SignInHandoffClient { context in
+                capturedContext = context
+                return .awaitingCallback(state: "paywall-state-123")
+            },
+            initialState: initialState,
+        )
+
+        await store.send(.loginTapped) { state in
+            state.isSignInInProgress = true
+            state.didSignInFail = false
+        }
+
+        XCTAssertEqual(capturedContext, .paywall)
+        await store.receive(\.signInHandoffCompleted) { state in
+            state.handoffPendingState = "paywall-state-123"
         }
 
         await store.finish()

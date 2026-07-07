@@ -273,7 +273,7 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
                 accountSessionClient: AccountSessionClient(
                     read: { self.sessionHolder.session },
                     persist: { _ in },
-                    delete: { self.sessionHolder.setSession(nil) },
+                    delete: { _ in self.sessionHolder.setSession(nil) },
                 ),
                 authNetworkClient: AuthNetworkClient(
                     exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
@@ -292,7 +292,7 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func makeMockSignInHandoffClient() -> SignInHandoffClient {
-        SignInHandoffClient { [sessionHolder] in
+        SignInHandoffClient { [sessionHolder] _ in
             let mockSession = AccountSession(
                 accessToken: "mock-onboarding-token",
                 status: .coreLicenseActive,

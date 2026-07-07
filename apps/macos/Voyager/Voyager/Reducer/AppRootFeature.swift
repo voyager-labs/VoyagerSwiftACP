@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesFileManager
 import VoyagerPagesSettings
@@ -56,27 +57,67 @@ struct AppRootFeature {
     ) -> Effect<Action> {
         switch action {
         case .lifecycle(.launch(.willFinishLaunching)):
-            startLaunchObservers()
+            // ponytail: launch 1회 bootstrap — General/Appearance load를 SettingsFeature가 담당.
+            .merge(
+                startLaunchObservers(),
+                .send(.settings(.bootstrapLocalPreferences)),
+                .send(.settings(.ai(.onAppear))),
+            )
 
         case let .lifecycle(.delegate(delegateAction)):
-            switch delegateAction {
-            case .openInitialWindowIfNeeded:
-                .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
-
-            case let .reopenWindowIfNeeded(hasVisibleWindows):
-                .send(.windowManager(.lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: hasVisibleWindows))))
-
-            case .startHelperIfNeeded:
-                .none
-            }
+            reduceLifecycleDelegate(delegateAction)
 
         case .lifecycle(.termination(.willTerminate)):
             .cancel(id: CancelID.appDidBecomeActiveObserver)
+
+        case let .lifecycle(.sessionExpiredDetected(reason)):
+            // 명시적 로그아웃(reason == .explicitSignOut)은 이미 Account child가
+            // `.delegate(.signedOut)`로 처리하므로 만료 액션으로 덮어쓰지 않는다.
+            // 세션 만료(reason == .sessionExpired 또는 nil)만 top-level clear +
+            // child `_sessionExpiredDetected`로 라우팅한다.
+            if reason == .explicitSignOut {
+                .send(.settings(.accessStatusLoaded(.none)))
+            } else {
+                .merge(
+                    .send(.settings(.accessStatusLoaded(.none))),
+                    .send(.settings(.account(.access(._sessionExpiredDetected)))),
+                )
+            }
+
+        case let .lifecycle(.sessionLapseGuard(.delegate(.unlocked(snapshot)))):
+            // guard 재로그인 성공 시 Settings top-level accessStatus와 Account 탭
+            // child access 상태를 함께 복원한다. AccountSettingsView는 child state로
+            // 렌더링되므로 top-level만 갱신하면 재로그인 후에도 signed-out 상태로 남는다.
+            // `.appLifecycleAccessSnapshotReady`와 동일한 child hydration 경로를 사용한다.
+            .merge(
+                .send(.settings(.accessStatusLoaded(snapshot.status))),
+                .send(.settings(.account(.access(.hydrateLaunchSnapshot(snapshot))))),
+            )
+
+        case let .lifecycle(.accountAccessGate(.accountAccessGranted(snapshot))):
+            // ponytail: AppLifecycle이 fetch한 launch snapshot을 Settings hydration으로 1회 전달 +
+            // AI bootstrap은 launch 시점으로 이동. didBootstrap가 탭 렌더 중복 send를 no-op 처리한다.
+            .send(.settings(.appLifecycleAccessSnapshotReady(snapshot)))
 
         case .appDidBecomeActive:
             .none
 
         default:
+            .none
+        }
+    }
+
+    private func reduceLifecycleDelegate(
+        _ delegateAction: AppLifecycleAction.Delegate,
+    ) -> Effect<Action> {
+        switch delegateAction {
+        case .openInitialWindowIfNeeded:
+            .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
+
+        case let .reopenWindowIfNeeded(hasVisibleWindows):
+            .send(.windowManager(.lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: hasVisibleWindows))))
+
+        case .startHelperIfNeeded:
             .none
         }
     }
@@ -115,8 +156,13 @@ struct AppRootFeature {
             return .send(.openAISettings)
 
         case .openAISettings:
-            return .concatenate(
-                .send(.settings(.selectSection(.ai))),
+            // ponytail: in-state gate. AppLifecycle snapshot hydration이 이미 state를 채움.
+            // 활성 상태일 때만 AI tab 딥링크 선택. native Settings scene은 항상 오픈.
+            let selectAI: Effect<Action> = state.settings.accessStatus.isActive
+                ? .send(.settings(.selectSection(.ai)))
+                : .none
+            return .merge(
+                selectAI,
                 .run { _ in
                     await MainActor.run {
                         openNativeSettingsScene()

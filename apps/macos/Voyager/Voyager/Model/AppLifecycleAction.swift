@@ -3,10 +3,12 @@ import Foundation
 import VoyagerFeaturesAccountAccess
 
 @CasePathable
-enum AppLifecycleAction: CasePathable, Equatable {
+enum AppLifecycleAction: CasePathable {
     case launch(Launch)
     case termination(Termination)
     case accountAccessGate(AccountAccessGate)
+    case sessionLapseGuard(AccountAccessAction)
+    case sessionExpiredDetected(reason: AccountSessionEndReason?)
     case delegate(Delegate)
 
     @CasePathable

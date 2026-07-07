@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
 import Logging
@@ -29,6 +30,8 @@ struct AppLifecycleFeature {
     var uuid
     @Dependency(\.authNetworkClient)
     var authNetwork
+    @Dependency(\.accountSessionClient)
+    var accountSessionClient
     @Dependency(\.accessStatusSnapshotClient)
     var snapshotClient
     @Dependency(\.unlockSurfaceWindowClient)
@@ -37,11 +40,14 @@ struct AppLifecycleFeature {
     var date
     @Dependency(\.continuousClock)
     var clock
+    @Dependency(\.notificationCenterClient)
+    var notificationCenterClient
 
     private enum CancelID {
         static let helperMonitor = "helperMonitor"
         static let accessCheck = "accessCheck"
         static let terminationCleanupTimeout = "terminationCleanupTimeout"
+        static let sessionExpirationObserver = "sessionExpirationObserver"
     }
 
     var body: some Reducer<State, Action> {
@@ -53,8 +59,10 @@ struct AppLifecycleFeature {
                 let theme = appearanceSettingsClient.loadTheme()
                 appearanceSettingsClient.applyThemeSync(theme)
 
+                let notificationCenterClient = notificationCenterClient
+
                 if isRunningXCTest() {
-                    return .none
+                    return observeSessionExpirationEffect(notificationCenterClient: notificationCenterClient)
                 }
 
                 try? EnvironmentLoader.loadEnvFiles()
@@ -66,7 +74,7 @@ struct AppLifecycleFeature {
                     component: "app",
                 )
                 VoyagerSentryMetricLogger.setUserId(userId)
-                return .none
+                return observeSessionExpirationEffect(notificationCenterClient: notificationCenterClient)
 
             case .launch(.didFinishLaunching):
                 if onboardingWindowClient.showIfNeeded() {
@@ -77,6 +85,11 @@ struct AppLifecycleFeature {
             case let .launch(.appReopen(hasVisibleWindows: flag)):
                 if onboardingWindowClient.showIfNeeded() {
                     return .none
+                }
+                // PR #295: sessionLapseGuard가 있으면 오버레이를 마운트할 FileManager 창이 필요하다.
+                // accountAccessGateResolved=false 경로가 이를 차단하면 빈 창에서 가드가 보이지 않는다.
+                if state.sessionLapseGuard != nil {
+                    return .send(.delegate(.reopenWindowIfNeeded(hasVisibleWindows: flag)))
                 }
                 if !state.accountAccessGateResolved {
                     return .none
@@ -110,13 +123,21 @@ struct AppLifecycleFeature {
                 state.accountAccessGateResolved = true
 
                 if accessStatus.isActive {
-                    let now = date.now
-                    let snapshot = AccessStatusSnapshot(
-                        status: accessStatus,
-                        currentPeriodEnd: response.currentPeriodEnd,
-                        fetchedAt: now,
-                    )
-                    return .send(.accountAccessGate(.accountAccessGranted(snapshot: snapshot)))
+                    // 활성 접근 권한: 스냅샷 생성 시 세션 만료 시점을 함께 반영한다.
+                    // authNetwork가 반환한 accessStatus를 그대로 사용하며,
+                    // 세션 읽기 실패/미존재는 access gate에 영향을 주지 않는다 (sessionExpiresAt == nil).
+                    let accountSessionClient = accountSessionClient
+                    let dateNow = date.now
+                    return .run { send in
+                        let sessionExpiresAt = await (try? accountSessionClient.read())?.expiresAt
+                        let snapshot = AccessStatusSnapshot(
+                            status: accessStatus,
+                            currentPeriodEnd: response.currentPeriodEnd,
+                            fetchedAt: dateNow,
+                            sessionExpiresAt: sessionExpiresAt,
+                        )
+                        await send(.accountAccessGate(.accountAccessGranted(snapshot: snapshot)))
+                    }
                 } else {
                     return .send(.accountAccessGate(.showUnlockSurface))
                 }
@@ -126,6 +147,7 @@ struct AppLifecycleFeature {
                     return .send(.accountAccessGate(.showUnlockSurface))
                 }
                 let snapshotClient = snapshotClient
+                let accountSessionClient = accountSessionClient
                 let dateNow = date.now
                 return .run { send in
                     guard let cached = await snapshotClient.load(),
@@ -136,7 +158,18 @@ struct AppLifecycleFeature {
                         await send(.accountAccessGate(.showUnlockSurface))
                         return
                     }
-                    await send(.accountAccessGate(.accountAccessGranted(snapshot: cached)))
+                    // session은 token file 기반으로 access_status 캐시와 무관하게
+                    // 변경될 수 있어 복원 시점에 다시 읽는다. status/currentPeriodEnd/
+                    // fetchedAt은 캐시 값을 유지하고 sessionExpiresAt 축만 최신화.
+                    // read 실패/미존재는 success path와 동일하게 nil로 흡수 → gate 정책은 그대로 유지.
+                    let sessionExpiresAt = await (try? accountSessionClient.read())?.expiresAt
+                    let restored = AccessStatusSnapshot(
+                        status: cached.status,
+                        currentPeriodEnd: cached.currentPeriodEnd,
+                        fetchedAt: cached.fetchedAt,
+                        sessionExpiresAt: sessionExpiresAt,
+                    )
+                    await send(.accountAccessGate(.accountAccessGranted(snapshot: restored)))
                 }
 
             case .accountAccessGate(.showUnlockSurface):
@@ -253,13 +286,50 @@ struct AppLifecycleFeature {
                     },
                 )
 
+            case let .sessionExpiredDetected(reason):
+                // accountSessionDidEnd notification 수신. 명시적 로그아웃(signOut → AccountSessionClient.delete)
+                // 와 세션 만료(refresh/decoding 실패) 양쪽이 모두 이 notification을 post하므로
+                // 두 원인이 같은 경로로 전달된다. T5에서 reason 구분이 추가되었으며,
+                // 두 경우 모두 동일하게 guard를 표시한다 (PRESERVED 동작).
+                state.lastAccessStatus = nil
+                state.accountAccessGateResolved = false
+                guard state.sessionLapseGuard == nil else { return .none }
+                // ACC-003: 온보딩 윈도우가 활성 상태이면 세션 만료/로그아웃 보호를 스킵한다
+                guard !onboardingWindowClient.isRequired() else { return .none }
+                state.sessionEndReason = reason
+                var sessionLapseGuard = AccountAccessFeature.State()
+                sessionLapseGuard.handoffContext = .paywall
+                state.sessionLapseGuard = sessionLapseGuard
+                return .send(.sessionLapseGuard(.onAppear))
+
             case .termination(.willTerminate):
-                return .cancel(id: CancelID.helperMonitor)
+                return .merge(
+                    .cancel(id: CancelID.helperMonitor),
+                    .cancel(id: CancelID.sessionExpirationObserver),
+                )
 
             case .delegate(.startHelperIfNeeded):
                 return .none
 
             case .delegate:
+                return .none
+
+            default:
+                return .none
+            }
+        }
+        .ifLet(\.sessionLapseGuard, action: \.sessionLapseGuard) {
+            AccountAccessFeature()
+        }
+
+        Reduce { state, action in
+            switch action {
+            case let .sessionLapseGuard(.delegate(.unlocked(snapshot))):
+                state.lastAccessStatus = snapshot.status
+                state.accountAccessGateResolved = true
+                state.sessionLapseGuard = nil
+                return .none
+            default:
                 return .none
             }
         }
@@ -337,6 +407,25 @@ private func waitAndRetryIfNeeded(
 private func isRunningXCTest() -> Bool {
     // TODO(VOY-432): ProcessInfo 대신 Dotenv 사용 검토 — https://linear.app/voyager-fm/issue/VOY-432
     ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+}
+
+/// accountSessionDidEnd notification을 관찰한다. 이 notification은 명시적 로그아웃과
+/// 세션 만료 양쪽에서 post되므로, effect 이름(sessionExpiration)과 무관하게 두 경우를 모두 수신한다.
+/// notification userInfo에서 AccountSessionEndReason을 추출하여 action에 전달한다.
+private func observeSessionExpirationEffect(
+    notificationCenterClient: NotificationCenterClient,
+) -> Effect<AppLifecycleAction> {
+    .run { send in
+        for await notification in notificationCenterClient.notifications(
+            .accountSessionDidEnd,
+            nil,
+        ) {
+            let reasonRaw = notification.userInfo?[AccountSessionClient.sessionEndReasonUserInfoKey] as? String
+            let reason = reasonRaw.flatMap(AccountSessionEndReason.init(rawValue:))
+            await send(.sessionExpiredDetected(reason: reason))
+        }
+    }
+    .cancellable(id: "sessionExpirationObserver", cancelInFlight: true)
 }
 
 actor VoyagerTerminationCoordinator {

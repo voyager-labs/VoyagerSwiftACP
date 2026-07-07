@@ -21,16 +21,21 @@ public struct CheckoutURLClient: Sendable {
     /// 고객지원/도움 페이지 URL을 반환한다.
     public var supportURL: @Sendable () throws -> URL
 
+    /// 계정(billing portal) 페이지 URL을 반환한다.
+    public var accountURL: @Sendable () throws -> URL
+
     nonisolated public init(
         openURL: @escaping @Sendable (URL) -> Void,
         checkoutURL: @escaping @Sendable () throws -> URL,
         pricingURL: @escaping @Sendable () throws -> URL,
         supportURL: @escaping @Sendable () throws -> URL,
+        accountURL: @escaping @Sendable () throws -> URL,
     ) {
         self.openURL = openURL
         self.checkoutURL = checkoutURL
         self.pricingURL = pricingURL
         self.supportURL = supportURL
+        self.accountURL = accountURL
     }
 }
 
@@ -108,6 +113,9 @@ extension CheckoutURLClient: DependencyKey {
             supportURL: {
                 try webRouteURL(path: "/support")
             },
+            accountURL: {
+                try webRouteURL(path: "/account")
+            },
         )
     }
 
@@ -117,6 +125,7 @@ extension CheckoutURLClient: DependencyKey {
             checkoutURL: { testURL(path: "/checkout") },
             pricingURL: { testURL(path: "/pricing") },
             supportURL: { testURL(path: "/support") },
+            accountURL: { testURL(path: "/account") },
         )
     }
 

@@ -23,7 +23,7 @@ enum StateMutation {
     static let activeAccountSessionClient = AccountSessionClient(
         read: { AccountSession(accessToken: "test-token", status: .coreLicenseActive) },
         persist: { _ in },
-        delete: {},
+        delete: { _ in },
     )
 
     static let activeAuthNetworkClient = AuthNetworkClient(
