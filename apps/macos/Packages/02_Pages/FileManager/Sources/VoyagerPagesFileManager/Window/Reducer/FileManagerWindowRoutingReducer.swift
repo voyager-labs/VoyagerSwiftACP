@@ -948,7 +948,7 @@ private func routeBackgroundAiChatAction(
           var backgroundContent = state.backgroundAiChatStates[sessionID]
     else { return .none }
 
-    let shouldRemoveBackgroundState = shouldRemoveBackgroundAiChatState(
+    let backgroundOwnerRemoval = backgroundAiChatOwnerRemoval(
         after: aiChatAction,
         backgroundAiChat: backgroundContent.aiChat,
     )
@@ -989,10 +989,11 @@ private func routeBackgroundAiChatAction(
         )
     }
 
-    if shouldRemoveBackgroundState {
-        state.removeBackgroundAiChatState(sessionID: sessionID)
-    } else {
+    backgroundContent.aiChat.removeBackgroundOwner(backgroundOwnerRemoval)
+    if backgroundContent.aiChat.hasRemainingBackgroundLifecycleOwner {
         state.backgroundAiChatStates[sessionID] = backgroundContent
+    } else {
+        state.removeBackgroundAiChatState(sessionID: sessionID)
     }
 
     return effect
@@ -1329,6 +1330,30 @@ private extension AiChatFeature.State {
             || backgroundExecutionPhases[requestID]?.matchesOwner(requestID: requestID, runID: runID) == true
     }
 
+    var hasRemainingBackgroundLifecycleOwner: Bool {
+        pendingRequestStart != nil
+            || executionPhase.lock != nil
+            || !backgroundExecutionPhases.isEmpty
+    }
+
+    mutating func removeBackgroundOwner(_ removal: BackgroundAiChatOwnerRemoval?) {
+        guard let removal else { return }
+        guard let requestID = removal.requestID else {
+            if removal.removeLegacySessionOwner {
+                pendingRequestStart = nil
+                executionPhase = .idle
+                backgroundExecutionPhases = [:]
+            }
+            return
+        }
+        if executionPhase.matchesOwner(requestID: requestID, runID: removal.runID) {
+            executionPhase = .idle
+        }
+        if backgroundExecutionPhases[requestID]?.matchesOwner(requestID: requestID, runID: removal.runID) == true {
+            backgroundExecutionPhases[requestID] = nil
+        }
+    }
+
     func canRefreshFailureFromBackground(sessionID: AiChatSessionID) -> Bool {
         self.sessionID == sessionID
             && !executionPhase.isProcessing
@@ -1550,7 +1575,7 @@ private func routeBackgroundInspectorAiChatAction(
           var inspectorState = state.backgroundInspectorAiChatStates[sessionID]
     else { return nil }
 
-    let shouldRemoveBackgroundState = shouldRemoveBackgroundAiChatState(
+    let backgroundOwnerRemoval = backgroundAiChatOwnerRemoval(
         after: aiChatAction,
         backgroundAiChat: inspectorState.aiChat,
     )
@@ -1590,10 +1615,11 @@ private func routeBackgroundInspectorAiChatAction(
         )
     }
 
-    if shouldRemoveBackgroundState {
-        state.removeBackgroundInspectorAiChatState(sessionID: sessionID)
-    } else {
+    inspectorState.aiChat.removeBackgroundOwner(backgroundOwnerRemoval)
+    if inspectorState.aiChat.hasRemainingBackgroundLifecycleOwner {
         state.backgroundInspectorAiChatStates[sessionID] = inspectorState.tabSnapshot()
+    } else {
+        state.removeBackgroundInspectorAiChatState(sessionID: sessionID)
     }
 
     return effect
@@ -1768,33 +1794,48 @@ private func backgroundAiChatSessionID(
     }
 }
 
-private func shouldRemoveBackgroundAiChatState(
+private struct BackgroundAiChatOwnerRemoval {
+    let requestID: AiChatRequestID?
+    let runID: AiChatRunID?
+    let removeLegacySessionOwner: Bool
+}
+
+private func backgroundAiChatOwnerRemoval(
     after aiChatAction: AiChatAction,
     backgroundAiChat: AiChatFeature.State,
-) -> Bool {
+) -> BackgroundAiChatOwnerRemoval? {
     switch aiChatAction {
     case .executionEvent:
-        false
+        nil
     case let .sessionSnapshotSaved(_, _, requestID, runID):
-        shouldRemoveBackgroundAiChatState(
+        backgroundAiChatOwnerRemoval(
             requestID: requestID,
             runID: runID,
             backgroundAiChat: backgroundAiChat,
         )
     case let .persistenceRecoverySucceeded(lock):
         backgroundAiChat.hasBackgroundOwnerMatching(requestID: lock.requestID, runID: lock.runID)
+            ? BackgroundAiChatOwnerRemoval(
+                requestID: lock.requestID,
+                runID: lock.runID,
+                removeLegacySessionOwner: false,
+            )
+            : nil
     case .persistenceRecoveryRetryFailed:
-        false
+        nil
     default:
-        false
+        nil
     }
 }
 
-private func shouldRemoveBackgroundAiChatState(
+private func backgroundAiChatOwnerRemoval(
     requestID: AiChatRequestID?,
     runID: AiChatRunID?,
     backgroundAiChat: AiChatFeature.State,
-) -> Bool {
-    guard let requestID else { return true }
-    return backgroundAiChat.hasBackgroundOwnerMatching(requestID: requestID, runID: runID)
+) -> BackgroundAiChatOwnerRemoval? {
+    guard let requestID else {
+        return BackgroundAiChatOwnerRemoval(requestID: nil, runID: nil, removeLegacySessionOwner: true)
+    }
+    guard backgroundAiChat.hasBackgroundOwnerMatching(requestID: requestID, runID: runID) else { return nil }
+    return BackgroundAiChatOwnerRemoval(requestID: requestID, runID: runID, removeLegacySessionOwner: false)
 }

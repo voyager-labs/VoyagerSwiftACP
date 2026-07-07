@@ -5288,12 +5288,17 @@ extension CTM005IndependentContentTabSessionTests {
             state.content.aiChat.sessionList.replaceRow(summary)
             state.content.aiChat.sessionList.selectedSessionID = aiSessionID
             state.tabContentStates[aiChatTabID] = state.content
-            state.backgroundAiChatStates.removeValue(forKey: aiSessionID)
+            state.backgroundAiChatStates[aiSessionID]?.aiChat.backgroundExecutionPhases[requestLock.requestID] = nil
         }
 
         XCTAssertEqual(store.state.content.aiChat.transcriptHistory.map(\.content), ["test", "done"])
         XCTAssertEqual(store.state.content.aiChat.executionPhase, .idle)
-        XCTAssertNil(store.state.backgroundAiChatStates[aiSessionID])
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase,
+            .processing(unrelatedLock),
+        )
+        XCTAssertNil(store.state.backgroundAiChatStates[aiSessionID]?.aiChat
+            .backgroundExecutionPhases[requestLock.requestID])
         await store.finish()
     }
 
@@ -5363,7 +5368,32 @@ extension CTM005IndependentContentTabSessionTests {
             store.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase,
             .persistenceRecovery(oldRecoveryLock, .unknown),
         )
+
         await store.finish()
+
+        var mixedBackgroundContent = FileManagerContentFeature.State()
+        mixedBackgroundContent.aiChat.sessionID = aiSessionID
+        mixedBackgroundContent.aiChat.executionPhase = .persistenceRecovery(oldRecoveryLock, .unknown)
+        mixedBackgroundContent.aiChat.backgroundExecutionPhases[newLock.requestID] = .completed(newLock)
+
+        var mixedState = FileManagerFeature.State()
+        mixedState.backgroundAiChatStates[aiSessionID] = mixedBackgroundContent
+
+        let mixedStore = TestStore(initialState: mixedState) {
+            FileManagerFeature()
+        }
+        mixedStore.exhaustivity = .off
+
+        await mixedStore.send(.backgroundAiChat(.persistenceRecoverySucceeded(newLock)))
+
+        XCTAssertEqual(
+            mixedStore.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase,
+            .persistenceRecovery(oldRecoveryLock, .unknown),
+        )
+        XCTAssertNil(mixedStore.state.backgroundAiChatStates[aiSessionID]?.aiChat
+            .backgroundExecutionPhases[newLock.requestID])
+        XCTAssertNotNil(mixedStore.state.backgroundAiChatStates[aiSessionID])
+        await mixedStore.finish()
     }
 
     func testBackgroundAiChatDeleteSessionRemovesClosedOwner() async {
