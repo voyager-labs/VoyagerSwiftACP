@@ -230,6 +230,46 @@ final class AiChatSessionFileStoreTests: XCTestCase {
         XCTAssertNil(restored.customTitle)
     }
 
+    func testSaveSessionKeepsIncomingCustomTitleForMetadataOnlyRename() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AiChatSessionFileStoreTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let store = try AiChatSessionFileStore(rootDirectoryURL: directoryURL)
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let originalSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: "Old title",
+            provider: nil,
+            model: nil,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "test"),
+                AiChatMessage(role: .assistant, content: "done"),
+            ],
+            updatedAtMs: 2,
+        )
+        let renamedSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: "New title",
+            provider: nil,
+            model: nil,
+            transcriptHistory: originalSnapshot.transcriptHistory,
+            updatedAtMs: originalSnapshot.updatedAtMs,
+        )
+
+        try await store.saveSession(originalSnapshot)
+        try await store.saveSession(renamedSnapshot)
+
+        let loadedSnapshot = try await store.loadSession(id: sessionID)
+        let restored = try XCTUnwrap(loadedSnapshot)
+        XCTAssertEqual(restored.customTitle, "New title")
+        XCTAssertEqual(restored.transcriptHistory.map(\.content), ["test", "done"])
+        XCTAssertEqual(restored.updatedAtMs, 2)
+    }
+
     func testSaveSessionMergesExistingCustomTitleIntoLaterFinalSnapshot() async throws {
         let directoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("AiChatSessionFileStoreTests-\(UUID().uuidString)", isDirectory: true)

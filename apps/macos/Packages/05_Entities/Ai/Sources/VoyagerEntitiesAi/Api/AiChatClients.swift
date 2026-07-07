@@ -295,6 +295,7 @@ private extension AiChatSessionSnapshot {
 
     func mergingExistingIndependentMetadata(from existingSnapshot: AiChatSessionSnapshot) -> AiChatSessionSnapshot? {
         guard sessionID == existingSnapshot.sessionID,
+              !representsMetadataOnlyChange(from: existingSnapshot),
               existingSnapshot.representsMetadataOnlyChange(from: self),
               existingSnapshot.customTitle != customTitle
         else {
