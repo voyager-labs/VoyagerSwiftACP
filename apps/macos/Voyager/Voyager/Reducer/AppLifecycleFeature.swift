@@ -297,7 +297,9 @@ struct AppLifecycleFeature {
                 // ACC-003: 온보딩 윈도우가 활성 상태이면 세션 만료/로그아웃 보호를 스킵한다
                 guard !onboardingWindowClient.isRequired() else { return .none }
                 state.sessionEndReason = reason
-                state.sessionLapseGuard = AccountAccessFeature.State()
+                var sessionLapseGuard = AccountAccessFeature.State()
+                sessionLapseGuard.handoffContext = .paywall
+                state.sessionLapseGuard = sessionLapseGuard
                 return .send(.sessionLapseGuard(.onAppear))
 
             case .termination(.willTerminate):

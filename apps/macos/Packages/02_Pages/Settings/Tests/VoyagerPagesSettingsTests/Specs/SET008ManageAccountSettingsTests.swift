@@ -371,10 +371,14 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
     /// SET-008-manage_account_settings: signedOut 상태에서 Sign In 버튼이 표시된다.
     /// AccountSettingsView는 setAuthState==.signedOut일 때 Sign In 버튼을 렌더링한다.
     func testSignedOutStateShowsSignInButton() async {
+        nonisolated(unsafe) var capturedContext: AppHandoffContext?
         let store = TestStore(initialState: AccountSettingsState()) {
             AccountSettingsFeature()
         } withDependencies: {
-            $0.signInHandoffClient.performHandoff = { .cancelled }
+            $0.signInHandoffClient.performHandoff = { context in
+                capturedContext = context
+                return .cancelled
+            }
         }
 
         // signedOut 상태 → Sign In 버튼 표시
@@ -388,6 +392,8 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
             state.access.isSignInInProgress = false
             state.access.didSignInFail = true
         }
+
+        XCTAssertEqual(capturedContext, .paywall, "Settings sign-in handoff should use paywall context")
     }
 
     /// SET-008-manage_account_settings: signedIn 상태에서 Sign Out 버튼과 Manage Account 버튼이 표시된다.

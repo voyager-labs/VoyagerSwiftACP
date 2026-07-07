@@ -40,7 +40,7 @@ final class SettingsHostSandboxTests: XCTestCase {
     func testSignedOutSignInHandoffCreatesActiveSession() async throws {
         let deps = SettingsHostSandbox.dependencies(for: scenario(accountAuth: .signedOut))
 
-        let result = await deps.signInHandoffClient.performHandoff()
+        let result = await deps.signInHandoffClient.performHandoff(.paywall)
         guard case let .success(callbackURL) = result else {
             XCTFail("signedOut sign-in handoff should succeed in SettingsHost sandbox")
             return

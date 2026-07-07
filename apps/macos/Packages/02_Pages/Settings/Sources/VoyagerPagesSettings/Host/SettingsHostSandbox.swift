@@ -291,7 +291,7 @@ public enum SettingsHostSandbox {
         accountAuthBox: SettingsHostAccountAuthBox,
         failureLatency: FailureLatencyScenario,
     ) -> SignInHandoffClient {
-        SignInHandoffClient {
+        SignInHandoffClient { _ in
             await maybeDelay(failureLatency)
             let accountAuth = await accountAuthBox.current()
             if accountAuth == .error || failureLatency == .error {

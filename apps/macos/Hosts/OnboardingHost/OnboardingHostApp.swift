@@ -292,7 +292,7 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func makeMockSignInHandoffClient() -> SignInHandoffClient {
-        SignInHandoffClient { [sessionHolder] in
+        SignInHandoffClient { [sessionHolder] _ in
             let mockSession = AccountSession(
                 accessToken: "mock-onboarding-token",
                 status: .coreLicenseActive,

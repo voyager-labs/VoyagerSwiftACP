@@ -195,9 +195,10 @@ public struct AccountAccessFeature {
 
         state.isSignInInProgress = true
         state.didSignInFail = false
+        let requestedContext = state.handoffContext
 
         return .run { [signInHandoffClient] send in
-            let result = await signInHandoffClient.performHandoff()
+            let result = await signInHandoffClient.performHandoff(requestedContext)
             await send(.signInHandoffCompleted(result))
         }
         .cancellable(id: CancelID.signInHandoff, cancelInFlight: true)
@@ -280,8 +281,7 @@ public struct AccountAccessFeature {
             return .none
         }
 
-        let expectedContext: AppHandoffContext = .onboarding
-        guard callback.context == expectedContext else {
+        guard callback.context == state.handoffContext else {
             state.isSignInInProgress = false
             state.didSignInFail = true
             state.handoffPendingState = nil

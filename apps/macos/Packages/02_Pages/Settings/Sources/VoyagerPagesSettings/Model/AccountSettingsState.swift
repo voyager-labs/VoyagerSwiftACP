@@ -22,7 +22,9 @@ public struct AccountSettingsState: Equatable {
     public var access: AccountAccessFeature.State = .init()
     public var isShowingSignOutConfirmation: Bool = false
 
-    public init() {}
+    public init() {
+        access.handoffContext = .paywall
+    }
 
     /// SET-008 surface auth 상태 매핑 (read-only display mapping).
     /// ACC-001 auth 상태를 SET의 5개 user-visible status로 변환한다.
