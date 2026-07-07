@@ -262,8 +262,8 @@ private extension AiChatSessionFileStore {
 private extension AiChatSessionSnapshot {
     func mergingIndependentMetadata(from snapshot: AiChatSessionSnapshot) -> AiChatSessionSnapshot? {
         guard snapshot.sessionID == sessionID,
-              let customTitle = snapshot.customTitle,
-              customTitle != self.customTitle
+              snapshot.representsMetadataOnlyChange(from: self),
+              snapshot.customTitle != customTitle
         else {
             return nil
         }
@@ -271,7 +271,7 @@ private extension AiChatSessionSnapshot {
         return AiChatSessionSnapshot(
             sessionID: sessionID,
             status: status,
-            customTitle: customTitle,
+            customTitle: snapshot.customTitle,
             provider: provider,
             model: model,
             selectedModelRow: selectedModelRow,
@@ -282,6 +282,17 @@ private extension AiChatSessionSnapshot {
             lastRequestContext: lastRequestContext,
             updatedAtMs: updatedAtMs,
         )
+    }
+
+    func representsMetadataOnlyChange(from existingSnapshot: AiChatSessionSnapshot) -> Bool {
+        provider == existingSnapshot.provider
+            && model == existingSnapshot.model
+            && selectedModelRow == existingSnapshot.selectedModelRow
+            && selectedThinking == existingSnapshot.selectedThinking
+            && lastRequestID == existingSnapshot.lastRequestID
+            && lastRunID == existingSnapshot.lastRunID
+            && lastRequestContext == existingSnapshot.lastRequestContext
+            && existingSnapshot.transcriptHistory.starts(with: transcriptHistory)
     }
 }
 

@@ -5819,6 +5819,53 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    func testBackgroundAiChatPersistenceFailedRefreshesActiveRecovery() async {
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let finalSnapshot = AiChatSessionSnapshot(
+            sessionID: aiSessionID,
+            status: .active,
+            provider: nil,
+            model: nil,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "test"),
+                AiChatMessage(role: .assistant, content: "done"),
+            ],
+            updatedAtMs: 1_234_567_890_000,
+        )
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+            .recordingFinalSnapshot(finalSnapshot)
+
+        var activeContent = FileManagerContentFeature.State()
+        activeContent.aiChat.sessionID = aiSessionID
+        activeContent.aiChat.sessionStatus = .active
+        activeContent.aiChat.executionPhase = .idle
+        activeContent.aiChat.transcriptHistory = [AiChatMessage(role: .user, content: "test")]
+
+        var backgroundContent = FileManagerContentFeature.State()
+        backgroundContent.aiChat.sessionID = aiSessionID
+        backgroundContent.aiChat.sessionStatus = .active
+        backgroundContent.aiChat.backgroundExecutionPhases[requestLock.requestID] = .completed(requestLock)
+
+        var state = FileManagerFeature.State()
+        state.content = activeContent
+        state.backgroundAiChatStates[aiSessionID] = backgroundContent
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.backgroundAiChat(.persistenceFailed(requestLock, .unknown)))
+
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[aiSessionID]?.aiChat.backgroundExecutionPhases[requestLock.requestID],
+            .persistenceRecovery(requestLock, .unknown),
+        )
+        XCTAssertEqual(store.state.content.aiChat.executionPhase, .persistenceRecovery(requestLock, .unknown))
+        XCTAssertEqual(store.state.content.aiChat.lastExecutionFailure, .unknown)
+        await store.finish()
+    }
+
     func testBackgroundAiChatFailureKeepsOwnerAndRefreshesActiveSession() async {
         let aiSessionID = AiChatSessionID(rawValue: UUID())
         let otherSessionID = AiChatSessionID(rawValue: UUID())

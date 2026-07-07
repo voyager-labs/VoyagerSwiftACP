@@ -924,6 +924,12 @@ private func routeBackgroundAiChatAction(
             backgroundAiChat: backgroundContent.aiChat,
             state: &state,
         )
+    } else if let recoveryLock = persistenceRecoveryLock(from: aiChatAction) {
+        refreshAiChatRecoveryFromBackgroundIfNeeded(
+            lock: recoveryLock,
+            backgroundAiChat: backgroundContent.aiChat,
+            state: &state,
+        )
     }
 
     if shouldRemoveBackgroundAiChatState(after: aiChatAction) {
@@ -946,6 +952,18 @@ private func sessionSnapshotSavedSummary(from aiChatAction: AiChatAction) -> AiC
 private func failedAiChatContext(from aiChatAction: AiChatAction) -> AiChatRequestContextSnapshot? {
     guard case let .executionEvent(.failed(context, _)) = aiChatAction else { return nil }
     return context
+}
+
+private func persistenceRecoveryLock(from aiChatAction: AiChatAction) -> AiChatRequestLock? {
+    switch aiChatAction {
+    case let .persistenceFailed(lock, _),
+         let .persistenceRecoverySucceeded(lock),
+         let .persistenceRecoveryRetryFailed(lock, _):
+        lock
+
+    default:
+        nil
+    }
 }
 
 private func handleBackgroundAiChatSnapshotPersisted(
@@ -1083,6 +1101,44 @@ private func refreshAiChatFailureFromBackgroundIfNeeded(
     }
 }
 
+private func refreshAiChatRecoveryFromBackgroundIfNeeded(
+    lock: AiChatRequestLock,
+    backgroundAiChat: AiChatFeature.State,
+    state: inout FileManagerWindowState,
+) {
+    guard let sessionID = lock.context.sessionID else { return }
+
+    if state.content.aiChat.canRefreshRecoveryFromBackground(sessionID: sessionID) {
+        state.content.aiChat.applyBackgroundRecovery(lock: lock, backgroundAiChat: backgroundAiChat)
+        state.syncActiveTabContentState()
+    }
+
+    for tabID in state.tabContentStates.keys {
+        guard tabID != state.contentTabs.activeTabID else { continue }
+        guard state.tabContentStates[tabID]?.aiChat.canRefreshRecoveryFromBackground(sessionID: sessionID) == true
+        else { continue }
+        state.tabContentStates[tabID]?.aiChat.applyBackgroundRecovery(
+            lock: lock,
+            backgroundAiChat: backgroundAiChat,
+        )
+    }
+
+    if state.inspector.aiChat.canRefreshRecoveryFromBackground(sessionID: sessionID) {
+        state.inspector.aiChat.applyBackgroundRecovery(lock: lock, backgroundAiChat: backgroundAiChat)
+        state.syncActiveTabInspectorState()
+    }
+
+    for tabID in state.tabInspectorStates.keys {
+        guard tabID != state.contentTabs.activeTabID else { continue }
+        guard state.tabInspectorStates[tabID]?.aiChat.canRefreshRecoveryFromBackground(sessionID: sessionID) == true
+        else { continue }
+        state.tabInspectorStates[tabID]?.aiChat.applyBackgroundRecovery(
+            lock: lock,
+            backgroundAiChat: backgroundAiChat,
+        )
+    }
+}
+
 private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
     summary: AiChatSessionSummary,
     snapshot: AiChatSessionSnapshot? = nil,
@@ -1135,6 +1191,30 @@ private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
 }
 
 private extension AiChatFeature.State {
+    func canRefreshRecoveryFromBackground(sessionID: AiChatSessionID) -> Bool {
+        self.sessionID == sessionID
+            && !executionPhase.isProcessing
+            && pendingRequestStart == nil
+    }
+
+    mutating func applyBackgroundRecovery(
+        lock: AiChatRequestLock,
+        backgroundAiChat: AiChatFeature.State,
+    ) {
+        guard let matchingPhase = backgroundAiChat.backgroundExecutionPhases[lock.requestID]?
+            .matchingRecovery(lock: lock)
+            ?? backgroundAiChat.executionPhase.matchingRecovery(lock: lock)
+        else { return }
+        executionPhase = matchingPhase
+        streamingAssistantDraft = nil
+        lockedModelHandle = nil
+        if case let .persistenceRecovery(_, failure) = matchingPhase {
+            lastExecutionFailure = failure
+        } else {
+            lastExecutionFailure = nil
+        }
+    }
+
     func canRefreshFailureFromBackground(sessionID: AiChatSessionID) -> Bool {
         self.sessionID == sessionID
             && !executionPhase.isProcessing
@@ -1220,6 +1300,16 @@ private extension AiChatFeature.State {
 }
 
 private extension AiChatExecutionPhase {
+    func matchingRecovery(lock expectedLock: AiChatRequestLock) -> Self? {
+        guard let lock,
+              lock.context.sessionID == expectedLock.context.sessionID,
+              lock.requestID == expectedLock.requestID,
+              lock.runID == expectedLock.runID,
+              case .persistenceRecovery = self
+        else { return nil }
+        return self
+    }
+
     func matchingFailure(context: AiChatRequestContextSnapshot) -> Self? {
         guard let lock,
               lock.context.sessionID == context.sessionID,
@@ -1340,6 +1430,12 @@ private func routeBackgroundInspectorAiChatAction(
     } else if let failedContext = failedAiChatContext(from: aiChatAction) {
         refreshAiChatFailureFromBackgroundIfNeeded(
             context: failedContext,
+            backgroundAiChat: inspectorState.aiChat,
+            state: &state,
+        )
+    } else if let recoveryLock = persistenceRecoveryLock(from: aiChatAction) {
+        refreshAiChatRecoveryFromBackgroundIfNeeded(
+            lock: recoveryLock,
             backgroundAiChat: inspectorState.aiChat,
             state: &state,
         )
