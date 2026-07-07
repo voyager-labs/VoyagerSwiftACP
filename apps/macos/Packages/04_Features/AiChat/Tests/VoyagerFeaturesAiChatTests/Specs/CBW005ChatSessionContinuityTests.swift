@@ -1007,6 +1007,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             mode: .sessions,
             sessionList: .init(selectedSessionID: oldSessionID),
             sessionID: oldSessionID,
+            currentSessionCustomTitle: "Renamed original",
             sessionStatus: .active,
             currentContext: makeContextSnapshot(summary: "Current docs"),
             draftText: "Question before new chat",
@@ -1054,6 +1055,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
             assistantReplacementIndex: nil,
+            customTitle: "Renamed original",
         )
 
         await store.send(.newChatTapped) { state in
@@ -1098,6 +1100,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         let expectedOriginalSnapshot = AiChatSessionSnapshot(
             sessionID: oldSessionID,
             status: .active,
+            customTitle: "Renamed original",
             provider: selectedHandle.provider,
             model: selectedHandle,
             selectedModelRow: catalogRows[0],

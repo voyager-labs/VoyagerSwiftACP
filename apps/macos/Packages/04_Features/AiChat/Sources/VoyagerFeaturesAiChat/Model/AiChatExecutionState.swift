@@ -149,6 +149,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
     public let selectedModelHandle: AiModelHandle
     public let selectedModelRow: AiModelCatalogRow?
     public let assistantReplacementIndex: Int?
+    public let customTitle: String?
     public let historyTruncation: AiChatHistoryTruncationMetadata
     public let observabilitySummary: AiChatRequestObservabilitySummary
 
@@ -161,6 +162,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
         selectedModelHandle: AiModelHandle,
         selectedModelRow: AiModelCatalogRow?,
         assistantReplacementIndex: Int?,
+        customTitle: String? = nil,
         historyTruncation: AiChatHistoryTruncationMetadata = .init(
             includedMessageCount: 0,
             excludedMessageCount: 0,
@@ -177,6 +179,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
         self.selectedModelHandle = selectedModelHandle
         self.selectedModelRow = selectedModelRow
         self.assistantReplacementIndex = assistantReplacementIndex
+        self.customTitle = customTitle
         self.historyTruncation = historyTruncation
         self.observabilitySummary = observabilitySummary
     }
@@ -191,6 +194,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
             selectedModelHandle: selectedModelHandle,
             selectedModelRow: selectedModelRow,
             assistantReplacementIndex: assistantReplacementIndex,
+            customTitle: customTitle,
             historyTruncation: historyTruncation,
             observabilitySummary: observabilitySummary.recordingDelta(at: timestampMs),
         )
@@ -210,6 +214,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
             selectedModelHandle: selectedModelHandle,
             selectedModelRow: selectedModelRow,
             assistantReplacementIndex: assistantReplacementIndex,
+            customTitle: customTitle,
             historyTruncation: historyTruncation,
             observabilitySummary: observabilitySummary.recordingTerminal(
                 at: timestampMs,

@@ -254,6 +254,7 @@ extension AiChatFeature {
             selectedModelHandle: selectedHandle,
             selectedModelRow: input.selectedRow,
             assistantReplacementIndex: input.preparedRequest.assistantReplacementIndex,
+            customTitle: state.currentSessionCustomTitle,
             historyTruncation: input.preparedRequest.historyTruncation,
             observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: submittedAtMs),
         )
