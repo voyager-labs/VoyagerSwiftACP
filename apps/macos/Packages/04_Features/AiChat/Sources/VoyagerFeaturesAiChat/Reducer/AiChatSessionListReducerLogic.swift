@@ -88,6 +88,7 @@ extension AiChatFeature {
 
         if state.sessionList.allRows.contains(where: { $0.sessionID == sessionID }) {
             if state.sessionID != sessionID {
+                moveVisibleProcessingToBackgroundIfNeeded(state: &state, targetSessionID: sessionID)
                 state.currentContextFolderStructureModes = [:]
             }
             state.sessionList.selectedSessionID = sessionID
@@ -281,10 +282,10 @@ extension AiChatFeature {
                     wasCancelled: true,
                 ))
             }
-            let deletedSessionEffects = cancelRequestLifecycle(for: sessionID, state: &state)
-            if let deletedSessionEffects {
-                preDeleteEffects.append(deletedSessionEffects)
-            }
+        }
+        let deletedSessionEffects = cancelRequestLifecycle(for: sessionID, state: &state)
+        if let deletedSessionEffects {
+            preDeleteEffects.append(deletedSessionEffects)
         }
         guard !preDeleteEffects.isEmpty else {
             return deleteSession(sessionID)
@@ -302,6 +303,7 @@ extension AiChatFeature {
         state.sessionList.unreadCompletedSessionIDs.remove(sessionID)
         state.sessionList.errorMessage = nil
         if state.sessionID != sessionID {
+            moveVisibleProcessingToBackgroundIfNeeded(state: &state, targetSessionID: sessionID)
             state.currentContextFolderStructureModes = [:]
         }
 

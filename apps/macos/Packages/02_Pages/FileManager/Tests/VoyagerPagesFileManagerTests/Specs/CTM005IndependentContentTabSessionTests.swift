@@ -4316,7 +4316,8 @@ extension CTM005IndependentContentTabSessionTests {
         await store.send(.content(.aiChat(.executionEvent(.final(response: response)))))
 
         await store.receive { action in
-            guard case let .backgroundAiChat(.sessionSnapshotSaved(summary)) = action else { return false }
+            guard case let .backgroundAiChatSnapshotPersisted(snapshot) = action else { return false }
+            let summary = AiChatSessionSummary(snapshot: snapshot)
             return summary.sessionID == aiSessionID
         } assert: { state in
             state.backgroundAiChatStates.removeValue(forKey: aiSessionID)
@@ -4415,7 +4416,8 @@ extension CTM005IndependentContentTabSessionTests {
         await store.send(.content(.aiChat(.executionEvent(.final(response: response)))))
 
         await store.receive { action in
-            guard case let .backgroundAiChat(.sessionSnapshotSaved(summary)) = action else { return false }
+            guard case let .backgroundAiChatSnapshotPersisted(snapshot) = action else { return false }
+            let summary = AiChatSessionSummary(snapshot: snapshot)
             return summary.sessionID == aiSessionID
         } assert: { state in
             state.backgroundAiChatStates.removeValue(forKey: aiSessionID)
@@ -4510,6 +4512,99 @@ extension CTM005IndependentContentTabSessionTests {
         XCTAssertEqual(store.state.content.aiChat.executionPhase, .completed(activeLock))
         XCTAssertEqual(store.state.content.aiChat.sessionList.allRows.first?.messageCount, 3)
         XCTAssertEqual(store.state.content.aiChat.sessionList.allRows.first?.preview, "R2 done")
+        XCTAssertNil(store.state.backgroundAiChatStates[sessionID])
+    }
+
+    func testBackgroundFinalSnapshotRefreshUsesFinalTranscript() async {
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: sessionID)
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+
+        var activeContent = FileManagerContentFeature.State()
+        activeContent.aiChat.sessionID = sessionID
+        activeContent.aiChat.mode = .chat
+        activeContent.aiChat.sessionStatus = .active
+        activeContent.aiChat.transcriptHistory = [
+            AiChatMessage(role: .user, content: "test"),
+        ]
+        activeContent.aiChat.sessionList = AiChatSessionListState(
+            allRows: [AiChatSessionSummary(
+                sessionID: sessionID,
+                title: "Active",
+                preview: "test",
+                messageCount: 1,
+                provider: requestLock.context.provider,
+                model: requestLock.context.model,
+                createdAtMs: 1_234_567_890_000,
+                updatedAtMs: 1_234_567_890_000,
+                status: .active,
+            )],
+            selectedSessionID: sessionID,
+        )
+
+        var backgroundContent = FileManagerContentFeature.State()
+        backgroundContent.aiChat.sessionID = sessionID
+        backgroundContent.aiChat.mode = .chat
+        backgroundContent.aiChat.sessionStatus = .active
+        backgroundContent.aiChat.transcriptHistory = []
+        backgroundContent.aiChat.backgroundExecutionPhases[requestLock.requestID] = .processing(requestLock)
+
+        var state = FileManagerFeature.State()
+        state.content = activeContent
+        state.backgroundAiChatStates[sessionID] = backgroundContent
+
+        let store: TestStore<FileManagerFeature.State, FileManagerWindowAction> = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_891))
+            $0.uuid = .incrementing
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+            }
+        }
+        store.exhaustivity = .off
+
+        let assistantMessage = AiChatMessage(role: .assistant, content: "done")
+        let response = AiChatResponse(
+            context: requestLock.context,
+            assistantMessage: assistantMessage,
+            completedAtMs: 1_234_567_891_000,
+        )
+        let expectedTranscript = [
+            AiChatMessage(role: .user, content: "test"),
+            assistantMessage,
+        ]
+        let expectedSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: requestLock.context.provider,
+            model: requestLock.context.model,
+            selectedModelRow: requestLock.selectedModelRow,
+            selectedThinking: requestLock.context.selectedThinking,
+            transcriptHistory: expectedTranscript,
+            lastRequestID: requestLock.requestID,
+            lastRunID: requestLock.runID,
+            lastRequestContext: requestLock.context.requestContext,
+            updatedAtMs: 1_234_567_891_000,
+        )
+        let expectedSummary = AiChatSessionSummary(snapshot: expectedSnapshot)
+
+        await store.send(.backgroundAiChat(.executionEvent(.final(response: response))))
+        await store.receive { action in
+            guard case let .backgroundAiChatSnapshotPersisted(snapshot) = action else { return false }
+            let summary = AiChatSessionSummary(snapshot: snapshot)
+            return summary == expectedSummary
+        } assert: { state in
+            state.content.aiChat.transcriptHistory = expectedTranscript
+            state.content.aiChat.sessionList.allRows = [expectedSummary]
+            state.content.aiChat.sessionList.rows = [expectedSummary]
+            state.content.aiChat.sessionList.selectedSessionID = sessionID
+            state.backgroundAiChatStates.removeValue(forKey: sessionID)
+        }
+        await store.finish()
+
+        XCTAssertEqual(savedSnapshots.value.first?.transcriptHistory.map(\.content), ["test", "done"])
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory.map(\.content), ["test", "done"])
         XCTAssertNil(store.state.backgroundAiChatStates[sessionID])
     }
 

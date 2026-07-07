@@ -215,7 +215,10 @@ final class AiChatSessionPersistenceSpy: @unchecked Sendable {
     }
 
     func loadSession(_ sessionID: AiChatSessionID) async throws -> AiChatSessionSnapshot? {
-        try await loadHandler(sessionID)
+        if let savedSnapshot = snapshots.last(where: { $0.sessionID == sessionID }) {
+            return savedSnapshot
+        }
+        return try await loadHandler(sessionID)
     }
 
     func save(_ snapshot: AiChatSessionSnapshot) async {

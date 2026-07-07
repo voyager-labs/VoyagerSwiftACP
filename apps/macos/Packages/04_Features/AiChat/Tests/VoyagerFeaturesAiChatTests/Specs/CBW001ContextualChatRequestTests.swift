@@ -1686,12 +1686,28 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             selectedRow: catalogRows[0],
             assistantReplacementIndex: nil,
         )
+        let activeRequestStartSnapshot = AiChatSessionSnapshot(
+            sessionID: activeSessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [AiChatMessage(role: .user, content: "Question A")],
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: lock.context.requestContext,
+            updatedAtMs: fixedMs,
+        )
 
         await store.send(.sessionRowTapped(targetSessionID)) { state in
             state.mode = .sessions
             state.sessionList.selectedSessionID = targetSessionID
             state.restoreSessionID = targetSessionID
             state.currentContextFolderStructureModes = [:]
+            state.backgroundExecutionPhases[lock.requestID] = .processing(lock)
+            state.executionPhase = .idle
+            state.lockedModelHandle = nil
+            state.streamingAssistantDraft = nil
         }
 
         await store.receive(.restoreOutcome(
@@ -1709,7 +1725,6 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             state.lastRequestContextModelHandle = nil
             state.addedAttachments = []
             state.currentContextFolderStructureModes = [:]
-            state.executionPhase = .processing(lock)
             state.selectedModelHandle = targetSnapshot.model
             state.selectedThinking = targetSnapshot.selectedThinking
             state.restoreOutcome = .restored(snapshot: targetSnapshot)
@@ -1728,23 +1743,23 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         await store.receive(.restoreOutcome(
             requestedSessionID: activeSessionID,
-            .restored(snapshot: activeRestoreSnapshot),
+            .restored(snapshot: activeRequestStartSnapshot),
             restoreFailure: nil,
         )) { state in
             state.sessionID = activeSessionID
             state.sessionStatus = .active
-            state.transcriptHistory = activeRestoreSnapshot.transcriptHistory
+            state.transcriptHistory = activeRequestStartSnapshot.transcriptHistory
             state.streamingAssistantDraft = nil
             state.lockedModelHandle = nil
             state.lastExecutionFailure = nil
-            state.lastRequestContext = activeRestoreSnapshot.lastRequestContext
-            state.lastRequestContextModelHandle = nil
+            state.lastRequestContext = activeRequestStartSnapshot.lastRequestContext
+            state.lastRequestContextModelHandle = activeRequestStartSnapshot.model
             state.addedAttachments = []
             state.currentContextFolderStructureModes = [:]
             state.executionPhase = .processing(lock)
-            state.selectedModelHandle = activeRestoreSnapshot.model
-            state.selectedThinking = activeRestoreSnapshot.selectedThinking
-            state.restoreOutcome = .restored(snapshot: activeRestoreSnapshot)
+            state.selectedModelHandle = activeRequestStartSnapshot.model
+            state.selectedThinking = activeRequestStartSnapshot.selectedThinking
+            state.restoreOutcome = .restored(snapshot: activeRequestStartSnapshot)
             state.restoreFailure = nil
             state.mode = .chat
             state.sessionList.errorMessage = nil
@@ -1801,7 +1816,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             updatedAtMs: fixedMs,
         )
         let expectedOriginalSummary = AiChatSessionSummary(snapshot: expectedOriginalSnapshot)
-        await store.receive(.sessionSnapshotSaved(expectedOriginalSummary)) { state in
+        await store.receive(.sessionSnapshotSaved(AiChatSessionSummary(snapshot: expectedOriginalSnapshot))) { state in
             state.sessionList.replaceRow(expectedOriginalSummary)
             state.sessionList.selectedSessionID = activeSessionID
             state.sessionList.unreadCompletedSessionIDs = []
@@ -1815,19 +1830,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             XCTFail("The restored original session must leave processing after final completion")
         }
         XCTAssertFalse(store.state.isProcessing)
-        let expectedStartSnapshot = AiChatSessionSnapshot(
-            sessionID: activeSessionID,
-            status: .active,
-            provider: selectedHandle.provider,
-            model: selectedHandle,
-            selectedModelRow: catalogRows[0],
-            transcriptHistory: [AiChatMessage(role: .user, content: "Question A")],
-            lastRequestID: lock.requestID,
-            lastRunID: lock.runID,
-            lastRequestContext: lock.context.requestContext,
-            updatedAtMs: fixedMs,
-        )
-        XCTAssertEqual(persistence.snapshots, [expectedStartSnapshot, expectedOriginalSnapshot])
+        XCTAssertEqual(persistence.snapshots, [activeRequestStartSnapshot, expectedOriginalSnapshot])
     }
 
     /// CBW-001-continue_inflight_chat_request: offscreen session failure는 현재 보이는 session을 오염시키지 않는다.
@@ -1937,12 +1940,28 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             selectedRow: catalogRows[0],
             assistantReplacementIndex: nil,
         )
+        let activeRequestStartSnapshot = AiChatSessionSnapshot(
+            sessionID: activeSessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [AiChatMessage(role: .user, content: "Question A")],
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: lock.context.requestContext,
+            updatedAtMs: fixedMs,
+        )
 
         await store.send(.sessionRowTapped(targetSessionID)) { state in
             state.mode = .sessions
             state.sessionList.selectedSessionID = targetSessionID
             state.restoreSessionID = targetSessionID
             state.currentContextFolderStructureModes = [:]
+            state.backgroundExecutionPhases[lock.requestID] = .processing(lock)
+            state.executionPhase = .idle
+            state.lockedModelHandle = nil
+            state.streamingAssistantDraft = nil
         }
         await store.receive(.restoreOutcome(
             requestedSessionID: targetSessionID,
@@ -1959,7 +1978,6 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             state.lastRequestContextModelHandle = nil
             state.addedAttachments = []
             state.currentContextFolderStructureModes = [:]
-            state.executionPhase = .processing(lock)
             state.selectedModelHandle = targetSnapshot.model
             state.selectedThinking = targetSnapshot.selectedThinking
             state.restoreOutcome = .restored(snapshot: targetSnapshot)
@@ -1974,8 +1992,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         let failedLock = lock.recordingTerminal(at: fixedMs, failure: .network, wasCancelled: false)
         await store.receive(.executionEvent(.failed(context: request.context, reason: .network))) { state in
-            state.lockedModelHandle = nil
-            state.executionPhase = .failed(failedLock, .network)
+            state.backgroundExecutionPhases[lock.requestID] = .failed(failedLock, .network)
         }
         XCTAssertEqual(store.state.sessionID, targetSessionID)
         XCTAssertEqual(store.state.transcriptHistory, targetSnapshot.transcriptHistory)
@@ -1994,23 +2011,23 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         }
         await store.receive(.restoreOutcome(
             requestedSessionID: activeSessionID,
-            .restored(snapshot: activeRestoreSnapshot),
+            .restored(snapshot: activeRequestStartSnapshot),
             restoreFailure: nil,
         )) { state in
             state.sessionID = activeSessionID
             state.sessionStatus = .active
-            state.transcriptHistory = activeRestoreSnapshot.transcriptHistory
+            state.transcriptHistory = activeRequestStartSnapshot.transcriptHistory
             state.streamingAssistantDraft = nil
             state.lockedModelHandle = nil
             state.lastExecutionFailure = nil
-            state.lastRequestContext = activeRestoreSnapshot.lastRequestContext
-            state.lastRequestContextModelHandle = nil
+            state.lastRequestContext = activeRequestStartSnapshot.lastRequestContext
+            state.lastRequestContextModelHandle = activeRequestStartSnapshot.model
             state.addedAttachments = []
             state.currentContextFolderStructureModes = [:]
             state.executionPhase = .failed(failedLock, .network)
-            state.selectedModelHandle = activeRestoreSnapshot.model
-            state.selectedThinking = activeRestoreSnapshot.selectedThinking
-            state.restoreOutcome = .restored(snapshot: activeRestoreSnapshot)
+            state.selectedModelHandle = activeRequestStartSnapshot.model
+            state.selectedThinking = activeRequestStartSnapshot.selectedThinking
+            state.restoreOutcome = .restored(snapshot: activeRequestStartSnapshot)
             state.restoreFailure = nil
             state.mode = .chat
             state.sessionList.errorMessage = nil

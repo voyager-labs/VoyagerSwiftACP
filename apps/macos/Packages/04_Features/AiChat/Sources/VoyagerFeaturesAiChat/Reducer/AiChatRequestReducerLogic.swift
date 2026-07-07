@@ -480,6 +480,12 @@ extension AiChatFeature {
 
     func cancelRequestLifecycle(for sessionID: AiChatSessionID, state: inout State) -> Effect<Action>? {
         var effects: [Effect<Action>] = []
+        if let pendingRequestStart = state.pendingRequestStart,
+           pendingRequestStart.sessionID == sessionID
+        {
+            state.pendingRequestStart = nil
+            effects.append(.cancel(id: CancelID.requestContextResolution(pendingRequestStart.resolutionID)))
+        }
         if let lock = state.executionPhase.lock, lock.context.sessionID == sessionID {
             effects.append(cancelRequestLifecycle(for: lock))
         }

@@ -293,11 +293,19 @@ struct FileManagerWindowRoutingReducer {
             case let .backgroundAiChat(aiChatAction):
                 return routeBackgroundAiChatAction(aiChatAction, state: &state)
 
+            case let .backgroundAiChatSnapshotPersisted(snapshot):
+                handleBackgroundAiChatSnapshotPersisted(snapshot, state: &state)
+                return .none
+
             case let .inspector(.aiChat(aiChatAction)):
                 return routeInactiveInspectorAiChatAction(aiChatAction, state: &state)
 
             case let .backgroundInspectorAiChat(aiChatAction):
                 return routeInactiveInspectorAiChatAction(aiChatAction, state: &state)
+
+            case let .backgroundInspectorAiChatSnapshotPersisted(snapshot):
+                handleBackgroundInspectorAiChatSnapshotPersisted(snapshot, state: &state)
+                return .none
 
             case .content(.collection(.saveCompleted(.failure))):
                 guard state.pendingContentTabClose != nil else {
@@ -798,9 +806,21 @@ private func routeBackgroundAiChatAction(
           var backgroundContent = state.backgroundAiChatStates[sessionID]
     else { return .none }
 
+    let finalSnapshotContext = backgroundFinalSnapshotContext(
+        from: aiChatAction,
+        backgroundAiChat: backgroundContent.aiChat,
+    )
     let effect = AiChatFeature()
         .reduce(into: &backgroundContent.aiChat, action: aiChatAction)
-        .map { FileManagerWindowAction.backgroundAiChat($0) }
+        .map { action in
+            if case let .sessionSnapshotSaved(summary) = action,
+               let context = finalSnapshotContext,
+               let snapshot = makeOffscreenFinalSnapshot(summary: summary, context: context)
+            {
+                return FileManagerWindowAction.backgroundAiChatSnapshotPersisted(snapshot)
+            }
+            return FileManagerWindowAction.backgroundAiChat(action)
+        }
 
     if let summary = sessionSnapshotSavedSummary(from: aiChatAction) {
         refreshAiChatSnapshotsFromBackgroundIfNeeded(
@@ -827,14 +847,113 @@ private func sessionSnapshotSavedSummary(from aiChatAction: AiChatAction) -> AiC
     }
 }
 
+private func handleBackgroundAiChatSnapshotPersisted(
+    _ snapshot: AiChatSessionSnapshot,
+    state: inout FileManagerWindowState,
+) {
+    let summary = AiChatSessionSummary(snapshot: snapshot)
+    guard let backgroundAiChat = state.backgroundAiChatStates[snapshot.sessionID]?.aiChat else { return }
+    refreshAiChatSnapshotsFromBackgroundIfNeeded(
+        summary: summary,
+        snapshot: snapshot,
+        backgroundAiChat: backgroundAiChat,
+        state: &state,
+    )
+    state.removeBackgroundAiChatState(sessionID: snapshot.sessionID)
+}
+
+private func handleBackgroundInspectorAiChatSnapshotPersisted(
+    _ snapshot: AiChatSessionSnapshot,
+    state: inout FileManagerWindowState,
+) {
+    let summary = AiChatSessionSummary(snapshot: snapshot)
+    guard let inspectorState = state.backgroundInspectorAiChatStates[snapshot.sessionID] else { return }
+    refreshAiChatSnapshotsFromBackgroundIfNeeded(
+        summary: summary,
+        snapshot: snapshot,
+        backgroundAiChat: inspectorState.aiChat,
+        state: &state,
+    )
+    state.removeBackgroundInspectorAiChatState(sessionID: snapshot.sessionID)
+}
+
+private struct BackgroundFinalSnapshotContext {
+    let response: AiChatResponse
+    let lock: AiChatRequestLock
+}
+
+private func backgroundFinalSnapshotContext(
+    from aiChatAction: AiChatAction,
+    backgroundAiChat: AiChatFeature.State,
+) -> BackgroundFinalSnapshotContext? {
+    guard case let .executionEvent(.final(response)) = aiChatAction,
+          let lock = finalSnapshotLock(for: response.context, backgroundAiChat: backgroundAiChat)
+    else { return nil }
+
+    return BackgroundFinalSnapshotContext(response: response, lock: lock)
+}
+
+private func finalSnapshotLock(
+    for context: AiChatRequestContextSnapshot,
+    backgroundAiChat: AiChatFeature.State,
+) -> AiChatRequestLock? {
+    if case let .processing(lock) = backgroundAiChat.executionPhase,
+       lock.context.requestID == context.requestID,
+       lock.context.runID == context.runID
+    {
+        return lock
+    }
+    if case let .processing(lock) = backgroundAiChat.backgroundExecutionPhases[context.requestID],
+       lock.context.runID == context.runID
+    {
+        return lock
+    }
+    return nil
+}
+
+private func makeOffscreenFinalSnapshot(
+    summary: AiChatSessionSummary,
+    context: BackgroundFinalSnapshotContext,
+) -> AiChatSessionSnapshot? {
+    let response = context.response
+    let lock = context.lock
+    guard let sessionID = lock.context.sessionID, sessionID == summary.sessionID else { return nil }
+    var transcriptHistory = lock.request.messages
+    if let index = lock.assistantReplacementIndex,
+       transcriptHistory.indices.contains(index),
+       transcriptHistory[index].role == .assistant
+    {
+        transcriptHistory[index] = response.assistantMessage
+    } else {
+        transcriptHistory.append(response.assistantMessage)
+    }
+
+    return AiChatSessionSnapshot(
+        sessionID: sessionID,
+        status: .active,
+        customTitle: nil,
+        provider: lock.context.provider,
+        model: lock.context.model,
+        selectedModelRow: lock.selectedModelRow,
+        selectedThinking: lock.context.selectedThinking,
+        transcriptHistory: transcriptHistory,
+        lastRequestID: lock.requestID,
+        lastRunID: lock.runID,
+        lastRequestContext: lock.context.requestContext,
+        updatedAtMs: summary.updatedAtMs,
+    )
+}
+
 private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
     summary: AiChatSessionSummary,
+    snapshot: AiChatSessionSnapshot? = nil,
     backgroundAiChat: AiChatFeature.State,
     state: inout FileManagerWindowState,
 ) {
     if state.content.aiChat.canRefreshFromBackground(summary: summary) {
         state.content.aiChat.applyBackgroundSnapshot(
             summary: summary,
+            snapshot: snapshot,
             backgroundAiChat: backgroundAiChat,
         )
         state.syncActiveTabContentState()
@@ -848,6 +967,7 @@ private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
         }
         state.tabContentStates[tabID]?.aiChat.applyBackgroundSnapshot(
             summary: summary,
+            snapshot: snapshot,
             backgroundAiChat: backgroundAiChat,
         )
     }
@@ -855,6 +975,7 @@ private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
     if state.inspector.aiChat.canRefreshFromBackground(summary: summary) {
         state.inspector.aiChat.applyBackgroundSnapshot(
             summary: summary,
+            snapshot: snapshot,
             backgroundAiChat: backgroundAiChat,
         )
         state.syncActiveTabInspectorState()
@@ -868,6 +989,7 @@ private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
         }
         state.tabInspectorStates[tabID]?.aiChat.applyBackgroundSnapshot(
             summary: summary,
+            snapshot: snapshot,
             backgroundAiChat: backgroundAiChat,
         )
     }
@@ -902,18 +1024,19 @@ private extension AiChatFeature.State {
 
     mutating func applyBackgroundSnapshot(
         summary: AiChatSessionSummary,
+        snapshot: AiChatSessionSnapshot? = nil,
         backgroundAiChat: AiChatFeature.State,
     ) {
-        transcriptHistory = backgroundAiChat.transcriptHistory
+        transcriptHistory = snapshot?.transcriptHistory ?? backgroundAiChat.transcriptHistory
         streamingAssistantDraft = nil
         transcriptAutoScrollVersion += 1
         lockedModelHandle = nil
         lastExecutionFailure = nil
-        lastRequestContext = backgroundAiChat.lastRequestContext
-        lastRequestContextModelHandle = backgroundAiChat.lastRequestContextModelHandle
-        selectedModelHandle = backgroundAiChat.selectedModelHandle
-        selectedThinking = backgroundAiChat.selectedThinking
-        sessionStatus = .active
+        lastRequestContext = snapshot?.lastRequestContext ?? backgroundAiChat.lastRequestContext
+        lastRequestContextModelHandle = snapshot?.model ?? backgroundAiChat.lastRequestContextModelHandle
+        selectedModelHandle = snapshot?.model ?? backgroundAiChat.selectedModelHandle
+        selectedThinking = snapshot?.selectedThinking ?? backgroundAiChat.selectedThinking
+        sessionStatus = snapshot?.status ?? .active
         executionPhase = backgroundAiChat.executionPhase
 
         guard !sessionList.deletedSessionIDs.contains(summary.sessionID) else { return }
@@ -965,9 +1088,21 @@ private func routeInactiveInspectorAiChatAction(
         return .none
     }
 
+    let finalSnapshotContext = backgroundFinalSnapshotContext(
+        from: aiChatAction,
+        backgroundAiChat: inspectorState.aiChat,
+    )
     let effect = AiChatFeature()
         .reduce(into: &inspectorState.aiChat, action: aiChatAction)
-        .map { FileManagerWindowAction.backgroundInspectorAiChat($0) }
+        .map { action in
+            if case let .sessionSnapshotSaved(summary) = action,
+               let context = finalSnapshotContext,
+               let snapshot = makeOffscreenFinalSnapshot(summary: summary, context: context)
+            {
+                return FileManagerWindowAction.backgroundInspectorAiChatSnapshotPersisted(snapshot)
+            }
+            return FileManagerWindowAction.backgroundInspectorAiChat(action)
+        }
 
     state.tabInspectorStates[tabID] = inspectorState.tabSnapshot()
     if let summary = sessionSnapshotSavedSummary(from: aiChatAction) {

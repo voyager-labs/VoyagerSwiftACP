@@ -162,7 +162,7 @@ extension AiChatFeature {
             wasCancelled: false,
         )
         if matched.isBackground {
-            state.backgroundExecutionPhases[failedLock.requestID] = nil
+            state.backgroundExecutionPhases[failedLock.requestID] = .failed(failedLock, reason)
             return .merge(
                 .cancel(id: CancelID.request(failedLock.requestID)),
                 .cancel(id: CancelID.requestStartPersistence(failedLock.requestID)),

@@ -2103,6 +2103,140 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         assertProcessingSessionDeleted(store.state, sessionID: sessionID, deletedIDs: deletedIDs.value)
     }
 
+    func testDeleteSessionCancelsPendingRequestContextResolutionBeforeDelete() async {
+        let sessionID = AiChatSessionID(rawValue: makeUUID("aaaaaaaa-1111-2222-3333-444444444444"))
+        let resolutionID = makeUUID("bbbbbbbb-1111-2222-3333-444444444444")
+        let requestID = AiChatRequestID(rawValue: makeUUID("cccccccc-1111-2222-3333-444444444444"))
+        let runID = AiChatRunID(rawValue: makeUUID("dddddddd-1111-2222-3333-444444444444"))
+        let prompt = "Pending resolver delete"
+        let row = makeDeleteTestSessionSummary(sessionID: sessionID, title: prompt)
+        let catalogRows = makeCatalogRows()
+        let providerModels = makeProviderModels()
+        let request = makeDeleteTestRequest(
+            sessionID: sessionID,
+            requestID: requestID,
+            runID: runID,
+            selectedRow: catalogRows[0],
+            prompt: prompt,
+        )
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: sessionID,
+            selectedModel: providerModels[0],
+            selectedRow: catalogRows[0],
+            preparedRequest: AiChatPreparedRequest(
+                prompt: prompt,
+                messages: request.messages,
+                assistantReplacementIndex: nil,
+                historyTruncation: .init(
+                    includedMessageCount: request.messages.count,
+                    excludedMessageCount: 0,
+                    budget: 200_000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        let deletedIDs = LockIsolated<[AiChatSessionID]>([])
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(allRows: [row], selectedSessionID: sessionID),
+            sessionID: sessionID,
+            sessionStatus: .active,
+            catalogRows: catalogRows,
+            modelListState: .loaded(providerModels),
+            pendingRequestStart: pendingRequest,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { id in deletedIDs.withValue { $0.append(id) } },
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.deleteSessionTapped(sessionID)) { state in
+            state.pendingRequestStart = nil
+        }
+        await store.receive(.sessionDeleteSucceeded(sessionID)) { state in
+            state.sessionList.allRows = []
+            state.sessionList.rows = []
+            state.sessionList.selectedSessionID = nil
+            state.sessionList.deletedSessionIDs = [sessionID]
+        }
+        await store.send(.requestContextResolved(
+            resolutionID,
+            AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: []),
+        ))
+        await store.finish()
+
+        XCTAssertEqual(deletedIDs.value, [sessionID])
+        XCTAssertNil(store.state.pendingRequestStart)
+        XCTAssertEqual(store.state.executionPhase, .idle)
+    }
+
+    func testDeleteInactiveBackgroundSessionCancelsRequestBeforeDelete() async {
+        let activeSessionID = AiChatSessionID(rawValue: makeUUID("aaaaaaaa-5555-6666-7777-888888888888"))
+        let deletedSessionID = AiChatSessionID(rawValue: makeUUID("bbbbbbbb-5555-6666-7777-888888888888"))
+        let requestID = AiChatRequestID(rawValue: makeUUID("cccccccc-5555-6666-7777-888888888888"))
+        let runID = AiChatRunID(rawValue: makeUUID("dddddddd-5555-6666-7777-888888888888"))
+        let prompt = "Inactive background delete"
+        let catalogRows = makeCatalogRows()
+        let request = makeDeleteTestRequest(
+            sessionID: deletedSessionID,
+            requestID: requestID,
+            runID: runID,
+            selectedRow: catalogRows[0],
+            prompt: prompt,
+        )
+        let lock = makeDeleteTestLock(request: request, selectedRow: catalogRows[0])
+        let deletedRow = makeDeleteTestSessionSummary(sessionID: deletedSessionID, title: prompt)
+        let activeRow = makeDeleteTestSessionSummary(sessionID: activeSessionID, title: "Active chat")
+        let deletedIDs = LockIsolated<[AiChatSessionID]>([])
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(allRows: [deletedRow, activeRow], selectedSessionID: deletedSessionID),
+            sessionID: activeSessionID,
+            sessionStatus: .active,
+            backgroundExecutionPhases: [lock.requestID: .processing(lock)],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in savedSnapshots.withValue { $0.append(snapshot) } },
+                deleteSession: { id in deletedIDs.withValue { $0.append(id) } },
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.deleteSessionTapped(deletedSessionID)) { state in
+            state.backgroundExecutionPhases = [:]
+        }
+        await store.receive(.sessionDeleteSucceeded(deletedSessionID)) { state in
+            state.sessionList.allRows = [activeRow]
+            state.sessionList.rows = [activeRow]
+            state.sessionList.selectedSessionID = nil
+            state.sessionList.deletedSessionIDs = [deletedSessionID]
+        }
+        await store.send(.executionEvent(.final(response: AiChatResponse(
+            context: request.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "Late final"),
+            completedAtMs: 1_700_000_000_000,
+        ))))
+        await store.finish()
+
+        XCTAssertEqual(deletedIDs.value, [deletedSessionID])
+        XCTAssertEqual(store.state.backgroundExecutionPhases, [:])
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+        XCTAssertFalse(store.state.sessionList.allRows.contains { $0.sessionID == deletedSessionID })
+    }
+
     /// CBW-005-delete_chat_conversation_session: 현재 processing session 삭제는 request를 먼저 cancel한 뒤 삭제한다.
     /// 현재 processing session 삭제는 request를 먼저 cancel한 뒤 삭제한다. 경로의 회귀 contract를 유지하는지 검증합니다.
     /// - 검증 내용: request cancellation, delete ordering, no late final persistence
