@@ -12,6 +12,65 @@ import XCTest
 
 @MainActor
 final class AppRootCompositionTests: XCTestCase {
+    func testRouteAuthCallbackPrioritizesOnboardingOverSessionLapseGuard() {
+        let url = makeAuthCallbackURL()
+        var onboardingCallCount = 0
+        var fallbackCallCount = 0
+
+        routeAuthCallback(
+            url,
+            routeToOnboarding: { incomingURL in
+                onboardingCallCount += 1
+                XCTAssertEqual(incomingURL, url)
+                return true
+            },
+            routeToSessionLapseGuard: { _ in
+                fallbackCallCount += 1
+            },
+        )
+
+        XCTAssertEqual(onboardingCallCount, 1)
+        XCTAssertEqual(fallbackCallCount, 0)
+    }
+
+    func testRouteAuthCallbackFallsBackToSessionLapseGuardWhenOnboardingMisses() {
+        let url = makeAuthCallbackURL()
+        var onboardingCallCount = 0
+        var routedURL: URL?
+
+        routeAuthCallback(
+            url,
+            routeToOnboarding: { incomingURL in
+                onboardingCallCount += 1
+                XCTAssertEqual(incomingURL, url)
+                return false
+            },
+            routeToSessionLapseGuard: { incomingURL in
+                routedURL = incomingURL
+            },
+        )
+
+        XCTAssertEqual(onboardingCallCount, 1)
+        XCTAssertEqual(routedURL, url)
+    }
+
+    func testRouteAuthCallbackAllowsNilSessionLapseGuard() {
+        let url = makeAuthCallbackURL()
+        var onboardingCallCount = 0
+
+        routeAuthCallback(
+            url,
+            routeToOnboarding: { incomingURL in
+                onboardingCallCount += 1
+                XCTAssertEqual(incomingURL, url)
+                return false
+            },
+            routeToSessionLapseGuard: nil,
+        )
+
+        XCTAssertEqual(onboardingCallCount, 1)
+    }
+
     func testAppPreferencesUpdatedRoutesToWindowManager() async {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
@@ -282,6 +341,10 @@ final class AppRootCompositionTests: XCTestCase {
     }
 
     // MARK: - T11 test support
+
+    private func makeAuthCallbackURL() -> URL {
+        URL(string: "voyager://auth/callback?code=abc123")!
+    }
 
     /// `accountAccessGranted` 경로 테스트용 TestStore.
     /// `OnboardingWindowClient.testValue`/`HelperAppClient.testValue.start`가 fatalError라

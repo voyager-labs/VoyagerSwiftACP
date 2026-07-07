@@ -30,9 +30,6 @@ struct AppRootFeature {
         Scope(state: \.lifecycle, action: \.lifecycle) {
             AppLifecycleFeature()
         }
-        Scope(state: \.accountAccess, action: \.accountAccess) {
-            AccountAccessFeature()
-        }
         Scope(state: \.appPreferences, action: \.appPreferences) {
             AppPreferencesFeature()
         }
