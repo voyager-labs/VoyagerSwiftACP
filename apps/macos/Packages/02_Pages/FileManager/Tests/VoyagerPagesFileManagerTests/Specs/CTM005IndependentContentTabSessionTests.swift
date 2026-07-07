@@ -2164,8 +2164,6 @@ extension CTM005IndependentContentTabSessionTests {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.setCurrent(aiChatID)))
-        await store.receive(\.content.aiChat.cancelInFlightWork)
-
         XCTAssertEqual(store.state.contentTabs.activeTabID, aiChatID)
         XCTAssertEqual(store.state.content.navigation.navigationState, .aiChatSessions(sessionID))
         XCTAssertEqual(store.state.content.aiChat.mode, .sessions)
@@ -2273,8 +2271,6 @@ extension CTM005IndependentContentTabSessionTests {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.setCurrent(homeID)))
-        await store.receive(\.content.aiChat.cancelInFlightWork)
-
         let savedAiChatState = try XCTUnwrap(store.state.tabContentStates[aiChatID]?.aiChat)
         XCTAssertEqual(savedAiChatState.executionPhase, .idle)
         XCTAssertNil(savedAiChatState.streamingAssistantDraft)
@@ -2373,8 +2369,6 @@ extension CTM005IndependentContentTabSessionTests {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.setCurrent(homeID)))
-        await store.receive(\.content.aiChat.cancelInFlightWork)
-
         let savedAiChatState = try XCTUnwrap(store.state.tabContentStates[aiChatID]?.aiChat)
         XCTAssertEqual(savedAiChatState.modelListState, .loaded([model]))
         XCTAssertEqual(savedAiChatState.modelListRequestID, requestUUID)
@@ -5293,7 +5287,8 @@ extension CTM005IndependentContentTabSessionTests {
         await store.send(.inspector(.aiChat(.executionEvent(.final(response: response)))))
 
         await store.receive { action in
-            guard case let .backgroundInspectorAiChat(.sessionSnapshotSaved(summary)) = action else { return false }
+            guard case let .backgroundInspectorAiChatSnapshotPersisted(snapshot) = action else { return false }
+            let summary = AiChatSessionSummary(snapshot: snapshot)
             return summary.sessionID == inspectorSessionID
         } assert: { state in
             state.backgroundInspectorAiChatStates.removeValue(forKey: inspectorSessionID)

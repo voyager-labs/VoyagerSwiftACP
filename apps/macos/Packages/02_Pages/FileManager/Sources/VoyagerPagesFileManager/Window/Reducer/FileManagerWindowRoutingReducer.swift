@@ -102,8 +102,12 @@ struct FileManagerWindowRoutingReducer {
                 }
                 let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
                     || state.activeTabContentStateMissing
-                if shouldResyncContentNavigation {
+                let handoffCleanupEffect: Effect<Action> = if shouldResyncContentNavigation {
                     prepareContentForActiveTabHandoff(state: &state.content)
+                } else {
+                    .none
+                }
+                if shouldResyncContentNavigation {
                     state.saveCurrentContentStateForPreviousActiveTab()
                     state.saveCurrentInspectorStateForPreviousActiveTab()
                     state.restoreContentStateForActiveTab()
@@ -112,10 +116,12 @@ struct FileManagerWindowRoutingReducer {
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
                 return .merge(
+                    handoffCleanupEffect,
                     activeTabHandoffEffect(
                         shouldResyncContentNavigation,
                         state: state,
                         aiConnectionsFileClient: aiConnectionsFileClient,
+                        skipAiChatCancel: true,
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
@@ -126,8 +132,12 @@ struct FileManagerWindowRoutingReducer {
                 }
                 let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
                     || state.activeTabContentStateMissing
-                if shouldResyncContentNavigation {
+                let handoffCleanupEffect: Effect<Action> = if shouldResyncContentNavigation {
                     prepareContentForActiveTabHandoff(state: &state.content)
+                } else {
+                    .none
+                }
+                if shouldResyncContentNavigation {
                     state.saveCurrentContentStateForPreviousActiveTab()
                     state.saveCurrentInspectorStateForPreviousActiveTab()
                     if state.activeTabContentStateMissing {
@@ -141,10 +151,12 @@ struct FileManagerWindowRoutingReducer {
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
                 return .merge(
+                    handoffCleanupEffect,
                     activeTabHandoffEffect(
                         shouldResyncContentNavigation,
                         state: state,
                         aiConnectionsFileClient: aiConnectionsFileClient,
+                        skipAiChatCancel: true,
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
@@ -161,22 +173,26 @@ struct FileManagerWindowRoutingReducer {
                     && state.contentTabs.activeTabID == tabID
                 let shouldResyncContentNavigation = shouldRestorePreviousActiveTab || shouldResetLastTabContent
                 let aiChatLifecycleSessionIDs = aiChatLifecycleSessionIDsToPreserve(state.content.aiChat)
-                let shouldPreserveAiChatRequestLifecycle = shouldResyncContentNavigation
-                    && !aiChatLifecycleSessionIDs.isEmpty
                 let isAiChatLifecyclePreservingTabClose = shouldResyncContentNavigation
                     && !aiChatLifecycleSessionIDs.isEmpty
                 if isRemovedTab {
                     state.recentlyClosedNavigationRoute = navigationRouteForClosingTab(tabID, state: state)
                 }
+                let handoffCleanupEffect: Effect<Action>
                 if shouldResyncContentNavigation {
                     if isAiChatLifecyclePreservingTabClose {
                         for aiChatSessionID in aiChatLifecycleSessionIDs {
                             state.addBackgroundAiChatState(sessionID: aiChatSessionID, state: state.content)
                         }
-                        prepareContentForActiveTabHandoff(state: &state.content, skipAiChatCleanup: true)
+                        handoffCleanupEffect = prepareContentForActiveTabHandoff(
+                            state: &state.content,
+                            skipAiChatCleanup: true,
+                        )
                     } else {
-                        prepareContentForActiveTabHandoff(state: &state.content)
+                        handoffCleanupEffect = prepareContentForActiveTabHandoff(state: &state.content)
                     }
+                } else {
+                    handoffCleanupEffect = .none
                 }
                 if isRemovedTab {
                     state.addBackgroundInspectorAiChatState(for: tabID)
@@ -200,11 +216,12 @@ struct FileManagerWindowRoutingReducer {
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
                 let handoffEffect: Effect<Action> = .merge(
+                    handoffCleanupEffect,
                     activeTabHandoffEffect(
                         shouldResyncContentNavigation,
                         state: state,
                         aiConnectionsFileClient: aiConnectionsFileClient,
-                        skipAiChatCancel: shouldPreserveAiChatRequestLifecycle,
+                        skipAiChatCancel: true,
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
@@ -216,8 +233,12 @@ struct FileManagerWindowRoutingReducer {
                 }
                 let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
                     || state.activeTabContentStateMissing
-                if shouldResyncContentNavigation {
+                let handoffCleanupEffect: Effect<Action> = if shouldResyncContentNavigation {
                     prepareContentForActiveTabHandoff(state: &state.content)
+                } else {
+                    .none
+                }
+                if shouldResyncContentNavigation {
                     state.saveCurrentContentStateForPreviousActiveTab()
                     state.saveCurrentInspectorStateForPreviousActiveTab()
                     state.restoreContentStateForActiveTab()
@@ -231,10 +252,12 @@ struct FileManagerWindowRoutingReducer {
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
                 return .merge(
+                    handoffCleanupEffect,
                     activeTabHandoffEffect(
                         shouldResyncContentNavigation,
                         state: state,
                         aiConnectionsFileClient: aiConnectionsFileClient,
+                        skipAiChatCancel: true,
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
@@ -523,13 +546,20 @@ private func navigationRouteForClosingTab(
 private func prepareContentForActiveTabHandoff(
     state: inout FileManagerContentFeature.State,
     skipAiChatCleanup: Bool = false,
-) {
+) -> Effect<FileManagerWindowAction> {
     clearInFlightComposerStateOnTabSwitch(state: &state.composer)
-    if !skipAiChatCleanup {
+    let aiChatCleanupEffect: Effect<FileManagerWindowAction>
+    if skipAiChatCleanup {
+        aiChatCleanupEffect = .none
+    } else {
+        aiChatCleanupEffect = AiChatFeature()
+            .reduce(into: &state.aiChat, action: .cancelInFlightWork)
+            .map { FileManagerWindowAction.content(.aiChat($0)) }
         clearInFlightAiChatStateOnTabSwitch(state: &state.aiChat)
     }
     state.entryViewLayout.entryOperations.isLoading = false
     state.entryViewLayout.entryOperations.isReloading = false
+    return aiChatCleanupEffect
 }
 
 private func clearInFlightAiChatStateOnTabSwitch(state: inout AiChatState) {
@@ -1123,9 +1153,21 @@ private func routeBackgroundInspectorAiChatAction(
           var inspectorState = state.backgroundInspectorAiChatStates[sessionID]
     else { return nil }
 
+    let finalSnapshotContext = backgroundFinalSnapshotContext(
+        from: aiChatAction,
+        backgroundAiChat: inspectorState.aiChat,
+    )
     let effect = AiChatFeature()
         .reduce(into: &inspectorState.aiChat, action: aiChatAction)
-        .map { FileManagerWindowAction.backgroundInspectorAiChat($0) }
+        .map { action in
+            if case let .sessionSnapshotSaved(summary) = action,
+               let context = finalSnapshotContext,
+               let snapshot = makeOffscreenFinalSnapshot(summary: summary, context: context)
+            {
+                return FileManagerWindowAction.backgroundInspectorAiChatSnapshotPersisted(snapshot)
+            }
+            return FileManagerWindowAction.backgroundInspectorAiChat(action)
+        }
 
     if let summary = sessionSnapshotSavedSummary(from: aiChatAction) {
         refreshAiChatSnapshotsFromBackgroundIfNeeded(
