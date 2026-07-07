@@ -350,7 +350,13 @@ struct FileManagerWindowRoutingReducer {
                 return .none
 
             case let .inspector(.aiChat(aiChatAction)):
-                return routeInactiveInspectorAiChatAction(aiChatAction, state: &state)
+                let effect = routeInactiveInspectorAiChatAction(aiChatAction, state: &state)
+                refreshAiChatFollowUpFromBackgroundIfNeeded(
+                    aiChatAction,
+                    backgroundAiChat: state.inspector.aiChat,
+                    state: &state,
+                )
+                return effect
 
             case let .backgroundInspectorAiChat(aiChatAction):
                 return routeInactiveInspectorAiChatAction(aiChatAction, state: &state)
@@ -864,17 +870,19 @@ private func cancelAndRemoveBackgroundAiChatOwners(
     state: inout FileManagerWindowState,
 ) -> Effect<FileManagerWindowAction> {
     var effects: [Effect<FileManagerWindowAction>] = []
-    if var backgroundContent = state.removeBackgroundAiChatState(sessionID: sessionID) {
+    if let backgroundContent = state.removeBackgroundAiChatState(sessionID: sessionID) {
+        var scopedAiChat = backgroundContent.aiChat.cancellationScope(sessionID: sessionID)
         effects.append(
             AiChatFeature()
-                .reduce(into: &backgroundContent.aiChat, action: .cancelInFlightWork)
+                .reduce(into: &scopedAiChat, action: .cancelInFlightWork)
                 .map { FileManagerWindowAction.backgroundAiChat($0) },
         )
     }
-    if var backgroundInspector = state.removeBackgroundInspectorAiChatState(sessionID: sessionID) {
+    if let backgroundInspector = state.removeBackgroundInspectorAiChatState(sessionID: sessionID) {
+        var scopedAiChat = backgroundInspector.aiChat.cancellationScope(sessionID: sessionID)
         effects.append(
             AiChatFeature()
-                .reduce(into: &backgroundInspector.aiChat, action: .cancelInFlightWork)
+                .reduce(into: &scopedAiChat, action: .cancelInFlightWork)
                 .map { FileManagerWindowAction.backgroundInspectorAiChat($0) },
         )
     }
@@ -1606,6 +1614,20 @@ private func aiChatEventRequestID(_ event: AiChatEvent) -> AiChatRequestID? {
 }
 
 private extension AiChatFeature.State {
+    func cancellationScope(sessionID: AiChatSessionID) -> Self {
+        var scopedState = self
+        if scopedState.pendingRequestStart?.sessionID != sessionID {
+            scopedState.pendingRequestStart = nil
+        }
+        if scopedState.executionPhase.lock?.context.sessionID != sessionID {
+            scopedState.executionPhase = .idle
+        }
+        scopedState.backgroundExecutionPhases = scopedState.backgroundExecutionPhases.filter { _, phase in
+            phase.lock?.context.sessionID == sessionID
+        }
+        return scopedState
+    }
+
     mutating func refreshExecutionOwnerCustomTitle(sessionID: AiChatSessionID, customTitle: String?) {
         executionPhase = executionPhase.refreshingCustomTitle(sessionID: sessionID, customTitle: customTitle)
         for (requestID, phase) in backgroundExecutionPhases {

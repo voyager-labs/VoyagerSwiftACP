@@ -6244,6 +6244,94 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    func testBackgroundAiChatDeleteSessionCancelsOnlyMatchingSessionOwner() async {
+        let deletedSessionID = AiChatSessionID(rawValue: UUID())
+        let preservedSessionID = AiChatSessionID(rawValue: UUID())
+        let deletedLock = makeRequestLock(sessionID: deletedSessionID)
+        let preservedLock = makeRequestLock(sessionID: preservedSessionID)
+
+        var backgroundContent = FileManagerContentFeature.State()
+        backgroundContent.aiChat.sessionID = deletedSessionID
+        backgroundContent.aiChat.sessionStatus = .active
+        backgroundContent.aiChat.executionPhase = .persistenceRecovery(deletedLock, .unknown)
+        backgroundContent.aiChat.backgroundExecutionPhases[preservedLock.requestID] = .processing(preservedLock)
+
+        var state = FileManagerFeature.State()
+        state.content.aiChat.sessionID = AiChatSessionID(rawValue: UUID())
+        state.backgroundAiChatStates[deletedSessionID] = backgroundContent
+        state.backgroundAiChatStates[preservedSessionID] = backgroundContent
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.aiChatSessionPersistenceClient.deleteSession = { _ in }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.content(.aiChat(.deleteSessionTapped(deletedSessionID)))) { state in
+            state.backgroundAiChatStates.removeValue(forKey: deletedSessionID)
+        }
+
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[preservedSessionID]?.aiChat
+                .backgroundExecutionPhases[preservedLock.requestID],
+            .processing(preservedLock),
+        )
+        await store.finish()
+    }
+
+    func testActiveInspectorBackgroundRecoverySucceededRefreshesContentSession() async {
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let inspectorVisibleSessionID = AiChatSessionID(rawValue: UUID())
+        let finalSnapshot = AiChatSessionSnapshot(
+            sessionID: aiSessionID,
+            status: .active,
+            provider: nil,
+            model: nil,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "test"),
+                AiChatMessage(role: .assistant, content: "done"),
+            ],
+            updatedAtMs: 1_234_567_890_000,
+        )
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+            .recordingFinalSnapshot(finalSnapshot)
+
+        var content = FileManagerContentFeature.State()
+        content.aiChat.sessionID = aiSessionID
+        content.aiChat.sessionStatus = .active
+        content.aiChat.transcriptHistory = [AiChatMessage(role: .user, content: "test")]
+        content.aiChat.executionPhase = .idle
+
+        var inspector = FileManagerInspectorFeature.State()
+        inspector.aiChat.sessionID = inspectorVisibleSessionID
+        inspector.aiChat.sessionStatus = .active
+        inspector.aiChat.backgroundExecutionPhases[requestLock.requestID] = .persistenceRecovery(
+            requestLock,
+            .unknown,
+        )
+
+        var state = FileManagerFeature.State()
+        state.content = content
+        state.inspector = inspector
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.inspector(.aiChat(.persistenceRecoverySucceeded(requestLock))))
+
+        XCTAssertEqual(
+            store.state.inspector.aiChat.backgroundExecutionPhases[requestLock.requestID],
+            .completed(requestLock),
+        )
+        XCTAssertEqual(store.state.content.aiChat.executionPhase, .completed(requestLock))
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory.map(\.content), ["test", "done"])
+        await store.finish()
+    }
+
     func testActiveContentBackgroundRecoverySucceededRefreshesInactiveSession() async {
         let activeTabID = ContentTabID()
         let inactiveTabID = ContentTabID()
