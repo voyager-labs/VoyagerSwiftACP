@@ -77,6 +77,7 @@ opt_in_rules:
   - strong_iboutlet # IBOutlet을 weak로 선언하지 않게 합니다.
   - switch_case_alignment # switch case indentation을 통일합니다.
   - toggle_bool # bool = !bool 대신 bool.toggle()을 권장합니다.
+  - type_contents_order # 타입 내부 선언 순서를 SwiftFormat과 같은 큰 그룹으로 맞춥니다.
   - unavailable_function # 미구현 함수는 body 대신 unavailable로 표시하게 합니다.
   - unneeded_parentheses_in_closure_argument # closure argument 선언의 불필요한 괄호를 제거합니다.
   - untyped_error_in_catch # catch error 변수에 타입 캐스팅을 명시하게 합니다.
@@ -97,7 +98,6 @@ disabled_rules:
   - trailing_comma # collection trailing comma 정책은 SwiftFormat에 맡깁니다.
   - void_return # SwiftFormat의 void rule과 충돌은 아니지만 SwiftLint 중복 검사는 끕니다.
   - file_name # 테스트 파일과 source extension 파일의 naming 패턴이 다양해 일치 검사를 끕니다. SwiftFormat이 기본 naming 규칙을 관리합니다.
-  - type_contents_order # SwiftFormat organizeDeclarations --organizationmode type의 그룹이 SwiftLint보다 coarse하므로 중복 검사를 끕니다. SwiftFormat에서 type 선언 순서를 관리합니다.
 
 # 규칙별 설정
 line_length:
@@ -174,16 +174,29 @@ modifier_order:
     - typeMethods # static/class 같은 type member modifier입니다.
     - owned # borrowing/consuming 등 ownership modifier입니다.
 
+# 타입 내부 선언 순서 규칙.
+# 현재 2-그룹만 강제 (case/type_alias vs 나머지). SwiftFormat organizeDeclarations의
+# 실제 grouping에 맞춘 최소 검증 상태.
+#
+# 근본 원인: SwiftFormat은 computed property를 property로, SwiftLint는 method로
+# 분류하는 등 선언 카테고리 분류 기준이 상이. SwiftFormat보다 coarse한 그룹으로
+# 맞추지 않으면 매 커밋마다 충돌 발생.
+#
+# TODO: SwiftFormat 규칙 조정(--organizationmode type 그룹 세분화 또는 custom rule)과
+# 함께 order를 더 세분화할 것. 예:
+#   - [case]
+#   - [type_alias, associated_type]
+#   - [type_property]
+#   - [instance_property, ib_inspectable, ib_outlet]
+#   - [subtype]
+#   - [initializer, deinitializer, view_life_cycle_method]
+#   - [type_method, ib_action, ib_segue_action, other_method, subscript]
+# SwiftFormat과 선언 분류 기준을 정합한 후 활성화.
 type_contents_order:
-  severity: warning # 타입 내부 선언 순서를 SwiftFormat organizeDeclarations와 같은 큰 그룹으로 맞춥니다.
+  severity: warning
   order:
-    - [case] # enum case를 먼저 둡니다.
-    - [type_alias, associated_type] # alias/associated type은 nested type 앞에 둡니다.
-    - [subtype] # SwiftFormat nestedType 그룹과 맞춥니다.
-    - [type_property] # static/class property 그룹입니다.
-    - [instance_property, ib_inspectable, ib_outlet] # instance property 계열을 한 그룹으로 둡니다.
-    - [initializer, deinitializer, view_life_cycle_method] # SwiftFormat Lifecycle 그룹과 맞춥니다.
-    - [type_method, ib_action, ib_segue_action, other_method, subscript] # SwiftFormat Functions 그룹과 맞춥니다.
+    - [case, type_alias, associated_type] # type 정의 선언.
+    - [instance_property, ib_inspectable, ib_outlet, type_property, subtype, initializer, deinitializer, view_life_cycle_method, type_method, ib_action, ib_segue_action, other_method, subscript] # SwiftFormat이 나머지를 느슨하게 묶음.
 
 # 린터 실행 옵션
 analyzer_rules:

@@ -6,13 +6,13 @@ import VoyagerShared
 
 @Reducer
 public struct ValuePickerFeature {
+    public typealias State = ValuePickerState
+    public typealias Action = ValuePickerAction
+
     @Dependency(\.registryClient)
     var registryClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
-
-    public typealias State = ValuePickerState
-    public typealias Action = ValuePickerAction
 
     public init() {}
 

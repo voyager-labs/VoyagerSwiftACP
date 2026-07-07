@@ -8,7 +8,9 @@ public enum OnboardingPermissionDebugScenario: String, CaseIterable, Identifiabl
     case helperFoldersPartial
     case allDenied
 
-    public var id: Self { self }
+    public var id: Self {
+        self
+    }
 
     public var title: String {
         switch self {

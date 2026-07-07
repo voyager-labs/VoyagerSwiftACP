@@ -9,6 +9,9 @@ import VoyagerShared
 
 @Reducer
 struct FileManagerNavigationActionReducer {
+    typealias State = FileManagerWindowState
+    typealias Action = FileManagerWindowAction
+
     @Dependency(\.fileManagerClient)
     var fileManagerClient
     @Dependency(\.collectionFileClient)
@@ -21,9 +24,6 @@ struct FileManagerNavigationActionReducer {
     var collectionStalenessClient
     @Dependency(\.metricsClient)
     var metricsClient
-
-    typealias State = FileManagerWindowState
-    typealias Action = FileManagerWindowAction
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in

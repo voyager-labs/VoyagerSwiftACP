@@ -21,7 +21,7 @@ public struct AccessCredentialClient: Sendable {
     public var loadRefreshToken: @Sendable () throws -> String?
     public var deleteRefreshToken: @Sendable () throws -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         saveAccessToken: @escaping @Sendable (String) throws -> Void,
         loadAccessToken: @escaping @Sendable () throws -> String?,
         deleteAccessToken: @escaping @Sendable () throws -> Void,
@@ -103,7 +103,7 @@ extension AccessCredentialClient {
 // MARK: - DependencyKey
 
 extension AccessCredentialClient: DependencyKey {
-    public nonisolated static var liveValue: AccessCredentialClient {
+    nonisolated public static var liveValue: AccessCredentialClient {
         AccessCredentialClient(
             saveAccessToken: { token in
                 try keychainSave(service: accessTokenService, data: token)
@@ -126,7 +126,7 @@ extension AccessCredentialClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: AccessCredentialClient {
+    nonisolated public static var testValue: AccessCredentialClient {
         nonisolated(unsafe) var storage: [String: String] = [:]
         let lock = NSLock()
         return AccessCredentialClient(
@@ -163,7 +163,7 @@ extension AccessCredentialClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: AccessCredentialClient {
+    nonisolated public static var previewValue: AccessCredentialClient {
         testValue
     }
 }
