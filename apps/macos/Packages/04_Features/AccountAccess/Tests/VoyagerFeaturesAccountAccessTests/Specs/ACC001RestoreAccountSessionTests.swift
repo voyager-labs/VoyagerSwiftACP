@@ -1,5 +1,7 @@
+import Combine
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
+import VoyagerShared
 import XCTest
 
 /*
@@ -30,16 +32,35 @@ import XCTest
 final class ACC001RestoreAccountSessionTests: XCTestCase {
     private let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
 
+    private static func makeNotificationCenterClient(
+        notifications: @escaping @Sendable (Notification.Name, NSObject?) -> AsyncStream<Notification> = { _, _ in
+            AsyncStream { continuation in
+                continuation.finish()
+            }
+        },
+    ) -> NotificationCenterClient {
+        NotificationCenterClient(
+            notifications: notifications,
+            addObserver: { _, _, _ in NSObject() },
+            removeObserver: { _ in },
+            publisher: { _ in NotificationCenter.default.publisher(for: .init("")) },
+            post: { _, _, _ in },
+        )
+    }
+
     private func makeTestStore(
         accountSessionClient: AccountSessionClient = .testValue,
         authNetworkClient: AuthNetworkClient = .testValue,
+        notificationCenterClient: NotificationCenterClient? = nil,
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
-        TestStore(initialState: initialState) {
+        let notificationCenterClient = notificationCenterClient ?? Self.makeNotificationCenterClient()
+        return TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
             $0.accountSessionClient = accountSessionClient
             $0.authNetworkClient = authNetworkClient
+            $0.notificationCenterClient = notificationCenterClient
             $0.date = .constant(referenceDate)
         }
     }
@@ -64,14 +85,34 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             sessionExpiresAt: sessionExpiry,
         )
 
-        let store = makeTestStore()
-        // exhaustivity=.off: handleHydrateLaunchSnapshot가 다수 필드를 갱신하나
-        // 검증 대상은 session 축(hasAccountSession/sessionExpiresAt/derived auth axis)만 해당.
-        store.exhaustivity = .off
+        var initialState = AccountAccessFeature.State()
+        initialState.didSignInFail = true
+        initialState.isSignInInProgress = true
+        initialState.errorMessage = "Sign in failed"
+        initialState.handoffPendingState = "stale-handoff"
 
-        await store.send(.hydrateLaunchSnapshot(snapshot))
+        let store = makeTestStore(initialState: initialState)
+
+        await store.send(.hydrateLaunchSnapshot(snapshot)) { state in
+            state.status = snapshot.status
+            state.snapshot = snapshot
+            state.trialExpiresAt = snapshot.currentPeriodEnd
+            state.isSignInInProgress = false
+            state.didSignInFail = false
+            state.handoffPendingState = nil
+            state.errorMessage = nil
+            state.hasAccountSession = true
+            state.sessionExpiresAt = sessionExpiry
+            state.isSessionExpired = false
+            state.didBootstrap = true
+            state.fetchGeneration = 1
+            state.ttlTimerActive = true
+        }
 
         XCTAssertTrue(store.state.hasAccountSession, "session 존재 → hasAccountSession=true")
+        XCTAssertFalse(store.state.isSignInInProgress, "stale sign-in progress 초기화")
+        XCTAssertFalse(store.state.didSignInFail, "stale sign-in failure 초기화")
+        XCTAssertNil(store.state.errorMessage, "stale sign-in errorMessage 초기화")
         XCTAssertEqual(
             store.state.sessionExpiresAt,
             sessionExpiry,
@@ -82,7 +123,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             .signedIn,
             "session 존재 → derived accountAccessAuthAxis=.signedIn",
         )
-        await store.finish()
+        await store.skipInFlightEffects()
     }
 
     /// ACC-001-restore_account_session: refreshToken 성공 시 기존 snapshot의 session 축만 갱신된다.

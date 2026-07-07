@@ -564,45 +564,39 @@ private extension AccountAccessFeature {
         }
     }
 
-    /// launch snapshot hydration: AppLifecycle accountAccessGate fetch 결과를
-    /// entitlement 축과 session 축 모두에 1회 반영한다.
     /// handleOnAppearSessionRestored/handleHandoffExchangeCompleted와 동일한 session ownership path를 따르되
     /// 네트워크 재조회(fetchAccessStatusEffect)는 수행하지 않는다 — launch snapshot이 곧 초기 상태.
     private func handleHydrateLaunchSnapshot(
         _ state: inout State,
         snapshot: AccessStatusSnapshot,
     ) -> Effect<Action> {
-        // entitlement 축: snapshot의 access status/trial 기간을 display 상태에 반영
         state.status = snapshot.status
         state.snapshot = snapshot
         state.trialExpiresAt = snapshot.currentPeriodEnd
+        clearStaleSignInState(&state)
 
-        // session 축: snapshot.hasSession 기반으로 signed-in semantics 설정.
-        // sessionExpiresAt == nil이면 hasAccountSession=false (가짜 세션 주입 금지).
         state.hasAccountSession = snapshot.hasSession
         state.sessionExpiresAt = snapshot.sessionExpiresAt
         state.isSessionExpired = false
 
-        // bootstrap 완료 표시: 이후 handleOnAppear가 중복 session read/fetch를 수행하지 않도록 차단.
         state.didBootstrap = true
 
-        // stale in-flight fetch 무효화: generation 증가로 이전 fetch 응답이 거부된다.
         state.fetchGeneration += 1
 
         if snapshot.hasSession {
-            // 유효 세션: TTL 타이머 시작. handleOnAppearSessionRestored success path와 동일 패턴.
             state.ttlTimerActive = true
             return .merge(
+                observeAppDidBecomeActive(),
                 .cancel(id: CancelID.fetchStatus),
                 .cancel(id: CancelID.ttlTimer),
                 startTtlTimer(),
             )
         } else {
-            // 세션 없음: TTL 타이머 비활성화. entitlement 축은 display-only로 유지.
             state.ttlTimerActive = false
             return .merge(
                 .cancel(id: CancelID.fetchStatus),
                 .cancel(id: CancelID.ttlTimer),
+                .cancel(id: CancelID.appDidBecomeActiveObserver),
             )
         }
     }
@@ -744,6 +738,13 @@ private extension AccountAccessFeature {
         state.snapshot = nil
         state.trialExpiresAt = nil
         state.isComplete = false
+        state.errorMessage = nil
+    }
+
+    private func clearStaleSignInState(_ state: inout State) {
+        state.isSignInInProgress = false
+        state.didSignInFail = false
+        state.handoffPendingState = nil
         state.errorMessage = nil
     }
 
