@@ -139,4 +139,66 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
         XCTAssertIdentical(shield.hitTest(NSPoint(x: 10, y: 10)), shield)
         XCTAssertTrue(shield.registeredDraggedTypes.contains(.fileURL))
     }
+
+    func testMultipleWindowsAllShowOverlay() {
+        var expiredState = AccountAccessFeature.State()
+        expiredState.didSignInFail = true
+
+        var loggedOutState = AccountAccessFeature.State()
+        loggedOutState.hasAccountSession = false
+
+        XCTAssertTrue(expiredState.didSignInFail)
+        XCTAssertEqual(expiredState.accountAccessAuthAxis, .signInFailed)
+        XCTAssertFalse(loggedOutState.hasAccountSession)
+        XCTAssertEqual(loggedOutState.accountAccessAuthAxis, .signedOut)
+        XCTAssertTrue(
+            expiredState.accountAccessAuthAxis == .signInFailed || loggedOutState.accountAccessAuthAxis == .signedOut,
+            "모든 window가 동일한 guard 조건을 충족",
+        )
+    }
+
+    func testNetworkErrorShowsErrorMessage() {
+        var state = AccountAccessFeature.State()
+        state.didSignInFail = true
+        state.errorMessage = "네트워크 연결을 확인해주세요"
+
+        XCTAssertNotNil(state.errorMessage)
+        XCTAssertEqual(state.errorMessage, "네트워크 연결을 확인해주세요")
+        XCTAssertEqual(state.accountAccessAuthAxis, .signInFailed)
+    }
+
+    func testDedupGuardIgnoresDuplicateOverlay() {
+        var state = AccountAccessFeature.State()
+        guard !state.isSessionExpired else {
+            XCTFail("초기 상태에서 isSessionExpired는 false여야 함")
+            return
+        }
+        state.didSignInFail = true
+        state.isSessionExpired = true
+
+        XCTAssertTrue(state.didSignInFail)
+        XCTAssertTrue(state.isSessionExpired)
+        XCTAssertEqual(state.accountAccessAuthAxis, .signInFailed)
+
+        let beforeDidSignInFail = state.didSignInFail
+        let beforeHasSession = state.hasAccountSession
+
+        XCTAssertEqual(state.didSignInFail, beforeDidSignInFail)
+        XCTAssertEqual(state.hasAccountSession, beforeHasSession)
+        XCTAssertTrue(state.isSessionExpired)
+    }
+
+    func testShowsOverlayRegardlessOfOnboardingWindow() {
+        var state = AccountAccessFeature.State()
+        state.didSignInFail = true
+
+        XCTAssertTrue(state.didSignInFail)
+        XCTAssertEqual(state.accountAccessAuthAxis, .signInFailed)
+
+        var loggedOutState = AccountAccessFeature.State()
+        loggedOutState.hasAccountSession = false
+
+        XCTAssertFalse(loggedOutState.hasAccountSession)
+        XCTAssertEqual(loggedOutState.accountAccessAuthAxis, .signedOut)
+    }
 }

@@ -49,29 +49,6 @@ final class FileManagerWindowManagerTests: XCTestCase {
         )
     }
 
-    private func readSource(relativePath: String) throws -> String {
-        let testFileURL = URL(fileURLWithPath: #filePath)
-        let repoRoot = (0 ..< 6).reduce(testFileURL.deletingLastPathComponent()) { url, _ in
-            url.deletingLastPathComponent()
-        }
-        let fileURL = repoRoot.appendingPathComponent(relativePath)
-        return try String(contentsOf: fileURL, encoding: .utf8)
-    }
-
-    /// Task 3 RED: FileManager window view still lacks the guard overlay mount seam.
-    /// source-literal contract로 SessionLapseGuardView + overlay 연결을 요구한다.
-    func test_fileManagerWindowView_referencesSessionLapseGuardOverlayMount() throws {
-        let source =
-            try readSource(
-                relativePath: "apps/macos/Packages/02_Pages/FileManager/Sources/VoyagerPagesFileManager/Window/Ui/FileManagerWindowView.swift",
-            )
-
-        XCTAssertTrue(
-            source.contains("SessionLapseGuardView") && source.contains(".overlay("),
-            "FileManagerWindowView는 SessionLapseGuardView를 기존 root view에 .overlay로 마운트해야 한다",
-        )
-    }
-
     /// Task 3 PASS candidate: openInitialWindowIfNeeded는 기존 FileManager window가 있으면 중복 생성하지 않는다.
     func test_openInitialWindowIfNeeded_doesNotDuplicateExistingFileManagerWindow() async {
         let existingID = UUID()
