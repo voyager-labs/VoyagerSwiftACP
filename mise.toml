@@ -95,7 +95,7 @@ scripts/dev/macos-launch.sh "$@"
 description = "macOS 개발 앱 테스트 (xcbeautify 필터링)"
 run = """
 set -o pipefail
-NSUnbufferedIO=YES xcodebuild test -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug -derivedDataPath build/dev/DerivedData -clonedSourcePackagesDirPath build/dev/SourcePackages -skipPackagePluginValidation -skipMacroValidation COMPILER_INDEX_STORE_ENABLE=NO 2>&1 | tee build/dev/xcodebuild-test.log | mise exec -- xcbeautify --quiet --is-ci --report junit --report-path build/dev/reports
+NSUnbufferedIO=YES xcodebuild test -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug -derivedDataPath build/dev/DerivedData -clonedSourcePackagesDirPath build/dev/SourcePackages -skipPackagePluginValidation -skipMacroValidation COMPILER_INDEX_STORE_ENABLE=NO CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/dev/xcodebuild-test.log | mise exec -- xcbeautify --quiet --is-ci --report junit --report-path build/dev/reports
 """
 
 # Xcode 툴체인의 Swift 버전 확인
