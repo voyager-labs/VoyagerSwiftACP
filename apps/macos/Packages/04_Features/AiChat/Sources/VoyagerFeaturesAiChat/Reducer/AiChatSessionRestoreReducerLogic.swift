@@ -207,6 +207,9 @@ extension AiChatFeature {
         state.lastRequestContextModelHandle = snapshot.lastRequestContext == nil ? nil : snapshot.model
         state.addedAttachments = []
         state.currentContextFolderStructureModes = [:]
+        if let promotedSnapshot = preservedExecutionPhase?.lock?.finalSnapshot {
+            applyPromotedFinalSnapshot(promotedSnapshot, state: &state)
+        }
         state.executionPhase = preservedExecutionPhase ?? .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
@@ -245,9 +248,25 @@ extension AiChatFeature {
         state.lastRequestContextModelHandle = nil
         state.addedAttachments = []
         state.currentContextFolderStructureModes = [:]
+        if let promotedSnapshot = preservedExecutionPhase?.lock?.finalSnapshot {
+            applyPromotedFinalSnapshot(promotedSnapshot, state: &state)
+        }
         state.executionPhase = preservedExecutionPhase ?? .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
+    }
+
+    func applyPromotedFinalSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
+        state.sessionID = snapshot.sessionID
+        state.sessionStatus = snapshot.status
+        state.currentSessionCustomTitle = snapshot.customTitle
+        state.transcriptHistory = snapshot.transcriptHistory
+        state.lastExecutionFailure = nil
+        state.lastRequestContext = snapshot.lastRequestContext
+        state.lastRequestContextModelHandle = snapshot.lastRequestContext == nil ? nil : snapshot.model
+        state.selectedModelHandle = snapshot.model
+        state.selectedThinking = snapshot.selectedThinking
+        state.transcriptAutoScrollVersion += 1
     }
 
     static func normalizeRestoredSnapshot(
