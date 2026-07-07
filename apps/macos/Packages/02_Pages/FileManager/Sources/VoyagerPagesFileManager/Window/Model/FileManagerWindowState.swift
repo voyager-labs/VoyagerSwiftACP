@@ -209,7 +209,11 @@ extension FileManagerWindowState {
 
     mutating func addBackgroundInspectorAiChatState(state inspectorState: FileManagerInspectorFeature.State) {
         for sessionID in inspectorState.aiChat.lifecycleSessionIDsToPreserve {
-            backgroundInspectorAiChatStates[sessionID] = inspectorState.tabSnapshot()
+            var mergedInspectorState = inspectorState.tabSnapshot()
+            if let existingInspectorState = backgroundInspectorAiChatStates[sessionID] {
+                mergedInspectorState.aiChat.mergeBackgroundLifecycleOwners(from: existingInspectorState.aiChat)
+            }
+            backgroundInspectorAiChatStates[sessionID] = mergedInspectorState
         }
     }
 
@@ -356,7 +360,11 @@ extension FileManagerWindowState {
             || state.aiChat.pendingRequestStart != nil
             || hasBackgroundExecutionPhase
         else { return }
-        backgroundAiChatStates[sessionID] = state
+        var mergedState = state
+        if let existingState = backgroundAiChatStates[sessionID] {
+            mergedState.aiChat.mergeBackgroundLifecycleOwners(from: existingState.aiChat)
+        }
+        backgroundAiChatStates[sessionID] = mergedState
     }
 
     @discardableResult
@@ -421,6 +429,24 @@ extension FileManagerInspectorFeature.State {
         var snapshot = self
         snapshot.inspectorPaneExists = false
         return snapshot
+    }
+}
+
+private extension AiChatFeature.State {
+    mutating func mergeBackgroundLifecycleOwners(from existingState: Self) {
+        if pendingRequestStart == nil {
+            pendingRequestStart = existingState.pendingRequestStart
+        }
+        mergeBackgroundLifecycleOwner(existingState.executionPhase)
+        for phase in existingState.backgroundExecutionPhases.values {
+            mergeBackgroundLifecycleOwner(phase)
+        }
+    }
+
+    mutating func mergeBackgroundLifecycleOwner(_ phase: AiChatExecutionPhase) {
+        guard let lock = phase.lock else { return }
+        if executionPhase.lock?.requestID == lock.requestID { return }
+        backgroundExecutionPhases[lock.requestID] = phase
     }
 }
 

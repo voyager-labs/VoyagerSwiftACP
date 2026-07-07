@@ -1595,9 +1595,10 @@ private func routeBackgroundInspectorAiChatAction(
             return FileManagerWindowAction.backgroundInspectorAiChat(action)
         }
 
-    if let summary = sessionSnapshotSavedSummary(from: aiChatAction) {
+    if let payload = sessionSnapshotSavedPayload(from: aiChatAction) {
         refreshAiChatSnapshotsFromBackgroundIfNeeded(
-            summary: summary,
+            summary: payload.summary,
+            snapshot: payload.snapshot,
             backgroundAiChat: inspectorState.aiChat,
             state: &state,
         )
