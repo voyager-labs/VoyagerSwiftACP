@@ -1412,6 +1412,88 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         await store.finish()
     }
 
+    func testNewChatTappedMovesPersistenceRecoveryOwnerToBackground() async {
+        let catalogRows = makeCatalogRows()
+        let sourceSessionID = makeCBW005SessionID("18181818-1818-1818-1818-181818181818")
+        let newSessionID = AiChatSessionID(rawValue: makeUUID("00000000-0000-0000-0000-000000000000"))
+        let selectedHandle = catalogRows[0].handle
+        let userMessage = AiChatMessage(role: .user, content: "Source recovery pending")
+        let assistantMessage = AiChatMessage(role: .assistant, content: "Final answer before retry")
+        let request = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: sourceSessionID,
+                requestID: AiChatRequestID(rawValue: makeUUID("18181818-1818-1818-1818-181818181819")),
+                runID: AiChatRunID(rawValue: makeUUID("18181818-1818-1818-1818-18181818181a")),
+                model: selectedHandle,
+                selectedRow: catalogRows[0],
+            ),
+            messages: [userMessage],
+        )
+        let finalizedLock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        .recordingTerminal(at: 1_700_000_001_818, failure: nil, wasCancelled: false)
+        let finalSnapshot = AiChatSessionSnapshot(
+            sessionID: sourceSessionID,
+            status: .active,
+            customTitle: "Recovered Source",
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [userMessage, assistantMessage],
+            lastRequestID: finalizedLock.requestID,
+            lastRunID: finalizedLock.runID,
+            lastRequestContext: finalizedLock.context.requestContext,
+            updatedAtMs: 1_700_000_001_818,
+        )
+        let ownerLock = finalizedLock.recordingFinalSnapshot(finalSnapshot)
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            sessionID: sourceSessionID,
+            sessionStatus: .active,
+            transcriptHistory: [userMessage],
+            draftText: "",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            executionPhase: .persistenceRecovery(ownerLock, .unknown),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_001_818))
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { _ in },
+            )
+        }
+
+        await store.send(.newChatTapped) { state in
+            applySessionListNewChatStarted(&state, sessionID: newSessionID)
+            state.backgroundExecutionPhases[ownerLock.requestID] = .persistenceRecovery(ownerLock, .unknown)
+        }
+
+        let newChatSnapshot = makeSessionListEmptySnapshot(
+            sessionID: newSessionID,
+            updatedAtMs: 1_700_000_001_818,
+        )
+        await store.receive(.newChatCreated(newChatSnapshot)) { state in
+            applySessionListNewChatCreated(&state, snapshot: newChatSnapshot)
+            state.backgroundExecutionPhases[ownerLock.requestID] = .persistenceRecovery(ownerLock, .unknown)
+        }
+
+        XCTAssertEqual(
+            store.state.backgroundExecutionPhases[ownerLock.requestID],
+            .persistenceRecovery(ownerLock, .unknown),
+        )
+        await store.finish()
+    }
+
     func testRouteToChatSessionMovesCompletedFinalOwnerToBackground() async {
         let catalogRows = makeCatalogRows()
         let sourceSessionID = makeCBW005SessionID("16161616-1616-1616-1616-161616161616")

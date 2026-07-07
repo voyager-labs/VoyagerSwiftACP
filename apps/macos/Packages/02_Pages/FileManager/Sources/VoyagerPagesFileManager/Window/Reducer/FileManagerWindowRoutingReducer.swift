@@ -1032,7 +1032,7 @@ private func makeOffscreenFinalSnapshot(
     return AiChatSessionSnapshot(
         sessionID: sessionID,
         status: .active,
-        customTitle: nil,
+        customTitle: lock.customTitle,
         provider: lock.context.provider,
         model: lock.context.model,
         selectedModelRow: lock.selectedModelRow,

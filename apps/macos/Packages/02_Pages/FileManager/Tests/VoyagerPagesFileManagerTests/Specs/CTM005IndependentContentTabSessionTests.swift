@@ -4516,7 +4516,7 @@ extension CTM005IndependentContentTabSessionTests {
 
     func testBackgroundFinalSnapshotRefreshUsesFinalTranscript() async {
         let sessionID = AiChatSessionID(rawValue: UUID())
-        let requestLock = makeRequestLock(sessionID: sessionID)
+        let requestLock = makeRequestLock(sessionID: sessionID).recordingCustomTitle("Renamed background")
         let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
 
         var activeContent = FileManagerContentFeature.State()
@@ -4576,6 +4576,7 @@ extension CTM005IndependentContentTabSessionTests {
         let expectedSnapshot = AiChatSessionSnapshot(
             sessionID: sessionID,
             status: .active,
+            customTitle: "Renamed background",
             provider: requestLock.context.provider,
             model: requestLock.context.model,
             selectedModelRow: requestLock.selectedModelRow,
@@ -4603,7 +4604,9 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
 
         XCTAssertEqual(savedSnapshots.value.first?.transcriptHistory.map(\.content), ["test", "done"])
+        XCTAssertEqual(savedSnapshots.value.first?.customTitle, "Renamed background")
         XCTAssertEqual(store.state.content.aiChat.transcriptHistory.map(\.content), ["test", "done"])
+        XCTAssertEqual(store.state.content.aiChat.sessionList.allRows.first?.title, "Renamed background")
         XCTAssertNil(store.state.backgroundAiChatStates[sessionID])
     }
 

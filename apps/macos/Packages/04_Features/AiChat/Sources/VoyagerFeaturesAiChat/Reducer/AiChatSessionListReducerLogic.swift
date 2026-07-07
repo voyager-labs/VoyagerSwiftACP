@@ -21,10 +21,17 @@ extension AiChatFeature {
         _ executionPhase: AiChatExecutionPhase,
         state: inout State,
     ) {
-        guard case let .processing(lock) = executionPhase else { return }
-        state.backgroundExecutionPhases[lock.requestID] = .processing(lock)
-        if state.executionPhase.requestID == lock.requestID {
-            state.executionPhase = .idle
+        guard let lock = executionPhase.lock else { return }
+
+        switch executionPhase {
+        case .processing, .completed, .persistenceRecovery:
+            state.backgroundExecutionPhases[lock.requestID] = executionPhase
+            if state.executionPhase.requestID == lock.requestID {
+                state.executionPhase = .idle
+            }
+
+        case .idle, .failed, .cancelled:
+            break
         }
     }
 
