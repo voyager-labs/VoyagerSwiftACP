@@ -328,16 +328,18 @@ extension FileManagerWindowState {
     }
 
     mutating func addBackgroundAiChatState(sessionID: AiChatSessionID, state: FileManagerContentFeature.State) {
-        let isCompleted = if case .completed = state.aiChat.executionPhase {
+        let shouldPreserveOwner = switch state.aiChat.executionPhase {
+        case .completed,
+             .persistenceRecovery:
             true
-        } else {
+        default:
             false
         }
         let hasBackgroundExecutionPhase = state.aiChat.backgroundExecutionPhases.values.contains {
             $0.lock?.context.sessionID == sessionID
         }
         guard state.aiChat.executionPhase.isProcessing
-            || isCompleted
+            || shouldPreserveOwner
             || state.aiChat.pendingRequestStart != nil
             || hasBackgroundExecutionPhase
         else { return }
@@ -412,8 +414,14 @@ extension FileManagerInspectorFeature.State {
 private extension AiChatFeature.State {
     var lifecycleSessionIDsToPreserve: [AiChatSessionID] {
         var sessionIDs: [AiChatSessionID] = []
-        let isCompleted = if case .completed = executionPhase { true } else { false }
-        if executionPhase.isProcessing || pendingRequestStart != nil || isCompleted,
+        let shouldPreserveOwner = switch executionPhase {
+        case .completed,
+             .persistenceRecovery:
+            true
+        default:
+            false
+        }
+        if executionPhase.isProcessing || pendingRequestStart != nil || shouldPreserveOwner,
            let sessionID
         {
             sessionIDs.append(sessionID)

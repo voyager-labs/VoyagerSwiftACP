@@ -5496,6 +5496,99 @@ extension CTM005IndependentContentTabSessionTests {
         }
         XCTAssertEqual(backgroundContent.aiChat.executionPhase, .completed(requestLock))
     }
+
+    func testPersistenceRecoveryAiChatPageClosePreservesFinalSnapshotOwner() async {
+        let aiChatTabID = ContentTabID()
+        let homeTabID = ContentTabID()
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let finalSnapshot = AiChatSessionSnapshot(
+            sessionID: aiSessionID,
+            status: .active,
+            provider: nil,
+            model: nil,
+            selectedModelRow: nil,
+            selectedThinking: nil,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "test"),
+                AiChatMessage(role: .assistant, content: "done"),
+            ],
+            lastRequestID: nil,
+            lastRunID: nil,
+            lastRequestContext: nil,
+            updatedAtMs: 1_234_567_890_000,
+        )
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+            .recordingFinalSnapshot(finalSnapshot)
+
+        var aiChatContent = FileManagerContentFeature.State()
+        aiChatContent.aiChat.sessionID = aiSessionID
+        aiChatContent.aiChat.sessionStatus = .active
+        aiChatContent.aiChat.executionPhase = .persistenceRecovery(requestLock, .unknown)
+        aiChatContent.aiChat.lastExecutionFailure = .unknown
+        aiChatContent.aiChat.transcriptHistory = [
+            AiChatMessage(role: .user, content: "test"),
+        ]
+
+        let homeContent = FileManagerContentFeature.State()
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: aiChatTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: aiSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "message",
+                ),
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: aiChatTabID,
+            recentlyClosed: nil,
+        )
+        state.content = aiChatContent
+        state.tabContentStates = [homeTabID: homeContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.entryWatchingClient.startWatchingDirectory = { _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.close(aiChatTabID)))
+        await store.receive(\.content.internal.applyNavigationState)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        guard let backgroundContent = store.state.backgroundAiChatStates[aiSessionID] else {
+            XCTFail("Expected persistence recovery AI Chat state to remain in background")
+            return
+        }
+        XCTAssertEqual(
+            backgroundContent.aiChat.executionPhase,
+            .persistenceRecovery(requestLock, .unknown),
+        )
+        XCTAssertEqual(
+            backgroundContent.aiChat.executionPhase.lock?.finalSnapshot?.transcriptHistory.map(\.content),
+            ["test", "done"],
+        )
+    }
 }
 
 // MARK: - CTM-005-ai_chat_invalid_session

@@ -800,10 +800,12 @@ private extension ContentTabPageAnchor {
 }
 
 private extension AiChatExecutionPhase {
-    var isCompleted: Bool {
-        if case .completed = self {
+    var shouldPreserveLifecycleOwner: Bool {
+        switch self {
+        case .completed,
+             .persistenceRecovery:
             true
-        } else {
+        default:
             false
         }
     }
@@ -817,7 +819,7 @@ private func aiChatLifecycleSessionIDsToPreserve(_ state: AiChatFeature.State) -
     }
 
     if state.executionPhase.isProcessing
-        || state.executionPhase.isCompleted
+        || state.executionPhase.shouldPreserveLifecycleOwner
         || state.pendingRequestStart != nil
     {
         append(state.sessionID)
