@@ -6244,6 +6244,90 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    func testActiveContentBackgroundRecoverySucceededRefreshesInactiveSession() async {
+        let activeTabID = ContentTabID()
+        let inactiveTabID = ContentTabID()
+        let activeSessionID = AiChatSessionID(rawValue: UUID())
+        let inactiveSessionID = AiChatSessionID(rawValue: UUID())
+        let finalSnapshot = AiChatSessionSnapshot(
+            sessionID: inactiveSessionID,
+            status: .active,
+            provider: nil,
+            model: nil,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "test"),
+                AiChatMessage(role: .assistant, content: "done"),
+            ],
+            updatedAtMs: 1_234_567_890_000,
+        )
+        let requestLock = makeRequestLock(sessionID: inactiveSessionID)
+            .recordingFinalSnapshot(finalSnapshot)
+
+        var activeContent = FileManagerContentFeature.State()
+        activeContent.aiChat.sessionID = activeSessionID
+        activeContent.aiChat.sessionStatus = .active
+        activeContent.aiChat.backgroundExecutionPhases[requestLock.requestID] = .persistenceRecovery(
+            requestLock,
+            .unknown,
+        )
+
+        var inactiveContent = FileManagerContentFeature.State()
+        inactiveContent.aiChat.sessionID = inactiveSessionID
+        inactiveContent.aiChat.sessionStatus = .active
+        inactiveContent.aiChat.transcriptHistory = [AiChatMessage(role: .user, content: "test")]
+        inactiveContent.aiChat.executionPhase = .idle
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: activeSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "Active",
+                    iconName: "sparkles",
+                ),
+                ContentTabItem(
+                    id: inactiveTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: inactiveSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "Inactive",
+                    iconName: "sparkles",
+                ),
+            ],
+            activeTabID: activeTabID,
+            recentlyClosed: nil,
+        )
+        state.content = activeContent
+        state.tabContentStates = [
+            activeTabID: activeContent,
+            inactiveTabID: inactiveContent,
+        ]
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.content(.aiChat(.persistenceRecoverySucceeded(requestLock))))
+
+        XCTAssertEqual(
+            store.state.content.aiChat.backgroundExecutionPhases[requestLock.requestID],
+            .completed(requestLock),
+        )
+        XCTAssertEqual(
+            store.state.tabContentStates[inactiveTabID]?.aiChat.executionPhase,
+            .completed(requestLock),
+        )
+        XCTAssertEqual(
+            store.state.tabContentStates[inactiveTabID]?.aiChat.transcriptHistory.map(\.content),
+            ["test", "done"],
+        )
+        await store.finish()
+    }
+
     func testBackgroundAiChatRecoverySucceededAppliesFinalSnapshotToActiveSession() async {
         let aiSessionID = AiChatSessionID(rawValue: UUID())
         let finalSnapshot = AiChatSessionSnapshot(

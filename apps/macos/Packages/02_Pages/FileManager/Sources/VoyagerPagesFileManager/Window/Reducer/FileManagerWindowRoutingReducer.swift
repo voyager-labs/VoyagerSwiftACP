@@ -334,7 +334,13 @@ struct FileManagerWindowRoutingReducer {
                 return .none
 
             case let .content(.aiChat(aiChatAction)):
-                return routeBackgroundAiChatAction(aiChatAction, state: &state)
+                let effect = routeBackgroundAiChatAction(aiChatAction, state: &state)
+                refreshAiChatFollowUpFromBackgroundIfNeeded(
+                    aiChatAction,
+                    backgroundAiChat: state.content.aiChat,
+                    state: &state,
+                )
+                return effect
 
             case let .backgroundAiChat(aiChatAction):
                 return routeBackgroundAiChatAction(aiChatAction, state: &state)
@@ -947,11 +953,47 @@ private func routeBackgroundAiChatAction(
     return effect
 }
 
+private struct SessionSnapshotSavedPayload {
+    let summary: AiChatSessionSummary
+    let snapshot: AiChatSessionSnapshot?
+}
+
 private func sessionSnapshotSavedSummary(from aiChatAction: AiChatAction) -> AiChatSessionSummary? {
-    if case let .sessionSnapshotSaved(summary, _, _, _) = aiChatAction {
-        summary
+    sessionSnapshotSavedPayload(from: aiChatAction)?.summary
+}
+
+private func sessionSnapshotSavedPayload(from aiChatAction: AiChatAction) -> SessionSnapshotSavedPayload? {
+    if case let .sessionSnapshotSaved(summary, snapshot, _, _) = aiChatAction {
+        SessionSnapshotSavedPayload(summary: summary, snapshot: snapshot)
     } else {
         nil
+    }
+}
+
+private func refreshAiChatFollowUpFromBackgroundIfNeeded(
+    _ aiChatAction: AiChatAction,
+    backgroundAiChat: AiChatFeature.State,
+    state: inout FileManagerWindowState,
+) {
+    if let payload = sessionSnapshotSavedPayload(from: aiChatAction) {
+        refreshAiChatSnapshotsFromBackgroundIfNeeded(
+            summary: payload.summary,
+            snapshot: payload.snapshot,
+            backgroundAiChat: backgroundAiChat,
+            state: &state,
+        )
+    } else if let failedContext = failedAiChatContext(from: aiChatAction) {
+        refreshAiChatFailureFromBackgroundIfNeeded(
+            context: failedContext,
+            backgroundAiChat: backgroundAiChat,
+            state: &state,
+        )
+    } else if let recoveryLock = persistenceRecoveryLock(from: aiChatAction) {
+        refreshAiChatRecoveryFromBackgroundIfNeeded(
+            lock: recoveryLock,
+            backgroundAiChat: backgroundAiChat,
+            state: &state,
+        )
     }
 }
 
@@ -1398,11 +1440,12 @@ private func routeInactiveInspectorAiChatAction(
     guard let tabID = inactiveInspectorTabID(for: aiChatAction, state: state),
           var inspectorState = state.tabInspectorStates[tabID]
     else {
-        if let summary = sessionSnapshotSavedSummary(from: aiChatAction),
-           state.inspector.aiChat.canRefreshFromBackground(summary: summary)
+        if let payload = sessionSnapshotSavedPayload(from: aiChatAction),
+           state.inspector.aiChat.canRefreshFromBackground(summary: payload.summary)
         {
             refreshAiChatSnapshotsFromBackgroundIfNeeded(
-                summary: summary,
+                summary: payload.summary,
+                snapshot: payload.snapshot,
                 backgroundAiChat: state.inspector.aiChat,
                 state: &state,
             )
@@ -1414,9 +1457,10 @@ private func routeInactiveInspectorAiChatAction(
         .map { FileManagerWindowAction.backgroundInspectorAiChat($0) }
 
     state.tabInspectorStates[tabID] = inspectorState.tabSnapshot()
-    if let summary = sessionSnapshotSavedSummary(from: aiChatAction) {
+    if let payload = sessionSnapshotSavedPayload(from: aiChatAction) {
         refreshAiChatSnapshotsFromBackgroundIfNeeded(
-            summary: summary,
+            summary: payload.summary,
+            snapshot: payload.snapshot,
             backgroundAiChat: inspectorState.aiChat,
             state: &state,
         )
