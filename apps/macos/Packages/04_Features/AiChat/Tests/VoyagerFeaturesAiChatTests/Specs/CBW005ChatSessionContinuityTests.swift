@@ -1366,6 +1366,52 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         await store.finish()
     }
 
+    func testBackgroundPersistenceRecoveryFollowUpsUpdateBackgroundOwner() async {
+        let catalogRows = makeCatalogRows()
+        let sessionID = makeCBW005SessionID("18181818-1818-1818-1818-181818181818")
+        let selectedHandle = catalogRows[0].handle
+        let request = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: sessionID,
+                requestID: AiChatRequestID(rawValue: makeUUID("18181818-1818-1818-1818-181818181819")),
+                runID: AiChatRunID(rawValue: makeUUID("18181818-1818-1818-1818-181818181820")),
+                model: selectedHandle,
+                selectedRow: catalogRows[0],
+            ),
+            messages: [AiChatMessage(role: .user, content: "Retry background")],
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        let otherSessionID = makeCBW005SessionID("19191919-1919-1919-1919-191919191919")
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: otherSessionID,
+            sessionStatus: .idle,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [],
+            draftText: "",
+            catalogRows: catalogRows,
+            backgroundExecutionPhases: [
+                lock.requestID: AiChatExecutionPhase.persistenceRecovery(lock, .unknown),
+            ],
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.persistenceRecoveryRetryFailed(lock, .network)) { state in
+            state.backgroundExecutionPhases[lock.requestID] = .persistenceRecovery(lock, .network)
+        }
+        await store.send(.persistenceRecoverySucceeded(lock)) { state in
+            state.backgroundExecutionPhases[lock.requestID] = .completed(lock)
+        }
+        await store.finish()
+    }
+
     func testRouteToChatSessionMovesCompletedFinalOwnerToBackground() async {
         let catalogRows = makeCatalogRows()
         let sourceSessionID = makeCBW005SessionID("16161616-1616-1616-1616-161616161616")

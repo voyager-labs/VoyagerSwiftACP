@@ -918,6 +918,12 @@ private func routeBackgroundAiChatAction(
             backgroundAiChat: backgroundContent.aiChat,
             state: &state,
         )
+    } else if let failedSessionID = failedAiChatSessionID(from: aiChatAction) {
+        refreshAiChatFailureFromBackgroundIfNeeded(
+            sessionID: failedSessionID,
+            backgroundAiChat: backgroundContent.aiChat,
+            state: &state,
+        )
     }
 
     if shouldRemoveBackgroundAiChatState(after: aiChatAction) {
@@ -935,6 +941,11 @@ private func sessionSnapshotSavedSummary(from aiChatAction: AiChatAction) -> AiC
     } else {
         nil
     }
+}
+
+private func failedAiChatSessionID(from aiChatAction: AiChatAction) -> AiChatSessionID? {
+    guard case let .executionEvent(.failed(context, _)) = aiChatAction else { return nil }
+    return context.sessionID
 }
 
 private func handleBackgroundAiChatSnapshotPersisted(
@@ -1034,6 +1045,36 @@ private func makeOffscreenFinalSnapshot(
     )
 }
 
+private func refreshAiChatFailureFromBackgroundIfNeeded(
+    sessionID: AiChatSessionID,
+    backgroundAiChat: AiChatFeature.State,
+    state: inout FileManagerWindowState,
+) {
+    if state.content.aiChat.canRefreshFailureFromBackground(sessionID: sessionID) {
+        state.content.aiChat.applyBackgroundFailure(backgroundAiChat: backgroundAiChat)
+        state.syncActiveTabContentState()
+    }
+
+    for tabID in state.tabContentStates.keys {
+        guard tabID != state.contentTabs.activeTabID else { continue }
+        guard state.tabContentStates[tabID]?.aiChat.canRefreshFailureFromBackground(sessionID: sessionID) == true
+        else { continue }
+        state.tabContentStates[tabID]?.aiChat.applyBackgroundFailure(backgroundAiChat: backgroundAiChat)
+    }
+
+    if state.inspector.aiChat.canRefreshFailureFromBackground(sessionID: sessionID) {
+        state.inspector.aiChat.applyBackgroundFailure(backgroundAiChat: backgroundAiChat)
+        state.syncActiveTabInspectorState()
+    }
+
+    for tabID in state.tabInspectorStates.keys {
+        guard tabID != state.contentTabs.activeTabID else { continue }
+        guard state.tabInspectorStates[tabID]?.aiChat.canRefreshFailureFromBackground(sessionID: sessionID) == true
+        else { continue }
+        state.tabInspectorStates[tabID]?.aiChat.applyBackgroundFailure(backgroundAiChat: backgroundAiChat)
+    }
+}
+
 private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
     summary: AiChatSessionSummary,
     snapshot: AiChatSessionSnapshot? = nil,
@@ -1086,6 +1127,20 @@ private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
 }
 
 private extension AiChatFeature.State {
+    func canRefreshFailureFromBackground(sessionID: AiChatSessionID) -> Bool {
+        self.sessionID == sessionID
+            && !executionPhase.isProcessing
+            && pendingRequestStart == nil
+    }
+
+    mutating func applyBackgroundFailure(backgroundAiChat: AiChatFeature.State) {
+        guard case .failed = backgroundAiChat.executionPhase else { return }
+        executionPhase = backgroundAiChat.executionPhase
+        streamingAssistantDraft = nil
+        lockedModelHandle = nil
+        lastExecutionFailure = backgroundAiChat.lastExecutionFailure
+    }
+
     func canRefreshFromBackground(summary: AiChatSessionSummary) -> Bool {
         sessionID == summary.sessionID
             && !executionPhase.isProcessing
@@ -1256,6 +1311,12 @@ private func routeBackgroundInspectorAiChatAction(
             backgroundAiChat: inspectorState.aiChat,
             state: &state,
         )
+    } else if let failedSessionID = failedAiChatSessionID(from: aiChatAction) {
+        refreshAiChatFailureFromBackgroundIfNeeded(
+            sessionID: failedSessionID,
+            backgroundAiChat: inspectorState.aiChat,
+            state: &state,
+        )
     }
 
     if shouldRemoveBackgroundAiChatState(after: aiChatAction) {
@@ -1400,8 +1461,8 @@ private func backgroundAiChatSessionID(
 
 private func shouldRemoveBackgroundAiChatState(after aiChatAction: AiChatAction) -> Bool {
     switch aiChatAction {
-    case let .executionEvent(event):
-        if case .failed = event { true } else { false }
+    case .executionEvent:
+        false
     case .sessionSnapshotSaved,
          .persistenceRecoverySucceeded:
         true

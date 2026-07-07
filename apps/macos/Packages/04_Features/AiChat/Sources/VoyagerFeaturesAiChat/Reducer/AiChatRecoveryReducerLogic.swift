@@ -59,11 +59,19 @@ extension AiChatFeature {
     }
 
     func handlePersistenceRecoverySucceeded(lock: AiChatRequestLock, state: inout State) -> Effect<Action> {
-        guard case let .persistenceRecovery(currentLock, _) = state.executionPhase,
-              currentLock.requestID == lock.requestID
+        if case let .persistenceRecovery(currentLock, _) = state.executionPhase,
+           currentLock.requestID == lock.requestID
+        {
+            state.executionPhase = .completed(lock)
+            state.lastExecutionFailure = nil
+            return .none
+        }
+
+        guard let backgroundPhase = state.backgroundExecutionPhases[lock.requestID],
+              let backgroundLock = backgroundPhase.lock,
+              backgroundLock.runID == lock.runID
         else { return .none }
-        state.executionPhase = .completed(lock)
-        state.lastExecutionFailure = nil
+        state.backgroundExecutionPhases[lock.requestID] = .completed(lock)
         return .none
     }
 
@@ -72,11 +80,19 @@ extension AiChatFeature {
         failure: AiChatExecutionFailure,
         state: inout State,
     ) -> Effect<Action> {
-        guard case let .persistenceRecovery(currentLock, _) = state.executionPhase,
-              currentLock.requestID == lock.requestID
+        if case let .persistenceRecovery(currentLock, _) = state.executionPhase,
+           currentLock.requestID == lock.requestID
+        {
+            state.executionPhase = .persistenceRecovery(lock, failure)
+            state.lastExecutionFailure = failure
+            return .none
+        }
+
+        guard let backgroundPhase = state.backgroundExecutionPhases[lock.requestID],
+              let backgroundLock = backgroundPhase.lock,
+              backgroundLock.runID == lock.runID
         else { return .none }
-        state.executionPhase = .persistenceRecovery(lock, failure)
-        state.lastExecutionFailure = failure
+        state.backgroundExecutionPhases[lock.requestID] = .persistenceRecovery(lock, failure)
         return .none
     }
 
