@@ -40,6 +40,8 @@ Voyager-dev owns test selection, execution, failure analysis, fix, and rerun loo
 
 This skill verifies with existing tests. It must not author new test files, helper files, or suites as a side effect of implementation verification.
 
+Must not author tests that read Swift source files to assert literal strings, view type names, or declaration order as behavior proof — that couples tests to source text, not behavior. Verify observable behavior instead: TCA action/state/effect assertions, accessibility, hitTest/drop behavior, dependency-call assertions. Fixture/data-file assertions remain allowed when behavior genuinely depends on fixture content.
+
 New or modified tests are allowed only when one of these is true:
 
 - The user explicitly asked for test authoring.

@@ -180,15 +180,16 @@ If two tests look similar but test different initial states, entry paths, or ass
 
 ## Common mistakes
 
-| Mistake                                                                                | Fix                                                                                 |
-| -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Creating one test file per interaction AC                                              | Create one spec-owner suite and put interactions in `// MARK:` sections.            |
-| Naming new suites `...FeatureTests.swift`                                              | Use `<SpecID><PascalCaseSpecTitle>Tests.swift`.                                     |
-| Keeping product behavior in `PolicyTests` or `ContractTests` after a spec owner exists | Move the behavior under the spec suite; keep only pure technical contracts outside. |
-| Mixing fixtures and executable assertions in the same support file                     | Keep support files limited to infrastructure; assertions live in spec suites.       |
-| Documenting test intent with plain `//` method comments                                | Use the required `///` traceability shape before every interaction test method.     |
-| Adding `TestStore.send` mutation closures for actions that do not change state         | Omit the closure and assert external effects or unchanged state separately.         |
-| Using the test target name as the SwiftPM filter                                       | Filter by suite class, such as `--filter <SpecID><PascalCaseSpecTitle>Tests`.       |
+| Mistake                                                                                             | Fix                                                                                                                                                                                          |
+| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Creating one test file per interaction AC                                                           | Create one spec-owner suite and put interactions in `// MARK:` sections.                                                                                                                     |
+| Naming new suites `...FeatureTests.swift`                                                           | Use `<SpecID><PascalCaseSpecTitle>Tests.swift`.                                                                                                                                              |
+| Keeping product behavior in `PolicyTests` or `ContractTests` after a spec owner exists              | Move the behavior under the spec suite; keep only pure technical contracts outside.                                                                                                          |
+| Mixing fixtures and executable assertions in the same support file                                  | Keep support files limited to infrastructure; assertions live in spec suites.                                                                                                                |
+| Documenting test intent with plain `//` method comments                                             | Use the required `///` traceability shape before every interaction test method.                                                                                                              |
+| Adding `TestStore.send` mutation closures for actions that do not change state                      | Omit the closure and assert external effects or unchanged state separately.                                                                                                                  |
+| Using the test target name as the SwiftPM filter                                                    | Filter by suite class, such as `--filter <SpecID><PascalCaseSpecTitle>Tests`.                                                                                                                |
+| Asserting Swift source text (literal strings, view type names, declaration order) as behavior proof | Verify observable behavior: TCA action/state/effect, accessibility, hitTest/drop, dependency-call assertions. Fixture/data-file assertions allowed when behavior depends on fixture content. |
 
 ## Quick reference
 
@@ -199,5 +200,5 @@ If two tests look similar but test different initial states, entry paths, or ass
 | Method doc comment        | `/// <SPEC-ID>-<interaction_id>: <scenario>` + intent + 검증 내용/사전 조건/기대 결과 |
 | Product behavior location | Owning spec suite under `Specs/`                                                      |
 | Fixture/recorder location | Flat files under `Support/`, named by role/type such as `PaymentFixtures.swift`       |
-| Fixture source default       | Root `fixtures/` submodule payload under `fixtures/fixtures/**`; path-equivalence variants still derive from sandboxed real fixtures |
+| Fixture source default    | Root `fixtures/` submodule payload under `fixtures/fixtures/**`; path-equivalence variants still derive from sandboxed real fixtures |
 | Verification handoff      | `../../testing/SKILL.md` with focused class filter                                    |
