@@ -164,6 +164,36 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
         XCTAssertEqual(state.accountAccessAuthAxis, .signInFailed)
     }
 
+    /// ACC-003-guard_session_lapse: session_expired 다이얼로그 제목이 스펙 문구와 일치한다.
+    /// Spec: ACC-003-guard_session_lapse.md:59, 61-62
+    /// - 검증 내용: session_expired title == "Session expired. Log in again to continue."
+    /// - 기대 결과: 세션 만료 시 제목이 정확히 노출된다.
+    func testSessionExpiredCopyMatchesSpec() {
+        XCTAssertEqual(
+            SessionLapseGuardView.dialogTitle(didSignInFail: true),
+            "Session expired. Log in again to continue.",
+        )
+    }
+
+    /// ACC-003-guard_session_lapse: logged_out 다이얼로그 제목이 스펙 문구와 일치한다.
+    /// Spec: ACC-003-guard_session_lapse.md:59, 61-62
+    /// - 검증 내용: logged_out title == "Log in to continue."
+    /// - 기대 결과: 로그아웃 상태에서 제목이 정확히 노출된다.
+    func testLoggedOutCopyMatchesSpec() {
+        XCTAssertEqual(
+            SessionLapseGuardView.dialogTitle(didSignInFail: false),
+            "Log in to continue.",
+        )
+    }
+
+    /// ACC-003-guard_session_lapse: 로그인 버튼 visible copy가 스펙 문구와 일치한다.
+    /// Spec: ACC-003-guard_session_lapse.md:59, 61-62
+    /// - 검증 내용: button title == "Log in"
+    /// - 기대 결과: 재인증 CTA가 정확히 노출된다.
+    func testLoginButtonCopyMatchesSpec() {
+        XCTAssertEqual(SessionLapseGuardView.loginButtonTitle, "Log in")
+    }
+
     /// ACC-003-guard_session_lapse: 중복 overlay 표시가 dedup guard에 의해 무시된다.
     /// isSessionExpired가 true인 상태에서 중복 처리가 발생해도 상태가 유지되는지 검증한다.
     /// - 검증 내용: 중복 만료 후에도 didSignInFail, hasAccountSession, isSessionExpired가 유지된다.
