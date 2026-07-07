@@ -63,6 +63,7 @@ extension AiChatFeature {
             state.streamingAssistantDraft = nil
             applyFinal(response: normalizedResponse, lock: finalizedLock, state: &state)
             snapshot = makeSessionSnapshot(state: state, lock: finalizedLock, updatedAtMs: terminalTimestampMs)
+            state.executionPhase = .completed(finalizedLock.recordingFinalSnapshot(snapshot))
         } else {
             state.streamingAssistantDraft = nil
             state.lockedModelHandle = nil

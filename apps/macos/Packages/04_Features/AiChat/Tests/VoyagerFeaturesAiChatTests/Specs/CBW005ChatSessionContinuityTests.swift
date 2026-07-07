@@ -1138,6 +1138,99 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertTrue(savedSnapshots.value.contains(expectedOriginalSnapshot))
     }
 
+    func testVisibleFinalStoresFinalSnapshotOnCompletedOwner() async {
+        let persistence = AiChatSessionPersistenceSpy()
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let sessionID = makeCBW005SessionID("13131313-1313-1313-1313-131313131313")
+        let fixedMs: Int64 = 1_700_000_001_313
+        let userMessage = AiChatMessage(role: .user, content: "Question before visible final")
+        let assistantMessage = AiChatMessage(role: .assistant, content: "Visible final answer")
+        let request = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: sessionID,
+                requestID: AiChatRequestID(rawValue: makeUUID("13131313-1313-1313-1313-131313131314")),
+                runID: AiChatRunID(rawValue: makeUUID("13131313-1313-1313-1313-131313131315")),
+                model: selectedHandle,
+                selectedRow: catalogRows[0],
+            ),
+            messages: [userMessage],
+        )
+        let processingLock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        let finalizedLock = processingLock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
+        let expectedSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: nil,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [userMessage, assistantMessage],
+            lastRequestID: finalizedLock.requestID,
+            lastRunID: finalizedLock.runID,
+            lastRequestContext: finalizedLock.context.requestContext,
+            updatedAtMs: fixedMs,
+        )
+        let finalizedLockWithSnapshot = finalizedLock.recordingFinalSnapshot(expectedSnapshot)
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [userMessage],
+            draftText: "",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: selectedHandle,
+            executionPhase: .processing(processingLock),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: TimeInterval(fixedMs) / 1000))
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in
+                    await persistence.save(snapshot)
+                },
+                deleteSession: { _ in },
+            )
+        }
+
+        await store.send(.executionEvent(.final(response: AiChatResponse(
+            context: processingLock.context,
+            assistantMessage: assistantMessage,
+            completedAtMs: fixedMs,
+        )))) { state in
+            state.transcriptHistory = [userMessage, assistantMessage]
+            state.lockedModelHandle = nil
+            state.lastRequestContext = processingLock.context.requestContext
+            state.lastRequestContextModelHandle = selectedHandle
+            state.executionPhase = .completed(finalizedLockWithSnapshot)
+            state.transcriptAutoScrollVersion += 1
+        }
+
+        await store.receive(.sessionSnapshotSaved(
+            AiChatSessionSummary(snapshot: expectedSnapshot),
+            snapshot: expectedSnapshot,
+            requestID: finalizedLockWithSnapshot.requestID,
+            runID: finalizedLockWithSnapshot.runID,
+        )) { state in
+            state.sessionList.replaceRow(AiChatSessionSummary(snapshot: expectedSnapshot))
+            state.sessionList.selectedSessionID = sessionID
+            state.sessionList.unreadCompletedSessionIDs = [sessionID]
+            state.sessionList.errorMessage = nil
+        }
+
+        XCTAssertEqual(persistence.snapshots, [expectedSnapshot])
+        XCTAssertEqual(store.state.executionPhase.lock?.finalSnapshot, expectedSnapshot)
+        await store.finish()
+    }
+
     func testPersistenceRecoveryRetryUsesFinalSnapshotStoredOnRequestLock() async {
         let persistence = AiChatSessionPersistenceSpy()
         let catalogRows = makeCatalogRows()

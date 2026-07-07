@@ -154,6 +154,20 @@ public struct AiChatRequestLock: Equatable, Sendable {
     public let historyTruncation: AiChatHistoryTruncationMetadata
     public let observabilitySummary: AiChatRequestObservabilitySummary
 
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.kind == rhs.kind
+            && lhs.requestID == rhs.requestID
+            && lhs.runID == rhs.runID
+            && lhs.context == rhs.context
+            && lhs.request == rhs.request
+            && lhs.selectedModelHandle == rhs.selectedModelHandle
+            && lhs.selectedModelRow == rhs.selectedModelRow
+            && lhs.assistantReplacementIndex == rhs.assistantReplacementIndex
+            && lhs.customTitle == rhs.customTitle
+            && lhs.historyTruncation == rhs.historyTruncation
+            && lhs.observabilitySummary == rhs.observabilitySummary
+    }
+
     public init(
         kind: AiChatRequestKind,
         requestID: AiChatRequestID,
