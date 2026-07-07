@@ -227,7 +227,11 @@ final class AppRootCompositionTests: XCTestCase {
         initialState.lifecycle.sessionLapseGuard = AccountAccessFeature.State()
         let store = makeAccountAccessGrantedStore(initialState: initialState)
 
-        await store.send(.lifecycle(.sessionLapseGuard(.delegate(.unlocked(snapshot)))))
+        await store.send(.lifecycle(.sessionLapseGuard(.delegate(.unlocked(snapshot))))) { state in
+            state.lifecycle.lastAccessStatus = .coreLicenseActive
+            state.lifecycle.accountAccessGateResolved = true
+            state.lifecycle.sessionLapseGuard = nil
+        }
 
         await store.receive(\.settings.accessStatusLoaded) { state in
             state.settings.accessStatus = .coreLicenseActive

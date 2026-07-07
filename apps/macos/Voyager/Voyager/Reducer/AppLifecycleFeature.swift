@@ -319,6 +319,7 @@ struct AppLifecycleFeature {
             switch action {
             case let .sessionLapseGuard(.delegate(.unlocked(snapshot))):
                 state.lastAccessStatus = snapshot.status
+                state.accountAccessGateResolved = true
                 state.sessionLapseGuard = nil
                 return .none
             default:
