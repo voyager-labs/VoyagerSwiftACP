@@ -7,6 +7,7 @@ public enum SentryBootstrap {
         appVersion: String?,
         userId: String?,
         component: String,
+        enableAppHangTracking: Bool = true,
     ) {
         guard let dsn = Dotenv["PUBLIC_SENTRY_DSN"]?.stringValue, !dsn.isEmpty else {
             return
@@ -20,6 +21,7 @@ public enum SentryBootstrap {
                 options.tracesSampleRate = NSNumber(value: tracesSampleRate)
             }
             options.enableLogs = true
+            options.enableAppHangTracking = enableAppHangTracking
             if let environment = Dotenv["APP_ENV"]?.stringValue, !environment.isEmpty {
                 options.environment = environment
             }

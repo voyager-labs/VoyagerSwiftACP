@@ -5,20 +5,26 @@ post-checkout:
   parallel: false
   commands:
     mise-trust:
-      run: |
-        mise trust -q 2>/dev/null || true
+      run: mise trust --all -y
     lefthook-install:
       run: test -f "$(git rev-parse --git-path hooks/post-checkout)" || lefthook install
     submodules:
       run: git submodule update --init --recursive
     docs-canonical-npm-ci:
       run: |
-        if git diff --name-only {1} {2} | grep -qE '^docs/canonical/(package\.json|package-lock\.json)$'; then
+        if [ "{1}" = "0000000000000000000000000000000000000000" ]; then
+          if [ -f docs/canonical/package-lock.json ] && [ ! -d docs/canonical/node_modules ]; then
+            echo ":: docs/canonical node_modules missing — running npm ci..."
+            cd docs/canonical && npm ci
+          fi
+          exit 0
+        fi
+        if git diff --name-only {1} {2} -- docs/canonical/package.json docs/canonical/package-lock.json | grep -q .; then
           echo ":: docs/canonical package manifest changed — running npm ci..."
           cd docs/canonical && npm ci
         fi
     codegraph:
-      run: test -d .codegraph || mise exec -- codegraph init -i
+      run: test -d .codegraph || (mise trust --all -y && mise exec -- codegraph init -i)
     cupertino:
       run: command -v cupertino >/dev/null 2>&1 || mise install cupertino
 

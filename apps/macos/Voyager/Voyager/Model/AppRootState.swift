@@ -10,7 +10,4 @@ struct AppRootState: Equatable {
     var updater: UpdaterFeature.State = .init()
     var settings: SettingsFeature.State = .init()
     var menuCommands: MenuCommandsFeature.State = .init()
-    var isHelperExternalFileBridgeStarted = false
-    var lastHelperReady = false
-    var windowPresenceBeforeWindowManagerAction: Bool?
 }

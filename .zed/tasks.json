@@ -1,0 +1,158 @@
+[
+  {
+    "label": "Voyager Dev: Launch (Debug)",
+    "command": "./scripts/dev/macos-launch.sh",
+    "args": [
+      "--scheme",
+      "Voyager-Dev",
+      "--configuration",
+      "Debug",
+      "--env",
+      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "Voyager Dev: Launch (Release)",
+    "command": "./scripts/dev/macos-launch.sh",
+    "args": [
+      "--scheme",
+      "Voyager-Dev",
+      "--configuration",
+      "Release",
+      "--env",
+      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "Voyager Prod: Launch (Debug)",
+    "command": "./scripts/dev/macos-launch.sh",
+    "args": [
+      "--scheme",
+      "Voyager-Prod",
+      "--configuration",
+      "Debug"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "Voyager Prod: Launch (Release)",
+    "command": "./scripts/dev/macos-launch.sh",
+    "args": [
+      "--scheme",
+      "Voyager-Prod",
+      "--configuration",
+      "Release"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "VoyagerHelper Dev: Launch (Debug)",
+    "command": "./scripts/dev/macos-launch.sh",
+    "args": [
+      "--scheme",
+      "VoyagerHelper-Dev",
+      "--configuration",
+      "Debug",
+      "--env",
+      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "VoyagerHelper Dev: Launch (Release)",
+    "command": "./scripts/dev/macos-launch.sh",
+    "args": [
+      "--scheme",
+      "VoyagerHelper-Dev",
+      "--configuration",
+      "Release",
+      "--env",
+      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "OnboardingHost Dev: Launch (Debug)",
+    "command": "./scripts/dev/macos-launch.sh",
+    "args": [
+      "--scheme",
+      "OnboardingHost-Dev",
+      "--configuration",
+      "Debug",
+      "--env",
+      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT",
+      "--env",
+      "VOYAGER_ONBOARDING_MOCK_BETA=1"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "OnboardingHost Dev: Launch (Release)",
+    "command": "./scripts/dev/macos-launch.sh",
+    "args": [
+      "--scheme",
+      "OnboardingHost-Dev",
+      "--configuration",
+      "Release",
+      "--env",
+      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT",
+      "--env",
+      "VOYAGER_ONBOARDING_MOCK_BETA=1"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "SettingsHost Dev: Launch (Debug)",
+    "command": "./scripts/dev/macos-launch.sh",
+    "args": [
+      "--scheme",
+      "SettingsHost-Dev",
+      "--configuration",
+      "Debug",
+      "--env",
+      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "SettingsHost Dev: Launch (Release)",
+    "command": "./scripts/dev/macos-launch.sh",
+    "args": [
+      "--scheme",
+      "SettingsHost-Dev",
+      "--configuration",
+      "Release",
+      "--env",
+      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "FileManagerHost Dev: Launch (Debug)",
+    "command": "./scripts/dev/macos-launch.sh",
+    "args": [
+      "--scheme",
+      "FileManagerHost-Dev",
+      "--configuration",
+      "Debug",
+      "--env",
+      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "FileManagerHost Dev: Launch (Release)",
+    "command": "./scripts/dev/macos-launch.sh",
+    "args": [
+      "--scheme",
+      "FileManagerHost-Dev",
+      "--configuration",
+      "Release",
+      "--env",
+      "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  }
+]
