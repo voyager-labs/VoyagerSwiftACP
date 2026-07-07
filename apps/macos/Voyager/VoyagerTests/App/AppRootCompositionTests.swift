@@ -6,6 +6,7 @@ import VoyagerFeaturesUpdateVersion
 import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
 @testable import VoyagerPagesSettings
+import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 import XCTest
 
@@ -480,6 +481,79 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertEqual(saved.value?.status, .coreLicenseActive)
         XCTAssertEqual(saved.value?.currentPeriodEnd, cachedCurrentPeriodEnd)
         XCTAssertEqual(saved.value?.fetchedAt, cachedFetchedAt)
+        await store.finish()
+    }
+
+    /// auth_session_flow.md:111-115, ACC-003-guard_session_lapse.md:26-31
+    /// sessionExpiredDetected(reason:)는 reason과 무관하게 lastAccessStatus/accountAccessGateResolved를
+    /// 즉시 지우고, 이후 appReopen이 reopen delegate를 다시 보내지 못하게 막는다.
+    func testSessionExpiredDetectedInvalidatesAppLifecycleAndBlocksAppReopenForAllReasons() async {
+        let reasons: [AccountSessionEndReason?] = [
+            .explicitSignOut,
+            .sessionExpired,
+            nil,
+        ]
+
+        for reason in reasons {
+            var initialState = AppLifecycleFeature.State()
+            initialState.lastAccessStatus = .coreLicenseActive
+            initialState.accountAccessGateResolved = true
+
+            let store = TestStore(initialState: initialState) {
+                AppLifecycleFeature()
+            } withDependencies: {
+                $0.accountSessionClient.read = { nil }
+                $0.helperAppClient.start = {}
+                $0.helperAppClient.stop = {}
+                $0.onboardingWindowClient.showIfNeeded = { false }
+                $0.onboardingWindowClient.isRequired = { true }
+                $0.notificationCenterClient.notifications = { _, _ in
+                    AsyncStream { continuation in
+                        continuation.finish()
+                    }
+                }
+            }
+
+            await store.send(.sessionExpiredDetected(reason: reason)) { state in
+                state.lastAccessStatus = nil
+                state.accountAccessGateResolved = false
+            }
+
+            await store.send(.launch(.appReopen(hasVisibleWindows: false)))
+            await store.finish()
+        }
+    }
+
+    /// auth_session_flow.md:111-115, ACC-003-guard_session_lapse.md:26-31
+    /// sessionLapseGuard가 이미 존재해도 sessionExpiredDetected(reason:)는 먼저
+    /// lastAccessStatus/accountAccessGateResolved를 무효화해야 stale active access가 남지 않는다.
+    func testSessionExpiredDetectedInvalidatesEvenWhenSessionLapseGuardAlreadyExists() async {
+        var initialState = AppLifecycleFeature.State()
+        initialState.lastAccessStatus = .coreLicenseActive
+        initialState.accountAccessGateResolved = true
+        initialState.sessionLapseGuard = AccountAccessFeature.State()
+
+        let store = TestStore(initialState: initialState) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.accountSessionClient.read = { nil }
+            $0.helperAppClient.start = {}
+            $0.helperAppClient.stop = {}
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+
+        await store.send(.sessionExpiredDetected(reason: .sessionExpired)) { state in
+            state.lastAccessStatus = nil
+            state.accountAccessGateResolved = false
+        }
+
+        await store.send(.launch(.appReopen(hasVisibleWindows: false)))
         await store.finish()
     }
 }

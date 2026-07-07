@@ -286,6 +286,8 @@ struct AppLifecycleFeature {
                 // 와 세션 만료(refresh/decoding 실패) 양쪽이 모두 이 notification을 post하므로
                 // 두 원인이 같은 경로로 전달된다. T5에서 reason 구분이 추가되었으며,
                 // 두 경우 모두 동일하게 guard를 표시한다 (PRESERVED 동작).
+                state.lastAccessStatus = nil
+                state.accountAccessGateResolved = false
                 guard state.sessionLapseGuard == nil else { return .none }
                 // ACC-003: 온보딩 윈도우가 활성 상태이면 세션 만료/로그아웃 보호를 스킵한다
                 guard !onboardingWindowClient.isRequired() else { return .none }
