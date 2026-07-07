@@ -52,12 +52,13 @@ extension AiChatFeature {
         let finalizedLock = matched.lock.recordingTerminal(at: terminalTimestampMs, failure: nil, wasCancelled: false)
         let snapshot: AiChatSessionSnapshot
         if matched.isBackground {
-            state.backgroundExecutionPhases[finalizedLock.requestID] = .completed(finalizedLock)
             snapshot = makeOffscreenFinalSnapshot(
                 response: normalizedResponse,
                 lock: finalizedLock,
                 updatedAtMs: terminalTimestampMs,
             )
+            let finalizedLockWithSnapshot = finalizedLock.recordingFinalSnapshot(snapshot)
+            state.backgroundExecutionPhases[finalizedLock.requestID] = .completed(finalizedLockWithSnapshot)
         } else if isVisibleRequest(lock: finalizedLock, state: state) {
             state.streamingAssistantDraft = nil
             applyFinal(response: normalizedResponse, lock: finalizedLock, state: &state)
@@ -66,14 +67,14 @@ extension AiChatFeature {
             state.streamingAssistantDraft = nil
             state.lockedModelHandle = nil
             state.lastExecutionFailure = nil
-            state.executionPhase = .completed(finalizedLock)
             snapshot = makeOffscreenFinalSnapshot(
                 response: normalizedResponse,
                 lock: finalizedLock,
                 updatedAtMs: terminalTimestampMs,
             )
+            state.executionPhase = .completed(finalizedLock.recordingFinalSnapshot(snapshot))
         }
-        return saveFinalSnapshot(snapshot, finalizedLock: finalizedLock)
+        return saveFinalSnapshot(snapshot, finalizedLock: finalizedLock.recordingFinalSnapshot(snapshot))
     }
 
     private func processingLock(

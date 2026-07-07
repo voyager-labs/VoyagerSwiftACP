@@ -20,11 +20,7 @@ extension AiChatFeature {
     }
 
     private func retryPersistenceRecovery(lock: AiChatRequestLock, state: State) -> Effect<Action> {
-        let snapshot = makeSessionSnapshot(
-            state: state,
-            lock: lock,
-            updatedAtMs: lock.observabilitySummary.terminalAtMs ?? currentTimestampMs(),
-        )
+        let snapshot = persistenceRecoverySnapshot(for: lock, state: state)
         return .run { [aiChatSessionPersistenceClient] send in
             do {
                 try await aiChatSessionPersistenceClient.saveSession(snapshot)
@@ -53,7 +49,8 @@ extension AiChatFeature {
             return .none
 
         default:
-            guard let backgroundLock = state.backgroundExecutionPhases[lock.requestID]?.lock,
+            guard let backgroundPhase = state.backgroundExecutionPhases[lock.requestID],
+                  let backgroundLock = backgroundPhase.lock,
                   backgroundLock.runID == lock.runID
             else { return .none }
             state.backgroundExecutionPhases[lock.requestID] = .persistenceRecovery(lock, failure)
@@ -81,5 +78,13 @@ extension AiChatFeature {
         state.executionPhase = .persistenceRecovery(lock, failure)
         state.lastExecutionFailure = failure
         return .none
+    }
+
+    private func persistenceRecoverySnapshot(for lock: AiChatRequestLock, state: State) -> AiChatSessionSnapshot {
+        lock.finalSnapshot ?? makeSessionSnapshot(
+            state: state,
+            lock: lock,
+            updatedAtMs: lock.observabilitySummary.terminalAtMs ?? currentTimestampMs(),
+        )
     }
 }

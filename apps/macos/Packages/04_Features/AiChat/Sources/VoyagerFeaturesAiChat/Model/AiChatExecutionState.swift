@@ -150,6 +150,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
     public let selectedModelRow: AiModelCatalogRow?
     public let assistantReplacementIndex: Int?
     public let customTitle: String?
+    public let finalSnapshot: AiChatSessionSnapshot?
     public let historyTruncation: AiChatHistoryTruncationMetadata
     public let observabilitySummary: AiChatRequestObservabilitySummary
 
@@ -163,6 +164,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
         selectedModelRow: AiModelCatalogRow?,
         assistantReplacementIndex: Int?,
         customTitle: String? = nil,
+        finalSnapshot: AiChatSessionSnapshot? = nil,
         historyTruncation: AiChatHistoryTruncationMetadata = .init(
             includedMessageCount: 0,
             excludedMessageCount: 0,
@@ -180,6 +182,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
         self.selectedModelRow = selectedModelRow
         self.assistantReplacementIndex = assistantReplacementIndex
         self.customTitle = customTitle
+        self.finalSnapshot = finalSnapshot
         self.historyTruncation = historyTruncation
         self.observabilitySummary = observabilitySummary
     }
@@ -210,6 +213,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
         self.selectedModelRow = selectedModelRow
         self.assistantReplacementIndex = assistantReplacementIndex
         customTitle = nil
+        finalSnapshot = nil
         self.historyTruncation = historyTruncation
         self.observabilitySummary = observabilitySummary
     }
@@ -225,6 +229,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
             selectedModelRow: selectedModelRow,
             assistantReplacementIndex: assistantReplacementIndex,
             customTitle: customTitle,
+            finalSnapshot: finalSnapshot,
             historyTruncation: historyTruncation,
             observabilitySummary: observabilitySummary.recordingDelta(at: timestampMs),
         )
@@ -245,12 +250,30 @@ public struct AiChatRequestLock: Equatable, Sendable {
             selectedModelRow: selectedModelRow,
             assistantReplacementIndex: assistantReplacementIndex,
             customTitle: customTitle,
+            finalSnapshot: finalSnapshot,
             historyTruncation: historyTruncation,
             observabilitySummary: observabilitySummary.recordingTerminal(
                 at: timestampMs,
                 failure: failure,
                 wasCancelled: wasCancelled,
             ),
+        )
+    }
+
+    public func recordingFinalSnapshot(_ snapshot: AiChatSessionSnapshot) -> Self {
+        Self(
+            kind: kind,
+            requestID: requestID,
+            runID: runID,
+            context: context,
+            request: request,
+            selectedModelHandle: selectedModelHandle,
+            selectedModelRow: selectedModelRow,
+            assistantReplacementIndex: assistantReplacementIndex,
+            customTitle: customTitle,
+            finalSnapshot: snapshot,
+            historyTruncation: historyTruncation,
+            observabilitySummary: observabilitySummary,
         )
     }
 }

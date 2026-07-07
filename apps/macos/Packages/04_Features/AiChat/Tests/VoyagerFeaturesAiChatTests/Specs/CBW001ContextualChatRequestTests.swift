@@ -1412,18 +1412,31 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         stream.finish()
 
         let finalizedLock = lock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
-        await store.receive(.executionEvent(.final(response: finalResponse))) { state in
-            state.transcriptHistory = [
+        let expectedFinalSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [
                 AiChatMessage(role: .user, content: "Hello"),
                 AiChatMessage(role: .assistant, content: "Hi"),
-            ]
+            ],
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: lock.context.requestContext,
+            updatedAtMs: fixedMs,
+        )
+        let finalizedLockWithSnapshot = finalizedLock.recordingFinalSnapshot(expectedFinalSnapshot)
+        await store.receive(.executionEvent(.final(response: finalResponse))) { state in
+            state.transcriptHistory = expectedFinalSnapshot.transcriptHistory
             state.lockedModelHandle = nil
             state.executionPhase = .completed(finalizedLock)
         }
 
-        await store.receive(.persistenceFailed(finalizedLock, .unknown)) { state in
+        await store.receive(.persistenceFailed(finalizedLockWithSnapshot, .unknown)) { state in
             state.lastExecutionFailure = .unknown
-            state.executionPhase = .persistenceRecovery(finalizedLock, .unknown)
+            state.executionPhase = .persistenceRecovery(finalizedLockWithSnapshot, .unknown)
         }
 
         XCTAssertEqual(store.state.transcriptHistory, [
