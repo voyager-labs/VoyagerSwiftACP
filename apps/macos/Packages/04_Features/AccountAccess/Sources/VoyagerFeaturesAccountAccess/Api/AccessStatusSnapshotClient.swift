@@ -8,7 +8,7 @@ public struct AccessStatusSnapshotClient: Sendable {
     public var save: @Sendable (_ snapshot: AccessStatusSnapshot) async -> Void
     public var remove: @Sendable () async -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         load: @escaping @Sendable () async -> AccessStatusSnapshot?,
         save: @escaping @Sendable (_ snapshot: AccessStatusSnapshot) async -> Void,
         remove: @escaping @Sendable () async -> Void,
@@ -20,7 +20,7 @@ public struct AccessStatusSnapshotClient: Sendable {
 }
 
 extension AccessStatusSnapshotClient: DependencyKey {
-    public nonisolated static var liveValue: AccessStatusSnapshotClient {
+    nonisolated public static var liveValue: AccessStatusSnapshotClient {
         AccessStatusSnapshotClient(
             load: {
                 @Dependency(\.userDefaultsClient)
@@ -44,7 +44,7 @@ extension AccessStatusSnapshotClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: AccessStatusSnapshotClient {
+    nonisolated public static var testValue: AccessStatusSnapshotClient {
         AccessStatusSnapshotClient(
             load: { nil },
             save: { _ in },
@@ -52,7 +52,7 @@ extension AccessStatusSnapshotClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: AccessStatusSnapshotClient {
+    nonisolated public static var previewValue: AccessStatusSnapshotClient {
         testValue
     }
 }

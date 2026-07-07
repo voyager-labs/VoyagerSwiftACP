@@ -3,13 +3,13 @@ import Foundation
 import VoyagerFeaturesAccountAccess
 
 @CasePathable
-enum UnlockSurfaceAction: CasePathable, Sendable {
+enum UnlockSurfaceAction: CasePathable {
     case onAppear
     case unlockAccess(AccountAccessFeature.Action)
     case delegate(Delegate)
 
     @CasePathable
-    enum Delegate: CasePathable, Sendable {
+    enum Delegate: CasePathable {
         case unlocked(AccessStatusSnapshot)
     }
 }

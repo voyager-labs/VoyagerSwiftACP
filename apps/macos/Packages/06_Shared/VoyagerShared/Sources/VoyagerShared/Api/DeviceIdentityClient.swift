@@ -7,7 +7,7 @@ import IOKit
 public struct DeviceIdentityClient: Sendable {
     public var deviceId: @Sendable () throws -> String
 
-    public nonisolated init(deviceId: @escaping @Sendable () throws -> String) {
+    nonisolated public init(deviceId: @escaping @Sendable () throws -> String) {
         self.deviceId = deviceId
     }
 }
@@ -36,7 +36,7 @@ extension DeviceIdentityClient {
 // MARK: - DependencyKey
 
 extension DeviceIdentityClient: DependencyKey {
-    public nonisolated static var liveValue: DeviceIdentityClient {
+    nonisolated public static var liveValue: DeviceIdentityClient {
         DeviceIdentityClient(
             deviceId: {
                 guard let uuid = platformUUID() else {
@@ -47,13 +47,13 @@ extension DeviceIdentityClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: DeviceIdentityClient {
+    nonisolated public static var testValue: DeviceIdentityClient {
         DeviceIdentityClient(
             deviceId: { "test-device-id" },
         )
     }
 
-    public nonisolated static var previewValue: DeviceIdentityClient {
+    nonisolated public static var previewValue: DeviceIdentityClient {
         testValue
     }
 }

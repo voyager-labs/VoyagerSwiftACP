@@ -3,7 +3,7 @@ import Dependencies
 import XCTest
 
 final class AccessCredentialClientTests: XCTestCase {
-    // given
+    /// given
     private func makeClient() -> AccessCredentialClient {
         withDependencies {
             $0.accessCredentialClient = .testValue

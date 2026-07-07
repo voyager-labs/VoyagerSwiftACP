@@ -9,12 +9,12 @@ import VoyagerFeaturesEntryArrangements
 
 @Reducer
 struct FileManagerWindowCommandRoutingReducer {
+    typealias State = FileManagerWindowState
+    typealias Action = FileManagerWindowAction
+
     nonisolated private enum CancelID: Hashable {
         case contextualAiChatOpen
     }
-
-    typealias State = FileManagerWindowState
-    typealias Action = FileManagerWindowAction
 
     @Dependency(\.aiConnectionsFileClient)
     private var aiConnectionsFileClient

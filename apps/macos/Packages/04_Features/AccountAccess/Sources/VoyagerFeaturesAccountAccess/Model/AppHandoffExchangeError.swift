@@ -3,7 +3,7 @@ import Foundation
 /// VOY-334 `/auth/app-handoff/exchange` 호출 시 발생 가능한 에러.
 /// 서버 에러 코드를 타입 안전한 케이스로 매핑한다.
 /// 토큰·세션 정보는 로깅하지 않는다.
-public nonisolated enum AppHandoffExchangeError: Error, Equatable, Sendable {
+nonisolated public enum AppHandoffExchangeError: Error, Equatable, Sendable {
     /// 티켓이 이미 사용됨 (HTTP 409)
     case ticketAlreadyUsed
     /// 콜백 state가 서버 대기 상태와 불일치 (HTTP 400)

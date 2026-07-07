@@ -6,13 +6,13 @@ import VoyagerShared
 
 @Reducer
 struct FileManagerWindowLifecycleReducer {
+    typealias State = FileManagerWindowState
+    typealias Action = FileManagerWindowAction
+
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient
     @Dependency(\.metricsClient)
     var metricsClient
-
-    typealias State = FileManagerWindowState
-    typealias Action = FileManagerWindowAction
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
