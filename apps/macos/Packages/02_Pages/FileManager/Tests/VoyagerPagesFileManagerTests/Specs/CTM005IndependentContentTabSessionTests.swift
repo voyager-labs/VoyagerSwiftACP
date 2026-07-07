@@ -6281,6 +6281,81 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    func testInactiveInspectorBackgroundRecoverySucceededRefreshesContentSession() async {
+        let activeTabID = ContentTabID()
+        let inactiveTabID = ContentTabID()
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let inspectorVisibleSessionID = AiChatSessionID(rawValue: UUID())
+        let finalSnapshot = AiChatSessionSnapshot(
+            sessionID: aiSessionID,
+            status: .active,
+            provider: nil,
+            model: nil,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "test"),
+                AiChatMessage(role: .assistant, content: "done"),
+            ],
+            updatedAtMs: 1_234_567_890_000,
+        )
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+            .recordingFinalSnapshot(finalSnapshot)
+
+        var content = FileManagerContentFeature.State()
+        content.aiChat.sessionID = aiSessionID
+        content.aiChat.sessionStatus = .active
+        content.aiChat.transcriptHistory = [AiChatMessage(role: .user, content: "test")]
+        content.aiChat.executionPhase = .idle
+
+        var inactiveInspector = FileManagerInspectorFeature.State()
+        inactiveInspector.aiChat.sessionID = inspectorVisibleSessionID
+        inactiveInspector.aiChat.sessionStatus = .active
+        inactiveInspector.aiChat.backgroundExecutionPhases[requestLock.requestID] = .persistenceRecovery(
+            requestLock,
+            .unknown,
+        )
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: inactiveTabID,
+                    page: .directory,
+                    anchor: .directory(path: "/tmp/inactive"),
+                    isPinned: false,
+                    title: "Inactive",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: activeTabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabInspectorStates[inactiveTabID] = inactiveInspector.tabSnapshot()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.inspector(.aiChat(.persistenceRecoverySucceeded(requestLock))))
+
+        XCTAssertEqual(
+            store.state.tabInspectorStates[inactiveTabID]?.aiChat.backgroundExecutionPhases[requestLock.requestID],
+            .completed(requestLock),
+        )
+        XCTAssertEqual(store.state.content.aiChat.executionPhase, .completed(requestLock))
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory.map(\.content), ["test", "done"])
+        await store.finish()
+    }
+
     func testActiveInspectorBackgroundRecoverySucceededRefreshesContentSession() async {
         let aiSessionID = AiChatSessionID(rawValue: UUID())
         let inspectorVisibleSessionID = AiChatSessionID(rawValue: UUID())

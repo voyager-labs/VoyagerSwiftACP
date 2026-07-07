@@ -1457,6 +1457,18 @@ private func routeInactiveInspectorAiChatAction(
                 backgroundAiChat: state.inspector.aiChat,
                 state: &state,
             )
+        } else if let failedContext = failedAiChatContext(from: aiChatAction) {
+            refreshAiChatFailureFromBackgroundIfNeeded(
+                context: failedContext,
+                backgroundAiChat: state.inspector.aiChat,
+                state: &state,
+            )
+        } else if let recoveryLock = persistenceRecoveryLock(from: aiChatAction) {
+            refreshAiChatRecoveryFromBackgroundIfNeeded(
+                lock: recoveryLock,
+                backgroundAiChat: state.inspector.aiChat,
+                state: &state,
+            )
         }
         return .none
     }
@@ -1469,6 +1481,18 @@ private func routeInactiveInspectorAiChatAction(
         refreshAiChatSnapshotsFromBackgroundIfNeeded(
             summary: payload.summary,
             snapshot: payload.snapshot,
+            backgroundAiChat: inspectorState.aiChat,
+            state: &state,
+        )
+    } else if let failedContext = failedAiChatContext(from: aiChatAction) {
+        refreshAiChatFailureFromBackgroundIfNeeded(
+            context: failedContext,
+            backgroundAiChat: inspectorState.aiChat,
+            state: &state,
+        )
+    } else if let recoveryLock = persistenceRecoveryLock(from: aiChatAction) {
+        refreshAiChatRecoveryFromBackgroundIfNeeded(
+            lock: recoveryLock,
             backgroundAiChat: inspectorState.aiChat,
             state: &state,
         )
