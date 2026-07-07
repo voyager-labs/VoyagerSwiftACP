@@ -141,12 +141,12 @@ struct AppLifecycleFeature {
                         await send(.accountAccessGate(.accountAccessGranted(snapshot: snapshot)))
                     }
                 } else {
-                    return .send(.delegate(.openInitialWindowIfNeeded))
+                    return .send(.sessionExpiredDetected(reason: nil))
                 }
 
             case let .accountAccessGate(.accessStatusResponse(.failure(error))):
                 guard error == .networkFailure else {
-                    return .send(.delegate(.openInitialWindowIfNeeded))
+                    return .send(.sessionExpiredDetected(reason: nil))
                 }
                 let snapshotClient = snapshotClient
                 let accountSessionClient = accountSessionClient
@@ -157,7 +157,7 @@ struct AppLifecycleFeature {
                           dateNow.timeIntervalSince(cached.fetchedAt) <= 24 * 3600,
                           cached.currentPeriodEnd.map({ dateNow < $0 }) ?? true
                     else {
-                        await send(.delegate(.openInitialWindowIfNeeded))
+                        await send(.sessionExpiredDetected(reason: nil))
                         return
                     }
                     // session은 token file 기반으로 access_status 캐시와 무관하게
@@ -287,6 +287,7 @@ struct AppLifecycleFeature {
                 // 두 경우 모두 동일하게 guard를 표시한다 (PRESERVED 동작).
                 state.lastAccessStatus = nil
                 state.accountAccessGateResolved = false
+                state.isCheckingAccountAccess = false
                 guard state.sessionLapseGuard == nil else { return .none }
                 // ACC-003: 온보딩 윈도우가 활성 상태이면 세션 만료/로그아웃 보호를 스킵한다
                 guard !onboardingWindowClient.isRequired() else { return .none }

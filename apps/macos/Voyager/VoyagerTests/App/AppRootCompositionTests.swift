@@ -311,6 +311,28 @@ final class AppRootCompositionTests: XCTestCase {
         return store
     }
 
+    private func makeAccessFailureStore(
+        openCallCount: LockIsolated<Int>,
+        configureDependencies: ((inout DependencyValues) -> Void)? = nil,
+    ) -> TestStore<AppRootFeature.State, AppRootFeature.Action> {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.helperAppClient.start = {}
+            $0.helperAppClient.stop = {}
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.fileManagerWindowClient.open = { _ in
+                openCallCount.withValue { $0 += 1 }
+            }
+            configureDependencies?(&$0)
+        }
+        store.exhaustivity = .off
+        return store
+    }
+
     // MARK: - AppLifecycle access session hydration
 
     /// active access + session 존재: read가 반환한 session.expiresAt가 snapshot에 그대로 주입된다.
@@ -599,49 +621,53 @@ final class AppRootCompositionTests: XCTestCase {
 
     // MARK: - VOY-521 Task 1: Auth callback fallback routing
 
-    /// `application(_:open:)`가 `voyager://auth/callback`을 수신하면
-    /// AppRoot로 `.lifecycle(.sessionLapseGuard(.loginCallbackReceived(url)))`를 전달한다.
-    /// 온보딩 창이 없으면 routeAuthCallbackToOnboardingIfPresent가 false를 반환하므로
-    /// sessionLapseGuard 폴백이 실행됨. 온보딩 컨트롤러가 테스트 환경에 없으므로
-    /// 자연스럽게 onboarding-absent 경로를 검증.
-    /// TestStore는 external send(테스트 흐름 바깥의 send)를 추적하지 않으므로
-    /// plain `Store` + action-recording reducer로 동작 기반 검증.
-    /// `application(_:open:)`가 `voyager://auth/callback`을 수신하고 온보딩 창이 활성이면
-    /// AppRoot로 폴백 액션을 보내지 않는다. 온보딩-first semantics 보존 검증.
-    ///
-    /// Environment note: 호스트 Voyager.app가 테스트 시작 전에 전역 `onboardingWindowController`를
-    /// 초기화하므로 `routeAuthCallbackToOnboardingIfPresent(url)`가 항상 true를 반환한다.
-    /// 온보딩-absent 폴백 경로(`.lifecycle(.sessionLapseGuard(.loginCallbackReceived(url)))`)는
-    /// AppDelegate routing 관점에서 직접 검증 불가 — AppRoot reducer 수신은 AppLifecycleFeature
-    /// 테스트들(sessionLapseGuard ifLet)이 이미 커버.
-    func testAppDelegateRoutesOnboardingFirstWhenAuthCallbackArrives() throws {
+    /// `application(_:open:)`이 `voyager://auth/callback`을 수신하고 온보딩이 처리하면
+    /// AppRoot로 폴백 액션을 보내지 않는다 (onboarding-first semantics).
+    /// `resolveAuthCallbackRouting` seam을 true로 override하여 결정론적으로 검증.
+    func testAppDelegateSkipsAppRootFallbackWhenOnboardingHandlesCallback() throws {
         let box = ActionBox<AppRootAction>()
         let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
             _ActionRecordingAppRoot(box: box)
         }
         let appDelegate = AppDelegate()
         appDelegate.configure(appRootStore: store)
+        appDelegate.resolveAuthCallbackRouting = { _ in true }
 
         let url = try XCTUnwrap(URL(string: "voyager://auth/callback?code=abc"))
-        XCTAssertEqual(url.scheme, "voyager")
-        XCTAssertEqual(url.host, "auth")
-        XCTAssertEqual(url.path, "/callback")
-
         appDelegate.application(NSApp, open: [url])
 
-        // 온보딩이 활성이면 AppRoot로 sessionLapseGuard 폴백이 전달되지 않아야 한다.
-        let onboardingHandled = VoyagerPagesOnboarding.routeAuthCallbackToOnboardingIfPresent(url)
         let sentFallback = box.actions.contains { action in
             if case .lifecycle(.sessionLapseGuard(.loginCallbackReceived)) = action {
                 return true
             }
             return false
         }
-        if onboardingHandled {
-            XCTAssertFalse(sentFallback, "온보딩 활성 시 sessionLapseGuard 폴백 미전송 (onboarding-first)")
+        XCTAssertFalse(sentFallback, "온보딩 처리 시 AppRoot sessionLapseGuard 폴백 미전송")
+    }
+
+    /// `application(_:open:)`이 `voyager://auth/callback`을 수신하고 온보딩이 없으면
+    /// AppRoot로 `.lifecycle(.sessionLapseGuard(.loginCallbackReceived(url)))`를 전달한다.
+    /// 폴백 액션에 전달된 URL 페이로드까지 구조적으로 단언.
+    /// `resolveAuthCallbackRouting` seam을 false로 override하여 결정론적으로 검증.
+    func testAppDelegateFallsBackToSessionLapseGuardWhenOnboardingAbsent() throws {
+        let box = ActionBox<AppRootAction>()
+        let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
+            _ActionRecordingAppRoot(box: box)
         }
-        // 온보딩이 비활성이면 폴백이 전송되어야 함 — 환경 제약으로 아래는 비활성화:
-        // XCTAssertTrue(sentFallback, "온보딩 부재 시 sessionLapseGuard.loginCallbackReceived 폴백")
+        let appDelegate = AppDelegate()
+        appDelegate.configure(appRootStore: store)
+        appDelegate.resolveAuthCallbackRouting = { _ in false }
+
+        let url = try XCTUnwrap(URL(string: "voyager://auth/callback?code=abc"))
+        appDelegate.application(NSApp, open: [url])
+
+        let routed = box.actions.contains { action in
+            if case let .lifecycle(.sessionLapseGuard(.loginCallbackReceived(received))) = action {
+                return received == url
+            }
+            return false
+        }
+        XCTAssertTrue(routed, "온보딩 부재 시 AppRoot sessionLapseGuard.loginCallbackReceived로 폴백 (URL 페이로드 보존)")
     }
 
     /// `application(_:open:)`가 voyager://auth/callback이 아닌 URL을 수신하면
