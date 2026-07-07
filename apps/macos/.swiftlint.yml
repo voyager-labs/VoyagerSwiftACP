@@ -174,11 +174,29 @@ modifier_order:
     - typeMethods # static/class 같은 type member modifier입니다.
     - owned # borrowing/consuming 등 ownership modifier입니다.
 
+# 타입 내부 선언 순서 규칙.
+# 현재 2-그룹만 강제 (case/type_alias vs 나머지). SwiftFormat organizeDeclarations의
+# 실제 grouping에 맞춘 최소 검증 상태.
+#
+# 근본 원인: SwiftFormat은 computed property를 property로, SwiftLint는 method로
+# 분류하는 등 선언 카테고리 분류 기준이 상이. SwiftFormat보다 coarse한 그룹으로
+# 맞추지 않으면 매 커밋마다 충돌 발생.
+#
+# TODO: SwiftFormat 규칙 조정(--organizationmode type 그룹 세분화 또는 custom rule)과
+# 함께 order를 더 세분화할 것. 예:
+#   - [case]
+#   - [type_alias, associated_type]
+#   - [type_property]
+#   - [instance_property, ib_inspectable, ib_outlet]
+#   - [subtype]
+#   - [initializer, deinitializer, view_life_cycle_method]
+#   - [type_method, ib_action, ib_segue_action, other_method, subscript]
+# SwiftFormat과 선언 분류 기준을 정합한 후 활성화.
 type_contents_order:
-  severity: warning # SwiftFormat organizeDeclarations --organizationmode type의 실제 grouping에 맞춤.
+  severity: warning
   order:
     - [case, type_alias, associated_type] # type 정의 선언.
-    - [instance_property, ib_inspectable, ib_outlet, type_property, subtype, initializer, deinitializer, view_life_cycle_method, type_method, ib_action, ib_segue_action, other_method, subscript] # SwiftFormat이 나머지를 느슨하게 묶음 (computed property를 property로 분류하는 등 SwiftLint와 분류 기준 상이).
+    - [instance_property, ib_inspectable, ib_outlet, type_property, subtype, initializer, deinitializer, view_life_cycle_method, type_method, ib_action, ib_segue_action, other_method, subscript] # SwiftFormat이 나머지를 느슨하게 묶음.
 
 # 린터 실행 옵션
 analyzer_rules:
