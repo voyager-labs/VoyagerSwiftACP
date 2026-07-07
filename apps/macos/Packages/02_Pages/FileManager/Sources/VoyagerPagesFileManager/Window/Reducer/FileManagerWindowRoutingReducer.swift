@@ -1208,9 +1208,13 @@ private extension AiChatFeature.State {
         backgroundAiChat: AiChatFeature.State,
     ) {
         guard let matchingPhase = backgroundAiChat.backgroundExecutionPhases[lock.requestID]?
-            .matchingRecovery(lock: lock)
-            ?? backgroundAiChat.executionPhase.matchingRecovery(lock: lock)
+            .matchingRecoveryFollowUp(lock: lock)
+            ?? backgroundAiChat.executionPhase.matchingRecoveryFollowUp(lock: lock)
         else { return }
+
+        if let finalSnapshot = matchingPhase.lock?.finalSnapshot {
+            applyBackgroundRecoveryFinalSnapshot(finalSnapshot)
+        }
         executionPhase = matchingPhase
         streamingAssistantDraft = nil
         lockedModelHandle = nil
@@ -1219,6 +1223,18 @@ private extension AiChatFeature.State {
         } else {
             lastExecutionFailure = nil
         }
+    }
+
+    mutating func applyBackgroundRecoveryFinalSnapshot(_ snapshot: AiChatSessionSnapshot) {
+        sessionID = snapshot.sessionID
+        sessionStatus = snapshot.status
+        currentSessionCustomTitle = snapshot.customTitle
+        transcriptHistory = snapshot.transcriptHistory
+        transcriptAutoScrollVersion += 1
+        lastRequestContext = snapshot.lastRequestContext
+        lastRequestContextModelHandle = snapshot.model
+        selectedModelHandle = snapshot.model
+        selectedThinking = snapshot.selectedThinking
     }
 
     func hasBackgroundOwnerMatching(requestID: AiChatRequestID, runID: AiChatRunID?) -> Bool {
@@ -1319,14 +1335,19 @@ private extension AiChatExecutionPhase {
         return lock.requestID == requestID
     }
 
-    func matchingRecovery(lock expectedLock: AiChatRequestLock) -> Self? {
+    func matchingRecoveryFollowUp(lock expectedLock: AiChatRequestLock) -> Self? {
         guard let lock,
               lock.context.sessionID == expectedLock.context.sessionID,
               lock.requestID == expectedLock.requestID,
-              lock.runID == expectedLock.runID,
-              case .persistenceRecovery = self
+              lock.runID == expectedLock.runID
         else { return nil }
-        return self
+
+        switch self {
+        case .completed, .persistenceRecovery:
+            return self
+        case .idle, .processing, .failed, .cancelled:
+            return nil
+        }
     }
 
     func matchingFailure(context: AiChatRequestContextSnapshot) -> Self? {
@@ -1388,21 +1409,9 @@ private func routeInactiveInspectorAiChatAction(
         }
         return .none
     }
-    let finalSnapshotContext = backgroundFinalSnapshotContext(
-        from: aiChatAction,
-        backgroundAiChat: inspectorState.aiChat,
-    )
     let effect = AiChatFeature()
         .reduce(into: &inspectorState.aiChat, action: aiChatAction)
-        .map { action in
-            if case let .sessionSnapshotSaved(summary, _, _, _) = action,
-               let context = finalSnapshotContext,
-               let snapshot = makeOffscreenFinalSnapshot(summary: summary, context: context)
-            {
-                return FileManagerWindowAction.backgroundInspectorAiChatSnapshotPersisted(snapshot)
-            }
-            return FileManagerWindowAction.backgroundInspectorAiChat(action)
-        }
+        .map { FileManagerWindowAction.backgroundInspectorAiChat($0) }
 
     state.tabInspectorStates[tabID] = inspectorState.tabSnapshot()
     if let summary = sessionSnapshotSavedSummary(from: aiChatAction) {

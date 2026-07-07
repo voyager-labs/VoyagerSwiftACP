@@ -5715,6 +5715,103 @@ extension CTM005IndependentContentTabSessionTests {
         XCTAssertNil(store.state.backgroundInspectorAiChatStates[inspectorSessionID])
     }
 
+    func testInactiveInspectorFinalSaveRefreshesTabInspectorSnapshot() async {
+        let homeTabID = ContentTabID()
+        let directoryTabID = ContentTabID()
+        let inspectorSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: inspectorSessionID)
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath("/Users/test/Home")
+
+        var directoryContent = FileManagerContentFeature.State()
+        directoryContent.navigation.seedInitialFolderPath("/Users/test/Documents")
+
+        var inactiveInspector = FileManagerInspectorFeature.State()
+        inactiveInspector.inspectorVisible = true
+        inactiveInspector.activeMode = .chat
+        inactiveInspector.aiChat.sessionID = inspectorSessionID
+        inactiveInspector.aiChat.sessionStatus = .active
+        inactiveInspector.aiChat.executionPhase = .processing(requestLock)
+        inactiveInspector.aiChat.lockedModelHandle = requestLock.selectedModelHandle
+        inactiveInspector.aiChat.transcriptHistory = [
+            AiChatMessage(role: .user, content: "test"),
+        ]
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: directoryTabID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Documents"),
+                    isPinned: false,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: homeTabID,
+            recentlyClosed: nil,
+        )
+        state.content = homeContent
+        state.tabContentStates = [
+            homeTabID: homeContent,
+            directoryTabID: directoryContent,
+        ]
+        state.tabInspectorStates[directoryTabID] = inactiveInspector.tabSnapshot()
+        state.syncContentTabSidebarItems()
+
+        let store: TestStore<FileManagerFeature.State, FileManagerWindowAction> = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+            }
+        }
+        store.exhaustivity = .off
+
+        let response = AiChatResponse(
+            context: requestLock.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "done"),
+            completedAtMs: 1_234_567_891_000,
+        )
+
+        await store.send(.inspector(.aiChat(.executionEvent(.final(response: response)))))
+
+        let savedSnapshot = savedSnapshots.value.first
+        XCTAssertEqual(savedSnapshot?.sessionID, inspectorSessionID)
+        XCTAssertEqual(savedSnapshot?.transcriptHistory.map(\.content), ["test", "done"])
+
+        await store.receive { action in
+            guard case let .backgroundInspectorAiChat(.sessionSnapshotSaved(summary, snapshot, requestID, runID)) =
+                action
+            else {
+                return false
+            }
+            return summary.sessionID == inspectorSessionID
+                && snapshot?.sessionID == inspectorSessionID
+                && requestID == requestLock.requestID
+                && runID == requestLock.runID
+        }
+
+        XCTAssertNil(store.state.backgroundInspectorAiChatStates[inspectorSessionID])
+        XCTAssertEqual(
+            store.state.tabInspectorStates[directoryTabID]?.aiChat.transcriptHistory.map(\.content),
+            ["test", "done"],
+        )
+        await store.finish()
+    }
+
     func testBackgroundInspectorFinalSaveRefreshesInactiveSameSessionInspectorSnapshot() async {
         let homeTabID = ContentTabID()
         let directoryTabID = ContentTabID()
@@ -6144,6 +6241,55 @@ extension CTM005IndependentContentTabSessionTests {
         )
         XCTAssertEqual(store.state.content.aiChat.executionPhase, .persistenceRecovery(requestLock, .unknown))
         XCTAssertEqual(store.state.content.aiChat.lastExecutionFailure, .unknown)
+        await store.finish()
+    }
+
+    func testBackgroundAiChatRecoverySucceededAppliesFinalSnapshotToActiveSession() async {
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let finalSnapshot = AiChatSessionSnapshot(
+            sessionID: aiSessionID,
+            status: .active,
+            provider: nil,
+            model: nil,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "test"),
+                AiChatMessage(role: .assistant, content: "done"),
+            ],
+            updatedAtMs: 1_234_567_890_000,
+        )
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+            .recordingFinalSnapshot(finalSnapshot)
+
+        var activeContent = FileManagerContentFeature.State()
+        activeContent.aiChat.sessionID = aiSessionID
+        activeContent.aiChat.sessionStatus = .active
+        activeContent.aiChat.executionPhase = .persistenceRecovery(requestLock, .unknown)
+        activeContent.aiChat.lastExecutionFailure = .unknown
+        activeContent.aiChat.transcriptHistory = [AiChatMessage(role: .user, content: "test")]
+
+        var backgroundContent = FileManagerContentFeature.State()
+        backgroundContent.aiChat.sessionID = aiSessionID
+        backgroundContent.aiChat.sessionStatus = .active
+        backgroundContent.aiChat.backgroundExecutionPhases[requestLock.requestID] = .persistenceRecovery(
+            requestLock,
+            .unknown,
+        )
+
+        var state = FileManagerFeature.State()
+        state.content = activeContent
+        state.backgroundAiChatStates[aiSessionID] = backgroundContent
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.backgroundAiChat(.persistenceRecoverySucceeded(requestLock)))
+
+        XCTAssertNil(store.state.backgroundAiChatStates[aiSessionID])
+        XCTAssertEqual(store.state.content.aiChat.executionPhase, .completed(requestLock))
+        XCTAssertEqual(store.state.content.aiChat.lastExecutionFailure, nil)
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory.map(\.content), ["test", "done"])
         await store.finish()
     }
 
