@@ -123,17 +123,26 @@ enum DefaultFileViewerLive {
 
         let ourBundleID = appBundleID
 
-        // AND 일치 원칙: NSFileViewer와 LSHandler가 모두 같은 앱이어야 해당 상태. 불일치 시 unknown.
-        if nsFileViewer == ourBundleID && lsHandlerBundleID == ourBundleID {
+        // Voyager 판정은 두 저장소가 모두 일치해야 한다. Finder/타 앱 판정은 실제 open 동작의
+        // 기준인 NSFileViewer를 우선하되, NSFileViewer가 비어 있으면 LS의 명시적 타 앱 값을 사용한다.
+        if nsFileViewer == ourBundleID, lsHandlerBundleID == ourBundleID {
             return .voyagerIsDefault
         }
-        let nsIsFinder = nsFileViewer == nil || nsFileViewer == "com.apple.finder"
-        let lsIsFinder = lsHandlerBundleID == nil || lsHandlerBundleID == "com.apple.finder"
-        if nsIsFinder, lsIsFinder {
+        if nsFileViewer == "com.apple.finder" {
             return .finderIsDefault
         }
-        if nsFileViewer == lsHandlerBundleID, let bid = nsFileViewer, bid != ourBundleID {
+        if let bid = nsFileViewer, bid != defaultFileViewerReadFailedValue, bid != ourBundleID {
             return .otherIsDefault(appBundleID: bid, appDisplayName: appDisplayName(for: bid))
+        }
+        if nsFileViewer == nil,
+           let bid = lsHandlerBundleID,
+           bid != ourBundleID,
+           bid != "com.apple.finder"
+        {
+            return .otherIsDefault(appBundleID: bid, appDisplayName: appDisplayName(for: bid))
+        }
+        if nsFileViewer == nil {
+            return .finderIsDefault
         }
         return .unknown
     }

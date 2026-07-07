@@ -140,19 +140,48 @@ final class AppRootFeatureContractTests: XCTestCase {
 
     // MARK: - FMW-003: Cold Start URL Buffering
 
-    /// Cold state(창 없음)에서 receiveExternalURL 수신 시 pendingExternalURLs에 순서대로 저장됨을 검증
-    func testReceiveExternalURLBuffersAllWhenNoWindows() async throws {
-        let url1 = try XCTUnwrap(URL(string: "voyager://open?url=file:///Users/test-1"))
-        let url2 = try XCTUnwrap(URL(string: "voyager://open?url=file:///Users/test-2"))
+    /// Launch 완료 전 cold state에서 receiveExternalURL 수신 시 pending만 유지함을 검증.
+    func testReceiveExternalURLBuffersWhenNoWindowsBeforeLaunchFinishes() async throws {
+        let url = try XCTUnwrap(URL(string: "voyager://open?url=file:///Users/test-1"))
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
         }
 
-        await store.send(.receiveExternalURL(url1)) {
-            $0.pendingExternalURLs = [url1]
+        await store.send(.receiveExternalURL(url)) {
+            $0.pendingExternalURLs = [url]
+            $0.isExternalURLRouteInFlightWithoutWindow = true
         }
-        await store.send(.receiveExternalURL(url2)) {
-            $0.pendingExternalURLs = [url1, url2]
+    }
+
+    /// Launch 완료 후 no-window 상태에서 receiveExternalURL 수신 시 initial window 경로를 요청함을 검증.
+    func testReceiveExternalURLRequestsLifecycleFlushWhenNoWindowsAfterLaunchFinishes() async throws {
+        let url = try XCTUnwrap(URL(string: "voyager://open?url=file:///Users/test-1"))
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.didFinishLaunching = true
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: false, isDirectory: false)
+            }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.receiveExternalURL(url)) {
+            $0.pendingExternalURLs = [url]
+            $0.isExternalURLFlushDelegateScheduled = true
+            $0.isExternalURLRouteInFlightWithoutWindow = true
+        }
+        await store.receive { action in
+            guard case .lifecycle(.delegate(.openInitialWindowIfNeeded)) = action else { return false }
+            return true
+        }
+        XCTAssertTrue(store.state.pendingExternalURLs.isEmpty)
+        await store.receive { action in
+            guard case let .externalFileRouter(.receive(receivedURL)) = action else { return false }
+            return receivedURL == url
         }
     }
 
@@ -220,6 +249,117 @@ final class AppRootFeatureContractTests: XCTestCase {
         }
     }
 
+    func testLifecycleDelegateFlushesPendingExternalURLWithoutOpeningBlankInitialWindow() async throws {
+        let url = try XCTUnwrap(URL(string: "voyager://open?url=file:///tmp/voyager-cold-url"))
+        var state = AppRootFeature.State()
+        state.pendingExternalURLs = [url]
+
+        let store = TestStore(initialState: state) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: false, isDirectory: false)
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded))) {
+            $0.pendingExternalURLs = []
+        }
+        await store.receive { action in
+            guard case let .externalFileRouter(.receive(receivedURL)) = action else { return false }
+            return receivedURL == url
+        }
+    }
+
+    func testLifecycleDelegateKeepsPendingExternalURLWhenOnboardingRequired() async throws {
+        let url = try XCTUnwrap(URL(string: "voyager://open?url=file:///tmp/voyager-onboarding-url"))
+        let windowID = UUID()
+        var state = AppRootFeature.State()
+        state.pendingExternalURLs = [url]
+        state.isExternalURLFlushDelegateScheduled = true
+
+        let store = TestStore(initialState: state) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { true }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: false, isDirectory: false)
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded))) {
+            $0.isExternalURLFlushDelegateScheduled = false
+        }
+        XCTAssertEqual(store.state.pendingExternalURLs, [url])
+
+        await store.send(.windowManager(.file(.newWindow(path: nil)))) {
+            $0.windowManager.windows = [
+                WindowSessionState(id: windowID, window: .makeInitial(path: nil)),
+            ]
+            $0.windowManager.focusedWindowID = windowID
+            $0.pendingExternalURLs = []
+        }
+        await store.receive { action in
+            guard case let .externalFileRouter(.receive(receivedURL)) = action else { return false }
+            return receivedURL == url
+        }
+    }
+
+    func testReceiveExternalURLDoesNotScheduleDuplicateFlushDelegate() async throws {
+        let url = try XCTUnwrap(URL(string: "voyager://open?url=file:///tmp/voyager-duplicate-schedule"))
+        var state = AppRootFeature.State()
+        state.lifecycle.didFinishLaunching = true
+        state.isExternalURLFlushDelegateScheduled = true
+        state.isExternalURLRouteInFlightWithoutWindow = true
+
+        let store = TestStore(initialState: state) {
+            AppRootFeature()
+        }
+
+        await store.send(.receiveExternalURL(url)) {
+            $0.pendingExternalURLs = [url]
+        }
+    }
+
+    func testLifecycleDelegateDuringExternalURLRouteInFlightDoesNotOpenBlankInitialWindow() async {
+        var state = AppRootFeature.State()
+        state.isExternalURLFlushDelegateScheduled = true
+        state.isExternalURLRouteInFlightWithoutWindow = true
+
+        let store = TestStore(initialState: state) {
+            AppRootFeature()
+        }
+
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded))) {
+            $0.isExternalURLFlushDelegateScheduled = false
+        }
+        XCTAssertTrue(store.state.windowManager.windows.isEmpty)
+    }
+
+    func testExternalURLValidationErrorClearsNoWindowRouteInFlight() async throws {
+        let url = try XCTUnwrap(URL(string: "https://example.com/not-a-file"))
+        var state = AppRootFeature.State()
+        state.isExternalURLFlushDelegateScheduled = true
+        state.isExternalURLRouteInFlightWithoutWindow = true
+
+        let store = TestStore(initialState: state) {
+            AppRootFeature()
+        }
+
+        await store.send(.externalFileRouter(.failed(.urlValidationError(url)))) {
+            $0.externalFileRouter.currentStatus = .urlValidationError
+            $0.isExternalURLFlushDelegateScheduled = false
+            $0.isExternalURLRouteInFlightWithoutWindow = false
+        }
+    }
+
     func testLifecycleDelegateFlushesPendingExternalFileRouteWithoutOpeningBlankInitialWindow() async {
         let url = URL(fileURLWithPath: "/tmp/voyager-cold-file.txt")
         var state = AppRootFeature.State()
@@ -230,6 +370,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: state) {
             AppRootFeature()
         } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { false }
             $0.pathProbeClient.probeExistence = { _ in
                 PathProbeResult(exists: false, isDirectory: false)
             }
@@ -268,6 +409,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         let windowID = UUID()
 
         var initialState = AppRootFeature.State()
+        initialState.pendingExternalURLs = [url1, url2]
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
         } withDependencies: {
@@ -281,8 +423,6 @@ final class AppRootFeatureContractTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.receiveExternalURL(url1))
-        await store.send(.receiveExternalURL(url2))
         XCTAssertEqual(store.state.pendingExternalURLs, [url1, url2])
 
         await store.send(.windowManager(.file(.newWindow(path: nil))))
@@ -338,6 +478,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
         } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { false }
             $0.pathProbeClient.probeExistence = { _ in
                 PathProbeResult(exists: false, isDirectory: false)
             }

@@ -5,6 +5,7 @@ import VoyagerEntitiesCollection
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesFileManager
+import VoyagerPagesOnboarding
 import VoyagerPagesSettings
 import VoyagerShared
 
@@ -17,6 +18,8 @@ struct AppRootFeature {
     private var collectionAlertClient
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
+    @Dependency(\.onboardingWindowClient)
+    private var onboardingWindowClient
 
     private enum CancelID {
         static let appDidBecomeActiveObserver = "appDidBecomeActiveObserver"
@@ -87,7 +90,13 @@ struct AppRootFeature {
             switch delegateAction {
             case .openInitialWindowIfNeeded:
                 if hasPendingExternalRoutes(state) {
+                    state.isExternalURLFlushDelegateScheduled = false
+                    guard !onboardingWindowClient.isRequired() else { return .none }
                     return flushPendingExternalRoutes(state: &state)
+                }
+                if state.isExternalURLRouteInFlightWithoutWindow {
+                    state.isExternalURLFlushDelegateScheduled = false
+                    return .none
                 }
                 return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
 
@@ -158,8 +167,28 @@ struct AppRootFeature {
         case let .settings(.general(.toggleAutomaticUpdate(enabled))):
             return .send(.updater(.setAutomaticUpdate(enabled)))
 
-        case let .externalFileRouter(.delegate(delegateAction)):
-            return reduceExternalFileRouterDelegate(delegateAction)
+        case let .externalFileRouter(action):
+            return reduceExternalFileRouter(into: &state, action)
+
+        default:
+            return .none
+        }
+    }
+
+    private func reduceExternalFileRouter(
+        into state: inout State,
+        _ action: ExternalFileRouterAction,
+    ) -> Effect<Action> {
+        switch action {
+        case let .delegate(delegateAction):
+            return reduceExternalFileRouterDelegate(into: &state, delegateAction)
+
+        case let .failed(error, context: _):
+            if case .urlValidationError = error {
+                state.isExternalURLFlushDelegateScheduled = false
+                state.isExternalURLRouteInFlightWithoutWindow = false
+            }
+            return .none
 
         default:
             return .none
@@ -167,38 +196,42 @@ struct AppRootFeature {
     }
 
     private func reduceExternalFileRouterDelegate(
+        into state: inout State,
         _ action: ExternalFileRouterAction.Delegate,
     ) -> Effect<Action> {
         switch action {
         case .openAppFallback:
-            .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
+            return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
 
         case let .openFolder(path):
             // ExternalFileRouter가 폴더 열기 요청 — 새 File Manager Window로 라우팅
-            .send(.windowManager(.file(.newWindow(path: path))))
+            return .send(.windowManager(.file(.newWindow(path: path))))
 
         case let .openParentFolder(path, selectEntryPath):
             // ExternalFileRouter가 부모 폴더 열기 요청 — 새 File Manager Window로 라우팅
-            .send(.windowManager(.file(.newWindow(path: path, selectEntryID: selectEntryPath))))
+            return .send(.windowManager(.file(.newWindow(path: path, selectEntryID: selectEntryPath))))
 
         case let .routeToAuthCallback(url):
-            // ACC-001 소유의 OAuth callback — FMW-003가 가로채지 않음
-            .send(.receiveAuthCallbackURL(url))
+            state.isExternalURLRouteInFlightWithoutWindow = false
+            // ACC-001 소유의 OAuth callback — FMW 라우터가 소유하지 않음
+            return .send(.receiveAuthCallbackURL(url))
 
         case .showInvalidPathError:
-            showExternalFileOpenError(
+            state.isExternalURLRouteInFlightWithoutWindow = false
+            return showExternalFileOpenError(
                 title: "Voyager에서 위치를 열 수 없습니다",
                 message: "선택한 위치를 찾을 수 없습니다. 경로를 확인한 뒤 다시 시도해 주세요.",
             )
 
         case let .showPermissionDeniedError(path):
-            showExternalFileOpenError(
+            state.isExternalURLRouteInFlightWithoutWindow = false
+            return showExternalFileOpenError(
                 title: "Voyager에서 위치를 열 수 없습니다",
                 message: "접근 권한이 없어 \(path)를 열 수 없습니다. macOS 시스템 설정에서 Voyager의 파일 및 폴더 접근 권한을 확인해 주세요.",
             )
 
         case .selectEntryCompleted:
-            .none
+            return .none
         }
     }
 
@@ -224,10 +257,15 @@ struct AppRootFeature {
     ) -> Effect<Action> {
         switch action {
         case let .receiveExternalURL(url):
-            // 창이 없으면 버퍼링, 창이 열리면 ExternalFileRouter로 URL 전달
+            // 창이 없으면 버퍼링한다. launch delegate나 예약된 flush delegate가 pending만 소비하게 한다.
             guard !state.windowManager.windows.isEmpty else {
                 state.pendingExternalURLs.append(url)
-                return .none
+                state.isExternalURLRouteInFlightWithoutWindow = true
+                guard state.lifecycle.didFinishLaunching,
+                      !state.isExternalURLFlushDelegateScheduled
+                else { return .none }
+                state.isExternalURLFlushDelegateScheduled = true
+                return .send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
             }
             // 창이 열려 있는 상태에서 ExternalFileRouter로 URL 전달
             return .send(.externalFileRouter(.receive(url)))
@@ -295,6 +333,9 @@ struct AppRootFeature {
         let hasWindowsAfterAction = !state.windowManager.windows.isEmpty
         let didOpenFirstWindow = !hadWindowsBeforeAction && hasWindowsAfterAction
         state.windowPresenceBeforeWindowManagerAction = nil
+        if hasWindowsAfterAction {
+            state.isExternalURLRouteInFlightWithoutWindow = false
+        }
         return didOpenFirstWindow ? flushPendingExternalRoutes(state: &state) : .none
     }
 
