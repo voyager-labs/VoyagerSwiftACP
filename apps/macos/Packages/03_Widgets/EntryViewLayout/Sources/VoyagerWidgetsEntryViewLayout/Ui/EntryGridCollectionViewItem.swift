@@ -59,8 +59,12 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
 
     override var isSelected: Bool {
         didSet {
-            updateAppearance()
+            updateAppearance(isSelected: isSelected)
         }
+    }
+
+    func refreshSelectionAppearance(isSelected: Bool) {
+        updateAppearance(isSelected: isSelected)
     }
 
     func configure(_ configuration: Configuration) {
@@ -105,7 +109,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         }
 
         updateTags(configuration.entry.facets.tags)
-        updateAppearance()
+        updateAppearance(isSelected: isSelected)
     }
 
     func beginRenaming() {
@@ -239,7 +243,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         iconBackgroundHeightConstraint?.constant = iconSize + 16
     }
 
-    private func updateAppearance() {
+    private func updateAppearance(isSelected: Bool) {
         let highlighted = (isSelected || isDropTargeted) && !isRenaming
 
         backgroundView.layer?.backgroundColor = nil

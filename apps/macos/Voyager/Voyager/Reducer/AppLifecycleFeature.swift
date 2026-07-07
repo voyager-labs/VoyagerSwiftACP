@@ -121,6 +121,7 @@ struct AppLifecycleFeature {
                 .cancellable(id: CancelID.helperMonitor, cancelInFlight: true)
 
             case .launch(.didFinishLaunching):
+                state.didFinishLaunching = true
                 if isRunningXCTest() {
                     return .none
                 }

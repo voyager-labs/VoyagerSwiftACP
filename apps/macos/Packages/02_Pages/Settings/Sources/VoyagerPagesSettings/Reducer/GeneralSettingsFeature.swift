@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import VoyagerEntitiesAppPreferences
+import VoyagerEntitiesEntry
 import VoyagerShared
 
 @Reducer
@@ -13,6 +14,21 @@ struct GeneralSettingsFeature {
     var launchAtLoginClient
     @Dependency(\.directorySelectionClient)
     var directorySelectionClient
+    @Dependency(\.defaultFileViewerClient)
+    var defaultFileViewerClient
+
+    /// 진단 효과 중복 실행 방지 — AiSettingsFeature CancelID 패턴 차용.
+    private enum CancelID: Hashable {
+        case defaultFileViewerDiagnosis
+    }
+
+    private func diagnoseDefaultFileViewerEffect(source: DefaultFileViewerDiagnosisSource) -> Effect<Action> {
+        .run { [defaultFileViewerClient] send in
+            let status = await defaultFileViewerClient.diagnose()
+            await send(.defaultFileViewerDiagnosisCompleted(status, source: source))
+        }
+        .cancellable(id: CancelID.defaultFileViewerDiagnosis, cancelInFlight: true)
+    }
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -108,7 +124,92 @@ struct GeneralSettingsFeature {
 
             case .checkForUpdates:
                 return .none
+
+            case .defaultFileViewerSectionAppeared:
+                guard !state.isSettingDefaultFileViewer,
+                      !state.isRestoringDefaultFileViewer,
+                      !state.isDiagnosingFailureFollowUp
+                else { return .none }
+                state.defaultFileViewerPhase = .diagnosing(.sectionAppeared)
+                return diagnoseDefaultFileViewerEffect(source: .sectionAppeared)
+
+            case let .defaultFileViewerDiagnoseRequested(source):
+                guard !state.isSettingDefaultFileViewer, !state.isRestoringDefaultFileViewer else { return .none }
+                state.defaultFileViewerPhase = .diagnosing(source)
+                return diagnoseDefaultFileViewerEffect(source: source)
+
+            case let .defaultFileViewerDiagnosisCompleted(status, source):
+                state.defaultFileViewerPhase = .idle
+                state.defaultFileViewerStatus = status
+                switch status {
+                case .voyagerIsDefault, .finderIsDefault, .otherIsDefault:
+                    if source.shouldClearErrorOnHealthyStatus {
+                        state.defaultFileViewerErrorMessage = nil
+                    }
+                case .unknown:
+                    break
+                }
+                return .none
+
+            case .setAsDefaultFileViewerTapped:
+                guard !state.isSettingDefaultFileViewer else { return .none }
+                state.defaultFileViewerPhase = .setting
+                state.defaultFileViewerErrorMessage = nil
+                return .run { [defaultFileViewerClient] send in
+                    do {
+                        try await defaultFileViewerClient.setVoyagerAsDefault()
+                        await send(.setAsDefaultFileViewerSucceeded)
+                    } catch {
+                        await send(.setAsDefaultFileViewerFailed(
+                            error as? FileOpError ?? .system(message: "\(error)"),
+                        ))
+                    }
+                }
+
+            case .setAsDefaultFileViewerSucceeded:
+                state.defaultFileViewerPhase = .diagnosing(.afterSetSucceeded)
+                return diagnoseDefaultFileViewerEffect(source: .afterSetSucceeded)
+
+            case let .setAsDefaultFileViewerFailed(error):
+                state.defaultFileViewerErrorMessage = error.message
+                state.defaultFileViewerPhase = .diagnosing(.afterSetFailed)
+                return diagnoseDefaultFileViewerEffect(source: .afterSetFailed)
+
+            case .restoreDefaultFileViewerTapped:
+                guard !state.isRestoringDefaultFileViewer else { return .none }
+                state.defaultFileViewerPhase = .restoring
+                state.defaultFileViewerErrorMessage = nil
+                return .run { [defaultFileViewerClient] send in
+                    do {
+                        try await defaultFileViewerClient.restoreFinder()
+                        await send(.restoreDefaultFileViewerSucceeded)
+                    } catch {
+                        await send(.restoreDefaultFileViewerFailed(
+                            error as? FileOpError ?? .system(message: "\(error)"),
+                        ))
+                    }
+                }
+
+            case .restoreDefaultFileViewerSucceeded:
+                state.defaultFileViewerPhase = .diagnosing(.afterRestoreSucceeded)
+                return diagnoseDefaultFileViewerEffect(source: .afterRestoreSucceeded)
+
+            case let .restoreDefaultFileViewerFailed(error):
+                state.defaultFileViewerErrorMessage = error.message
+                state.defaultFileViewerPhase = .diagnosing(.afterRestoreFailed)
+                return diagnoseDefaultFileViewerEffect(source: .afterRestoreFailed)
             }
+        }
+    }
+}
+
+private extension GeneralSettingsState {
+    var isDiagnosingFailureFollowUp: Bool {
+        switch defaultFileViewerPhase {
+        case .diagnosing(.afterSetFailed), .diagnosing(.afterRestoreFailed):
+            true
+        case .idle, .diagnosing, .setting, .restoring:
+            false
         }
     }
 }
