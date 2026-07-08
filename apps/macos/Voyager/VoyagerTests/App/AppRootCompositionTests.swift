@@ -123,6 +123,33 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
+    /// inactive entitlement snapshot은 Settings/Account access unlock recovery로 hydrate한다.
+    func testAppRootAccessUnlockRequiredHydratesBlockedAccountChild() async {
+        let expiry = Date(timeIntervalSince1970: 4_102_444_800)
+        let snapshot = AccessStatusSnapshot(
+            status: .trialExpired,
+            sessionExpiresAt: expiry,
+        )
+        let store = makeAccountAccessGrantedStore()
+
+        await store.send(.lifecycle(.accountAccessGate(.accessUnlockRequired(snapshot: snapshot))))
+
+        await store.receive(\.settings.accessStatusLoaded) { state in
+            state.settings.accessStatus = .trialExpired
+        }
+        await store.receive(\.settings.account.access.hydrateLaunchSnapshot) { state in
+            state.settings.accountSettings.access.status = .trialExpired
+            state.settings.accountSettings.access.snapshot = snapshot
+            state.settings.accountSettings.access.sessionExpiresAt = expiry
+            state.settings.accountSettings.access.hasAccountSession = true
+            state.settings.accountSettings.access.didBootstrap = true
+        }
+
+        XCTAssertEqual(store.state.settings.accountSettings.access.accessUnlockPrimaryCTA, .webPricing)
+        XCTAssertFalse(store.state.lifecycle.didStartHelper)
+        await store.finish()
+    }
+
     /// T11: `sessionExpiresAt == nil`인 snapshot도 AppRoot passthrough → Settings → AccountAccess
     /// 경로가 정상 동작함을 검증. backward compat 시나리오 (세션 없이 access granted).
     func testAppRootAccountAccessGrantedForwardsSnapshotWithNilSessionExpiry() async {
@@ -380,6 +407,40 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertEqual(saved.value?.sessionExpiresAt, expiry)
         XCTAssertEqual(saved.value?.status, .coreLicenseActive)
         XCTAssertNotNil(saved.value)
+        await store.finish()
+    }
+
+    /// inactive entitlement는 session lapse guard가 아니라 access unlock recovery state로 전달한다.
+    func testAccessStatusInactiveRoutesToAccessUnlockRecovery() async {
+        let expiry = Date(timeIntervalSince1970: 100)
+        let session = AccountSession(
+            accessToken: "access-token",
+            status: .trialExpired,
+            refreshToken: "refresh",
+            expiresAt: expiry,
+        )
+        let response = AccessStatusResponse(
+            hasAccess: false,
+            status: "trial_expired",
+            productKey: "trial",
+        )
+        let store = TestStore(initialState: AppLifecycleFeature.State()) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
+            $0.accountSessionClient.read = { session }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.accountAccessGate(.accessStatusResponse(.success(response))))
+
+        await store.receive(\.accountAccessGate.accessUnlockRequired) { state in
+            state.lastAccessStatus = .trialExpired
+            state.accountAccessGateResolved = true
+            state.isCheckingAccountAccess = false
+        }
+        XCTAssertNil(store.state.sessionLapseGuard)
+        XCTAssertFalse(store.state.didStartHelper)
         await store.finish()
     }
 

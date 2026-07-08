@@ -122,6 +122,14 @@ struct AppRootFeature {
                 .send(.settings(.account(.access(.hydrateLaunchSnapshot(snapshot))))),
             )
 
+        case let .lifecycle(.accountAccessGate(.accessUnlockRequired(snapshot))):
+            // 비활성 entitlement는 session 만료가 아니므로 guard 대신 Account access-unlock
+            // recovery 상태로 hydrate한다. signed-in + blocked 상태가 pricing CTA를 제공한다.
+            .merge(
+                .send(.settings(.accessStatusLoaded(snapshot.status))),
+                .send(.settings(.account(.access(.hydrateLaunchSnapshot(snapshot))))),
+            )
+
         case let .lifecycle(.accountAccessGate(.accountAccessGranted(snapshot))):
             // ponytail: AppLifecycle이 fetch한 launch snapshot을 Settings hydration으로 1회 전달 +
             // AI bootstrap은 launch 시점으로 이동. didBootstrap가 탭 렌더 중복 send를 no-op 처리한다.

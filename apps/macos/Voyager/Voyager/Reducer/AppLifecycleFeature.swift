@@ -140,8 +140,19 @@ struct AppLifecycleFeature {
                         )
                         await send(.accountAccessGate(.accountAccessGranted(snapshot: snapshot)))
                     }
-                } else {
-                    return .send(.sessionExpiredDetected(reason: nil))
+                }
+
+                let accountSessionClient = accountSessionClient
+                let dateNow = date.now
+                return .run { send in
+                    let sessionExpiresAt = await (try? accountSessionClient.read())?.expiresAt
+                    let snapshot = AccessStatusSnapshot(
+                        status: accessStatus,
+                        currentPeriodEnd: response.currentPeriodEnd,
+                        fetchedAt: dateNow,
+                        sessionExpiresAt: sessionExpiresAt,
+                    )
+                    await send(.accountAccessGate(.accessUnlockRequired(snapshot: snapshot)))
                 }
 
             case let .accountAccessGate(.accessStatusResponse(.failure(error))):
@@ -173,6 +184,12 @@ struct AppLifecycleFeature {
                     )
                     await send(.accountAccessGate(.accountAccessGranted(snapshot: restored)))
                 }
+
+            case let .accountAccessGate(.accessUnlockRequired(snapshot)):
+                state.lastAccessStatus = snapshot.status
+                state.accountAccessGateResolved = true
+                state.isCheckingAccountAccess = false
+                return .none
 
             case let .accountAccessGate(.accountAccessGranted(snapshot)):
                 return accountAccessGrantedEffects(
