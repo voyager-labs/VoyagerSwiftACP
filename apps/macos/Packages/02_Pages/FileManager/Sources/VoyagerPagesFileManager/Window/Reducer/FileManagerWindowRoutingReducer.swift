@@ -1336,7 +1336,7 @@ private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
     backgroundAiChat: AiChatFeature.State,
     state: inout FileManagerWindowState,
 ) {
-    if state.content.aiChat.canRefreshFromBackground(summary: summary) {
+    if state.content.aiChat.canRefreshFromBackground(summary: summary, snapshot: snapshot) {
         state.content.aiChat.applyBackgroundSnapshot(
             summary: summary,
             snapshot: snapshot,
@@ -1347,7 +1347,8 @@ private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
 
     for tabID in state.tabContentStates.keys {
         guard tabID != state.contentTabs.activeTabID else { continue }
-        guard state.tabContentStates[tabID]?.aiChat.canRefreshFromBackground(summary: summary) == true
+        guard state.tabContentStates[tabID]?.aiChat
+            .canRefreshFromBackground(summary: summary, snapshot: snapshot) == true
         else {
             continue
         }
@@ -1358,7 +1359,7 @@ private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
         )
     }
 
-    if state.inspector.aiChat.canRefreshFromBackground(summary: summary) {
+    if state.inspector.aiChat.canRefreshFromBackground(summary: summary, snapshot: snapshot) {
         state.inspector.aiChat.applyBackgroundSnapshot(
             summary: summary,
             snapshot: snapshot,
@@ -1369,7 +1370,8 @@ private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
 
     for tabID in state.tabInspectorStates.keys {
         guard tabID != state.contentTabs.activeTabID else { continue }
-        guard state.tabInspectorStates[tabID]?.aiChat.canRefreshFromBackground(summary: summary) == true
+        guard state.tabInspectorStates[tabID]?.aiChat
+            .canRefreshFromBackground(summary: summary, snapshot: snapshot) == true
         else {
             continue
         }
@@ -1420,6 +1422,35 @@ private extension AiChatFeature.State {
         lastRequestContextModelHandle = snapshot.model
         selectedModelHandle = snapshot.model
         selectedThinking = snapshot.selectedThinking
+    }
+
+    func matchingBackgroundSnapshot(
+        summary: AiChatSessionSummary,
+        snapshot: AiChatSessionSnapshot?,
+    ) -> AiChatExecutionPhase? {
+        guard let requestID = snapshot?.lastRequestID else {
+            return executionPhase.matchingBackgroundSnapshot(
+                summary: summary,
+                snapshot: snapshot,
+            )
+        }
+        if let backgroundPhase = backgroundExecutionPhases[requestID]?.matchingBackgroundSnapshot(
+            summary: summary,
+            snapshot: snapshot,
+        ) {
+            return backgroundPhase
+        }
+        guard executionPhase.matchesOwner(requestID: requestID, runID: snapshot?.lastRunID) else { return nil }
+        if case let .processing(lock) = executionPhase,
+           let snapshot,
+           snapshot.transcriptHistory.count > lock.request.messages.count
+        {
+            return .completed(lock.recordingFinalSnapshot(snapshot))
+        }
+        return executionPhase.matchingBackgroundSnapshot(
+            summary: summary,
+            snapshot: snapshot,
+        )
     }
 
     func hasBackgroundOwnerMatching(requestID: AiChatRequestID, runID: AiChatRunID?) -> Bool {
@@ -1474,11 +1505,17 @@ private extension AiChatFeature.State {
         }
     }
 
-    func canRefreshFromBackground(summary: AiChatSessionSummary) -> Bool {
-        sessionID == summary.sessionID
-            && !executionPhase.isProcessing
-            && pendingRequestStart == nil
-            && !hasNewerSnapshotThanBackground(summary)
+    func canRefreshFromBackground(
+        summary: AiChatSessionSummary,
+        snapshot: AiChatSessionSnapshot? = nil,
+    ) -> Bool {
+        guard sessionID == summary.sessionID,
+              pendingRequestStart == nil,
+              !hasNewerSnapshotThanBackground(summary)
+        else { return false }
+        guard executionPhase.isProcessing else { return true }
+        guard let requestID = snapshot?.lastRequestID else { return false }
+        return executionPhase.matchesOwner(requestID: requestID, runID: snapshot?.lastRunID)
     }
 
     private func hasNewerSnapshotThanBackground(_ summary: AiChatSessionSummary) -> Bool {
@@ -1520,7 +1557,10 @@ private extension AiChatFeature.State {
         selectedModelHandle = snapshot?.model ?? backgroundAiChat.selectedModelHandle
         selectedThinking = snapshot?.selectedThinking ?? backgroundAiChat.selectedThinking
         sessionStatus = snapshot?.status ?? .active
-        if let executionPhaseToApply = backgroundAiChat.executionPhase.matchingBackgroundSnapshot(
+        if let executionPhaseToApply = backgroundAiChat.matchingBackgroundSnapshot(
+            summary: summary,
+            snapshot: snapshot,
+        ) ?? matchingBackgroundSnapshot(
             summary: summary,
             snapshot: snapshot,
         ) {
