@@ -60,6 +60,8 @@ public struct AiChatPendingRequestStart: Equatable, Sendable {
     public var sessionID: AiChatSessionID
     public var selectedModel: AiProviderModel
     public var selectedRow: AiModelCatalogRow?
+    public var selectedThinking: AiThinkingSelection?
+    public var customTitle: String?
     public var preparedRequest: AiChatPreparedRequest
 
     public init(
@@ -68,6 +70,8 @@ public struct AiChatPendingRequestStart: Equatable, Sendable {
         sessionID: AiChatSessionID,
         selectedModel: AiProviderModel,
         selectedRow: AiModelCatalogRow?,
+        selectedThinking: AiThinkingSelection? = nil,
+        customTitle: String? = nil,
         preparedRequest: AiChatPreparedRequest,
     ) {
         self.resolutionID = resolutionID
@@ -75,6 +79,8 @@ public struct AiChatPendingRequestStart: Equatable, Sendable {
         self.sessionID = sessionID
         self.selectedModel = selectedModel
         self.selectedRow = selectedRow
+        self.selectedThinking = selectedThinking
+        self.customTitle = customTitle
         self.preparedRequest = preparedRequest
     }
 }

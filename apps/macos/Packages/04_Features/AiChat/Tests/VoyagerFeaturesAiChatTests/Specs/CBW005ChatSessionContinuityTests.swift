@@ -2747,12 +2747,16 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         let targetSessionID = AiChatSessionID(rawValue: makeUUID("bbbbbbbb-7777-8888-9999-000000000001"))
         let resolutionID = makeUUID("cccccccc-7777-8888-9999-000000000001")
         let userMessage = AiChatMessage(role: .user, content: "Pending setup question")
+        let frozenThinking = AiThinkingSelection.effort(.minimal)
+        let frozenTitle = "Frozen pending title"
         let pendingRequest = AiChatPendingRequestStart(
             resolutionID: resolutionID,
             kind: .submit,
             sessionID: currentSessionID,
             selectedModel: makeProviderModels()[0],
             selectedRow: catalogRows[0],
+            selectedThinking: frozenThinking,
+            customTitle: frozenTitle,
             preparedRequest: AiChatPreparedRequest(
                 prompt: userMessage.content,
                 messages: [userMessage],
@@ -2779,10 +2783,12 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         )
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: currentSessionID,
+            currentSessionCustomTitle: frozenTitle,
             sessionStatus: .active,
             catalogRows: catalogRows,
             modelListState: .loaded(makeProviderModels()),
             selectedModelHandle: catalogRows[0].handle,
+            selectedThinking: .effort(.high),
             pendingRequestStart: pendingRequest,
         )) {
             AiChatFeature()
@@ -2844,6 +2850,8 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         if case let .processing(lock) = store.state.backgroundExecutionPhases.values.first {
             XCTAssertEqual(lock.context.sessionID, currentSessionID)
             XCTAssertEqual(lock.request.messages, [userMessage])
+            XCTAssertEqual(lock.context.selectedThinking, frozenThinking)
+            XCTAssertEqual(lock.customTitle, frozenTitle)
         } else {
             XCTFail("background pending resolver should start as a background processing owner")
         }

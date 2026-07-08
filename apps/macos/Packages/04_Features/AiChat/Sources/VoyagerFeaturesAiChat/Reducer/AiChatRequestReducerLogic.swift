@@ -9,6 +9,8 @@ struct AiChatRequestLockInput {
     var sessionID: AiChatSessionID
     var selectedModel: AiProviderModel
     var selectedRow: AiModelCatalogRow?
+    var selectedThinking: AiThinkingSelection?
+    var customTitle: String?
     var preparedRequest: AiChatPreparedRequest
 }
 
@@ -45,6 +47,8 @@ extension AiChatFeature {
             sessionID: sessionID,
             selectedModel: selectedModel,
             selectedRow: resolvedSelectedModelRow(in: state),
+            selectedThinking: state.selectedThinking,
+            customTitle: state.currentSessionCustomTitle,
             preparedRequest: preparedRequest,
         )
 
@@ -109,6 +113,8 @@ extension AiChatFeature {
                 sessionID: pendingRequest.sessionID,
                 selectedModel: pendingRequest.selectedModel,
                 selectedRow: pendingRequest.selectedRow,
+                selectedThinking: pendingRequest.selectedThinking,
+                customTitle: pendingRequest.customTitle,
                 preparedRequest: pendingRequest.preparedRequest,
             ),
             lockedRequestContext: lockedRequestContext,
@@ -137,6 +143,8 @@ extension AiChatFeature {
                 sessionID: pendingRequest.sessionID,
                 selectedModel: pendingRequest.selectedModel,
                 selectedRow: pendingRequest.selectedRow,
+                selectedThinking: pendingRequest.selectedThinking,
+                customTitle: pendingRequest.customTitle,
                 preparedRequest: pendingRequest.preparedRequest,
             ),
             lockedRequestContext: lockedRequestContext,
@@ -306,7 +314,7 @@ extension AiChatFeature {
     private func makeRequestLock(
         input: AiChatRequestLockInput,
         lockedRequestContext: AiChatLockedRequestContextSnapshot,
-        state: State,
+        state _: State,
     ) -> AiChatRequestLock {
         let requestID = AiChatRequestID(rawValue: uuid())
         let runID = AiChatRunID(rawValue: uuid())
@@ -320,7 +328,7 @@ extension AiChatFeature {
             model: selectedHandle,
             selectedModel: input.selectedModel,
             selectedModelRow: input.selectedRow,
-            selectedThinking: state.selectedThinking,
+            selectedThinking: input.selectedThinking,
             sessionStatus: .active,
             currentContext: lockedRequestContext.currentContext,
             requestContext: lockedRequestContext,
@@ -338,7 +346,7 @@ extension AiChatFeature {
             selectedModelHandle: selectedHandle,
             selectedModelRow: input.selectedRow,
             assistantReplacementIndex: input.preparedRequest.assistantReplacementIndex,
-            customTitle: state.currentSessionCustomTitle,
+            customTitle: input.customTitle,
             historyTruncation: input.preparedRequest.historyTruncation,
             observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: submittedAtMs),
         )
