@@ -322,6 +322,12 @@ final class AppRootCompositionTests: XCTestCase {
             $0.helperAppClient.stop = {}
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.onboardingWindowClient.isRequired = { false }
+            $0.accountSessionClient.read = { nil }
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 0))
             $0.fileManagerWindowClient.open = { _ in
@@ -579,6 +585,28 @@ final class AppRootCompositionTests: XCTestCase {
             state.accountAccessGateResolved = false
         }
 
+        await store.finish()
+    }
+
+    /// access gate 실패는 guard만 띄우지 않고 FileManager window도 연다.
+    /// lastAccessStatus/accountAccessGateResolved는 비활성 상태로 유지되고 openInitialWindowIfNeeded가 전달된다.
+    func testAccessStatusFailureOpensFileManagerWindowAndLeavesGateInactive() async {
+        let openCallCount = LockIsolated(0)
+        let store = makeAccessFailureStore(openCallCount: openCallCount)
+
+        await store.send(.lifecycle(.accountAccessGate(.accessStatusResponse(.failure(.networkFailure))))) { state in
+            state.lifecycle.lastAccessStatus = nil
+            state.lifecycle.accountAccessGateResolved = false
+            state.lifecycle.isCheckingAccountAccess = false
+        }
+
+        await store.receive(\.lifecycle.sessionLapseGuard.onAppear)
+        await store.receive(\.lifecycle.delegate.openInitialWindowIfNeeded)
+        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
+
+        XCTAssertEqual(openCallCount.value, 1)
+        XCTAssertNil(store.state.lifecycle.lastAccessStatus)
+        XCTAssertFalse(store.state.lifecycle.accountAccessGateResolved)
         await store.finish()
     }
 

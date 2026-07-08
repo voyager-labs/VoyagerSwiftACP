@@ -295,7 +295,10 @@ struct AppLifecycleFeature {
                 var sessionLapseGuard = AccountAccessFeature.State()
                 sessionLapseGuard.handoffContext = .paywall
                 state.sessionLapseGuard = sessionLapseGuard
-                return .send(.sessionLapseGuard(.onAppear))
+                return .merge(
+                    .send(.sessionLapseGuard(.onAppear)),
+                    .send(.delegate(.openInitialWindowIfNeeded)),
+                )
 
             case .termination(.willTerminate):
                 return .merge(
@@ -305,7 +308,9 @@ struct AppLifecycleFeature {
 
             case .delegate(.openInitialWindowIfNeeded):
                 state.isCheckingAccountAccess = false
-                state.accountAccessGateResolved = true
+                if state.sessionLapseGuard == nil {
+                    state.accountAccessGateResolved = true
+                }
                 return .none
 
             case .delegate(.startHelperIfNeeded):
