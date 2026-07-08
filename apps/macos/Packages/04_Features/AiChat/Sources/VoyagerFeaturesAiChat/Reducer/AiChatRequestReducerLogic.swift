@@ -515,6 +515,12 @@ extension AiChatFeature {
             state.pendingRequestStart = nil
             effects.append(.cancel(id: CancelID.requestContextResolution(pendingRequestStart.resolutionID)))
         }
+        let backgroundPendingRequestStarts = state.backgroundPendingRequestStarts.values
+            .filter { $0.sessionID == sessionID }
+        for pendingRequestStart in backgroundPendingRequestStarts {
+            state.backgroundPendingRequestStarts[pendingRequestStart.resolutionID] = nil
+            effects.append(.cancel(id: CancelID.requestContextResolution(pendingRequestStart.resolutionID)))
+        }
         if let lock = state.executionPhase.lock, lock.context.sessionID == sessionID {
             effects.append(cancelRequestLifecycle(for: lock))
         }
@@ -535,12 +541,16 @@ extension AiChatFeature {
         if let pendingRequestStart = state.pendingRequestStart {
             effects.append(.cancel(id: CancelID.requestContextResolution(pendingRequestStart.resolutionID)))
         }
+        for pendingRequestStart in state.backgroundPendingRequestStarts.values {
+            effects.append(.cancel(id: CancelID.requestContextResolution(pendingRequestStart.resolutionID)))
+        }
         if let lock = state.executionPhase.lock {
             effects.append(cancelRequestLifecycle(for: lock))
         }
         for lock in state.backgroundExecutionPhases.values.compactMap(\.lock) {
             effects.append(cancelRequestLifecycle(for: lock))
         }
+        state.backgroundPendingRequestStarts = [:]
         state.backgroundExecutionPhases = [:]
         return .merge(effects)
     }
