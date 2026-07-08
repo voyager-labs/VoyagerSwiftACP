@@ -5786,7 +5786,7 @@ extension CTM005IndependentContentTabSessionTests {
         inactiveAiChatContent.aiChat.mode = .chat
         inactiveAiChatContent.aiChat.sessionID = aiSessionID
         inactiveAiChatContent.aiChat.sessionStatus = .active
-        inactiveAiChatContent.aiChat.transcriptHistory = requestLock.request.messages
+        inactiveAiChatContent.aiChat.transcriptHistory = []
         inactiveAiChatContent.aiChat.executionPhase = .processing(requestLock)
 
         var backgroundContent = inactiveAiChatContent
@@ -5869,7 +5869,7 @@ extension CTM005IndependentContentTabSessionTests {
         inactiveAiChatContent.aiChat.mode = .chat
         inactiveAiChatContent.aiChat.sessionID = aiSessionID
         inactiveAiChatContent.aiChat.sessionStatus = .active
-        inactiveAiChatContent.aiChat.transcriptHistory = requestLock.request.messages
+        inactiveAiChatContent.aiChat.transcriptHistory = []
         inactiveAiChatContent.aiChat.executionPhase = .processing(requestLock)
 
         var backgroundContent = inactiveAiChatContent
@@ -5913,6 +5913,12 @@ extension CTM005IndependentContentTabSessionTests {
         store.exhaustivity = .off
 
         await store.send(.backgroundAiChat(.persistenceFailed(requestLock, .unknown))) { state in
+            state.tabContentStates[aiChatTabID]?.aiChat.transcriptHistory = requestLock.request.messages
+            state.tabContentStates[aiChatTabID]?.aiChat.lastRequestContext = requestLock.context.requestContext
+            state.tabContentStates[aiChatTabID]?.aiChat.lastRequestContextModelHandle = requestLock.context.model
+            state.tabContentStates[aiChatTabID]?.aiChat.selectedModelHandle = requestLock.context.model
+            state.tabContentStates[aiChatTabID]?.aiChat.selectedThinking = requestLock.context.selectedThinking
+            state.tabContentStates[aiChatTabID]?.aiChat.transcriptAutoScrollVersion = 1
             state.tabContentStates[aiChatTabID]?.aiChat.executionPhase = .persistenceRecovery(requestLock, .unknown)
             state.tabContentStates[aiChatTabID]?.aiChat.lastExecutionFailure = .unknown
             state.backgroundAiChatStates[aiSessionID]?.aiChat
@@ -5922,6 +5928,10 @@ extension CTM005IndependentContentTabSessionTests {
                 )
         }
 
+        XCTAssertEqual(
+            store.state.tabContentStates[aiChatTabID]?.aiChat.transcriptHistory,
+            requestLock.request.messages,
+        )
         XCTAssertEqual(
             store.state.tabContentStates[aiChatTabID]?.aiChat.executionPhase,
             .persistenceRecovery(requestLock, .unknown),

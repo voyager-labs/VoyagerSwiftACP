@@ -1404,6 +1404,8 @@ private extension AiChatFeature.State {
 
         if let finalSnapshot = matchingPhase.lock?.finalSnapshot {
             applyBackgroundRecoveryFinalSnapshot(finalSnapshot)
+        } else if let lock = matchingPhase.lock {
+            applyBackgroundLockPayload(lock)
         }
         executionPhase = matchingPhase
         streamingAssistantDraft = nil
@@ -1425,6 +1427,15 @@ private extension AiChatFeature.State {
         lastRequestContextModelHandle = snapshot.model
         selectedModelHandle = snapshot.model
         selectedThinking = snapshot.selectedThinking
+    }
+
+    mutating func applyBackgroundLockPayload(_ lock: AiChatRequestLock) {
+        transcriptHistory = lock.request.messages
+        lastRequestContext = lock.context.requestContext
+        lastRequestContextModelHandle = lock.context.model
+        selectedModelHandle = lock.context.model
+        selectedThinking = lock.context.selectedThinking
+        transcriptAutoScrollVersion += 1
     }
 
     func matchingBackgroundSnapshot(
@@ -1502,6 +1513,9 @@ private extension AiChatFeature.State {
             .matchingFailure(context: context)
             ?? backgroundAiChat.executionPhase.matchingFailure(context: context)
         else { return }
+        if let lock = matchingPhase.lock {
+            applyBackgroundLockPayload(lock)
+        }
         executionPhase = matchingPhase
         streamingAssistantDraft = nil
         lockedModelHandle = nil
