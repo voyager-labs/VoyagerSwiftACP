@@ -77,12 +77,26 @@ final class FMW003PendingSelectionTests: XCTestCase {
         await store.finish()
     }
 
-    /// FMW-003: /tmp deep link와 /private/tmp 로드 결과가 symlink 기준으로 동일하면 실제 entry ID를 선택한다.
-    /// - 사전 조건: pendingSelectEntryID는 /tmp 경로, entries는 FileManager가 반환한 /private/tmp 경로
-    /// - 기대 결과: 매칭 성공 + UI가 찾을 수 있는 loaded entry ID로 selection state 반영
-    func test_handleItemsLoaded_symlinkEquivalentEntry_selectsLoadedEntryID() async {
-        let pendingID = "/tmp/voyager-qa-folder/sample.txt"
-        let loadedEntryID = "/private/tmp/voyager-qa-folder/sample.txt"
+    /// FMW-003-handle_external_file_open_requests: symlink 경로 요청과 실제 로드 결과가 같은 파일이면 실제 entry ID를 선택한다.
+    /// 사용자가 symlink 경로로 파일을 열고 FileManager가 실제 경로 entry를 로드한 경우의 pending selection 매칭을 검증한다.
+    /// - 검증 내용: `itemsLoaded` 처리 시 pendingSelectEntryID와 loaded entry fullPath를 symlink 해소 기준으로 매칭한다.
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/98.txt`를 임시 sandbox로 복사하고, pendingSelectEntryID는 sandbox symlink 경로,
+    /// entries는 실제 복사본 경로를 사용한다.
+    /// - 기대 결과: pendingSelectEntryID를 지우고 UI가 찾을 수 있는 loaded entry ID로 selection state를 반영한다.
+    func test_handleItemsLoaded_symlinkEquivalentEntry_selectsLoadedEntryID() async throws {
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/98.txt",
+        )
+        defer { sandbox.cleanup() }
+
+        let pendingID = sandbox.symlinkedFileURL.path
+        let loadedEntryID = sandbox.fileURL.path
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pendingID))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: loadedEntryID))
+        XCTAssertEqual(
+            URL(fileURLWithPath: pendingID).resolvingSymlinksInPath().path,
+            URL(fileURLWithPath: loadedEntryID).resolvingSymlinksInPath().path,
+        )
         let entries = [Self.makeEntry(fullPath: loadedEntryID)]
 
         let store = TestStore(initialState: makeBridgeState(pendingSelectEntryID: pendingID)) {

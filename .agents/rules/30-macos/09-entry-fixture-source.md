@@ -15,14 +15,17 @@ globs: "apps/macos/**/*.swift"
 
 ## Must
 
+- When a repo-local skill governs the touched test surface, load and follow that skill first. For spec/AC/TestStore authoring and support-file placement, use `.agents/skills/voyager-dev/verifier/spec-test-authoring/SKILL.md` and its references; treat this rule as the fixture-source supplement to that skill.
 - Use the repository root `fixtures/` submodule as the default source for entry test files, entry collections, and Voyager-owned fixture formats such as `.voycoll`. The imported payload lives under `fixtures/fixtures/`.
 - Refer to fixture files by repo-relative paths such as `fixtures/fixtures/images/jpeg/hopper.jpg` in test comments, helper names, and evidence.
 - Initialize the submodule before fixture-backed verification: `git submodule update --init --recursive` or `mise run submodules`.
 - Keep reusable fixture path helpers in the relevant test target's `Support/` directory; helpers may resolve the repo root with `git rev-parse --show-toplevel` or test-process environment, but tests should consume stable repo-relative fixture paths.
+- Do not import or copy a test-support fixture helper from another package test target unless that helper is intentionally exposed through a shared test-support module. If the current target has no suitable helper, create a flat `Support/` helper named by role/type that follows the repo-local spec-test-authoring topology.
 - Copy fixture files into a temporary test directory before any test mutates, renames, deletes, writes metadata, changes permissions, or asserts destructive entry operations.
 - Use read-only fixture paths directly only for tests that inspect path display, metadata, detection, indexing input, collection state, or import source identity without mutating the source.
 - In interaction/spec tests, mention the fixture path or fixture category in the `- 사전 조건` traceability bullet when the scenario depends on real files.
 - Use `FixtureSandbox.copyingFile(from:)` or `FixtureSandbox.copyingDirectory(from:)` to create isolated temp copies of real fixture files for reducer action inputs. Pair with `defer { sandbox.cleanup() }` to guarantee sandbox teardown. Use `sandbox.fileURL.path` as the action input path so the reducer receives a real, existing file path.
+- For path-normalization, symlink, standardized-path, or `/tmp` ↔ `/private/tmp` equivalence scenarios, build both compared path strings from an existing sandboxed fixture and real filesystem links. Assert both paths exist and resolve to the same canonical path before sending reducer actions.
 - Mock OS-boundary clients (NSWorkspace, QLPreviewPanel, share services, pasteboard, Trash) even when using real fixture paths. Test the reducer's file-operation logic, not real OS side effects. The pattern is: **real paths in, mocked clients out**.
 - Empty-path no-op tests (where the action path is empty and no file operation occurs) are exempt from `FixtureSandbox` usage — they do not interact with the file system.
 
@@ -33,7 +36,7 @@ globs: "apps/macos/**/*.swift"
 - Do not mutate files in `fixtures/fixtures/**` in-place during tests.
 - Do not create new large, provenance-sensitive, or reusable Voyager-owned fixture files (including `.voycoll`) directly in `voyager-app`; import them through `voyager-test-files` with source/license notes.
 - Do not skip fixture-backed coverage by generating trivial temporary text files when the behavior under test manipulates real entries, entry collections, `.voycoll` files, file types, paths, metadata, thumbnails, indexing, ingestion, or File Manager presentation.
-- Do not use hardcoded fake paths (e.g., `/Users/test/document.txt`, `/tmp/fake*`) as reducer action inputs in non-empty-path test scenarios. Use `FixtureSandbox` to provide real file paths instead. Fake paths are acceptable only in mock return values (e.g., a mocked app URL) or empty-path no-op tests.
+- Do not use hardcoded fake paths (e.g., `/Users/test/document.txt`, `/tmp/fake*`, `/tmp/example` paired with `/private/tmp/example`) as reducer action inputs in non-empty-path test scenarios. Use a target-local sandbox helper backed by `fixtures/fixtures/**` to provide real file paths instead. Fake paths are acceptable only in mock return values (e.g., a mocked app URL) or empty-path no-op tests.
 
 ## Execution steps
 
