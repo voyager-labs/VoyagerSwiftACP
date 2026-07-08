@@ -189,7 +189,9 @@ struct AppLifecycleFeature {
                 state.lastAccessStatus = snapshot.status
                 state.accountAccessGateResolved = true
                 state.isCheckingAccountAccess = false
-                return .none
+                return .run { _ in
+                    await snapshotClient.save(snapshot)
+                }
 
             case let .accountAccessGate(.accountAccessGranted(snapshot)):
                 return accountAccessGrantedEffects(

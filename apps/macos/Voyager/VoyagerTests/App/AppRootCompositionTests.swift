@@ -424,11 +424,15 @@ final class AppRootCompositionTests: XCTestCase {
             status: "trial_expired",
             productKey: "trial",
         )
+        let saved = SnapshotCaptureBox()
         let store = TestStore(initialState: AppLifecycleFeature.State()) {
             AppLifecycleFeature()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
             $0.accountSessionClient.read = { session }
+            $0.accessStatusSnapshotClient.save = { snapshot in
+                saved.value = snapshot
+            }
         }
         store.exhaustivity = .off
 
@@ -441,6 +445,8 @@ final class AppRootCompositionTests: XCTestCase {
         }
         XCTAssertNil(store.state.sessionLapseGuard)
         XCTAssertFalse(store.state.didStartHelper)
+        XCTAssertEqual(saved.value?.status, .trialExpired)
+        XCTAssertEqual(saved.value?.sessionExpiresAt, expiry)
         await store.finish()
     }
 
