@@ -897,6 +897,9 @@ private func aiChatLifecycleSessionIDsToPreserve(_ state: AiChatFeature.State) -
         append(state.sessionID)
     }
     append(state.pendingRequestStart?.sessionID)
+    for pendingRequestStart in state.backgroundPendingRequestStarts.values {
+        append(pendingRequestStart.sessionID)
+    }
     for phase in state.backgroundExecutionPhases.values {
         append(phase.lock?.context.sessionID)
     }
