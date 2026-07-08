@@ -4734,6 +4734,12 @@ extension CTM005IndependentContentTabSessionTests {
             .processing(requestLock),
         )
         XCTAssertNotEqual(store.state.content.aiChat.sessionID, aiSessionID)
+
+        await store.send(.contentTabs(.setCurrent(aiChatTabID)))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.content.aiChat.executionPhase, .processing(requestLock))
+        XCTAssertNil(store.state.backgroundAiChatStates[aiSessionID])
         await store.finish()
     }
 

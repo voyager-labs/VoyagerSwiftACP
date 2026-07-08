@@ -123,6 +123,7 @@ struct FileManagerWindowRoutingReducer {
                     state.saveCurrentContentStateForPreviousActiveTab()
                     state.saveCurrentInspectorStateForPreviousActiveTab()
                     state.restoreContentStateForActiveTab()
+                    removeBackgroundAiChatOwnersPromotedToActiveContent(state: &state)
                     state.restoreInspectorStateForActiveTab()
                 }
                 state.syncContentTabSidebarItems()
@@ -280,6 +281,7 @@ struct FileManagerWindowRoutingReducer {
                     state.saveCurrentContentStateForPreviousActiveTab()
                     state.saveCurrentInspectorStateForPreviousActiveTab()
                     state.restoreContentStateForActiveTab()
+                    removeBackgroundAiChatOwnersPromotedToActiveContent(state: &state)
                     state.restoreInspectorStateForActiveTab()
                     if let restoredRoute = state.recentlyClosedNavigationRoute {
                         state.content.navigation.navigationState = restoredRoute
@@ -1043,6 +1045,20 @@ private func refreshAiChatFollowUpFromBackgroundIfNeeded(
     }
 }
 
+private func removeBackgroundAiChatOwnersPromotedToActiveContent(state: inout FileManagerWindowState) {
+    let activeAiChat = state.content.aiChat
+    let sessionIDs = activeAiChat.lifecycleOwnerSessionIDs
+    for sessionID in sessionIDs {
+        guard var backgroundContent = state.backgroundAiChatStates[sessionID] else { continue }
+        backgroundContent.aiChat.removeBackgroundOwners(matching: activeAiChat)
+        if backgroundContent.aiChat.hasRemainingBackgroundLifecycleOwner {
+            state.backgroundAiChatStates[sessionID] = backgroundContent
+        } else {
+            state.removeBackgroundAiChatState(sessionID: sessionID)
+        }
+    }
+}
+
 private func failedAiChatContext(from aiChatAction: AiChatAction) -> AiChatRequestContextSnapshot? {
     guard case let .executionEvent(.failed(context, _)) = aiChatAction else { return nil }
     return context
@@ -1738,6 +1754,45 @@ private func aiChatEventRequestID(_ event: AiChatEvent) -> AiChatRequestID? {
 }
 
 private extension AiChatFeature.State {
+    var lifecycleOwnerSessionIDs: Set<AiChatSessionID> {
+        var sessionIDs = Set<AiChatSessionID>()
+        if let sessionID = pendingRequestStart?.sessionID {
+            sessionIDs.insert(sessionID)
+        }
+        if let sessionID = executionPhase.lock?.context.sessionID {
+            sessionIDs.insert(sessionID)
+        }
+        for phase in backgroundExecutionPhases.values {
+            if let sessionID = phase.lock?.context.sessionID {
+                sessionIDs.insert(sessionID)
+            }
+        }
+        return sessionIDs
+    }
+
+    mutating func removeBackgroundOwners(matching activeAiChat: Self) {
+        if let pendingRequestStart = activeAiChat.pendingRequestStart,
+           self.pendingRequestStart?.resolutionID == pendingRequestStart.resolutionID
+        {
+            self.pendingRequestStart = nil
+        }
+        if let lock = activeAiChat.executionPhase.lock {
+            removeBackgroundOwner(BackgroundAiChatOwnerRemoval(
+                requestID: lock.requestID,
+                runID: lock.runID,
+                removeLegacySessionOwner: false,
+            ))
+        }
+        for phase in activeAiChat.backgroundExecutionPhases.values {
+            guard let lock = phase.lock else { continue }
+            removeBackgroundOwner(BackgroundAiChatOwnerRemoval(
+                requestID: lock.requestID,
+                runID: lock.runID,
+                removeLegacySessionOwner: false,
+            ))
+        }
+    }
+
     func cancellationScope(sessionID: AiChatSessionID) -> Self {
         var scopedState = self
         if scopedState.pendingRequestStart?.sessionID != sessionID {
