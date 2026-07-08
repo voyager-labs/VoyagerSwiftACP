@@ -5610,6 +5610,85 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    func testBackgroundRequestStartSnapshotUpdatedRefreshesActiveSessionRow() async {
+        let aiChatTabID = ContentTabID()
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+        let snapshot = AiChatSessionSnapshot(
+            sessionID: aiSessionID,
+            status: .active,
+            provider: .openai,
+            model: requestLock.selectedModelHandle,
+            transcriptHistory: requestLock.request.messages,
+            lastRequestID: requestLock.requestID,
+            lastRunID: requestLock.runID,
+            updatedAtMs: 1_234_567_891_000,
+        )
+        let summary = AiChatSessionSummary(snapshot: snapshot)
+
+        var activeContent = FileManagerContentFeature.State()
+        activeContent.navigation.navigationState = .aiChat(aiSessionID.rawValue.uuidString)
+        activeContent.aiChat.mode = .chat
+        activeContent.aiChat.sessionID = aiSessionID
+        activeContent.aiChat.sessionStatus = .active
+        activeContent.aiChat.transcriptHistory = []
+
+        var backgroundContent = activeContent
+        backgroundContent.aiChat.executionPhase = .processing(requestLock)
+        backgroundContent.aiChat.transcriptHistory = requestLock.request.messages
+        backgroundContent.aiChat.selectedModelHandle = requestLock.selectedModelHandle
+        backgroundContent.aiChat.lastRequestContextModelHandle = requestLock.selectedModelHandle
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: aiChatTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: aiSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "message",
+                ),
+            ],
+            activeTabID: aiChatTabID,
+            recentlyClosed: nil,
+        )
+        state.content = activeContent
+        state.tabContentStates = [aiChatTabID: activeContent]
+        state.backgroundAiChatStates[aiSessionID] = backgroundContent
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.backgroundAiChat(.sessionSnapshotUpdated(
+            summary,
+            requestID: requestLock.requestID,
+            runID: requestLock.runID,
+        ))) { state in
+            state.content.aiChat.transcriptHistory = requestLock.request.messages
+            state.content.aiChat.executionPhase = .processing(requestLock)
+            state.content.aiChat.selectedModelHandle = requestLock.selectedModelHandle
+            state.content.aiChat.lastRequestContextModelHandle = requestLock.selectedModelHandle
+            state.content.aiChat.sessionList.replaceRow(summary)
+            state.content.aiChat.sessionList.selectedSessionID = aiSessionID
+            state.tabContentStates[aiChatTabID] = state.content
+        }
+
+        XCTAssertEqual(store.state.content.aiChat.sessionList.allRows.first?.sessionID, aiSessionID)
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory, requestLock.request.messages)
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase,
+            .processing(requestLock),
+        )
+        await store.finish()
+    }
+
     func testBackgroundSnapshotRefreshDoesNotCopyUnrelatedExecutionPhase() async {
         let aiChatTabID = ContentTabID()
         let aiSessionID = AiChatSessionID(rawValue: UUID())

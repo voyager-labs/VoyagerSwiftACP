@@ -1028,7 +1028,7 @@ private func routeBackgroundAiChatAction(
             return FileManagerWindowAction.backgroundAiChat(action)
         }
 
-    if let payload = sessionSnapshotSavedPayload(from: aiChatAction) {
+    if let payload = sessionSnapshotRefreshPayload(from: aiChatAction) {
         refreshAiChatSnapshotsFromBackgroundIfNeeded(
             summary: payload.summary,
             snapshot: payload.snapshot,
@@ -1065,13 +1065,16 @@ private struct SessionSnapshotSavedPayload {
 }
 
 private func sessionSnapshotSavedSummary(from aiChatAction: AiChatAction) -> AiChatSessionSummary? {
-    sessionSnapshotSavedPayload(from: aiChatAction)?.summary
+    sessionSnapshotRefreshPayload(from: aiChatAction)?.summary
 }
 
-private func sessionSnapshotSavedPayload(from aiChatAction: AiChatAction) -> SessionSnapshotSavedPayload? {
-    if case let .sessionSnapshotSaved(summary, snapshot, _, _) = aiChatAction {
+private func sessionSnapshotRefreshPayload(from aiChatAction: AiChatAction) -> SessionSnapshotSavedPayload? {
+    switch aiChatAction {
+    case let .sessionSnapshotSaved(summary, snapshot, _, _):
         SessionSnapshotSavedPayload(summary: summary, snapshot: snapshot)
-    } else {
+    case let .sessionSnapshotUpdated(summary, _, _):
+        SessionSnapshotSavedPayload(summary: summary, snapshot: nil)
+    default:
         nil
     }
 }
@@ -1081,7 +1084,7 @@ private func refreshAiChatFollowUpFromBackgroundIfNeeded(
     backgroundAiChat: AiChatFeature.State,
     state: inout FileManagerWindowState,
 ) {
-    if let payload = sessionSnapshotSavedPayload(from: aiChatAction) {
+    if let payload = sessionSnapshotRefreshPayload(from: aiChatAction) {
         refreshAiChatSnapshotsFromBackgroundIfNeeded(
             summary: payload.summary,
             snapshot: payload.snapshot,
@@ -1610,7 +1613,7 @@ private func routeInactiveInspectorAiChatAction(
     guard let tabID = inactiveInspectorTabID(for: aiChatAction, state: state),
           var inspectorState = state.tabInspectorStates[tabID]
     else {
-        if let payload = sessionSnapshotSavedPayload(from: aiChatAction),
+        if let payload = sessionSnapshotRefreshPayload(from: aiChatAction),
            state.inspector.aiChat.canRefreshFromBackground(summary: payload.summary)
         {
             refreshAiChatSnapshotsFromBackgroundIfNeeded(
@@ -1639,7 +1642,7 @@ private func routeInactiveInspectorAiChatAction(
         .map { FileManagerWindowAction.backgroundInspectorAiChat($0) }
 
     state.tabInspectorStates[tabID] = inspectorState.tabSnapshot()
-    if let payload = sessionSnapshotSavedPayload(from: aiChatAction) {
+    if let payload = sessionSnapshotRefreshPayload(from: aiChatAction) {
         refreshAiChatSnapshotsFromBackgroundIfNeeded(
             summary: payload.summary,
             snapshot: payload.snapshot,
@@ -1694,7 +1697,7 @@ private func routeBackgroundInspectorAiChatAction(
             return FileManagerWindowAction.backgroundInspectorAiChat(action)
         }
 
-    if let payload = sessionSnapshotSavedPayload(from: aiChatAction) {
+    if let payload = sessionSnapshotRefreshPayload(from: aiChatAction) {
         refreshAiChatSnapshotsFromBackgroundIfNeeded(
             summary: payload.summary,
             snapshot: payload.snapshot,
@@ -1785,6 +1788,15 @@ private func backgroundInspectorAiChatSessionID(
     if case let .sessionSnapshotSaved(summary, _, requestID, runID) = aiChatAction,
        let requestID
     {
+        guard state.backgroundInspectorAiChatStates[summary.sessionID]?.aiChat.hasBackgroundOwnerMatching(
+            requestID: requestID,
+            runID: runID,
+        ) == true
+        else { return nil }
+        return summary.sessionID
+    }
+
+    if case let .sessionSnapshotUpdated(summary, requestID, runID) = aiChatAction {
         guard state.backgroundInspectorAiChatStates[summary.sessionID]?.aiChat.hasBackgroundOwnerMatching(
             requestID: requestID,
             runID: runID,
@@ -2063,6 +2075,13 @@ private func backgroundAiChatSessionID(
             ) == true
             else { return nil }
         }
+        return summary.sessionID
+    case let .sessionSnapshotUpdated(summary, requestID, runID):
+        guard state.backgroundAiChatStates[summary.sessionID]?.aiChat.hasBackgroundOwnerMatching(
+            requestID: requestID,
+            runID: runID,
+        ) == true
+        else { return nil }
         return summary.sessionID
     case let .requestContextResolved(resolutionID, _):
         return state.backgroundAiChatStates.values.compactMap { backgroundContent in
