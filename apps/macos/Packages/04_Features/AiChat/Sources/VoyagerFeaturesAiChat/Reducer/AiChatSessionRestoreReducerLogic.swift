@@ -114,13 +114,29 @@ extension AiChatFeature {
     }
 
     func apply(setup: AiChatSetupState, to state: inout State) {
+        let targetSessionID = setup.sessionID ?? setup.restoreSessionID
+        movePendingRequestStartToBackgroundIfNeeded(
+            state: &state,
+            targetSessionID: targetSessionID,
+        )
         moveVisibleProcessingToBackgroundIfNeeded(
             state: &state,
-            targetSessionID: setup.sessionID ?? setup.restoreSessionID,
+            targetSessionID: targetSessionID,
         )
         applySetupSession(setup, to: &state)
         applySetupModelState(setup, to: &state)
         clearSetupRuntimeState(&state)
+    }
+
+    private func movePendingRequestStartToBackgroundIfNeeded(
+        state: inout State,
+        targetSessionID: AiChatSessionID?,
+    ) {
+        guard let pendingRequestStart = state.pendingRequestStart,
+              pendingRequestStart.sessionID != targetSessionID
+        else { return }
+        state.backgroundPendingRequestStarts[pendingRequestStart.resolutionID] = pendingRequestStart
+        state.pendingRequestStart = nil
     }
 
     private func applySetupSession(_ setup: AiChatSetupState, to state: inout State) {

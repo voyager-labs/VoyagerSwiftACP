@@ -2741,6 +2741,86 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(store.state.transcriptAutoScrollVersion, 0)
     }
 
+    func testSetupParksPendingResolverForDifferentSessionBeforeSwitching() async {
+        let catalogRows = makeCatalogRows()
+        let currentSessionID = AiChatSessionID(rawValue: makeUUID("aaaaaaaa-7777-8888-9999-000000000001"))
+        let targetSessionID = AiChatSessionID(rawValue: makeUUID("bbbbbbbb-7777-8888-9999-000000000001"))
+        let resolutionID = makeUUID("cccccccc-7777-8888-9999-000000000001")
+        let userMessage = AiChatMessage(role: .user, content: "Pending setup question")
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: currentSessionID,
+            selectedModel: makeProviderModels()[0],
+            selectedRow: catalogRows[0],
+            preparedRequest: AiChatPreparedRequest(
+                prompt: userMessage.content,
+                messages: [userMessage],
+                assistantReplacementIndex: nil,
+                historyTruncation: .init(
+                    includedMessageCount: 1,
+                    excludedMessageCount: 0,
+                    budget: 200_000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        let setupState = AiChatSetupState(
+            restoreSessionID: nil,
+            sessionID: targetSessionID,
+            sessionStatus: .idle,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [],
+            draftText: "",
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[0].handle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: currentSessionID,
+            sessionStatus: .active,
+            catalogRows: catalogRows,
+            modelListState: .loaded(makeProviderModels()),
+            selectedModelHandle: catalogRows[0].handle,
+            pendingRequestStart: pendingRequest,
+        )) {
+            AiChatFeature()
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.setup(setupState)) { state in
+            state.emptyDraftSessionID = nil
+            state.currentSessionCustomTitle = nil
+            state.pendingRequestStart = nil
+            state.backgroundPendingRequestStarts[resolutionID] = pendingRequest
+            state.restoreSessionID = nil
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.sessionID = targetSessionID
+            state.sessionStatus = .idle
+            state.currentContext = setupState.currentContext
+            state.lastRequestContext = nil
+            state.lastRequestContextModelHandle = nil
+            state.transcriptHistory = []
+            state.draftText = ""
+            state.streamingAssistantDraft = nil
+            state.addedAttachments = []
+            state.currentContextFolderStructureModes = [:]
+            state.catalogRows = catalogRows
+            state.modelListState = .loaded(makeProviderModels())
+            state.selectedModelHandle = catalogRows[0].handle
+            state.selectedThinking = nil
+            state.unavailableSelectedModelHandle = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.executionPhase = .idle
+        }
+
+        XCTAssertNil(store.state.pendingRequestStart)
+        XCTAssertEqual(store.state.backgroundPendingRequestStarts[resolutionID], pendingRequest)
+    }
+
     /// CBW-005-show_chat_session_restore_failure: 빈 catalog에서 missing record fallback이 unknown model selection을 만들지
     /// 않는다.
     /// 빈 catalog에서 missing record fallback이 unknown model selection을 만들지 않는다. 경로의 회귀 contract를 유지하는지 검증합니다.
