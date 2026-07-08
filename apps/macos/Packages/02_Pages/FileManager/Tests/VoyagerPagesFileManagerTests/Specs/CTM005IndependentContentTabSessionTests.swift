@@ -5855,6 +5855,43 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    func testActiveFailureDoesNotRefreshContentFromItself() async {
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+        var activeContent = FileManagerContentFeature.State()
+        activeContent.aiChat.sessionID = aiSessionID
+        activeContent.aiChat.sessionStatus = .active
+        activeContent.aiChat.executionPhase = .processing(requestLock)
+        activeContent.aiChat.transcriptHistory = requestLock.request.messages
+        activeContent.aiChat.streamingAssistantDraft = "partial answer"
+
+        var state = FileManagerFeature.State()
+        state.content = activeContent
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.content(.aiChat(.executionEvent(.failed(
+            context: requestLock.context,
+            reason: .network,
+        )))))
+
+        let expectedFailedLock = requestLock.recordingTerminal(
+            at: 1_234_567_890_000,
+            failure: .network,
+            wasCancelled: false,
+        )
+        XCTAssertEqual(store.state.content.aiChat.executionPhase, .failed(expectedFailedLock, .network))
+        XCTAssertEqual(store.state.content.aiChat.streamingAssistantDraft, "partial answer")
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory, requestLock.request.messages)
+        XCTAssertEqual(store.state.content.aiChat.lastExecutionFailure, .network)
+        await store.finish()
+    }
+
     func testBackgroundFailureRefreshesInactiveProcessingCopyWithMatchingOwner() async {
         let homeTabID = ContentTabID()
         let aiChatTabID = ContentTabID()

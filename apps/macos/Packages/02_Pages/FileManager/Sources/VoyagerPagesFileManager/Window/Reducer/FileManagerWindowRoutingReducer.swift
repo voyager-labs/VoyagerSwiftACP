@@ -378,6 +378,7 @@ struct FileManagerWindowRoutingReducer {
                     aiChatAction,
                     backgroundAiChat: state.content.aiChat,
                     state: &state,
+                    skipsActiveContent: true,
                 )
                 return effect
 
@@ -394,6 +395,7 @@ struct FileManagerWindowRoutingReducer {
                     aiChatAction,
                     backgroundAiChat: state.inspector.aiChat,
                     state: &state,
+                    skipsActiveInspector: true,
                 )
                 return effect
 
@@ -1084,6 +1086,8 @@ private func refreshAiChatFollowUpFromBackgroundIfNeeded(
     _ aiChatAction: AiChatAction,
     backgroundAiChat: AiChatFeature.State,
     state: inout FileManagerWindowState,
+    skipsActiveContent: Bool = false,
+    skipsActiveInspector: Bool = false,
 ) {
     if let payload = sessionSnapshotRefreshPayload(from: aiChatAction) {
         refreshAiChatSnapshotsFromBackgroundIfNeeded(
@@ -1091,18 +1095,24 @@ private func refreshAiChatFollowUpFromBackgroundIfNeeded(
             snapshot: payload.snapshot,
             backgroundAiChat: backgroundAiChat,
             state: &state,
+            skipsActiveContent: skipsActiveContent,
+            skipsActiveInspector: skipsActiveInspector,
         )
     } else if let failedContext = failedAiChatContext(from: aiChatAction) {
         refreshAiChatFailureFromBackgroundIfNeeded(
             context: failedContext,
             backgroundAiChat: backgroundAiChat,
             state: &state,
+            skipsActiveContent: skipsActiveContent,
+            skipsActiveInspector: skipsActiveInspector,
         )
     } else if let recoveryLock = persistenceRecoveryLock(from: aiChatAction) {
         refreshAiChatRecoveryFromBackgroundIfNeeded(
             lock: recoveryLock,
             backgroundAiChat: backgroundAiChat,
             state: &state,
+            skipsActiveContent: skipsActiveContent,
+            skipsActiveInspector: skipsActiveInspector,
         )
     }
 }
@@ -1259,10 +1269,14 @@ private func refreshAiChatFailureFromBackgroundIfNeeded(
     context: AiChatRequestContextSnapshot,
     backgroundAiChat: AiChatFeature.State,
     state: inout FileManagerWindowState,
+    skipsActiveContent: Bool = false,
+    skipsActiveInspector: Bool = false,
 ) {
-    guard let sessionID = context.sessionID else { return }
+    guard context.sessionID != nil else { return }
 
-    if state.content.aiChat.canRefreshFailureFromBackground(context: context) {
+    if !skipsActiveContent,
+       state.content.aiChat.canRefreshFailureFromBackground(context: context)
+    {
         state.content.aiChat.applyBackgroundFailure(context: context, backgroundAiChat: backgroundAiChat)
         state.syncActiveTabContentState()
     }
@@ -1277,7 +1291,9 @@ private func refreshAiChatFailureFromBackgroundIfNeeded(
         )
     }
 
-    if state.inspector.aiChat.canRefreshFailureFromBackground(context: context) {
+    if !skipsActiveInspector,
+       state.inspector.aiChat.canRefreshFailureFromBackground(context: context)
+    {
         state.inspector.aiChat.applyBackgroundFailure(context: context, backgroundAiChat: backgroundAiChat)
         state.syncActiveTabInspectorState()
     }
@@ -1297,10 +1313,14 @@ private func refreshAiChatRecoveryFromBackgroundIfNeeded(
     lock: AiChatRequestLock,
     backgroundAiChat: AiChatFeature.State,
     state: inout FileManagerWindowState,
+    skipsActiveContent: Bool = false,
+    skipsActiveInspector: Bool = false,
 ) {
-    guard let sessionID = lock.context.sessionID else { return }
+    guard lock.context.sessionID != nil else { return }
 
-    if state.content.aiChat.canRefreshRecoveryFromBackground(lock: lock) {
+    if !skipsActiveContent,
+       state.content.aiChat.canRefreshRecoveryFromBackground(lock: lock)
+    {
         state.content.aiChat.applyBackgroundRecovery(lock: lock, backgroundAiChat: backgroundAiChat)
         state.syncActiveTabContentState()
     }
@@ -1315,7 +1335,9 @@ private func refreshAiChatRecoveryFromBackgroundIfNeeded(
         )
     }
 
-    if state.inspector.aiChat.canRefreshRecoveryFromBackground(lock: lock) {
+    if !skipsActiveInspector,
+       state.inspector.aiChat.canRefreshRecoveryFromBackground(lock: lock)
+    {
         state.inspector.aiChat.applyBackgroundRecovery(lock: lock, backgroundAiChat: backgroundAiChat)
         state.syncActiveTabInspectorState()
     }
@@ -1336,8 +1358,12 @@ private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
     snapshot: AiChatSessionSnapshot? = nil,
     backgroundAiChat: AiChatFeature.State,
     state: inout FileManagerWindowState,
+    skipsActiveContent: Bool = false,
+    skipsActiveInspector: Bool = false,
 ) {
-    if state.content.aiChat.canRefreshFromBackground(summary: summary, snapshot: snapshot) {
+    if !skipsActiveContent,
+       state.content.aiChat.canRefreshFromBackground(summary: summary, snapshot: snapshot)
+    {
         state.content.aiChat.applyBackgroundSnapshot(
             summary: summary,
             snapshot: snapshot,
@@ -1360,7 +1386,9 @@ private func refreshAiChatSnapshotsFromBackgroundIfNeeded(
         )
     }
 
-    if state.inspector.aiChat.canRefreshFromBackground(summary: summary, snapshot: snapshot) {
+    if !skipsActiveInspector,
+       state.inspector.aiChat.canRefreshFromBackground(summary: summary, snapshot: snapshot)
+    {
         state.inspector.aiChat.applyBackgroundSnapshot(
             summary: summary,
             snapshot: snapshot,
