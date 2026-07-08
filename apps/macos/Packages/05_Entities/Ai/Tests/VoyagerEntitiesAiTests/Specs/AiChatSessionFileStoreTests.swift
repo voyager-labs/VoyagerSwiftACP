@@ -325,6 +325,64 @@ final class AiChatSessionFileStoreTests: XCTestCase {
         XCTAssertNotNil(restored.lastRequestContext)
     }
 
+    func testSaveSessionMergesExistingNilCustomTitleWithRequestMetadataIntoLaterFinalSnapshot() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AiChatSessionFileStoreTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let store = try AiChatSessionFileStore(rootDirectoryURL: directoryURL)
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let requestID = AiChatRequestID(rawValue: UUID())
+        let runID = AiChatRunID(rawValue: UUID())
+        let model = AiModelHandle(provider: .openai, rawValue: "gpt-test")
+        let requestContext = AiChatLockedRequestContextSnapshot()
+        let clearedTitleSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: nil,
+            provider: .openai,
+            model: model,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "test"),
+            ],
+            lastRequestID: requestID,
+            lastRunID: runID,
+            lastRequestContext: requestContext,
+            updatedAtMs: 1,
+        )
+        let laterFinalSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: "Old title",
+            provider: .openai,
+            model: model,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "test"),
+                AiChatMessage(role: .assistant, content: "done"),
+            ],
+            lastRequestID: requestID,
+            lastRunID: runID,
+            lastRequestContext: requestContext,
+            updatedAtMs: 2,
+        )
+
+        try await store.saveSession(clearedTitleSnapshot)
+        let persistedSnapshot = try await store.saveSession(laterFinalSnapshot)
+
+        XCTAssertNil(persistedSnapshot.customTitle)
+        XCTAssertEqual(persistedSnapshot.updatedAtMs, 2)
+        XCTAssertEqual(persistedSnapshot.transcriptHistory.map(\.content), ["test", "done"])
+        XCTAssertEqual(persistedSnapshot.lastRequestID, requestID)
+        XCTAssertEqual(persistedSnapshot.lastRunID, runID)
+        XCTAssertNotNil(persistedSnapshot.lastRequestContext)
+
+        let loadedSnapshot = try await store.loadSession(id: sessionID)
+        let restored = try XCTUnwrap(loadedSnapshot)
+        XCTAssertNil(restored.customTitle)
+        XCTAssertEqual(restored.transcriptHistory.map(\.content), ["test", "done"])
+    }
+
     func testSaveSessionDoesNotMergeStaleRequestStartCustomTitleIntoNewerSnapshot() async throws {
         let directoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("AiChatSessionFileStoreTests-\(UUID().uuidString)", isDirectory: true)

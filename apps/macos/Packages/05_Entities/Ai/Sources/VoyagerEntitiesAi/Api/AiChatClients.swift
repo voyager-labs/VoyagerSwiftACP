@@ -350,7 +350,6 @@ private extension AiChatSessionSnapshot {
         guard hasMatchingRequestLifecycle else { return false }
         if transcriptHistory == existingSnapshot.transcriptHistory { return true }
         return allowsRequestLifecycleTranscriptPrefix
-            && customTitle != nil
             && existingSnapshot.transcriptHistory.starts(with: transcriptHistory)
     }
 
