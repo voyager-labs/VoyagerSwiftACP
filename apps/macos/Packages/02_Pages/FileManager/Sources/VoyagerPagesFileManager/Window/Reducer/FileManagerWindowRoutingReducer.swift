@@ -226,6 +226,7 @@ struct FileManagerWindowRoutingReducer {
                     state.removeInspectorState(for: tabID)
                     if shouldRestorePreviousActiveTab {
                         state.restoreContentStateForActiveTab()
+                        removeBackgroundAiChatOwnersPromotedToActiveContent(state: &state)
                         state.restoreInspectorStateForActiveTab()
                     }
                 } else if shouldResetLastTabContent {

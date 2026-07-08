@@ -541,6 +541,73 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
     /// - 검증 내용: activeTabID 불변, content 불변, tabContentStates에서 closed tab session만 제거됨
     /// - 사전 조건: 두 content tab이 있고 active tab이 A(home)
     /// - 기대 결과: activeTabID == A, content.currentPath == A session 경로, tabContentStates[B] == nil
+    func testActiveCloseRestoresAiChatTabAndRemovesPromotedBackgroundOwner() async {
+        let aiChatID = ContentTabID()
+        let directoryID = ContentTabID()
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+
+        var aiChatContent = FileManagerContentFeature.State()
+        aiChatContent.navigation.navigationState = .aiChat(aiSessionID.rawValue.uuidString)
+        aiChatContent.aiChat.sessionID = aiSessionID
+        aiChatContent.aiChat.sessionStatus = .active
+        aiChatContent.aiChat.executionPhase = .processing(requestLock)
+
+        var directoryContent = FileManagerContentFeature.State()
+        directoryContent.navigation.seedInitialFolderPath("/Users/test/Desktop")
+
+        var backgroundContent = aiChatContent
+        backgroundContent.aiChat.executionPhase = .idle
+        backgroundContent.aiChat.backgroundExecutionPhases[requestLock.requestID] = .processing(requestLock)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: aiChatID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: aiSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "Chat",
+                    iconName: "message",
+                ),
+                ContentTabItem(
+                    id: directoryID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Desktop"),
+                    isPinned: false,
+                    title: "Desktop",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: directoryID,
+            previousActiveTabID: aiChatID,
+            recentlyClosed: nil,
+        )
+        state.content = directoryContent
+        state.tabContentStates = [aiChatID: aiChatContent, directoryID: directoryContent]
+        state.backgroundAiChatStates[aiSessionID] = backgroundContent
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.close(directoryID)))
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, aiChatID)
+        XCTAssertEqual(store.state.content.aiChat.executionPhase, .processing(requestLock))
+        XCTAssertNil(
+            store.state.backgroundAiChatStates[aiSessionID]?.aiChat.backgroundExecutionPhases[requestLock.requestID],
+            "restoring the AI Chat tab on close should remove the duplicated background owner",
+        )
+        XCTAssertNil(store.state.tabContentStates[directoryID])
+        await store.finish()
+    }
+
     func testInactiveCloseRemovesOnlyClosedTabSession() async {
         let homeID = ContentTabID()
         let directoryID = ContentTabID()
