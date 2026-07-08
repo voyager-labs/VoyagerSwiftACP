@@ -298,7 +298,10 @@ private extension AiChatSessionSnapshot {
     func mergingExistingIndependentMetadata(from existingSnapshot: AiChatSessionSnapshot) -> AiChatSessionSnapshot? {
         guard sessionID == existingSnapshot.sessionID,
               !representsMetadataOnlyChange(from: existingSnapshot),
-              existingSnapshot.representsMetadataOnlyChange(from: self),
+              existingSnapshot.representsMetadataOnlyChange(
+                  from: self,
+                  allowsRequestLifecycleTranscriptPrefix: true,
+              ),
               existingSnapshot.customTitle != customTitle
         else {
             return nil
@@ -320,22 +323,35 @@ private extension AiChatSessionSnapshot {
         )
     }
 
-    func representsMetadataOnlyChange(from existingSnapshot: AiChatSessionSnapshot) -> Bool {
+    func representsMetadataOnlyChange(
+        from existingSnapshot: AiChatSessionSnapshot,
+        allowsRequestLifecycleTranscriptPrefix: Bool = false,
+    ) -> Bool {
         provider == existingSnapshot.provider
             && model == existingSnapshot.model
             && selectedModelRow == existingSnapshot.selectedModelRow
             && selectedThinking == existingSnapshot.selectedThinking
-            && canMergeIndependentMetadata(over: existingSnapshot)
+            && canMergeIndependentMetadata(
+                over: existingSnapshot,
+                allowsRequestLifecycleTranscriptPrefix: allowsRequestLifecycleTranscriptPrefix,
+            )
     }
 
-    func canMergeIndependentMetadata(over existingSnapshot: AiChatSessionSnapshot) -> Bool {
+    func canMergeIndependentMetadata(
+        over existingSnapshot: AiChatSessionSnapshot,
+        allowsRequestLifecycleTranscriptPrefix: Bool,
+    ) -> Bool {
         guard hasRequestLifecycleMetadata else {
             return existingSnapshot.transcriptHistory.starts(with: transcriptHistory)
         }
-        return transcriptHistory == existingSnapshot.transcriptHistory
-            && lastRequestID == existingSnapshot.lastRequestID
+        let hasMatchingRequestLifecycle = lastRequestID == existingSnapshot.lastRequestID
             && lastRunID == existingSnapshot.lastRunID
             && lastRequestContext == existingSnapshot.lastRequestContext
+        guard hasMatchingRequestLifecycle else { return false }
+        if transcriptHistory == existingSnapshot.transcriptHistory { return true }
+        return allowsRequestLifecycleTranscriptPrefix
+            && customTitle != nil
+            && existingSnapshot.transcriptHistory.starts(with: transcriptHistory)
     }
 
     var hasRequestLifecycleMetadata: Bool {

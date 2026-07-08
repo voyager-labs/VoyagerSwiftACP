@@ -281,6 +281,7 @@ final class AiChatSessionFileStoreTests: XCTestCase {
         let requestID = AiChatRequestID(rawValue: UUID())
         let runID = AiChatRunID(rawValue: UUID())
         let model = AiModelHandle(provider: .openai, rawValue: "gpt-test")
+        let requestContext = AiChatLockedRequestContextSnapshot()
         let renamedSnapshot = AiChatSessionSnapshot(
             sessionID: sessionID,
             status: .active,
@@ -290,6 +291,9 @@ final class AiChatSessionFileStoreTests: XCTestCase {
             transcriptHistory: [
                 AiChatMessage(role: .user, content: "test"),
             ],
+            lastRequestID: requestID,
+            lastRunID: runID,
+            lastRequestContext: requestContext,
             updatedAtMs: 1,
         )
         let laterFinalSnapshot = AiChatSessionSnapshot(
@@ -304,7 +308,7 @@ final class AiChatSessionFileStoreTests: XCTestCase {
             ],
             lastRequestID: requestID,
             lastRunID: runID,
-            lastRequestContext: AiChatLockedRequestContextSnapshot(),
+            lastRequestContext: requestContext,
             updatedAtMs: 2,
         )
 
