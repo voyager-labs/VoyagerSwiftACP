@@ -66,23 +66,33 @@ extension AiChatFeature {
         resolvedContext: AiChatResolvedRequestContext,
         state: inout State,
     ) -> Effect<Action> {
-        let pendingRequest: AiChatPendingRequestStart
+        let lockedRequestContext = makeLockedRequestContextSnapshot(from: resolvedContext)
         if let currentPendingRequest = state.pendingRequestStart,
            currentPendingRequest.resolutionID == resolutionID
         {
-            pendingRequest = currentPendingRequest
             state.pendingRequestStart = nil
-        } else if let backgroundPendingRequest = state.backgroundPendingRequestStarts
-            .removeValue(forKey: resolutionID)
-        {
-            pendingRequest = backgroundPendingRequest
-        } else {
-            return .none
+            return beginRequest(
+                currentPendingRequest,
+                lockedRequestContext: lockedRequestContext,
+                state: &state,
+            )
         }
 
-        return beginRequest(
-            pendingRequest,
-            lockedRequestContext: makeLockedRequestContextSnapshot(from: resolvedContext),
+        guard let backgroundPendingRequest = state.backgroundPendingRequestStarts
+            .removeValue(forKey: resolutionID)
+        else { return .none }
+
+        if backgroundPendingRequest.sessionID == state.sessionID {
+            return beginRequest(
+                backgroundPendingRequest,
+                lockedRequestContext: lockedRequestContext,
+                state: &state,
+            )
+        }
+
+        return beginBackgroundRequest(
+            backgroundPendingRequest,
+            lockedRequestContext: lockedRequestContext,
             state: &state,
         )
     }
@@ -113,6 +123,27 @@ extension AiChatFeature {
             state: &state,
         )
         let startSnapshotEffect = saveRequestStartSnapshotIfNeeded(kind: pendingRequest.kind, state: state, lock: lock)
+        return .merge(startSnapshotEffect, execute(request: lock.request))
+    }
+
+    private func beginBackgroundRequest(
+        _ pendingRequest: AiChatPendingRequestStart,
+        lockedRequestContext: AiChatLockedRequestContextSnapshot,
+        state: inout State,
+    ) -> Effect<Action> {
+        let lock = makeRequestLock(
+            input: AiChatRequestLockInput(
+                kind: pendingRequest.kind,
+                sessionID: pendingRequest.sessionID,
+                selectedModel: pendingRequest.selectedModel,
+                selectedRow: pendingRequest.selectedRow,
+                preparedRequest: pendingRequest.preparedRequest,
+            ),
+            lockedRequestContext: lockedRequestContext,
+            state: state,
+        )
+        state.backgroundExecutionPhases[lock.requestID] = .processing(lock)
+        let startSnapshotEffect = saveBackgroundRequestStartSnapshotIfNeeded(kind: pendingRequest.kind, lock: lock)
         return .merge(startSnapshotEffect, execute(request: lock.request))
     }
 
@@ -150,6 +181,49 @@ extension AiChatFeature {
             }
         }
         .cancellable(id: CancelID.requestStartPersistence(lock.requestID), cancelInFlight: true)
+    }
+
+    private func saveBackgroundRequestStartSnapshotIfNeeded(
+        kind: AiChatRequestKind,
+        lock: AiChatRequestLock,
+    ) -> Effect<Action> {
+        guard kind == .submit else { return .none }
+        let snapshot = makeBackgroundRequestStartSnapshot(lock: lock)
+        return .run { [aiChatSessionPersistenceClient] send in
+            do {
+                let persistedSnapshot = try await aiChatSessionPersistenceClient.saveSession(snapshot)
+                await send(.sessionSnapshotUpdated(
+                    AiChatSessionSummary(snapshot: persistedSnapshot),
+                    snapshot: persistedSnapshot,
+                    requestID: lock.requestID,
+                    runID: lock.runID,
+                ))
+            } catch {
+                await send(.sessionSnapshotUpdateFailed(requestID: lock.requestID, runID: lock.runID))
+            }
+        }
+        .cancellable(id: CancelID.requestStartPersistence(lock.requestID), cancelInFlight: true)
+    }
+
+    private func makeBackgroundRequestStartSnapshot(lock: AiChatRequestLock) -> AiChatSessionSnapshot {
+        guard let sessionID = lock.context.sessionID else {
+            preconditionFailure("Missing session ID for background request-start snapshot")
+        }
+
+        return AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: lock.customTitle,
+            provider: lock.context.provider,
+            model: lock.context.model,
+            selectedModelRow: lock.selectedModelRow,
+            selectedThinking: lock.context.selectedThinking,
+            transcriptHistory: lock.request.messages,
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: persistenceSafeRequestContext(lock.context.requestContext),
+            updatedAtMs: lock.context.submittedAtMs ?? currentTimestampMs(),
+        )
     }
 
     private func makeRequestStartSnapshot(state: State, lock: AiChatRequestLock) -> AiChatSessionSnapshot {

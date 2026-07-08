@@ -2837,12 +2837,15 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         await store.skipReceivedActions()
 
         XCTAssertNil(store.state.backgroundPendingRequestStarts[resolutionID])
-        XCTAssertEqual(store.state.transcriptHistory, [userMessage])
-        if case let .processing(lock) = store.state.executionPhase {
+        XCTAssertEqual(store.state.sessionID, targetSessionID)
+        XCTAssertEqual(store.state.transcriptHistory, [])
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertEqual(store.state.backgroundExecutionPhases.count, 1)
+        if case let .processing(lock) = store.state.backgroundExecutionPhases.values.first {
             XCTAssertEqual(lock.context.sessionID, currentSessionID)
             XCTAssertEqual(lock.request.messages, [userMessage])
         } else {
-            XCTFail("background pending resolver should start processing after resolution")
+            XCTFail("background pending resolver should start as a background processing owner")
         }
     }
 
