@@ -364,8 +364,8 @@ struct FileManagerWindowRoutingReducer {
 
             case let .content(.aiChat(.sessionRenameSucceeded(summary, customTitle))),
                  let .inspector(.aiChat(.sessionRenameSucceeded(summary, customTitle))):
-                refreshBackgroundAiChatCustomTitle(
-                    sessionID: summary.sessionID,
+                refreshAiChatCustomTitle(
+                    summary: summary,
                     customTitle: customTitle,
                     state: &state,
                 )
@@ -912,35 +912,86 @@ private func cancelAndRemoveBackgroundAiChatOwners(
 ) -> Effect<FileManagerWindowAction> {
     var effects: [Effect<FileManagerWindowAction>] = []
     if let backgroundContent = state.removeBackgroundAiChatState(sessionID: sessionID) {
-        var scopedAiChat = backgroundContent.aiChat.cancellationScope(sessionID: sessionID)
-        effects.append(
-            AiChatFeature()
-                .reduce(into: &scopedAiChat, action: .cancelInFlightWork)
-                .map { FileManagerWindowAction.backgroundAiChat($0) },
-        )
+        effects.append(cancelBackgroundAiChatWork(sessionID: sessionID, aiChat: backgroundContent.aiChat))
     }
     if let backgroundInspector = state.removeBackgroundInspectorAiChatState(sessionID: sessionID) {
-        var scopedAiChat = backgroundInspector.aiChat.cancellationScope(sessionID: sessionID)
-        effects.append(
-            AiChatFeature()
-                .reduce(into: &scopedAiChat, action: .cancelInFlightWork)
-                .map { FileManagerWindowAction.backgroundInspectorAiChat($0) },
-        )
+        effects.append(cancelBackgroundInspectorAiChatWork(sessionID: sessionID, aiChat: backgroundInspector.aiChat))
+    }
+
+    for backgroundSessionID in state.backgroundAiChatStates.keys {
+        guard var backgroundContent = state.backgroundAiChatStates[backgroundSessionID],
+              backgroundContent.aiChat.hasLifecycleOwner(sessionID: sessionID)
+        else { continue }
+        effects.append(cancelBackgroundAiChatWork(sessionID: sessionID, aiChat: backgroundContent.aiChat))
+        backgroundContent.aiChat.removeLifecycleOwners(sessionID: sessionID)
+        if backgroundContent.aiChat.hasRemainingBackgroundLifecycleOwner {
+            state.backgroundAiChatStates[backgroundSessionID] = backgroundContent
+        } else {
+            state.removeBackgroundAiChatState(sessionID: backgroundSessionID)
+        }
+    }
+
+    for backgroundSessionID in state.backgroundInspectorAiChatStates.keys {
+        guard var backgroundInspector = state.backgroundInspectorAiChatStates[backgroundSessionID],
+              backgroundInspector.aiChat.hasLifecycleOwner(sessionID: sessionID)
+        else { continue }
+        effects.append(cancelBackgroundInspectorAiChatWork(sessionID: sessionID, aiChat: backgroundInspector.aiChat))
+        backgroundInspector.aiChat.removeLifecycleOwners(sessionID: sessionID)
+        if backgroundInspector.aiChat.hasRemainingBackgroundLifecycleOwner {
+            state.backgroundInspectorAiChatStates[backgroundSessionID] = backgroundInspector.tabSnapshot()
+        } else {
+            state.removeBackgroundInspectorAiChatState(sessionID: backgroundSessionID)
+        }
     }
     return .merge(effects)
 }
 
-private func refreshBackgroundAiChatCustomTitle(
+private func cancelBackgroundAiChatWork(
     sessionID: AiChatSessionID,
+    aiChat: AiChatFeature.State,
+) -> Effect<FileManagerWindowAction> {
+    var scopedAiChat = aiChat.cancellationScope(sessionID: sessionID)
+    return AiChatFeature()
+        .reduce(into: &scopedAiChat, action: .cancelInFlightWork)
+        .map { FileManagerWindowAction.backgroundAiChat($0) }
+}
+
+private func cancelBackgroundInspectorAiChatWork(
+    sessionID: AiChatSessionID,
+    aiChat: AiChatFeature.State,
+) -> Effect<FileManagerWindowAction> {
+    var scopedAiChat = aiChat.cancellationScope(sessionID: sessionID)
+    return AiChatFeature()
+        .reduce(into: &scopedAiChat, action: .cancelInFlightWork)
+        .map { FileManagerWindowAction.backgroundInspectorAiChat($0) }
+}
+
+private func refreshAiChatCustomTitle(
+    summary: AiChatSessionSummary,
     customTitle: String?,
     state: inout FileManagerWindowState,
 ) {
+    let sessionID = summary.sessionID
+    state.content.aiChat.refreshCustomTitle(summary: summary, customTitle: customTitle)
+    state.syncActiveTabContentState()
+
+    for tabID in state.tabContentStates.keys {
+        state.tabContentStates[tabID]?.aiChat.refreshCustomTitle(summary: summary, customTitle: customTitle)
+    }
+
+    state.inspector.aiChat.refreshCustomTitle(summary: summary, customTitle: customTitle)
+    state.syncActiveTabInspectorState()
+
+    for tabID in state.tabInspectorStates.keys {
+        state.tabInspectorStates[tabID]?.aiChat.refreshCustomTitle(summary: summary, customTitle: customTitle)
+    }
+
     if var backgroundContent = state.backgroundAiChatStates[sessionID] {
-        backgroundContent.aiChat.refreshExecutionOwnerCustomTitle(sessionID: sessionID, customTitle: customTitle)
+        backgroundContent.aiChat.refreshCustomTitle(summary: summary, customTitle: customTitle)
         state.backgroundAiChatStates[sessionID] = backgroundContent
     }
     if var backgroundInspector = state.backgroundInspectorAiChatStates[sessionID] {
-        backgroundInspector.aiChat.refreshExecutionOwnerCustomTitle(sessionID: sessionID, customTitle: customTitle)
+        backgroundInspector.aiChat.refreshCustomTitle(summary: summary, customTitle: customTitle)
         state.backgroundInspectorAiChatStates[sessionID] = backgroundInspector.tabSnapshot()
     }
 }
@@ -1883,11 +1934,37 @@ private extension AiChatFeature.State {
         }
     }
 
+    func hasLifecycleOwner(sessionID: AiChatSessionID) -> Bool {
+        pendingRequestStart?.sessionID == sessionID
+            || backgroundPendingRequestStarts.values.contains { $0.sessionID == sessionID }
+            || executionPhase.lock?.context.sessionID == sessionID
+            || backgroundExecutionPhases.values.contains { $0.lock?.context.sessionID == sessionID }
+    }
+
+    mutating func removeLifecycleOwners(sessionID: AiChatSessionID) {
+        if pendingRequestStart?.sessionID == sessionID {
+            pendingRequestStart = nil
+        }
+        backgroundPendingRequestStarts = backgroundPendingRequestStarts.filter { _, pendingRequestStart in
+            pendingRequestStart.sessionID != sessionID
+        }
+        if executionPhase.lock?.context.sessionID == sessionID {
+            executionPhase = .idle
+        }
+        backgroundExecutionPhases = backgroundExecutionPhases.filter { _, phase in
+            phase.lock?.context.sessionID != sessionID
+        }
+    }
+
     func cancellationScope(sessionID: AiChatSessionID) -> Self {
         var scopedState = self
         if scopedState.pendingRequestStart?.sessionID != sessionID {
             scopedState.pendingRequestStart = nil
         }
+        scopedState.backgroundPendingRequestStarts = scopedState.backgroundPendingRequestStarts
+            .filter { _, pendingRequestStart in
+                pendingRequestStart.sessionID == sessionID
+            }
         if scopedState.executionPhase.lock?.context.sessionID != sessionID {
             scopedState.executionPhase = .idle
         }
@@ -1895,6 +1972,20 @@ private extension AiChatFeature.State {
             phase.lock?.context.sessionID == sessionID
         }
         return scopedState
+    }
+
+    mutating func refreshCustomTitle(summary: AiChatSessionSummary, customTitle: String?) {
+        guard sessionID == summary.sessionID || sessionList.allRows
+            .contains(where: { $0.sessionID == summary.sessionID })
+        else {
+            refreshExecutionOwnerCustomTitle(sessionID: summary.sessionID, customTitle: customTitle)
+            return
+        }
+        if sessionID == summary.sessionID {
+            currentSessionCustomTitle = customTitle
+        }
+        sessionList.replaceRow(summary)
+        refreshExecutionOwnerCustomTitle(sessionID: summary.sessionID, customTitle: customTitle)
     }
 
     mutating func refreshExecutionOwnerCustomTitle(sessionID: AiChatSessionID, customTitle: String?) {
