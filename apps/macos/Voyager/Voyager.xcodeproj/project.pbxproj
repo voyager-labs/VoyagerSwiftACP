@@ -85,6 +85,7 @@
 		F20000000000000000000054 /* VoyagerEntitiesAi in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000047 /* VoyagerEntitiesAi */; };
 		F20000000000000000000055 /* VoyagerWidgetsEntryViewLayout in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001F /* VoyagerWidgetsEntryViewLayout */; };
 		F20000000000000000000056 /* ConcurrencyExtras in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000017 /* ConcurrencyExtras */; };
+		F2000000000000000000005A /* VoyagerFeaturesExternalFileRouter in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000005B /* VoyagerFeaturesExternalFileRouter */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -220,6 +221,7 @@
 				F20000000000000000000041 /* VoyagerFeaturesUpdateVersion in Frameworks */,
 				F20000000000000000000042 /* VoyagerFeaturesComposer in Frameworks */,
 				F20000000000000000000052 /* VoyagerFeaturesAiChat in Frameworks */,
+				F2000000000000000000005A /* VoyagerFeaturesExternalFileRouter in Frameworks */,
 				F2000000000000000000003B /* VoyagerEntitiesEntry in Frameworks */,
 				F2000000000000000000003C /* Dependencies in Frameworks */,
 				F2000000000000000000003D /* Clocks in Frameworks */,
@@ -399,6 +401,7 @@
 				F2000000000000000000001D /* VoyagerFeaturesComposer */,
 				F2000000000000000000001E /* VoyagerPagesFileManager */,
 				F20000000000000000000051 /* VoyagerFeaturesAiChat */,
+				F2000000000000000000005B /* VoyagerFeaturesExternalFileRouter */,
 				F2000000000000000000001F /* VoyagerWidgetsEntryViewLayout */,
 				F21000000000000000000014 /* Dependencies */,
 				F21000000000000000000012 /* OrderedCollections */,
@@ -636,6 +639,7 @@
 				F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */,
 				F2000000000000000000000E /* XCLocalSwiftPackageReference "02_Pages/FileManager" */,
 				F20000000000000000000050 /* XCLocalSwiftPackageReference "04_Features/AiChat" */,
+				F20000000000000000000059 /* XCLocalSwiftPackageReference "04_Features/ExternalFileRouter" */,
 				F2000000000000000000000F /* XCLocalSwiftPackageReference "03_Widgets/EntryViewLayout" */,
 				F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
 				F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
@@ -1569,6 +1573,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/04_Features/AiChat;
 		};
+		F20000000000000000000059 /* XCLocalSwiftPackageReference "04_Features/ExternalFileRouter" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/04_Features/ExternalFileRouter;
+		};
 		F2000000000000000000000F /* XCLocalSwiftPackageReference "03_Widgets/EntryViewLayout" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/03_Widgets/EntryViewLayout;
@@ -1873,6 +1881,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F20000000000000000000050 /* XCLocalSwiftPackageReference "04_Features/AiChat" */;
 			productName = VoyagerFeaturesAiChat;
+		};
+		F2000000000000000000005B /* VoyagerFeaturesExternalFileRouter */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000059 /* XCLocalSwiftPackageReference "04_Features/ExternalFileRouter" */;
+			productName = VoyagerFeaturesExternalFileRouter;
 		};
 		/* End XCSwiftPackageProductDependency section */
 	};
