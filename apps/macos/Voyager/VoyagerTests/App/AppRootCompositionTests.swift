@@ -655,25 +655,57 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// access gate 실패는 guard만 띄우지 않고 FileManager window도 연다.
-    /// lastAccessStatus/accountAccessGateResolved는 비활성 상태로 유지되고 openInitialWindowIfNeeded가 전달된다.
-    func testAccessStatusFailureOpensFileManagerWindowAndLeavesGateInactive() async {
-        let openCallCount = LockIsolated(0)
-        let store = makeAccessFailureStore(openCallCount: openCallCount)
+    /// networkFailure + 유효 active cache 없음은 session 만료가 아니라 retry 가능한 access unlock 상태로 전달한다.
+    func testAccessStatusNetworkFailureWithoutCacheRoutesToRetryableAccessUnlock() async {
+        let expiry = Date(timeIntervalSince1970: 100)
+        let saved = SnapshotCaptureBox()
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
+            $0.accessStatusSnapshotClient.load = { nil }
+            $0.accessStatusSnapshotClient.save = { snapshot in
+                saved.value = snapshot
+            }
+            $0.accountSessionClient.read = {
+                AccountSession(
+                    accessToken: "access-token",
+                    status: .networkFailure,
+                    refreshToken: "refresh",
+                    expiresAt: expiry,
+                )
+            }
+            $0.helperAppClient.start = {}
+            $0.helperAppClient.stop = {}
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        store.exhaustivity = .off
 
-        await store.send(.lifecycle(.accountAccessGate(.accessStatusResponse(.failure(.networkFailure))))) { state in
-            state.lifecycle.lastAccessStatus = nil
-            state.lifecycle.accountAccessGateResolved = false
+        await store.send(.lifecycle(.accountAccessGate(.accessStatusResponse(.failure(.networkFailure)))))
+
+        await store.receive(\.lifecycle.accountAccessGate.accessUnlockRequired) { state in
+            state.lifecycle.lastAccessStatus = .networkFailure
+            state.lifecycle.accountAccessGateResolved = true
             state.lifecycle.isCheckingAccountAccess = false
         }
+        await store.receive(\.settings.accessStatusLoaded) { state in
+            state.settings.accessStatus = .networkFailure
+        }
+        await store.receive(\.settings.account.access.hydrateLaunchSnapshot) { state in
+            state.settings.accountSettings.access.status = .networkFailure
+            state.settings.accountSettings.access.snapshot = saved.value
+            state.settings.accountSettings.access.sessionExpiresAt = expiry
+            state.settings.accountSettings.access.hasAccountSession = true
+            state.settings.accountSettings.access.didBootstrap = true
+        }
 
-        await store.receive(\.lifecycle.sessionLapseGuard.onAppear)
-        await store.receive(\.lifecycle.delegate.openInitialWindowIfNeeded)
-        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
-
-        XCTAssertEqual(openCallCount.value, 1)
-        XCTAssertNil(store.state.lifecycle.lastAccessStatus)
-        XCTAssertFalse(store.state.lifecycle.accountAccessGateResolved)
+        XCTAssertNil(store.state.lifecycle.sessionLapseGuard)
+        XCTAssertFalse(store.state.lifecycle.didStartHelper)
+        XCTAssertEqual(store.state.settings.accountSettings.access.accessUnlockPrimaryCTA, .retry)
+        XCTAssertEqual(saved.value?.status, .networkFailure)
+        XCTAssertEqual(saved.value?.sessionExpiresAt, expiry)
         await store.finish()
     }
 
