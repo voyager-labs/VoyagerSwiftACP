@@ -950,6 +950,10 @@ private func routeBackgroundAiChatAction(
           var backgroundContent = state.backgroundAiChatStates[sessionID]
     else { return .none }
 
+    if case let .requestContextResolved(resolutionID, _) = aiChatAction {
+        backgroundContent.aiChat.activateBackgroundPendingRequestStart(resolutionID: resolutionID)
+    }
+
     let backgroundOwnerRemoval = backgroundAiChatOwnerRemoval(
         after: aiChatAction,
         backgroundAiChat: backgroundContent.aiChat,
@@ -1368,6 +1372,7 @@ private extension AiChatFeature.State {
 
     var hasRemainingBackgroundLifecycleOwner: Bool {
         pendingRequestStart != nil
+            || !backgroundPendingRequestStarts.isEmpty
             || executionPhase.lock != nil
             || !backgroundExecutionPhases.isEmpty
     }
@@ -1611,6 +1616,10 @@ private func routeBackgroundInspectorAiChatAction(
           var inspectorState = state.backgroundInspectorAiChatStates[sessionID]
     else { return nil }
 
+    if case let .requestContextResolved(resolutionID, _) = aiChatAction {
+        inspectorState.aiChat.activateBackgroundPendingRequestStart(resolutionID: resolutionID)
+    }
+
     let backgroundOwnerRemoval = backgroundAiChatOwnerRemoval(
         after: aiChatAction,
         backgroundAiChat: inspectorState.aiChat,
@@ -1686,10 +1695,12 @@ private func backgroundInspectorAiChatSessionID(
 ) -> AiChatSessionID? {
     if case let .requestContextResolved(resolutionID, _) = aiChatAction {
         return state.backgroundInspectorAiChatStates.values.compactMap { inspectorState in
-            let pendingRequestStart = inspectorState.aiChat.pendingRequestStart
-            return pendingRequestStart?.resolutionID == resolutionID
-                ? pendingRequestStart?.sessionID
-                : nil
+            if let pendingRequestStart = inspectorState.aiChat.pendingRequestStart,
+               pendingRequestStart.resolutionID == resolutionID
+            {
+                return pendingRequestStart.sessionID
+            }
+            return inspectorState.aiChat.backgroundPendingRequestStarts[resolutionID]?.sessionID
         }.first
     }
 
@@ -1705,6 +1716,18 @@ private func backgroundInspectorAiChatSessionID(
         return sessionID
     }
 
+    if case let .persistenceFailed(lock, _) = aiChatAction {
+        return backgroundInspectorAiChatSessionID(for: lock, state: state)
+    }
+
+    if case let .persistenceRecoverySucceeded(lock) = aiChatAction {
+        return backgroundInspectorAiChatSessionID(for: lock, state: state)
+    }
+
+    if case let .persistenceRecoveryRetryFailed(lock, _) = aiChatAction {
+        return backgroundInspectorAiChatSessionID(for: lock, state: state)
+    }
+
     if case let .sessionSnapshotSaved(summary, _, requestID, runID) = aiChatAction,
        let requestID
     {
@@ -1717,6 +1740,19 @@ private func backgroundInspectorAiChatSessionID(
     }
 
     return inspectorAiChatSessionID(for: aiChatAction)
+}
+
+private func backgroundInspectorAiChatSessionID(
+    for lock: AiChatRequestLock,
+    state: FileManagerWindowState,
+) -> AiChatSessionID? {
+    guard let sessionID = lock.context.sessionID else { return nil }
+    guard state.backgroundInspectorAiChatStates[sessionID]?.aiChat.hasBackgroundOwnerMatching(
+        requestID: lock.requestID,
+        runID: lock.runID,
+    ) == true
+    else { return nil }
+    return sessionID
 }
 
 private func inspectorAiChatSessionID(for aiChatAction: AiChatAction) -> AiChatSessionID? {
@@ -1783,6 +1819,9 @@ private extension AiChatFeature.State {
         if let sessionID = pendingRequestStart?.sessionID {
             sessionIDs.insert(sessionID)
         }
+        for pendingRequestStart in backgroundPendingRequestStarts.values {
+            sessionIDs.insert(pendingRequestStart.sessionID)
+        }
         if let sessionID = executionPhase.lock?.context.sessionID {
             sessionIDs.insert(sessionID)
         }
@@ -1794,11 +1833,25 @@ private extension AiChatFeature.State {
         return sessionIDs
     }
 
-    mutating func removeBackgroundOwners(matching activeAiChat: Self) {
-        if let pendingRequestStart = activeAiChat.pendingRequestStart,
-           self.pendingRequestStart?.resolutionID == pendingRequestStart.resolutionID
+    mutating func activateBackgroundPendingRequestStart(resolutionID: UUID) {
+        guard let pendingRequestStart = backgroundPendingRequestStarts.removeValue(forKey: resolutionID) else { return }
+        if let currentPendingRequestStart = self.pendingRequestStart,
+           currentPendingRequestStart.resolutionID != pendingRequestStart.resolutionID
         {
-            self.pendingRequestStart = nil
+            backgroundPendingRequestStarts[currentPendingRequestStart.resolutionID] = currentPendingRequestStart
+        }
+        self.pendingRequestStart = pendingRequestStart
+    }
+
+    mutating func removeBackgroundOwners(matching activeAiChat: Self) {
+        if let pendingRequestStart = activeAiChat.pendingRequestStart {
+            if self.pendingRequestStart?.resolutionID == pendingRequestStart.resolutionID {
+                self.pendingRequestStart = nil
+            }
+            backgroundPendingRequestStarts.removeValue(forKey: pendingRequestStart.resolutionID)
+        }
+        for pendingRequestStart in activeAiChat.backgroundPendingRequestStarts.values {
+            backgroundPendingRequestStarts.removeValue(forKey: pendingRequestStart.resolutionID)
         }
         if let lock = activeAiChat.executionPhase.lock {
             removeBackgroundOwnerPromotedToActiveContent(lock)
@@ -1901,7 +1954,13 @@ private func backgroundAiChatSessionID(
     case let .persistenceFailed(lock, _),
          let .persistenceRecoverySucceeded(lock),
          let .persistenceRecoveryRetryFailed(lock, _):
-        return lock.context.sessionID
+        guard let sessionID = lock.context.sessionID else { return nil }
+        guard state.backgroundAiChatStates[sessionID]?.aiChat.hasBackgroundOwnerMatching(
+            requestID: lock.requestID,
+            runID: lock.runID,
+        ) == true
+        else { return nil }
+        return sessionID
     case let .sessionSnapshotSaved(summary, _, requestID, runID):
         if let requestID {
             guard state.backgroundAiChatStates[summary.sessionID]?.aiChat.hasBackgroundOwnerMatching(
@@ -1913,10 +1972,12 @@ private func backgroundAiChatSessionID(
         return summary.sessionID
     case let .requestContextResolved(resolutionID, _):
         return state.backgroundAiChatStates.values.compactMap { backgroundContent in
-            let pendingRequestStart = backgroundContent.aiChat.pendingRequestStart
-            return pendingRequestStart?.resolutionID == resolutionID
-                ? pendingRequestStart?.sessionID
-                : nil
+            if let pendingRequestStart = backgroundContent.aiChat.pendingRequestStart,
+               pendingRequestStart.resolutionID == resolutionID
+            {
+                return pendingRequestStart.sessionID
+            }
+            return backgroundContent.aiChat.backgroundPendingRequestStarts[resolutionID]?.sessionID
         }.first
     default:
         return nil

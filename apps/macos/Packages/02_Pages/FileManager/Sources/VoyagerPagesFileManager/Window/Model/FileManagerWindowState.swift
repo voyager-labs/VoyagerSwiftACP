@@ -355,9 +355,13 @@ extension FileManagerWindowState {
         let hasBackgroundExecutionPhase = state.aiChat.backgroundExecutionPhases.values.contains {
             $0.lock?.context.sessionID == sessionID
         }
+        let hasBackgroundPendingRequestStart = state.aiChat.backgroundPendingRequestStarts.values.contains {
+            $0.sessionID == sessionID
+        }
         guard state.aiChat.executionPhase.isProcessing
             || shouldPreserveOwner
             || state.aiChat.pendingRequestStart != nil
+            || hasBackgroundPendingRequestStart
             || hasBackgroundExecutionPhase
         else { return }
         var mergedState = state
@@ -434,15 +438,20 @@ extension FileManagerInspectorFeature.State {
 
 private extension AiChatFeature.State {
     mutating func mergeBackgroundLifecycleOwners(from existingState: Self) {
-        if let existingPendingRequestStart = existingState.pendingRequestStart,
-           pendingRequestStart?.resolutionID != existingPendingRequestStart.resolutionID
-        {
-            pendingRequestStart = existingPendingRequestStart
+        mergeBackgroundPendingRequestStart(existingState.pendingRequestStart)
+        for pendingRequestStart in existingState.backgroundPendingRequestStarts.values {
+            mergeBackgroundPendingRequestStart(pendingRequestStart)
         }
         mergeBackgroundLifecycleOwner(existingState.executionPhase)
         for phase in existingState.backgroundExecutionPhases.values {
             mergeBackgroundLifecycleOwner(phase)
         }
+    }
+
+    mutating func mergeBackgroundPendingRequestStart(_ pendingRequestStart: AiChatPendingRequestStart?) {
+        guard let pendingRequestStart else { return }
+        if self.pendingRequestStart?.resolutionID == pendingRequestStart.resolutionID { return }
+        backgroundPendingRequestStarts[pendingRequestStart.resolutionID] = pendingRequestStart
     }
 
     mutating func mergeBackgroundLifecycleOwner(_ phase: AiChatExecutionPhase) {
@@ -469,6 +478,9 @@ private extension AiChatFeature.State {
         }
         if let pendingSessionID = pendingRequestStart?.sessionID {
             sessionIDs.append(pendingSessionID)
+        }
+        for pendingRequestStart in backgroundPendingRequestStarts.values {
+            sessionIDs.append(pendingRequestStart.sessionID)
         }
         for phase in backgroundExecutionPhases.values {
             if let sessionID = phase.lock?.context.sessionID {

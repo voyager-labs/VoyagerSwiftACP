@@ -4349,6 +4349,7 @@ extension CTM005IndependentContentTabSessionTests {
             }
             $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
                 savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
             }
         }
         store.exhaustivity = .off
@@ -4444,6 +4445,7 @@ extension CTM005IndependentContentTabSessionTests {
             }
             $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
                 savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
             }
         }
         store.exhaustivity = .off
@@ -4618,6 +4620,7 @@ extension CTM005IndependentContentTabSessionTests {
             $0.uuid = .incrementing
             $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
                 savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
             }
         }
         store.exhaustivity = .off
@@ -4900,8 +4903,104 @@ extension CTM005IndependentContentTabSessionTests {
 
         XCTAssertEqual(
             state.backgroundAiChatStates[aiSessionID]?.aiChat.pendingRequestStart?.resolutionID,
+            newResolutionID,
+        )
+        XCTAssertEqual(
+            state.backgroundAiChatStates[aiSessionID]?.aiChat.backgroundPendingRequestStarts[oldResolutionID]?
+                .resolutionID,
             oldResolutionID,
         )
+    }
+
+    func testBackgroundPendingResolverStartsRequestWhenNewPendingExistsForSameSession() async throws {
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let oldLock = makeRequestLock(sessionID: aiSessionID)
+        let newLock = makeRequestLock(sessionID: aiSessionID)
+        let oldModel = try XCTUnwrap(oldLock.context.selectedModel)
+        let newModel = try XCTUnwrap(newLock.context.selectedModel)
+        let oldResolutionID = UUID()
+        let newResolutionID = UUID()
+
+        func pendingRequest(
+            resolutionID: UUID,
+            lock: AiChatRequestLock,
+            selectedModel: AiProviderModel,
+        ) -> AiChatPendingRequestStart {
+            AiChatPendingRequestStart(
+                resolutionID: resolutionID,
+                kind: .submit,
+                sessionID: aiSessionID,
+                selectedModel: selectedModel,
+                selectedRow: lock.selectedModelRow,
+                preparedRequest: AiChatPreparedRequest(
+                    prompt: "test",
+                    messages: lock.request.messages,
+                    assistantReplacementIndex: nil,
+                    historyTruncation: AiChatHistoryTruncationMetadata(
+                        includedMessageCount: lock.request.messages.count,
+                        excludedMessageCount: 0,
+                        budget: 24000,
+                        truncationReason: nil,
+                    ),
+                ),
+            )
+        }
+
+        var backgroundContent = FileManagerContentFeature.State()
+        backgroundContent.aiChat.sessionID = aiSessionID
+        backgroundContent.aiChat.sessionStatus = .active
+        backgroundContent.aiChat.modelListState = .loaded([oldModel, newModel])
+        backgroundContent.aiChat.selectedModelHandle = newModel.id
+        backgroundContent.aiChat.pendingRequestStart = pendingRequest(
+            resolutionID: newResolutionID,
+            lock: newLock,
+            selectedModel: newModel,
+        )
+        backgroundContent.aiChat.backgroundPendingRequestStarts[oldResolutionID] = pendingRequest(
+            resolutionID: oldResolutionID,
+            lock: oldLock,
+            selectedModel: oldModel,
+        )
+
+        var state = FileManagerFeature.State()
+        state.content = FileManagerContentFeature.State()
+        state.backgroundAiChatStates[aiSessionID] = backgroundContent
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.aiChatExecutionClient.execute = { _, _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        let resolvedContext = AiChatResolvedRequestContext(
+            currentContext: .init(),
+            addedAttachments: [],
+            parts: [],
+        )
+        await store.send(.content(.aiChat(.requestContextResolved(oldResolutionID, resolvedContext)))) { state in
+            if case .processing = state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase {
+            } else {
+                XCTFail("background pending resolver should start the matching request")
+            }
+            XCTAssertNil(state.backgroundAiChatStates[aiSessionID]?.aiChat.pendingRequestStart)
+            XCTAssertEqual(
+                state.backgroundAiChatStates[aiSessionID]?.aiChat.backgroundPendingRequestStarts[newResolutionID]?
+                    .resolutionID,
+                newResolutionID,
+            )
+            XCTAssertNil(state.backgroundAiChatStates[aiSessionID]?.aiChat
+                .backgroundPendingRequestStarts[oldResolutionID])
+        }
+
+        await store.skipReceivedActions()
+        await store.finish()
     }
 
     func testAiChatTabSwitchStoresPendingRequestUnderPendingSessionID() async throws {
@@ -6079,6 +6178,7 @@ extension CTM005IndependentContentTabSessionTests {
             }
             $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
                 savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
             }
         }
         store.exhaustivity = .off
@@ -6179,6 +6279,7 @@ extension CTM005IndependentContentTabSessionTests {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
                 savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
             }
         }
         store.exhaustivity = .off
@@ -6906,8 +7007,18 @@ extension CTM005IndependentContentTabSessionTests {
             activeTabID: activeTabID,
             recentlyClosed: nil,
         )
+        var staleBackgroundInspector = FileManagerInspectorFeature.State()
+        let staleLock = makeRequestLock(sessionID: aiSessionID)
+        staleBackgroundInspector.aiChat.sessionID = aiSessionID
+        staleBackgroundInspector.aiChat.sessionStatus = .active
+        staleBackgroundInspector.aiChat.backgroundExecutionPhases[staleLock.requestID] = .persistenceRecovery(
+            staleLock,
+            .unknown,
+        )
+
         state.content = content
         state.tabInspectorStates[inactiveTabID] = inactiveInspector.tabSnapshot()
+        state.backgroundInspectorAiChatStates[aiSessionID] = staleBackgroundInspector.tabSnapshot()
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
@@ -6922,6 +7033,11 @@ extension CTM005IndependentContentTabSessionTests {
         )
         XCTAssertEqual(store.state.content.aiChat.executionPhase, .completed(requestLock))
         XCTAssertEqual(store.state.content.aiChat.transcriptHistory.map(\.content), ["test", "done"])
+        XCTAssertEqual(
+            store.state.backgroundInspectorAiChatStates[aiSessionID]?.aiChat
+                .backgroundExecutionPhases[staleLock.requestID],
+            .persistenceRecovery(staleLock, .unknown),
+        )
         await store.finish()
     }
 
