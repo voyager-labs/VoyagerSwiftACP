@@ -186,6 +186,39 @@ Support file names should describe the helper role or dependency shape, matching
 
 Avoid names that merely repeat the spec ID, such as `PAY002PaymentFixtures.swift`, unless the domain term would otherwise be ambiguous.
 
+## SwiftPM package test rules
+
+SwiftPM 패키지 테스트(`Tests/<TestTarget>/`)는 예외 없이 아래 규칙을 따른다.
+
+### Mandatory Specs/ placement
+
+모든 spec 기반 테스트 파일은 `Specs/` 디렉토리 안에 배치한다. 패키지 루트(`Tests/<TestTarget>/`)에 직접 `.swift` 테스트 파일을 두는 것은 금지한다.
+
+```text
+Tests/<TestTarget>/
+├── Specs/                                    ← 모든 spec 테스트는 여기
+│   └── <SpecID><PascalCaseSpecTitle>Tests.swift
+└── Support/                                  ← fixture, double, helper
+```
+
+프로젝트 전체 50+ SwiftPM 테스트 파일이 이 패턴을 따른다. 새 패키지나 새 테스트 파일을 추가할 때 반드시 확인한다.
+
+### Pre-addition checklist
+
+새 테스트 파일을 생성하기 전에 반드시 확인:
+
+1. **Spec ID가 있는가?** — `<SpecID><PascalCaseTitle>Tests.swift` 형태인가? (`FMW003`, `CBW005`, `RCL003` 등)
+2. **`Specs/` 디렉토리에 배치하는가?** — 패키지 루트가 아닌 `Specs/` 하위인가?
+3. **구현 이름이 아닌 spec 이름을 사용하는가?** — `OpenRouterFeatureTests` ❌ → `FMW003HandleExternalFileOpenRequestsTests` ✅
+
+### Anti-patterns (rejected during FMW-003 review)
+
+| 잘못된 패턴                                          | 이유                                              | 올바른 형태                                              |
+| ---------------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------- |
+| `Tests/.../ExternalFileURLParserTests.swift`         | `Specs/` 밖, spec ID 없음                         | `Tests/.../Specs/FMW003ExternalFileURLParserTests.swift` |
+| `Tests/.../FilePathNormalizerTests.swift`            | `Specs/` 밖, spec ID 없음                         | `Tests/.../Specs/FMW003FilePathNormalizerTests.swift`    |
+| `VoyagerTests/Features/OpenRouterFeatureTests.swift` | `FeatureTests` 접미사 (명시적 금지), spec ID 없음 | `Specs/FMW003HandleExternalFileOpenRequestsTests.swift`  |
+
 ### Evidence
 
 VOY-356 Settings support files follow this shape: `InMemoryStorage.swift`, `MutationRecorder.swift`, and `ThemeApplyRecorder.swift` live directly under `Support/` with no nested support directory.

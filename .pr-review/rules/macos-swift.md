@@ -32,6 +32,7 @@ Layer direction (top-to-bottom only):
 - `06_Shared` owns globally reusable clients, config, utilities, design tokens, and common models.
 
 Flag these patterns:
+
 - `Entities` importing or depending on `Features`, `Pages`, or `App`.
 - `Features` depending on `Pages` or page-specific UI containers.
 - Same-layer slices directly depending on each other when the shared concept should move lower.
@@ -41,6 +42,7 @@ Flag these patterns:
 ## TCA and segment ownership
 
 Use these segment responsibilities:
+
 - `Ui/`: SwiftUI views and view adapters. Views should render state and send actions.
 - `Reducer/`: TCA reducer orchestration, child reducer composition, effect routing, cancellation IDs.
 - `Model/`: state, actions, domain/display models, value types.
@@ -49,6 +51,7 @@ Use these segment responsibilities:
 - `Config/`: constants, design tokens, configuration.
 
 Flag changes where:
+
 - A SwiftUI view performs network, filesystem, system SDK, persistence, or long-lived observation work.
 - A reducer directly constructs external services instead of using dependency clients.
 - A dependency client owns UI policy or presentation copy.
@@ -59,6 +62,7 @@ Flag changes where:
 ## Reuse and duplicate detection
 
 Before accepting any new abstraction, search mentally through the existing codebase patterns and ask:
+
 - Is there already a dependency client for this external capability?
 - Is there already a reducer/helper/adapter for this command or lifecycle?
 - Is there already an entity model or display model that represents this concept?
@@ -66,6 +70,7 @@ Before accepting any new abstraction, search mentally through the existing codeb
 - Is this new utility duplicating a mapping, label, icon, provider, status, or formatting helper?
 
 Flag high-confidence duplication when:
+
 - Two types represent the same domain concept with different names.
 - Two helpers perform the same mapping across layers.
 - A new service bypasses an existing dependency client.
@@ -79,12 +84,14 @@ Do not flag reuse speculatively. Cite the existing path/type/pattern that should
 Cross-feature and window-level commands should move through actions, delegate events, or explicit handlers.
 
 Prefer:
+
 - View sends a semantic action.
 - Child feature emits a delegate action.
 - Parent/page/window reducer routes the command.
 - App/window manager dispatches to the focused window through explicit action paths.
 
 Flag:
+
 - Direct mutation of another feature's state.
 - View-to-view communication for domain behavior.
 - Global notification or singleton routing when a reducer action path exists.
@@ -95,6 +102,7 @@ Flag:
 For AppKit and SwiftUI coordinator code, verify the distinction between logical reducer intent and physical AppKit state.
 
 Physical state includes:
+
 - `NSSplitView` arranged subviews
 - actual view hierarchy membership
 - visible frame width/height
@@ -104,6 +112,7 @@ Physical state includes:
 - mounted/teardown state
 
 Flag issues where:
+
 - The reducer assumes an AppKit view is physically mounted before the coordinator confirms it.
 - Menu or toolbar state derives from logical intent when the user-visible state depends on physical mount.
 - A coordinator mutates reducer state before the AppKit operation actually succeeds.
@@ -113,18 +122,32 @@ Flag issues where:
 ## Async lifecycle and cancellation
 
 For async effects, streaming, session restore, provider loading, filesystem reads, and callback-driven flows, check:
+
 - Is there a cancellation ID?
 - Does close/reset/teardown cancel in-flight work?
 - Can a late event reopen or mutate a closed feature?
 - Is the resolved context captured once and preserved across the async chain?
 - Are failure and rollback paths handled by the canonical owner?
 - Are corrupted or missing persisted records handled explicitly?
+- If an effect mutates external/system state, can `onAppear`, retry, or a late
+  completion overwrite the mutation phase or clear the visible error too early?
 
 Flag late-event bugs and split cleanup ownership aggressively when concrete.
+
+When a PR mutates external system state such as Launch Services, defaults,
+file associations, helper registration, or process-global settings, check for
+partial-application safety:
+
+- Existing state is read from the same boundary that writes it.
+- Read failures stop durable mutation instead of becoming stored fallback values.
+- Multi-step mutations either rollback earlier steps on later failure or surface
+  the partial state as an explicit error.
+- Tests cover failure between steps, rollback, and stale/late diagnostics.
 
 ## File-backed storage and credentials
 
 When a PR touches credential, OAuth, provider, settings, or file-backed storage paths:
+
 - Use atomic replacement writes.
 - Use file locks when concurrent access is possible.
 - Use restrictive file permissions for sensitive files.
@@ -138,6 +161,7 @@ Flag storage path mismatches as correctness/data-loss risks, not style issues.
 When a PR touches `APP_ENV`, `PUBLIC_*` values, `.env.prod`, scheme environment,
 `Info.plist`, entitlement files, or env-copy/build scripts, check for runtime
 mismatch and secret exposure:
+
 - Secrets must not be committed, copied into bundles, logged, or represented as `PUBLIC_*` values.
 - Debug/release environment selection must stay deterministic and match the app/helper/XPC launch path.
 - Build scripts must copy only intended secret-free production templates and must not make local `.env.dev` values part of the app bundle.
@@ -151,6 +175,7 @@ Treat leaked secrets as P0 and boot/runtime environment mismatches as P1 when th
 When a PR changes helper launch code, XPC protocols/transports, helper state
 broadcasting, indexing, external file replay, or app-helper handoff paths,
 review the contract across all participating targets:
+
 - Shared protocol changes must be reflected in the app, helper/XPC service, transport adapters, and tests/fixtures.
 - Timeouts, process termination, unavailable helper states, and replay/restore paths must fail closed and surface semantic reducer actions.
 - Do not bypass the shared XPC/helper contract with global notifications, singleton state, direct file mutation, or app-only assumptions.
@@ -161,6 +186,7 @@ Flag mismatched contracts, missing failure paths, and one-sided app/helper updat
 ## Package and public boundaries
 
 When a PR touches Swift packages or promotes code across package boundaries:
+
 - Package targets must not import the app target or higher FSD layers; use dependency injection, adapters, or lower-layer promotion instead.
 - Avoid `@testable import Voyager` or app-only fixtures in package tests.
 - Public API promotions must expose the initializer, stored properties, enum cases, and dependency surfaces needed by real consumers.
@@ -173,9 +199,12 @@ Flag package reverse dependencies, incomplete public surfaces, and compatibility
 Tests should verify architecture-relevant behavior, not just happy paths.
 
 For TCA tests, check:
+
 - Effects are cancellable where needed.
 - Delegate actions and parent routing are covered.
 - Failure, cancel, restore, teardown, and late-event paths are covered.
+- Mutation phases are protected from `onAppear`, retry, and stale completion
+  events that could re-enable controls or erase an error banner early.
 - Tests model external coordinator/system state explicitly when runtime code receives it from AppKit or system callbacks.
 - Test support helpers reuse existing fixtures instead of creating parallel fixture formats.
 - New or renamed test files under `Tests/.../Specs/` follow the spec-based naming convention `<SpecID><PascalCaseSpecTitle>Tests.swift`.

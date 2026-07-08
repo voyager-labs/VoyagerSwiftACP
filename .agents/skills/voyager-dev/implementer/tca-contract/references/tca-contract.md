@@ -65,6 +65,8 @@ enum ParentAction {
 - Use `cancelInFlight` only when repeated user intent should replace the earlier in-flight work.
 - Keep every step of a multi-stage async user intent under one cancellation boundary when later steps depend on earlier steps (for example acquire input → verify → persist durable state).
 - Before emitting durable state or persistence effects from an async completion, verify the completion still matches the current user intent/session and was not cancelled or superseded.
+- Protect mutation phases from lifecycle probes: `onAppear`, manual retry, and follow-up diagnostics must not overwrite an in-flight setting/restoring/saving phase unless the reducer explicitly models that transition.
+- Preserve failure ownership through follow-up effects: automatic re-diagnosis may update health/status, but it must not clear a user-visible error unless the source and phase prove the original failed operation has been superseded.
 - Do not read nondeterministic globals such as `UUID()`, `Date()`, clocks, `Task.sleep`, or persistent stores directly when the value should be controlled in tests.
 - In `.run` effects, capture immutable snapshots and dependencies explicitly; do not rely on mutable reducer state escaping into async work.
 - Treat fallback behavior as a typed policy decision, not a catch-all error branch; distinguish network, configuration, authorization, decoding, and server failures before using cached or synthetic state.
@@ -77,6 +79,7 @@ enum ParentAction {
 - Dependency surfaces used across concurrency boundaries should be designed so their usage remains `Sendable`-safe.
 - Verify externally owned payloads, URLs, and config contracts with real or captured fixtures instead of relying only on mocks that mirror Swift property names.
 - Separate sensitive credential storage from non-sensitive snapshot/cache persistence; credentials must flow through secure storage clients, while status snapshots may use ordinary persistence clients.
+- For clients that mutate external system state in multiple steps, model partial failure deliberately: read the prior state from the write boundary, stop on uncertain reads, rollback earlier steps when a later step fails, and never persist sentinel/error placeholder values as real state.
 
 For client granularity, capability-boundary splitting, composition patterns (`live(_:)` factory vs `@Dependency` in closure), phantom dependency elimination, and `@DependencyClient` macro policy, see `.agents/rules/30-macos/11-dependency-client-design.md`.
 

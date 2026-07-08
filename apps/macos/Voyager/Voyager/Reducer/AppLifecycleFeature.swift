@@ -77,6 +77,10 @@ struct AppLifecycleFeature {
                 return observeSessionExpirationEffect(notificationCenterClient: notificationCenterClient)
 
             case .launch(.didFinishLaunching):
+                state.didFinishLaunching = true
+                if isRunningXCTest() {
+                    return .none
+                }
                 if onboardingWindowClient.showIfNeeded() {
                     return .none
                 }

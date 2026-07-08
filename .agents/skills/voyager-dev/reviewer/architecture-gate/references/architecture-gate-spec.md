@@ -34,13 +34,18 @@ Block implementation choices that violate clean architecture or FSD dependency d
 7. Layer vocabulary gate
     - Prefer standard Voyager/FSD segments (`Ui`, `Api`, `Model`, `Reducer`, `Lib`, `Config`).
     - Avoid introducing generic architecture buckets such as `Components`, `Types`, `Hooks`, or `Utils` as default segment names.
-8. Dependency client design gate
+8. Package placement gate
+    - Each new type, file, or test suite must reside in the package that matches its ownership scope, not in a lower layer just because it compiles there.
+    - One-slice code must not be placed in `06_Shared`. If only one feature/spec consumes the code, it belongs in `04_Features`, `05_Entities`, or the app layer.
+    - Naming collision gate: new types must not reuse names that conflict with well-known external services or libraries (e.g., `OpenRouter` the LLM provider). Check for external name conflicts before naming.
+    - See `layer-and-segment-rules.md` "Package placement decision tree" for the mandatory checklist.
+9. Dependency client design gate
     - Every registered `DependencyKey` has at least one `@Dependency(\.)` consumer in a `@Reducer`. No phantom dependencies.
     - No `OtherClient.liveValue` reference inside another client's method closure (Premature Dependency Capture). Use a factory function or `@Dependency` resolved inside the closure.
     - A single client must not mix multiple infrastructure seams (file I/O + network HTTP + system API). Split per seam.
     - Do not introduce the `@DependencyClient` macro in a single package; the codebase uses manual `DependencyKey` conformance everywhere.
     - See `.agents/rules/30-macos/11-dependency-client-design.md` for the full rule.
-9. Custom URL scheme and callback target gate
+10. Custom URL scheme and callback target gate
     - macOS custom URL schemes are routed by LaunchServices to the preferred handler for the scheme, not to "the currently running app" or the app that initiated the flow.
     - Do not let Voyager app, dev builds, host apps, or helper apps rely on the same callback scheme when they must coexist on one machine.
     - Keep screen/business context separate from callback target identity: `context=onboarding` must not imply `OnboardingHost`.

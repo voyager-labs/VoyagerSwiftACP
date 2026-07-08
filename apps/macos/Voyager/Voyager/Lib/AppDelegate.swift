@@ -1,5 +1,7 @@
 import AppKit
 import ComposableArchitecture
+import VoyagerEntitiesCollection
+import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesOnboarding
 
@@ -31,9 +33,88 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_: Notification) {
+        NSApp.servicesProvider = self
         withAppRootStore {
             $0.send(.lifecycle(.launch(.didFinishLaunching)))
         }
+    }
+
+    func application(_: NSApplication, open urls: [URL]) {
+        withAppRootStore {
+            for url in urls {
+                routeOpenedURL(url, to: $0)
+            }
+        }
+    }
+
+    func application(_: NSApplication, openFile filename: String) -> Bool {
+        let url = URL(fileURLWithPath: filename)
+        routeSystemOpenFileURLs([url])
+        return true
+    }
+
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        routeSystemOpenFileURLs(filenames.map(URL.init(fileURLWithPath:)))
+        sender.reply(toOpenOrPrint: .success)
+    }
+
+    /// NSServices "Voyager로 열기" 핸들러
+    @objc
+    func openInVoyagerService(
+        _ pboard: NSPasteboard,
+        userData _: String,
+        error _: NSErrorPointer,
+    ) {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        guard let urls = pboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL] else { return }
+        withAppRootStore {
+            for url in urls {
+                let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+                let mode: DeepLinkMode = isDirectory ? .open : .reveal
+                routeFileURL(url, source: .nsservices, mode: mode, to: $0)
+            }
+        }
+    }
+
+    private func routeSystemOpenFileURLs(_ urls: [URL]) {
+        withAppRootStore {
+            for url in urls {
+                routeFileURL(url, source: .systemOpenEvent, mode: .open, to: $0)
+            }
+        }
+    }
+
+    private func routeOpenedURL(_ url: URL, to store: StoreOf<AppRootFeature>) {
+        switch url.scheme?.lowercased() {
+        case "voyager":
+            if isAuthCallback(url) {
+                routeAuthCallback(url)
+            } else {
+                store.send(.receiveExternalURL(url))
+            }
+        case "file":
+            routeFileURL(url, source: .systemOpenEvent, mode: .open, to: store)
+        default:
+            break
+        }
+    }
+
+    private func routeFileURL(
+        _ url: URL,
+        source: RouteSource,
+        mode: DeepLinkMode,
+        to store: StoreOf<AppRootFeature>,
+    ) {
+        if CollectionFileUtils.isCollectionFile(url) {
+            store.send(.receiveCollectionFileURL(url))
+            return
+        }
+
+        store.send(.receiveExternalFileURL(url, source: source, mode: mode))
+    }
+
+    private func isAuthCallback(_ url: URL) -> Bool {
+        url.host?.lowercased() == "auth" && url.path.lowercased() == "/callback"
     }
 
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -43,19 +124,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } onMissing: {
             true
         }
-    }
-
-    func application(_: NSApplication, open urls: [URL]) {
-        guard let url = urls.first else { return }
-
-        guard url.scheme == "voyager",
-              url.host == "auth",
-              url.path == "/callback"
-        else {
-            return
-        }
-
-        routeAuthCallback(url)
     }
 
     private func routeAuthCallback(_ url: URL) {

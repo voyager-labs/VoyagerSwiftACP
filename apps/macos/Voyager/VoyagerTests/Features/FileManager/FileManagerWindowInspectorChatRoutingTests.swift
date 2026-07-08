@@ -419,7 +419,22 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         )
         var updatedContent = initialState.content
         updatedContent.entryViewLayout.selectedIds = [secondEntry.id]
-        let updatedContext = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: updatedContent)
+        let rawUpdatedContext = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: updatedContent)
+        let updatedReference = addingCurrentFolderOnlyMode(to: rawUpdatedContext.references[0])
+        let updatedItem = AiChatContextItem(
+            kind: rawUpdatedContext.items[0].kind,
+            identifier: rawUpdatedContext.items[0].identifier,
+            title: rawUpdatedContext.items[0].title,
+            subtitle: rawUpdatedContext.items[0].subtitle,
+            metadata: rawUpdatedContext.items[0].metadata,
+            references: [updatedReference],
+        )
+        let updatedContext = AiChatCurrentContextSnapshot(
+            summary: rawUpdatedContext.summary,
+            references: [updatedReference],
+            items: [updatedItem],
+            attachments: rawUpdatedContext.attachments,
+        )
 
         let store = makeStore(
             initialState: initialState,
@@ -446,7 +461,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await store.receive(\.content.entryViewLayout.delegate.selectionChanged)
         await store.receive { action in
             guard case let .content(.delegate(.currentContextChanged(snapshot))) = action else { return false }
-            return snapshot == updatedContext
+            return snapshot == rawUpdatedContext
         }
         await store.receive(\.inspector.aiChat.currentContextChanged) {
             $0.inspector.aiChat.currentContext = updatedContext
@@ -516,6 +531,20 @@ private extension FileManagerWindowInspectorChatRoutingTests {
         }
 
         XCTAssertEqual(skeletonConnection, expectedBanner)
+    }
+
+    private func addingCurrentFolderOnlyMode(
+        to reference: AiChatContextReference,
+    ) -> AiChatContextReference {
+        var metadata = reference.metadata
+        metadata["folderStructureMode"] = "currentFolderOnly"
+        return AiChatContextReference(
+            kind: reference.kind,
+            identifier: reference.identifier,
+            title: reference.title,
+            subtitle: reference.subtitle,
+            metadata: metadata,
+        )
     }
 
     private func makeStore(

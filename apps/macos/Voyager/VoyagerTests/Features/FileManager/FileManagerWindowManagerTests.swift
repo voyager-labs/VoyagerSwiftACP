@@ -321,6 +321,7 @@ enum WindowManagerTestSupport {
             if let uuid {
                 $0.uuid = .constant(uuid)
             }
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
             $0.onboardingWindowClient.showIfNeeded = { onboardingRequired }
             configureDependencies?(&$0)
         }

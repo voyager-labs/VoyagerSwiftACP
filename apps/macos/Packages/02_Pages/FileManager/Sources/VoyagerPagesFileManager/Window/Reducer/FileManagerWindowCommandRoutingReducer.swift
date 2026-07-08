@@ -20,6 +20,8 @@ struct FileManagerWindowCommandRoutingReducer {
     private var aiConnectionsFileClient
     @Dependency(\.searchClient)
     private var searchClient
+    @Dependency(\.uuid)
+    private var uuid
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -269,9 +271,10 @@ struct FileManagerWindowCommandRoutingReducer {
 
     private func openContextualAiChatEffect(state: State) -> Effect<Action> {
         let content = state.content
-        // Entry opens the inspector with seeded context only so AiChat starts on Sessions.
-        // Session creation/restoration stays inside AiChat via New Chat or explicit restoreSessionID.
-        let setup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: content)
+        let setup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
+            content: content,
+            sessionID: AiChatSessionID(rawValue: uuid()),
+        )
         return .run { [aiConnectionsFileClient, setup] send in
             let connectionsFile: AIConnectionsFile
             do {
