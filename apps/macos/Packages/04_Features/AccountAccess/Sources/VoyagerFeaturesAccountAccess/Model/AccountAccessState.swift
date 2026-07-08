@@ -116,4 +116,20 @@ public struct AccountAccessState: Equatable {
             return .webPricing
         }
     }
+
+    /// AppLifecycle/Settings가 launch access snapshot을 같은 방식으로 상태에 반영한다.
+    public mutating func hydrateLaunchSnapshotState(_ snapshot: AccessStatusSnapshot) {
+        status = snapshot.status
+        self.snapshot = snapshot
+        trialExpiresAt = snapshot.currentPeriodEnd
+        isSignInInProgress = false
+        didSignInFail = false
+        handoffPendingState = nil
+        errorMessage = nil
+        hasAccountSession = snapshot.hasSession
+        sessionExpiresAt = snapshot.sessionExpiresAt
+        isSessionExpired = false
+        didBootstrap = true
+        fetchGeneration += 1
+    }
 }

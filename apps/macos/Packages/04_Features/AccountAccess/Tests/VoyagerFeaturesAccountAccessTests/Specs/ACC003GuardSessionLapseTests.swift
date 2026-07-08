@@ -93,6 +93,35 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
         XCTAssertEqual(SessionLapseGuardView.loginButtonTitle, "Log in")
     }
 
+    func testPrimaryButtonTitleMatchesAccessRecoveryCTA() {
+        XCTAssertEqual(SessionLapseGuardView.primaryButtonTitle(for: .login), "Log in")
+        XCTAssertEqual(SessionLapseGuardView.primaryButtonTitle(for: .retry), "Retry")
+        XCTAssertEqual(SessionLapseGuardView.primaryButtonTitle(for: .webPricing), "View pricing")
+    }
+
+    func testPrimaryButtonActionMatchesAccessRecoveryCTA() {
+        if case .loginTapped = SessionLapseGuardView.primaryButtonAction(for: .login) {} else {
+            XCTFail("login CTA는 loginTapped를 전송해야 함")
+        }
+        if case .retryTapped = SessionLapseGuardView.primaryButtonAction(for: .retry) {} else {
+            XCTFail("retry CTA는 retryTapped를 전송해야 함")
+        }
+        if case .openPricingTapped = SessionLapseGuardView.primaryButtonAction(for: .webPricing) {} else {
+            XCTFail("pricing CTA는 openPricingTapped를 전송해야 함")
+        }
+    }
+
+    func testDialogTitleMatchesAccessRecoveryCTA() {
+        XCTAssertEqual(
+            SessionLapseGuardView.dialogTitle(didSignInFail: false, accessUnlockPrimaryCTA: .webPricing),
+            "Access required to continue.",
+        )
+        XCTAssertEqual(
+            SessionLapseGuardView.dialogTitle(didSignInFail: false, accessUnlockPrimaryCTA: .retry),
+            "Could not verify access.",
+        )
+    }
+
     func testReauthCompleteDismissesOverlay() {
         var state = AccountAccessFeature.State()
         state.didSignInFail = true

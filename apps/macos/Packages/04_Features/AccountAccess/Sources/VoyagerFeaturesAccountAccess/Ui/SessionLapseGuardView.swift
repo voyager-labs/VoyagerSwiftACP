@@ -25,6 +25,7 @@ private struct SessionLapseGuardObservedState: Equatable {
     let accountAccessStepState: AccountAccessStepState
     let isSignInInProgress: Bool
     let errorMessage: String?
+    let accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA
 }
 
 // MARK: - Interaction shield
@@ -101,6 +102,8 @@ public struct SessionLapseGuardView: View {
     private let store: StoreOf<AccountAccessFeature>
 
     static let loginButtonTitle = "Log in"
+    static let retryButtonTitle = "Retry"
+    static let webPricingButtonTitle = "View pricing"
 
     public init(store: StoreOf<AccountAccessFeature>) {
         self.store = store
@@ -115,6 +118,7 @@ public struct SessionLapseGuardView: View {
                     accountAccessStepState: state.accountAccessStepState,
                     isSignInInProgress: state.isSignInInProgress,
                     errorMessage: state.errorMessage,
+                    accessUnlockPrimaryCTA: state.accessUnlockPrimaryCTA,
                 )
             },
             content: { viewStore in
@@ -122,6 +126,7 @@ public struct SessionLapseGuardView: View {
                 let accountAccessStepState = viewStore.accountAccessStepState
                 let isSignInInProgress = viewStore.isSignInInProgress
                 let errorMessage = viewStore.errorMessage
+                let accessUnlockPrimaryCTA = viewStore.accessUnlockPrimaryCTA
 
                 let shouldShow = Self.shouldShow(
                     accountAccessStepState: accountAccessStepState,
@@ -146,9 +151,12 @@ public struct SessionLapseGuardView: View {
                                 .foregroundStyle(.secondary)
                                 .accessibilityHidden(true)
 
-                            Text(Self.dialogTitle(didSignInFail: didSignInFail))
-                                .font(.title3)
-                                .fontWeight(.semibold)
+                            Text(Self.dialogTitle(
+                                didSignInFail: didSignInFail,
+                                accessUnlockPrimaryCTA: accessUnlockPrimaryCTA,
+                            ))
+                            .font(.title3)
+                            .fontWeight(.semibold)
 
                             if let error = errorMessage {
                                 Text(error)
@@ -157,8 +165,8 @@ public struct SessionLapseGuardView: View {
                                     .multilineTextAlignment(.center)
                             }
 
-                            Button(Self.loginButtonTitle) {
-                                viewStore.send(.loginTapped)
+                            Button(Self.primaryButtonTitle(for: accessUnlockPrimaryCTA)) {
+                                viewStore.send(Self.primaryButtonAction(for: accessUnlockPrimaryCTA))
                             }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.large)
@@ -183,10 +191,47 @@ public struct SessionLapseGuardView: View {
     /// - session_expired → "세션이 만료되었습니다"
     /// - logged_out → "로그인이 필요합니다"
     static func dialogTitle(didSignInFail: Bool) -> String {
+        dialogTitle(didSignInFail: didSignInFail, accessUnlockPrimaryCTA: .login)
+    }
+
+    static func dialogTitle(
+        didSignInFail: Bool,
+        accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA,
+    ) -> String {
+        switch accessUnlockPrimaryCTA {
+        case .webPricing:
+            return "Access required to continue."
+        case .retry:
+            return "Could not verify access."
+        case .login, .next, .pending:
+            break
+        }
         if didSignInFail {
             return "Session expired. Log in again to continue."
         }
         return "Log in to continue."
+    }
+
+    static func primaryButtonTitle(for accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA) -> String {
+        switch accessUnlockPrimaryCTA {
+        case .retry:
+            retryButtonTitle
+        case .webPricing:
+            webPricingButtonTitle
+        case .login, .next, .pending:
+            loginButtonTitle
+        }
+    }
+
+    static func primaryButtonAction(for accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA) -> AccountAccessAction {
+        switch accessUnlockPrimaryCTA {
+        case .retry:
+            .retryTapped
+        case .webPricing:
+            .openPricingTapped
+        case .login, .next, .pending:
+            .loginTapped
+        }
     }
 
     static func shouldShow(
