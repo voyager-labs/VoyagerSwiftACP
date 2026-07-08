@@ -434,6 +434,9 @@ public struct AiChatFeature {
             case .resetTapped:
                 return handleResetTapped(state: &state)
 
+            case let .cancelRequestLifecycle(sessionID):
+                return cancelRequestLifecycle(for: sessionID, state: &state) ?? .none
+
             case .cancelInFlightWork:
                 return cancelAllInFlightWork(state: &state)
 

@@ -7629,7 +7629,6 @@ extension CTM005IndependentContentTabSessionTests {
         await store.send(.content(.aiChat(.deleteSessionTapped(deletedSessionID)))) { state in
             state.backgroundAiChatStates.removeValue(forKey: deletedSessionID)
         }
-
         XCTAssertEqual(
             store.state.backgroundAiChatStates[preservedSessionID]?.aiChat
                 .backgroundExecutionPhases[preservedLock.requestID],

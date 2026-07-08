@@ -953,7 +953,7 @@ private func cancelBackgroundAiChatWork(
 ) -> Effect<FileManagerWindowAction> {
     var scopedAiChat = aiChat.cancellationScope(sessionID: sessionID)
     return AiChatFeature()
-        .reduce(into: &scopedAiChat, action: .cancelInFlightWork)
+        .reduce(into: &scopedAiChat, action: .cancelRequestLifecycle(sessionID))
         .map { FileManagerWindowAction.backgroundAiChat($0) }
 }
 
@@ -963,7 +963,7 @@ private func cancelBackgroundInspectorAiChatWork(
 ) -> Effect<FileManagerWindowAction> {
     var scopedAiChat = aiChat.cancellationScope(sessionID: sessionID)
     return AiChatFeature()
-        .reduce(into: &scopedAiChat, action: .cancelInFlightWork)
+        .reduce(into: &scopedAiChat, action: .cancelRequestLifecycle(sessionID))
         .map { FileManagerWindowAction.backgroundInspectorAiChat($0) }
 }
 
