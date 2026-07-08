@@ -1072,8 +1072,8 @@ private func sessionSnapshotRefreshPayload(from aiChatAction: AiChatAction) -> S
     switch aiChatAction {
     case let .sessionSnapshotSaved(summary, snapshot, _, _):
         SessionSnapshotSavedPayload(summary: summary, snapshot: snapshot)
-    case let .sessionSnapshotUpdated(summary, _, _):
-        SessionSnapshotSavedPayload(summary: summary, snapshot: nil)
+    case let .sessionSnapshotUpdated(summary, snapshot, _, _):
+        SessionSnapshotSavedPayload(summary: summary, snapshot: snapshot)
     default:
         nil
     }
@@ -1796,7 +1796,7 @@ private func backgroundInspectorAiChatSessionID(
         return summary.sessionID
     }
 
-    if case let .sessionSnapshotUpdated(summary, requestID, runID) = aiChatAction {
+    if case let .sessionSnapshotUpdated(summary, _, requestID, runID) = aiChatAction {
         guard state.backgroundInspectorAiChatStates[summary.sessionID]?.aiChat.hasBackgroundOwnerMatching(
             requestID: requestID,
             runID: runID,
@@ -1831,7 +1831,7 @@ private func inspectorAiChatSessionID(for aiChatAction: AiChatAction) -> AiChatS
         lock.context.sessionID
     case let .sessionSnapshotSaved(summary, _, _, _):
         summary.sessionID
-    case let .sessionSnapshotUpdated(summary, _, _):
+    case let .sessionSnapshotUpdated(summary, _, _, _):
         summary.sessionID
     default:
         nil
@@ -2076,7 +2076,7 @@ private func backgroundAiChatSessionID(
             else { return nil }
         }
         return summary.sessionID
-    case let .sessionSnapshotUpdated(summary, requestID, runID):
+    case let .sessionSnapshotUpdated(summary, _, requestID, runID):
         guard state.backgroundAiChatStates[summary.sessionID]?.aiChat.hasBackgroundOwnerMatching(
             requestID: requestID,
             runID: runID,

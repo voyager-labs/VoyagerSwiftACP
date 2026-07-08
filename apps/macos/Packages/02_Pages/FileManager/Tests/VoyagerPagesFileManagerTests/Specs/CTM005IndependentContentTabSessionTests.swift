@@ -5668,6 +5668,7 @@ extension CTM005IndependentContentTabSessionTests {
 
         await store.send(.backgroundAiChat(.sessionSnapshotUpdated(
             summary,
+            snapshot: snapshot,
             requestID: requestLock.requestID,
             runID: requestLock.runID,
         ))) { state in
