@@ -267,7 +267,7 @@ extension AiChatFeature {
             applyPromotedFinalSnapshot(promotedSnapshot, state: &state)
             return
         }
-        guard case let .processing(lock) = phase else { return }
+        guard let lock = phase.lock else { return }
         state.transcriptHistory = lock.request.messages
         state.lastRequestContext = lock.context.requestContext
         state.lastRequestContextModelHandle = lock.context.model

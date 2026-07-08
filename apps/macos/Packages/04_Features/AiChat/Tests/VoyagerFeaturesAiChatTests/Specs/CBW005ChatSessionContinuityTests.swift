@@ -2164,6 +2164,103 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         await store.finish()
     }
 
+    func testRouteToChatSessionPromotesFailedOwnerWithRequestTranscript() async {
+        let catalogRows = makeCatalogRows()
+        let sessionID = makeCBW005SessionID("23232323-2323-2323-2323-232323232323")
+        let selectedHandle = catalogRows[0].handle
+        let failedUserMessage = AiChatMessage(role: .user, content: "Failed request prompt")
+        let failedRequest = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: sessionID,
+                requestID: AiChatRequestID(rawValue: makeUUID("23232323-2323-2323-2323-232323232324")),
+                runID: AiChatRunID(rawValue: makeUUID("23232323-2323-2323-2323-232323232325")),
+                model: selectedHandle,
+                selectedRow: catalogRows[0],
+            ),
+            messages: [failedUserMessage],
+        )
+        let failedLock = makeRequestLock(
+            kind: .submit,
+            request: failedRequest,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        .recordingTerminal(at: 1_700_000_002_323, failure: .unknown, wasCancelled: false)
+        let staleSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [],
+            updatedAtMs: 1_700_000_002_000,
+        )
+        let staleSummary = AiChatSessionSummary(snapshot: staleSnapshot)
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionList: .init(allRows: [staleSummary], rows: [staleSummary]),
+            sessionID: makeCBW005SessionID("24242424-2424-2424-2424-242424242424"),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [AiChatMessage(role: .user, content: "Other session")],
+            draftText: "",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            backgroundExecutionPhases: [failedLock.requestID: .failed(failedLock, .unknown)],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { requestedSessionID in
+                    requestedSessionID == sessionID ? staleSnapshot : nil
+                },
+                saveSession: { snapshot in snapshot },
+                deleteSession: { _ in },
+            )
+        }
+
+        await store.send(.routeToChatSession(sessionID)) { state in
+            state.sessionList.selectedSessionID = sessionID
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.restoreSessionID = sessionID
+            state.mode = .sessions
+        }
+        await store.receive(.restoreOutcome(
+            requestedSessionID: sessionID,
+            .restored(snapshot: staleSnapshot),
+            restoreFailure: nil,
+        )) { state in
+            state.sessionID = sessionID
+            state.sessionStatus = .active
+            state.currentSessionCustomTitle = staleSnapshot.customTitle
+            state.transcriptHistory = failedRequest.messages
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = failedRequest.context.requestContext
+            state.lastRequestContextModelHandle = failedRequest.context.model
+            state.addedAttachments = []
+            state.currentContextFolderStructureModes = [:]
+            state.transcriptAutoScrollVersion += 1
+            state.executionPhase = .failed(failedLock, .unknown)
+            state.backgroundExecutionPhases[failedLock.requestID] = nil
+            state.selectedModelHandle = failedRequest.context.model
+            state.selectedThinking = failedLock.context.selectedThinking
+            state.restoreOutcome = .restored(snapshot: staleSnapshot)
+            state.restoreFailure = nil
+            state.mode = .chat
+            state.sessionList.errorMessage = nil
+        }
+
+        XCTAssertEqual(store.state.executionPhase, .failed(failedLock, .unknown))
+        XCTAssertEqual(store.state.transcriptHistory, failedRequest.messages)
+        XCTAssertEqual(store.state.lastRequestContext, failedRequest.context.requestContext)
+        await store.finish()
+    }
+
     func testRouteToChatSessionPromotesBackgroundExecutionPhaseToVisible() async {
         let catalogRows = makeCatalogRows()
         let sessionID = makeCBW005SessionID("11111111-2222-3333-4444-555555555555")
