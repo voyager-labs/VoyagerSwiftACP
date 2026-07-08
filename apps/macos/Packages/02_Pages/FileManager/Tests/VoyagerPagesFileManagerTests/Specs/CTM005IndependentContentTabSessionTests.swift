@@ -6325,6 +6325,87 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    func testInactiveInspectorEventBypassesMismatchedBackgroundInspectorOwner() async {
+        let homeTabID = ContentTabID()
+        let directoryTabID = ContentTabID()
+        let inspectorSessionID = AiChatSessionID(rawValue: UUID())
+        let staleLock = makeRequestLock(sessionID: inspectorSessionID)
+        let requestLock = makeRequestLock(sessionID: inspectorSessionID)
+        let failedLock = requestLock.recordingTerminal(
+            at: 1_234_567_890_000,
+            failure: .network,
+            wasCancelled: false,
+        )
+
+        var inactiveInspector = FileManagerInspectorFeature.State()
+        inactiveInspector.inspectorVisible = true
+        inactiveInspector.activeMode = .chat
+        inactiveInspector.aiChat.sessionID = inspectorSessionID
+        inactiveInspector.aiChat.sessionStatus = .active
+        inactiveInspector.aiChat.backgroundExecutionPhases[requestLock.requestID] = .processing(requestLock)
+
+        var staleBackgroundInspector = FileManagerInspectorFeature.State()
+        staleBackgroundInspector.inspectorVisible = true
+        staleBackgroundInspector.activeMode = .chat
+        staleBackgroundInspector.aiChat.sessionID = inspectorSessionID
+        staleBackgroundInspector.aiChat.sessionStatus = .active
+        staleBackgroundInspector.aiChat.executionPhase = .completed(staleLock)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: directoryTabID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Documents"),
+                    isPinned: false,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: homeTabID,
+            recentlyClosed: nil,
+        )
+        state.tabInspectorStates[directoryTabID] = inactiveInspector.tabSnapshot()
+        state.backgroundInspectorAiChatStates[inspectorSessionID] = staleBackgroundInspector.tabSnapshot()
+        state.syncContentTabSidebarItems()
+
+        let store: TestStore<FileManagerFeature.State, FileManagerWindowAction> = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.inspector(.aiChat(.executionEvent(.failed(
+            context: requestLock.context,
+            reason: .network,
+        ))))) { state in
+            state.tabInspectorStates[directoryTabID]?.aiChat.backgroundExecutionPhases[requestLock.requestID] = .failed(
+                failedLock,
+                .network,
+            )
+        }
+
+        XCTAssertEqual(
+            store.state.tabInspectorStates[directoryTabID]?.aiChat.backgroundExecutionPhases[requestLock.requestID],
+            .failed(failedLock, .network),
+        )
+        XCTAssertEqual(
+            store.state.backgroundInspectorAiChatStates[inspectorSessionID]?.aiChat.executionPhase,
+            .completed(staleLock),
+        )
+        await store.finish()
+    }
+
     func testBackgroundInspectorSnapshotSavedUsesSavedSnapshotPayload() async {
         let homeTabID = ContentTabID()
         let directoryTabID = ContentTabID()

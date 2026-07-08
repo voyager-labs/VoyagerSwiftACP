@@ -228,9 +228,12 @@ extension AiChatFeature {
             break
         }
 
-        guard let match = state.backgroundExecutionPhases.first(where: { _, phase in
-            phase.lock?.context.sessionID == sessionID
-        }) else { return nil }
+        guard let match = state.backgroundExecutionPhases
+            .filter({ _, phase in phase.lock?.context.sessionID == sessionID })
+            .max(by: { lhs, rhs in
+                lhs.value.navigationPromotionPriority < rhs.value.navigationPromotionPriority
+            })
+        else { return nil }
         state.backgroundExecutionPhases[match.key] = nil
         return match.value
     }
@@ -344,4 +347,21 @@ struct AiChatRestoreContext {
     var catalogRows: [AiModelCatalogRow]
     var selectedHandle: AiModelHandle?
     var selectedThinking: AiThinkingSelection?
+}
+
+private extension AiChatExecutionPhase {
+    var navigationPromotionPriority: Int {
+        switch self {
+        case .processing:
+            4
+        case .persistenceRecovery:
+            3
+        case .completed:
+            2
+        case .failed:
+            1
+        case .cancelled, .idle:
+            0
+        }
+    }
 }

@@ -1693,6 +1693,18 @@ private func backgroundInspectorAiChatSessionID(
         }.first
     }
 
+    if case let .executionEvent(event) = aiChatAction,
+       let sessionID = aiChatEventSessionID(event),
+       let requestID = aiChatEventRequestID(event)
+    {
+        guard state.backgroundInspectorAiChatStates[sessionID]?.aiChat.hasBackgroundOwnerMatching(
+            requestID: requestID,
+            runID: aiChatEventRunID(event),
+        ) == true
+        else { return nil }
+        return sessionID
+    }
+
     if case let .sessionSnapshotSaved(summary, _, requestID, runID) = aiChatAction,
        let requestID
     {
@@ -1750,6 +1762,18 @@ private func aiChatEventRequestID(_ event: AiChatEvent) -> AiChatRequestID? {
 
     case let .final(response):
         response.context.requestID
+    }
+}
+
+private func aiChatEventRunID(_ event: AiChatEvent) -> AiChatRunID? {
+    switch event {
+    case let .started(context),
+         let .delta(context, _),
+         let .failed(context, _):
+        context.runID
+
+    case let .final(response):
+        response.context.runID
     }
 }
 
@@ -1844,7 +1868,15 @@ private func backgroundAiChatSessionID(
 ) -> AiChatSessionID? {
     switch aiChatAction {
     case let .executionEvent(event):
-        return aiChatEventSessionID(event)
+        guard let sessionID = aiChatEventSessionID(event),
+              let requestID = aiChatEventRequestID(event)
+        else { return nil }
+        guard state.backgroundAiChatStates[sessionID]?.aiChat.hasBackgroundOwnerMatching(
+            requestID: requestID,
+            runID: aiChatEventRunID(event),
+        ) == true
+        else { return nil }
+        return sessionID
     case let .persistenceFailed(lock, _),
          let .persistenceRecoverySucceeded(lock),
          let .persistenceRecoveryRetryFailed(lock, _):
