@@ -178,7 +178,7 @@ public struct AiChatFeature {
                 state.sessionList.errorMessage = message
                 return .none
 
-            case let .sessionSnapshotUpdated(summary, requestID, runID):
+            case let .sessionSnapshotUpdated(summary, _, requestID, runID):
                 guard case let .processing(lock) = state.executionPhase,
                       lock.requestID == requestID,
                       lock.runID == runID,

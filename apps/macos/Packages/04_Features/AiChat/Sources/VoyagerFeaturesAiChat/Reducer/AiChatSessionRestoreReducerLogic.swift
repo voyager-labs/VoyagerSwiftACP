@@ -220,8 +220,14 @@ extension AiChatFeature {
         switch state.executionPhase {
         case let .processing(lock) where lock.context.sessionID == sessionID:
             return .processing(lock)
+        case let .completed(lock) where lock.context.sessionID == sessionID:
+            return .completed(lock)
         case let .failed(lock, failure) where lock.context.sessionID == sessionID:
             return .failed(lock, failure)
+        case let .cancelled(lock) where lock.context.sessionID == sessionID:
+            return .cancelled(lock)
+        case let .persistenceRecovery(lock, failure) where lock.context.sessionID == sessionID:
+            return .persistenceRecovery(lock, failure)
         default:
             break
         }

@@ -1921,6 +1921,116 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         await store.finish()
     }
 
+    func testRouteToChatSessionPreservesCurrentCompletedOwnerForSameSession() async {
+        let catalogRows = makeCatalogRows()
+        let sessionID = makeCBW005SessionID("2A2A2A2A-2A2A-2A2A-2A2A-2A2A2A2A2A2A")
+        let selectedHandle = catalogRows[0].handle
+        let userMessage = AiChatMessage(role: .user, content: "Restore current final pending")
+        let assistantMessage = AiChatMessage(role: .assistant, content: "Current final answer")
+        let request = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: sessionID,
+                requestID: AiChatRequestID(rawValue: makeUUID("2A2A2A2A-2A2A-2A2A-2A2A-2A2A2A2A2A2B")),
+                runID: AiChatRunID(rawValue: makeUUID("2A2A2A2A-2A2A-2A2A-2A2A-2A2A2A2A2A2C")),
+                model: selectedHandle,
+                selectedRow: catalogRows[0],
+            ),
+            messages: [userMessage],
+        )
+        let finalizedLock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        .recordingTerminal(at: 1_700_000_002_424, failure: nil, wasCancelled: false)
+        let finalSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: "Current final title",
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [userMessage, assistantMessage],
+            lastRequestID: finalizedLock.requestID,
+            lastRunID: finalizedLock.runID,
+            lastRequestContext: finalizedLock.context.requestContext,
+            updatedAtMs: 1_700_000_002_424,
+        )
+        let ownerLock = finalizedLock.recordingFinalSnapshot(finalSnapshot)
+        let staleSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: "Stale same-session title",
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [userMessage],
+            lastRequestID: nil,
+            lastRunID: nil,
+            lastRequestContext: nil,
+            updatedAtMs: 1_700_000_002_300,
+        )
+        let staleSummary = AiChatSessionSummary(snapshot: staleSnapshot)
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionList: .init(allRows: [staleSummary], rows: [staleSummary]),
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: staleSnapshot.transcriptHistory,
+            draftText: "",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            executionPhase: .completed(ownerLock),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { requestedSessionID in
+                    requestedSessionID == sessionID ? staleSnapshot : nil
+                },
+                saveSession: { snapshot in snapshot },
+                deleteSession: { _ in },
+            )
+        }
+
+        await store.send(.sessionRowTapped(sessionID)) { state in
+            self.applyOpeningSessionRowState(&state, sessionID: sessionID)
+        }
+        await store.receive(.restoreOutcome(
+            requestedSessionID: sessionID,
+            .restored(snapshot: staleSnapshot),
+            restoreFailure: nil,
+        )) { state in
+            state.sessionID = sessionID
+            state.sessionStatus = .active
+            state.currentSessionCustomTitle = finalSnapshot.customTitle
+            state.transcriptHistory = finalSnapshot.transcriptHistory
+            state.transcriptAutoScrollVersion += 1
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = finalSnapshot.lastRequestContext
+            state.lastRequestContextModelHandle = finalSnapshot.model
+            state.addedAttachments = []
+            state.currentContextFolderStructureModes = [:]
+            state.executionPhase = .completed(ownerLock)
+            state.selectedModelHandle = finalSnapshot.model
+            state.selectedThinking = finalSnapshot.selectedThinking
+            state.restoreOutcome = .restored(snapshot: staleSnapshot)
+            state.restoreFailure = nil
+            state.mode = .chat
+            state.sessionList.errorMessage = nil
+        }
+
+        XCTAssertEqual(store.state.executionPhase.lock?.finalSnapshot, finalSnapshot)
+        XCTAssertEqual(store.state.transcriptHistory, finalSnapshot.transcriptHistory)
+        await store.finish()
+    }
+
     func testRouteToChatSessionPromotesProcessingOwnerBeforeCompletedOwner() async {
         let catalogRows = makeCatalogRows()
         let sessionID = makeCBW005SessionID("21212121-2121-2121-2121-212121212121")
@@ -3667,6 +3777,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(expectedStartSummary.title, "Hello while browsing history")
         await store.receive(.sessionSnapshotUpdated(
             expectedStartSummary,
+            snapshot: expectedStartSnapshot,
             requestID: lock.requestID,
             runID: lock.runID,
         )) { state in
