@@ -1009,6 +1009,7 @@ private func routeBackgroundAiChatAction(
 
     if case let .requestContextResolved(resolutionID, _) = aiChatAction {
         backgroundContent.aiChat.activateBackgroundPendingRequestStart(resolutionID: resolutionID)
+        removeAiChatPendingRequestStart(resolutionID: resolutionID, state: &state)
     }
 
     let backgroundOwnerRemoval = backgroundAiChatOwnerRemoval(
@@ -1079,6 +1080,25 @@ private func sessionSnapshotRefreshPayload(from aiChatAction: AiChatAction) -> S
         SessionSnapshotSavedPayload(summary: summary, snapshot: snapshot)
     default:
         nil
+    }
+}
+
+private func removeAiChatPendingRequestStart(
+    resolutionID: UUID,
+    state: inout FileManagerWindowState,
+) {
+    state.content.aiChat.removePendingRequestStart(resolutionID: resolutionID)
+    state.syncActiveTabContentState()
+
+    for tabID in state.tabContentStates.keys {
+        state.tabContentStates[tabID]?.aiChat.removePendingRequestStart(resolutionID: resolutionID)
+    }
+
+    state.inspector.aiChat.removePendingRequestStart(resolutionID: resolutionID)
+    state.syncActiveTabInspectorState()
+
+    for tabID in state.tabInspectorStates.keys {
+        state.tabInspectorStates[tabID]?.aiChat.removePendingRequestStart(resolutionID: resolutionID)
     }
 }
 
@@ -1762,6 +1782,7 @@ private func routeBackgroundInspectorAiChatAction(
 
     if case let .requestContextResolved(resolutionID, _) = aiChatAction {
         inspectorState.aiChat.activateBackgroundPendingRequestStart(resolutionID: resolutionID)
+        removeAiChatPendingRequestStart(resolutionID: resolutionID, state: &state)
     }
 
     let backgroundOwnerRemoval = backgroundAiChatOwnerRemoval(
@@ -1994,6 +2015,13 @@ private extension AiChatFeature.State {
             backgroundPendingRequestStarts[currentPendingRequestStart.resolutionID] = currentPendingRequestStart
         }
         self.pendingRequestStart = pendingRequestStart
+    }
+
+    mutating func removePendingRequestStart(resolutionID: UUID) {
+        if pendingRequestStart?.resolutionID == resolutionID {
+            pendingRequestStart = nil
+        }
+        backgroundPendingRequestStarts.removeValue(forKey: resolutionID)
     }
 
     mutating func removeBackgroundOwners(matching activeAiChat: Self) {
