@@ -127,9 +127,9 @@ extension AiChatFeature {
         let snapshot = makeRequestStartSnapshot(state: state, lock: lock)
         return .run { [aiChatSessionPersistenceClient] send in
             do {
-                try await aiChatSessionPersistenceClient.saveSession(snapshot)
+                let persistedSnapshot = try await aiChatSessionPersistenceClient.saveSession(snapshot)
                 await send(.sessionSnapshotUpdated(
-                    AiChatSessionSummary(snapshot: snapshot),
+                    AiChatSessionSummary(snapshot: persistedSnapshot),
                     requestID: lock.requestID,
                     runID: lock.runID,
                 ))

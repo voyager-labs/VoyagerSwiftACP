@@ -58,8 +58,8 @@ extension AiChatFeature {
     func saveNewChat(_ snapshot: AiChatSessionSnapshot) -> Effect<Action> {
         .run { [aiChatSessionPersistenceClient] send in
             do {
-                try await aiChatSessionPersistenceClient.saveSession(snapshot)
-                await send(.newChatCreated(snapshot))
+                let persistedSnapshot = try await aiChatSessionPersistenceClient.saveSession(snapshot)
+                await send(.newChatCreated(persistedSnapshot))
             } catch is CancellationError {
                 return
             } catch {
@@ -148,10 +148,10 @@ extension AiChatFeature {
                     return
                 }
                 let renamedSnapshot = Self.snapshot(snapshot, renamedTo: title, updatedAtMs: snapshot.updatedAtMs)
-                try await aiChatSessionPersistenceClient.saveSession(renamedSnapshot)
+                let persistedSnapshot = try await aiChatSessionPersistenceClient.saveSession(renamedSnapshot)
                 await send(.sessionRenameSucceeded(
-                    AiChatSessionSummary(snapshot: renamedSnapshot),
-                    customTitle: renamedSnapshot.customTitle,
+                    AiChatSessionSummary(snapshot: persistedSnapshot),
+                    customTitle: persistedSnapshot.customTitle,
                 ))
             } catch is CancellationError {
                 return

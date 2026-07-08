@@ -443,7 +443,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             })
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in },
             )
         }
@@ -1139,7 +1139,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             $0.aiChatExecutionClient = .live(providerExecutionClient: providerClient)
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in },
             )
             $0.aiConnectionsFileClient = AIConnectionsFileClient(
@@ -2385,7 +2385,10 @@ private extension CBW001ContextualChatRequestTests {
             $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in stream.stream(for: request) })
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { snapshot in await persistence?.save(snapshot) },
+                saveSession: { snapshot in
+                    guard let persistence else { return snapshot }
+                    return await persistence.save(snapshot)
+                },
                 deleteSession: { _ in },
             )
         }
@@ -2601,7 +2604,7 @@ private extension CBW001ContextualChatRequestTests {
             })
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in },
             )
         }

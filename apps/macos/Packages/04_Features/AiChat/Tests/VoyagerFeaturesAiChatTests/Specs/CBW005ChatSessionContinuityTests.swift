@@ -84,7 +84,10 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { snapshot in savedSnapshots.withValue { $0.append(snapshot) } },
+                saveSession: { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
+                },
                 deleteSession: { _ in },
             )
         }
@@ -207,7 +210,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             $0.uuid = .incrementing
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { sessionID in
                     deletedSessionIDs.withValue { $0.append(sessionID) }
                 },
@@ -483,7 +486,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
                     return [first, second]
                 },
                 loadSession: { _ in nil },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in },
             )
         }
@@ -558,7 +561,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         } withDependencies: {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { id in deletedIDs.withValue { $0.append(id) } },
             )
         }
@@ -931,6 +934,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
                 loadSession: { _ in nil },
                 saveSession: { snapshot in
                     savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
                 },
                 deleteSession: { _ in },
             )
@@ -976,7 +980,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_000_000))
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in },
             )
         }
@@ -1027,7 +1031,10 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 listSessions: { _, _ in [] },
                 loadSession: { _ in nil },
-                saveSession: { snapshot in savedSnapshots.withValue { $0.append(snapshot) } },
+                saveSession: { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
+                },
                 deleteSession: { _ in },
             )
             $0.aiConnectionsFileClient = AIConnectionsFileClient(
@@ -1308,7 +1315,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             $0.aiChatExecutionClient.execute = { _, _ in AsyncStream { $0.finish() } }
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in },
             )
         }
@@ -1660,7 +1667,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_001_818))
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in },
             )
         }
@@ -1758,7 +1765,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
                 loadSession: { requestedSessionID in
                     requestedSessionID == targetSessionID ? targetSnapshot : nil
                 },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in },
             )
         }
@@ -1871,7 +1878,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
                 loadSession: { requestedSessionID in
                     requestedSessionID == sessionID ? staleSnapshot : nil
                 },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in },
             )
         }
@@ -2001,7 +2008,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
                 loadSession: { requestedSessionID in
                     requestedSessionID == sessionID ? staleSnapshot : nil
                 },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in },
             )
         }
@@ -2136,6 +2143,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
                 loadSession: { _ in nil },
                 saveSession: { snapshot in
                     savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
                 },
                 deleteSession: { _ in },
             )
@@ -2234,7 +2242,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         } withDependencies: {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { sessionID in
                     deletedSessionIDs.withValue { $0.append(sessionID) }
                 },
@@ -2290,7 +2298,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         } withDependencies: {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { sessionID in
                     deletedSessionIDs.withValue { $0.append(sessionID) }
                 },
@@ -2350,7 +2358,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         } withDependencies: {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { sessionID in
                     deletedSessionIDs.withValue { $0.append(sessionID) }
                 },
@@ -2404,7 +2412,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         } withDependencies: {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { sessionID in
                     deletedSessionIDs.withValue { $0.append(sessionID) }
                     throw AiChatSessionPersistenceClientError.applicationSupportDirectoryUnavailable
@@ -2451,7 +2459,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             $0.uuid = .incrementing
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in },
             )
         }
@@ -2539,7 +2547,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             $0.uuid = .incrementing
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in },
             )
         }
@@ -2690,7 +2698,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
                     }
                     return nil
                 },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in
                     deleteStarted.setValue(true)
                     try await withTaskCancellationHandler {
@@ -2758,7 +2766,10 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         } withDependencies: {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in id == sessionID ? snapshot : nil },
-                saveSession: { snapshot in savedSnapshots.withValue { $0.append(snapshot) } },
+                saveSession: { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
+                },
                 deleteSession: { _ in },
             )
         }
@@ -2807,7 +2818,10 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         } withDependencies: {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in id == sessionID ? snapshot : nil },
-                saveSession: { snapshot in savedSnapshots.withValue { $0.append(snapshot) } },
+                saveSession: { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
+                },
                 deleteSession: { _ in },
             )
         }
@@ -2854,7 +2868,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         } withDependencies: {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in throw AiChatSessionPersistenceClientError.applicationSupportDirectoryUnavailable },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in },
             )
         }
@@ -2888,7 +2902,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         } withDependencies: {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in
                     throw AiChatSessionPersistenceClientError.applicationSupportDirectoryUnavailable
                 },
@@ -2991,7 +3005,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { id in deletedIDs.withValue { $0.append(id) } },
             )
         }
@@ -3069,7 +3083,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         } withDependencies: {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { id in deletedIDs.withValue { $0.append(id) } },
             )
         }
@@ -3126,7 +3140,10 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         } withDependencies: {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
-                saveSession: { snapshot in savedSnapshots.withValue { $0.append(snapshot) } },
+                saveSession: { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
+                },
                 deleteSession: { id in deletedIDs.withValue { $0.append(id) } },
             )
         }
@@ -3281,6 +3298,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
                         saveCancelled.setValue(true)
                     }
                     completedSaves.withValue { $0.append(snapshot) }
+                    return snapshot
                 },
                 deleteSession: { id in deletedIDs.withValue { $0.append(id) } },
             )
@@ -3360,6 +3378,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
                         saveCancelled.setValue(true)
                     }
                     completedSaves.withValue { $0.append(snapshot) }
+                    return snapshot
                 },
                 deleteSession: { id in deletedIDs.withValue { $0.append(id) } },
             )

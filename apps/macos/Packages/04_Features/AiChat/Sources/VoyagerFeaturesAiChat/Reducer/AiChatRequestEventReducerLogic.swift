@@ -138,10 +138,10 @@ extension AiChatFeature {
         .merge(
             .run { [aiChatSessionPersistenceClient] send in
                 do {
-                    try await aiChatSessionPersistenceClient.saveSession(snapshot)
+                    let persistedSnapshot = try await aiChatSessionPersistenceClient.saveSession(snapshot)
                     await send(.sessionSnapshotSaved(
-                        AiChatSessionSummary(snapshot: snapshot),
-                        snapshot: snapshot,
+                        AiChatSessionSummary(snapshot: persistedSnapshot),
+                        snapshot: persistedSnapshot,
                         requestID: finalizedLock.requestID,
                         runID: finalizedLock.runID,
                     ))

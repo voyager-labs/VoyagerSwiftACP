@@ -1300,6 +1300,7 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
                 loadSession: { _ in nil },
                 saveSession: { snapshot in
                     savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
                 },
                 deleteSession: { _ in },
             )

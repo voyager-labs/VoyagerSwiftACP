@@ -23,7 +23,7 @@ extension AiChatFeature {
         let snapshot = persistenceRecoverySnapshot(for: lock, state: state)
         return .run { [aiChatSessionPersistenceClient] send in
             do {
-                try await aiChatSessionPersistenceClient.saveSession(snapshot)
+                _ = try await aiChatSessionPersistenceClient.saveSession(snapshot)
                 await send(.persistenceRecoverySucceeded(lock))
             } catch {
                 await send(.persistenceRecoveryRetryFailed(lock, .unknown))

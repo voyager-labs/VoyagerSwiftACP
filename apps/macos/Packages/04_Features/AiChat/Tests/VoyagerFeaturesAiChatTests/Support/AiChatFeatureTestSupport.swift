@@ -223,8 +223,9 @@ final class AiChatSessionPersistenceSpy: @unchecked Sendable {
         return try await loadHandler(sessionID)
     }
 
-    func save(_ snapshot: AiChatSessionSnapshot) async {
+    func save(_ snapshot: AiChatSessionSnapshot) async -> AiChatSessionSnapshot {
         snapshots.append(snapshot)
+        return snapshot
     }
 }
 
