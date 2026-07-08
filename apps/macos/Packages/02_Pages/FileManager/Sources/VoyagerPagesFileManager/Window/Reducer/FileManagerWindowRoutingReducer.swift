@@ -961,9 +961,9 @@ private func routeBackgroundAiChatAction(
     let effect = AiChatFeature()
         .reduce(into: &backgroundContent.aiChat, action: aiChatAction)
         .map { action in
-            if case let .sessionSnapshotSaved(summary, _, _, _) = action,
+            if case let .sessionSnapshotSaved(summary, persistedSnapshot, _, _) = action,
                let context = finalSnapshotContext,
-               let snapshot = makeOffscreenFinalSnapshot(summary: summary, context: context)
+               let snapshot = persistedSnapshot ?? makeOffscreenFinalSnapshot(summary: summary, context: context)
             {
                 return FileManagerWindowAction.backgroundAiChatSnapshotPersisted(snapshot)
             }
@@ -1622,9 +1622,9 @@ private func routeBackgroundInspectorAiChatAction(
     let effect = AiChatFeature()
         .reduce(into: &inspectorState.aiChat, action: aiChatAction)
         .map { action in
-            if case let .sessionSnapshotSaved(summary, _, _, _) = action,
+            if case let .sessionSnapshotSaved(summary, persistedSnapshot, _, _) = action,
                let context = finalSnapshotContext,
-               let snapshot = makeOffscreenFinalSnapshot(summary: summary, context: context)
+               let snapshot = persistedSnapshot ?? makeOffscreenFinalSnapshot(summary: summary, context: context)
             {
                 return FileManagerWindowAction.backgroundInspectorAiChatSnapshotPersisted(snapshot)
             }
@@ -1801,19 +1801,29 @@ private extension AiChatFeature.State {
             self.pendingRequestStart = nil
         }
         if let lock = activeAiChat.executionPhase.lock {
-            removeBackgroundOwner(BackgroundAiChatOwnerRemoval(
-                requestID: lock.requestID,
-                runID: lock.runID,
-                removeLegacySessionOwner: false,
-            ))
+            removeBackgroundOwnerPromotedToActiveContent(lock)
         }
         for phase in activeAiChat.backgroundExecutionPhases.values {
             guard let lock = phase.lock else { continue }
-            removeBackgroundOwner(BackgroundAiChatOwnerRemoval(
-                requestID: lock.requestID,
-                runID: lock.runID,
-                removeLegacySessionOwner: false,
-            ))
+            removeBackgroundOwnerPromotedToActiveContent(lock)
+        }
+    }
+
+    mutating func removeBackgroundOwnerPromotedToActiveContent(_ lock: AiChatRequestLock) {
+        guard !hasPendingFinalPersistenceOwner(matching: lock) else { return }
+        removeBackgroundOwner(BackgroundAiChatOwnerRemoval(
+            requestID: lock.requestID,
+            runID: lock.runID,
+            removeLegacySessionOwner: false,
+        ))
+    }
+
+    func hasPendingFinalPersistenceOwner(matching lock: AiChatRequestLock) -> Bool {
+        if executionPhase.hasPendingFinalPersistenceOwner(matching: lock) {
+            return true
+        }
+        return backgroundExecutionPhases.values.contains {
+            $0.hasPendingFinalPersistenceOwner(matching: lock)
         }
     }
 
@@ -1843,6 +1853,17 @@ private extension AiChatFeature.State {
 }
 
 private extension AiChatExecutionPhase {
+    func hasPendingFinalPersistenceOwner(matching lock: AiChatRequestLock) -> Bool {
+        guard case let .completed(completedLock) = self,
+              completedLock.requestID == lock.requestID,
+              completedLock.runID == lock.runID,
+              completedLock.finalSnapshot != nil
+        else {
+            return false
+        }
+        return true
+    }
+
     func refreshingCustomTitle(sessionID: AiChatSessionID, customTitle: String?) -> Self {
         guard lock?.context.sessionID == sessionID else { return self }
         switch self {
