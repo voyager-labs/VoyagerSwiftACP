@@ -290,9 +290,6 @@ final class AiChatSessionFileStoreTests: XCTestCase {
             transcriptHistory: [
                 AiChatMessage(role: .user, content: "test"),
             ],
-            lastRequestID: requestID,
-            lastRunID: runID,
-            lastRequestContext: AiChatLockedRequestContextSnapshot(),
             updatedAtMs: 1,
         )
         let laterFinalSnapshot = AiChatSessionSnapshot(
@@ -361,11 +358,16 @@ final class AiChatSessionFileStoreTests: XCTestCase {
             ],
             lastRequestID: requestID,
             lastRunID: runID,
+            lastRequestContext: AiChatLockedRequestContextSnapshot(),
             updatedAtMs: 1,
         )
 
         try await store.saveSession(finalSnapshot)
-        try await store.saveSession(staleRequestStartSnapshot)
+        let persistedSnapshot = try await store.saveSession(staleRequestStartSnapshot)
+
+        XCTAssertEqual(persistedSnapshot.updatedAtMs, 2)
+        XCTAssertEqual(persistedSnapshot.transcriptHistory.map(\.content), ["test", "done"])
+        XCTAssertEqual(persistedSnapshot.customTitle, "Renamed while generating")
 
         let loadedSnapshot = try await store.loadSession(id: sessionID)
         let restored = try XCTUnwrap(loadedSnapshot)

@@ -8,7 +8,7 @@ public protocol AiChatExecutionClientProtocol: Sendable {
 public protocol AiChatSessionPersistenceClientProtocol: Sendable {
     func listSessions(limit: Int?, query: String?) async throws -> [AiChatSessionSummary]
     func loadSession(id: AiChatSessionID) async throws -> AiChatSessionSnapshot?
-    func saveSession(_ snapshot: AiChatSessionSnapshot) async throws
+    func saveSession(_ snapshot: AiChatSessionSnapshot) async throws -> AiChatSessionSnapshot
     func deleteSession(id: AiChatSessionID) async throws
 }
 
@@ -83,7 +83,7 @@ public actor AiChatSessionFileStore: AiChatSessionPersistenceClientProtocol {
         }
     }
 
-    public func saveSession(_ snapshot: AiChatSessionSnapshot) async throws {
+    public func saveSession(_ snapshot: AiChatSessionSnapshot) async throws -> AiChatSessionSnapshot {
         try withExclusiveLock {
             let fileURL = sessionFileURL(for: snapshot.sessionID)
             if fileManager.fileExists(atPath: fileURL.path),
@@ -93,8 +93,9 @@ public actor AiChatSessionFileStore: AiChatSessionPersistenceClientProtocol {
                 if let mergedSnapshot = existingSnapshot.mergingIndependentMetadata(from: snapshot) {
                     let data = try encoder.encode(mergedSnapshot)
                     try replaceSessionFile(at: fileURL, with: data)
+                    return mergedSnapshot
                 }
-                return
+                return existingSnapshot
             }
 
             let snapshotToSave: AiChatSessionSnapshot = if fileManager.fileExists(atPath: fileURL.path),
@@ -108,6 +109,7 @@ public actor AiChatSessionFileStore: AiChatSessionPersistenceClientProtocol {
             }
             let data = try encoder.encode(snapshotToSave)
             try replaceSessionFile(at: fileURL, with: data)
+            return snapshotToSave
         }
     }
 
@@ -324,12 +326,14 @@ private extension AiChatSessionSnapshot {
             && selectedModelRow == existingSnapshot.selectedModelRow
             && selectedThinking == existingSnapshot.selectedThinking
             && canMergeIndependentMetadata(over: existingSnapshot)
-            && existingSnapshot.transcriptHistory.starts(with: transcriptHistory)
     }
 
     func canMergeIndependentMetadata(over existingSnapshot: AiChatSessionSnapshot) -> Bool {
-        guard hasRequestLifecycleMetadata else { return true }
-        return lastRequestID == existingSnapshot.lastRequestID
+        guard hasRequestLifecycleMetadata else {
+            return existingSnapshot.transcriptHistory.starts(with: transcriptHistory)
+        }
+        return transcriptHistory == existingSnapshot.transcriptHistory
+            && lastRequestID == existingSnapshot.lastRequestID
             && lastRunID == existingSnapshot.lastRunID
             && lastRequestContext == existingSnapshot.lastRequestContext
     }
