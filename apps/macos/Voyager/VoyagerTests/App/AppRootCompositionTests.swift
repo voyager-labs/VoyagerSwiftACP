@@ -70,7 +70,7 @@ final class AppRootCompositionTests: XCTestCase {
         let snapshot = AccessStatusSnapshot(status: .coreLicenseActive)
         let store = makeAccountAccessGrantedStore()
 
-        await store.send(.lifecycle(.accountAccessGate(.accountAccessGranted(snapshot: snapshot))))
+        await store.send(.lifecycle(.accountAccessGate(.accountAccessGranted(generation: 0, snapshot: snapshot))))
 
         await store.receive(\.settings.appLifecycleAccessSnapshotReady) { state in
             state.settings.accessStatus = snapshot.status
@@ -100,7 +100,7 @@ final class AppRootCompositionTests: XCTestCase {
         )
         let store = makeAccountAccessGrantedStore()
 
-        await store.send(.lifecycle(.accountAccessGate(.accountAccessGranted(snapshot: snapshot))))
+        await store.send(.lifecycle(.accountAccessGate(.accountAccessGranted(generation: 0, snapshot: snapshot))))
 
         await store.receive(\.settings.appLifecycleAccessSnapshotReady) { state in
             state.settings.accessStatus = snapshot.status
@@ -123,8 +123,8 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// inactive entitlement snapshot은 Settings/Account access unlock recovery로 hydrate한다.
-    func testAppRootAccessUnlockRequiredHydratesBlockedAccountChild() async {
+    /// inactive entitlement snapshot은 FileManager guard overlay와 Settings 상태를 함께 hydrate한다.
+    func testAppRootAccessUnlockRequiredHydratesGuardOverlayAndAccountChild() async {
         let expiry = Date(timeIntervalSince1970: 4_102_444_800)
         let snapshot = AccessStatusSnapshot(
             status: .trialExpired,
@@ -132,8 +132,22 @@ final class AppRootCompositionTests: XCTestCase {
         )
         let store = makeAccountAccessGrantedStore()
 
-        await store.send(.lifecycle(.accountAccessGate(.accessUnlockRequired(snapshot: snapshot))))
-
+        await store.send(.lifecycle(.accountAccessGate(.accessUnlockRequired(
+            generation: 0,
+            snapshot: snapshot,
+        )))) { state in
+            state.lifecycle.accessGatePhase = .unlockRequired(snapshot: snapshot, generation: 0)
+            state.lifecycle.lastAccessStatus = .trialExpired
+            state.lifecycle.accountAccessGateResolved = true
+            state.lifecycle.sessionLapseGuard = AccountAccessFeature.State()
+            state.lifecycle.sessionLapseGuard?.handoffContext = .paywall
+            state.lifecycle.sessionLapseGuard?.status = .trialExpired
+            state.lifecycle.sessionLapseGuard?.snapshot = snapshot
+            state.lifecycle.sessionLapseGuard?.sessionExpiresAt = expiry
+            state.lifecycle.sessionLapseGuard?.hasAccountSession = true
+            state.lifecycle.sessionLapseGuard?.didBootstrap = true
+            state.lifecycle.sessionLapseGuard?.fetchGeneration = 1
+        }
         await store.receive(\.settings.accessStatusLoaded) { state in
             state.settings.accessStatus = .trialExpired
         }
@@ -144,7 +158,9 @@ final class AppRootCompositionTests: XCTestCase {
             state.settings.accountSettings.access.hasAccountSession = true
             state.settings.accountSettings.access.didBootstrap = true
         }
+        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
 
+        XCTAssertEqual(store.state.lifecycle.sessionLapseGuard?.accessUnlockPrimaryCTA, .webPricing)
         XCTAssertEqual(store.state.settings.accountSettings.access.accessUnlockPrimaryCTA, .webPricing)
         XCTAssertFalse(store.state.lifecycle.didStartHelper)
         await store.finish()
@@ -159,7 +175,7 @@ final class AppRootCompositionTests: XCTestCase {
         )
         let store = makeAccountAccessGrantedStore()
 
-        await store.send(.lifecycle(.accountAccessGate(.accountAccessGranted(snapshot: snapshot))))
+        await store.send(.lifecycle(.accountAccessGate(.accountAccessGranted(generation: 0, snapshot: snapshot))))
 
         await store.receive(\.settings.appLifecycleAccessSnapshotReady) { state in
             state.settings.accessStatus = snapshot.status
@@ -219,9 +235,10 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertFalse(store.state.settings.accountSettings.isManageAccountAvailable)
     }
 
-    /// 사용자 명시적 로그아웃(reason == .explicitSignOut)은 Settings top-level만 clear 한다.
+    /// 사용자 명시적 로그아웃(reason == .explicitSignOut)은 Settings top-level을 clear하고
+    /// logged_out 보호 정책에 따라 session lapse guard도 표시한다.
     /// Account child는 이미 `.delegate(.signedOut)`로 처리되므로 만료 액션으로 덮어쓰지 않는다.
-    func testExplicitSignOutOnlyClearsSettingsTopLevel() async {
+    func testExplicitSignOutClearsSettingsTopLevelAndCreatesSessionLapseGuard() async {
         var initialState = AppRootFeature.State()
         initialState.settings.accessStatus = .coreLicenseActive
         initialState.settings.accountSettings.access.hasAccountSession = true
@@ -237,6 +254,39 @@ final class AppRootCompositionTests: XCTestCase {
         // Account child는 만료 액션을 받지 않아 signed-in 상태가 유지된다.
         XCTAssertTrue(store.state.settings.accountSettings.access.hasAccountSession)
         XCTAssertFalse(store.state.settings.accountSettings.access.didSignInFail)
+        XCTAssertNotNil(store.state.lifecycle.sessionLapseGuard)
+        await store.finish()
+    }
+
+    /// 사용자 명시적 로그아웃은 stale access check를 무효화하고 logged_out guard를 만든다.
+    func testExplicitSignOutInvalidatesLifecycleAndCreatesSessionLapseGuard() async {
+        var initialState = AppLifecycleFeature.State()
+        initialState.accessGateGeneration = 1
+        initialState.accessGatePhase = .granted(
+            snapshot: AccessStatusSnapshot(status: .coreLicenseActive),
+            generation: 1,
+        )
+        initialState.lastAccessStatus = .coreLicenseActive
+        initialState.accountAccessGateResolved = true
+
+        let store = TestStore(initialState: initialState) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { false }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.sessionExpiredDetected(reason: .explicitSignOut)) { state in
+            state.accessGateGeneration = 2
+            state.accessGatePhase = .signedOut(generation: 2)
+            state.lastAccessStatus = nil
+            state.accountAccessGateResolved = false
+            state.sessionEndReason = .explicitSignOut
+            state.sessionLapseGuard = AccountAccessFeature.State()
+            state.sessionLapseGuard?.handoffContext = .paywall
+        }
+
+        XCTAssertNotNil(store.state.sessionLapseGuard)
         await store.finish()
     }
 
@@ -255,6 +305,8 @@ final class AppRootCompositionTests: XCTestCase {
         let store = makeAccountAccessGrantedStore(initialState: initialState)
 
         await store.send(.lifecycle(.sessionLapseGuard(.delegate(.unlocked(snapshot))))) { state in
+            state.lifecycle.accessGateGeneration = 1
+            state.lifecycle.accessGatePhase = .granted(snapshot: snapshot, generation: 1)
             state.lifecycle.lastAccessStatus = .coreLicenseActive
             state.lifecycle.accountAccessGateResolved = true
             state.lifecycle.sessionLapseGuard = nil
@@ -324,6 +376,7 @@ final class AppRootCompositionTests: XCTestCase {
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.onboardingWindowClient.isRequired = { false }
             $0.accountSessionClient.delete = { _ in }
+            $0.accessStatusSnapshotClient.save = { _ in }
             $0.accessStatusSnapshotClient.remove = {}
             // T11: 직접 XCTest 실행 시 도달하는 전이 의존성의 testValue가 fatalError라
             // 테스트-로컬 deterministic override로만 우회. 글로벌 testValue는 미변경.
@@ -398,7 +451,7 @@ final class AppRootCompositionTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.accountAccessGate(.accessStatusResponse(.success(response))))
+        await store.send(.accountAccessGate(.accessStatusResponse(generation: 0, result: .success(response))))
 
         await store.receive(\.accountAccessGate.accountAccessGranted)
         await store.receive(\.delegate.openInitialWindowIfNeeded)
@@ -410,7 +463,7 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// inactive entitlement는 session lapse guard가 아니라 access unlock recovery state로 전달한다.
+    /// inactive entitlement는 access unlock recovery 상태를 hydrate한 session lapse guard overlay로 전달한다.
     func testAccessStatusInactiveRoutesToAccessUnlockRecovery() async {
         let expiry = Date(timeIntervalSince1970: 100)
         let session = AccountSession(
@@ -424,6 +477,11 @@ final class AppRootCompositionTests: XCTestCase {
             status: "trial_expired",
             productKey: "trial",
         )
+        let expectedSnapshot = AccessStatusSnapshot(
+            status: .trialExpired,
+            fetchedAt: Date(timeIntervalSince1970: 0),
+            sessionExpiresAt: expiry,
+        )
         let saved = SnapshotCaptureBox()
         let store = TestStore(initialState: AppLifecycleFeature.State()) {
             AppLifecycleFeature()
@@ -436,14 +494,25 @@ final class AppRootCompositionTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.accountAccessGate(.accessStatusResponse(.success(response))))
+        await store.send(.accountAccessGate(.accessStatusResponse(generation: 0, result: .success(response))))
 
         await store.receive(\.accountAccessGate.accessUnlockRequired) { state in
+            state.accessGatePhase = .unlockRequired(snapshot: expectedSnapshot, generation: 0)
             state.lastAccessStatus = .trialExpired
             state.accountAccessGateResolved = true
             state.isCheckingAccountAccess = false
+            state.sessionLapseGuard = AccountAccessFeature.State()
+            state.sessionLapseGuard?.handoffContext = .paywall
+            state.sessionLapseGuard?.status = .trialExpired
+            state.sessionLapseGuard?.snapshot = expectedSnapshot
+            state.sessionLapseGuard?.sessionExpiresAt = expiry
+            state.sessionLapseGuard?.hasAccountSession = true
+            state.sessionLapseGuard?.didBootstrap = true
+            state.sessionLapseGuard?.fetchGeneration = 1
         }
-        XCTAssertNil(store.state.sessionLapseGuard)
+        await store.receive(\.delegate.openInitialWindowIfNeeded)
+        XCTAssertNotNil(store.state.sessionLapseGuard)
+        XCTAssertEqual(store.state.sessionLapseGuard?.accessUnlockPrimaryCTA, .webPricing)
         XCTAssertFalse(store.state.didStartHelper)
         XCTAssertEqual(saved.value?.status, .trialExpired)
         XCTAssertEqual(saved.value?.sessionExpiresAt, expiry)
@@ -473,7 +542,7 @@ final class AppRootCompositionTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.accountAccessGate(.accessStatusResponse(.success(response))))
+        await store.send(.accountAccessGate(.accessStatusResponse(generation: 0, result: .success(response))))
 
         await store.receive(\.accountAccessGate.accountAccessGranted)
         await store.receive(\.delegate.openInitialWindowIfNeeded)
@@ -526,7 +595,7 @@ final class AppRootCompositionTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.accountAccessGate(.accessStatusResponse(.failure(.networkFailure))))
+        await store.send(.accountAccessGate(.accessStatusResponse(generation: 0, result: .failure(.networkFailure))))
 
         await store.receive(\.accountAccessGate.accountAccessGranted)
         await store.receive(\.delegate.openInitialWindowIfNeeded)
@@ -569,7 +638,7 @@ final class AppRootCompositionTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.accountAccessGate(.accessStatusResponse(.failure(.networkFailure))))
+        await store.send(.accountAccessGate(.accessStatusResponse(generation: 0, result: .failure(.networkFailure))))
 
         await store.receive(\.accountAccessGate.accountAccessGranted)
         await store.receive(\.delegate.openInitialWindowIfNeeded)
@@ -614,8 +683,13 @@ final class AppRootCompositionTests: XCTestCase {
             }
 
             await store.send(.sessionExpiredDetected(reason: reason)) { state in
+                state.accessGateGeneration = 1
+                state.accessGatePhase = reason == .explicitSignOut
+                    ? .signedOut(generation: 1)
+                    : .sessionLapsed(reason: reason, generation: 1)
                 state.lastAccessStatus = nil
                 state.accountAccessGateResolved = false
+                state.sessionEndReason = reason
             }
 
             await store.send(.launch(.appReopen(hasVisibleWindows: false)))
@@ -648,16 +722,63 @@ final class AppRootCompositionTests: XCTestCase {
         }
 
         await store.send(.sessionExpiredDetected(reason: .sessionExpired)) { state in
+            state.accessGateGeneration = 1
+            state.accessGatePhase = .sessionLapsed(reason: .sessionExpired, generation: 1)
             state.lastAccessStatus = nil
             state.accountAccessGateResolved = false
+            state.sessionEndReason = .sessionExpired
         }
 
+        await store.finish()
+    }
+
+    /// session 만료가 access check보다 먼저 도착하면 이후 stale access_status 응답은
+    /// active 상태를 되살리거나 initial window open delegate를 보내면 안 된다.
+    func testSessionExpiredDetectedIgnoresStaleAccessStatusResponse() async {
+        var initialState = AppLifecycleFeature.State()
+        initialState.accessGateGeneration = 1
+        initialState.accessGatePhase = .checking(generation: 1)
+        initialState.isCheckingAccountAccess = true
+        initialState.lastAccessStatus = .coreLicenseActive
+        initialState.accountAccessGateResolved = true
+
+        let store = TestStore(initialState: initialState) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { true }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.sessionExpiredDetected(reason: .sessionExpired)) { state in
+            state.accessGateGeneration = 2
+            state.accessGatePhase = .sessionLapsed(reason: .sessionExpired, generation: 2)
+            state.isCheckingAccountAccess = false
+            state.lastAccessStatus = nil
+            state.accountAccessGateResolved = false
+            state.sessionEndReason = .sessionExpired
+        }
+
+        let response = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            productKey: "core",
+        )
+        await store.send(.accountAccessGate(.accessStatusResponse(generation: 1, result: .success(response))))
+
+        XCTAssertNil(store.state.lastAccessStatus)
+        XCTAssertFalse(store.state.accountAccessGateResolved)
+        XCTAssertNil(store.state.sessionLapseGuard)
         await store.finish()
     }
 
     /// networkFailure + 유효 active cache 없음은 session 만료가 아니라 retry 가능한 access unlock 상태로 전달한다.
     func testAccessStatusNetworkFailureWithoutCacheRoutesToRetryableAccessUnlock() async {
         let expiry = Date(timeIntervalSince1970: 100)
+        let expectedSnapshot = AccessStatusSnapshot(
+            status: .networkFailure,
+            fetchedAt: Date(timeIntervalSince1970: 0),
+            sessionExpiresAt: expiry,
+        )
         let saved = SnapshotCaptureBox()
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
@@ -679,16 +800,29 @@ final class AppRootCompositionTests: XCTestCase {
             $0.helperAppClient.stop = {}
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.onboardingWindowClient.isRequired = { false }
+            $0.uuid = .incrementing
             $0.fileManagerWindowClient.open = { _ in }
         }
         store.exhaustivity = .off
 
-        await store.send(.lifecycle(.accountAccessGate(.accessStatusResponse(.failure(.networkFailure)))))
+        await store.send(.lifecycle(.accountAccessGate(.accessStatusResponse(
+            generation: 0,
+            result: .failure(.networkFailure),
+        ))))
 
         await store.receive(\.lifecycle.accountAccessGate.accessUnlockRequired) { state in
+            state.lifecycle.accessGatePhase = .unlockRequired(snapshot: expectedSnapshot, generation: 0)
             state.lifecycle.lastAccessStatus = .networkFailure
             state.lifecycle.accountAccessGateResolved = true
             state.lifecycle.isCheckingAccountAccess = false
+            state.lifecycle.sessionLapseGuard = AccountAccessFeature.State()
+            state.lifecycle.sessionLapseGuard?.handoffContext = .paywall
+            state.lifecycle.sessionLapseGuard?.status = .networkFailure
+            state.lifecycle.sessionLapseGuard?.snapshot = saved.value
+            state.lifecycle.sessionLapseGuard?.sessionExpiresAt = expiry
+            state.lifecycle.sessionLapseGuard?.hasAccountSession = true
+            state.lifecycle.sessionLapseGuard?.didBootstrap = true
+            state.lifecycle.sessionLapseGuard?.fetchGeneration = 1
         }
         await store.receive(\.settings.accessStatusLoaded) { state in
             state.settings.accessStatus = .networkFailure
@@ -700,12 +834,44 @@ final class AppRootCompositionTests: XCTestCase {
             state.settings.accountSettings.access.hasAccountSession = true
             state.settings.accountSettings.access.didBootstrap = true
         }
+        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
 
-        XCTAssertNil(store.state.lifecycle.sessionLapseGuard)
+        XCTAssertNotNil(store.state.lifecycle.sessionLapseGuard)
         XCTAssertFalse(store.state.lifecycle.didStartHelper)
+        XCTAssertEqual(store.state.lifecycle.sessionLapseGuard?.accessUnlockPrimaryCTA, .retry)
         XCTAssertEqual(store.state.settings.accountSettings.access.accessUnlockPrimaryCTA, .retry)
         XCTAssertEqual(saved.value?.status, .networkFailure)
         XCTAssertEqual(saved.value?.sessionExpiresAt, expiry)
+        await store.finish()
+    }
+
+    /// decoding/notConfigured 같은 access 조회 실패는 network retry 복구가 아니라
+    /// 세션 경계 재확인이 필요한 lapse 경로로 보낸다.
+    func testAccessStatusNonNetworkFailureRoutesToSessionLapse() async {
+        var initialState = AppLifecycleFeature.State()
+        initialState.accessGateGeneration = 3
+        initialState.accessGatePhase = .checking(generation: 3)
+        initialState.isCheckingAccountAccess = true
+
+        let store = TestStore(initialState: initialState) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { true }
+        }
+
+        await store.send(.accountAccessGate(.accessStatusResponse(
+            generation: 3,
+            result: .failure(.decodingFailure),
+        )))
+
+        await store.receive(\.sessionExpiredDetected) { state in
+            state.accessGateGeneration = 4
+            state.accessGatePhase = .sessionLapsed(reason: nil, generation: 4)
+            state.isCheckingAccountAccess = false
+            state.accountAccessGateResolved = false
+        }
+
+        XCTAssertNil(store.state.sessionLapseGuard)
         await store.finish()
     }
 
@@ -743,6 +909,33 @@ final class AppRootCompositionTests: XCTestCase {
         }
 
         await store.send(.launch(.appReopen(hasVisibleWindows: false)))
+        await store.finish()
+    }
+
+    /// guard가 필요한 locked 상태에서는 buffered voyager:// route를 먼저 flush하지 않고,
+    /// guard overlay를 마운트할 FileManager window open만 요청한다.
+    func testOpenInitialWindowDefersPendingExternalRoutesWhenSessionGuardActive() async throws {
+        let deepLink = try XCTUnwrap(URL(string: "voyager://open"))
+        var initialState = AppRootFeature.State()
+        initialState.pendingExternalURLs = [deepLink]
+        initialState.lifecycle.sessionLapseGuard = AccountAccessFeature.State()
+        initialState.lifecycle.accountAccessGateResolved = false
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
+        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
+
+        XCTAssertEqual(store.state.pendingExternalURLs, [deepLink])
         await store.finish()
     }
 
@@ -797,9 +990,9 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertTrue(routed, "온보딩 부재 시 AppRoot sessionLapseGuard.loginCallbackReceived로 폴백 (URL 페이로드 보존)")
     }
 
-    /// `application(_:open:)`가 voyager://auth/callback이 아닌 URL을 수신하면
-    /// AppRoot로 아무 액션도 보내지 않는다. non-auth URL은 무시됨.
-    func testAppDelegateIgnoresNonAuthURLs() throws {
+    /// `application(_:open:)`는 지원하지 않는 외부 scheme을 무시하되,
+    /// voyager:// non-auth deep link는 ExternalFileRouter 경로로 전달한다.
+    func testAppDelegateIgnoresUnsupportedURLsAndRoutesVoyagerDeepLinks() throws {
         let box = ActionBox<AppRootAction>()
         let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
             _ActionRecordingAppRoot(box: box)
@@ -808,10 +1001,20 @@ final class AppRootCompositionTests: XCTestCase {
         appDelegate.configure(appRootStore: store)
 
         try appDelegate.application(NSApp, open: [XCTUnwrap(URL(string: "https://example.com"))])
-        try appDelegate.application(NSApp, open: [XCTUnwrap(URL(string: "voyager://other/path"))])
         appDelegate.application(NSApp, open: [])
 
-        XCTAssertTrue(box.actions.isEmpty, "non-auth URL은 AppRoot로 라우팅되지 않아야 함")
+        XCTAssertTrue(box.actions.isEmpty, "지원하지 않는 scheme은 AppRoot로 라우팅되지 않아야 함")
+
+        let deepLink = try XCTUnwrap(URL(string: "voyager://open"))
+        appDelegate.application(NSApp, open: [deepLink])
+
+        let routed = box.actions.contains { action in
+            if case let .receiveExternalURL(received) = action {
+                return received == deepLink
+            }
+            return false
+        }
+        XCTAssertTrue(routed, "voyager:// non-auth deep link는 ExternalFileRouter 경로로 전달")
     }
 }
 

@@ -104,21 +104,31 @@ struct AppLifecycleFeature {
             // MARK: - Access Gate
 
             case .accountAccessGate(.checkAccessStatus):
-                state.isCheckingAccountAccess = true
+                let generation = state.beginAccessCheck()
                 let authNetwork = authNetwork
                 return .run { send in
                     do {
                         let response = try await authNetwork.fetchAccessStatus()
-                        await send(.accountAccessGate(.accessStatusResponse(.success(response))))
+                        await send(.accountAccessGate(.accessStatusResponse(
+                            generation: generation,
+                            result: .success(response),
+                        )))
                     } catch let error as AccessError {
-                        await send(.accountAccessGate(.accessStatusResponse(.failure(error))))
+                        await send(.accountAccessGate(.accessStatusResponse(
+                            generation: generation,
+                            result: .failure(error),
+                        )))
                     } catch {
-                        await send(.accountAccessGate(.accessStatusResponse(.failure(.networkFailure))))
+                        await send(.accountAccessGate(.accessStatusResponse(
+                            generation: generation,
+                            result: .failure(.networkFailure),
+                        )))
                     }
                 }
                 .cancellable(id: CancelID.accessCheck, cancelInFlight: true)
 
-            case let .accountAccessGate(.accessStatusResponse(.success(response))):
+            case let .accountAccessGate(.accessStatusResponse(generation: generation, result: .success(response))):
+                guard state.isCurrentAccessGateGeneration(generation) else { return .none }
                 state.isCheckingAccountAccess = false
                 let accessStatus = response.toAccessStatus()
                 state.lastAccessStatus = accessStatus
@@ -132,13 +142,16 @@ struct AppLifecycleFeature {
                     let dateNow = date.now
                     return .run { send in
                         let sessionExpiresAt = await (try? accountSessionClient.read())?.expiresAt
-                        let snapshot = AccessStatusSnapshot(
+                        let snapshot = AccessStatusSnapshot.fetchResult(
                             status: accessStatus,
                             currentPeriodEnd: response.currentPeriodEnd,
-                            fetchedAt: dateNow,
                             sessionExpiresAt: sessionExpiresAt,
+                            fetchedAt: dateNow,
                         )
-                        await send(.accountAccessGate(.accountAccessGranted(snapshot: snapshot)))
+                        await send(.accountAccessGate(.accountAccessGranted(
+                            generation: generation,
+                            snapshot: snapshot,
+                        )))
                     }
                 }
 
@@ -146,16 +159,23 @@ struct AppLifecycleFeature {
                 let dateNow = date.now
                 return .run { send in
                     let sessionExpiresAt = await (try? accountSessionClient.read())?.expiresAt
-                    let snapshot = AccessStatusSnapshot(
+                    let snapshot = AccessStatusSnapshot.fetchResult(
                         status: accessStatus,
                         currentPeriodEnd: response.currentPeriodEnd,
-                        fetchedAt: dateNow,
                         sessionExpiresAt: sessionExpiresAt,
+                        fetchedAt: dateNow,
                     )
-                    await send(.accountAccessGate(.accessUnlockRequired(snapshot: snapshot)))
+                    await send(.accountAccessGate(.accessUnlockRequired(
+                        generation: generation,
+                        snapshot: snapshot,
+                    )))
                 }
 
-            case let .accountAccessGate(.accessStatusResponse(.failure(error))):
+            case let .accountAccessGate(.accessStatusResponse(generation: generation, result: .failure(error))):
+                guard state.isCurrentAccessGateGeneration(generation) else { return .none }
+                guard error != .unauthorized else {
+                    return .send(.sessionExpiredDetected(reason: .sessionExpired))
+                }
                 guard error == .networkFailure else {
                     return .send(.sessionExpiredDetected(reason: nil))
                 }
@@ -169,12 +189,15 @@ struct AppLifecycleFeature {
                           cached.currentPeriodEnd.map({ dateNow < $0 }) ?? true
                     else {
                         let sessionExpiresAt = await (try? accountSessionClient.read())?.expiresAt
-                        let snapshot = AccessStatusSnapshot(
+                        let snapshot = AccessStatusSnapshot.fetchResult(
                             status: .networkFailure,
-                            fetchedAt: dateNow,
                             sessionExpiresAt: sessionExpiresAt,
+                            fetchedAt: dateNow,
                         )
-                        await send(.accountAccessGate(.accessUnlockRequired(snapshot: snapshot)))
+                        await send(.accountAccessGate(.accessUnlockRequired(
+                            generation: generation,
+                            snapshot: snapshot,
+                        )))
                         return
                     }
                     // session은 token file 기반으로 access_status 캐시와 무관하게
@@ -182,30 +205,43 @@ struct AppLifecycleFeature {
                     // fetchedAt은 캐시 값을 유지하고 sessionExpiresAt 축만 최신화.
                     // read 실패/미존재는 success path와 동일하게 nil로 흡수 → gate 정책은 그대로 유지.
                     let sessionExpiresAt = await (try? accountSessionClient.read())?.expiresAt
-                    let restored = AccessStatusSnapshot(
+                    let restored = AccessStatusSnapshot.fetchResult(
                         status: cached.status,
                         currentPeriodEnd: cached.currentPeriodEnd,
-                        fetchedAt: cached.fetchedAt,
                         sessionExpiresAt: sessionExpiresAt,
+                        fetchedAt: cached.fetchedAt,
                     )
-                    await send(.accountAccessGate(.accountAccessGranted(snapshot: restored)))
+                    await send(.accountAccessGate(.accountAccessGranted(
+                        generation: generation,
+                        snapshot: restored,
+                    )))
                 }
 
-            case let .accountAccessGate(.accessUnlockRequired(snapshot)):
-                state.lastAccessStatus = snapshot.status
-                state.accountAccessGateResolved = true
-                state.isCheckingAccountAccess = false
-                return .run { _ in
-                    await snapshotClient.save(snapshot)
-                }
+            case let .accountAccessGate(.accessUnlockRequired(generation: generation, snapshot: snapshot)):
+                guard state.isCurrentAccessGateGeneration(generation) else { return .none }
+                state.resolveAccessUnlockRequired(snapshot, generation: generation)
+                var sessionLapseGuard = AccountAccessFeature.State()
+                sessionLapseGuard.handoffContext = .paywall
+                sessionLapseGuard.hydrateLaunchSnapshotState(snapshot)
+                state.sessionLapseGuard = sessionLapseGuard
+                return .merge(
+                    .run { _ in
+                        await snapshotClient.save(snapshot)
+                    },
+                    .send(.delegate(.openInitialWindowIfNeeded)),
+                )
 
-            case let .accountAccessGate(.accountAccessGranted(snapshot)):
+            case let .accountAccessGate(.accountAccessGranted(generation: generation, snapshot: snapshot)):
+                guard state.isCurrentAccessGateGeneration(generation) else { return .none }
                 return accountAccessGrantedEffects(
                     state: &state,
                     snapshot: snapshot,
-                    snapshotClient: snapshotClient,
-                    helperAppClient: helperAppClient,
-                    helperStateClient: helperStateClient,
+                    generation: generation,
+                    environment: AccountAccessGrantEnvironment(
+                        snapshotClient: snapshotClient,
+                        helperAppClient: helperAppClient,
+                        helperStateClient: helperStateClient,
+                    ),
                 )
 
             // MARK: - Termination
@@ -292,25 +328,24 @@ struct AppLifecycleFeature {
             case let .sessionExpiredDetected(reason):
                 // accountSessionDidEnd notification 수신. 명시적 로그아웃(signOut → AccountSessionClient.delete)
                 // 와 세션 만료(refresh/decoding 실패) 양쪽이 모두 이 notification을 post하므로
-                // 두 원인이 같은 경로로 전달된다. T5에서 reason 구분이 추가되었으며,
-                // 두 경우 모두 동일하게 guard를 표시한다 (PRESERVED 동작).
-                state.lastAccessStatus = nil
-                state.accountAccessGateResolved = false
-                state.isCheckingAccountAccess = false
-                guard state.sessionLapseGuard == nil else { return .none }
+                // 두 원인이 같은 경로로 전달된다. reason은 phase에 보존하되 둘 다 guard를 표시한다.
+                state.resolveSessionEnded(reason: reason)
+                let cancelAccessCheck: Effect<Action> = .cancel(id: CancelID.accessCheck)
+                guard state.sessionLapseGuard == nil else { return cancelAccessCheck }
                 // ACC-003: 온보딩 윈도우가 활성 상태이면 세션 만료/로그아웃 보호를 스킵한다
-                guard !onboardingWindowClient.isRequired() else { return .none }
-                state.sessionEndReason = reason
+                guard !onboardingWindowClient.isRequired() else { return cancelAccessCheck }
                 var sessionLapseGuard = AccountAccessFeature.State()
                 sessionLapseGuard.handoffContext = .paywall
                 state.sessionLapseGuard = sessionLapseGuard
                 return .merge(
+                    cancelAccessCheck,
                     .send(.sessionLapseGuard(.onAppear)),
                     .send(.delegate(.openInitialWindowIfNeeded)),
                 )
 
             case .termination(.willTerminate):
                 return .merge(
+                    .cancel(id: CancelID.accessCheck),
                     .cancel(id: CancelID.helperMonitor),
                     .cancel(id: CancelID.sessionExpirationObserver),
                 )
@@ -343,9 +378,12 @@ struct AppLifecycleFeature {
                 return accountAccessGrantedEffects(
                     state: &state,
                     snapshot: snapshot,
-                    snapshotClient: snapshotClient,
-                    helperAppClient: helperAppClient,
-                    helperStateClient: helperStateClient,
+                    generation: state.accessGateGeneration + 1,
+                    environment: AccountAccessGrantEnvironment(
+                        snapshotClient: snapshotClient,
+                        helperAppClient: helperAppClient,
+                        helperStateClient: helperStateClient,
+                    ),
                 )
             default:
                 return .none
@@ -354,28 +392,32 @@ struct AppLifecycleFeature {
     }
 }
 
+private struct AccountAccessGrantEnvironment {
+    var snapshotClient: AccessStatusSnapshotClient
+    var helperAppClient: HelperAppClient
+    var helperStateClient: HelperStateClient
+}
+
 private func accountAccessGrantedEffects(
     state: inout AppLifecycleState,
     snapshot: AccessStatusSnapshot,
-    snapshotClient: AccessStatusSnapshotClient,
-    helperAppClient: HelperAppClient,
-    helperStateClient: HelperStateClient,
+    generation: Int,
+    environment: AccountAccessGrantEnvironment,
 ) -> Effect<AppLifecycleAction> {
     let saveEffect: Effect<AppLifecycleAction> = .run { _ in
-        await snapshotClient.save(snapshot)
+        await environment.snapshotClient.save(snapshot)
     }
 
-    state.lastAccessStatus = snapshot.status
-    state.accountAccessGateResolved = true
-    state.isCheckingAccountAccess = false
+    state.accessGateGeneration = max(state.accessGateGeneration, generation)
+    state.resolveAccessGranted(snapshot, generation: state.accessGateGeneration)
 
     var effects: [Effect<AppLifecycleAction>] = [saveEffect]
 
     if !state.didStartHelper {
         state.didStartHelper = true
         effects.append(helperMonitorEffect(
-            helperClient: helperAppClient,
-            stateClient: helperStateClient,
+            helperClient: environment.helperAppClient,
+            stateClient: environment.helperStateClient,
         ))
     }
 

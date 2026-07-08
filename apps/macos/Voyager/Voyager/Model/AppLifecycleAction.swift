@@ -21,9 +21,9 @@ enum AppLifecycleAction: CasePathable {
     @CasePathable
     enum AccountAccessGate: CasePathable, Equatable {
         case checkAccessStatus
-        case accessStatusResponse(Result<AccessStatusResponse, AccessError>)
-        case accessUnlockRequired(snapshot: AccessStatusSnapshot)
-        case accountAccessGranted(snapshot: AccessStatusSnapshot)
+        case accessStatusResponse(generation: Int, result: Result<AccessStatusResponse, AccessError>)
+        case accessUnlockRequired(generation: Int, snapshot: AccessStatusSnapshot)
+        case accountAccessGranted(generation: Int, snapshot: AccessStatusSnapshot)
     }
 
     @CasePathable

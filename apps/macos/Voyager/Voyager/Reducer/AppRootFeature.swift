@@ -122,15 +122,15 @@ struct AppRootFeature {
                 .send(.settings(.account(.access(.hydrateLaunchSnapshot(snapshot))))),
             )
 
-        case let .lifecycle(.accountAccessGate(.accessUnlockRequired(snapshot))):
-            // 비활성 entitlement는 session 만료가 아니므로 guard 대신 Account access-unlock
-            // recovery 상태로 hydrate한다. signed-in + blocked 상태가 pricing CTA를 제공한다.
+        case let .lifecycle(.accountAccessGate(.accessUnlockRequired(generation: _, snapshot: snapshot))):
+            // 비활성 entitlement/retry 상태는 AppLifecycle guard overlay가 소유한다.
+            // Settings는 사용자가 직접 열었을 때 같은 상태를 볼 수 있도록 hydrate만 맞춘다.
             .merge(
                 .send(.settings(.accessStatusLoaded(snapshot.status))),
                 .send(.settings(.account(.access(.hydrateLaunchSnapshot(snapshot))))),
             )
 
-        case let .lifecycle(.accountAccessGate(.accountAccessGranted(snapshot))):
+        case let .lifecycle(.accountAccessGate(.accountAccessGranted(generation: _, snapshot: snapshot))):
             // ponytail: AppLifecycle이 fetch한 launch snapshot을 Settings hydration으로 1회 전달 +
             // AI bootstrap은 launch 시점으로 이동. didBootstrap가 탭 렌더 중복 send를 no-op 처리한다.
             .send(.settings(.appLifecycleAccessSnapshotReady(snapshot)))
@@ -152,6 +152,9 @@ struct AppRootFeature {
             if hasPendingExternalRoutes(state) {
                 state.isExternalURLFlushDelegateScheduled = false
                 guard !onboardingWindowClient.isRequired() else { return .none }
+                guard canFlushPendingExternalRoutes(state) else {
+                    return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
+                }
                 return flushPendingExternalRoutes(state: &state)
             }
             if state.isExternalURLRouteInFlightWithoutWindow {
@@ -374,6 +377,10 @@ struct AppRootFeature {
         !state.pendingExternalURLs.isEmpty || !state.pendingExternalFileRoutes.isEmpty
     }
 
+    private func canFlushPendingExternalRoutes(_ state: State) -> Bool {
+        state.lifecycle.isExternalRouteFlushAllowed
+    }
+
     private func flushPendingExternalRoutes(state: inout State) -> Effect<Action> {
         .concatenate(
             flushPendingExternalURL(state: &state),
@@ -394,13 +401,24 @@ struct AppRootFeature {
         if hasWindowsAfterAction {
             state.isExternalURLRouteInFlightWithoutWindow = false
         }
-        return didOpenFirstWindow ? flushPendingExternalRoutes(state: &state) : .none
+        guard didOpenFirstWindow, canFlushPendingExternalRoutes(state) else { return .none }
+        return flushPendingExternalRoutes(state: &state)
     }
 
     private func showExternalFileOpenError(title: String, message: String) -> Effect<Action> {
         .run { [collectionAlertClient] _ in
             await collectionAlertClient.showCollectionOpenErrorAlert(title, message)
         }
+    }
+
+    private func openSettingsSceneEffect() -> Effect<Action> {
+        isRunningXCTest()
+            ? .none
+            : .run { _ in
+                await MainActor.run {
+                    openNativeSettingsScene()
+                }
+            }
     }
 }
 
