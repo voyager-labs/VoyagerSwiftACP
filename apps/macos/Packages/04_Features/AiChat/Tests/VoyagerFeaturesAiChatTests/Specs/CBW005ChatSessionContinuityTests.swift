@@ -2786,6 +2786,15 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             pendingRequestStart: pendingRequest,
         )) {
             AiChatFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_002.800))
+            $0.uuid = .incrementing
+            $0.aiChatExecutionClient.execute = { _, _ in AsyncStream { $0.finish() } }
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in snapshot },
+                deleteSession: { _ in },
+            )
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
@@ -2819,6 +2828,22 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
 
         XCTAssertNil(store.state.pendingRequestStart)
         XCTAssertEqual(store.state.backgroundPendingRequestStarts[resolutionID], pendingRequest)
+
+        await store.send(.requestContextResolved(resolutionID, AiChatResolvedRequestContext(
+            currentContext: .init(),
+            addedAttachments: [],
+            parts: [],
+        )))
+        await store.skipReceivedActions()
+
+        XCTAssertNil(store.state.backgroundPendingRequestStarts[resolutionID])
+        XCTAssertEqual(store.state.transcriptHistory, [userMessage])
+        if case let .processing(lock) = store.state.executionPhase {
+            XCTAssertEqual(lock.context.sessionID, currentSessionID)
+            XCTAssertEqual(lock.request.messages, [userMessage])
+        } else {
+            XCTFail("background pending resolver should start processing after resolution")
+        }
     }
 
     /// CBW-005-show_chat_session_restore_failure: 빈 catalog에서 missing record fallback이 unknown model selection을 만들지

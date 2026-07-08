@@ -66,11 +66,20 @@ extension AiChatFeature {
         resolvedContext: AiChatResolvedRequestContext,
         state: inout State,
     ) -> Effect<Action> {
-        guard let pendingRequest = state.pendingRequestStart,
-              pendingRequest.resolutionID == resolutionID
-        else { return .none }
+        let pendingRequest: AiChatPendingRequestStart
+        if let currentPendingRequest = state.pendingRequestStart,
+           currentPendingRequest.resolutionID == resolutionID
+        {
+            pendingRequest = currentPendingRequest
+            state.pendingRequestStart = nil
+        } else if let backgroundPendingRequest = state.backgroundPendingRequestStarts
+            .removeValue(forKey: resolutionID)
+        {
+            pendingRequest = backgroundPendingRequest
+        } else {
+            return .none
+        }
 
-        state.pendingRequestStart = nil
         return beginRequest(
             pendingRequest,
             lockedRequestContext: makeLockedRequestContextSnapshot(from: resolvedContext),
