@@ -92,6 +92,54 @@ Use this reference when deciding where Voyager code belongs across FSD layers an
 - Keep `Shared` free of assumptions that would block package extraction or reuse.
 - If code is only meaningful for one slice, it probably does not belong in `Shared`.
 
+### Package placement decision tree
+
+새 타입/파일을 생성하기 전에 반드시 아래 결정 트리를 따른다. 잘못된 레이어 배치는 아키텍처 부채의 주요 원인이다.
+
+```
+1. 이 코드가 2개 이상의 서로 다른 슬라이스/피처에서 재사용되는가?
+   → YES: 2번으로
+   → NO:  Shared가 아님. 4번으로
+
+2. 모든 레이어(App ~ Shared)에서 의존 가능한 범용 유틸리티/계약인가?
+   → YES: 06_Shared 적합. 단, 도메인 특화 지식(스키마, 프로토콜 등)이 없어야 함
+   → NO:  Shared가 아님. 3번으로
+
+3. Helper XPC 등 Host+Helper 양쪽에서 접근해야 하는 계약인가?
+   → YES: 06_Shared 적합 (HelperExternalFileChangeContract 패턴)
+   → NO:  Shared가 아님. 4번으로
+
+4. 도메인 모델/엔티티 정체성과 관련된 로직인가?
+   → YES: 05_Entities 적합
+   → NO:  5번으로
+
+5. 유스케이스 플로우 / 재사용 가능한 피처 동작인가?
+   → YES: 04_Features 적합. 전용 패키지 생성 고려
+   → NO:  6번으로
+
+6. 특정 페이지/윈도우 컨테이너에 종속된 로직인가?
+   → YES: 02_Pages 적합
+   → NO:  01_App (앱 전용 셸 오케스트레이션)
+```
+
+### One-slice code detection checklist
+
+코드가 단일 슬라이스에만 의미있는지 확인:
+
+- [ ] 이 코드가 참조하는 도메인 개념(스키마, 프로토콜, 상태 머신 등)이 오직 하나의 피처에서만 사용되는가?
+- [ ] 다른 패키지가 이 코드를 import할 필요가 없는가?
+- [ ] 이 코드의 이름에 피처 특정 용어(예: `voyager://`, 특정 URL scheme)가 포함되어 있는가?
+
+하나라도 YES라면 `06_Shared`가 아니다.
+
+### Anti-pattern evidence (FMW-003)
+
+| 코드                    | 잘못된 배치                    | 이유                                     | 올바른 배치                           |
+| ----------------------- | ------------------------------ | ---------------------------------------- | ------------------------------------- |
+| `ExternalFileURLParser` | `06_Shared/VoyagerShared/Lib/` | `voyager://` 스키마 파싱은 FMW-003 전용  | `04_Features/ExternalFileRouter`      |
+| `FilePathNormalizer`    | `06_Shared/VoyagerShared/Lib/` | FMW-003 경로 정규화 전용                 | `04_Features/ExternalFileRouter`      |
+| `PathProbeClient`       | `05_Entities/Entry/Api/`       | Entry 엔티티와 무관, FMW-003 시스템 경계 | `04_Features/ExternalFileRouter/Api/` |
+
 ## Segment responsibilities
 
 - `Ui/`

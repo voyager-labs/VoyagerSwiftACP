@@ -1,4 +1,6 @@
 import ComposableArchitecture
+import Foundation
+import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesSettings
 
@@ -10,4 +12,21 @@ struct AppRootState: Equatable {
     var updater: UpdaterFeature.State = .init()
     var settings: SettingsFeature.State = .init()
     var menuCommands: MenuCommandsFeature.State = .init()
+    /// ExternalFileRouter: 외부 URL/경로를 받아 File Manager Window로 라우팅
+    var externalFileRouter: ExternalFileRouterState = .init()
+    var windowPresenceBeforeWindowManagerAction: Bool?
+    /// Cold state에서 첫 창 오픈까지 버퍼링된 외부 URL (Deep Link) 큐
+    var pendingExternalURLs: [URL] = []
+    /// no-window 외부 URL flush delegate 중복 예약을 막는다.
+    var isExternalURLFlushDelegateScheduled = false
+    /// no-window 외부 URL 처리 중 빈 initial-window fallback을 막는다.
+    var isExternalURLRouteInFlightWithoutWindow = false
+    /// Cold state에서 첫 창 오픈까지 버퍼링된 외부 file:// URL 큐
+    struct PendingExternalFileRoute: Equatable {
+        var url: URL
+        var source: RouteSource
+        var mode: DeepLinkMode
+    }
+
+    var pendingExternalFileRoutes: [PendingExternalFileRoute] = []
 }

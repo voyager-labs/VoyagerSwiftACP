@@ -158,6 +158,18 @@ When converting synchronous TestStore tests to the modern async pattern:
 - `@testable import` grants internal access to the target module. Production API widening (promoting internal symbols to public) is never required for test modernization.
 - Helper extraction (`makeStore()`, `makeState()`) should follow the 3-occurrence threshold: extract when the same setup appears in 3 or more test methods. Place helpers under `Support/` using an enum namespace pattern.
 
+## Async phase regression pattern
+
+When a reducer owns a long-running mutation plus lifecycle-driven diagnostics
+or refreshes, add at least one focused regression test for the race that matters:
+
+- Send the mutation action and leave the phase in progress.
+- Send `onAppear`, manual retry, refresh, or a stale completion that used to race.
+- Assert the mutation phase, disabled controls, and user-visible error ownership
+  are preserved unless the reducer intentionally supersedes the operation.
+- Finish the original effect and verify late diagnostics are accepted only when
+  their source/phase still matches current state.
+
 ## Scope boundary
 
 This reference covers TestStore authoring mechanics and gotchas. For test execution commands, failure analysis, rerun loops, and dependency testing rules, load `../../testing/references/testing-playbook.md`.
