@@ -14,7 +14,7 @@ public struct AiChatFeature {
         case requestStartPersistence(AiChatRequestID)
         case requestFinalPersistence(AiChatRequestID)
         case restore
-        case persistenceRecovery
+        case persistenceRecovery(AiChatRequestID)
         case modelList
         case sessionList
         case sessionDelete

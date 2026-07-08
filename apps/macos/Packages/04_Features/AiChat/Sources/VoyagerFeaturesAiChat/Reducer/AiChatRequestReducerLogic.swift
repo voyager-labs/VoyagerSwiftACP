@@ -505,6 +505,7 @@ extension AiChatFeature {
             .cancel(id: CancelID.request(lock.requestID)),
             .cancel(id: CancelID.requestStartPersistence(lock.requestID)),
             .cancel(id: CancelID.requestFinalPersistence(lock.requestID)),
+            .cancel(id: CancelID.persistenceRecovery(lock.requestID)),
         )
     }
 
@@ -560,7 +561,6 @@ extension AiChatFeature {
         .merge(
             cancelAllRequestLifecycleWork(state: &state),
             .cancel(id: CancelID.restore),
-            .cancel(id: CancelID.persistenceRecovery),
             .cancel(id: CancelID.modelList),
             .cancel(id: CancelID.newChat),
             .cancel(id: CancelID.sessionList),

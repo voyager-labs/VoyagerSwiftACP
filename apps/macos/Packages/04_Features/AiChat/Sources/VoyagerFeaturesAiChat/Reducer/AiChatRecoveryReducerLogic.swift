@@ -29,7 +29,7 @@ extension AiChatFeature {
                 await send(.persistenceRecoveryRetryFailed(lock, .unknown))
             }
         }
-        .cancellable(id: CancelID.persistenceRecovery, cancelInFlight: true)
+        .cancellable(id: CancelID.persistenceRecovery(lock.requestID), cancelInFlight: true)
     }
 
     func handlePersistenceFailed(lock: AiChatRequestLock, failure: AiChatExecutionFailure, state: inout State)
