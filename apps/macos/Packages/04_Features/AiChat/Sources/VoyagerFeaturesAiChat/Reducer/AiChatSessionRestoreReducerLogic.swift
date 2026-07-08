@@ -207,9 +207,7 @@ extension AiChatFeature {
         state.lastRequestContextModelHandle = snapshot.lastRequestContext == nil ? nil : snapshot.model
         state.addedAttachments = []
         state.currentContextFolderStructureModes = [:]
-        if let promotedSnapshot = preservedExecutionPhase?.lock?.finalSnapshot {
-            applyPromotedFinalSnapshot(promotedSnapshot, state: &state)
-        }
+        applyPromotedExecutionTranscript(preservedExecutionPhase, state: &state)
         state.executionPhase = preservedExecutionPhase ?? .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
@@ -251,12 +249,25 @@ extension AiChatFeature {
         state.lastRequestContextModelHandle = nil
         state.addedAttachments = []
         state.currentContextFolderStructureModes = [:]
-        if let promotedSnapshot = preservedExecutionPhase?.lock?.finalSnapshot {
-            applyPromotedFinalSnapshot(promotedSnapshot, state: &state)
-        }
+        applyPromotedExecutionTranscript(preservedExecutionPhase, state: &state)
         state.executionPhase = preservedExecutionPhase ?? .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
+    }
+
+    func applyPromotedExecutionTranscript(_ phase: AiChatExecutionPhase?, state: inout State) {
+        guard let phase else { return }
+        if let promotedSnapshot = phase.lock?.finalSnapshot {
+            applyPromotedFinalSnapshot(promotedSnapshot, state: &state)
+            return
+        }
+        guard case let .processing(lock) = phase else { return }
+        state.transcriptHistory = lock.request.messages
+        state.lastRequestContext = lock.context.requestContext
+        state.lastRequestContextModelHandle = lock.context.model
+        state.selectedModelHandle = lock.context.model
+        state.selectedThinking = lock.context.selectedThinking
+        state.transcriptAutoScrollVersion += 1
     }
 
     func applyPromotedFinalSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {

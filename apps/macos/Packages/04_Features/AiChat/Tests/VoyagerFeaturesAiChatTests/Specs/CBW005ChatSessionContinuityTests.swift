@@ -2028,18 +2028,19 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             state.sessionID = sessionID
             state.sessionStatus = .active
             state.currentSessionCustomTitle = staleSnapshot.customTitle
-            state.transcriptHistory = staleSnapshot.transcriptHistory
+            state.transcriptHistory = processingRequest.messages
             state.streamingAssistantDraft = nil
             state.lockedModelHandle = nil
             state.lastExecutionFailure = nil
-            state.lastRequestContext = staleSnapshot.lastRequestContext
-            state.lastRequestContextModelHandle = nil
+            state.lastRequestContext = processingRequest.context.requestContext
+            state.lastRequestContextModelHandle = processingRequest.context.model
             state.addedAttachments = []
             state.currentContextFolderStructureModes = [:]
+            state.transcriptAutoScrollVersion += 1
             state.executionPhase = .processing(processingLock)
             state.backgroundExecutionPhases[processingLock.requestID] = nil
-            state.selectedModelHandle = staleSnapshot.model
-            state.selectedThinking = staleSnapshot.selectedThinking
+            state.selectedModelHandle = processingRequest.context.model
+            state.selectedThinking = processingLock.context.selectedThinking
             state.restoreOutcome = .restored(snapshot: staleSnapshot)
             state.restoreFailure = nil
             state.mode = .chat
@@ -2047,6 +2048,8 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         }
 
         XCTAssertEqual(store.state.executionPhase, .processing(processingLock))
+        XCTAssertEqual(store.state.transcriptHistory, processingRequest.messages)
+        XCTAssertEqual(store.state.lastRequestContext, processingRequest.context.requestContext)
         XCTAssertEqual(store.state.backgroundExecutionPhases[completedLock.requestID], .completed(completedLock))
         await store.finish()
     }
