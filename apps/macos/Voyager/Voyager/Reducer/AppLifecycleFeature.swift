@@ -175,29 +175,13 @@ struct AppLifecycleFeature {
                 }
 
             case let .accountAccessGate(.accountAccessGranted(snapshot)):
-                let snapshotClient = snapshotClient
-
-                let saveEffect: Effect<Action> = .run { _ in
-                    await snapshotClient.save(snapshot)
-                }
-
-                state.lastAccessStatus = snapshot.status
-                state.accountAccessGateResolved = true
-                state.isCheckingAccountAccess = false
-
-                var effects: [Effect<Action>] = [saveEffect]
-
-                if !state.didStartHelper {
-                    state.didStartHelper = true
-                    effects.append(helperMonitorEffect(
-                        helperClient: helperAppClient,
-                        stateClient: helperStateClient,
-                    ))
-                }
-
-                effects.append(.send(.delegate(.openInitialWindowIfNeeded)))
-
-                return .merge(effects)
+                return accountAccessGrantedEffects(
+                    state: &state,
+                    snapshot: snapshot,
+                    snapshotClient: snapshotClient,
+                    helperAppClient: helperAppClient,
+                    helperStateClient: helperStateClient,
+                )
 
             // MARK: - Termination
 
@@ -330,15 +314,49 @@ struct AppLifecycleFeature {
         Reduce { state, action in
             switch action {
             case let .sessionLapseGuard(.delegate(.unlocked(snapshot))):
-                state.lastAccessStatus = snapshot.status
-                state.accountAccessGateResolved = true
                 state.sessionLapseGuard = nil
-                return .none
+                return accountAccessGrantedEffects(
+                    state: &state,
+                    snapshot: snapshot,
+                    snapshotClient: snapshotClient,
+                    helperAppClient: helperAppClient,
+                    helperStateClient: helperStateClient,
+                )
             default:
                 return .none
             }
         }
     }
+}
+
+private func accountAccessGrantedEffects(
+    state: inout AppLifecycleState,
+    snapshot: AccessStatusSnapshot,
+    snapshotClient: AccessStatusSnapshotClient,
+    helperAppClient: HelperAppClient,
+    helperStateClient: HelperStateClient,
+) -> Effect<AppLifecycleAction> {
+    let saveEffect: Effect<AppLifecycleAction> = .run { _ in
+        await snapshotClient.save(snapshot)
+    }
+
+    state.lastAccessStatus = snapshot.status
+    state.accountAccessGateResolved = true
+    state.isCheckingAccountAccess = false
+
+    var effects: [Effect<AppLifecycleAction>] = [saveEffect]
+
+    if !state.didStartHelper {
+        state.didStartHelper = true
+        effects.append(helperMonitorEffect(
+            helperClient: helperAppClient,
+            stateClient: helperStateClient,
+        ))
+    }
+
+    effects.append(.send(.delegate(.openInitialWindowIfNeeded)))
+
+    return .merge(effects)
 }
 
 private func helperMonitorEffect(

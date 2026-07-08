@@ -26,6 +26,10 @@ struct FileManagerHostApp: App {
     @NSApplicationDelegateAdaptor(FileManagerHostAppDelegate.self)
     private var appDelegate
 
+    init() {
+        FileManagerHostSmokeMode.runIfNeeded()
+    }
+
     var body: some Scene {
         Settings {
             ZStack {
@@ -33,9 +37,6 @@ struct FileManagerHostApp: App {
                     initialPreset: appDelegate.initialPreset,
                     onSelect: { appDelegate.selectPreset($0) },
                 )
-            }
-            .onAppear {
-                FileManagerHostSmokeMode.runIfNeeded()
             }
         }
     }
