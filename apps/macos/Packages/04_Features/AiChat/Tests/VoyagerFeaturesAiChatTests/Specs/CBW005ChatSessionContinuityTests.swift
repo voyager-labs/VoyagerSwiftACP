@@ -1440,6 +1440,104 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         await store.finish()
     }
 
+    func testRequestStartPreservesDifferentSessionCompletedOwnerForCancellation() async {
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let oldSessionID = makeCBW005SessionID("17171717-1717-1717-1717-171717171717")
+        let newSessionID = makeCBW005SessionID("18181818-1818-1818-1818-181818181818")
+        let oldUserMessage = AiChatMessage(role: .user, content: "Old cross-session question")
+        let oldAssistantMessage = AiChatMessage(role: .assistant, content: "Old cross-session answer")
+        let oldRequest = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: oldSessionID,
+                requestID: AiChatRequestID(rawValue: makeUUID("17171717-1717-1717-1717-171717171718")),
+                runID: AiChatRunID(rawValue: makeUUID("17171717-1717-1717-1717-171717171719")),
+                model: selectedHandle,
+                selectedRow: catalogRows[0],
+                selectedModel: makeProviderModels()[0],
+            ),
+            messages: [oldUserMessage],
+        )
+        let oldFinalizedLock = makeRequestLock(
+            kind: .submit,
+            request: oldRequest,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        .recordingTerminal(at: 1_700_000_001_717, failure: nil, wasCancelled: false)
+        let oldSnapshot = AiChatSessionSnapshot(
+            sessionID: oldSessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [oldUserMessage, oldAssistantMessage],
+            lastRequestID: oldFinalizedLock.requestID,
+            lastRunID: oldFinalizedLock.runID,
+            lastRequestContext: oldFinalizedLock.context.requestContext,
+            updatedAtMs: 1_700_000_001_717,
+        )
+        let oldOwnerLock = oldFinalizedLock.recordingFinalSnapshot(oldSnapshot)
+        let resolutionID = makeUUID("18181818-1818-1818-1818-181818181819")
+        let newUserMessage = AiChatMessage(role: .user, content: "New session question")
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: newSessionID,
+            selectedModel: makeProviderModels()[0],
+            selectedRow: catalogRows[0],
+            preparedRequest: AiChatPreparedRequest(
+                prompt: newUserMessage.content,
+                messages: [newUserMessage],
+                persistenceTranscriptHistory: [newUserMessage],
+                assistantReplacementIndex: nil,
+                historyTruncation: AiChatHistoryTruncationMetadata(
+                    includedMessageCount: 1,
+                    excludedMessageCount: 0,
+                    budget: 24000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        let store: TestStore<AiChatFeature.State, AiChatAction> = TestStore(initialState: AiChatFeature.State(
+            sessionID: newSessionID,
+            sessionStatus: .active,
+            transcriptHistory: [],
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            pendingRequestStart: pendingRequest,
+            executionPhase: .completed(oldOwnerLock),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_001.800))
+            $0.uuid = .incrementing
+            $0.aiChatExecutionClient.execute = { _, _ in AsyncStream { $0.finish() } }
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in snapshot },
+                deleteSession: { _ in },
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.requestContextResolved(resolutionID, AiChatResolvedRequestContext(
+            currentContext: .init(),
+            addedAttachments: [],
+            parts: [],
+        )))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.backgroundExecutionPhases[oldOwnerLock.requestID], .completed(oldOwnerLock))
+        if case let .processing(lock) = store.state.executionPhase {
+            XCTAssertEqual(lock.context.sessionID, newSessionID)
+        } else {
+            XCTFail("new session request should start processing after context resolution")
+        }
+        await store.finish()
+    }
+
     func testSavedCompletedOwnerIsNotPreservedBeforeNextRequestStart() async {
         let catalogRows = makeCatalogRows()
         let selectedHandle = catalogRows[0].handle

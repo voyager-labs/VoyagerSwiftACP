@@ -394,7 +394,6 @@ extension AiChatFeature {
         state: inout State,
     ) {
         guard let currentLock = state.executionPhase.lock,
-              currentLock.context.sessionID == newLock.context.sessionID,
               currentLock.requestID != newLock.requestID
         else { return }
 
