@@ -3060,6 +3060,95 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         }
     }
 
+    func testSameSessionParkedPendingRequestBlocksSubmit() {
+        let catalogRows = makeCatalogRows()
+        let providerModels = makeProviderModels()
+        let sessionID = AiChatSessionID(rawValue: makeUUID("ddddddd0-7777-8888-9999-000000000001"))
+        let resolutionID = makeUUID("eeeeeee0-7777-8888-9999-000000000001")
+        let message = AiChatMessage(role: .user, content: "parked")
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: sessionID,
+            selectedModel: providerModels[0],
+            selectedRow: catalogRows[0],
+            preparedRequest: AiChatPreparedRequest(
+                prompt: message.content,
+                messages: [message],
+                persistenceTranscriptHistory: [message],
+                assistantReplacementIndex: nil,
+                historyTruncation: .init(
+                    includedMessageCount: 1,
+                    excludedMessageCount: 0,
+                    budget: 200_000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        let state = AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            draftText: "second request",
+            catalogRows: catalogRows,
+            modelListState: .loaded(providerModels),
+            selectedModelHandle: catalogRows[0].handle,
+            backgroundPendingRequestStarts: [resolutionID: pendingRequest],
+        )
+
+        XCTAssertFalse(state.canSubmit)
+        XCTAssertFalse(state.chatInputDisplayModel.canSubmit)
+    }
+
+    func testSameSessionBackgroundProcessingRequestBlocksSubmit() {
+        let catalogRows = makeCatalogRows()
+        let providerModels = makeProviderModels()
+        let sessionID = AiChatSessionID(rawValue: makeUUID("fffffff0-7777-8888-9999-000000000001"))
+        let message = AiChatMessage(role: .user, content: "background")
+        let requestID = AiChatRequestID(rawValue: makeUUID("11111110-7777-8888-9999-000000000001"))
+        let runID = AiChatRunID(rawValue: makeUUID("22222220-7777-8888-9999-000000000001"))
+        let request = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: sessionID,
+                requestID: requestID,
+                runID: runID,
+                model: providerModels[0].id,
+                selectedRow: catalogRows[0],
+            ),
+            messages: [message],
+        )
+        let lock = AiChatRequestLock(
+            kind: .submit,
+            requestID: requestID,
+            runID: runID,
+            context: request.context,
+            request: request,
+            persistenceTranscriptHistory: [message],
+            selectedModelHandle: providerModels[0].id,
+            selectedModelRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+            historyTruncation: .init(
+                includedMessageCount: 1,
+                excludedMessageCount: 0,
+                budget: 200_000,
+                truncationReason: nil,
+            ),
+        )
+        let state = AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            draftText: "second request",
+            catalogRows: catalogRows,
+            modelListState: .loaded(providerModels),
+            selectedModelHandle: catalogRows[0].handle,
+            backgroundExecutionPhases: [requestID: .processing(lock)],
+        )
+
+        XCTAssertFalse(state.canSubmit)
+        XCTAssertFalse(state.chatInputDisplayModel.canSubmit)
+    }
+
     /// CBW-005-show_chat_session_restore_failure: 빈 catalog에서 missing record fallback이 unknown model selection을 만들지
     /// 않는다.
     /// 빈 catalog에서 missing record fallback이 unknown model selection을 만들지 않는다. 경로의 회귀 contract를 유지하는지 검증합니다.
