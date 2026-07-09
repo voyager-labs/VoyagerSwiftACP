@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
@@ -17,8 +18,10 @@ struct FileManagerContentNavigationBridgeReducer {
         static let systemNotifications = "FileManagerContent.systemNotifications"
     }
 
-    @Dependency(\.entryWatchingClient)
-    private var entryWatchingClient
+    @Dependency(\.collectionStalenessClient)
+    private var collectionStalenessClient
+    @Dependency(\.fileChangeGatewayClient)
+    private var fileChangeGatewayClient
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
 
@@ -167,7 +170,10 @@ struct FileManagerContentNavigationBridgeReducer {
             )
 
         case .collection:
-            .cancel(id: CancelID.folderWatcher)
+            observeCollectionScopeChangesEffect(
+                context: state.collection.collectionContext,
+                openedURL: state.collection.collectionSession.document?.url,
+            )
 
         case let .aiChat(sessionID):
             aiChatEntryRouteEffect(aiChatRouteEffect(sessionID: sessionID))
@@ -203,10 +209,59 @@ struct FileManagerContentNavigationBridgeReducer {
     }
 
     private func observeFolderChangesEffect(path: String) -> Effect<Action> {
-        let url = URL(fileURLWithPath: path)
-        return .run { [entryWatchingClient] send in
-            for await changedPaths in entryWatchingClient.startWatchingDirectory(url) {
-                await send(.externalFileSystemChanged(changedPaths))
+        let interest = FileChangeWatchInterest(
+            id: "visible-folder:\(UUID().uuidString)",
+            owner: .fileManager,
+            purpose: .visibleFolderReload,
+            roots: [path],
+            includeSubfolders: true,
+        )
+        return observeGatewayChangesEffect(interest: interest)
+    }
+
+    private func observeCollectionScopeChangesEffect(
+        context: CollectionContext?,
+        openedURL: URL?,
+    ) -> Effect<Action> {
+        guard let context else {
+            return .cancel(id: CancelID.folderWatcher)
+        }
+        let roots = collectionScopeWatchRoots(from: context)
+        guard !roots.isEmpty else {
+            return .cancel(id: CancelID.folderWatcher)
+        }
+
+        let interest = FileChangeWatchInterest(
+            id: "collection-stale:\(UUID().uuidString)",
+            owner: .collection,
+            purpose: .collectionStale,
+            roots: roots,
+            includeSubfolders: context.includeSubfolders,
+            excludedRoots: context.excludedScopes,
+        )
+        return observeGatewayChangesEffect(interest: interest, openedURL: openedURL)
+    }
+
+    private func observeGatewayChangesEffect(
+        interest: FileChangeWatchInterest,
+        openedURL: URL? = nil,
+    ) -> Effect<Action> {
+        let collectionStalenessClient = collectionStalenessClient
+        return .run { [fileChangeGatewayClient] send in
+            fileChangeGatewayClient.updateInterests([interest])
+            await withTaskCancellationHandler {
+                for await events in fileChangeGatewayClient.observeEvents() {
+                    let changedPaths = gatewayRelevantChangedPaths(events, interest: interest, openedURL: openedURL)
+                    guard !changedPaths.isEmpty else { continue }
+
+                    if interest.purpose == .collectionStale {
+                        collectionStalenessClient.invalidateRecords(changedPaths)
+                    }
+                    await send(.externalFileSystemChanged(changedPaths))
+                }
+                fileChangeGatewayClient.removeInterests([interest.id])
+            } onCancel: {
+                fileChangeGatewayClient.removeInterests([interest.id])
             }
         }
         .cancellable(id: CancelID.folderWatcher, cancelInFlight: true)
@@ -214,5 +269,34 @@ struct FileManagerContentNavigationBridgeReducer {
 
     private func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<Action> {
         .send(.entryViewLayout(.entryOperations(action)))
+    }
+}
+
+nonisolated func collectionScopeWatchRoots(from context: CollectionContext?) -> [String] {
+    guard let context else { return [] }
+    return FileChangeScopePolicy.allowedWatchRoots(from: context.scopes)
+}
+
+nonisolated func gatewayRelevantChangedPaths(
+    _ events: [FileChangeGatewayEvent],
+    interest: FileChangeWatchInterest,
+    openedURL: URL?,
+) -> [String] {
+    collectionRelevantChangedPaths(
+        FileChangeScopePolicy.interestAffectedPaths(events: events, interest: interest),
+        openedURL: openedURL,
+    )
+}
+
+nonisolated func collectionRelevantChangedPaths(_ paths: [String], openedURL: URL?) -> [String] {
+    guard let openedURL else { return paths }
+    let normalizedOpenedPath = openedURL.standardizedFileURL.path
+    return paths.filter { path in
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        if normalizedPath == normalizedOpenedPath {
+            return false
+        }
+        let packagePrefix = normalizedOpenedPath == "/" ? "/" : normalizedOpenedPath + "/"
+        return !normalizedPath.hasPrefix(packagePrefix)
     }
 }

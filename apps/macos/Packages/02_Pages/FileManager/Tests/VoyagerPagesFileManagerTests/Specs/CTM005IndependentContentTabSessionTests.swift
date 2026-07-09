@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import CoreServices
 import Foundation
 import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
@@ -6,6 +7,7 @@ import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -53,10 +55,18 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.entryWatchingClient.startWatchingDirectory = { url in
-                XCTAssertEqual(url.path, directoryPath)
-                return AsyncStream { continuation in
-                    continuation.yield([changedPath])
+            $0.fileChangeGatewayClient.updateInterests = { interests in
+                XCTAssertEqual(interests.map(\.roots), [[directoryPath]])
+                XCTAssertEqual(interests.map(\.purpose), [.visibleFolderReload])
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in
+                    continuation.yield([
+                        FileChangeGatewayEvent(
+                            path: changedPath,
+                            flags: UInt32(kFSEventStreamEventFlagItemCreated),
+                        ),
+                    ])
                     continuation.finish()
                 }
             }
@@ -168,7 +178,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -237,7 +247,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -2218,7 +2228,7 @@ extension CTM005IndependentContentTabSessionTests {
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -2302,7 +2312,7 @@ extension CTM005IndependentContentTabSessionTests {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
             $0.aiConnectionsFileClient.load = { .empty() }
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -2409,7 +2419,7 @@ extension CTM005IndependentContentTabSessionTests {
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -2507,7 +2517,7 @@ extension CTM005IndependentContentTabSessionTests {
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -2591,7 +2601,7 @@ extension CTM005IndependentContentTabSessionTests {
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -2663,7 +2673,7 @@ extension CTM005IndependentContentTabSessionTests {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -3884,7 +3894,7 @@ extension CTM005IndependentContentTabSessionTests {
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -3947,7 +3957,7 @@ extension CTM005IndependentContentTabSessionTests {
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -4078,7 +4088,7 @@ extension CTM005IndependentContentTabSessionTests {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -4201,7 +4211,7 @@ extension CTM005IndependentContentTabSessionTests {
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -4431,7 +4441,7 @@ extension CTM005IndependentContentTabSessionTests {
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -4527,7 +4537,7 @@ extension CTM005IndependentContentTabSessionTests {
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -5539,7 +5549,7 @@ extension CTM005IndependentContentTabSessionTests {
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -5968,7 +5978,7 @@ extension CTM005IndependentContentTabSessionTests {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -7093,7 +7103,7 @@ extension CTM005IndependentContentTabSessionTests {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -7173,7 +7183,7 @@ extension CTM005IndependentContentTabSessionTests {
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -7659,7 +7669,7 @@ extension CTM005IndependentContentTabSessionTests {
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -7745,7 +7755,7 @@ extension CTM005IndependentContentTabSessionTests {
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }
@@ -8859,7 +8869,7 @@ extension CTM005IndependentContentTabSessionTests {
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }

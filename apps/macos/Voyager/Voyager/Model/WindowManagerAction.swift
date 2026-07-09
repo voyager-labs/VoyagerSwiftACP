@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 import VoyagerEntitiesAi
 import VoyagerFeaturesEntryArrangements
 import VoyagerShared
@@ -31,7 +32,8 @@ enum WindowManagerAction: CasePathable {
 
     @CasePathable
     enum FileCommand: CasePathable {
-        case newWindow(path: String? = nil)
+        case newWindow(path: String? = nil, selectEntryID: String? = nil)
+        case openCollectionFile(URL)
         case newTab
         case closeTab
         case togglePinTab

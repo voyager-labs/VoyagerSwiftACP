@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesEntry
 @testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
@@ -316,7 +317,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.entryWatchingClient.startWatchingDirectory = { _ in
+            $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
                     continuation.finish()
                 }

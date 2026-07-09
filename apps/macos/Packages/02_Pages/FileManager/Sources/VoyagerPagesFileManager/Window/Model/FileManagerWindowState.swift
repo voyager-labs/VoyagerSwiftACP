@@ -37,9 +37,8 @@ public struct FileManagerWindowState: Equatable {
         syncContentTabSidebarItems()
     }
 
-    public static func makeInitial(path: String?) -> Self {
+    public static func makeInitial(path: String?, selectEntryID: String? = nil) -> Self {
         var state = Self()
-
         if let path {
             state.content.navigation.seedInitialFolderPath(path)
             state.syncActiveTabAnchorForInitialPath(path)
@@ -51,6 +50,7 @@ public struct FileManagerWindowState: Equatable {
                 inheritingWindowContextFrom: state.content,
             )
         }
+        state.content.pendingSelectEntryID = selectEntryID
 
         state.syncActiveTabContentState()
         state.restoreInspectorStateForActiveTab()
@@ -61,6 +61,7 @@ public struct FileManagerWindowState: Equatable {
     public static func makeInitial(
         path: String?,
         contentTabs: ContentTabState?,
+        selectEntryID: String? = nil,
     ) -> Self {
         var state = Self()
         state.contentTabs = contentTabs.map { ContentTabState.bootstrapping(
@@ -81,6 +82,8 @@ public struct FileManagerWindowState: Equatable {
                 inheritingWindowContextFrom: state.content,
             )
         }
+
+        state.content.pendingSelectEntryID = selectEntryID
 
         state.syncActiveTabContentState()
         state.restoreInspectorStateForActiveTab()

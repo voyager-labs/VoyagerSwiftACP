@@ -56,6 +56,12 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
     - Xcode에서 시작(권장): `xed apps/macos/Voyager/Voyager.xcworkspace` (열기 후 `Cmd+R` 실행)
         - Workspace에 Voyager.xcodeproj, OnboardingHost.xcodeproj, SettingsHost.xcodeproj가 포함되어 있습니다
     - (대안) Xcode 프로젝트: `xed apps/macos/Voyager/Voyager.xcodeproj`
+    - Terminal/Agent에서 실행:
+        - 기본 개발 앱 실행: `mise run macos-launch`
+        - 다른 scheme 실행: `mise run macos-launch -- --scheme SettingsHost-Dev --configuration Debug`
+        - 빌드만 확인: `mise run macos-launch -- --scheme Voyager-Dev --configuration Debug --no-launch`
+    - Zed에서 실행:
+        - Command Palette에서 `task: spawn` 실행 후 `Voyager Dev: Launch (Debug)` 등 `.zed/tasks.json`의 launch task 선택
     - VSCode 류 IDE(Sweetpad Extension)에서 실행:
         - Xcode 프로젝트 열기: Sweetpad로 `apps/macos/Voyager/Voyager.xcodeproj` 오픈
         - 태스크로 실행 (권장):
@@ -69,12 +75,12 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
                 - `OnboardingHost Dev: Launch (Release)` - 온보딩 호스트 Release 모드로 빌드 및 실행
                 - `SettingsHost Dev: Launch (Debug)` - 설정 호스트 Debug 모드로 빌드 및 실행
                 - `SettingsHost Dev: Launch (Release)` - 설정 호스트 Release 모드로 빌드 및 실행
-            - 참고: 버튼을 통한 직접 실행은 비권장합니다. xcscheme의 환경변수가 제대로 주입되지 않을 수 있습니다. 태스크를 통한 실행을 사용하세요.
-    - Build (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug`
-    - Prod build/archive (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Prod -configuration Release`
+            - 참고: Sweetpad는 `.vscode/settings.json`의 shared xcodebuild wrapper를 사용합니다. 버튼을 통한 직접 실행은 xcscheme의 환경변수가 제대로 주입되지 않을 수 있어 태스크 실행을 권장합니다.
+    - Build (CLI): `mise run macos-build`
+    - Prod build/archive (CLI): `mise run macos-launch -- --scheme Voyager-Prod --configuration Release --no-launch`
     - Tests (CLI): `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj`
-    - OnboardingHost Build (CLI): `xcodebuild -project apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj -scheme OnboardingHost-Dev -configuration Debug`
-    - SettingsHost Build (CLI): `xcodebuild -project apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj -scheme SettingsHost-Dev -configuration Debug`
+    - OnboardingHost Build (CLI): `mise run macos-launch -- --scheme OnboardingHost-Dev --configuration Debug --no-launch`
+    - SettingsHost Build (CLI): `mise run macos-launch -- --scheme SettingsHost-Dev --configuration Debug --no-launch`
 
 ### Xcode 버전 관리
 

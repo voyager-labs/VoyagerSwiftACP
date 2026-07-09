@@ -14,6 +14,8 @@ public struct FileManagerContentState: Equatable {
     public var composer: ComposerFeature.State = .init()
     public var collection: CollectionFeature.State = .init()
     public var aiChat: AiChatFeature.State = .init()
+    /// 외부에서 오픈 요청된 파일의 선택 focus ID (itemsLoaded 후 소비됨)
+    public var pendingSelectEntryID: String?
 
     var homeDirectoryItemCounts: [FileManagerHomeDirectory: Int] = [:]
 

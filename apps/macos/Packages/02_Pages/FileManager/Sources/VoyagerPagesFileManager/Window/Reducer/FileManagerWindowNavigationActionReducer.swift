@@ -325,13 +325,27 @@ private func handleCollectionFileLoaded(
         var isStale = false
         if let url = state.content.collection.collectionSession.document?.url {
             let canonicalPath = url.standardizedFileURL.path
-            isStale = collectionStalenessClient.record(canonicalPath)?.lastInvalidatedAt != nil
+            let hasPersistedInvalidation = collectionStalenessClient.record(canonicalPath)?.lastInvalidatedAt != nil
+            let hasScopeRootChangedSinceSnapshot = collectionScopeRootsChangedSinceSnapshot(file)
+            isStale = hasPersistedInvalidation || hasScopeRootChangedSinceSnapshot
             collectionStalenessClient.registerCollection(
                 canonicalPath,
                 file.scopes,
                 file.excludedScopes,
                 file.includeSubfolders,
             )
+            if hasScopeRootChangedSinceSnapshot {
+                collectionStalenessClient.upsertRecord(
+                    canonicalPath,
+                    .init(
+                        definitionFingerprint: file.snapshotMeta?.definitionFingerprint ?? "",
+                        relevanceRoots: file.snapshotMeta?.relevanceRoots ?? file.scopes,
+                        excludedScopes: file.excludedScopes,
+                        includeSubfolders: file.includeSubfolders,
+                        lastInvalidatedAt: Date(),
+                    ),
+                )
+            }
         }
         return handleCollectionFileLoadedSuccess(
             file,
@@ -459,6 +473,31 @@ private func handleCollectionFileLoadedSuccess(
 private struct CollectionOpenEnvironment {
     let collectionAlertClient: CollectionAlertClient
     let registryClient: RegistryClient
+}
+
+nonisolated func collectionScopeRootsChangedSinceSnapshot(
+    _ file: VoyagerCollectionFile,
+    fileManager: FileManager = .default,
+) -> Bool {
+    guard let snapshotMeta = file.snapshotMeta else { return false }
+    let relevanceRoots = snapshotMeta.relevanceRoots.isEmpty ? file.scopes : snapshotMeta.relevanceRoots
+    return relevanceRoots.contains {
+        collectionScopeRootModified(after: snapshotMeta.capturedAt, root: $0, fileManager: fileManager)
+    }
+}
+
+nonisolated private func collectionScopeRootModified(
+    after capturedAt: Date,
+    root: String,
+    fileManager: FileManager,
+) -> Bool {
+    guard !root.isEmpty, root.hasPrefix("/") else { return false }
+    let url = URL(fileURLWithPath: root).standardizedFileURL
+    guard fileManager.fileExists(atPath: url.path),
+          let values = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
+          let modifiedAt = values.contentModificationDate
+    else { return false }
+    return modifiedAt > capturedAt
 }
 
 private func handleCollectionFileLoadedFailure(

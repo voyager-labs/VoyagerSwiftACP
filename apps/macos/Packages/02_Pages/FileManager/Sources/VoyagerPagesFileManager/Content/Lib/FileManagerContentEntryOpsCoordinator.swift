@@ -1,4 +1,6 @@
 import ComposableArchitecture
+import Foundation
+import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 
@@ -8,8 +10,8 @@ enum FileManagerContentEntryOpsCoordinator {
         state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
         switch action {
-        case .loading(.itemsLoaded):
-            .none
+        case let .loading(.itemsLoaded(entries)):
+            handleItemsLoaded(entries: entries, state: &state)
 
         case let .lifecycle(.entryActionCompleted(record)):
             handleEntryActionCompleted(record, state: state)
@@ -59,6 +61,28 @@ enum FileManagerContentEntryOpsCoordinator {
         case .collection, .aiChat, .aiChatSessions:
             .none
         }
+    }
+
+    /// itemsLoaded reconcile 전에 pending selection을 동기 반영한다.
+    @discardableResult
+    static func applyPendingSelectionForLoadedEntries(
+        entries: [EntryModel],
+        state: inout FileManagerContentState,
+    ) -> Bool {
+        guard let selectID = state.pendingSelectEntryID else { return false }
+        let normalizedSelectID = normalizedPath(selectID)
+        guard let matchedID = entries.first(where: { normalizedPath($0.id) == normalizedSelectID })?.id else {
+            return false
+        }
+
+        let selectedIds = Set([matchedID])
+        let didChangeSelection = state.entryViewLayout.selectedIds != selectedIds
+        state.pendingSelectEntryID = nil
+        state.entryViewLayout.selectedIds = selectedIds
+        state.entryViewLayout.lastSelectedId = matchedID
+        state.entryViewLayout.rangeAnchorId = matchedID
+        state.entryViewLayout.shouldScrollToSelection = true
+        return didChangeSelection
     }
 
     private static func handleEntryActionCompleted(
@@ -113,6 +137,21 @@ enum FileManagerContentEntryOpsCoordinator {
             return .none
         }
         return .send(.entryViewLayout(.internal(.removeCollectionPaths(paths))))
+    }
+
+    /// itemsLoaded 후 pendingSelectEntryID가 있으면 해당 엔트리를 선택 focus
+    private static func handleItemsLoaded(
+        entries: [EntryModel],
+        state: inout FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        guard applyPendingSelectionForLoadedEntries(entries: entries, state: &state) else {
+            return .none
+        }
+        return .send(.entryViewLayout(.delegate(.selectionChanged)))
+    }
+
+    private static func normalizedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().path
     }
 
     private static func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<FileManagerContentAction> {

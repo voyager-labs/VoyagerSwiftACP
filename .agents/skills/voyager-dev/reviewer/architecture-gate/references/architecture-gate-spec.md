@@ -34,6 +34,11 @@ Block implementation choices that violate clean architecture or FSD dependency d
 7. Layer vocabulary gate
     - Prefer standard Voyager/FSD segments (`Ui`, `Api`, `Model`, `Reducer`, `Lib`, `Config`).
     - Avoid introducing generic architecture buckets such as `Components`, `Types`, `Hooks`, or `Utils` as default segment names.
+8. Package placement gate
+    - Each new type, file, or test suite must reside in the package that matches its ownership scope, not in a lower layer just because it compiles there.
+    - One-slice code must not be placed in `06_Shared`. If only one feature/spec consumes the code, it belongs in `04_Features`, `05_Entities`, or the app layer.
+    - Naming collision gate: new types must not reuse names that conflict with well-known external services or libraries (e.g., `OpenRouter` the LLM provider). Check for external name conflicts before naming.
+    - See `layer-and-segment-rules.md` "Package placement decision tree" for the mandatory checklist.
 
 ## Violation handling
 
