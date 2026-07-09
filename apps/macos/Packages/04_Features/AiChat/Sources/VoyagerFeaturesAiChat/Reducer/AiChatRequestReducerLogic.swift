@@ -226,7 +226,7 @@ extension AiChatFeature {
             model: lock.context.model,
             selectedModelRow: lock.selectedModelRow,
             selectedThinking: lock.context.selectedThinking,
-            transcriptHistory: lock.request.messages,
+            transcriptHistory: lock.persistenceTranscriptHistory,
             lastRequestID: lock.requestID,
             lastRunID: lock.runID,
             lastRequestContext: persistenceSafeRequestContext(lock.context.requestContext),
@@ -274,6 +274,7 @@ extension AiChatFeature {
         return AiChatPreparedRequest(
             prompt: trimmed,
             messages: truncatedHistory.messages,
+            persistenceTranscriptHistory: fullMessages,
             assistantReplacementIndex: nil,
             historyTruncation: truncatedHistory.metadata,
         )
@@ -304,6 +305,7 @@ extension AiChatFeature {
         return AiChatPreparedRequest(
             prompt: lastUserPrompt,
             messages: truncatedHistory.messages,
+            persistenceTranscriptHistory: messages,
             assistantReplacementIndex: assistantReplacementIndex,
             historyTruncation: truncatedHistory.metadata,
             requestContextOverride: requestContextOverride,
@@ -343,6 +345,7 @@ extension AiChatFeature {
             runID: runID,
             context: context,
             request: request,
+            persistenceTranscriptHistory: input.preparedRequest.persistenceTranscriptHistory,
             selectedModelHandle: selectedHandle,
             selectedModelRow: input.selectedRow,
             assistantReplacementIndex: input.preparedRequest.assistantReplacementIndex,

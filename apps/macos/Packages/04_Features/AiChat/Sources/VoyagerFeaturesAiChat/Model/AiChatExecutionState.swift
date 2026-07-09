@@ -32,6 +32,7 @@ public struct AiChatHistoryTruncationMetadata: Equatable, Sendable {
 public struct AiChatPreparedRequest: Equatable, Sendable {
     public var prompt: String
     public var messages: [AiChatMessage]
+    public var persistenceTranscriptHistory: [AiChatMessage]
     public var assistantReplacementIndex: Int?
     public var historyTruncation: AiChatHistoryTruncationMetadata
     public var requestContextOverride: AiChatLockedRequestContextSnapshot?
@@ -40,6 +41,7 @@ public struct AiChatPreparedRequest: Equatable, Sendable {
     public init(
         prompt: String,
         messages: [AiChatMessage],
+        persistenceTranscriptHistory: [AiChatMessage]? = nil,
         assistantReplacementIndex: Int?,
         historyTruncation: AiChatHistoryTruncationMetadata,
         requestContextOverride: AiChatLockedRequestContextSnapshot? = nil,
@@ -47,6 +49,7 @@ public struct AiChatPreparedRequest: Equatable, Sendable {
     ) {
         self.prompt = prompt
         self.messages = messages
+        self.persistenceTranscriptHistory = persistenceTranscriptHistory ?? messages
         self.assistantReplacementIndex = assistantReplacementIndex
         self.historyTruncation = historyTruncation
         self.requestContextOverride = requestContextOverride
@@ -152,6 +155,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
     public let runID: AiChatRunID
     public let context: AiChatRequestContextSnapshot
     public let request: AiChatRequest
+    public let persistenceTranscriptHistory: [AiChatMessage]
     public let selectedModelHandle: AiModelHandle
     public let selectedModelRow: AiModelCatalogRow?
     public let assistantReplacementIndex: Int?
@@ -166,6 +170,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
             && lhs.runID == rhs.runID
             && lhs.context == rhs.context
             && lhs.request == rhs.request
+            && lhs.persistenceTranscriptHistory == rhs.persistenceTranscriptHistory
             && lhs.selectedModelHandle == rhs.selectedModelHandle
             && lhs.selectedModelRow == rhs.selectedModelRow
             && lhs.assistantReplacementIndex == rhs.assistantReplacementIndex
@@ -180,6 +185,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
         runID: AiChatRunID,
         context: AiChatRequestContextSnapshot,
         request: AiChatRequest,
+        persistenceTranscriptHistory: [AiChatMessage]? = nil,
         selectedModelHandle: AiModelHandle,
         selectedModelRow: AiModelCatalogRow?,
         assistantReplacementIndex: Int?,
@@ -198,6 +204,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
         self.runID = runID
         self.context = context
         self.request = request
+        self.persistenceTranscriptHistory = persistenceTranscriptHistory ?? request.messages
         self.selectedModelHandle = selectedModelHandle
         self.selectedModelRow = selectedModelRow
         self.assistantReplacementIndex = assistantReplacementIndex
@@ -213,6 +220,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
         runID: AiChatRunID,
         context: AiChatRequestContextSnapshot,
         request: AiChatRequest,
+        persistenceTranscriptHistory: [AiChatMessage]? = nil,
         selectedModelHandle: AiModelHandle,
         selectedModelRow: AiModelCatalogRow?,
         assistantReplacementIndex: Int?,
@@ -229,6 +237,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
         self.runID = runID
         self.context = context
         self.request = request
+        self.persistenceTranscriptHistory = persistenceTranscriptHistory ?? request.messages
         self.selectedModelHandle = selectedModelHandle
         self.selectedModelRow = selectedModelRow
         self.assistantReplacementIndex = assistantReplacementIndex
@@ -245,6 +254,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
             runID: runID,
             context: context,
             request: request,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
             selectedModelHandle: selectedModelHandle,
             selectedModelRow: selectedModelRow,
             assistantReplacementIndex: assistantReplacementIndex,
@@ -266,6 +276,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
             runID: runID,
             context: context,
             request: request,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
             selectedModelHandle: selectedModelHandle,
             selectedModelRow: selectedModelRow,
             assistantReplacementIndex: assistantReplacementIndex,
@@ -287,6 +298,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
             runID: runID,
             context: context,
             request: request,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
             selectedModelHandle: selectedModelHandle,
             selectedModelRow: selectedModelRow,
             assistantReplacementIndex: assistantReplacementIndex,
@@ -304,6 +316,7 @@ public struct AiChatRequestLock: Equatable, Sendable {
             runID: runID,
             context: context,
             request: request,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
             selectedModelHandle: selectedModelHandle,
             selectedModelRow: selectedModelRow,
             assistantReplacementIndex: assistantReplacementIndex,

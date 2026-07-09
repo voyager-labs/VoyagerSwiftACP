@@ -569,6 +569,15 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             AiChatMessage(role: .assistant, content: latestAssistant),
             AiChatMessage(role: .user, content: draft),
         ])
+        XCTAssertEqual(lock.persistenceTranscriptHistory, [
+            AiChatMessage(role: .user, content: olderUser),
+            AiChatMessage(role: .assistant, content: olderAssistant),
+            AiChatMessage(role: .user, content: oversizedRecentUser),
+            AiChatMessage(role: .assistant, content: oversizedRecentAssistant),
+            AiChatMessage(role: .user, content: latestUser),
+            AiChatMessage(role: .assistant, content: latestAssistant),
+            AiChatMessage(role: .user, content: draft),
+        ])
         XCTAssertFalse(request.messages.contains(AiChatMessage(role: .user, content: olderUser)))
         XCTAssertFalse(request.messages.contains(AiChatMessage(role: .assistant, content: olderAssistant)))
         XCTAssertEqual(lock.historyTruncation.includedMessageCount, 3)
@@ -646,6 +655,13 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertEqual(request.context.selectedThinking, .effort(.medium))
         XCTAssertEqual(request.context.submittedAtMs, fixedMs)
         XCTAssertEqual(request.messages, [
+            AiChatMessage(role: .user, content: largeUser2),
+            AiChatMessage(role: .assistant, content: largeAssistant2),
+            AiChatMessage(role: .user, content: draft),
+        ])
+        XCTAssertEqual(lock.persistenceTranscriptHistory, [
+            AiChatMessage(role: .user, content: largeUser1),
+            AiChatMessage(role: .assistant, content: largeAssistant1),
             AiChatMessage(role: .user, content: largeUser2),
             AiChatMessage(role: .assistant, content: largeAssistant2),
             AiChatMessage(role: .user, content: draft),
@@ -1810,7 +1826,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             state.lastRequestContext = lock.context.requestContext
             state.lastRequestContextModelHandle = selectedHandle
             state.executionPhase = .completed(finalizedLock)
-            state.transcriptAutoScrollVersion = 2
+            state.transcriptAutoScrollVersion = 3
         }
 
         let expectedOriginalSnapshot = AiChatSessionSnapshot(

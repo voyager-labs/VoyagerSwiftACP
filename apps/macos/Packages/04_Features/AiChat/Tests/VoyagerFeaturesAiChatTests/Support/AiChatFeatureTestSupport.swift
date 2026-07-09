@@ -163,6 +163,7 @@ func makeRequestLock(
     selectedRow: AiModelCatalogRow,
     assistantReplacementIndex: Int?,
     customTitle: String? = nil,
+    persistenceTranscriptHistory: [AiChatMessage]? = nil,
 ) -> AiChatRequestLock {
     AiChatRequestLock(
         kind: kind,
@@ -170,6 +171,7 @@ func makeRequestLock(
         runID: request.context.runID,
         context: request.context,
         request: request,
+        persistenceTranscriptHistory: persistenceTranscriptHistory,
         selectedModelHandle: selectedHandle,
         selectedModelRow: selectedRow,
         assistantReplacementIndex: assistantReplacementIndex,

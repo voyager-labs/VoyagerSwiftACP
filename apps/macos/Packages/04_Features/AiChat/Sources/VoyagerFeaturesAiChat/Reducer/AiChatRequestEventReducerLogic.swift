@@ -102,7 +102,7 @@ extension AiChatFeature {
         lock: AiChatRequestLock,
         updatedAtMs: Int64,
     ) -> AiChatSessionSnapshot {
-        var transcriptHistory = lock.request.messages
+        var transcriptHistory = lock.persistenceTranscriptHistory
         if let index = lock.assistantReplacementIndex,
            transcriptHistory.indices.contains(index),
            transcriptHistory[index].role == .assistant
