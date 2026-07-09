@@ -47,6 +47,20 @@ public struct AiChatFeature {
 
     public init() {}
 
+    func matchesRequestLifecycleOwner(
+        requestID: AiChatRequestID,
+        runID: AiChatRunID,
+        state: State,
+    ) -> Bool {
+        if case let .processing(lock) = state.executionPhase,
+           lock.requestID == requestID,
+           lock.runID == runID
+        {
+            return true
+        }
+        return state.backgroundExecutionPhases[requestID]?.lock?.runID == runID
+    }
+
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -179,14 +193,14 @@ public struct AiChatFeature {
                 return .none
 
             case let .sessionSnapshotUpdated(summary, _, requestID, runID):
-                guard case let .processing(lock) = state.executionPhase,
-                      lock.requestID == requestID,
-                      lock.runID == runID,
-                      !state.sessionList.deletedSessionIDs.contains(summary.sessionID)
+                guard !state.sessionList.deletedSessionIDs.contains(summary.sessionID),
+                      matchesRequestLifecycleOwner(requestID: requestID, runID: runID, state: state)
                 else { return .none }
                 state.sessionList.replaceRow(summary)
-                state.sessionList.selectedSessionID = summary.sessionID
-                state.sessionList.unreadCompletedSessionIDs.remove(summary.sessionID)
+                if state.sessionID == summary.sessionID {
+                    state.sessionList.selectedSessionID = summary.sessionID
+                    state.sessionList.unreadCompletedSessionIDs.remove(summary.sessionID)
+                }
                 state.sessionList.errorMessage = nil
                 return .none
 

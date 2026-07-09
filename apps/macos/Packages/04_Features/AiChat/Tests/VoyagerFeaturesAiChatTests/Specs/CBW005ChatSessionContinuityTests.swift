@@ -3810,6 +3810,54 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         )
     }
 
+    func testBackgroundRequestStartSnapshotUpdatedRefreshesSessionRow() async {
+        let sessionID = AiChatSessionID(rawValue: makeUUID("aaaaaaaa-2222-3333-4444-555555555555"))
+        let visibleSessionID = AiChatSessionID(rawValue: makeUUID("bbbbbbbb-2222-3333-4444-555555555555"))
+        let requestID = AiChatRequestID(rawValue: makeUUID("cccccccc-2222-3333-4444-555555555555"))
+        let runID = AiChatRunID(rawValue: makeUUID("dddddddd-2222-3333-4444-555555555555"))
+        let catalogRows = makeCatalogRows()
+        let request = makeDeleteTestRequest(
+            sessionID: sessionID,
+            requestID: requestID,
+            runID: runID,
+            selectedRow: catalogRows[0],
+            prompt: "Background row refresh",
+        )
+        let lock = makeDeleteTestLock(request: request, selectedRow: catalogRows[0])
+        let summary = makeDeleteTestSessionSummary(
+            sessionID: sessionID,
+            title: "Background row refresh",
+            updatedAtMs: 1_700_000_010_000,
+            status: .active,
+        )
+        let visibleSummary = makeDeleteTestSessionSummary(
+            sessionID: visibleSessionID,
+            title: "Visible session",
+            updatedAtMs: 1_700_000_000_000,
+            status: .idle,
+        )
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionList: .init(allRows: [visibleSummary], selectedSessionID: visibleSessionID),
+            sessionID: visibleSessionID,
+            sessionStatus: .idle,
+            executionPhase: .idle,
+            backgroundExecutionPhases: [requestID: .processing(lock)],
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(AiChatAction.sessionSnapshotUpdated(summary, requestID: requestID, runID: runID)) { state in
+            state.sessionList.allRows = [summary, visibleSummary]
+            state.sessionList.rows = [summary, visibleSummary]
+            state.sessionList.errorMessage = nil
+        }
+
+        XCTAssertEqual(store.state.sessionList.selectedSessionID, visibleSessionID)
+        XCTAssertEqual(store.state.backgroundExecutionPhases[requestID], AiChatExecutionPhase.processing(lock))
+    }
+
     /// CBW-005-delete_chat_conversation_session: 삭제된 processing session으로부터 늦게 도착한 snapshot callback은 row를 되살리지 않는다.
     /// 삭제된 processing session으로부터 늦게 도착한 snapshot callback은 row를 되살리지 않는다. 경로의 회귀 contract를 유지하는지 검증합니다.
     /// - 검증 내용: late snapshot ignore after deletion, deletedSessionIDs guard, row non-reinsertion
