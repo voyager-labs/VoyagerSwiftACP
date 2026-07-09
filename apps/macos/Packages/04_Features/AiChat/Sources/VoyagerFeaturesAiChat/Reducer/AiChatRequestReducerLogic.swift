@@ -399,10 +399,11 @@ extension AiChatFeature {
         else { return }
 
         switch state.executionPhase {
-        case .completed,
+        case .completed where currentLock.finalSnapshot != nil,
              .persistenceRecovery:
             state.backgroundExecutionPhases[currentLock.requestID] = state.executionPhase
-        case .idle,
+        case .completed,
+             .idle,
              .processing,
              .failed,
              .cancelled:

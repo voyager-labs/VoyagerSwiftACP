@@ -309,6 +309,24 @@ public struct AiChatRequestLock: Equatable, Sendable {
         )
     }
 
+    public func clearingFinalSnapshot() -> Self {
+        Self(
+            kind: kind,
+            requestID: requestID,
+            runID: runID,
+            context: context,
+            request: request,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
+            selectedModelHandle: selectedModelHandle,
+            selectedModelRow: selectedModelRow,
+            assistantReplacementIndex: assistantReplacementIndex,
+            customTitle: customTitle,
+            finalSnapshot: nil,
+            historyTruncation: historyTruncation,
+            observabilitySummary: observabilitySummary,
+        )
+    }
+
     public func recordingCustomTitle(_ customTitle: String?) -> Self {
         Self(
             kind: kind,

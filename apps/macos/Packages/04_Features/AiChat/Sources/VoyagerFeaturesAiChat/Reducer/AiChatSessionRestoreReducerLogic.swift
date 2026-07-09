@@ -284,7 +284,7 @@ extension AiChatFeature {
             return
         }
         guard let lock = phase.lock else { return }
-        state.transcriptHistory = lock.request.messages
+        state.transcriptHistory = lock.persistenceTranscriptHistory
         state.lastRequestContext = lock.context.requestContext
         state.lastRequestContextModelHandle = lock.context.model
         state.selectedModelHandle = lock.context.model

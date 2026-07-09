@@ -1332,6 +1332,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             requestID: finalizedLockWithSnapshot.requestID,
             runID: finalizedLockWithSnapshot.runID,
         )) { state in
+            state.executionPhase = .completed(finalizedLockWithSnapshot.clearingFinalSnapshot())
             state.sessionList.replaceRow(AiChatSessionSummary(snapshot: expectedSnapshot))
             state.sessionList.selectedSessionID = sessionID
             state.sessionList.unreadCompletedSessionIDs = [sessionID]
@@ -1339,7 +1340,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         }
 
         XCTAssertEqual(persistence.snapshots, [expectedSnapshot])
-        XCTAssertEqual(store.state.executionPhase.lock?.finalSnapshot, expectedSnapshot)
+        XCTAssertNil(store.state.executionPhase.lock?.finalSnapshot)
         await store.finish()
     }
 
@@ -1432,6 +1433,110 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         await store.skipReceivedActions()
 
         XCTAssertEqual(store.state.backgroundExecutionPhases[oldOwnerLock.requestID], .completed(oldOwnerLock))
+        if case .processing = store.state.executionPhase {
+        } else {
+            XCTFail("new request should start processing after context resolution")
+        }
+        await store.finish()
+    }
+
+    func testSavedCompletedOwnerIsNotPreservedBeforeNextRequestStart() async {
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let sessionID = makeCBW005SessionID("16161616-1616-1616-1616-161616161616")
+        let oldUserMessage = AiChatMessage(role: .user, content: "Saved old question")
+        let oldAssistantMessage = AiChatMessage(role: .assistant, content: "Saved old answer")
+        let oldRequest = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: sessionID,
+                requestID: AiChatRequestID(rawValue: makeUUID("16161616-1616-1616-1616-161616161617")),
+                runID: AiChatRunID(rawValue: makeUUID("16161616-1616-1616-1616-161616161618")),
+                model: selectedHandle,
+                selectedRow: catalogRows[0],
+                selectedModel: makeProviderModels()[0],
+            ),
+            messages: [oldUserMessage],
+        )
+        let oldFinalizedLock = makeRequestLock(
+            kind: .submit,
+            request: oldRequest,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        .recordingTerminal(at: 1_700_000_001_616, failure: nil, wasCancelled: false)
+        let oldSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [oldUserMessage, oldAssistantMessage],
+            lastRequestID: oldFinalizedLock.requestID,
+            lastRunID: oldFinalizedLock.runID,
+            lastRequestContext: oldFinalizedLock.context.requestContext,
+            updatedAtMs: 1_700_000_001_616,
+        )
+        let oldOwnerLock = oldFinalizedLock.recordingFinalSnapshot(oldSnapshot)
+        let savedOwnerLock = oldOwnerLock.clearingFinalSnapshot()
+        let resolutionID = makeUUID("16161616-1616-1616-1616-161616161619")
+        let newUserMessage = AiChatMessage(role: .user, content: "New question after saved final")
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: sessionID,
+            selectedModel: makeProviderModels()[0],
+            selectedRow: catalogRows[0],
+            preparedRequest: AiChatPreparedRequest(
+                prompt: newUserMessage.content,
+                messages: [newUserMessage],
+                assistantReplacementIndex: nil,
+                historyTruncation: AiChatHistoryTruncationMetadata(
+                    includedMessageCount: 1,
+                    excludedMessageCount: 0,
+                    budget: 24000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        let store: TestStore<AiChatFeature.State, AiChatAction> = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            transcriptHistory: oldSnapshot.transcriptHistory,
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            pendingRequestStart: pendingRequest,
+            executionPhase: .completed(oldOwnerLock),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_001.700))
+            $0.uuid = .incrementing
+            $0.aiChatExecutionClient.execute = { _, _ in AsyncStream { $0.finish() } }
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in snapshot },
+                deleteSession: { _ in },
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.sessionSnapshotSaved(
+            AiChatSessionSummary(snapshot: oldSnapshot),
+            snapshot: oldSnapshot,
+            requestID: oldOwnerLock.requestID,
+            runID: oldOwnerLock.runID,
+        ))
+        XCTAssertEqual(store.state.executionPhase, .completed(savedOwnerLock))
+
+        await store.send(.requestContextResolved(resolutionID, AiChatResolvedRequestContext(
+            currentContext: .init(),
+            addedAttachments: [],
+            parts: [],
+        )))
+        await store.skipReceivedActions()
+
+        XCTAssertNil(store.state.backgroundExecutionPhases[oldOwnerLock.requestID])
         if case .processing = store.state.executionPhase {
         } else {
             XCTFail("new request should start processing after context resolution")
@@ -2171,7 +2276,9 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             updatedAtMs: 1_700_000_002_121,
         ))
 
+        let processingPreviousMessage = AiChatMessage(role: .assistant, content: "Preserved previous context")
         let processingUserMessage = AiChatMessage(role: .user, content: "Current request")
+        let processingTranscriptHistory = [processingPreviousMessage, processingUserMessage]
         let processingRequest = AiChatRequest(
             context: makeRequestContext(
                 sessionID: sessionID,
@@ -2188,6 +2295,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
             assistantReplacementIndex: nil,
+            persistenceTranscriptHistory: processingTranscriptHistory,
         )
         let staleSnapshot = AiChatSessionSnapshot(
             sessionID: sessionID,
@@ -2241,7 +2349,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             state.sessionID = sessionID
             state.sessionStatus = .active
             state.currentSessionCustomTitle = staleSnapshot.customTitle
-            state.transcriptHistory = processingRequest.messages
+            state.transcriptHistory = processingTranscriptHistory
             state.streamingAssistantDraft = nil
             state.lockedModelHandle = nil
             state.lastExecutionFailure = nil
@@ -2261,7 +2369,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         }
 
         XCTAssertEqual(store.state.executionPhase, .processing(processingLock))
-        XCTAssertEqual(store.state.transcriptHistory, processingRequest.messages)
+        XCTAssertEqual(store.state.transcriptHistory, processingTranscriptHistory)
         XCTAssertEqual(store.state.lastRequestContext, processingRequest.context.requestContext)
         XCTAssertEqual(store.state.backgroundExecutionPhases[completedLock.requestID], .completed(completedLock))
         await store.finish()
