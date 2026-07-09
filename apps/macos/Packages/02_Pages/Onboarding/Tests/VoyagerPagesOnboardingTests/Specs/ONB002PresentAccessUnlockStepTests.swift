@@ -206,6 +206,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             $0.authNetworkClient = AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { revokedResponse },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             )
             $0.date = .constant(testDate)
@@ -312,6 +313,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             $0.authNetworkClient = AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { StateMutation.activeAccessResponse },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             )
         }

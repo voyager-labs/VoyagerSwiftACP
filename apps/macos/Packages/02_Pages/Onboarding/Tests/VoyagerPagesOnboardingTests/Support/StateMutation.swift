@@ -18,6 +18,7 @@ enum StateMutation {
     static let activeAccessSnapshot = AccessStatusSnapshot(
         status: .coreLicenseActive,
         fetchedAt: Date(timeIntervalSince1970: 0),
+        deviceBindingVerifiedAt: Date(timeIntervalSince1970: 0),
     )
 
     static let activeAccountSessionClient = AccountSessionClient(
@@ -29,6 +30,7 @@ enum StateMutation {
     static let activeAuthNetworkClient = AuthNetworkClient(
         exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
         fetchAccessStatus: { activeAccessResponse },
+        bindDevice: { _ in DeviceBindingResponse(ok: true) },
         refreshToken: { throw AccessError.notConfigured },
     )
 
@@ -44,6 +46,17 @@ enum StateMutation {
     }
 
     /// access 상태를 server-canonical active access 결과와 동일하게 설정합니다.
+    static func applyActiveAccessStatusPending(state: inout OnboardingFeature.State) {
+        state.accessUnlock.status = .coreLicenseActive
+        state.accessUnlock.snapshot = nil
+        state.accessUnlock.isComplete = false
+        state.accessUnlock.isSubmitting = true
+        state.accessUnlock.trialExpiresAt = nil
+        state.accessUnlock.errorMessage = nil
+        state.accessUnlock.fetchRetryCount = 0
+    }
+
+    /// device binding 성공 후 access 완료 상태를 적용합니다.
     static func applyActiveAccess(state: inout OnboardingFeature.State) {
         state.accessUnlock.status = .coreLicenseActive
         state.accessUnlock.snapshot = activeAccessSnapshot

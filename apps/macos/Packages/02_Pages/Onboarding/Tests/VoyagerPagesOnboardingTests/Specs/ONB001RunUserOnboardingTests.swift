@@ -21,6 +21,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
+            $0.authNetworkClient = StateMutation.activeAuthNetworkClient
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
 
@@ -141,6 +142,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
+            $0.authNetworkClient = StateMutation.activeAuthNetworkClient
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
 
@@ -191,6 +193,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
+            $0.authNetworkClient = StateMutation.activeAuthNetworkClient
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
 
@@ -202,6 +205,9 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             generation: 0,
             result: .success(StateMutation.activeAccessResponse),
         ))) { state in
+            StateMutation.applyActiveAccessStatusPending(state: &state)
+        }
+        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
             StateMutation.applyActiveAccess(state: &state)
         }
         await store.receive(\.accessUnlock.delegate.unlocked)
@@ -295,6 +301,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
+            $0.authNetworkClient = StateMutation.activeAuthNetworkClient
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
 
@@ -310,6 +317,9 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             generation: 0,
             result: .success(StateMutation.activeAccessResponse),
         ))) { state in
+            StateMutation.applyActiveAccessStatusPending(state: &state)
+        }
+        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
             StateMutation.applyActiveAccess(state: &state)
         }
         await store.receive(\.accessUnlock.delegate.unlocked)
@@ -374,6 +384,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
+            $0.authNetworkClient = StateMutation.activeAuthNetworkClient
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
 
@@ -388,6 +399,9 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             generation: 0,
             result: .success(StateMutation.activeAccessResponse),
         ))) { state in
+            StateMutation.applyActiveAccessStatusPending(state: &state)
+        }
+        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
             StateMutation.applyActiveAccess(state: &state)
         }
         await store.receive(\.accessUnlock.delegate.unlocked)
@@ -411,6 +425,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
+            $0.authNetworkClient = StateMutation.activeAuthNetworkClient
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
 
@@ -418,6 +433,9 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             generation: 0,
             result: .success(StateMutation.activeAccessResponse),
         ))) { state in
+            StateMutation.applyActiveAccessStatusPending(state: &state)
+        }
+        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
             StateMutation.applyActiveAccess(state: &state)
         }
         await store.receive(\.accessUnlock.delegate.unlocked)
@@ -494,6 +512,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
+            $0.authNetworkClient = StateMutation.activeAuthNetworkClient
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
 
@@ -509,6 +528,9 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             generation: 0,
             result: .success(StateMutation.activeAccessResponse),
         ))) { state in
+            StateMutation.applyActiveAccessStatusPending(state: &state)
+        }
+        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
             StateMutation.applyActiveAccess(state: &state)
         }
         await store.receive(\.accessUnlock.delegate.unlocked)
@@ -771,13 +793,20 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.permissions.isComplete = false
             state.complete.isComplete = false
         }
-        await store.receive(\.accessUnlock.onAppear)
+        await store.receive(\.accessUnlock.onAppear) { state in
+            state.accessUnlock.didBootstrap = true
+        }
         await store.receive(\.accessUnlock._onAppearSessionRestored) { state in
             state.accessUnlock.hasAccountSession = true
             state.accessUnlock.fetchGeneration = 1
             state.accessUnlock.ttlTimerActive = true
         }
-        await store.receive(\.accessUnlock.accessStatusResponse)
+        await store.receive(\.accessUnlock.accessStatusResponse) { state in
+            StateMutation.applyActiveAccessStatusPending(state: &state)
+        }
+        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
+            StateMutation.applyActiveAccess(state: &state)
+        }
         await store.receive(\.accessUnlock.delegate.unlocked)
     }
 
@@ -899,13 +928,20 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.aiProviderSetup.choice = .providerConnected
             state.aiProviderSetup.status = .complete
         }
-        await store.receive(\.accessUnlock.onAppear)
+        await store.receive(\.accessUnlock.onAppear) { state in
+            state.accessUnlock.didBootstrap = true
+        }
         await store.receive(\.accessUnlock._onAppearSessionRestored) { state in
             state.accessUnlock.hasAccountSession = true
             state.accessUnlock.fetchGeneration = 1
             state.accessUnlock.ttlTimerActive = true
         }
-        await store.receive(\.accessUnlock.accessStatusResponse)
+        await store.receive(\.accessUnlock.accessStatusResponse) { state in
+            StateMutation.applyActiveAccessStatusPending(state: &state)
+        }
+        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
+            StateMutation.applyActiveAccess(state: &state)
+        }
         await store.receive(\.accessUnlock.delegate.unlocked)
 
         XCTAssertEqual(store.state.currentStep, .complete)
@@ -997,7 +1033,12 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.accessUnlock.fetchGeneration = 1
             state.accessUnlock.ttlTimerActive = true
         }
-        await store.receive(\.accessUnlock.accessStatusResponse)
+        await store.receive(\.accessUnlock.accessStatusResponse) { state in
+            StateMutation.applyActiveAccessStatusPending(state: &state)
+        }
+        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
+            StateMutation.applyActiveAccess(state: &state)
+        }
         await store.receive(\.accessUnlock.delegate.unlocked)
 
         let saved = saveRecorder.value
@@ -1160,6 +1201,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.authNetworkClient = AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { revokedResponse },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             )
             $0.accessStatusSnapshotClient = AccessSnapshotClient.recording(
@@ -1356,13 +1398,20 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.aiProviderSetup.status = .complete
             state.complete.isComplete = true
         }
-        await store.receive(\.accessUnlock.onAppear)
+        await store.receive(\.accessUnlock.onAppear) { state in
+            state.accessUnlock.didBootstrap = true
+        }
         await store.receive(\.accessUnlock._onAppearSessionRestored) { state in
             state.accessUnlock.hasAccountSession = true
             state.accessUnlock.fetchGeneration = 1
             state.accessUnlock.ttlTimerActive = true
         }
-        await store.receive(\.accessUnlock.accessStatusResponse)
+        await store.receive(\.accessUnlock.accessStatusResponse) { state in
+            StateMutation.applyActiveAccessStatusPending(state: &state)
+        }
+        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
+            StateMutation.applyActiveAccess(state: &state)
+        }
         await store.receive(\.accessUnlock.delegate.unlocked)
     }
 
@@ -1680,19 +1729,27 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.aiProviderSetup.status = .complete
             state.complete.isComplete = true
         }
-        await store.receive(\.accessUnlock.onAppear)
+        await store.receive(\.accessUnlock.onAppear) { state in
+            state.accessUnlock.didBootstrap = true
+        }
         await store.receive(\.accessUnlock._onAppearSessionRestored) { state in
             state.accessUnlock.hasAccountSession = true
             state.accessUnlock.fetchGeneration = 1
             state.accessUnlock.ttlTimerActive = true
         }
-        await store.receive(\.accessUnlock.accessStatusResponse)
+        await store.receive(\.accessUnlock.accessStatusResponse) { state in
+            StateMutation.applyActiveAccessStatusPending(state: &state)
+        }
+        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
+            StateMutation.applyActiveAccess(state: &state)
+        }
         await store.receive(\.accessUnlock.delegate.unlocked)
 
         XCTAssertTrue(store.state.isSessionComplete)
         XCTAssertEqual(store.state.currentStep, .complete)
 
-        await store.skipInFlightEffects()
+        // re-entry refresh가 시작한 TTL/foreground observer는 세션 생존 동안 유지되는 장기 effect다.
+        store.exhaustivity = .off
     }
 
     // MARK: - ONB-001-access_snapshot_persistence
