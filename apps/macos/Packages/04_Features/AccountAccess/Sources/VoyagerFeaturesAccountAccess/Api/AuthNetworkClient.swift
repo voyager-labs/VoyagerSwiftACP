@@ -9,6 +9,7 @@ public struct AuthNetworkClient: Sendable {
     public var exchangeHandoff: @Sendable (_ ticket: String, _ state: String, _ context: AppHandoffContext) async throws
         -> AccountSession
     public var fetchAccessStatus: @Sendable () async throws -> AccessStatusResponse
+    public var bindDevice: @Sendable (_ request: DeviceBindingRequest) async throws -> DeviceBindingResponse
     public var refreshToken: @Sendable () async throws -> AccountSession
 
     public init(
@@ -19,10 +20,14 @@ public struct AuthNetworkClient: Sendable {
         ) async throws
             -> AccountSession,
         fetchAccessStatus: @escaping @Sendable () async throws -> AccessStatusResponse,
+        bindDevice: @escaping @Sendable (_ request: DeviceBindingRequest) async throws -> DeviceBindingResponse = { _ in
+            throw DeviceBindingError.notConfigured
+        },
         refreshToken: @escaping @Sendable () async throws -> AccountSession,
     ) {
         self.exchangeHandoff = exchangeHandoff
         self.fetchAccessStatus = fetchAccessStatus
+        self.bindDevice = bindDevice
         self.refreshToken = refreshToken
     }
 }
@@ -37,6 +42,9 @@ public extension AuthNetworkClient {
             },
             fetchAccessStatus: {
                 try await fetchAccessStatusLive()
+            },
+            bindDevice: { request in
+                try await bindDeviceLive(request)
             },
             refreshToken: {
                 try await refreshTokenLive()
@@ -135,6 +143,46 @@ public extension AuthNetworkClient {
         return try decoder.decode(AccessStatusResponse.self, from: data)
     }
 
+    private static func bindDeviceLive(_ bindingRequest: DeviceBindingRequest) async throws -> DeviceBindingResponse {
+        let store = AccountTokenFileStore.withDefaultHome()
+        let file = try await store.read()
+        guard let file else { throw DeviceBindingError.notConfigured }
+        guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL")
+        else {
+            throw DeviceBindingError.networkFailure
+        }
+        guard let base = URL(string: gatewayURLString) else { throw DeviceBindingError.networkFailure }
+        let bindingURL = base.appendingPathComponent("access/device-bindings")
+        var request = URLRequest(url: bindingURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(file.accessToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(bindingRequest)
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw DeviceBindingError.networkFailure
+        }
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw DeviceBindingError.networkFailure
+        }
+        if (200 ..< 300).contains(httpResponse.statusCode) {
+            let bindingResponse: DeviceBindingResponse
+            do {
+                bindingResponse = try JSONDecoder().decode(DeviceBindingResponse.self, from: data)
+            } catch {
+                throw DeviceBindingError.decodingFailure
+            }
+            guard bindingResponse.ok else { throw DeviceBindingError.decodingFailure }
+            return bindingResponse
+        }
+
+        let errorCode = extractErrorCode(from: data)
+        throw mappedDeviceBindingError(statusCode: httpResponse.statusCode, code: errorCode)
+    }
+
     private static func refreshTokenLive() async throws -> AccountSession {
         // extracted from AccountAccessClient.swift:87-128 (excluding write-back)
         let store = AccountTokenFileStore.withDefaultHome()
@@ -190,6 +238,7 @@ extension AuthNetworkClient: DependencyKey {
         AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
             fetchAccessStatus: { throw AccessError.notConfigured },
+            bindDevice: { _ in throw DeviceBindingError.notConfigured },
             refreshToken: { throw AccessError.notConfigured },
         )
     }
