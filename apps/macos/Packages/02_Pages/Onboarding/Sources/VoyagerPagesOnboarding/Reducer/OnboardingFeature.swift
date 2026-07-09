@@ -121,6 +121,11 @@ struct OnboardingFeature {
         if let accessSnapshot = trustedAccessSnapshot {
             state.accessUnlock.snapshot = accessSnapshot
             state.accessUnlock.status = accessSnapshot.status
+            state.accessUnlock.hasAccountSession = accessSnapshot.hasSession
+            state.accessUnlock.sessionExpiresAt = accessSnapshot.sessionExpiresAt
+            state.accessUnlock.isComplete = accessSnapshot.isActive
+                && accessSnapshot.isDeviceBindingVerified
+                && accessSnapshot.hasSession
         }
         state.currentStep = state.lastValidStep(from: snapshot.currentStep)
         let saveEffect = Self.saveEffect(state.progressSnapshot, progressClient: progressClient)
@@ -212,7 +217,7 @@ struct OnboardingFeature {
 
     private static func trustedAccessSnapshot(_ snapshot: AccessStatusSnapshot?) -> AccessStatusSnapshot? {
         guard let snapshot else { return nil }
-        if snapshot.status.isActive, !snapshot.isDeviceBindingVerified {
+        if snapshot.status.isActive, !snapshot.isDeviceBindingVerified || !snapshot.hasSession {
             return nil
         }
         return snapshot
