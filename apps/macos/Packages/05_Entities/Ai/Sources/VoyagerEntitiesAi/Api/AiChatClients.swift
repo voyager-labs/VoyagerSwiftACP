@@ -100,8 +100,17 @@ public actor AiChatSessionFileStore: AiChatSessionPersistenceClientProtocol {
 
             let snapshotToSave: AiChatSessionSnapshot = if fileManager.fileExists(atPath: fileURL.path),
                                                            let existingSnapshot = try loadSnapshotIfValid(at: fileURL),
-                                                           let mergedSnapshot = snapshot
-                                                           .mergingExistingIndependentMetadata(from: existingSnapshot)
+                                                           let mergedSnapshot = existingSnapshot
+                                                           .mergingIndependentMetadata(
+                                                               from: snapshot,
+                                                               allowsRequestLifecycleTranscriptPrefix: true,
+                                                           )
+            {
+                mergedSnapshot
+            } else if fileManager.fileExists(atPath: fileURL.path),
+                      let existingSnapshot = try loadSnapshotIfValid(at: fileURL),
+                      let mergedSnapshot = snapshot
+                      .mergingExistingIndependentMetadata(from: existingSnapshot)
             {
                 mergedSnapshot
             } else {
@@ -271,9 +280,15 @@ private extension AiChatSessionFileStore {
 }
 
 private extension AiChatSessionSnapshot {
-    func mergingIndependentMetadata(from snapshot: AiChatSessionSnapshot) -> AiChatSessionSnapshot? {
+    func mergingIndependentMetadata(
+        from snapshot: AiChatSessionSnapshot,
+        allowsRequestLifecycleTranscriptPrefix: Bool = false,
+    ) -> AiChatSessionSnapshot? {
         guard snapshot.sessionID == sessionID,
-              snapshot.representsMetadataOnlyChange(from: self),
+              snapshot.representsMetadataOnlyChange(
+                  from: self,
+                  allowsRequestLifecycleTranscriptPrefix: allowsRequestLifecycleTranscriptPrefix,
+              ),
               snapshot.customTitle != customTitle
         else {
             return nil
