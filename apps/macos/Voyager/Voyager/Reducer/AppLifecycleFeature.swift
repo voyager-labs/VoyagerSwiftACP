@@ -230,9 +230,9 @@ struct AppLifecycleFeature {
                 state.resolveAccessUnlockRequired(snapshot, generation: generation)
                 var sessionLapseGuard = AccountAccessFeature.State()
                 sessionLapseGuard.handoffContext = .paywall
-                sessionLapseGuard.hydrateLaunchSnapshotState(snapshot)
                 state.sessionLapseGuard = sessionLapseGuard
                 return .merge(
+                    .send(.sessionLapseGuard(.hydrateLaunchSnapshot(snapshot))),
                     .run { _ in
                         await snapshotClient.save(snapshot)
                     },

@@ -141,12 +141,15 @@ final class AppRootCompositionTests: XCTestCase {
             state.lifecycle.accountAccessGateResolved = true
             state.lifecycle.sessionLapseGuard = AccountAccessFeature.State()
             state.lifecycle.sessionLapseGuard?.handoffContext = .paywall
+        }
+        await store.receive(\.lifecycle.sessionLapseGuard.hydrateLaunchSnapshot) { state in
             state.lifecycle.sessionLapseGuard?.status = .trialExpired
             state.lifecycle.sessionLapseGuard?.snapshot = snapshot
             state.lifecycle.sessionLapseGuard?.sessionExpiresAt = expiry
             state.lifecycle.sessionLapseGuard?.hasAccountSession = true
             state.lifecycle.sessionLapseGuard?.didBootstrap = true
             state.lifecycle.sessionLapseGuard?.fetchGeneration = 1
+            state.lifecycle.sessionLapseGuard?.ttlTimerActive = true
         }
         await store.receive(\.settings.accessStatusLoaded) { state in
             state.settings.accessStatus = .trialExpired
@@ -163,6 +166,7 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertEqual(store.state.lifecycle.sessionLapseGuard?.accessUnlockPrimaryCTA, .webPricing)
         XCTAssertEqual(store.state.settings.accountSettings.access.accessUnlockPrimaryCTA, .webPricing)
         XCTAssertFalse(store.state.lifecycle.didStartHelper)
+        await store.skipInFlightEffects()
         await store.finish()
     }
 
@@ -378,6 +382,11 @@ final class AppRootCompositionTests: XCTestCase {
             $0.accountSessionClient.delete = { _ in }
             $0.accessStatusSnapshotClient.save = { _ in }
             $0.accessStatusSnapshotClient.remove = {}
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
             // T11: 직접 XCTest 실행 시 도달하는 전이 의존성의 testValue가 fatalError라
             // 테스트-로컬 deterministic override로만 우회. 글로벌 testValue는 미변경.
             // - WindowManagerFeature: @Dependency(\.uuid)
@@ -491,6 +500,11 @@ final class AppRootCompositionTests: XCTestCase {
             $0.accessStatusSnapshotClient.save = { snapshot in
                 saved.value = snapshot
             }
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
         }
         store.exhaustivity = .off
 
@@ -503,12 +517,15 @@ final class AppRootCompositionTests: XCTestCase {
             state.isCheckingAccountAccess = false
             state.sessionLapseGuard = AccountAccessFeature.State()
             state.sessionLapseGuard?.handoffContext = .paywall
+        }
+        await store.receive(\.sessionLapseGuard.hydrateLaunchSnapshot) { state in
             state.sessionLapseGuard?.status = .trialExpired
             state.sessionLapseGuard?.snapshot = expectedSnapshot
             state.sessionLapseGuard?.sessionExpiresAt = expiry
             state.sessionLapseGuard?.hasAccountSession = true
             state.sessionLapseGuard?.didBootstrap = true
             state.sessionLapseGuard?.fetchGeneration = 1
+            state.sessionLapseGuard?.ttlTimerActive = true
         }
         await store.receive(\.delegate.openInitialWindowIfNeeded)
         XCTAssertNotNil(store.state.sessionLapseGuard)
@@ -516,6 +533,7 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertFalse(store.state.didStartHelper)
         XCTAssertEqual(saved.value?.status, .trialExpired)
         XCTAssertEqual(saved.value?.sessionExpiresAt, expiry)
+        await store.skipInFlightEffects()
         await store.finish()
     }
 
@@ -802,6 +820,11 @@ final class AppRootCompositionTests: XCTestCase {
             $0.onboardingWindowClient.isRequired = { false }
             $0.uuid = .incrementing
             $0.fileManagerWindowClient.open = { _ in }
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
         }
         store.exhaustivity = .off
 
@@ -817,12 +840,15 @@ final class AppRootCompositionTests: XCTestCase {
             state.lifecycle.isCheckingAccountAccess = false
             state.lifecycle.sessionLapseGuard = AccountAccessFeature.State()
             state.lifecycle.sessionLapseGuard?.handoffContext = .paywall
+        }
+        await store.receive(\.lifecycle.sessionLapseGuard.hydrateLaunchSnapshot) { state in
             state.lifecycle.sessionLapseGuard?.status = .networkFailure
             state.lifecycle.sessionLapseGuard?.snapshot = saved.value
             state.lifecycle.sessionLapseGuard?.sessionExpiresAt = expiry
             state.lifecycle.sessionLapseGuard?.hasAccountSession = true
             state.lifecycle.sessionLapseGuard?.didBootstrap = true
             state.lifecycle.sessionLapseGuard?.fetchGeneration = 1
+            state.lifecycle.sessionLapseGuard?.ttlTimerActive = true
         }
         await store.receive(\.settings.accessStatusLoaded) { state in
             state.settings.accessStatus = .networkFailure
@@ -842,6 +868,7 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertEqual(store.state.settings.accountSettings.access.accessUnlockPrimaryCTA, .retry)
         XCTAssertEqual(saved.value?.status, .networkFailure)
         XCTAssertEqual(saved.value?.sessionExpiresAt, expiry)
+        await store.skipInFlightEffects()
         await store.finish()
     }
 
