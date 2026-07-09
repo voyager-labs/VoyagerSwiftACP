@@ -46,6 +46,13 @@ struct AppLifecycleState: Equatable {
         isCheckingAccountAccess = false
     }
 
+    mutating func resolveAccessFailure(_ error: AccessError, generation: Int) {
+        accessGatePhase = .accessFailure(error: error, generation: generation)
+        lastAccessStatus = nil
+        accountAccessGateResolved = true
+        isCheckingAccountAccess = false
+    }
+
     mutating func resolveSessionEnded(reason: AccountSessionEndReason?) {
         accessGateGeneration += 1
         lastAccessStatus = nil
@@ -66,6 +73,7 @@ enum AppLifecycleAccessGatePhase: Equatable {
     case checking(generation: Int)
     case granted(snapshot: AccessStatusSnapshot, generation: Int)
     case unlockRequired(snapshot: AccessStatusSnapshot, generation: Int)
+    case accessFailure(error: AccessError, generation: Int)
     case sessionLapsed(reason: AccountSessionEndReason?, generation: Int)
     case signedOut(generation: Int)
 

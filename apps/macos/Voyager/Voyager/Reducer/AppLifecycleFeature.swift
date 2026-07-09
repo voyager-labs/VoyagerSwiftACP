@@ -177,7 +177,15 @@ struct AppLifecycleFeature {
                     return .send(.sessionExpiredDetected(reason: .sessionExpired))
                 }
                 guard error == .networkFailure else {
-                    return .send(.sessionExpiredDetected(reason: nil))
+                    let accountSessionClient = accountSessionClient
+                    return .run { send in
+                        let sessionExpiresAt = await (try? accountSessionClient.read())?.expiresAt
+                        await send(.accountAccessGate(.accessStatusFailed(
+                            generation: generation,
+                            error: error,
+                            sessionExpiresAt: sessionExpiresAt,
+                        )))
+                    }
                 }
                 let snapshotClient = snapshotClient
                 let accountSessionClient = accountSessionClient
@@ -230,6 +238,22 @@ struct AppLifecycleFeature {
                     },
                     .send(.delegate(.openInitialWindowIfNeeded)),
                 )
+
+            case let .accountAccessGate(.accessStatusFailed(
+                generation: generation,
+                error: error,
+                sessionExpiresAt: sessionExpiresAt,
+            )):
+                guard state.isCurrentAccessGateGeneration(generation) else { return .none }
+                state.resolveAccessFailure(error, generation: generation)
+                var sessionLapseGuard = AccountAccessFeature.State()
+                sessionLapseGuard.handoffContext = .paywall
+                sessionLapseGuard.hydrateAccessFailureState(
+                    error: error,
+                    sessionExpiresAt: sessionExpiresAt,
+                )
+                state.sessionLapseGuard = sessionLapseGuard
+                return .send(.delegate(.openInitialWindowIfNeeded))
 
             case let .accountAccessGate(.accountAccessGranted(generation: generation, snapshot: snapshot)):
                 guard state.isCurrentAccessGateGeneration(generation) else { return .none }
