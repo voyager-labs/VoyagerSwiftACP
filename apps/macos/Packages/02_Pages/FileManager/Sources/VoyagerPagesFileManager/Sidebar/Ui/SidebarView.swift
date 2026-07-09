@@ -21,13 +21,11 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Color.clear
-                .frame(height: 50)
-
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    if !store.fixedLocationItems.isEmpty {
+                    if !store.allFixedLocationItems.isEmpty {
                         fixedLocationsGrid
+                            .padding(.top, store.fixedLocationItems.isEmpty ? 0 : 50)
                     }
 
                     if !store.contentTabSidebarItems.isEmpty {
@@ -65,31 +63,73 @@ struct SidebarView: View {
         store.contentTabSidebarItems.filter { !$0.isPinned }
     }
 
+    @ViewBuilder
     private var fixedLocationsGrid: some View {
-        GeometryReader { proxy in
-            let metrics = fixedLocationGridMetrics(for: proxy.size.width)
+        if store.fixedLocationItems.isEmpty {
+            Color.clear
+                .frame(height: fixedLocationGridHeight(for: 1))
+                .contentShape(Rectangle())
+                .contextMenu { fixedLocationsVisibilityMenu }
+                .padding(.horizontal, fixedLocationGridHorizontalPadding)
+                .padding(.vertical, fixedLocationGridVerticalPadding)
+                .padding(.bottom, fixedLocationGridBottomSpacing)
+        } else {
+            GeometryReader { proxy in
+                let metrics = fixedLocationGridMetrics(for: proxy.size.width)
 
-            LazyVGrid(columns: metrics.columns, alignment: .leading, spacing: fixedLocationGridGap) {
-                ForEach(store.fixedLocationItems) { item in
-                    FixedLocationButton(
-                        item: item,
-                        width: metrics.cellWidth,
-                        height: fixedLocationCellHeight,
-                        isHovered: fixedLocationHoveredItemID == item.id,
-                        onSelect: {
-                            store.send(.delegate(.selectFixedLocation(item.id)))
-                        },
-                        onHover: { isHovered in
-                            fixedLocationHoveredItemID = isHovered ? item.id : nil
-                        },
-                    )
+                LazyVGrid(columns: metrics.columns, alignment: .leading, spacing: fixedLocationGridGap) {
+                    ForEach(store.fixedLocationItems) { item in
+                        FixedLocationButton(
+                            item: item,
+                            width: metrics.cellWidth,
+                            height: fixedLocationCellHeight,
+                            isHovered: fixedLocationHoveredItemID == item.id,
+                            onSelect: {
+                                store.send(.delegate(.selectFixedLocation(item.id)))
+                            },
+                            onHover: { isHovered in
+                                fixedLocationHoveredItemID = isHovered ? item.id : nil
+                            },
+                        )
+                    }
+                }
+                .padding(.horizontal, fixedLocationGridHorizontalPadding)
+                .padding(.vertical, fixedLocationGridVerticalPadding)
+            }
+            .frame(height: fixedLocationGridHeight(for: store.fixedLocationItems.count))
+            .padding(.bottom, fixedLocationGridBottomSpacing)
+            .contentShape(Rectangle())
+            .contextMenu { fixedLocationsVisibilityMenu }
+        }
+    }
+
+    @ViewBuilder
+    private var fixedLocationsVisibilityMenu: some View {
+        if !store.allFixedLocationItems.isEmpty {
+            Section("Locations") {
+                Button("Show All") {
+                    store.send(.view(.setAllFixedLocationVisibility(true)))
+                }
+                Button("Hide All") {
+                    store.send(.view(.setAllFixedLocationVisibility(false)))
+                }
+
+                Divider()
+
+                ForEach(store.allFixedLocationItems) { item in
+                    Toggle(
+                        isOn: Binding(
+                            get: { !store.hiddenFixedLocationItemIDs.contains(item.id) },
+                            set: { isVisible in
+                                store.send(.view(.setFixedLocationVisibility(item.id, isVisible)))
+                            },
+                        ),
+                    ) {
+                        Label(item.title, systemImage: normalizedSidebarIconName(item.iconName))
+                    }
                 }
             }
-            .padding(.horizontal, fixedLocationGridHorizontalPadding)
-            .padding(.vertical, fixedLocationGridVerticalPadding)
         }
-        .frame(height: fixedLocationGridHeight(for: store.fixedLocationItems.count))
-        .padding(.bottom, fixedLocationGridBottomSpacing)
     }
 
     private var fixedLocationGridGap: CGFloat {
@@ -326,10 +366,12 @@ private struct SidebarSymbolIcon: View {
                     .antialiased(true)
                     .scaledToFit()
                     .frame(width: applicationsIconSize, height: applicationsIconSize)
+                    .accessibilityHidden(true)
             } else {
                 Image(systemName: normalizedSidebarIconName(systemName))
                     .font(.system(size: iconSize, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
+                    .accessibilityHidden(true)
             }
         }
         .foregroundColor(.accentColor)
@@ -395,6 +437,7 @@ private struct SidebarCloseButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 10, weight: .medium))
+                .accessibilityHidden(true)
                 .foregroundColor(.secondary)
                 .frame(width: 18, height: 18)
                 .background(
