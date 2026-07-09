@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 @Reducer
 public struct AccountAccessFeature {
@@ -34,7 +35,10 @@ public struct AccountAccessFeature {
     @Dependency(\.appHandoffTarget)
     var appHandoffTarget
 
-    private enum CancelID {
+    @Dependency(\.deviceIdentityClient)
+    var deviceIdentityClient
+
+    enum CancelID {
         static let fetchStatus = "accountAccessFetchStatus"
         static let fetchRetry = "accountAccessFetchRetry"
         static let appDidBecomeActiveObserver = "accountAccessAppDidBecomeActiveObserver"
@@ -79,6 +83,9 @@ public struct AccountAccessFeature {
             case let .accessStatusResponse(generation: gen, result: result):
                 return handleAccessStatusResponse(&state, generation: gen, result: result)
 
+            case let .deviceBindingResponse(generation: gen, snapshot: snapshot, result: result):
+                return handleDeviceBindingResponse(&state, generation: gen, snapshot: snapshot, result: result)
+
             case .refreshAccessTapped:
                 return handleRefreshAccessTapped(&state)
 
@@ -94,6 +101,9 @@ public struct AccountAccessFeature {
 
             case .openPricingTapped:
                 return handleOpenPricing(&state)
+
+            case .openAccountTapped:
+                return handleOpenAccount(&state)
 
             case .openAccessHelpTapped:
                 return handleOpenAccessHelp(&state)
@@ -176,7 +186,7 @@ public struct AccountAccessFeature {
         )
     }
 
-    private func fetchAccessStatusEffect(generation: Int) -> Effect<Action> {
+    func fetchAccessStatusEffect(generation: Int) -> Effect<Action> {
         .run { [authNetwork] send in
             let result: Result<AccessStatusResponse, AccessError>
             do {
@@ -397,182 +407,6 @@ public struct AccountAccessFeature {
 }
 
 private extension AccountAccessFeature {
-    private func handleRefreshAccessTapped(_ state: inout State) -> Effect<Action> {
-        guard state.canRefreshAccess else {
-            return .none
-        }
-        state.fetchGeneration += 1
-        return fetchAccessStatusEffect(generation: state.fetchGeneration)
-    }
-
-    private func handleAccessStatusResponse(
-        _ state: inout State,
-        generation: Int,
-        result: Result<AccessStatusResponse, AccessError>,
-    ) -> Effect<Action> {
-        guard generation == state.fetchGeneration else {
-            return .none
-        }
-
-        switch result {
-        case let .success(response):
-            return handleAccessStatusSuccess(&state, response: response)
-
-        case let .failure(error):
-            return handleAccessStatusFailure(&state, error: error)
-        }
-    }
-
-    private func handleAccessStatusSuccess(_ state: inout State, response: AccessStatusResponse) -> Effect<Action> {
-        let accessStatus = response.toAccessStatus()
-        state.status = accessStatus
-        state.trialExpiresAt = response.currentPeriodEnd
-        state.fetchRetryCount = 0
-
-        let snapshot = AccessStatusSnapshot.fetchResult(
-            status: accessStatus,
-            currentPeriodEnd: response.currentPeriodEnd,
-            sessionExpiresAt: state.sessionExpiresAt,
-            fetchedAt: date(),
-        )
-        state.snapshot = snapshot
-
-        if accessStatus.isActive {
-            state.isComplete = true
-            state.errorMessage = nil
-            return .run { [snapshotClient] send in
-                await snapshotClient.save(snapshot)
-                await send(.delegate(.unlocked(snapshot)))
-            }
-        }
-
-        state.isComplete = false
-        state.errorMessage = errorMessageForStatus(accessStatus)
-        return .run { [snapshotClient] _ in
-            await snapshotClient.save(snapshot)
-        }
-    }
-
-    private func handleAccessStatusFailure(_ state: inout State, error: AccessError) -> Effect<Action> {
-        state.isComplete = false
-        state.errorMessage = errorMessage(for: error)
-
-        if error == .unauthorized {
-            // 401 → 즉시 session_expired 전환 (canonical: entitlement_check.md error table)
-            return .send(._sessionExpiredDetected)
-        }
-
-        // networkFailure는 source fact로 status에 기록 (error/retry projection의 source).
-        // retry budget과 무관하게 항상 기록하여 access_status가 pending/nil로 잘못 해석되지 않는다.
-        if error == .networkFailure {
-            state.status = .networkFailure
-        }
-
-        if error == .notConfigured || error == .decodingFailure {
-            return .none
-        }
-
-        guard error == .networkFailure else { return .none }
-
-        if state.fetchRetryCount >= 3 {
-            state.fetchRetryCount = 0
-            return .run { [snapshotClient] send in
-                let snapshot = await snapshotClient.load()
-                await send(._cachedSnapshotRestored(snapshot))
-            }
-        }
-
-        let retryStep = state.fetchRetryCount
-        state.fetchRetryCount += 1
-        return .send(._fetchRetryScheduled(retryStep))
-    }
-
-    private func handleFetchRetryScheduled(_ state: inout State, retryStep: Int) -> Effect<Action> {
-        // fetchRetryCount는 handleAccessStatusResponse에서 이미 증가함
-        let delay = Duration.seconds(1 << retryStep) // 1s, 2s, 4s
-        let generation = state.fetchGeneration
-        return .run { [continuousClock, authNetwork] send in
-            do {
-                try await continuousClock.sleep(for: delay)
-
-                let result: Result<AccessStatusResponse, AccessError>
-                do {
-                    let response = try await authNetwork.fetchAccessStatus()
-                    result = .success(response)
-                } catch let error as AccessError {
-                    result = .failure(error)
-                } catch {
-                    result = .failure(.networkFailure)
-                }
-
-                await send(.accessStatusResponse(generation: generation, result: result))
-            } catch {
-                // retry effect cancelled
-            }
-        }
-        .cancellable(id: CancelID.fetchRetry, cancelInFlight: true)
-    }
-
-    /// 캐시된 snapshot의 최대 허용 보관 기간.
-    /// 네트워크 장애 시 이 기간을 초과한 snapshot은 만료되지 않았더라도 신뢰하지 않는다 (entitlement bypass 방지).
-    private static let cachedSnapshotMaxAge: TimeInterval = 7 * 24 * 60 * 60 // 7일
-
-    private func handleCachedSnapshotRestored(_ state: inout State, snapshot: AccessStatusSnapshot?) -> Effect<Action> {
-        // 계약 (entitlement_access_flow.md): 조회 실패는 error 축에서 처리.
-        // failure handler가 이미 status=.networkFailure + errorMessage를 기록했으므로
-        // 캐시가 없거나 만료된 snapshot은 거부하고 state를 그대로 둔다.
-        guard let snapshot else {
-            return .none
-        }
-
-        let now = date.now
-        let isStale = snapshot.isExpired(now: now)
-            || now.timeIntervalSince(snapshot.fetchedAt) > Self.cachedSnapshotMaxAge
-        if isStale {
-            return .none
-        }
-
-        // entitlement 축: 캐시된 access status로 복원. 기존 정책 미변경.
-        state.status = snapshot.status
-        state.snapshot = snapshot
-        state.isComplete = snapshot.isActive
-        state.errorMessage = "일시적인 네트워크 오류"
-
-        // session 축: snapshot 기반으로 signed-in semantics 설정.
-        // handleHydrateLaunchSnapshot와 동일한 ownership path를 따르되,
-        // networkFailure fallback 경로이므로 fetchAccessStatusEffect는 호출하지 않는다.
-        // sessionExpiresAt == nil이면 hasAccountSession=false (가짜 세션 주입 금지).
-        state.hasAccountSession = snapshot.hasSession
-        state.sessionExpiresAt = snapshot.sessionExpiresAt
-
-        // bootstrap 완료 표시: 캐시 복원으로 초기 상태가 확정되었으므로
-        // 이후 handleOnAppear가 중복 session read/fetch를 수행하지 않도록 차단.
-        state.didBootstrap = true
-
-        return .none
-    }
-
-    private func errorMessage(for error: AccessError) -> String {
-        switch error {
-        case .networkFailure: "Network error. Please check your connection and try again."
-        case .notConfigured: "Access service is not configured."
-        case .decodingFailure: "Failed to process the response."
-        case .unauthorized: "Session expired. Please sign in again."
-        case .unknownGatewayCode: "An unexpected error occurred."
-        }
-    }
-
-    private func errorMessageForStatus(_ status: AccessStatus) -> String {
-        switch status {
-        case .trialExpired: "This trial has expired."
-        case .revoked: "This license has been revoked."
-        case .refunded: "This license has been refunded."
-        case .networkFailure: "Network error. Please check your connection and try again."
-        case .none: "Access denied."
-        default: "An unexpected status was returned."
-        }
-    }
-
     /// handleOnAppearSessionRestored/handleHandoffExchangeCompleted와 동일한 session ownership path를 따르되
     /// 네트워크 재조회(fetchAccessStatusEffect)는 수행하지 않는다 — launch snapshot이 곧 초기 상태.
     private func handleHydrateLaunchSnapshot(
@@ -652,6 +486,7 @@ private extension AccountAccessFeature {
                     currentPeriodEnd: snapshot.currentPeriodEnd,
                     sessionExpiresAt: session.expiresAt,
                     fetchedAt: snapshot.fetchedAt,
+                    deviceBindingVerifiedAt: snapshot.deviceBindingVerifiedAt,
                 )
             }
             return .none
@@ -730,6 +565,9 @@ private extension AccountAccessFeature {
         state.status = nil
         state.snapshot = nil
         state.trialExpiresAt = nil
+        state.deviceBindingFailure = nil
+        state.deviceBindingRetryCount = 0
+        state.isSubmitting = false
         state.isComplete = false
         state.errorMessage = nil
     }
@@ -738,11 +576,14 @@ private extension AccountAccessFeature {
         state.isSignInInProgress = false
         state.didSignInFail = false
         state.handoffPendingState = nil
+        state.deviceBindingFailure = nil
+        state.deviceBindingRetryCount = 0
         state.errorMessage = nil
     }
 
     private func resetSessionRetryBudget(_ state: inout State) {
         state.fetchRetryCount = 0
+        state.deviceBindingRetryCount = 0
     }
 
     private func handleOpenCheckout(_: inout State) -> Effect<Action> {
@@ -751,6 +592,10 @@ private extension AccountAccessFeature {
 
     private func handleOpenPricing(_: inout State) -> Effect<Action> {
         openWebURL(makeURL: checkoutURLClient.pricingURL)
+    }
+
+    private func handleOpenAccount(_: inout State) -> Effect<Action> {
+        openWebURL(makeURL: checkoutURLClient.accountURL)
     }
 
     private func handleOpenAccessHelp(_: inout State) -> Effect<Action> {
