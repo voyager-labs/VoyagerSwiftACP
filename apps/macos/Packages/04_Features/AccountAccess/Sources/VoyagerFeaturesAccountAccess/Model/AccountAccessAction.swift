@@ -13,10 +13,16 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case _onAppearSessionRestored(AccountSession?)
     case _loginSessionRestored(Bool)
     case accessStatusResponse(generation: Int, result: Result<AccessStatusResponse, AccessError>)
+    case deviceBindingResponse(
+        generation: Int,
+        snapshot: AccessStatusSnapshot,
+        result: Result<DeviceBindingResponse, DeviceBindingError>,
+    )
     case refreshAccessTapped
     case appDidBecomeActive
     case openCheckoutTapped
     case openPricingTapped
+    case openAccountTapped
     case openAccessHelpTapped
     case openBetaCodeHelpTapped
     case _webURLResult(Result<Void, AccessError>)
