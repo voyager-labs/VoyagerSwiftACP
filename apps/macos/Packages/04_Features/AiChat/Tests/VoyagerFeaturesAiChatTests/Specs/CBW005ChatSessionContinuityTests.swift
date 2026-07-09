@@ -2960,6 +2960,106 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         }
     }
 
+    func testParkedPendingResolverStartsInBackgroundWhenForegroundIsBusy() async {
+        let catalogRows = makeCatalogRows()
+        let providerModels = makeProviderModels()
+        let sessionID = AiChatSessionID(rawValue: makeUUID("aaaaaaa0-7777-8888-9999-000000000001"))
+        let parkedResolutionID = makeUUID("bbbbbbb0-7777-8888-9999-000000000001")
+        let currentResolutionID = makeUUID("ccccccc0-7777-8888-9999-000000000001")
+        let parkedMessage = AiChatMessage(role: .user, content: "Parked question")
+        let currentMessage = AiChatMessage(role: .user, content: "Current question")
+        let parkedRequest = AiChatPendingRequestStart(
+            resolutionID: parkedResolutionID,
+            kind: .submit,
+            sessionID: sessionID,
+            selectedModel: providerModels[0],
+            selectedRow: catalogRows[0],
+            selectedThinking: .effort(.minimal),
+            customTitle: "Parked title",
+            preparedRequest: AiChatPreparedRequest(
+                prompt: parkedMessage.content,
+                messages: [parkedMessage],
+                persistenceTranscriptHistory: [parkedMessage],
+                assistantReplacementIndex: nil,
+                historyTruncation: .init(
+                    includedMessageCount: 1,
+                    excludedMessageCount: 0,
+                    budget: 200_000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        let currentPendingRequest = AiChatPendingRequestStart(
+            resolutionID: currentResolutionID,
+            kind: .submit,
+            sessionID: sessionID,
+            selectedModel: providerModels[0],
+            selectedRow: catalogRows[0],
+            preparedRequest: AiChatPreparedRequest(
+                prompt: currentMessage.content,
+                messages: [currentMessage],
+                persistenceTranscriptHistory: [currentMessage],
+                assistantReplacementIndex: nil,
+                historyTruncation: .init(
+                    includedMessageCount: 1,
+                    excludedMessageCount: 0,
+                    budget: 200_000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+
+        let store: TestStore<AiChatFeature.State, AiChatAction> = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            catalogRows: catalogRows,
+            modelListState: .loaded(providerModels),
+            selectedModelHandle: catalogRows[0].handle,
+            pendingRequestStart: currentPendingRequest,
+            backgroundPendingRequestStarts: [parkedResolutionID: parkedRequest],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatExecutionClient = AiChatExecutionClient { _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+            $0.aiChatContextPartResolverClient = .init { _ in
+                AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: [])
+            }
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                listSessions: { _, _ in [] },
+                loadSession: { _ in nil },
+                saveSession: { snapshot in snapshot },
+                deleteSession: { _ in },
+            )
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_003.000))
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.requestContextResolved(parkedResolutionID, AiChatResolvedRequestContext(
+            currentContext: .init(),
+            addedAttachments: [],
+            parts: [],
+        )))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.pendingRequestStart, currentPendingRequest)
+        XCTAssertNil(store.state.backgroundPendingRequestStarts[parkedResolutionID])
+        XCTAssertEqual(store.state.transcriptHistory, [])
+        XCTAssertEqual(store.state.backgroundExecutionPhases.count, 1)
+        if case let .processing(lock) = store.state.backgroundExecutionPhases.values.first {
+            XCTAssertEqual(lock.context.sessionID, sessionID)
+            XCTAssertEqual(lock.request.messages, [parkedMessage])
+            XCTAssertEqual(lock.context.selectedThinking, AiThinkingSelection.effort(.minimal))
+            XCTAssertEqual(lock.customTitle, "Parked title")
+        } else {
+            XCTFail("parked resolver should start as a background owner while foreground is busy")
+        }
+    }
+
     /// CBW-005-show_chat_session_restore_failure: 빈 catalog에서 missing record fallback이 unknown model selection을 만들지
     /// 않는다.
     /// 빈 catalog에서 missing record fallback이 unknown model selection을 만들지 않는다. 경로의 회귀 contract를 유지하는지 검증합니다.

@@ -86,7 +86,9 @@ extension AiChatFeature {
             .removeValue(forKey: resolutionID)
         else { return .none }
 
-        if backgroundPendingRequest.sessionID == state.sessionID {
+        if backgroundPendingRequest.sessionID == state.sessionID,
+           canBeginForegroundRequest(state: state)
+        {
             return beginRequest(
                 backgroundPendingRequest,
                 lockedRequestContext: lockedRequestContext,
@@ -130,6 +132,10 @@ extension AiChatFeature {
         )
         let startSnapshotEffect = saveRequestStartSnapshotIfNeeded(kind: pendingRequest.kind, state: state, lock: lock)
         return .merge(startSnapshotEffect, execute(request: lock.request))
+    }
+
+    private func canBeginForegroundRequest(state: State) -> Bool {
+        state.pendingRequestStart == nil && !state.executionPhase.isProcessing
     }
 
     private func beginBackgroundRequest(
