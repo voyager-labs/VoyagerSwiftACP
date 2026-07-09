@@ -119,14 +119,14 @@ public struct AccountAccessState: Equatable {
     /// VOY-397: 화면에 표시할 primary CTA를 상태에서 도출.
     /// direct checkout은 core ONB recovery 경로에서 숨김.
     public var accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA {
-        if isComplete, status?.isActive == true {
-            return .next
-        }
         if isSubmitting {
             return .pending
         }
         if !hasAccountSession {
             return .login
+        }
+        if isComplete, status?.isActive == true {
+            return .next
         }
         if let deviceBindingFailure {
             return primaryCTA(for: deviceBindingFailure)
@@ -150,7 +150,7 @@ public struct AccountAccessState: Equatable {
         self.snapshot = snapshot
         trialExpiresAt = snapshot.currentPeriodEnd
         deviceBindingFailure = nil
-        isComplete = snapshot.isActive && snapshot.isDeviceBindingVerified
+        isComplete = snapshot.isActive && snapshot.isDeviceBindingVerified && snapshot.hasSession
         isSignInInProgress = false
         didSignInFail = false
         handoffPendingState = nil

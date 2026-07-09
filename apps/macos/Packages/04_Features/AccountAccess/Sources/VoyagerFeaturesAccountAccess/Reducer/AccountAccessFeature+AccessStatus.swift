@@ -113,8 +113,13 @@ extension AccountAccessFeature {
             state.snapshot = verifiedSnapshot
             state.deviceBindingFailure = nil
             state.deviceBindingRetryCount = 0
-            state.isComplete = true
+            state.isComplete = verifiedSnapshot.hasSession
             state.errorMessage = nil
+            guard verifiedSnapshot.hasSession else {
+                return .run { [snapshotClient] _ in
+                    await snapshotClient.save(verifiedSnapshot)
+                }
+            }
             return .run { [snapshotClient] send in
                 await snapshotClient.save(verifiedSnapshot)
                 await send(.delegate(.unlocked(verifiedSnapshot)))
@@ -238,7 +243,7 @@ extension AccountAccessFeature {
         // entitlement 축: 캐시된 access status로 복원. 기존 정책 미변경.
         state.status = snapshot.status
         state.snapshot = snapshot
-        state.isComplete = snapshot.isActive && snapshot.isDeviceBindingVerified
+        state.isComplete = snapshot.isActive && snapshot.isDeviceBindingVerified && snapshot.hasSession
         state.errorMessage = "일시적인 네트워크 오류"
         state.deviceBindingFailure = snapshot.isActive && !snapshot.isDeviceBindingVerified ? .retryable : nil
 

@@ -196,8 +196,11 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     /// - 사전 조건: fetchGeneration=1, active 상태의 AccessStatusResponse
     /// - 기대 결과: status=.coreLicenseActive, snapshot!=nil, isComplete=true, errorMessage=nil
     func testFetchAccessStatusSuccessUpdatesStatusAndSnapshot() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
         var state = AccountAccessFeature.State()
         state.fetchGeneration = 1
+        state.hasAccountSession = true
+        state.sessionExpiresAt = sessionExpiry
         let store = makeTestStore(initialState: state)
         store.exhaustivity = .off
 
@@ -221,6 +224,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                 status: .coreLicenseActive,
                 currentPeriodEnd: nil,
                 fetchedAt: self.referenceDate,
+                sessionExpiresAt: sessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
             )
             state.isSubmitting = false
@@ -242,8 +246,11 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     /// - 사전 조건: fetchGeneration=1, active 상태의 AccessStatusResponse
     /// - 기대 결과: delegate(.unlocked) 수신, isComplete=true
     func testFetchAccessStatusSuccessActiveSendsDelegateUnlocked() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
         var state = AccountAccessFeature.State()
         state.fetchGeneration = 1
+        state.hasAccountSession = true
+        state.sessionExpiresAt = sessionExpiry
         let store = makeTestStore(initialState: state)
 
         let response = AccessStatusResponse(
@@ -266,6 +273,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                 status: .coreLicenseActive,
                 currentPeriodEnd: nil,
                 fetchedAt: self.referenceDate,
+                sessionExpiresAt: sessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
             )
             state.isSubmitting = false
@@ -585,10 +593,12 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     /// - 사전 조건: fetchRetryCount=3, fetchGeneration=1, snapshotClient.load가 유효한 snapshot 반환
     /// - 기대 결과: status/snapshot/isComplete가 캐시된 값으로 복원, errorMessage=한국어 메시지
     func testCachedSnapshotRestoredAfterThreeFailures() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
         let cachedSnapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
             currentPeriodEnd: nil,
             fetchedAt: referenceDate,
+            sessionExpiresAt: sessionExpiry,
             deviceBindingVerifiedAt: referenceDate,
         )
         var state = AccountAccessFeature.State()
@@ -614,6 +624,8 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             state.snapshot = cachedSnapshot
             state.isComplete = true
             state.errorMessage = "일시적인 네트워크 오류"
+            state.hasAccountSession = true
+            state.sessionExpiresAt = sessionExpiry
             state.didBootstrap = true
         }
     }
@@ -672,8 +684,11 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     /// - 사전 조건: fetchGeneration=1
     /// - 기대 결과: status=.trialActive, trialExpiresAt==응답의 currentPeriodEnd, isComplete=true
     func testTrialActivePreservesTrialExpiresAtDetail() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
         var state = AccountAccessFeature.State()
         state.fetchGeneration = 1
+        state.hasAccountSession = true
+        state.sessionExpiresAt = sessionExpiry
         let store = makeTestStore(initialState: state)
         store.exhaustivity = .off
 
@@ -803,7 +818,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         XCTAssertFalse(store.state.hasAccountSession)
         XCTAssertNil(store.state.sessionExpiresAt)
         XCTAssertTrue(store.state.didBootstrap)
-        XCTAssertTrue(store.state.isComplete)
+        XCTAssertFalse(store.state.isComplete)
         XCTAssertEqual(store.state.status, .coreLicenseActive)
     }
 
@@ -813,9 +828,12 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     /// - 사전 조건: fetchRetryCount=3, fetchGeneration=1
     /// - 기대 결과: fetchRetryCount=0
     func testFetchRetryCountResetOnSuccess() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
         var state = AccountAccessFeature.State()
         state.fetchGeneration = 1
         state.fetchRetryCount = 3
+        state.hasAccountSession = true
+        state.sessionExpiresAt = sessionExpiry
         let store = makeTestStore(initialState: state)
         store.exhaustivity = .off
 
@@ -994,10 +1012,15 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     /// - 사전 조건: 유효 session, 성공 fetchAccessStatus
     /// - 기대 결과: status=.coreLicenseActive, isComplete=true, delegate(.unlocked) 수신
     func testIntegrationOnAppearToUnlockedFullPipeline() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
         let store = makeTestStore(
             accountSessionClient: AccountSessionClient(
                 read: {
-                    AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
+                    AccountSession(
+                        accessToken: "valid-token",
+                        status: .coreLicenseActive,
+                        expiresAt: sessionExpiry,
+                    )
                 },
                 persist: { _ in },
                 delete: { _ in },
@@ -1032,6 +1055,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             status: .coreLicenseActive,
             currentPeriodEnd: nil,
             fetchedAt: referenceDate,
+            sessionExpiresAt: sessionExpiry,
             deviceBindingVerifiedAt: referenceDate,
         )
         await store.receive(\.accessStatusResponse) { state in
@@ -1063,10 +1087,12 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     /// - 사전 조건: fetchGeneration=0, snapshotClient.load가 유효 snapshot 반환
     /// - 기대 결과: fetchRetryCount=0→1→2→3→0, _cachedSnapshotRestored에서 status/snapshot 복원
     func testIntegrationFetchFailureRetryChainToCachedFallback() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
         let cachedSnapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
             currentPeriodEnd: nil,
             fetchedAt: referenceDate,
+            sessionExpiresAt: sessionExpiry,
             deviceBindingVerifiedAt: referenceDate,
         )
         let store = makeTestStore(
@@ -1111,6 +1137,8 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             state.snapshot = cachedSnapshot
             state.isComplete = true
             state.errorMessage = "일시적인 네트워크 오류"
+            state.hasAccountSession = true
+            state.sessionExpiresAt = sessionExpiry
             state.didBootstrap = true
         }
     }
@@ -1121,6 +1149,10 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     /// - 사전 조건: fetchGeneration=0, fetchAccessStatus 성공
     /// - 기대 결과: fetchGeneration=1, status=.coreLicenseActive, delegate(.unlocked) 수신
     func testIntegrationRetryTappedToUnlockedFullPipeline() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
+        var initialState = AccountAccessFeature.State()
+        initialState.hasAccountSession = true
+        initialState.sessionExpiresAt = sessionExpiry
         let store = makeTestStore(
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
@@ -1136,6 +1168,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
+            initialState: initialState,
         )
 
         await store.send(.retryTapped) { state in
@@ -1146,6 +1179,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             status: .coreLicenseActive,
             currentPeriodEnd: nil,
             fetchedAt: referenceDate,
+            sessionExpiresAt: sessionExpiry,
             deviceBindingVerifiedAt: referenceDate,
         )
         await store.receive(\.accessStatusResponse) { state in

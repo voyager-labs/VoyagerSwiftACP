@@ -251,6 +251,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
     func testFetchSucceedsAfterAppDidBecomeActiveUpdatesStatus() async {
         var initialState = AccountAccessFeature.State()
         initialState.hasAccountSession = true
+        initialState.sessionExpiresAt = referenceDate.addingTimeInterval(3600)
 
         let store = makeTestStore(
             authNetworkClient: AuthNetworkClient(
@@ -278,6 +279,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             status: .trialActive,
             currentPeriodEnd: nil,
             fetchedAt: referenceDate,
+            sessionExpiresAt: referenceDate.addingTimeInterval(3600),
             deviceBindingVerifiedAt: referenceDate,
         )
 
@@ -345,8 +347,10 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
     /// - 기대 결과: fetchGeneration=1, status=.coreLicenseActive, delegate(.unlocked) 수신
     func testIntegrationAppDidBecomeActiveToUnlockedFullPipeline() async {
         nonisolated(unsafe) var fetchCallCount = 0
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
         var initialState = AccountAccessFeature.State()
         initialState.hasAccountSession = true
+        initialState.sessionExpiresAt = sessionExpiry
 
         let store = makeTestStore(
             authNetworkClient: AuthNetworkClient(
@@ -377,6 +381,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             status: .coreLicenseActive,
             currentPeriodEnd: nil,
             fetchedAt: referenceDate,
+            sessionExpiresAt: sessionExpiry,
             deviceBindingVerifiedAt: referenceDate,
         )
         await store.receive(\.accessStatusResponse) { state in
