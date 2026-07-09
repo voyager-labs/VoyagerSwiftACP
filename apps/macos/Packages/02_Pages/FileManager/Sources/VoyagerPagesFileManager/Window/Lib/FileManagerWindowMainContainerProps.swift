@@ -64,7 +64,7 @@ func makeScopeFavorites(fileManagerClient: FileManagerClient) -> [ScopeFavoriteI
         domain: FileManager.SearchPathDomainMask,
         iconName: String,
     )] = [
-        ("Applications", .applicationDirectory, .localDomainMask, "appstore"),
+        ("Applications", .applicationDirectory, .localDomainMask, "folder.badge.gearshape"),
         ("Desktop", .desktopDirectory, .userDomainMask, "menubar.dock.rectangle"),
         ("Documents", .documentDirectory, .userDomainMask, "doc"),
         ("Downloads", .downloadsDirectory, .userDomainMask, "arrow.down.circle"),

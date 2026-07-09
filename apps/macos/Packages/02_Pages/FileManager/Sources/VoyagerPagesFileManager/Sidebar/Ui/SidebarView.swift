@@ -14,6 +14,9 @@ struct SidebarView: View {
     private var contentTabHoveredItemID: ContentTabID?
 
     @State
+    private var fixedLocationHoveredItemID: FileManagerFixedLocationItem.ID?
+
+    @State
     private var isNewTabHovered = false
 
     var body: some View {
@@ -23,6 +26,10 @@ struct SidebarView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    if !store.fixedLocationItems.isEmpty {
+                        fixedLocationsGrid
+                    }
+
                     if !store.contentTabSidebarItems.isEmpty {
                         contentTabRows(pinnedContentTabSidebarItems)
 
@@ -56,6 +63,90 @@ struct SidebarView: View {
 
     private var unpinnedContentTabSidebarItems: [ContentTabProjection.ContentTabSidebarItem] {
         store.contentTabSidebarItems.filter { !$0.isPinned }
+    }
+
+    private var fixedLocationsGrid: some View {
+        GeometryReader { proxy in
+            let metrics = fixedLocationGridMetrics(for: proxy.size.width)
+
+            LazyVGrid(columns: metrics.columns, alignment: .leading, spacing: fixedLocationGridGap) {
+                ForEach(store.fixedLocationItems) { item in
+                    FixedLocationButton(
+                        item: item,
+                        width: metrics.cellWidth,
+                        height: fixedLocationCellHeight,
+                        isHovered: fixedLocationHoveredItemID == item.id,
+                        onSelect: {
+                            store.send(.delegate(.selectFixedLocation(item.id)))
+                        },
+                        onHover: { isHovered in
+                            fixedLocationHoveredItemID = isHovered ? item.id : nil
+                        },
+                    )
+                }
+            }
+            .padding(.horizontal, fixedLocationGridHorizontalPadding)
+            .padding(.vertical, fixedLocationGridVerticalPadding)
+        }
+        .frame(height: fixedLocationGridHeight(for: store.fixedLocationItems.count))
+        .padding(.bottom, fixedLocationGridBottomSpacing)
+    }
+
+    private var fixedLocationGridGap: CGFloat {
+        8
+    }
+
+    private var fixedLocationGridHorizontalPadding: CGFloat {
+        12
+    }
+
+    private var fixedLocationGridVerticalPadding: CGFloat {
+        6
+    }
+
+    private var fixedLocationGridBottomSpacing: CGFloat {
+        8
+    }
+
+    private var fixedLocationCellHeight: CGFloat {
+        42
+    }
+
+    private var fixedLocationMinimumCellWidth: CGFloat {
+        42
+    }
+
+    private func fixedLocationGridMetrics(for width: CGFloat) -> FixedLocationGridMetrics {
+        let availableWidth = max(0, width - fixedLocationGridHorizontalPadding * 2)
+        let columnCount = max(
+            1,
+            Int((availableWidth + fixedLocationGridGap) / (fixedLocationMinimumCellWidth + fixedLocationGridGap)),
+        )
+        let totalGapWidth = fixedLocationGridGap * CGFloat(max(0, columnCount - 1))
+        let cellWidth = max(
+            fixedLocationMinimumCellWidth,
+            floor((availableWidth - totalGapWidth) / CGFloat(columnCount)),
+        )
+
+        return FixedLocationGridMetrics(
+            columns: Array(
+                repeating: GridItem(.fixed(cellWidth), spacing: fixedLocationGridGap, alignment: .center),
+                count: columnCount,
+            ),
+            cellWidth: cellWidth,
+        )
+    }
+
+    private func fixedLocationGridHeight(for itemCount: Int) -> CGFloat {
+        let width = max(0, store.sidebarWidth - fixedLocationGridHorizontalPadding * 2)
+        let columnCount = max(
+            1,
+            Int((width + fixedLocationGridGap) / (fixedLocationMinimumCellWidth + fixedLocationGridGap)),
+        )
+        let rowCount = max(1, Int(ceil(Double(itemCount) / Double(columnCount))))
+        return fixedLocationGridVerticalPadding * 2
+            + CGFloat(rowCount) * fixedLocationCellHeight
+            + CGFloat(max(0, rowCount - 1)) * fixedLocationGridGap
     }
 
     private var contentTabSectionDivider: some View {
@@ -169,7 +260,7 @@ private struct ContentTabSidebarRow: View {
         .overlay(alignment: .trailing) {
             if isHovered {
                 SidebarCloseButton(systemName: item.isPinned ? "minus" : "xmark", action: onClose)
-                    .padding(.trailing, 8)
+                    .padding(.trailing, 14)
             }
         }
         .onTapGesture {
@@ -186,11 +277,7 @@ private struct ContentTabSidebarRow: View {
                 .frame(width: 16)
                 .accessibilityHidden(true)
         } else {
-            Image(systemName: item.iconName ?? "doc")
-                .symbolRenderingMode(.hierarchical)
-                .foregroundColor(.accentColor)
-                .frame(width: 16)
-                .accessibilityHidden(true)
+            SidebarSymbolIcon(systemName: item.iconName ?? "doc", size: 16, iconSize: 16)
         }
     }
 
@@ -202,6 +289,95 @@ private struct ContentTabSidebarRow: View {
         } else {
             Color.clear
         }
+    }
+}
+
+private func applicationsSidebarIcon() -> NSImage? {
+    let appIcon = NSImage(
+        contentsOfFile:
+        "/System/Library/CoreServices/CoreTypes.bundle"
+            + "/Contents/Resources/SidebarApplicationsFolder.icns",
+    )
+    appIcon?.isTemplate = true
+    return appIcon
+}
+
+private struct FixedLocationGridMetrics {
+    let columns: [GridItem]
+    let cellWidth: CGFloat
+}
+
+private func normalizedSidebarIconName(_ iconName: String) -> String {
+    iconName == "appstore" ? "folder.badge.gearshape" : iconName
+}
+
+private struct SidebarSymbolIcon: View {
+    let systemName: String
+    let size: CGFloat
+    let iconSize: CGFloat
+
+    var body: some View {
+        Group {
+            if isApplicationsIcon, let appIcon = applicationsSidebarIcon() {
+                Image(nsImage: appIcon)
+                    .renderingMode(.template)
+                    .resizable()
+                    .interpolation(.high)
+                    .antialiased(true)
+                    .scaledToFit()
+                    .frame(width: applicationsIconSize, height: applicationsIconSize)
+            } else {
+                Image(systemName: normalizedSidebarIconName(systemName))
+                    .font(.system(size: iconSize, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+            }
+        }
+        .foregroundColor(.accentColor)
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+
+    private var applicationsIconSize: CGFloat {
+        max(12, iconSize - 2)
+    }
+
+    private var isApplicationsIcon: Bool {
+        systemName == "appstore" || systemName == "folder.badge.gearshape"
+    }
+}
+
+private struct FixedLocationButton: View {
+    let item: FileManagerFixedLocationItem
+    let width: CGFloat
+    let height: CGFloat
+    let isHovered: Bool
+    let onSelect: () -> Void
+    let onHover: (Bool) -> Void
+
+    @Environment(\.colorScheme)
+    private var colorScheme
+
+    var body: some View {
+        Button(action: onSelect) {
+            SidebarSymbolIcon(systemName: item.iconName, size: height, iconSize: 20)
+                .frame(width: width, height: height)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(backgroundColor),
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.primary.opacity(isHovered ? 0.12 : 0.06), lineWidth: 1),
+                )
+        }
+        .buttonStyle(.plain)
+        .help(item.accessibilityLabel)
+        .accessibilityLabel(item.accessibilityLabel)
+        .onHover(perform: onHover)
+    }
+
+    private var backgroundColor: Color {
+        isHovered ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : Color.primary.opacity(0.06)
     }
 }
 
