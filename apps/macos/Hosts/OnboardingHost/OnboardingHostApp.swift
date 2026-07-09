@@ -274,6 +274,7 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
                 authNetworkClient: AuthNetworkClient(
                     exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                     fetchAccessStatus: { accessStatusResponse },
+                    bindDevice: { _ in DeviceBindingResponse(ok: true) },
                     refreshToken: { throw AccessError.notConfigured },
                 ),
                 signInHandoffClient: makeMockSignInHandoffClient(),
