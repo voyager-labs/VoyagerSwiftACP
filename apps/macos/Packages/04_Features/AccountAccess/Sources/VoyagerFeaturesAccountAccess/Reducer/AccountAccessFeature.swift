@@ -119,6 +119,10 @@ public struct AccountAccessFeature {
             case let .hydrateLaunchSnapshot(snapshot):
                 return handleHydrateLaunchSnapshot(&state, snapshot: snapshot)
 
+            case let .hydrateAccessFailure(error: error, sessionExpiresAt: sessionExpiresAt):
+                state.hydrateAccessFailureState(error: error, sessionExpiresAt: sessionExpiresAt)
+                return .none
+
             case let ._fetchRetryScheduled(retryStep):
                 return handleFetchRetryScheduled(&state, retryStep: retryStep)
 
