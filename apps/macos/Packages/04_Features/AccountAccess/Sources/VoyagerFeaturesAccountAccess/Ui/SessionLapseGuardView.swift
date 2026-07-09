@@ -102,6 +102,7 @@ public struct SessionLapseGuardView: View {
     private let store: StoreOf<AccountAccessFeature>
 
     static let loginButtonTitle = "Log in"
+    static let accountButtonTitle = "Open account"
     static let retryButtonTitle = "Retry"
     static let webPricingButtonTitle = "View pricing"
 
@@ -199,6 +200,8 @@ public struct SessionLapseGuardView: View {
         accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA,
     ) -> String {
         switch accessUnlockPrimaryCTA {
+        case .account:
+            return "Check your account to continue."
         case .webPricing:
             return "Access required to continue."
         case .retry:
@@ -214,6 +217,8 @@ public struct SessionLapseGuardView: View {
 
     static func primaryButtonTitle(for accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA) -> String {
         switch accessUnlockPrimaryCTA {
+        case .account:
+            accountButtonTitle
         case .retry:
             retryButtonTitle
         case .webPricing:
@@ -225,6 +230,8 @@ public struct SessionLapseGuardView: View {
 
     static func primaryButtonAction(for accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA) -> AccountAccessAction {
         switch accessUnlockPrimaryCTA {
+        case .account:
+            .openAccountTapped
         case .retry:
             .retryTapped
         case .webPricing:
