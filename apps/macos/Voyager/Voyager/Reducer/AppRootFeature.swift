@@ -176,6 +176,7 @@ struct AppRootFeature {
                 state.isExternalURLFlushDelegateScheduled = false
                 guard !onboardingWindowClient.isRequired() else { return .none }
                 guard canFlushPendingExternalRoutes(state) else {
+                    guard state.lifecycle.sessionLapseGuard != nil else { return .none }
                     return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
                 }
                 return flushPendingExternalRoutes(state: &state)

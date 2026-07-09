@@ -882,6 +882,7 @@ final class AppRootCompositionTests: XCTestCase {
         let expiry = Date(timeIntervalSince1970: 4_102_444_800)
         var rootState = AppRootFeature.State(lifecycle: initialState)
         rootState.settings.accessStatus = .coreLicenseActive
+        let snapshotRemoved = expectation(description: "stale active access snapshot removed")
 
         let store = TestStore(initialState: rootState) {
             AppRootFeature()
@@ -901,6 +902,9 @@ final class AppRootCompositionTests: XCTestCase {
             $0.fileManagerWindowClient.open = { _ in }
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.accessStatusSnapshotClient.remove = {
+                snapshotRemoved.fulfill()
+            }
         }
         store.exhaustivity = .off
 
@@ -935,6 +939,7 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertEqual(store.state.settings.accessStatus, .coreLicenseActive)
         XCTAssertEqual(store.state.settings.accountSettings.access.accountAccessStepState, .error)
         XCTAssertEqual(store.state.settings.accountSettings.access.accessUnlockPrimaryCTA, .retry)
+        await fulfillment(of: [snapshotRemoved], timeout: 1.0)
         await store.finish()
     }
 
@@ -999,6 +1004,35 @@ final class AppRootCompositionTests: XCTestCase {
         await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
 
         XCTAssertEqual(store.state.pendingExternalURLs, [deepLink])
+        await store.finish()
+    }
+
+    /// access 확인 중에는 buffered voyager:// route가 있어도 guard 없는 빈 FileManager 창을 열지 않는다.
+    func testOpenInitialWindowDoesNotOpenEmptyWindowWhileAccessGateChecking() async throws {
+        let deepLink = try XCTUnwrap(URL(string: "voyager://open"))
+        var initialState = AppRootFeature.State()
+        initialState.pendingExternalURLs = [deepLink]
+        initialState.isExternalURLFlushDelegateScheduled = true
+        initialState.lifecycle.accessGatePhase = .checking(generation: 1)
+        initialState.lifecycle.isCheckingAccountAccess = true
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded))) { state in
+            state.isExternalURLFlushDelegateScheduled = false
+        }
+
+        XCTAssertEqual(store.state.pendingExternalURLs, [deepLink])
+        XCTAssertTrue(store.state.windowManager.windows.isEmpty)
         await store.finish()
     }
 

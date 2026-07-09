@@ -253,7 +253,12 @@ struct AppLifecycleFeature {
                     sessionExpiresAt: sessionExpiresAt,
                 )
                 state.sessionLapseGuard = sessionLapseGuard
-                return .send(.delegate(.openInitialWindowIfNeeded))
+                return .merge(
+                    .run { _ in
+                        await snapshotClient.remove()
+                    },
+                    .send(.delegate(.openInitialWindowIfNeeded)),
+                )
 
             case let .accountAccessGate(.accountAccessGranted(generation: generation, snapshot: snapshot)):
                 guard state.isCurrentAccessGateGeneration(generation) else { return .none }
