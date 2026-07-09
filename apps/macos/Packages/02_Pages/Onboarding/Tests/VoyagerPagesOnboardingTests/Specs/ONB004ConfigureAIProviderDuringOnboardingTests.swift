@@ -431,6 +431,8 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.onAppear) { state in
+            state.accessUnlock.hasAccountSession = true
+            state.accessUnlock.sessionExpiresAt = StateMutation.activeSessionExpiry
             state.accessUnlock.isComplete = true
             state.accessUnlock.status = .coreLicenseActive
             state.accessUnlock.snapshot = StateMutation.activeAccessSnapshot
