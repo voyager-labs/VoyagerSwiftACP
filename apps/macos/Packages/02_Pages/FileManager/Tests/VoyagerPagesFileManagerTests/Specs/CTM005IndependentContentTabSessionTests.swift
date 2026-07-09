@@ -5536,6 +5536,98 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    func testInactiveInspectorFindsBackgroundPendingResolver() async throws {
+        let homeTabID = ContentTabID()
+        let aiChatTabID = ContentTabID()
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+        let selectedModel = try XCTUnwrap(requestLock.context.selectedModel)
+        let resolutionID = UUID()
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: aiSessionID,
+            selectedModel: selectedModel,
+            selectedRow: requestLock.selectedModelRow,
+            preparedRequest: AiChatPreparedRequest(
+                prompt: "test",
+                messages: requestLock.request.messages,
+                assistantReplacementIndex: nil,
+                historyTruncation: AiChatHistoryTruncationMetadata(
+                    includedMessageCount: requestLock.request.messages.count,
+                    excludedMessageCount: 0,
+                    budget: 24000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+
+        var inactiveInspector = FileManagerInspectorFeature.State()
+        inactiveInspector.aiChat.sessionID = aiSessionID
+        inactiveInspector.aiChat.sessionStatus = .active
+        inactiveInspector.aiChat.backgroundPendingRequestStarts[resolutionID] = pendingRequest
+        inactiveInspector.aiChat.modelListState = .loaded([selectedModel])
+        inactiveInspector.aiChat.selectedModelHandle = selectedModel.id
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: aiChatTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: aiSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "message",
+                ),
+            ],
+            activeTabID: homeTabID,
+            recentlyClosed: nil,
+        )
+        state.tabInspectorStates[aiChatTabID] = inactiveInspector
+        state.syncContentTabSidebarItems()
+
+        let store: TestStore<FileManagerFeature.State, FileManagerWindowAction> = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.aiChatExecutionClient.execute = { _, _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        let resolvedContext = AiChatResolvedRequestContext(
+            currentContext: .init(),
+            addedAttachments: [],
+            parts: [],
+        )
+        await store.send(.inspector(.aiChat(.requestContextResolved(resolutionID, resolvedContext)))) { state in
+            state.tabInspectorStates[aiChatTabID]?.aiChat.backgroundPendingRequestStarts
+                .removeValue(forKey: resolutionID)
+            if case .processing = state.tabInspectorStates[aiChatTabID]?.aiChat.executionPhase {
+            } else {
+                XCTFail("inactive inspector AI Chat should start processing after parked resolver completion")
+            }
+        }
+
+        await store.skipReceivedActions()
+        XCTAssertNil(store.state.tabInspectorStates[aiChatTabID]?.aiChat.backgroundPendingRequestStarts[resolutionID])
+        XCTAssertNotNil(store.state.tabInspectorStates[aiChatTabID])
+        await store.finish()
+    }
+
     func testBackgroundPendingResolverUsesPendingSessionIDWhenAliasKeyExists() async throws {
         let aiSessionID = AiChatSessionID(rawValue: UUID())
         let aliasSessionID = AiChatSessionID(rawValue: UUID())

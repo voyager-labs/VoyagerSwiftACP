@@ -1878,7 +1878,8 @@ private func inactiveInspectorTabID(
     if case let .requestContextResolved(resolutionID, _) = aiChatAction {
         return state.tabInspectorStates.first { tabID, inspectorState in
             tabID != state.contentTabs.activeTabID
-                && inspectorState.aiChat.pendingRequestStart?.resolutionID == resolutionID
+                && (inspectorState.aiChat.pendingRequestStart?.resolutionID == resolutionID
+                    || inspectorState.aiChat.backgroundPendingRequestStarts[resolutionID] != nil)
         }?.key
     }
 
