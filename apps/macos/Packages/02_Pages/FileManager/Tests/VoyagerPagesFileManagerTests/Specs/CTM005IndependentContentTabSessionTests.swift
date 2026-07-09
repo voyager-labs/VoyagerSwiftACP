@@ -7449,6 +7449,110 @@ extension CTM005IndependentContentTabSessionTests {
         )
     }
 
+    func testAiChatDeleteSucceededRefreshesAllOpenCopies() async {
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let activeTabID = ContentTabID()
+        let inactiveTabID = ContentTabID()
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+        let snapshot = AiChatSessionSnapshot(
+            sessionID: aiSessionID,
+            status: .active,
+            customTitle: "Delete me",
+            provider: nil,
+            model: nil,
+            selectedModelRow: nil,
+            selectedThinking: nil,
+            transcriptHistory: [],
+            lastRequestID: nil,
+            lastRunID: nil,
+            lastRequestContext: nil,
+            updatedAtMs: 1,
+        )
+        let summary = AiChatSessionSummary(snapshot: snapshot)
+
+        func aiChatState() -> AiChatFeature.State {
+            var aiChat = AiChatFeature.State(
+                sessionList: .init(allRows: [summary]),
+                sessionID: aiSessionID,
+                currentSessionCustomTitle: "Delete me",
+                executionPhase: .processing(requestLock),
+            )
+            aiChat.restoreSessionID = aiSessionID
+            aiChat.restoreOutcome = .restored(snapshot: snapshot)
+            aiChat.sessionStatus = .active
+            return aiChat
+        }
+
+        var activeContent = FileManagerContentFeature.State()
+        activeContent.aiChat = aiChatState()
+        var inactiveContent = FileManagerContentFeature.State()
+        inactiveContent.aiChat = aiChatState()
+        var activeInspector = FileManagerInspectorFeature.State()
+        activeInspector.aiChat = aiChatState()
+        var inactiveInspector = FileManagerInspectorFeature.State()
+        inactiveInspector.aiChat = aiChatState()
+        var backgroundContent = FileManagerContentFeature.State()
+        backgroundContent.aiChat = aiChatState()
+        var backgroundInspector = FileManagerInspectorFeature.State()
+        backgroundInspector.aiChat = aiChatState()
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: aiSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "Active",
+                    iconName: "sparkles",
+                ),
+                ContentTabItem(
+                    id: inactiveTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: aiSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "Inactive",
+                    iconName: "sparkles",
+                ),
+            ],
+            activeTabID: activeTabID,
+        )
+        state.tabContentStates[activeTabID] = activeContent
+        state.tabContentStates[inactiveTabID] = inactiveContent
+        state.content = activeContent
+        state.tabInspectorStates[activeTabID] = activeInspector
+        state.tabInspectorStates[inactiveTabID] = inactiveInspector
+        state.inspector = activeInspector
+        state.backgroundAiChatStates[aiSessionID] = backgroundContent
+        state.backgroundInspectorAiChatStates[aiSessionID] = backgroundInspector.tabSnapshot()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.content(.aiChat(.sessionDeleteSucceeded(aiSessionID)))) { state in
+            state.content.aiChat.applyDeletedSessionExpectation(sessionID: aiSessionID)
+            state.tabContentStates[activeTabID]?.aiChat.applyDeletedSessionExpectation(sessionID: aiSessionID)
+            state.tabContentStates[inactiveTabID]?.aiChat.applyDeletedSessionExpectation(sessionID: aiSessionID)
+            state.inspector.aiChat.applyDeletedSessionExpectation(sessionID: aiSessionID)
+            state.tabInspectorStates[activeTabID]?.aiChat.applyDeletedSessionExpectation(sessionID: aiSessionID)
+            state.tabInspectorStates[inactiveTabID]?.aiChat.applyDeletedSessionExpectation(sessionID: aiSessionID)
+            state.backgroundAiChatStates[aiSessionID] = nil
+            state.backgroundInspectorAiChatStates[aiSessionID] = nil
+        }
+
+        XCTAssertTrue(store.state.content.aiChat.sessionList.deletedSessionIDs.contains(aiSessionID))
+        XCTAssertFalse(store.state.content.aiChat.sessionList.allRows.contains { $0.sessionID == aiSessionID })
+        XCTAssertTrue(store.state.tabContentStates[inactiveTabID]?.aiChat.sessionList.deletedSessionIDs
+            .contains(aiSessionID) == true)
+        XCTAssertFalse(store.state.tabContentStates[inactiveTabID]?.aiChat.sessionList.allRows
+            .contains { $0.sessionID == aiSessionID } ?? true)
+        XCTAssertNil(store.state.backgroundAiChatStates[aiSessionID])
+        XCTAssertNil(store.state.backgroundInspectorAiChatStates[aiSessionID])
+    }
+
     func testAiChatRenameRefreshesAllOpenCopiesCustomTitle() async {
         let aiSessionID = AiChatSessionID(rawValue: UUID())
         let activeTabID = ContentTabID()
@@ -8537,5 +8641,27 @@ private extension CTM005IndependentContentTabSessionTests {
         // 각 시나리오에서 검증하는 핵심 상태 변화만 명시적으로 확인한다.
         store.exhaustivity = .off
         return store
+    }
+}
+
+private extension AiChatFeature.State {
+    mutating func applyDeletedSessionExpectation(sessionID deletedSessionID: AiChatSessionID) {
+        pendingEmptyDraftDeletionSessionIDs.remove(deletedSessionID)
+        sessionList.removeRow(sessionID: deletedSessionID)
+        if restoreSessionID == deletedSessionID {
+            restoreSessionID = nil
+            restoreOutcome = nil
+            restoreFailure = nil
+        }
+        if sessionID == deletedSessionID {
+            currentSessionCustomTitle = nil
+            pendingRequestStart = nil
+            backgroundPendingRequestStarts = [:]
+            executionPhase = .idle
+            backgroundExecutionPhases = [:]
+            streamingAssistantDraft = nil
+            lockedModelHandle = nil
+            lastExecutionFailure = nil
+        }
     }
 }

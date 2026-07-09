@@ -356,8 +356,11 @@ struct FileManagerWindowRoutingReducer {
                 return cancelAndRemoveBackgroundAiChatOwners(sessionID: sessionID, state: &state)
 
             case let .content(.aiChat(.sessionDeleteSucceeded(sessionID))),
-                 let .inspector(.aiChat(.sessionDeleteSucceeded(sessionID))),
-                 let .content(.aiChat(.sessionDeleteFailed(sessionID, _))),
+                 let .inspector(.aiChat(.sessionDeleteSucceeded(sessionID))):
+                propagateAiChatSessionDeleteSucceeded(sessionID: sessionID, state: &state)
+                return .none
+
+            case let .content(.aiChat(.sessionDeleteFailed(sessionID, _))),
                  let .inspector(.aiChat(.sessionDeleteFailed(sessionID, _))):
                 state.removeBackgroundAiChatState(sessionID: sessionID)
                 state.removeBackgroundInspectorAiChatState(sessionID: sessionID)
@@ -967,6 +970,38 @@ private func cancelBackgroundInspectorAiChatWork(
     return AiChatFeature()
         .reduce(into: &scopedAiChat, action: .cancelRequestLifecycle(sessionID))
         .map { FileManagerWindowAction.backgroundInspectorAiChat($0) }
+}
+
+private func propagateAiChatSessionDeleteSucceeded(
+    sessionID: AiChatSessionID,
+    state: inout FileManagerWindowState,
+) {
+    state.content.aiChat.applySessionDeleteSucceeded(sessionID: sessionID)
+    state.syncActiveTabContentState()
+
+    for tabID in state.tabContentStates.keys {
+        state.tabContentStates[tabID]?.aiChat.applySessionDeleteSucceeded(sessionID: sessionID)
+    }
+
+    state.inspector.aiChat.applySessionDeleteSucceeded(sessionID: sessionID)
+    state.syncActiveTabInspectorState()
+
+    for tabID in state.tabInspectorStates.keys {
+        state.tabInspectorStates[tabID]?.aiChat.applySessionDeleteSucceeded(sessionID: sessionID)
+    }
+
+    state.removeBackgroundAiChatState(sessionID: sessionID)
+    state.removeBackgroundInspectorAiChatState(sessionID: sessionID)
+
+    for sessionKey in Array(state.backgroundAiChatStates.keys) {
+        state.backgroundAiChatStates[sessionKey]?.aiChat.applySessionDeleteSucceeded(sessionID: sessionID)
+    }
+    for sessionKey in Array(state.backgroundInspectorAiChatStates.keys) {
+        if var backgroundInspector = state.backgroundInspectorAiChatStates[sessionKey] {
+            backgroundInspector.aiChat.applySessionDeleteSucceeded(sessionID: sessionID)
+            state.backgroundInspectorAiChatStates[sessionKey] = backgroundInspector.tabSnapshot()
+        }
+    }
 }
 
 private func refreshAiChatCustomTitle(
@@ -2099,6 +2134,28 @@ private extension AiChatFeature.State {
             phase.lock?.context.sessionID == sessionID
         }
         return scopedState
+    }
+
+    mutating func applySessionDeleteSucceeded(sessionID deletedSessionID: AiChatSessionID) {
+        pendingEmptyDraftDeletionSessionIDs.remove(deletedSessionID)
+        sessionList.removeRow(sessionID: deletedSessionID)
+        if restoreSessionID == deletedSessionID {
+            restoreSessionID = nil
+            restoreOutcome = nil
+            restoreFailure = nil
+        }
+        if sessionID == deletedSessionID {
+            currentSessionCustomTitle = nil
+            pendingRequestStart = nil
+            backgroundPendingRequestStarts = [:]
+            executionPhase = .idle
+            backgroundExecutionPhases = [:]
+            streamingAssistantDraft = nil
+            lockedModelHandle = nil
+            lastExecutionFailure = nil
+        } else {
+            removeLifecycleOwners(sessionID: deletedSessionID)
+        }
     }
 
     mutating func refreshCustomTitle(summary: AiChatSessionSummary, customTitle: String?) {
