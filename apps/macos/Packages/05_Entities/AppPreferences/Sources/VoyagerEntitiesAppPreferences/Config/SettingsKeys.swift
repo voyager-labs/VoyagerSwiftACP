@@ -19,4 +19,5 @@ public enum SettingsKeys {
     public static let collectionSearchAISettings = "collectionSearchAISettings"
     public static let defaultPinnedTabsSeedCompleted = "fileManager.defaultPinnedTabsSeedCompleted"
     public static let finderFavoritesPinnedSeedCompleted = "fileManager.finderFavoritesPinnedSeedCompleted"
+    public static let hiddenFixedLocationIDs = "fileManager.hiddenFixedLocationIDs"
 }

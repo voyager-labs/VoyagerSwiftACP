@@ -11,6 +11,8 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
     public enum View: CasePathable, Sendable {
         case setSidebarVisible(Bool)
         case setSidebarWidth(CGFloat)
+        case setFixedLocationVisibility(FileManagerFixedLocationItem.ID, Bool)
+        case setAllFixedLocationVisibility(Bool)
     }
 
     @CasePathable

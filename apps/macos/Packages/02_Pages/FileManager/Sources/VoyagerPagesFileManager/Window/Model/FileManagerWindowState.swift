@@ -287,11 +287,12 @@ extension FileManagerWindowState {
     mutating func syncFixedLocationItems(
         with locationsClient: FileManagerLocationsClient,
         entryLoadingClient: EntryLoadingClient,
+        hiddenLocationIDs: Set<FileManagerFixedLocationItem.ID> = [],
     ) {
         let items = FileManagerHomeDashboardProjection.makeFixedLocations(
             from: locationsClient.loadLocations(entryLoadingClient),
         )
-        sidebar.fixedLocationItems = items
+        sidebar.setFixedLocationItems(items, hiddenIDs: hiddenLocationIDs)
         content.homeLocationItems = items
     }
 
@@ -306,7 +307,7 @@ extension FileManagerWindowState {
     }
 
     mutating func syncHomeLocationItems() {
-        content.homeLocationItems = sidebar.fixedLocationItems
+        content.homeLocationItems = sidebar.allFixedLocationItems
     }
 
     mutating func applyPinnedContentTabs(_ restoredPinnedState: ContentTabState) {

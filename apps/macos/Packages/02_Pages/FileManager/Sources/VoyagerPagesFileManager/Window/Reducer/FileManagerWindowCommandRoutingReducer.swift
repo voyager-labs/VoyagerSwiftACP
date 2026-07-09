@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
@@ -34,12 +35,18 @@ struct FileManagerWindowCommandRoutingReducer {
     private var fileManagerLocationsClient
     @Dependency(\.entryLoadingClient)
     private var entryLoadingClient
+    @Dependency(\.userDefaultsClient)
+    private var userDefaultsClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
             case .onAppear:
-                state.syncFixedLocationItems(with: fileManagerLocationsClient, entryLoadingClient: entryLoadingClient)
+                state.syncFixedLocationItems(
+                    with: fileManagerLocationsClient,
+                    entryLoadingClient: entryLoadingClient,
+                    hiddenLocationIDs: hiddenFixedLocationIDs(),
+                )
                 state.syncHomeFavoriteItems()
                 return .none
 
@@ -73,6 +80,18 @@ struct FileManagerWindowCommandRoutingReducer {
                     .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
                     .send(.navigation(.view(.navigateToPath(location.path)))),
                 )
+
+            case let .sidebar(.view(.setFixedLocationVisibility(id, isVisible))):
+                state.sidebar.setFixedLocationVisibility(id: id, isVisible: isVisible)
+                state.syncHomeLocationItems()
+                persistHiddenFixedLocationIDs(state.sidebar.hiddenFixedLocationItemIDs)
+                return .none
+
+            case let .sidebar(.view(.setAllFixedLocationVisibility(isVisible))):
+                state.sidebar.setAllFixedLocationVisibility(isVisible)
+                state.syncHomeLocationItems()
+                persistHiddenFixedLocationIDs(state.sidebar.hiddenFixedLocationItemIDs)
+                return .none
 
             case let .content(.delegate(.aiChatSessionCreated(sessionID))):
                 return routeActiveAiChatTab(to: sessionID, state: state)
@@ -108,6 +127,17 @@ struct FileManagerWindowCommandRoutingReducer {
                 return .none
             }
         }
+    }
+
+    private func hiddenFixedLocationIDs() -> Set<FileManagerFixedLocationItem.ID> {
+        guard let storedIDs = userDefaultsClient.object(SettingsKeys.hiddenFixedLocationIDs) as? [String] else {
+            return []
+        }
+        return Set(storedIDs)
+    }
+
+    private func persistHiddenFixedLocationIDs(_ ids: Set<FileManagerFixedLocationItem.ID>) {
+        userDefaultsClient.setObject(Array(ids).sorted(), SettingsKeys.hiddenFixedLocationIDs)
     }
 
     private func routeActiveAiChatTab(to sessionID: AiChatSessionID, state: State) -> Effect<Action> {
