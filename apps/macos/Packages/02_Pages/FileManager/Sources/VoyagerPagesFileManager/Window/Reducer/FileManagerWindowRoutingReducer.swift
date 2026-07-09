@@ -881,8 +881,9 @@ private extension ContentTabPageAnchor {
 private extension AiChatExecutionPhase {
     var shouldPreserveLifecycleOwner: Bool {
         switch self {
-        case .completed,
-             .persistenceRecovery:
+        case let .completed(lock):
+            lock.finalSnapshot != nil
+        case .persistenceRecovery:
             true
         default:
             false
@@ -906,7 +907,7 @@ private func aiChatLifecycleSessionIDsToPreserve(_ state: AiChatFeature.State) -
     for pendingRequestStart in state.backgroundPendingRequestStarts.values {
         append(pendingRequestStart.sessionID)
     }
-    for phase in state.backgroundExecutionPhases.values {
+    for phase in state.backgroundExecutionPhases.values where phase.isProcessing || phase.shouldPreserveLifecycleOwner {
         append(phase.lock?.context.sessionID)
     }
     return sessionIDs

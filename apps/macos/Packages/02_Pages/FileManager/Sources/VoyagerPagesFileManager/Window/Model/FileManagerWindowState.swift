@@ -461,12 +461,26 @@ private extension AiChatFeature.State {
     }
 }
 
+private extension AiChatExecutionPhase {
+    var shouldPreserveLifecycleOwner: Bool {
+        switch self {
+        case let .completed(lock):
+            lock.finalSnapshot != nil
+        case .persistenceRecovery:
+            true
+        default:
+            false
+        }
+    }
+}
+
 private extension AiChatFeature.State {
     var lifecycleSessionIDsToPreserve: [AiChatSessionID] {
         var sessionIDs: [AiChatSessionID] = []
         let shouldPreserveOwner = switch executionPhase {
-        case .completed,
-             .persistenceRecovery:
+        case let .completed(lock):
+            lock.finalSnapshot != nil
+        case .persistenceRecovery:
             true
         default:
             false
@@ -482,7 +496,7 @@ private extension AiChatFeature.State {
         for pendingRequestStart in backgroundPendingRequestStarts.values {
             sessionIDs.append(pendingRequestStart.sessionID)
         }
-        for phase in backgroundExecutionPhases.values {
+        for phase in backgroundExecutionPhases.values where phase.isProcessing || phase.shouldPreserveLifecycleOwner {
             if let sessionID = phase.lock?.context.sessionID {
                 sessionIDs.append(sessionID)
             }
