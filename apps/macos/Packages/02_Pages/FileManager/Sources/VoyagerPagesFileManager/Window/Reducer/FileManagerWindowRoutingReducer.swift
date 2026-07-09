@@ -1895,14 +1895,19 @@ private func backgroundInspectorAiChatSessionID(
     state: FileManagerWindowState,
 ) -> AiChatSessionID? {
     if case let .requestContextResolved(resolutionID, _) = aiChatAction {
-        return state.backgroundInspectorAiChatStates.values.compactMap { inspectorState in
-            if let pendingRequestStart = inspectorState.aiChat.pendingRequestStart,
-               pendingRequestStart.resolutionID == resolutionID
-            {
-                return pendingRequestStart.sessionID
-            }
-            return inspectorState.aiChat.backgroundPendingRequestStarts[resolutionID]?.sessionID
-        }.first
+        if let pendingSessionID = state.backgroundInspectorAiChatStates.values.compactMap({ inspectorState in
+            inspectorState.aiChat.pendingRequestStart?.resolutionID == resolutionID
+                ? inspectorState.aiChat.pendingRequestStart?.sessionID
+                : inspectorState.aiChat.backgroundPendingRequestStarts[resolutionID]?.sessionID
+        }).first,
+            state.backgroundInspectorAiChatStates[pendingSessionID] != nil
+        {
+            return pendingSessionID
+        }
+        return state.backgroundInspectorAiChatStates.first { _, inspectorState in
+            inspectorState.aiChat.pendingRequestStart?.resolutionID == resolutionID
+                || inspectorState.aiChat.backgroundPendingRequestStarts[resolutionID] != nil
+        }?.key
     }
 
     if case let .executionEvent(event) = aiChatAction,
@@ -2044,7 +2049,9 @@ private extension AiChatFeature.State {
     }
 
     mutating func activateBackgroundPendingRequestStart(resolutionID: UUID) {
-        guard let pendingRequestStart = backgroundPendingRequestStarts.removeValue(forKey: resolutionID) else { return }
+        guard let pendingRequestStart = backgroundPendingRequestStarts[resolutionID] else { return }
+        guard pendingRequestStart.sessionID == sessionID else { return }
+        backgroundPendingRequestStarts.removeValue(forKey: resolutionID)
         if let currentPendingRequestStart = self.pendingRequestStart,
            currentPendingRequestStart.resolutionID != pendingRequestStart.resolutionID
         {
@@ -2146,12 +2153,23 @@ private extension AiChatFeature.State {
             restoreFailure = nil
         }
         if sessionID == deletedSessionID {
+            sessionID = nil
+            sessionStatus = .idle
             currentSessionCustomTitle = nil
-            pendingRequestStart = nil
-            executionPhase = .idle
+            transcriptHistory = []
+            draftText = ""
             streamingAssistantDraft = nil
             lockedModelHandle = nil
             lastExecutionFailure = nil
+            lastRequestContext = nil
+            lastRequestContextModelHandle = nil
+            addedAttachments = []
+            currentContextFolderStructureModes = [:]
+            pendingRequestStart = nil
+            executionPhase = .idle
+            selectedModelHandle = nil
+            selectedThinking = nil
+            unavailableSelectedModelHandle = nil
         }
         removeLifecycleOwners(sessionID: deletedSessionID)
     }
@@ -2254,14 +2272,19 @@ private func backgroundAiChatSessionID(
         else { return nil }
         return summary.sessionID
     case let .requestContextResolved(resolutionID, _):
-        return state.backgroundAiChatStates.values.compactMap { backgroundContent in
-            if let pendingRequestStart = backgroundContent.aiChat.pendingRequestStart,
-               pendingRequestStart.resolutionID == resolutionID
-            {
-                return pendingRequestStart.sessionID
-            }
-            return backgroundContent.aiChat.backgroundPendingRequestStarts[resolutionID]?.sessionID
-        }.first
+        if let pendingSessionID = state.backgroundAiChatStates.values.compactMap({ backgroundContent in
+            backgroundContent.aiChat.pendingRequestStart?.resolutionID == resolutionID
+                ? backgroundContent.aiChat.pendingRequestStart?.sessionID
+                : backgroundContent.aiChat.backgroundPendingRequestStarts[resolutionID]?.sessionID
+        }).first,
+            state.backgroundAiChatStates[pendingSessionID] != nil
+        {
+            return pendingSessionID
+        }
+        return state.backgroundAiChatStates.first { _, backgroundContent in
+            backgroundContent.aiChat.pendingRequestStart?.resolutionID == resolutionID
+                || backgroundContent.aiChat.backgroundPendingRequestStarts[resolutionID] != nil
+        }?.key
     default:
         return nil
     }

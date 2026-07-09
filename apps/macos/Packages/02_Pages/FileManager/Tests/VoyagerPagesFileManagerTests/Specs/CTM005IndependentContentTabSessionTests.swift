@@ -5634,6 +5634,65 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    func testBackgroundPendingResolverStaysParkedWhenAliasStateSessionDiffers() async throws {
+        let aliasSessionID = AiChatSessionID(rawValue: UUID())
+        let pendingSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: pendingSessionID)
+        let selectedModel = try XCTUnwrap(requestLock.context.selectedModel)
+        let resolutionID = UUID()
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: pendingSessionID,
+            selectedModel: selectedModel,
+            selectedRow: requestLock.selectedModelRow,
+            preparedRequest: AiChatPreparedRequest(
+                prompt: "test",
+                messages: requestLock.request.messages,
+                assistantReplacementIndex: nil,
+                historyTruncation: AiChatHistoryTruncationMetadata(
+                    includedMessageCount: requestLock.request.messages.count,
+                    excludedMessageCount: 0,
+                    budget: 24000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        var backgroundContent = FileManagerContentFeature.State()
+        backgroundContent.aiChat.sessionID = aliasSessionID
+        backgroundContent.aiChat.backgroundPendingRequestStarts[resolutionID] = pendingRequest
+
+        var state = FileManagerFeature.State()
+        state.backgroundAiChatStates[aliasSessionID] = backgroundContent
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.aiChatExecutionClient.execute = { _, _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        let resolvedContext = AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: [])
+        await store.send(.content(.aiChat(.requestContextResolved(resolutionID, resolvedContext))))
+        await store.skipReceivedActions()
+
+        let aiChat = try XCTUnwrap(store.state.backgroundAiChatStates[aliasSessionID]?.aiChat)
+        XCTAssertNil(aiChat.pendingRequestStart)
+        XCTAssertNil(aiChat.backgroundPendingRequestStarts[resolutionID])
+        XCTAssertEqual(aiChat.backgroundExecutionPhases.count, 1)
+        guard case let .processing(lock) = aiChat.backgroundExecutionPhases.values.first else {
+            XCTFail("parked resolver should start as background processing owner")
+            return
+        }
+        XCTAssertEqual(lock.context.sessionID, pendingSessionID)
+    }
+
     func testBackgroundPendingResolverUsesPendingSessionIDWhenAliasKeyExists() async throws {
         let aiSessionID = AiChatSessionID(rawValue: UUID())
         let aliasSessionID = AiChatSessionID(rawValue: UUID())
@@ -7670,6 +7729,13 @@ extension CTM005IndependentContentTabSessionTests {
             .contains(aiSessionID) == true)
         XCTAssertFalse(store.state.tabContentStates[inactiveTabID]?.aiChat.sessionList.allRows
             .contains { $0.sessionID == aiSessionID } ?? true)
+        XCTAssertNil(store.state.content.aiChat.sessionID)
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory, [])
+        XCTAssertEqual(store.state.content.aiChat.draftText, "")
+        XCTAssertNil(store.state.content.aiChat.selectedModelHandle)
+        XCTAssertNil(store.state.tabContentStates[inactiveTabID]?.aiChat.sessionID)
+        XCTAssertEqual(store.state.tabContentStates[inactiveTabID]?.aiChat.transcriptHistory, [])
+        XCTAssertEqual(store.state.tabContentStates[inactiveTabID]?.aiChat.draftText, "")
         XCTAssertNil(store.state.backgroundAiChatStates[aiSessionID])
         XCTAssertNil(store.state.backgroundInspectorAiChatStates[aiSessionID])
         XCTAssertEqual(
@@ -8792,12 +8858,23 @@ private extension AiChatFeature.State {
             restoreFailure = nil
         }
         if sessionID == deletedSessionID {
+            sessionID = nil
+            sessionStatus = .idle
             currentSessionCustomTitle = nil
-            pendingRequestStart = nil
-            executionPhase = .idle
+            transcriptHistory = []
+            draftText = ""
             streamingAssistantDraft = nil
             lockedModelHandle = nil
             lastExecutionFailure = nil
+            lastRequestContext = nil
+            lastRequestContextModelHandle = nil
+            addedAttachments = []
+            currentContextFolderStructureModes = [:]
+            pendingRequestStart = nil
+            executionPhase = .idle
+            selectedModelHandle = nil
+            selectedThinking = nil
+            unavailableSelectedModelHandle = nil
         }
         backgroundPendingRequestStarts = backgroundPendingRequestStarts.filter { _, pendingRequestStart in
             pendingRequestStart.sessionID != deletedSessionID
