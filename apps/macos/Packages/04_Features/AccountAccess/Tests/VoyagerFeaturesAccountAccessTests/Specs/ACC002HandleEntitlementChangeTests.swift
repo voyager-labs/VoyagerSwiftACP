@@ -39,9 +39,9 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
 
     // MARK: Pattern A — 순수 상태 전환 (computed property)
 
-    /// ACC-002-handle_entitlement_change: 구매 완료 시 accountAccessStepState가 .complete로 전환된다.
-    /// status가 .none에서 .coreLicenseActive로 변경될 때 step state가 올바르게 계산되는지 검증한다.
-    /// - 검증 내용: .coreLicenseActive → accountAccessStepState == .complete
+    /// ACC-002-handle_entitlement_change: 구매와 device binding 완료 시 accountAccessStepState가 .complete로 전환된다.
+    /// active status만으로는 complete가 아니며 binding 성공이 함께 필요함을 검증한다.
+    /// - 검증 내용: .coreLicenseActive + isComplete=true → accountAccessStepState == .complete
     /// - 사전 조건: hasAccountSession=true, status=.none
     /// - 기대 결과: status 변경 후 accountAccessStepState == .complete
     func testPurchaseCompleteStepState() {
@@ -53,6 +53,9 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
         XCTAssertEqual(state.accountAccessStepState, .blocked)
 
         state.status = .coreLicenseActive
+        XCTAssertEqual(state.accountAccessStepState, .pending)
+
+        state.isComplete = true
 
         XCTAssertEqual(state.accountAccessStepState, .complete)
     }
@@ -66,6 +69,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
         var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .trialActive
+        state.isComplete = true
 
         // 초기 상태: active → complete
         XCTAssertEqual(state.accountAccessStepState, .complete)
@@ -85,6 +89,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
         var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .coreLicenseActive
+        state.isComplete = true
 
         // 초기 상태: active → complete
         XCTAssertEqual(state.accountAccessStepState, .complete)
@@ -145,6 +150,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: initialState,
@@ -182,6 +188,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
         )
@@ -217,6 +224,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: initialState,
@@ -256,6 +264,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: initialState,
@@ -269,11 +278,20 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             status: .trialActive,
             currentPeriodEnd: nil,
             fetchedAt: referenceDate,
+            deviceBindingVerifiedAt: referenceDate,
         )
 
         await store.receive(\.accessStatusResponse) { state in
             state.status = .trialActive
+            state.isSubmitting = true
+            state.isComplete = false
+            state.errorMessage = nil
+            state.fetchRetryCount = 0
+        }
+
+        await store.receive(\.deviceBindingResponse) { state in
             state.snapshot = expectedSnapshot
+            state.isSubmitting = false
             state.isComplete = true
             state.errorMessage = nil
         }
@@ -299,6 +317,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             currentPeriodEnd: referenceDate.addingTimeInterval(86400),
             fetchedAt: referenceDate,
             sessionExpiresAt: sessionExpiry,
+            deviceBindingVerifiedAt: referenceDate,
         )
 
         let store = makeTestStore()
@@ -342,6 +361,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: initialState,
@@ -357,15 +377,25 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             status: .coreLicenseActive,
             currentPeriodEnd: nil,
             fetchedAt: referenceDate,
+            deviceBindingVerifiedAt: referenceDate,
         )
         await store.receive(\.accessStatusResponse) { state in
             state.status = .coreLicenseActive
+            state.isSubmitting = true
+            state.isComplete = false
+            state.errorMessage = nil
+            state.fetchRetryCount = 0
+        }
+
+        // Step 3: device binding 성공 → status/snapshot 갱신
+        await store.receive(\.deviceBindingResponse) { state in
             state.snapshot = expectedSnapshot
+            state.isSubmitting = false
             state.isComplete = true
             state.errorMessage = nil
         }
 
-        // Step 3: delegate(.unlocked) 전달
+        // Step 4: delegate(.unlocked) 전달
         await store.receive(\.delegate.unlocked)
         await store.finish()
 

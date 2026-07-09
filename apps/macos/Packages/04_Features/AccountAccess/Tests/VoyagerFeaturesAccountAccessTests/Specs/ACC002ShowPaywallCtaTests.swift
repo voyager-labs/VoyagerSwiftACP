@@ -29,6 +29,7 @@ final class ACC002ShowPaywallCtaTests: XCTestCase {
         var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .coreLicenseActive
+        state.isComplete = true
 
         XCTAssertEqual(state.accountAccessStepState, .complete)
         XCTAssertTrue(state.isComplete || state.status?.isActive == true)
@@ -63,6 +64,9 @@ final class ACC002ShowPaywallCtaTests: XCTestCase {
         XCTAssertEqual(state.accountAccessStepState, .blocked)
 
         state.status = .coreLicenseActive
+        XCTAssertEqual(state.accountAccessStepState, .pending)
+
+        state.isComplete = true
 
         XCTAssertEqual(state.accountAccessStepState, .complete)
         XCTAssertNotEqual(state.accountAccessStepState, .blocked)

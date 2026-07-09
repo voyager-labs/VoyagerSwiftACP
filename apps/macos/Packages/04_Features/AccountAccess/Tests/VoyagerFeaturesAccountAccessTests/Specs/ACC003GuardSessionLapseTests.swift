@@ -67,6 +67,7 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
             var state = AccountAccessFeature.State()
             state.hasAccountSession = true
             state.status = status
+            state.isComplete = true
 
             XCTAssertEqual(state.accountAccessStepState, .complete)
             XCTAssertFalse(
@@ -91,10 +92,12 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
 
     func testLoginButtonTitleIsStable() {
         XCTAssertEqual(SessionLapseGuardView.loginButtonTitle, "Log in")
+        XCTAssertEqual(SessionLapseGuardView.accountButtonTitle, "Open account")
     }
 
     func testPrimaryButtonTitleMatchesAccessRecoveryCTA() {
         XCTAssertEqual(SessionLapseGuardView.primaryButtonTitle(for: .login), "Log in")
+        XCTAssertEqual(SessionLapseGuardView.primaryButtonTitle(for: .account), "Open account")
         XCTAssertEqual(SessionLapseGuardView.primaryButtonTitle(for: .retry), "Retry")
         XCTAssertEqual(SessionLapseGuardView.primaryButtonTitle(for: .webPricing), "View pricing")
     }
@@ -106,6 +109,9 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
         if case .retryTapped = SessionLapseGuardView.primaryButtonAction(for: .retry) {} else {
             XCTFail("retry CTA는 retryTapped를 전송해야 함")
         }
+        if case .openAccountTapped = SessionLapseGuardView.primaryButtonAction(for: .account) {} else {
+            XCTFail("account CTA는 openAccountTapped를 전송해야 함")
+        }
         if case .openPricingTapped = SessionLapseGuardView.primaryButtonAction(for: .webPricing) {} else {
             XCTFail("pricing CTA는 openPricingTapped를 전송해야 함")
         }
@@ -115,6 +121,10 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
         XCTAssertEqual(
             SessionLapseGuardView.dialogTitle(didSignInFail: false, accessUnlockPrimaryCTA: .webPricing),
             "Access required to continue.",
+        )
+        XCTAssertEqual(
+            SessionLapseGuardView.dialogTitle(didSignInFail: false, accessUnlockPrimaryCTA: .account),
+            "Check your account to continue.",
         )
         XCTAssertEqual(
             SessionLapseGuardView.dialogTitle(didSignInFail: false, accessUnlockPrimaryCTA: .retry),
@@ -138,6 +148,7 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
         state.hasAccountSession = true
         state.didSignInFail = false
         state.status = .coreLicenseActive
+        state.isComplete = true
 
         XCTAssertEqual(state.accountAccessStepState, .complete)
         XCTAssertFalse(
