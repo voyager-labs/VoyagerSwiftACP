@@ -122,7 +122,22 @@ struct AppRootFeature {
                 .send(.settings(.account(.access(.hydrateLaunchSnapshot(snapshot))))),
             )
 
-        case let .lifecycle(.accountAccessGate(.accessUnlockRequired(generation: _, snapshot: snapshot))):
+        case let .lifecycle(.accountAccessGate(gateAction)):
+            reduceAccountAccessGate(gateAction)
+
+        case .appDidBecomeActive:
+            .none
+
+        default:
+            .none
+        }
+    }
+
+    private func reduceAccountAccessGate(
+        _ gateAction: AppLifecycleAction.AccountAccessGate,
+    ) -> Effect<Action> {
+        switch gateAction {
+        case let .accessUnlockRequired(generation: _, snapshot: snapshot):
             // 비활성 entitlement/retry 상태는 AppLifecycle guard overlay가 소유한다.
             // Settings는 사용자가 직접 열었을 때 같은 상태를 볼 수 있도록 hydrate만 맞춘다.
             .merge(
@@ -130,13 +145,21 @@ struct AppRootFeature {
                 .send(.settings(.account(.access(.hydrateLaunchSnapshot(snapshot))))),
             )
 
-        case let .lifecycle(.accountAccessGate(.accountAccessGranted(generation: _, snapshot: snapshot))):
+        case let .accessStatusFailed(
+            generation: _,
+            error: error,
+            sessionExpiresAt: sessionExpiresAt,
+        ):
+            // access_status 미확정 실패는 auth session 만료로 지우지 않고 error 축으로 표시한다.
+            .send(.settings(.account(.access(.hydrateAccessFailure(
+                error: error,
+                sessionExpiresAt: sessionExpiresAt,
+            )))))
+
+        case let .accountAccessGranted(generation: _, snapshot: snapshot):
             // ponytail: AppLifecycle이 fetch한 launch snapshot을 Settings hydration으로 1회 전달 +
             // AI bootstrap은 launch 시점으로 이동. didBootstrap가 탭 렌더 중복 send를 no-op 처리한다.
             .send(.settings(.appLifecycleAccessSnapshotReady(snapshot)))
-
-        case .appDidBecomeActive:
-            .none
 
         default:
             .none

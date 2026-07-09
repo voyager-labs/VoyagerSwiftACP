@@ -845,33 +845,69 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// decoding/notConfigured 같은 access 조회 실패는 network retry 복구가 아니라
-    /// 세션 경계 재확인이 필요한 lapse 경로로 보낸다.
-    func testAccessStatusNonNetworkFailureRoutesToSessionLapse() async {
+    /// decoding/notConfigured 같은 access 조회 실패는 session 만료로 지우지 않고
+    /// access_status 미확정 error/retry guard 경로로 보낸다.
+    func testAccessStatusNonNetworkFailureRoutesToAccessErrorGuard() async {
         var initialState = AppLifecycleFeature.State()
         initialState.accessGateGeneration = 3
         initialState.accessGatePhase = .checking(generation: 3)
         initialState.isCheckingAccountAccess = true
+        let expiry = Date(timeIntervalSince1970: 4_102_444_800)
+        var rootState = AppRootFeature.State(lifecycle: initialState)
+        rootState.settings.accessStatus = .coreLicenseActive
 
-        let store = TestStore(initialState: initialState) {
-            AppLifecycleFeature()
+        let store = TestStore(initialState: rootState) {
+            AppRootFeature()
         } withDependencies: {
-            $0.onboardingWindowClient.isRequired = { true }
+            $0.accountSessionClient.read = {
+                AccountSession(
+                    accessToken: "access-token",
+                    status: .none,
+                    refreshToken: "refresh-token",
+                    expiresAt: expiry,
+                )
+            }
+            $0.helperAppClient.start = {}
+            $0.helperAppClient.stop = {}
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
+        store.exhaustivity = .off
 
-        await store.send(.accountAccessGate(.accessStatusResponse(
+        await store.send(.lifecycle(.accountAccessGate(.accessStatusResponse(
             generation: 3,
             result: .failure(.decodingFailure),
-        )))
+        ))))
 
-        await store.receive(\.sessionExpiredDetected) { state in
-            state.accessGateGeneration = 4
-            state.accessGatePhase = .sessionLapsed(reason: nil, generation: 4)
-            state.isCheckingAccountAccess = false
-            state.accountAccessGateResolved = false
+        await store.receive(\.lifecycle.accountAccessGate.accessStatusFailed) { state in
+            state.lifecycle.accessGatePhase = .accessFailure(error: .decodingFailure, generation: 3)
+            state.lifecycle.isCheckingAccountAccess = false
+            state.lifecycle.accountAccessGateResolved = true
+            state.lifecycle.sessionLapseGuard = AccountAccessFeature.State()
+            state.lifecycle.sessionLapseGuard?.handoffContext = .paywall
+            state.lifecycle.sessionLapseGuard?.errorMessage = "Failed to process the response."
+            state.lifecycle.sessionLapseGuard?.hasAccountSession = true
+            state.lifecycle.sessionLapseGuard?.sessionExpiresAt = expiry
+            state.lifecycle.sessionLapseGuard?.didBootstrap = true
+            state.lifecycle.sessionLapseGuard?.fetchGeneration = 1
         }
+        await store.receive(\.settings.account.access.hydrateAccessFailure) { state in
+            state.settings.accountSettings.access.errorMessage = "Failed to process the response."
+            state.settings.accountSettings.access.hasAccountSession = true
+            state.settings.accountSettings.access.sessionExpiresAt = expiry
+            state.settings.accountSettings.access.didBootstrap = true
+            state.settings.accountSettings.access.fetchGeneration = 1
+        }
+        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
 
-        XCTAssertNil(store.state.sessionLapseGuard)
+        XCTAssertEqual(store.state.lifecycle.sessionLapseGuard?.accountAccessStepState, .error)
+        XCTAssertEqual(store.state.lifecycle.sessionLapseGuard?.accessUnlockPrimaryCTA, .retry)
+        XCTAssertEqual(store.state.settings.accessStatus, .coreLicenseActive)
+        XCTAssertEqual(store.state.settings.accountSettings.access.accountAccessStepState, .error)
+        XCTAssertEqual(store.state.settings.accountSettings.access.accessUnlockPrimaryCTA, .retry)
         await store.finish()
     }
 
