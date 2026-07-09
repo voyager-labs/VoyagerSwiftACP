@@ -229,6 +229,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     return AccountSession(accessToken: "exchanged-token", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: { activeAccessStatusResponse },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(),
@@ -249,11 +250,20 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
         XCTAssertTrue(exchangeCalled, "검증 성공 시 exchange_handoff_token 자동 트리거")
         await store.receive(\.accessStatusResponse) { state in
             state.status = .coreLicenseActive
-            state.isComplete = true
+            state.isSubmitting = true
+            state.isComplete = false
+            state.errorMessage = nil
+            state.fetchRetryCount = 0
+        }
+        await store.receive(\.deviceBindingResponse) { state in
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 fetchedAt: self.referenceDate,
+                deviceBindingVerifiedAt: self.referenceDate,
             )
+            state.isSubmitting = false
+            state.isComplete = true
+            state.errorMessage = nil
         }
         await store.receive(\.delegate.unlocked)
         XCTAssertTrue(store.state.hasAccountSession)
@@ -289,6 +299,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(pendingState: "xyz789"),
@@ -344,6 +355,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(handoffContext: .paywall),
@@ -383,6 +395,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     return AccountSession(accessToken: "paywall-token", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: { activeAccessStatusResponse },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(handoffContext: .paywall),
@@ -436,6 +449,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(pendingState: "new-state-456"),
@@ -532,6 +546,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(),
@@ -585,6 +600,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(),

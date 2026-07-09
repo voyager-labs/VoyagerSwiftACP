@@ -56,6 +56,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: {
                     AccountSession(
                         accessToken: "refreshed-token",
@@ -93,6 +94,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: {
                     AccountSession(
                         accessToken: "rotated-token",
@@ -129,6 +131,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.decodingFailure },
             ),
             initialState: sessionNearExpiryState(),
@@ -166,6 +169,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.unauthorized },
             ),
             initialState: sessionNearExpiryState(),
@@ -191,6 +195,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.networkFailure },
             ),
             initialState: sessionNearExpiryState(),
@@ -219,6 +224,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.decodingFailure },
             ),
             initialState: sessionNearExpiryState(),
@@ -253,6 +259,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: {
                     await withCheckedContinuation { refreshContinuation = $0 }
                 },
@@ -305,6 +312,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.networkFailure },
             ),
             initialState: sessionNearExpiryState(),

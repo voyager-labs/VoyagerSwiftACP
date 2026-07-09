@@ -257,6 +257,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: initialState,

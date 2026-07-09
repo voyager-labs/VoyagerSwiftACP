@@ -37,6 +37,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
             authNetwork: AuthNetworkClient(
                 exchangeHandoff: exchangeHandoff,
                 fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             sessionClient: AccountSessionClient.live(store: store),
@@ -99,6 +100,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(),
@@ -139,6 +141,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
                     throw AppHandoffExchangeError.networkFailure
                 },
                 fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(),
@@ -173,6 +176,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
                     throw AppHandoffExchangeError.ticketAlreadyUsed
                 },
                 fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(),

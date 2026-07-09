@@ -388,6 +388,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             )
             $0.date = .constant(referenceDate)

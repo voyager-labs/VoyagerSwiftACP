@@ -51,6 +51,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.decodingFailure },
             ),
             initialState: signedInState(),
@@ -253,6 +254,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { throw AccessError.unauthorized },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: state,
@@ -278,6 +280,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.networkFailure },
             ),
             initialState: signedInState(),

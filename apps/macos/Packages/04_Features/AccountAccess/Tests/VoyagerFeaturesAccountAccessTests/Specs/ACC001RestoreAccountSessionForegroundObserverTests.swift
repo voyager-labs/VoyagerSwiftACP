@@ -46,12 +46,22 @@ final class ACC001RestoreAccountSessionForegroundObserverTests: XCTestCase {
     ) async {
         await store.receive(\.accessStatusResponse) { state in
             state.status = .trialActive
+            state.snapshot = nil
+            state.isSubmitting = true
+            state.isComplete = false
+            state.trialExpiresAt = nil
+            state.errorMessage = nil
+            state.fetchRetryCount = 0
+        }
+        await store.receive(\.deviceBindingResponse) { state in
             state.snapshot = AccessStatusSnapshot(
                 status: .trialActive,
                 currentPeriodEnd: nil,
                 fetchedAt: self.referenceDate,
                 sessionExpiresAt: sessionExpiry,
+                deviceBindingVerifiedAt: self.referenceDate,
             )
+            state.isSubmitting = false
             state.isComplete = true
             state.errorMessage = nil
             state.trialExpiresAt = nil
@@ -82,6 +92,7 @@ final class ACC001RestoreAccountSessionForegroundObserverTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             notificationCenterClient: Self.makeNotificationCenterClient { _, _ in
@@ -111,6 +122,7 @@ final class ACC001RestoreAccountSessionForegroundObserverTests: XCTestCase {
         await receiveTrialActiveResponse(from: store, sessionExpiry: sessionExpiry)
         await store.receive(\.delegate.unlocked)
         XCTAssertTrue(fetchCalled, "foreground notification → fetchAccessStatus 호출")
-        await store.skipInFlightEffects()
+        // hydrateLaunchSnapshot가 시작한 TTL 타이머는 세션 생존 동안 유지되는 장기 effect다.
+        store.exhaustivity = .off
     }
 }
