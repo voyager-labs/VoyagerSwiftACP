@@ -53,6 +53,7 @@ struct UnlockAccessStepView: View {
             HStack(spacing: 8) {
                 Image(systemName: "person.crop.circle.badge.xmark")
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 Text("Sign in to activate your license.")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
@@ -69,6 +70,7 @@ struct UnlockAccessStepView: View {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
+                    .accessibilityHidden(true)
                 Text("Sign in failed. Please try again.")
                     .font(.system(size: 13))
                     .foregroundStyle(.red)
@@ -77,6 +79,7 @@ struct UnlockAccessStepView: View {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
+                    .accessibilityHidden(true)
                 Text("Signed in")
                     .font(.system(size: 13))
                     .foregroundStyle(.green)
@@ -101,8 +104,12 @@ struct UnlockAccessStepView: View {
         }
 
         if viewStore.accountAccessAuthAxis == .signedIn,
-           viewStore.accountAccessStepState == .blocked,
-           let status = viewStore.status
+           let failure = viewStore.deviceBindingFailure
+        {
+            deviceBindingFailureCTAs(viewStore: viewStore, failure: failure)
+        } else if viewStore.accountAccessAuthAxis == .signedIn,
+                  viewStore.accountAccessStepState == .blocked,
+                  let status = viewStore.status
         {
             blockedStatusCTAs(viewStore: viewStore, status: status)
         }
@@ -116,6 +123,48 @@ struct UnlockAccessStepView: View {
             .buttonStyle(.bordered)
             .controlSize(.regular)
             .disabled(viewStore.isSubmitting || viewStore.isSignInInProgress)
+        }
+    }
+
+    private func deviceBindingFailureCTAs(
+        viewStore: ViewStoreOf<AccountAccessFeature>,
+        failure _: DeviceBindingFailure,
+    ) -> some View {
+        VStack(spacing: 10) {
+            switch viewStore.accessUnlockPrimaryCTA {
+            case .account:
+                Button {
+                    viewStore.send(.openAccountTapped)
+                } label: {
+                    Label("Open Account", systemImage: "person.crop.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+                Button {
+                    viewStore.send(.openAccessHelpTapped)
+                } label: {
+                    Label("Contact Support", systemImage: "questionmark.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+
+            case .retry:
+                Button {
+                    viewStore.send(.retryTapped)
+                } label: {
+                    Label("Retry Device Binding", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(!viewStore.canRetry)
+
+            case .login, .webPricing, .next, .pending:
+                EmptyView()
+            }
         }
     }
 
