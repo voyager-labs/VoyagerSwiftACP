@@ -67,7 +67,7 @@ extension AiChatFeature {
            currentLock.requestID == lock.requestID,
            currentLock.runID == lock.runID
         {
-            state.executionPhase = .completed(currentLock)
+            state.executionPhase = .completed(currentLock.clearingFinalSnapshot())
             state.lastExecutionFailure = nil
             return .none
         }
@@ -76,7 +76,7 @@ extension AiChatFeature {
               let backgroundLock = backgroundPhase.lock,
               backgroundLock.runID == lock.runID
         else { return .none }
-        state.backgroundExecutionPhases[lock.requestID] = .completed(backgroundLock)
+        state.backgroundExecutionPhases[lock.requestID] = .completed(backgroundLock.clearingFinalSnapshot())
         return .none
     }
 
