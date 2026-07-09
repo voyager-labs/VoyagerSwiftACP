@@ -3322,6 +3322,58 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertFalse(state.chatInputDisplayModel.canSubmit)
     }
 
+    func testForegroundProcessingDifferentSessionBlocksSubmit() {
+        let catalogRows = makeCatalogRows()
+        let providerModels = makeProviderModels()
+        let processingSessionID = AiChatSessionID(rawValue: makeUUID("33333330-7777-8888-9999-000000000001"))
+        let visibleSessionID = AiChatSessionID(rawValue: makeUUID("44444440-7777-8888-9999-000000000001"))
+        let message = AiChatMessage(role: .user, content: "foreground processing")
+        let requestID = AiChatRequestID(rawValue: makeUUID("55555550-7777-8888-9999-000000000001"))
+        let runID = AiChatRunID(rawValue: makeUUID("66666660-7777-8888-9999-000000000001"))
+        let request = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: processingSessionID,
+                requestID: requestID,
+                runID: runID,
+                model: providerModels[0].id,
+                selectedRow: catalogRows[0],
+            ),
+            messages: [message],
+        )
+        let lock = AiChatRequestLock(
+            kind: .submit,
+            requestID: requestID,
+            runID: runID,
+            context: request.context,
+            request: request,
+            persistenceTranscriptHistory: [message],
+            selectedModelHandle: providerModels[0].id,
+            selectedModelRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+            historyTruncation: .init(
+                includedMessageCount: 1,
+                excludedMessageCount: 0,
+                budget: 200_000,
+                truncationReason: nil,
+            ),
+        )
+        let visibleRow = makeDeleteTestSessionSummary(sessionID: visibleSessionID, title: "Visible chat")
+        let state = AiChatFeature.State(
+            sessionList: .init(allRows: [visibleRow], selectedSessionID: visibleSessionID),
+            sessionID: visibleSessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            draftText: "new visible request",
+            catalogRows: catalogRows,
+            modelListState: .loaded(providerModels),
+            selectedModelHandle: catalogRows[0].handle,
+            executionPhase: .processing(lock),
+        )
+
+        XCTAssertFalse(state.canSubmit)
+        XCTAssertFalse(state.chatInputDisplayModel.canSubmit)
+    }
+
     func testSameSessionBackgroundProcessingRequestBlocksSubmit() {
         let catalogRows = makeCatalogRows()
         let providerModels = makeProviderModels()
