@@ -1,5 +1,7 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAppPreferences
+import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
@@ -40,8 +42,15 @@ struct WindowManagerFeature {
     private var contentTabPinnedRecordClient
     @Dependency(\.fileManagerClient)
     private var fileManagerClient
+    @Dependency(\.fileManagerFavoritesClient)
+    private var fileManagerFavoritesClient
+    @Dependency(\.entryLoadingClient)
+    private var entryLoadingClient
     @Dependency(\.userDefaultsClient)
     private var userDefaultsClient
+
+    @Dependency(\.date)
+    private var date
 
     @Dependency(\.uuid)
     private var uuid
@@ -396,6 +405,52 @@ struct WindowManagerFeature {
         try? contentTabPinnedRecordClient.saveStore(compactedStore, userDefaultsClient)
     }
 
+    private func seedDefaultPinnedRecordsIfNeeded(store: inout ContentTabPinnedRecordStore) {
+        seedLegacyDefaultPinnedRecordsIfNeeded(store: &store)
+        seedFinderFavoritesPinnedRecordsIfNeeded(store: &store)
+    }
+
+    private func seedLegacyDefaultPinnedRecordsIfNeeded(store _: inout ContentTabPinnedRecordStore) {
+        let didSeed = userDefaultsClient.bool(SettingsKeys.defaultPinnedTabsSeedCompleted)
+        guard !didSeed else { return }
+
+        userDefaultsClient.setBool(true, SettingsKeys.defaultPinnedTabsSeedCompleted)
+    }
+
+    private func seedFinderFavoritesPinnedRecordsIfNeeded(store: inout ContentTabPinnedRecordStore) {
+        let didSeed = userDefaultsClient.bool(SettingsKeys.finderFavoritesPinnedSeedCompleted)
+        guard !didSeed else { return }
+
+        guard store.records.isEmpty else {
+            userDefaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
+            return
+        }
+
+        let favorites = fileManagerFavoritesClient.loadFavorites(entryLoadingClient, userDefaultsClient)
+        let favoriteRecords = FileManagerFavoritesPinnedRecordMapper.pinnedRecords(
+            from: favorites,
+            pinnedAt: date(),
+            fileExistsWithIsDirectory: fileManagerClient.fileExistsWithIsDirectory,
+        )
+        guard !favoriteRecords.isEmpty else {
+            userDefaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
+            return
+        }
+
+        let seededStore = ContentTabPinnedRecordStore(
+            schemaVersion: store.schemaVersion,
+            records: favoriteRecords,
+        )
+        do {
+            try contentTabPinnedRecordClient.saveStore(seededStore, userDefaultsClient)
+        } catch {
+            return
+        }
+
+        store = seededStore
+        userDefaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
+    }
+
     private func makeWindowSession(path: String?, selectEntryID: String? = nil) -> WindowSessionState {
         let id = uuid()
 
@@ -409,7 +464,8 @@ struct WindowManagerFeature {
 
         let windowState: FileManagerWindowFeature.State
         do {
-            let store = try contentTabPinnedRecordClient.loadStore(userDefaultsClient)
+            var store = try contentTabPinnedRecordClient.loadStore(userDefaultsClient)
+            seedDefaultPinnedRecordsIfNeeded(store: &store)
             let restoreResult = restorePinnedContentTabs(from: store)
             compactPinnedStoreIfNeeded(store, restoreResult: restoreResult)
 

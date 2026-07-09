@@ -171,7 +171,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
             $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
                 guard path == "/Users/test/Documents" else { return false }
-                isDirectory?.pointee = true
+                isDirectory?.pointee = ObjCBool(true)
                 return true
             }
             $0.onboardingWindowClient.showIfNeeded = { false }
@@ -234,7 +234,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             }
             $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
                 guard path == "/Users/test/Documents" else { return false }
-                isDirectory?.pointee = true
+                isDirectory?.pointee = ObjCBool(true)
                 return true
             }
             $0.onboardingWindowClient.showIfNeeded = { false }
@@ -281,7 +281,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
             $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
                 guard path == collectionURL.path else { return false }
-                isDirectory?.pointee = true
+                isDirectory?.pointee = ObjCBool(true)
                 return true
             }
             $0.onboardingWindowClient.showIfNeeded = { false }
@@ -339,7 +339,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
             $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
                 guard path == "/Users/test/Documents" else { return false }
-                isDirectory?.pointee = true
+                isDirectory?.pointee = ObjCBool(true)
                 return true
             }
             $0.onboardingWindowClient.showIfNeeded = { false }
@@ -503,7 +503,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
                 guard path == directoryPath else { return false }
-                isDirectory?.pointee = true
+                isDirectory?.pointee = ObjCBool(true)
                 return true
             }
             $0.fileManagerWindowClient.open = { _ in }
@@ -522,5 +522,382 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertNil(window?.contentTabs.recentlyClosed, "restore 후 recentlyClosed는 소비되어 nil이어야 함")
         XCTAssertEqual(window?.contentTabs.tabs.count, initialTabCount + 1, "restore 후 tab count가 1 증가해야 함")
         XCTAssertEqual(window?.contentTabs.tabs.last?.anchor, directoryAnchor, "복원된 tab의 anchor가 일치해야 함")
+    }
+
+    // MARK: - Default Pinned Favorites Seed
+
+    /// 최초 실행(finder flag=false, pinnedStore empty)에서 Finder Favorites를 compatible pinned tab으로 변환하고
+    /// store를 저장하며 finder seed flag를 true로 설정하는지 검증한다.
+    /// - 검증 내용: favorites 기반 pinned tab + Home tab, saveStore 호출, finder flag 저장
+    /// - 사전 조건: finder seed flag=false(default), pinnedStore empty, favorites client가 2개 directory favorite 반환
+    /// - 기대 결과: favorite 2개가 directory pinned tab으로 복원, saveStore 1회 호출
+    func testDefaultBootstrapSeedsPinnedTabsFromFinderFavoritesOnFirstLaunch() async {
+        let newID = UUID()
+        let savedStores = LockIsolated<[ContentTabPinnedRecordStore]>([])
+        let legacySeedFlag = LockIsolated(false)
+        let finderSeedFlag = LockIsolated(false)
+        let applicationsURL = URL(fileURLWithPath: "/Applications")
+        let projectsURL = URL(fileURLWithPath: "/Users/test/Projects")
+        let favorites = Self.favoriteItems(applicationsURL: applicationsURL, projectsURL: projectsURL)
+
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(newID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
+            $0.contentTabPinnedRecordClient.saveStore = { store, _ in
+                savedStores.withValue { $0.append(store) }
+            }
+            $0.fileManagerFavoritesClient.loadFavorites = { _, _ in favorites }
+            $0.fileManagerClient.fileExistsWithIsDirectory = Self.fileExistsForFavoriteURLs([
+                applicationsURL,
+                projectsURL,
+            ])
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.userDefaultsClient.bool = { key in
+                switch key {
+                case "fileManager.defaultPinnedTabsSeedCompleted":
+                    legacySeedFlag.value
+                case "fileManager.finderFavoritesPinnedSeedCompleted":
+                    finderSeedFlag.value
+                default:
+                    false
+                }
+            }
+            $0.userDefaultsClient.setBool = { value, key in
+                switch key {
+                case "fileManager.defaultPinnedTabsSeedCompleted":
+                    legacySeedFlag.withValue { $0 = value }
+                case "fileManager.finderFavoritesPinnedSeedCompleted":
+                    finderSeedFlag.withValue { $0 = value }
+                default:
+                    break
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.finish()
+
+        Self.assertFinderFavoritesSeeded(
+            in: store.state,
+            savedRecords: savedStores.value.last?.records ?? [],
+        )
+        XCTAssertTrue(legacySeedFlag.value, "legacy seed flag도 완료 상태로 전환되어야 함")
+        XCTAssertTrue(finderSeedFlag.value, "finder favorites seed 완료 flag가 true로 설정되어야 함")
+    }
+
+    /// 이전 잘못된 기본 seed flag가 이미 true인 사용자에게도 finder seed flag가 false이면
+    /// Finder Favorites migration이 1회 실행되어 pinned tab으로 들어가는지 검증한다.
+    func testFinderFavoritesSeedRunsWhenLegacyDefaultSeedFlagAlreadyTrue() async {
+        let newID = UUID()
+        let savedStores = LockIsolated<[ContentTabPinnedRecordStore]>([])
+        let legacySeedFlag = LockIsolated(true)
+        let finderSeedFlag = LockIsolated(false)
+        let applicationsURL = URL(fileURLWithPath: "/Applications")
+        let projectsURL = URL(fileURLWithPath: "/Users/test/Projects")
+        let favorites = Self.favoriteItems(applicationsURL: applicationsURL, projectsURL: projectsURL)
+
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(newID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
+            $0.contentTabPinnedRecordClient.saveStore = { store, _ in
+                savedStores.withValue { $0.append(store) }
+            }
+            $0.fileManagerFavoritesClient.loadFavorites = { _, _ in favorites }
+            $0.fileManagerClient.fileExistsWithIsDirectory = Self.fileExistsForFavoriteURLs([
+                applicationsURL,
+                projectsURL,
+            ])
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.userDefaultsClient.bool = { key in
+                switch key {
+                case "fileManager.defaultPinnedTabsSeedCompleted":
+                    legacySeedFlag.value
+                case "fileManager.finderFavoritesPinnedSeedCompleted":
+                    finderSeedFlag.value
+                default:
+                    false
+                }
+            }
+            $0.userDefaultsClient.setBool = { value, key in
+                switch key {
+                case "fileManager.defaultPinnedTabsSeedCompleted":
+                    legacySeedFlag.withValue { $0 = value }
+                case "fileManager.finderFavoritesPinnedSeedCompleted":
+                    finderSeedFlag.withValue { $0 = value }
+                default:
+                    break
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.finish()
+
+        Self.assertFinderFavoritesSeeded(
+            in: store.state,
+            savedRecords: savedStores.value.last?.records ?? [],
+        )
+        XCTAssertTrue(legacySeedFlag.value, "기존 legacy flag는 유지되어야 함")
+        XCTAssertTrue(finderSeedFlag.value, "finder favorites seed 완료 flag가 true로 설정되어야 함")
+    }
+
+    /// 기존 pinned store가 있으면 missing favorite을 재삽입하지 않고 migration 완료 flag만 기록한다.
+    /// - 검증 내용: 사용자가 일부 favorite을 unpin한 상태를 seed migration이 덮어쓰지 않음
+    /// - 사전 조건: finder seed flag=false, pinnedStore non-empty
+    /// - 기대 결과: 기존 pinned tab만 유지, favorites load/save 없음, finder flag true
+    func testFinderFavoritesSeedPreservesNonEmptyPinnedStoreWithoutAppendingMissingFavorites() async {
+        let newID = UUID()
+        let saveStoreCalled = LockIsolated(false)
+        let loadFavoritesCalled = LockIsolated(false)
+        let legacySeedFlag = LockIsolated(true)
+        let finderSeedFlag = LockIsolated(false)
+        let existingRecord = ContentTabPinnedRecord(
+            id: "existing-projects",
+            page: .directory,
+            anchor: .directory(path: "/Users/test/Projects"),
+            title: "Projects",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 443),
+        )
+
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(newID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in
+                ContentTabPinnedRecordStore(records: [existingRecord])
+            }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in
+                saveStoreCalled.withValue { $0 = true }
+            }
+            $0.fileManagerFavoritesClient.loadFavorites = { _, _ in
+                loadFavoritesCalled.withValue { $0 = true }
+                return Self.favoriteItems(
+                    applicationsURL: URL(fileURLWithPath: "/Applications"),
+                    projectsURL: URL(fileURLWithPath: "/Users/test/Projects"),
+                )
+            }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerClient.fileExistsWithIsDirectory = Self.fileExistsForFavoriteURLs([
+                URL(fileURLWithPath: "/Users/test/Projects"),
+            ])
+            $0.userDefaultsClient.bool = { key in
+                switch key {
+                case "fileManager.defaultPinnedTabsSeedCompleted":
+                    legacySeedFlag.value
+                case "fileManager.finderFavoritesPinnedSeedCompleted":
+                    finderSeedFlag.value
+                default:
+                    false
+                }
+            }
+            $0.userDefaultsClient.setBool = { value, key in
+                switch key {
+                case "fileManager.defaultPinnedTabsSeedCompleted":
+                    legacySeedFlag.withValue { $0 = value }
+                case "fileManager.finderFavoritesPinnedSeedCompleted":
+                    finderSeedFlag.withValue { $0 = value }
+                default:
+                    break
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.finish()
+
+        let pinnedTabs = store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned) ?? []
+        XCTAssertEqual(
+            pinnedTabs.map(\.anchor),
+            [.directory(path: "/Users/test/Projects")],
+            "non-empty pinned store는 사용자 의도일 수 있으므로 missing favorite을 재삽입하지 않아야 함",
+        )
+        XCTAssertFalse(loadFavoritesCalled.value, "non-empty store에서는 favorites를 다시 읽지 않아야 함")
+        XCTAssertFalse(saveStoreCalled.value, "non-empty store에서는 seed 저장이 없어야 함")
+        XCTAssertTrue(finderSeedFlag.value, "finder favorites seed 완료 flag가 true로 설정되어야 함")
+    }
+
+    /// seed store 저장에 실패하면 완료 flag를 세우지 않고 다음 실행에서 재시도할 수 있어야 한다.
+    func testFinderFavoritesSeedDoesNotSetFlagWhenSaveFails() async {
+        let newID = UUID()
+        let legacySeedFlag = LockIsolated(true)
+        let finderSeedFlag = LockIsolated(false)
+        let applicationsURL = URL(fileURLWithPath: "/Applications")
+        let projectsURL = URL(fileURLWithPath: "/Users/test/Projects")
+        let favorites = Self.favoriteItems(applicationsURL: applicationsURL, projectsURL: projectsURL)
+
+        struct SeedSaveFailure: Error {}
+
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(newID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in
+                throw SeedSaveFailure()
+            }
+            $0.fileManagerFavoritesClient.loadFavorites = { _, _ in favorites }
+            $0.fileManagerClient.fileExistsWithIsDirectory = Self.fileExistsForFavoriteURLs([
+                applicationsURL,
+                projectsURL,
+            ])
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.userDefaultsClient.bool = { key in
+                switch key {
+                case "fileManager.defaultPinnedTabsSeedCompleted":
+                    legacySeedFlag.value
+                case "fileManager.finderFavoritesPinnedSeedCompleted":
+                    finderSeedFlag.value
+                default:
+                    false
+                }
+            }
+            $0.userDefaultsClient.setBool = { value, key in
+                switch key {
+                case "fileManager.defaultPinnedTabsSeedCompleted":
+                    legacySeedFlag.withValue { $0 = value }
+                case "fileManager.finderFavoritesPinnedSeedCompleted":
+                    finderSeedFlag.withValue { $0 = value }
+                default:
+                    break
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.finish()
+
+        let pinnedTabs = store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned) ?? []
+        XCTAssertTrue(pinnedTabs.isEmpty, "save 실패 시 in-memory pinned seed도 적용하지 않아야 함")
+        XCTAssertFalse(finderSeedFlag.value, "save 실패 시 finder seed 완료 flag를 세우면 안 됨")
+    }
+
+    /// finder seed 완료 flag가 true이면 pinnedStore가 비어있어도 seed를 건너뛰고 Home tab만 있는 window를 생성한다.
+    /// - 검증 내용: pinned tab 없음, saveStore 미호출
+    /// - 사전 조건: finder seed flag=true, pinnedStore empty
+    /// - 기대 결과: pinned tab 0개, Home tab 1개, saveStore 미호출
+    func testDefaultBootstrapDoesNotReseedWhenFinderFlagTrueAndStoreEmpty() async {
+        let newID = UUID()
+        let saveStoreCalled = LockIsolated(false)
+        let legacySeedFlag = LockIsolated(true)
+        let finderSeedFlag = LockIsolated(true)
+
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(newID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in
+                saveStoreCalled.withValue { $0 = true }
+            }
+            $0.fileManagerFavoritesClient.loadFavorites = { _, _ in
+                XCTFail("finder seed flag가 true이면 favorites를 다시 읽지 않아야 함")
+                return []
+            }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.userDefaultsClient.bool = { key in
+                switch key {
+                case "fileManager.defaultPinnedTabsSeedCompleted":
+                    legacySeedFlag.value
+                case "fileManager.finderFavoritesPinnedSeedCompleted":
+                    finderSeedFlag.value
+                default:
+                    false
+                }
+            }
+            $0.userDefaultsClient.setBool = { value, key in
+                switch key {
+                case "fileManager.defaultPinnedTabsSeedCompleted":
+                    legacySeedFlag.withValue { $0 = value }
+                case "fileManager.finderFavoritesPinnedSeedCompleted":
+                    finderSeedFlag.withValue { $0 = value }
+                default:
+                    break
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.finish()
+
+        let pinnedTabs = store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned) ?? []
+        XCTAssertTrue(pinnedTabs.isEmpty, "pinned tab이 없어야 함")
+        XCTAssertFalse(saveStoreCalled.value, "seed 완료 상태에서는 saveStore가 호출되지 않아야 함")
+    }
+
+    private static func assertFinderFavoritesSeeded(
+        in state: WindowManagerFeature.State,
+        savedRecords: [ContentTabPinnedRecord],
+    ) {
+        let pinnedTabs = state.windows.first?.window.contentTabs.tabs.filter(\.isPinned) ?? []
+        XCTAssertEqual(
+            pinnedTabs.map(\.title),
+            ["Applications", "Projects"],
+            "Finder Favorites가 pinned tab title로 복원되어야 함",
+        )
+        XCTAssertEqual(
+            pinnedTabs.map(\.anchor),
+            [
+                .directory(path: "/Applications"),
+                .directory(path: "/Users/test/Projects"),
+            ],
+            "초기 pinned seed는 하드코딩 위치가 아니라 Finder Favorites directory anchor를 사용해야 함",
+        )
+        XCTAssertEqual(
+            savedRecords.map(\.title),
+            ["Applications", "Projects"],
+            "saveStore에 Finder Favorites record가 저장되어야 함",
+        )
+        XCTAssertTrue(
+            savedRecords.allSatisfy { $0.page == .directory },
+            "기본 seed는 compatible directory page만 저장해야 함",
+        )
+        XCTAssertEqual(
+            savedRecords.map(\.anchor),
+            [
+                .directory(path: "/Applications"),
+                .directory(path: "/Users/test/Projects"),
+            ],
+            "기본 seed는 Recents/Tags/AI Chat이 아니라 Finder Favorites compatible anchor만 저장해야 함",
+        )
+    }
+
+    nonisolated private static func favoriteItems(
+        applicationsURL: URL,
+        projectsURL: URL,
+    ) -> [SidebarItems.FavoriteItem] {
+        [
+            SidebarItems.FavoriteItem(name: "Applications", url: applicationsURL, iconName: "appstore"),
+            SidebarItems.FavoriteItem(name: "Projects", url: projectsURL, iconName: "folder"),
+        ]
+    }
+
+    nonisolated private static func fileExistsForFavoriteURLs(
+        _ urls: [URL],
+    ) -> @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool {
+        { path, isDirectory in
+            guard urls.contains(where: { $0.path == path }) else { return false }
+            isDirectory?.pointee = ObjCBool(true)
+            return true
+        }
     }
 }

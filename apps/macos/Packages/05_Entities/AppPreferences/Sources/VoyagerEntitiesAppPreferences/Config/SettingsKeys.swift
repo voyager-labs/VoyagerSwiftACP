@@ -5,7 +5,7 @@ public enum SettingsKeys {
     public static let launchAtStartup = "launchAtStartup"
     public static let automaticUpdate = "SUAutomaticallyUpdate"
     public static let alertBeforeQuit = "alertBeforeQuit"
-    public nonisolated static let theme = "theme"
+    nonisolated public static let theme = "theme"
     public static let listIconSize = "listIconSize"
     public static let gridIconSize = "gridIconSize"
     public static let listTextSize = "listTextSize"
@@ -17,4 +17,6 @@ public enum SettingsKeys {
     public static let viewLayout = "viewLayout"
     public static let helperFolderAccessSnapshot = "helperFolderAccessSnapshot"
     public static let collectionSearchAISettings = "collectionSearchAISettings"
+    public static let defaultPinnedTabsSeedCompleted = "fileManager.defaultPinnedTabsSeedCompleted"
+    public static let finderFavoritesPinnedSeedCompleted = "fileManager.finderFavoritesPinnedSeedCompleted"
 }
