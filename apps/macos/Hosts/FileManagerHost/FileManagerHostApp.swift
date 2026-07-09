@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import VoyagerPagesFileManager
 
@@ -31,24 +32,73 @@ struct FileManagerHostApp: App {
 
     var body: some Scene {
         Settings {
-            EmptyView()
+            ZStack {
+                FileManagerHostScenarioPicker(
+                    initialPreset: appDelegate.initialPreset,
+                    onSelect: { appDelegate.selectPreset($0) },
+                )
+            }
         }
     }
 }
 
 @MainActor
-private final class FileManagerHostAppDelegate: NSObject, NSApplicationDelegate {
+private final class FileManagerHostAppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
+    @Published private(set) var initialPreset = FileManagerHostPreset.resolveFromEnvironment()
     private var windowController: NSWindowController?
 
     func applicationDidFinishLaunching(_: Notification) {
-        let controller = FileManagerHostFixture.makeWindowController()
+        showWindow(for: initialPreset)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
+        true
+    }
+
+    func selectPreset(_ preset: FileManagerHostPreset) {
+        windowController?.close()
+        windowController = nil
+        initialPreset = preset
+        showWindow(for: preset)
+    }
+
+    private func showWindow(for preset: FileManagerHostPreset) {
+        let controller = FileManagerHostFixture.makeWindowController(preset: preset)
         windowController = controller
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
+}
 
-    func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
-        true
+private struct FileManagerHostScenarioPicker: View {
+    @State private var preset: FileManagerHostPreset
+    let onSelect: (FileManagerHostPreset) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Scenario")
+                .font(.headline)
+            Picker("Preset", selection: $preset) {
+                ForEach(FileManagerHostPreset.allCases, id: \.self) { preset in
+                    Text(preset.rawValue).tag(preset)
+                }
+            }
+            .onChange(of: preset) { new in
+                onSelect(new)
+            }
+        }
+        .padding(20)
+        .frame(width: 300)
+    }
+}
+
+extension FileManagerHostScenarioPicker {
+    init(
+        initialPreset: FileManagerHostPreset,
+        onSelect: @escaping (FileManagerHostPreset) -> Void,
+    ) {
+        self.onSelect = onSelect
+        _preset = State(initialValue: initialPreset)
     }
 }

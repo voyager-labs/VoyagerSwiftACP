@@ -199,5 +199,5 @@ If two tests look similar but test different initial states, entry paths, or ass
 | Method doc comment        | `/// <SPEC-ID>-<interaction_id>: <scenario>` + intent + 검증 내용/사전 조건/기대 결과 |
 | Product behavior location | Owning spec suite under `Specs/`                                                      |
 | Fixture/recorder location | Flat files under `Support/`, named by role/type such as `PaymentFixtures.swift`       |
-| Fixture source default       | Root `fixtures/` submodule payload under `fixtures/fixtures/**`; path-equivalence variants still derive from sandboxed real fixtures |
+| Fixture source default    | Root `fixtures/` submodule payload under `fixtures/fixtures/**`; path-equivalence variants still derive from sandboxed real fixtures |
 | Verification handoff      | `../../testing/SKILL.md` with focused class filter                                    |

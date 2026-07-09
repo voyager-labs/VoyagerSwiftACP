@@ -27,6 +27,21 @@ public struct AccessStatusSnapshot: Equatable, Sendable, Codable {
         self.sessionExpiresAt = sessionExpiresAt
     }
 
+    /// access_status 조회 결과와 현재 세션 축을 하나의 복구 스냅샷으로 고정한다.
+    public static func fetchResult(
+        status: AccessStatus,
+        currentPeriodEnd: Date? = nil,
+        sessionExpiresAt: Date? = nil,
+        fetchedAt: Date = Date(),
+    ) -> Self {
+        Self(
+            status: status,
+            currentPeriodEnd: currentPeriodEnd,
+            fetchedAt: fetchedAt,
+            sessionExpiresAt: sessionExpiresAt,
+        )
+    }
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         status = try container.decode(AccessStatus.self, forKey: .status)

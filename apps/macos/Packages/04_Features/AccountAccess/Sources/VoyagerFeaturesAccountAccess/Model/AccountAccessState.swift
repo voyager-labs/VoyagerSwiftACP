@@ -105,7 +105,7 @@ public struct AccountAccessState: Equatable {
             return .login
         }
         guard let status else {
-            return .pending
+            return errorMessage == nil ? .pending : .retry
         }
         switch status {
         case .coreLicenseActive, .trialActive, .internalTestActive:
@@ -114,6 +114,57 @@ public struct AccountAccessState: Equatable {
             return .retry
         case .none, .trialExpired, .revoked, .refunded:
             return .webPricing
+        }
+    }
+
+    /// AppLifecycle/Settings가 launch access snapshot을 같은 방식으로 상태에 반영한다.
+    public mutating func hydrateLaunchSnapshotState(_ snapshot: AccessStatusSnapshot) {
+        status = snapshot.status
+        self.snapshot = snapshot
+        trialExpiresAt = snapshot.currentPeriodEnd
+        isSignInInProgress = false
+        didSignInFail = false
+        handoffPendingState = nil
+        errorMessage = nil
+        hasAccountSession = snapshot.hasSession
+        sessionExpiresAt = snapshot.sessionExpiresAt
+        isSessionExpired = false
+        didBootstrap = true
+        fetchGeneration += 1
+    }
+
+    /// access_status를 확정할 수 없는 실패를 세션 만료와 분리해 error 축으로 반영한다.
+    public mutating func hydrateAccessFailureState(
+        error: AccessError,
+        sessionExpiresAt: Date?,
+    ) {
+        status = error == .networkFailure ? .networkFailure : nil
+        snapshot = nil
+        trialExpiresAt = nil
+        isSignInInProgress = false
+        didSignInFail = false
+        handoffPendingState = nil
+        errorMessage = Self.errorMessage(for: error)
+        hasAccountSession = sessionExpiresAt != nil
+        self.sessionExpiresAt = sessionExpiresAt
+        isSessionExpired = false
+        isComplete = false
+        didBootstrap = true
+        fetchGeneration += 1
+    }
+
+    private static func errorMessage(for error: AccessError) -> String {
+        switch error {
+        case .networkFailure:
+            "Network error. Please try again."
+        case .notConfigured:
+            "Access service is not configured."
+        case .decodingFailure:
+            "Failed to process the response."
+        case .unauthorized:
+            "Session expired. Log in again to continue."
+        case .unknownGatewayCode:
+            "An unexpected error occurred."
         }
     }
 }

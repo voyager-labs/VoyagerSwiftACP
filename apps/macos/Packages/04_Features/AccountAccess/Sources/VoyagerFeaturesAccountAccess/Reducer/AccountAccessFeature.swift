@@ -119,6 +119,10 @@ public struct AccountAccessFeature {
             case let .hydrateLaunchSnapshot(snapshot):
                 return handleHydrateLaunchSnapshot(&state, snapshot: snapshot)
 
+            case let .hydrateAccessFailure(error: error, sessionExpiresAt: sessionExpiresAt):
+                state.hydrateAccessFailureState(error: error, sessionExpiresAt: sessionExpiresAt)
+                return .none
+
             case let ._fetchRetryScheduled(retryStep):
                 return handleFetchRetryScheduled(&state, retryStep: retryStep)
 
@@ -425,11 +429,11 @@ private extension AccountAccessFeature {
         state.trialExpiresAt = response.currentPeriodEnd
         state.fetchRetryCount = 0
 
-        let snapshot = AccessStatusSnapshot(
+        let snapshot = AccessStatusSnapshot.fetchResult(
             status: accessStatus,
             currentPeriodEnd: response.currentPeriodEnd,
-            fetchedAt: date(),
             sessionExpiresAt: state.sessionExpiresAt,
+            fetchedAt: date(),
         )
         state.snapshot = snapshot
 
@@ -575,18 +579,7 @@ private extension AccountAccessFeature {
         _ state: inout State,
         snapshot: AccessStatusSnapshot,
     ) -> Effect<Action> {
-        state.status = snapshot.status
-        state.snapshot = snapshot
-        state.trialExpiresAt = snapshot.currentPeriodEnd
-        clearStaleSignInState(&state)
-
-        state.hasAccountSession = snapshot.hasSession
-        state.sessionExpiresAt = snapshot.sessionExpiresAt
-        state.isSessionExpired = false
-
-        state.didBootstrap = true
-
-        state.fetchGeneration += 1
+        state.hydrateLaunchSnapshotState(snapshot)
 
         if snapshot.hasSession {
             state.ttlTimerActive = true
@@ -654,11 +647,11 @@ private extension AccountAccessFeature {
             state.consecutiveRefreshFailures = 0
             state.sessionExpiresAt = session.expiresAt
             if let snapshot = state.snapshot {
-                state.snapshot = AccessStatusSnapshot(
+                state.snapshot = AccessStatusSnapshot.fetchResult(
                     status: snapshot.status,
                     currentPeriodEnd: snapshot.currentPeriodEnd,
-                    fetchedAt: snapshot.fetchedAt,
                     sessionExpiresAt: session.expiresAt,
+                    fetchedAt: snapshot.fetchedAt,
                 )
             }
             return .none

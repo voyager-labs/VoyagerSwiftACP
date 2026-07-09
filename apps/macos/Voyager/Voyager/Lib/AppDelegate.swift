@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesOnboarding
@@ -8,6 +9,13 @@ import VoyagerPagesOnboarding
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var appRootStore: StoreOf<AppRootFeature>?
+
+    /// Auth callback routing 결정 seam. true 반환 = 온보딩이 처리, false 반환 = AppRoot
+    /// sessionLapseGuard 폴백. 기본 동작은 전역 onboarding controller 존재 여부 조회.
+    /// 테스트에서 override하여 onboarding-present/absent 경로를 결정론적으로 검증.
+    var resolveAuthCallbackRouting: @MainActor (URL) -> Bool = { url in
+        VoyagerPagesOnboarding.routeAuthCallbackToOnboardingIfPresent(url)
+    }
 
     override init() {
         super.init()
@@ -128,10 +136,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func routeAuthCallback(_ url: URL) {
         MainActor.assumeIsolated {
-            if VoyagerPagesOnboarding.routeAuthCallbackToOnboardingIfPresent(url) {
+            // resolveAuthCallbackRouting == true → 온보딩이 처리했으므로 AppRoot 폴백 생략.
+            // false → sessionLapseGuard 폴백. guard state가 nil이면 ifLet가 action을 무시.
+            guard resolveAuthCallbackRouting(url) else {
+                withAppRootStore {
+                    $0.send(.lifecycle(.sessionLapseGuard(.loginCallbackReceived(url))))
+                }
                 return
             }
-            VoyagerPagesOnboarding.routeAuthCallbackToUnlockSurface(url)
         }
     }
 

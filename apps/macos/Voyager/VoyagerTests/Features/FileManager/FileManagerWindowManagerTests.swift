@@ -49,6 +49,26 @@ final class FileManagerWindowManagerTests: XCTestCase {
         )
     }
 
+    /// openInitialWindowIfNeeded는 기존 FileManager window가 있으면 중복 생성하지 않는다.
+    func test_openInitialWindowIfNeeded_doesNotDuplicateExistingFileManagerWindow() async {
+        let existingID = UUID()
+        let openCallCount = LockIsolated(0)
+
+        let store = makeStore(initialState: makeState(
+            focusedID: existingID,
+            windows: [(existingID, Spec.firstPath)],
+        )) {
+            $0.fileManagerWindowClient.open = { _ in
+                openCallCount.withValue { $0 += 1 }
+            }
+        }
+
+        await store.send(.lifecycle(.openInitialWindowIfNeeded))
+        await store.send(.lifecycle(.openInitialWindowIfNeeded))
+
+        XCTAssertEqual(openCallCount.value, 0, "기존 window가 있으면 openInitialWindowIfNeeded는 open client를 다시 호출하지 않아야 한다")
+    }
+
     // MARK: - FMW-001-open_new_file_manager_window
 
     /// FMW-001-open_new_file_manager_window: 새 윈도우 생성 및 활성 윈도우 추적

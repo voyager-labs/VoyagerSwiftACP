@@ -25,6 +25,54 @@ private struct SessionLapseGuardObservedState: Equatable {
     let accountAccessStepState: AccountAccessStepState
     let isSignInInProgress: Bool
     let errorMessage: String?
+    let accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA
+}
+
+// MARK: - Interaction shield
+
+private struct SessionLapseGuardInteractionShield: NSViewRepresentable {
+    func makeNSView(context _: Context) -> SessionLapseGuardInteractionShieldView {
+        SessionLapseGuardInteractionShieldView(frame: .zero)
+    }
+
+    func updateNSView(_: SessionLapseGuardInteractionShieldView, context _: Context) {}
+}
+
+final class SessionLapseGuardInteractionShieldView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        nil
+    }
+
+    override var acceptsFirstResponder: Bool {
+        true
+    }
+
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
+        true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard !isHidden, alphaValue > 0, bounds.contains(point) else { return nil }
+        return self
+    }
+
+    override func draggingEntered(_: any NSDraggingInfo) -> NSDragOperation {
+        []
+    }
+
+    override func draggingUpdated(_: any NSDraggingInfo) -> NSDragOperation {
+        []
+    }
+
+    override func performDragOperation(_: any NSDraggingInfo) -> Bool {
+        true
+    }
 }
 
 /// ACC-003-guard_session_lapse: 세션 만료 또는 로그아웃 상태에서 현재 window 콘텐츠를
@@ -54,6 +102,8 @@ public struct SessionLapseGuardView: View {
     private let store: StoreOf<AccountAccessFeature>
 
     static let loginButtonTitle = "Log in"
+    static let retryButtonTitle = "Retry"
+    static let webPricingButtonTitle = "View pricing"
 
     public init(store: StoreOf<AccountAccessFeature>) {
         self.store = store
@@ -68,6 +118,7 @@ public struct SessionLapseGuardView: View {
                     accountAccessStepState: state.accountAccessStepState,
                     isSignInInProgress: state.isSignInInProgress,
                     errorMessage: state.errorMessage,
+                    accessUnlockPrimaryCTA: state.accessUnlockPrimaryCTA,
                 )
             },
             content: { viewStore in
@@ -75,6 +126,7 @@ public struct SessionLapseGuardView: View {
                 let accountAccessStepState = viewStore.accountAccessStepState
                 let isSignInInProgress = viewStore.isSignInInProgress
                 let errorMessage = viewStore.errorMessage
+                let accessUnlockPrimaryCTA = viewStore.accessUnlockPrimaryCTA
 
                 let shouldShow = Self.shouldShow(
                     accountAccessStepState: accountAccessStepState,
@@ -83,23 +135,28 @@ public struct SessionLapseGuardView: View {
 
                 if shouldShow {
                     ZStack {
-                        // Semi-opaque blur background (NSVisualEffectView)
                         VisualEffectView(
                             material: .fullScreenUI,
                             blendingMode: .behindWindow,
                         )
                         .edgesIgnoringSafeArea(.all)
 
-                        // Centered reauth dialog
+                        SessionLapseGuardInteractionShield()
+                            .edgesIgnoringSafeArea(.all)
+                            .accessibilityHidden(true)
+
                         VStack(spacing: 16) {
                             Image(systemName: "lock.shield")
                                 .font(.system(size: 40))
                                 .foregroundStyle(.secondary)
                                 .accessibilityHidden(true)
 
-                            Text(Self.dialogTitle(didSignInFail: didSignInFail))
-                                .font(.title3)
-                                .fontWeight(.semibold)
+                            Text(Self.dialogTitle(
+                                didSignInFail: didSignInFail,
+                                accessUnlockPrimaryCTA: accessUnlockPrimaryCTA,
+                            ))
+                            .font(.title3)
+                            .fontWeight(.semibold)
 
                             if let error = errorMessage {
                                 Text(error)
@@ -108,8 +165,8 @@ public struct SessionLapseGuardView: View {
                                     .multilineTextAlignment(.center)
                             }
 
-                            Button(Self.loginButtonTitle) {
-                                viewStore.send(.loginTapped)
+                            Button(Self.primaryButtonTitle(for: accessUnlockPrimaryCTA)) {
+                                viewStore.send(Self.primaryButtonAction(for: accessUnlockPrimaryCTA))
                             }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.large)
@@ -120,10 +177,9 @@ public struct SessionLapseGuardView: View {
                                     .controlSize(.small)
                             }
                         }
-                        .padding(32)
-                        .background(Color(nsColor: .windowBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .shadow(radius: 8)
+                        .padding(.vertical, 40)
+                        .padding(.horizontal, 48)
+                        .frame(minWidth: 360)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -135,10 +191,47 @@ public struct SessionLapseGuardView: View {
     /// - session_expired → "세션이 만료되었습니다"
     /// - logged_out → "로그인이 필요합니다"
     static func dialogTitle(didSignInFail: Bool) -> String {
+        dialogTitle(didSignInFail: didSignInFail, accessUnlockPrimaryCTA: .login)
+    }
+
+    static func dialogTitle(
+        didSignInFail: Bool,
+        accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA,
+    ) -> String {
+        switch accessUnlockPrimaryCTA {
+        case .webPricing:
+            return "Access required to continue."
+        case .retry:
+            return "Could not verify access."
+        case .login, .next, .pending:
+            break
+        }
         if didSignInFail {
             return "Session expired. Log in again to continue."
         }
         return "Log in to continue."
+    }
+
+    static func primaryButtonTitle(for accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA) -> String {
+        switch accessUnlockPrimaryCTA {
+        case .retry:
+            retryButtonTitle
+        case .webPricing:
+            webPricingButtonTitle
+        case .login, .next, .pending:
+            loginButtonTitle
+        }
+    }
+
+    static func primaryButtonAction(for accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA) -> AccountAccessAction {
+        switch accessUnlockPrimaryCTA {
+        case .retry:
+            .retryTapped
+        case .webPricing:
+            .openPricingTapped
+        case .login, .next, .pending:
+            .loginTapped
+        }
     }
 
     static func shouldShow(

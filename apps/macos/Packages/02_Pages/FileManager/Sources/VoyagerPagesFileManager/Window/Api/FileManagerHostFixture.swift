@@ -5,6 +5,7 @@ import IdentifiedCollections
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
@@ -12,7 +13,9 @@ import VoyagerWidgetsEntryViewLayout
 
 @MainActor
 public enum FileManagerHostFixture {
-    public static func makeWindowController() -> NSWindowController {
+    public static func makeWindowController(
+        preset: FileManagerHostPreset = .default,
+    ) -> NSWindowController {
         let state = FileManagerHostFixtureStateFactory.makeState()
         let undoManager = UndoManager()
         let store = Store(initialState: state) {
@@ -25,7 +28,32 @@ public enum FileManagerHostFixture {
             windowID: UUID(),
             store: store,
             windowUndoManager: undoManager,
+            sessionLapseGuardStore: FileManagerHostFixture.makeSessionLapseGuardStore(
+                for: preset.scenario.sessionLapse,
+            ),
         )
+    }
+
+    /// ponytail: AccountAccess 의존성은 모두 안전한 no-op previewValue로 주입.
+    static func makeSessionLapseGuardStore(
+        for scenario: FileManagerHostSessionLapseScenario,
+    ) -> Store<AccountAccessFeature.State?, AccountAccessAction>? {
+        switch scenario {
+        case .none:
+            return nil
+        case .active, .signInFailed:
+            var guardState: AccountAccessFeature.State? = AccountAccessFeature.State()
+            if scenario == .signInFailed {
+                guardState?.didSignInFail = true
+            }
+            // ponytail: EmptyReducer 사용 — host는 guard view 표시만 검증.
+            // 의존성 주입 불필요 (reducer가 실행되지 않으므로 previewValue crash 경로 없음).
+            return Store<AccountAccessFeature.State?, AccountAccessAction>(
+                initialState: guardState,
+            ) {
+                EmptyReducer()
+            }
+        }
     }
 }
 
