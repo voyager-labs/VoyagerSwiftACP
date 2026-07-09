@@ -40,6 +40,8 @@ struct AppLifecycleFeature {
     var clock
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
+    @Dependency(\.deviceIdentityClient)
+    var deviceIdentityClient
 
     private enum CancelID {
         static let helperMonitor = "helperMonitor"
@@ -129,16 +131,15 @@ struct AppLifecycleFeature {
 
             case let .accountAccessGate(.accessStatusResponse(generation: generation, result: .success(response))):
                 guard state.isCurrentAccessGateGeneration(generation) else { return .none }
-                state.isCheckingAccountAccess = false
                 let accessStatus = response.toAccessStatus()
                 state.lastAccessStatus = accessStatus
-                state.accountAccessGateResolved = true
+                state.accountAccessGateResolved = false
 
                 if accessStatus.isActive {
-                    // 활성 접근 권한: 스냅샷 생성 시 세션 만료 시점을 함께 반영한다.
-                    // authNetwork가 반환한 accessStatus를 그대로 사용하며,
-                    // 세션 읽기 실패/미존재는 access gate에 영향을 주지 않는다 (sessionExpiresAt == nil).
+                    state.isCheckingAccountAccess = true
                     let accountSessionClient = accountSessionClient
+                    let authNetwork = authNetwork
+                    let deviceIdentityClient = deviceIdentityClient
                     let dateNow = date.now
                     return .run { send in
                         let sessionExpiresAt = await (try? accountSessionClient.read())?.expiresAt
@@ -148,13 +149,38 @@ struct AppLifecycleFeature {
                             sessionExpiresAt: sessionExpiresAt,
                             fetchedAt: dateNow,
                         )
-                        await send(.accountAccessGate(.accountAccessGranted(
+                        guard snapshot.hasSession else {
+                            await send(.accountAccessGate(.accessUnlockRequired(
+                                generation: generation,
+                                snapshot: snapshot,
+                            )))
+                            return
+                        }
+
+                        let result: Result<DeviceBindingResponse, DeviceBindingError>
+                        do {
+                            let request = try DeviceBindingRequest(
+                                deviceId: deviceIdentityClient.deviceId(),
+                                deviceName: Host.current().localizedName,
+                                appVersion: AppVersionInfo.shortVersion,
+                                osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+                            )
+                            let response = try await authNetwork.bindDevice(request)
+                            result = .success(response)
+                        } catch let error as DeviceBindingError {
+                            result = .failure(error)
+                        } catch {
+                            result = .failure(.invalidDevicePayload)
+                        }
+                        await send(.accountAccessGate(.deviceBindingResponse(
                             generation: generation,
                             snapshot: snapshot,
+                            result: result,
                         )))
                     }
                 }
 
+                state.isCheckingAccountAccess = false
                 let accountSessionClient = accountSessionClient
                 let dateNow = date.now
                 return .run { send in
@@ -193,6 +219,7 @@ struct AppLifecycleFeature {
                 return .run { send in
                     guard let cached = await snapshotClient.load(),
                           cached.isActive,
+                          cached.isDeviceBindingVerified,
                           dateNow.timeIntervalSince(cached.fetchedAt) <= 24 * 3600,
                           cached.currentPeriodEnd.map({ dateNow < $0 }) ?? true
                     else {
@@ -218,11 +245,61 @@ struct AppLifecycleFeature {
                         currentPeriodEnd: cached.currentPeriodEnd,
                         sessionExpiresAt: sessionExpiresAt,
                         fetchedAt: cached.fetchedAt,
+                        deviceBindingVerifiedAt: cached.deviceBindingVerifiedAt,
                     )
+                    guard restored.hasSession else {
+                        await send(.accountAccessGate(.accessUnlockRequired(
+                            generation: generation,
+                            snapshot: restored,
+                        )))
+                        return
+                    }
                     await send(.accountAccessGate(.accountAccessGranted(
                         generation: generation,
                         snapshot: restored,
                     )))
+                }
+
+            case let .accountAccessGate(.deviceBindingResponse(
+                generation: generation,
+                snapshot: snapshot,
+                result: result,
+            )):
+                guard state.isCurrentAccessGateGeneration(generation) else { return .none }
+                switch result {
+                case let .success(response):
+                    guard response.ok else {
+                        return deviceBindingFailureEffects(
+                            state: &state,
+                            snapshot: snapshot,
+                            generation: generation,
+                            error: .decodingFailure,
+                            snapshotClient: snapshotClient,
+                        )
+                    }
+                    let verifiedSnapshot = AccessStatusSnapshot.fetchResult(
+                        status: snapshot.status,
+                        currentPeriodEnd: snapshot.currentPeriodEnd,
+                        sessionExpiresAt: snapshot.sessionExpiresAt,
+                        fetchedAt: snapshot.fetchedAt,
+                        deviceBindingVerifiedAt: date.now,
+                    )
+                    return .send(.accountAccessGate(.accountAccessGranted(
+                        generation: generation,
+                        snapshot: verifiedSnapshot,
+                    )))
+
+                case .failure(.unauthorized):
+                    return .send(.sessionExpiredDetected(reason: .sessionExpired))
+
+                case let .failure(error):
+                    return deviceBindingFailureEffects(
+                        state: &state,
+                        snapshot: snapshot,
+                        generation: generation,
+                        error: error,
+                        snapshotClient: snapshotClient,
+                    )
                 }
 
             case let .accountAccessGate(.accessUnlockRequired(generation: generation, snapshot: snapshot)):
@@ -262,6 +339,12 @@ struct AppLifecycleFeature {
 
             case let .accountAccessGate(.accountAccessGranted(generation: generation, snapshot: snapshot)):
                 guard state.isCurrentAccessGateGeneration(generation) else { return .none }
+                guard snapshot.isActive, snapshot.hasSession, snapshot.isDeviceBindingVerified else {
+                    return .send(.accountAccessGate(.accessUnlockRequired(
+                        generation: generation,
+                        snapshot: snapshot,
+                    )))
+                }
                 return accountAccessGrantedEffects(
                     state: &state,
                     snapshot: snapshot,
@@ -453,6 +536,39 @@ private func accountAccessGrantedEffects(
     effects.append(.send(.delegate(.openInitialWindowIfNeeded)))
 
     return .merge(effects)
+}
+
+private func deviceBindingFailureEffects(
+    state: inout AppLifecycleState,
+    snapshot: AccessStatusSnapshot,
+    generation: Int,
+    error: DeviceBindingError,
+    snapshotClient: AccessStatusSnapshotClient,
+) -> Effect<AppLifecycleAction> {
+    state.resolveAccessUnlockRequired(snapshot, generation: generation)
+    var sessionLapseGuard = AccountAccessFeature.State()
+    sessionLapseGuard.handoffContext = .paywall
+    sessionLapseGuard.fetchGeneration = generation
+    sessionLapseGuard.status = snapshot.status
+    sessionLapseGuard.trialExpiresAt = snapshot.currentPeriodEnd
+    sessionLapseGuard.snapshot = snapshot
+    sessionLapseGuard.hasAccountSession = snapshot.hasSession
+    sessionLapseGuard.sessionExpiresAt = snapshot.sessionExpiresAt
+    sessionLapseGuard.isSubmitting = true
+    sessionLapseGuard.didBootstrap = true
+    state.sessionLapseGuard = sessionLapseGuard
+
+    return .merge(
+        .send(.sessionLapseGuard(.deviceBindingResponse(
+            generation: generation,
+            snapshot: snapshot,
+            result: .failure(error),
+        ))),
+        .run { _ in
+            await snapshotClient.save(snapshot)
+        },
+        .send(.delegate(.openInitialWindowIfNeeded)),
+    )
 }
 
 private func helperMonitorEffect(

@@ -23,6 +23,11 @@ enum AppLifecycleAction: CasePathable {
         case checkAccessStatus
         case accessStatusResponse(generation: Int, result: Result<AccessStatusResponse, AccessError>)
         case accessStatusFailed(generation: Int, error: AccessError, sessionExpiresAt: Date?)
+        case deviceBindingResponse(
+            generation: Int,
+            snapshot: AccessStatusSnapshot,
+            result: Result<DeviceBindingResponse, DeviceBindingError>,
+        )
         case accessUnlockRequired(generation: Int, snapshot: AccessStatusSnapshot)
         case accountAccessGranted(generation: Int, snapshot: AccessStatusSnapshot)
     }

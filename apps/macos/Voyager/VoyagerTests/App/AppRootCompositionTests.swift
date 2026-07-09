@@ -67,7 +67,12 @@ final class AppRootCompositionTests: XCTestCase {
     /// 테스트-로컬 `withDependencies` override로 helperAppClient.start/stop no-op,
     /// onboardingWindowClient.showIfNeeded={false} 처리. 글로벌 testValue는 미변경.
     func testAppRootAccountAccessGrantedForwardsSettingsAccessSnapshotHydration() async {
-        let snapshot = AccessStatusSnapshot(status: .coreLicenseActive)
+        let expiry = Date(timeIntervalSince1970: 4_102_444_800)
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            sessionExpiresAt: expiry,
+            deviceBindingVerifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        )
         let store = makeAccountAccessGrantedStore()
 
         await store.send(.lifecycle(.accountAccessGate(.accountAccessGranted(generation: 0, snapshot: snapshot))))
@@ -76,13 +81,16 @@ final class AppRootCompositionTests: XCTestCase {
             state.settings.accessStatus = snapshot.status
         }
         await store.receive(\.settings.account.access.hydrateLaunchSnapshot) { state in
-            state.settings.accountSettings.access.sessionExpiresAt = nil
-            state.settings.accountSettings.access.hasAccountSession = false
+            state.settings.accountSettings.access.status = .coreLicenseActive
+            state.settings.accountSettings.access.snapshot = snapshot
+            state.settings.accountSettings.access.isComplete = true
+            state.settings.accountSettings.access.sessionExpiresAt = expiry
+            state.settings.accountSettings.access.hasAccountSession = true
             state.settings.accountSettings.access.didBootstrap = true
         }
 
-        XCTAssertNil(store.state.settings.accountSettings.access.sessionExpiresAt)
-        XCTAssertFalse(store.state.settings.accountSettings.access.hasAccountSession)
+        XCTAssertEqual(store.state.settings.accountSettings.access.sessionExpiresAt, expiry)
+        XCTAssertTrue(store.state.settings.accountSettings.access.hasAccountSession)
         await store.finish()
     }
 
@@ -97,6 +105,7 @@ final class AppRootCompositionTests: XCTestCase {
         let snapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
             sessionExpiresAt: expiry,
+            deviceBindingVerifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
         )
         let store = makeAccountAccessGrantedStore()
 
@@ -108,6 +117,7 @@ final class AppRootCompositionTests: XCTestCase {
         await store.receive(\.settings.account.access.hydrateLaunchSnapshot) { state in
             state.settings.accountSettings.access.sessionExpiresAt = expiry
             state.settings.accountSettings.access.hasAccountSession = true
+            state.settings.accountSettings.access.isComplete = true
             state.settings.accountSettings.access.didBootstrap = true
         }
 
@@ -170,25 +180,45 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// T11: `sessionExpiresAt == nil`인 snapshot도 AppRoot passthrough → Settings → AccountAccess
-    /// 경로가 정상 동작함을 검증. backward compat 시나리오 (세션 없이 access granted).
-    func testAppRootAccountAccessGrantedForwardsSnapshotWithNilSessionExpiry() async {
+    /// `sessionExpiresAt == nil`인 active snapshot은 granted passthrough가 아니라 unlock-required로 되돌린다.
+    func testAppRootAccountAccessGrantedRejectsSnapshotWithNilSessionExpiry() async {
         let snapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
             sessionExpiresAt: nil,
+            deviceBindingVerifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
         )
         let store = makeAccountAccessGrantedStore()
 
         await store.send(.lifecycle(.accountAccessGate(.accountAccessGranted(generation: 0, snapshot: snapshot))))
 
-        await store.receive(\.settings.appLifecycleAccessSnapshotReady) { state in
-            state.settings.accessStatus = snapshot.status
+        await store.receive(\.lifecycle.accountAccessGate.accessUnlockRequired) { state in
+            state.lifecycle.accessGatePhase = .unlockRequired(snapshot: snapshot, generation: 0)
+            state.lifecycle.lastAccessStatus = .coreLicenseActive
+            state.lifecycle.accountAccessGateResolved = true
+            state.lifecycle.sessionLapseGuard = AccountAccessFeature.State()
+            state.lifecycle.sessionLapseGuard?.handoffContext = .paywall
+        }
+        await store.receive(\.lifecycle.sessionLapseGuard.hydrateLaunchSnapshot) { state in
+            state.lifecycle.sessionLapseGuard?.status = .coreLicenseActive
+            state.lifecycle.sessionLapseGuard?.snapshot = snapshot
+            state.lifecycle.sessionLapseGuard?.sessionExpiresAt = nil
+            state.lifecycle.sessionLapseGuard?.hasAccountSession = false
+            state.lifecycle.sessionLapseGuard?.isComplete = false
+            state.lifecycle.sessionLapseGuard?.didBootstrap = true
+            state.lifecycle.sessionLapseGuard?.fetchGeneration = 1
+        }
+        await store.receive(\.settings.accessStatusLoaded) { state in
+            state.settings.accessStatus = .none
         }
         await store.receive(\.settings.account.access.hydrateLaunchSnapshot) { state in
+            state.settings.accountSettings.access.status = .coreLicenseActive
+            state.settings.accountSettings.access.snapshot = snapshot
+            state.settings.accountSettings.access.isComplete = false
             state.settings.accountSettings.access.sessionExpiresAt = nil
             state.settings.accountSettings.access.hasAccountSession = false
             state.settings.accountSettings.access.didBootstrap = true
         }
+        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
 
         XCTAssertNil(
             store.state.settings.accountSettings.access.sessionExpiresAt,
@@ -301,6 +331,7 @@ final class AppRootCompositionTests: XCTestCase {
         let snapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
             sessionExpiresAt: expiry,
+            deviceBindingVerifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
         )
         var initialState = AppRootFeature.State()
         // AppLifecycleFeature가 unlocked delegate를 정상 처리하려면 sessionLapseGuard
@@ -324,6 +355,7 @@ final class AppRootCompositionTests: XCTestCase {
             state.settings.accountSettings.access.snapshot = snapshot
             state.settings.accountSettings.access.sessionExpiresAt = expiry
             state.settings.accountSettings.access.hasAccountSession = true
+            state.settings.accountSettings.access.isComplete = true
             state.settings.accountSettings.access.didBootstrap = true
         }
 
@@ -452,6 +484,7 @@ final class AppRootCompositionTests: XCTestCase {
             // reducer가 date.now를 읽어 snapshot.fetchedAt에 넣는다. deterministic 고정.
             $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
             $0.accountSessionClient.read = { session }
+            $0.authNetworkClient.bindDevice = { _ in DeviceBindingResponse(ok: true) }
             $0.helperAppClient.start = {}
             $0.helperAppClient.stop = {}
             $0.accessStatusSnapshotClient.save = { snapshot in
@@ -462,12 +495,14 @@ final class AppRootCompositionTests: XCTestCase {
 
         await store.send(.accountAccessGate(.accessStatusResponse(generation: 0, result: .success(response))))
 
+        await store.receive(\.accountAccessGate.deviceBindingResponse)
         await store.receive(\.accountAccessGate.accountAccessGranted)
         await store.receive(\.delegate.openInitialWindowIfNeeded)
 
         // sessionExpiresAt == session.expiresAt, status는 access gate 결과 유지.
         XCTAssertEqual(saved.value?.sessionExpiresAt, expiry)
         XCTAssertEqual(saved.value?.status, .coreLicenseActive)
+        XCTAssertNotNil(saved.value?.deviceBindingVerifiedAt)
         XCTAssertNotNil(saved.value)
         await store.finish()
     }
@@ -537,13 +572,16 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// active access + session 미존재: read가 nil을 반환해도 access gate는 succeed하며,
-    /// snapshot.sessionExpiresAt는 nil이다.
-    func testAccessStatusSuccessLeavesSessionExpiryNilWhenNoSession() async {
+    /// active access + session 미존재: read가 nil이면 access gate가 grant되지 않고 unlock guard로 간다.
+    func testAccessStatusSuccessRoutesToUnlockRequiredWhenNoSession() async {
         let response = AccessStatusResponse(
             hasAccess: true,
             status: "active",
             productKey: "core",
+        )
+        let expectedSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: Date(timeIntervalSince1970: 0),
         )
         let saved = SnapshotCaptureBox()
 
@@ -554,6 +592,10 @@ final class AppRootCompositionTests: XCTestCase {
             $0.accountSessionClient.read = { nil }
             $0.helperAppClient.start = {}
             $0.helperAppClient.stop = {}
+            $0.authNetworkClient.bindDevice = { _ in
+                XCTFail("세션 없이는 device binding을 호출하면 안 됨")
+                return DeviceBindingResponse(ok: true)
+            }
             $0.accessStatusSnapshotClient.save = { snapshot in
                 saved.value = snapshot
             }
@@ -562,13 +604,29 @@ final class AppRootCompositionTests: XCTestCase {
 
         await store.send(.accountAccessGate(.accessStatusResponse(generation: 0, result: .success(response))))
 
-        await store.receive(\.accountAccessGate.accountAccessGranted)
+        await store.receive(\.accountAccessGate.accessUnlockRequired) { state in
+            state.accessGatePhase = .unlockRequired(snapshot: expectedSnapshot, generation: 0)
+            state.lastAccessStatus = .coreLicenseActive
+            state.accountAccessGateResolved = true
+            state.isCheckingAccountAccess = false
+            state.sessionLapseGuard = AccountAccessFeature.State()
+            state.sessionLapseGuard?.handoffContext = .paywall
+        }
+        await store.receive(\.sessionLapseGuard.hydrateLaunchSnapshot) { state in
+            state.sessionLapseGuard?.status = .coreLicenseActive
+            state.sessionLapseGuard?.snapshot = expectedSnapshot
+            state.sessionLapseGuard?.sessionExpiresAt = nil
+            state.sessionLapseGuard?.hasAccountSession = false
+            state.sessionLapseGuard?.isComplete = false
+            state.sessionLapseGuard?.didBootstrap = true
+            state.sessionLapseGuard?.fetchGeneration = 1
+        }
         await store.receive(\.delegate.openInitialWindowIfNeeded)
 
-        // session read nil → sessionExpiresAt nil. access gate는 여전히 succeed (snapshot.status active).
-        XCTAssertNotNil(saved.value, "access gate should still grant access without a session")
+        XCTAssertNotNil(saved.value, "unlock-required snapshot should be saved for recovery UI")
         XCTAssertNil(saved.value?.sessionExpiresAt, "no session → sessionExpiresAt must be nil")
         XCTAssertEqual(saved.value?.status, .coreLicenseActive)
+        XCTAssertFalse(store.state.accessGatePhase.allowsExternalRouteFlush)
         await store.finish()
     }
 
@@ -589,6 +647,7 @@ final class AppRootCompositionTests: XCTestCase {
             currentPeriodEnd: cachedCurrentPeriodEnd,
             fetchedAt: cachedFetchedAt,
             sessionExpiresAt: cachedSessionExpiry,
+            deviceBindingVerifiedAt: cachedFetchedAt,
         )
         let session = AccountSession(
             accessToken: "access-token",
@@ -624,13 +683,12 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertEqual(saved.value?.status, .coreLicenseActive)
         XCTAssertEqual(saved.value?.currentPeriodEnd, cachedCurrentPeriodEnd)
         XCTAssertEqual(saved.value?.fetchedAt, cachedFetchedAt)
+        XCTAssertEqual(saved.value?.deviceBindingVerifiedAt, cachedFetchedAt)
         await store.finish()
     }
 
-    /// networkFailure + 유효 캐시 복원 시, session read가 nil을 반환하면
-    /// success path와 동일하게 sessionExpiresAt=nil로 복원된다.
-    /// gate policy는 그대로 granted (캐시 isActive/TTL/currentPeriodEnd 통과).
-    func testCacheRestoreLeavesSessionExpiryNilWhenSessionMissingOnNetworkFailure() async {
+    /// networkFailure + 유효 캐시 복원 시에도 session read가 nil이면 grant하지 않는다.
+    func testCacheRestoreRoutesToUnlockRequiredWhenSessionMissingOnNetworkFailure() async {
         let cachedSessionExpiry = Date(timeIntervalSince1970: 50)
         let cachedCurrentPeriodEnd = Date(timeIntervalSince1970: 100_000)
         let cachedFetchedAt = Date(timeIntervalSince1970: 0)
@@ -639,6 +697,14 @@ final class AppRootCompositionTests: XCTestCase {
             currentPeriodEnd: cachedCurrentPeriodEnd,
             fetchedAt: cachedFetchedAt,
             sessionExpiresAt: cachedSessionExpiry,
+            deviceBindingVerifiedAt: cachedFetchedAt,
+        )
+        let expectedSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: cachedCurrentPeriodEnd,
+            fetchedAt: cachedFetchedAt,
+            sessionExpiresAt: nil,
+            deviceBindingVerifiedAt: cachedFetchedAt,
         )
         let saved = SnapshotCaptureBox()
 
@@ -658,15 +724,32 @@ final class AppRootCompositionTests: XCTestCase {
 
         await store.send(.accountAccessGate(.accessStatusResponse(generation: 0, result: .failure(.networkFailure))))
 
-        await store.receive(\.accountAccessGate.accountAccessGranted)
+        await store.receive(\.accountAccessGate.accessUnlockRequired) { state in
+            state.accessGatePhase = .unlockRequired(snapshot: expectedSnapshot, generation: 0)
+            state.lastAccessStatus = .coreLicenseActive
+            state.accountAccessGateResolved = true
+            state.isCheckingAccountAccess = false
+            state.sessionLapseGuard = AccountAccessFeature.State()
+            state.sessionLapseGuard?.handoffContext = .paywall
+        }
+        await store.receive(\.sessionLapseGuard.hydrateLaunchSnapshot) { state in
+            state.sessionLapseGuard?.status = .coreLicenseActive
+            state.sessionLapseGuard?.snapshot = expectedSnapshot
+            state.sessionLapseGuard?.sessionExpiresAt = nil
+            state.sessionLapseGuard?.hasAccountSession = false
+            state.sessionLapseGuard?.isComplete = false
+            state.sessionLapseGuard?.didBootstrap = true
+            state.sessionLapseGuard?.fetchGeneration = 1
+        }
         await store.receive(\.delegate.openInitialWindowIfNeeded)
 
         // session read nil → fresh sessionExpiresAt == nil. cached 값은 무시.
-        XCTAssertNotNil(saved.value, "cache restore should still grant access")
+        XCTAssertNotNil(saved.value, "cache restore should save unlock-required snapshot")
         XCTAssertNil(saved.value?.sessionExpiresAt, "missing session → sessionExpiresAt nil (re-read result)")
         XCTAssertEqual(saved.value?.status, .coreLicenseActive)
         XCTAssertEqual(saved.value?.currentPeriodEnd, cachedCurrentPeriodEnd)
         XCTAssertEqual(saved.value?.fetchedAt, cachedFetchedAt)
+        XCTAssertEqual(saved.value?.deviceBindingVerifiedAt, cachedFetchedAt)
         await store.finish()
     }
 
