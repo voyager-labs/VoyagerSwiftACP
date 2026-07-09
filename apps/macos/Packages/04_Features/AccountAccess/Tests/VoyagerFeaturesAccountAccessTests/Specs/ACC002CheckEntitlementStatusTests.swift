@@ -22,9 +22,16 @@ import XCTest
 final class ACC002CheckEntitlementStatusTests: XCTestCase {
     private let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
 
+    private static let deviceBindingSuccessAuthNetworkClient = AuthNetworkClient(
+        exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+        fetchAccessStatus: { throw AccessError.notConfigured },
+        bindDevice: { _ in DeviceBindingResponse(ok: true) },
+        refreshToken: { throw AccessError.notConfigured },
+    )
+
     private func makeTestStore(
         accountSessionClient: AccountSessionClient = .testValue,
-        authNetworkClient: AuthNetworkClient = .testValue,
+        authNetworkClient: AuthNetworkClient = ACC002CheckEntitlementStatusTests.deviceBindingSuccessAuthNetworkClient,
         snapshotClient: AccessStatusSnapshotClient = .testValue,
         checkoutURLClient: CheckoutURLClient = .testValue,
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
@@ -71,6 +78,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
         )
@@ -108,6 +116,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
         )
@@ -181,9 +190,9 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         }
     }
 
-    /// ACC-002-check_entitlement_status: fetchAccessStatus 성공 시 status와 snapshot이 갱신된다.
-    /// active 상태 응답을 받으면 state.status와 state.snapshot이 올바르게 설정되는지 검증한다.
-    /// - 검증 내용: success 응답 → status 갱신, snapshot 생성, isComplete=true
+    /// ACC-002-check_entitlement_status: active fetchAccessStatus 성공 후 device binding 성공 시 snapshot이 갱신된다.
+    /// active 상태 응답만으로는 complete가 되지 않고 binding 성공 뒤 완료되는지 검증한다.
+    /// - 검증 내용: success 응답 → binding pending → binding success → snapshot 생성, isComplete=true
     /// - 사전 조건: fetchGeneration=1, active 상태의 AccessStatusResponse
     /// - 기대 결과: status=.coreLicenseActive, snapshot!=nil, isComplete=true, errorMessage=nil
     func testFetchAccessStatusSuccessUpdatesStatusAndSnapshot() async {
@@ -199,18 +208,37 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             productKey: "core",
             source: "polar",
         )
-        await store.send(.accessStatusResponse(generation: 1, result: .success(response)))
+        await store.send(.accessStatusResponse(generation: 1, result: .success(response))) { state in
+            state.status = .coreLicenseActive
+            state.isSubmitting = true
+            state.isComplete = false
+            state.errorMessage = nil
+            state.fetchRetryCount = 0
+        }
+
+        await store.receive(\.deviceBindingResponse) { state in
+            state.snapshot = AccessStatusSnapshot(
+                status: .coreLicenseActive,
+                currentPeriodEnd: nil,
+                fetchedAt: self.referenceDate,
+                deviceBindingVerifiedAt: self.referenceDate,
+            )
+            state.isSubmitting = false
+            state.isComplete = true
+            state.errorMessage = nil
+        }
 
         XCTAssertEqual(store.state.status, .coreLicenseActive)
         XCTAssertNotNil(store.state.snapshot)
         XCTAssertEqual(store.state.snapshot?.status, .coreLicenseActive)
+        XCTAssertEqual(store.state.snapshot?.deviceBindingVerifiedAt, referenceDate)
         XCTAssertTrue(store.state.isComplete)
         XCTAssertNil(store.state.errorMessage)
     }
 
-    /// ACC-002-check_entitlement_status: fetchAccessStatus 성공 시 delegate(.unlocked)가 전달된다.
-    /// active 상태 응답에 대해 delegate(.unlocked)가 전송되고 isComplete=true가 되는지 검증한다.
-    /// - 검증 내용: success 응답 → delegate(.unlocked) 수신, isComplete=true
+    /// ACC-002-check_entitlement_status: active fetchAccessStatus + binding 성공 시 delegate(.unlocked)가 전달된다.
+    /// active 상태 응답만으로는 delegate를 보내지 않고 binding 성공 뒤 전송되는지 검증한다.
+    /// - 검증 내용: success 응답 → binding success → delegate(.unlocked) 수신, isComplete=true
     /// - 사전 조건: fetchGeneration=1, active 상태의 AccessStatusResponse
     /// - 기대 결과: delegate(.unlocked) 수신, isComplete=true
     func testFetchAccessStatusSuccessActiveSendsDelegateUnlocked() async {
@@ -227,16 +255,206 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         )
         await store.send(.accessStatusResponse(generation: 1, result: .success(response))) { state in
             state.status = .coreLicenseActive
+            state.isSubmitting = true
+            state.isComplete = false
+            state.errorMessage = nil
+            state.fetchRetryCount = 0
+        }
+
+        await store.receive(\.deviceBindingResponse) { state in
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 currentPeriodEnd: nil,
                 fetchedAt: self.referenceDate,
+                deviceBindingVerifiedAt: self.referenceDate,
             )
+            state.isSubmitting = false
             state.isComplete = true
             state.errorMessage = nil
         }
 
         await store.receive(\.delegate)
+    }
+
+    /// ACC-002-check_entitlement_status: active access여도 device binding 실패 시 unlock되지 않는다.
+    /// seat capacity 초과는 signed-in blocked state와 Account CTA로 투영된다.
+    func testActiveAccessDeviceBindingSeatCapacityDoesNotUnlock() async {
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        state.hasAccountSession = true
+        let store = makeTestStore(
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in throw DeviceBindingError.seatCapacityExceeded },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: state,
+        )
+
+        let response = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            source: "polar",
+        )
+        await store.send(.accessStatusResponse(generation: 1, result: .success(response))) { state in
+            state.status = .coreLicenseActive
+            state.isSubmitting = true
+            state.isComplete = false
+            state.errorMessage = nil
+            state.fetchRetryCount = 0
+        }
+
+        await store.receive(\.deviceBindingResponse) { state in
+            state.isSubmitting = false
+            state.snapshot = nil
+            state.deviceBindingFailure = .seatCapacityExceeded
+            state.isComplete = false
+            state.errorMessage = "This license has reached its device limit. Manage devices or contact support."
+        }
+
+        XCTAssertEqual(store.state.accountAccessStepState, .blocked)
+        XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .account)
+        XCTAssertFalse(store.state.isComplete)
+    }
+
+    /// ACC-002-check_entitlement_status: device binding network/5xx 실패는 retry 가능한 error 상태다.
+    func testActiveAccessDeviceBindingTransientFailureIsRetryable() async {
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        state.hasAccountSession = true
+        let store = makeTestStore(
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in throw DeviceBindingError.serverFailure },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: state,
+        )
+
+        let response = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            source: "polar",
+        )
+        await store.send(.accessStatusResponse(generation: 1, result: .success(response))) { state in
+            state.status = .coreLicenseActive
+            state.isSubmitting = true
+            state.isComplete = false
+            state.errorMessage = nil
+            state.fetchRetryCount = 0
+        }
+
+        await store.receive(\.deviceBindingResponse) { state in
+            state.status = .networkFailure
+            state.isSubmitting = false
+            state.snapshot = nil
+            state.deviceBindingFailure = .retryable
+            state.deviceBindingRetryCount = 1
+            state.isComplete = false
+            state.errorMessage = "Could not bind this Mac. Please try again."
+        }
+
+        XCTAssertEqual(store.state.accountAccessStepState, .error)
+        XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .retry)
+        XCTAssertTrue(store.state.canRetry)
+    }
+
+    /// ACC-002-check_entitlement_status: 반복 device binding 실패는 account/support 경로로 escalates.
+    func testRepeatedDeviceBindingTransientFailureEscalatesToAccountSupport() async {
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        state.hasAccountSession = true
+        state.isSubmitting = true
+        state.deviceBindingRetryCount = 2
+        let store = makeTestStore(initialState: state)
+
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: referenceDate,
+        )
+        await store.send(.deviceBindingResponse(
+            generation: 1,
+            snapshot: snapshot,
+            result: .failure(.serverFailure),
+        )) { state in
+            state.status = .networkFailure
+            state.isSubmitting = false
+            state.snapshot = nil
+            state.errorMessage = "Could not bind this Mac. Please try again."
+            state.deviceBindingFailure = .retryable
+            state.deviceBindingRetryCount = 3
+            state.isComplete = false
+        }
+
+        XCTAssertEqual(store.state.accountAccessStepState, .error)
+        XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .account)
+        XCTAssertFalse(store.state.canRetry)
+    }
+
+    /// ACC-002-check_entitlement_status: stale generation의 device binding 성공은 unlock을 커밋하지 않는다.
+    func testStaleDeviceBindingSuccessIgnored() async {
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 2
+        state.hasAccountSession = true
+        state.isSubmitting = true
+        let store = makeTestStore(initialState: state)
+
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: referenceDate,
+        )
+        await store.send(.deviceBindingResponse(
+            generation: 1,
+            snapshot: snapshot,
+            result: .success(DeviceBindingResponse(ok: true)),
+        ))
+
+        XCTAssertNil(store.state.snapshot)
+        XCTAssertFalse(store.state.isComplete)
+        XCTAssertTrue(store.state.isSubmitting)
+    }
+
+    /// ACC-002-check_entitlement_status: device binding 401은 세션 만료 복구로 전환된다.
+    func testDeviceBindingUnauthorizedTriggersSessionExpired() async {
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        state.hasAccountSession = true
+        state.isSubmitting = true
+        let store = makeTestStore(initialState: state)
+
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: referenceDate,
+        )
+        await store.send(.deviceBindingResponse(
+            generation: 1,
+            snapshot: snapshot,
+            result: .failure(.unauthorized),
+        )) { state in
+            state.isSubmitting = false
+        }
+        await store.receive(\._sessionExpiredDetected) { state in
+            state.hasAccountSession = false
+            state.didSignInFail = true
+            state.isSessionExpired = true
+            state.status = nil
+            state.snapshot = nil
+            state.trialExpiresAt = nil
+            state.deviceBindingFailure = nil
+            state.isSubmitting = false
+            state.isComplete = false
+            state.errorMessage = nil
+            state.fetchGeneration = 2
+            state.ttlTimerActive = false
+            state.sessionExpiresAt = nil
+            state.consecutiveRefreshFailures = 0
+        }
     }
 
     /// ACC-002-check_entitlement_status: fetchAccessStatus networkFailure 시 error 상태로 전환된다.
@@ -321,6 +539,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
         )
@@ -370,6 +589,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             status: .coreLicenseActive,
             currentPeriodEnd: nil,
             fetchedAt: referenceDate,
+            deviceBindingVerifiedAt: referenceDate,
         )
         var state = AccountAccessFeature.State()
         state.fetchGeneration = 1
@@ -467,6 +687,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             source: "polar",
         )
         await store.send(.accessStatusResponse(generation: 1, result: .success(response)))
+        await store.receive(\.deviceBindingResponse)
 
         XCTAssertEqual(store.state.status, .trialActive)
         XCTAssertEqual(store.state.trialExpiresAt, trialEndDate)
@@ -522,6 +743,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             currentPeriodEnd: nil,
             fetchedAt: referenceDate,
             sessionExpiresAt: sessionExpiry,
+            deviceBindingVerifiedAt: referenceDate,
         )
         var state = AccountAccessFeature.State()
         state.fetchGeneration = 1
@@ -560,6 +782,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             currentPeriodEnd: nil,
             fetchedAt: referenceDate,
             sessionExpiresAt: nil,
+            deviceBindingVerifiedAt: referenceDate,
         )
         var state = AccountAccessFeature.State()
         state.fetchGeneration = 1
@@ -604,6 +827,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             source: "polar",
         )
         await store.send(.accessStatusResponse(generation: 1, result: .success(response)))
+        await store.receive(\.deviceBindingResponse)
 
         XCTAssertEqual(store.state.fetchRetryCount, 0)
         XCTAssertEqual(store.state.status, .coreLicenseActive)
@@ -639,9 +863,11 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             source: "polar",
         )
         await store.send(.accessStatusResponse(generation: 1, result: .success(response)))
+        await store.receive(\.deviceBindingResponse)
 
         XCTAssertEqual(savedSnapshot?.sessionExpiresAt, sessionExpiry)
         XCTAssertEqual(savedSnapshot?.status, .coreLicenseActive)
+        XCTAssertEqual(savedSnapshot?.deviceBindingVerifiedAt, referenceDate)
         XCTAssertEqual(store.state.snapshot?.sessionExpiresAt, sessionExpiry)
     }
 
@@ -787,6 +1013,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
         )
@@ -800,21 +1027,30 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             state.fetchGeneration = 1
         }
 
-        // Step 2: fetchAccessStatus 성공 응답
+        // Step 2: fetchAccessStatus 성공 응답 → device binding pending
         let expectedSnapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
             currentPeriodEnd: nil,
             fetchedAt: referenceDate,
+            deviceBindingVerifiedAt: referenceDate,
         )
         await store.receive(\.accessStatusResponse) { state in
             state.status = .coreLicenseActive
-            state.snapshot = expectedSnapshot
-            state.isComplete = true
+            state.isSubmitting = true
+            state.isComplete = false
             state.errorMessage = nil
             state.fetchRetryCount = 0
         }
 
-        // Step 3: delegate(.unlocked) 전달
+        // Step 3: device binding 성공 후 unlock 커밋
+        await store.receive(\.deviceBindingResponse) { state in
+            state.snapshot = expectedSnapshot
+            state.isSubmitting = false
+            state.isComplete = true
+            state.errorMessage = nil
+        }
+
+        // Step 4: delegate(.unlocked) 전달
         await store.receive(\.delegate)
 
         XCTAssertEqual(store.state.status, .coreLicenseActive)
@@ -831,6 +1067,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             status: .coreLicenseActive,
             currentPeriodEnd: nil,
             fetchedAt: referenceDate,
+            deviceBindingVerifiedAt: referenceDate,
         )
         let store = makeTestStore(
             authNetworkClient: AuthNetworkClient(
@@ -838,6 +1075,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                 fetchAccessStatus: {
                     throw AccessError.networkFailure
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             snapshotClient: AccessStatusSnapshotClient(
@@ -895,6 +1133,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
         )
@@ -907,13 +1146,20 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             status: .coreLicenseActive,
             currentPeriodEnd: nil,
             fetchedAt: referenceDate,
+            deviceBindingVerifiedAt: referenceDate,
         )
         await store.receive(\.accessStatusResponse) { state in
             state.status = .coreLicenseActive
-            state.snapshot = expectedSnapshot
-            state.isComplete = true
+            state.isSubmitting = true
+            state.isComplete = false
             state.errorMessage = nil
             state.fetchRetryCount = 0
+        }
+        await store.receive(\.deviceBindingResponse) { state in
+            state.snapshot = expectedSnapshot
+            state.isSubmitting = false
+            state.isComplete = true
+            state.errorMessage = nil
         }
         await store.receive(\.delegate.unlocked)
         await store.finish()
