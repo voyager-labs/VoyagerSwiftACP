@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesEntry
 @testable import VoyagerPagesFileManager
 import VoyagerShared
@@ -339,6 +340,118 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(state.content.homeLocationItems.map(\.title), state.sidebar.fixedLocationItems.map(\.title))
         XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.title), ["Projects"])
         XCTAssertTrue(state.sidebar.contentTabSidebarItems.allSatisfy(\.isPinned))
+    }
+
+    /// CTM-004-sidebar_fixed_locations_visibility: 숨긴 Locations는 Sidebar와 Home dashboard projection에서 제외함
+    /// 전체 Locations 원본은 보존해 all-hidden 상태에서도 컨텍스트 메뉴 복구가 가능해야 함.
+    func testSyncFixedLocationItems_appliesHiddenLocationPreferenceToSidebarAndHome() throws {
+        var seedState = FileManagerFeature.State()
+        seedState.syncFixedLocationItems(with: Self.fixedLocationClient(), entryLoadingClient: .testValue)
+        let oneDriveID = try XCTUnwrap(seedState.sidebar.fixedLocationItems.first { $0.title == "OneDrive" }?.id)
+        let trashID = try XCTUnwrap(seedState.sidebar.fixedLocationItems.first { $0.title == "Trash" }?.id)
+        var state = FileManagerFeature.State()
+
+        state.syncFixedLocationItems(
+            with: Self.fixedLocationClient(),
+            entryLoadingClient: .testValue,
+            hiddenLocationIDs: [oneDriveID, trashID],
+        )
+
+        XCTAssertEqual(state.sidebar.allFixedLocationItems.map(\.title), [
+            "iCloud Drive",
+            "OneDrive",
+            "wonsik",
+            "Macintosh HD",
+            "Trash",
+        ])
+        XCTAssertEqual(state.sidebar.fixedLocationItems.map(\.title), [
+            "iCloud Drive",
+            "wonsik",
+            "Macintosh HD",
+        ])
+        XCTAssertEqual(state.content.homeLocationItems.map(\.title), [
+            "iCloud Drive",
+            "OneDrive",
+            "wonsik",
+            "Macintosh HD",
+            "Trash",
+        ])
+        XCTAssertFalse(state.sidebar.isFixedLocationVisible(oneDriveID))
+        XCTAssertFalse(state.sidebar.isFixedLocationVisible(trashID))
+    }
+
+    /// CTM-004-sidebar_fixed_locations_visibility: 사용자 토글은 hidden ID를 저장하고 Home projection을 즉시 갱신함
+    /// - 검증 내용: Sidebar context menu Toggle action → hidden IDs persist → Home Locations에서 제거
+    func testFixedLocationVisibilityActionPersistsHiddenIDsAndUpdatesHomeProjection() async throws {
+        var state = FileManagerFeature.State()
+        state.syncFixedLocationItems(with: Self.fixedLocationClient(), entryLoadingClient: .testValue)
+        let oneDriveID = try XCTUnwrap(state.sidebar.fixedLocationItems.first { $0.title == "OneDrive" }?.id)
+        let persistedIDs = LockIsolated<[String]?>(nil)
+        let persistedKey = LockIsolated<String?>(nil)
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.userDefaultsClient.setObject = { value, key in
+                let ids = value as? [String]
+                persistedIDs.setValue(ids)
+                persistedKey.setValue(key)
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.view(.setFixedLocationVisibility(oneDriveID, false)))) {
+            $0.sidebar.setFixedLocationVisibility(id: oneDriveID, isVisible: false)
+            $0.syncHomeLocationItems()
+        }
+
+        XCTAssertEqual(persistedKey.value, SettingsKeys.hiddenFixedLocationIDs)
+        XCTAssertEqual(persistedIDs.value, [oneDriveID])
+        XCTAssertFalse(store.state.sidebar.fixedLocationItems.contains { $0.id == oneDriveID })
+        XCTAssertTrue(store.state.content.homeLocationItems.contains { $0.id == oneDriveID })
+    }
+
+    /// CTM-004-sidebar_fixed_locations_visibility: 모든 Locations를 숨기거나 다시 보이게 할 수 있음
+    /// allFixedLocationItems는 유지되어 전부 숨긴 상태에서도 메뉴 source로 사용된다.
+    func testSetAllFixedLocationVisibilityCanHideAndRestoreAllLocations() async {
+        var state = FileManagerFeature.State()
+        state.syncFixedLocationItems(with: Self.fixedLocationClient(), entryLoadingClient: .testValue)
+        let allIDs = Set(state.sidebar.allFixedLocationItems.map(\.id))
+        let persistedValues = LockIsolated<[[String]]>([])
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.userDefaultsClient.setObject = { value, _ in
+                let ids = value as? [String] ?? []
+                persistedValues.withValue { $0.append(ids) }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.view(.setAllFixedLocationVisibility(false)))) {
+            $0.sidebar.setAllFixedLocationVisibility(false)
+            $0.syncHomeLocationItems()
+        }
+        XCTAssertEqual(Set(persistedValues.value.last ?? []), allIDs)
+        XCTAssertEqual(store.state.sidebar.allFixedLocationItems.count, 5)
+        XCTAssertTrue(store.state.sidebar.fixedLocationItems.isEmpty)
+        XCTAssertEqual(store.state.content.homeLocationItems.count, 5)
+
+        await store.send(.sidebar(.view(.setAllFixedLocationVisibility(true)))) {
+            $0.sidebar.setAllFixedLocationVisibility(true)
+            $0.syncHomeLocationItems()
+        }
+        XCTAssertEqual(persistedValues.value.last, [])
+        XCTAssertEqual(store.state.sidebar.fixedLocationItems.map(\.title), [
+            "iCloud Drive",
+            "OneDrive",
+            "wonsik",
+            "Macintosh HD",
+            "Trash",
+        ])
+        XCTAssertEqual(
+            store.state.content.homeLocationItems.map(\.title),
+            store.state.sidebar.fixedLocationItems.map(\.title),
+        )
     }
 
     /// CTM-004-sidebar_fixed_locations: fixed Location tap은 현재 active tab을 해당 Location으로 전환함
