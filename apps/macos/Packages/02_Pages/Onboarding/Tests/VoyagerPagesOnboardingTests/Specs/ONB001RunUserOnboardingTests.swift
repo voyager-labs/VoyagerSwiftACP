@@ -189,7 +189,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// - 사전 조건: welcome 통과, accessUnlock에서 `.active` 확인 응답 수신 후 `isComplete = true` 상태입니다.
     /// - 기대 결과: `currentStep`은 `.permissions`, title "Permissions", `currentStepIndex` 3입니다.
     func testShowPermissionsStepAfterAccess() async {
-        let store = TestStore(initialState: OnboardingFeature.State()) {
+        let store = TestStore(initialState: StateMutation.signedInOnboardingState()) {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
@@ -197,7 +197,6 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
 
-        await store.send(.onAppear)
         await store.send(.nextTapped) { state in
             state.currentStep = .accessUnlock
         }
@@ -231,6 +230,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .permissions
         initialState.welcome.isComplete = true
+        initialState.accessUnlock.hasAccountSession = true
+        initialState.accessUnlock.sessionExpiresAt = StateMutation.activeSessionExpiry
         initialState.accessUnlock.isComplete = true
         initialState.accessUnlock.status = .coreLicenseActive
         initialState.accessUnlock.snapshot = StateMutation.activeAccessSnapshot
@@ -297,15 +298,13 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     func testCurrentStepAdvancesThroughCanonicalOrder() async {
         XCTAssertEqual(OnboardingStep.allCases, [.welcome, .accessUnlock, .permissions, .aiProviderSetup, .complete])
 
-        let store = TestStore(initialState: OnboardingFeature.State()) {
+        let store = TestStore(initialState: StateMutation.signedInOnboardingState()) {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
             $0.authNetworkClient = StateMutation.activeAuthNetworkClient
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
-
-        await store.send(.onAppear)
 
         // welcome → accessUnlock
         await store.send(.nextTapped) { state in
@@ -380,15 +379,13 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// - 사전 조건: `onAppear` 후 accessUnlock는 미완료(`.notActive`) 상태입니다.
     /// - 기대 결과: `isComplete = true`, `status = .active`, `reason = .none`으로 변경됩니다.
     func testUpdateAccessStepStateOnVerification() async {
-        let store = TestStore(initialState: OnboardingFeature.State()) {
+        let store = TestStore(initialState: StateMutation.signedInOnboardingState()) {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
             $0.authNetworkClient = StateMutation.activeAuthNetworkClient
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
-
-        await store.send(.onAppear)
 
         // beta access는 미완료 상태로 시작
         XCTAssertFalse(store.state.accessUnlock.isComplete)
@@ -421,7 +418,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     func testStepStateUpdateTriggersProgressSave() async throws {
         let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
 
-        let store = TestStore(initialState: OnboardingFeature.State()) {
+        let store = TestStore(initialState: StateMutation.signedInOnboardingState()) {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
@@ -463,6 +460,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertFalse(state.isStepComplete(.permissions))
         XCTAssertFalse(state.isStepComplete(.complete))
 
+        state.accessUnlock.hasAccountSession = true
+        state.accessUnlock.sessionExpiresAt = StateMutation.activeSessionExpiry
         state.accessUnlock.isComplete = true
         XCTAssertTrue(state.isStepComplete(.accessUnlock))
 
@@ -483,6 +482,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     func testProgressSnapshotCapturesAllStepStates() {
         var state = OnboardingFeature.State()
         state.currentStep = .permissions
+        state.accessUnlock.hasAccountSession = true
+        state.accessUnlock.sessionExpiresAt = StateMutation.activeSessionExpiry
         state.accessUnlock.isComplete = true
         state.permissions.isComplete = true
 
@@ -508,15 +509,13 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// - 사전 조건: `load`가 `.empty`를 반환합니다. accessUnlock는 `.active` 확인 응답으로 완료 처리합니다.
     /// - 기대 결과: 단계 전환이 정확한 순서대로 발생하고 뒤로 이동도 올바르게 동작합니다.
     func testNextBackNavigation() async {
-        let store = TestStore(initialState: OnboardingFeature.State()) {
+        let store = TestStore(initialState: StateMutation.signedInOnboardingState()) {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
             $0.authNetworkClient = StateMutation.activeAuthNetworkClient
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
-
-        await store.send(.onAppear)
 
         await store.send(.nextTapped) { state in
             state.currentStep = .accessUnlock
@@ -662,6 +661,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .permissions
         initialState.welcome.isComplete = true
+        initialState.accessUnlock.hasAccountSession = true
+        initialState.accessUnlock.sessionExpiresAt = StateMutation.activeSessionExpiry
         initialState.accessUnlock.status = .coreLicenseActive
         initialState.accessUnlock.snapshot = StateMutation.activeAccessSnapshot
         initialState.accessUnlock.isComplete = true

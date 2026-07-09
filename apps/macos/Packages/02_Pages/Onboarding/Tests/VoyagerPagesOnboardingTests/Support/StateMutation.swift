@@ -7,6 +7,8 @@ import VoyagerFeaturesAccountAccess
 
 /// 테스트에서 반복 사용하는 상태 변이 패턴을 네임스페이스로 제공합니다.
 enum StateMutation {
+    static let activeSessionExpiry = Date(timeIntervalSince1970: 4_102_444_800)
+
     static let activeAccessResponse = AccessStatusResponse(
         hasAccess: true,
         status: "active",
@@ -18,11 +20,18 @@ enum StateMutation {
     static let activeAccessSnapshot = AccessStatusSnapshot(
         status: .coreLicenseActive,
         fetchedAt: Date(timeIntervalSince1970: 0),
+        sessionExpiresAt: activeSessionExpiry,
         deviceBindingVerifiedAt: Date(timeIntervalSince1970: 0),
     )
 
     static let activeAccountSessionClient = AccountSessionClient(
-        read: { AccountSession(accessToken: "test-token", status: .coreLicenseActive) },
+        read: {
+            AccountSession(
+                accessToken: "test-token",
+                status: .coreLicenseActive,
+                expiresAt: activeSessionExpiry,
+            )
+        },
         persist: { _ in },
         delete: { _ in },
     )
@@ -47,6 +56,8 @@ enum StateMutation {
 
     /// access 상태를 server-canonical active access 결과와 동일하게 설정합니다.
     static func applyActiveAccessStatusPending(state: inout OnboardingFeature.State) {
+        state.accessUnlock.hasAccountSession = true
+        state.accessUnlock.sessionExpiresAt = activeSessionExpiry
         state.accessUnlock.status = .coreLicenseActive
         state.accessUnlock.snapshot = nil
         state.accessUnlock.isComplete = false
@@ -58,6 +69,8 @@ enum StateMutation {
 
     /// device binding 성공 후 access 완료 상태를 적용합니다.
     static func applyActiveAccess(state: inout OnboardingFeature.State) {
+        state.accessUnlock.hasAccountSession = true
+        state.accessUnlock.sessionExpiresAt = activeSessionExpiry
         state.accessUnlock.status = .coreLicenseActive
         state.accessUnlock.snapshot = activeAccessSnapshot
         state.accessUnlock.isComplete = true
@@ -66,6 +79,14 @@ enum StateMutation {
 
     static func applyPersistedCompletedAccessStep(state: inout OnboardingFeature.State) {
         applyActiveAccess(state: &state)
+    }
+
+    static func signedInOnboardingState(currentStep: OnboardingStep = .welcome) -> OnboardingFeature.State {
+        var state = OnboardingFeature.State()
+        state.currentStep = currentStep
+        state.accessUnlock.hasAccountSession = true
+        state.accessUnlock.sessionExpiresAt = activeSessionExpiry
+        return state
     }
 
     /// applyStepState + accessSnapshot 복원 경로를 시뮬레이션합니다.
