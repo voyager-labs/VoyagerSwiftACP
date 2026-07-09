@@ -5,6 +5,7 @@ import Foundation
 public struct FileManagerSidebarState: Equatable {
     public var sidebarVisible: Bool = true
     var sidebarWidth: CGFloat = 220
+    var fixedLocationItems: [FileManagerFixedLocationItem] = []
     var contentTabSidebarItems: [ContentTabProjection.ContentTabSidebarItem] = ContentTabProjection
         .sidebarItems(from: .withHomeTab())
 }
