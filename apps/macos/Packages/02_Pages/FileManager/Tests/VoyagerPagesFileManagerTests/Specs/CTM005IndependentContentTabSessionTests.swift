@@ -665,7 +665,13 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         let homeID = ContentTabID()
         let aiChatID = ContentTabID()
         let aiSessionID = AiChatSessionID(rawValue: UUID())
-        let requestLock = makeRequestLock(sessionID: aiSessionID)
+        let providerMessage = AiChatMessage(role: .user, content: "latest provider prompt")
+        let preservedMessage = AiChatMessage(role: .user, content: "older preserved prompt")
+        let requestLock = makeRequestLock(
+            sessionID: aiSessionID,
+            requestMessages: [providerMessage],
+            persistenceTranscriptHistory: [preservedMessage, providerMessage],
+        )
 
         var homeContent = FileManagerContentFeature.State()
         homeContent.navigation.seedInitialFolderPath("/Users/test/HomeSession")
@@ -6139,7 +6145,7 @@ extension CTM005IndependentContentTabSessionTests {
         store.exhaustivity = .off
 
         await store.send(.backgroundAiChat(.persistenceFailed(requestLock, .unknown))) { state in
-            state.tabContentStates[aiChatTabID]?.aiChat.transcriptHistory = requestLock.request.messages
+            state.tabContentStates[aiChatTabID]?.aiChat.transcriptHistory = requestLock.persistenceTranscriptHistory
             state.tabContentStates[aiChatTabID]?.aiChat.lastRequestContext = requestLock.context.requestContext
             state.tabContentStates[aiChatTabID]?.aiChat.lastRequestContextModelHandle = requestLock.context.model
             state.tabContentStates[aiChatTabID]?.aiChat.selectedModelHandle = requestLock.context.model
@@ -6156,7 +6162,7 @@ extension CTM005IndependentContentTabSessionTests {
 
         XCTAssertEqual(
             store.state.tabContentStates[aiChatTabID]?.aiChat.transcriptHistory,
-            requestLock.request.messages,
+            requestLock.persistenceTranscriptHistory,
         )
         XCTAssertEqual(
             store.state.tabContentStates[aiChatTabID]?.aiChat.executionPhase,
@@ -7541,11 +7547,32 @@ extension CTM005IndependentContentTabSessionTests {
         )
     }
 
-    func testAiChatDeleteSucceededRefreshesAllOpenCopies() async {
+    func testAiChatDeleteSucceededRefreshesAllOpenCopies() async throws {
         let aiSessionID = AiChatSessionID(rawValue: UUID())
         let activeTabID = ContentTabID()
         let inactiveTabID = ContentTabID()
         let requestLock = makeRequestLock(sessionID: aiSessionID)
+        let parkedSessionID = AiChatSessionID(rawValue: UUID())
+        let parkedRequestLock = makeRequestLock(sessionID: parkedSessionID)
+        let parkedResolutionID = UUID()
+        let parkedPendingRequest = try AiChatPendingRequestStart(
+            resolutionID: parkedResolutionID,
+            kind: .submit,
+            sessionID: parkedSessionID,
+            selectedModel: XCTUnwrap(parkedRequestLock.context.selectedModel),
+            selectedRow: parkedRequestLock.context.selectedModelRow,
+            preparedRequest: AiChatPreparedRequest(
+                prompt: "parked",
+                messages: [AiChatMessage(role: .user, content: "parked")],
+                assistantReplacementIndex: nil,
+                historyTruncation: .init(
+                    includedMessageCount: 1,
+                    excludedMessageCount: 0,
+                    budget: 200_000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
         let snapshot = AiChatSessionSnapshot(
             sessionID: aiSessionID,
             status: .active,
@@ -7572,6 +7599,8 @@ extension CTM005IndependentContentTabSessionTests {
             aiChat.restoreSessionID = aiSessionID
             aiChat.restoreOutcome = .restored(snapshot: snapshot)
             aiChat.sessionStatus = .active
+            aiChat.backgroundPendingRequestStarts[parkedResolutionID] = parkedPendingRequest
+            aiChat.backgroundExecutionPhases[parkedRequestLock.requestID] = .processing(parkedRequestLock)
             return aiChat
         }
 
@@ -7643,6 +7672,18 @@ extension CTM005IndependentContentTabSessionTests {
             .contains { $0.sessionID == aiSessionID } ?? true)
         XCTAssertNil(store.state.backgroundAiChatStates[aiSessionID])
         XCTAssertNil(store.state.backgroundInspectorAiChatStates[aiSessionID])
+        XCTAssertEqual(
+            store.state.content.aiChat.backgroundPendingRequestStarts[parkedResolutionID],
+            parkedPendingRequest,
+        )
+        XCTAssertEqual(
+            store.state.content.aiChat.backgroundExecutionPhases[parkedRequestLock.requestID],
+            .processing(parkedRequestLock),
+        )
+        XCTAssertEqual(
+            store.state.tabContentStates[inactiveTabID]?.aiChat.backgroundPendingRequestStarts[parkedResolutionID],
+            parkedPendingRequest,
+        )
     }
 
     func testAiChatRenameRefreshesAllOpenCopiesCustomTitle() async {
@@ -8674,7 +8715,11 @@ private extension CTM005IndependentContentTabSessionTests {
         )
     }
 
-    func makeRequestLock(sessionID: AiChatSessionID) -> AiChatRequestLock {
+    func makeRequestLock(
+        sessionID: AiChatSessionID,
+        requestMessages: [AiChatMessage] = [AiChatMessage(role: .user, content: "test")],
+        persistenceTranscriptHistory: [AiChatMessage]? = nil,
+    ) -> AiChatRequestLock {
         let modelHandle = AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini")
         let catalogRow = AiModelCatalogRow(
             handle: modelHandle,
@@ -8703,13 +8748,14 @@ private extension CTM005IndependentContentTabSessionTests {
             promptSummary: "test",
             submittedAtMs: 0,
         )
-        let request = AiChatRequest(context: requestContext, messages: [AiChatMessage(role: .user, content: "test")])
+        let request = AiChatRequest(context: requestContext, messages: requestMessages)
         return AiChatRequestLock(
             kind: .submit,
             requestID: requestID,
             runID: runID,
             context: requestContext,
             request: request,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
             selectedModelHandle: modelHandle,
             selectedModelRow: catalogRow,
             assistantReplacementIndex: nil,
@@ -8748,12 +8794,16 @@ private extension AiChatFeature.State {
         if sessionID == deletedSessionID {
             currentSessionCustomTitle = nil
             pendingRequestStart = nil
-            backgroundPendingRequestStarts = [:]
             executionPhase = .idle
-            backgroundExecutionPhases = [:]
             streamingAssistantDraft = nil
             lockedModelHandle = nil
             lastExecutionFailure = nil
+        }
+        backgroundPendingRequestStarts = backgroundPendingRequestStarts.filter { _, pendingRequestStart in
+            pendingRequestStart.sessionID != deletedSessionID
+        }
+        backgroundExecutionPhases = backgroundExecutionPhases.filter { _, phase in
+            phase.lock?.context.sessionID != deletedSessionID
         }
     }
 }

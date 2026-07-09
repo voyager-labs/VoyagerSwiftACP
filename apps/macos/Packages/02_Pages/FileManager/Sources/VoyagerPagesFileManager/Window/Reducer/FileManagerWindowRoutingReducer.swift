@@ -1485,7 +1485,7 @@ private extension AiChatFeature.State {
             ?? backgroundAiChat.executionPhase.matchingRecoveryFollowUp(lock: lock)
         else { return }
 
-        if let finalSnapshot = matchingPhase.lock?.finalSnapshot {
+        if let finalSnapshot = matchingPhase.lock?.finalSnapshot ?? lock.finalSnapshot {
             applyBackgroundRecoveryFinalSnapshot(finalSnapshot)
         } else if let lock = matchingPhase.lock {
             applyBackgroundLockPayload(lock)
@@ -1513,7 +1513,7 @@ private extension AiChatFeature.State {
     }
 
     mutating func applyBackgroundLockPayload(_ lock: AiChatRequestLock) {
-        transcriptHistory = lock.request.messages
+        transcriptHistory = lock.persistenceTranscriptHistory
         lastRequestContext = lock.context.requestContext
         lastRequestContextModelHandle = lock.context.model
         selectedModelHandle = lock.context.model
@@ -2148,15 +2148,12 @@ private extension AiChatFeature.State {
         if sessionID == deletedSessionID {
             currentSessionCustomTitle = nil
             pendingRequestStart = nil
-            backgroundPendingRequestStarts = [:]
             executionPhase = .idle
-            backgroundExecutionPhases = [:]
             streamingAssistantDraft = nil
             lockedModelHandle = nil
             lastExecutionFailure = nil
-        } else {
-            removeLifecycleOwners(sessionID: deletedSessionID)
         }
+        removeLifecycleOwners(sessionID: deletedSessionID)
     }
 
     mutating func refreshCustomTitle(summary: AiChatSessionSummary, customTitle: String?) {
