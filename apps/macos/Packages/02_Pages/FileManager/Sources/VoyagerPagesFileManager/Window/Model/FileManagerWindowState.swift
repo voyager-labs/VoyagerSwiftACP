@@ -472,9 +472,9 @@ private extension AiChatFeature.State {
             false
         }
         if executionPhase.isProcessing || shouldPreserveOwner,
-           let sessionID
+           let ownerSessionID = executionPhase.lock?.context.sessionID
         {
-            sessionIDs.append(sessionID)
+            sessionIDs.append(ownerSessionID)
         }
         if let pendingSessionID = pendingRequestStart?.sessionID {
             sessionIDs.append(pendingSessionID)

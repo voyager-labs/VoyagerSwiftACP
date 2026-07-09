@@ -4747,6 +4747,68 @@ extension CTM005IndependentContentTabSessionTests {
         XCTAssertNil(store.state.backgroundAiChatStates[sessionID])
     }
 
+    func testAiChatTabSwitchPreservesForegroundOwnerUnderLockSession() async {
+        let aiChatTabID = ContentTabID()
+        let homeTabID = ContentTabID()
+        let ownerSessionID = AiChatSessionID(rawValue: UUID())
+        let routeSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: ownerSessionID)
+
+        var aiChatContent = FileManagerContentFeature.State()
+        aiChatContent.aiChat.sessionID = routeSessionID
+        aiChatContent.aiChat.sessionStatus = .active
+        aiChatContent.aiChat.mode = .chat
+        aiChatContent.aiChat.executionPhase = .processing(requestLock)
+        aiChatContent.aiChat.lockedModelHandle = requestLock.selectedModelHandle
+        aiChatContent.aiChat.transcriptHistory = requestLock.request.messages
+
+        let homeContent = FileManagerContentFeature.State()
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: aiChatTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: routeSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "message",
+                ),
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: aiChatTabID,
+            recentlyClosed: nil,
+        )
+        state.content = aiChatContent
+        state.tabContentStates = [homeTabID: homeContent]
+        state.syncContentTabSidebarItems()
+
+        let store: TestStore<FileManagerFeature.State, FileManagerWindowAction> = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(homeTabID)))
+        await store.skipReceivedActions()
+
+        XCTAssertNil(store.state.backgroundAiChatStates[routeSessionID])
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[ownerSessionID]?.aiChat.executionPhase,
+            .processing(requestLock),
+        )
+    }
+
     func testAiChatTabSwitchPreservesBackgroundRequestOwner() async {
         let aiChatTabID = ContentTabID()
         let homeTabID = ContentTabID()

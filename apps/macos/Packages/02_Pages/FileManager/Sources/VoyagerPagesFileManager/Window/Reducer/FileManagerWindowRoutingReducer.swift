@@ -900,7 +900,7 @@ private func aiChatLifecycleSessionIDsToPreserve(_ state: AiChatFeature.State) -
     if state.executionPhase.isProcessing
         || state.executionPhase.shouldPreserveLifecycleOwner
     {
-        append(state.sessionID)
+        append(state.executionPhase.lock?.context.sessionID)
     }
     append(state.pendingRequestStart?.sessionID)
     for pendingRequestStart in state.backgroundPendingRequestStarts.values {
