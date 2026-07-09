@@ -220,7 +220,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     }
 
     /// CTM-004-sidebar_projection_content_tabs: Directory tab은 ContentTab 자체 metadata를 그대로 표시함
-    /// Sidebar legacy Locations 섹션 제거 후 Tabs row가 ContentTabProjection만 원천으로 사용하는 정책을 검증한다.
+    /// Fixed Locations grid와 Tabs row가 서로 다른 projection 원천을 사용하는 정책을 검증한다.
     func testContentTabSidebarItems_useContentTabMetadataForDirectory() {
         let directoryID = ContentTabID()
         var state = FileManagerFeature.State()
@@ -241,7 +241,10 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
         XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.title), ["Desktop"])
         XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.iconName), ["folder"])
-        XCTAssertNil(state.sidebar.contentTabSidebarItems.first?.targetURL)
+        XCTAssertEqual(
+            state.sidebar.contentTabSidebarItems.first?.targetURL,
+            URL(fileURLWithPath: "/Users/test/Desktop"),
+        )
         XCTAssertTrue(state.sidebar.contentTabSidebarItems.allSatisfy { $0.tagColorCode == nil })
     }
 
@@ -269,6 +272,218 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(item.title, "Work")
         XCTAssertEqual(item.iconName, "folder")
         XCTAssertNil(item.tagColorCode)
+    }
+
+    // MARK: - CTM-004-sidebar_fixed_locations
+
+    /// CTM-004-sidebar_fixed_locations: fixed Locations는 window onAppear sync 전에는 비어 있음
+    /// Locations grid가 ContentTabProjection에 섞이지 않고 window bootstrap에서 별도 주입되는 정책을 검증한다.
+    func testInitialStateHasNoFixedLocationsUntilWindowAppearSync() {
+        let state = FileManagerFeature.State()
+
+        XCTAssertTrue(state.sidebar.fixedLocationItems.isEmpty)
+        XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.title), ["Home"])
+    }
+
+    /// CTM-004-sidebar_fixed_locations: fixed Locations는 Finder/Voyager Locations source를 별도 grid item으로 구성함
+    /// Sidebar 상단 icon grid가 iCloud/CloudStorage/home/root/Trash source를 안정적인 id/path로 노출함을 검증한다.
+    func testSyncFixedLocationItems_populatesSystemLocations() {
+        var state = FileManagerFeature.State()
+
+        state.syncFixedLocationItems(with: Self.fixedLocationClient(), entryLoadingClient: .testValue)
+
+        XCTAssertEqual(state.sidebar.fixedLocationItems.map(\.title), [
+            "iCloud Drive",
+            "OneDrive",
+            "wonsik",
+            "Macintosh HD",
+            "Trash",
+        ])
+        XCTAssertEqual(state.sidebar.fixedLocationItems.map(\.path), [
+            "/Users/test/Library/Mobile Documents/com~apple~CloudDocs",
+            "/Users/test/Library/CloudStorage/OneDrive",
+            "/Users/test",
+            "/",
+            "/Users/test/.Trash",
+        ])
+    }
+
+    /// CTM-004-sidebar_fixed_locations: fixed Locations grid는 pinned/unpinned ContentTab row와 섞이지 않음
+    /// Favorites로 seed된 pinned tab은 일반 ContentTab row list에 남고, Locations는 별도 grid에만 남는 구조를 검증한다.
+    func testFixedLocationsRemainSeparateFromContentTabSidebarItems() {
+        let pinnedID = ContentTabID()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: pinnedID,
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Projects"),
+                isPinned: true,
+                title: "Projects",
+                iconName: "folder",
+            )],
+            activeTabID: pinnedID,
+            recentlyClosed: nil,
+        )
+
+        state.syncFixedLocationItems(with: Self.fixedLocationClient(), entryLoadingClient: .testValue)
+        state.syncContentTabSidebarItems()
+
+        XCTAssertEqual(state.sidebar.fixedLocationItems.map(\.title), [
+            "iCloud Drive",
+            "OneDrive",
+            "wonsik",
+            "Macintosh HD",
+            "Trash",
+        ])
+        XCTAssertEqual(state.content.homeLocationItems.map(\.title), state.sidebar.fixedLocationItems.map(\.title))
+        XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.title), ["Projects"])
+        XCTAssertTrue(state.sidebar.contentTabSidebarItems.allSatisfy(\.isPinned))
+    }
+
+    /// CTM-004-sidebar_fixed_locations: fixed Location tap은 현재 active tab을 해당 Location으로 전환함
+    /// Locations grid는 새 탭 생성기가 아니라 현재 탭을 빠르게 이동시키는 shortcut임을 검증한다.
+    func testFixedLocationTap_navigatesActiveTab() async throws {
+        let homeID = ContentTabID()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        state.syncFixedLocationItems(with: Self.fixedLocationClient(), entryLoadingClient: .testValue)
+        state.syncContentTabSidebarItems()
+        let iCloudLocationID = try XCTUnwrap(state.sidebar.fixedLocationItems.first?.id)
+        let locationAnchor = ContentTabPageAnchor
+            .directory(path: "/Users/test/Library/Mobile Documents/com~apple~CloudDocs")
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.selectFixedLocation(iCloudLocationID))))
+        await store.receive(\.contentTabs)
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 1)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, homeID)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: homeID]?.anchor, locationAnchor)
+        XCTAssertEqual(ContentTabProjection.activePageAnchor(from: store.state.contentTabs), locationAnchor)
+    }
+
+    /// CTM-004-home_dashboard_projection: 새 Home tab을 열어도 Home dashboard Favorites/Locations projection이 유지됨
+    /// ContentTab handoff가 새 content state를 만들 때 Home dashboard data를 누락하지 않는지 검증한다.
+    func testOpenNewHomeTab_keepsHomeDashboardFavoritesAndLocations() async {
+        let pinnedID = ContentTabID()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: pinnedID,
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Projects"),
+                isPinned: true,
+                title: "Projects",
+                iconName: "folder",
+            )],
+            activeTabID: pinnedID,
+            recentlyClosed: nil,
+        )
+        state.syncContentTabSidebarItems()
+        state.syncFixedLocationItems(with: Self.fixedLocationClient(), entryLoadingClient: .testValue)
+        state.syncHomeFavoriteItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerLocationsClient = Self.fixedLocationClient()
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.openContentTab)))
+        await store.receive(\.contentTabs)
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
+        XCTAssertEqual(store.state.contentTabs.tabs.last?.anchor, .homeDefault)
+        XCTAssertEqual(store.state.content.homeFavoriteItems.map(\.title), ["Projects"])
+        XCTAssertEqual(store.state.content.homeLocationItems.map(\.title), [
+            "iCloud Drive",
+            "OneDrive",
+            "wonsik",
+            "Macintosh HD",
+            "Trash",
+        ])
+    }
+
+    /// CTM-004-home_dashboard_projection: tab lifecycle은 fixed Locations를 재조회하지 않고 기존 projection만 전달함
+    /// - 검증 내용: Home tab open 시 syncDashboardProjections가 fileManagerLocationsClient를 호출하지 않음
+    /// - 사전 조건: onAppear에서 fixed Locations가 이미 동기화된 window state
+    /// - 기대 결과: 새 Home tab에서도 기존 Locations 유지, locations client 호출 0회
+    func testOpenNewHomeTab_doesNotReloadFixedLocations() async {
+        let pinnedID = ContentTabID()
+        let locationsLoadCount = LockIsolated(0)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: pinnedID,
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Projects"),
+                isPinned: true,
+                title: "Projects",
+                iconName: "folder",
+            )],
+            activeTabID: pinnedID,
+            recentlyClosed: nil,
+        )
+        state.syncContentTabSidebarItems()
+        state.syncFixedLocationItems(with: Self.fixedLocationClient(), entryLoadingClient: .testValue)
+        state.syncHomeFavoriteItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerLocationsClient.loadLocations = { _ in
+                locationsLoadCount.withValue { $0 += 1 }
+                return []
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.openContentTab)))
+        await store.receive(\.contentTabs)
+
+        XCTAssertEqual(locationsLoadCount.value, 0, "tab lifecycle에서는 fixed Locations를 재조회하지 않아야 함")
+        XCTAssertEqual(store.state.content.homeLocationItems.map(\.title), [
+            "iCloud Drive",
+            "OneDrive",
+            "wonsik",
+            "Macintosh HD",
+            "Trash",
+        ])
     }
 
     // MARK: - CTM-004-sidebar_row_click_routing
@@ -393,7 +608,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             "/Users/test/Downloads",
         ])
         XCTAssertEqual(overlayProps.favorites.map(\.iconName), [
-            "appstore",
+            "folder.badge.gearshape",
             "menubar.dock.rectangle",
             "doc",
             "arrow.down.circle",
@@ -424,5 +639,37 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(state.sidebar.contentTabSidebarItems.count, 1)
         XCTAssertEqual(state.sidebar.contentTabSidebarItems[0].id, homeID)
         XCTAssertEqual(state.sidebar.contentTabSidebarItems[0].pageType, .home)
+    }
+
+    private static func fixedLocationClient() -> FileManagerLocationsClient {
+        FileManagerLocationsClient { _ in
+            [
+                SidebarItems.LocationItem(
+                    name: "iCloud Drive",
+                    url: URL(fileURLWithPath: "/Users/test/Library/Mobile Documents/com~apple~CloudDocs"),
+                    iconName: "icloud",
+                ),
+                SidebarItems.LocationItem(
+                    name: "OneDrive",
+                    url: URL(fileURLWithPath: "/Users/test/Library/CloudStorage/OneDrive"),
+                    iconName: "folder",
+                ),
+                SidebarItems.LocationItem(
+                    name: "wonsik",
+                    url: URL(fileURLWithPath: "/Users/test"),
+                    iconName: "house",
+                ),
+                SidebarItems.LocationItem(
+                    name: "Macintosh HD",
+                    url: URL(fileURLWithPath: "/"),
+                    iconName: "internaldrive",
+                ),
+                SidebarItems.LocationItem(
+                    name: "Trash",
+                    url: URL(fileURLWithPath: "/Users/test/.Trash"),
+                    iconName: "trash",
+                ),
+            ]
+        }
     }
 }
