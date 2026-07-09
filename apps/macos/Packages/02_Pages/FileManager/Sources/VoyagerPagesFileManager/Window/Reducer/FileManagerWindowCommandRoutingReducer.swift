@@ -403,6 +403,10 @@ struct FileManagerWindowCommandRoutingReducer {
     }
 
     private func openContextualAiChatEffect(state: State) -> Effect<Action> {
+        guard let activeTabID = state.contentTabs.activeTabID,
+              state.supportsInspector(tabID: activeTabID)
+        else { return .none }
+
         let content = state.content
         // Entry opens the inspector with seeded context only so AiChat starts on Sessions.
         // Session creation/restoration stays inside AiChat via New Chat or explicit restoreSessionID.

@@ -342,11 +342,14 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertNil(store.state.inspector.aiChat.selectedModelHandle)
     }
 
-    func testInspectorCloseChatActionHidesPaneFromWindow() async {
+    func testInspectorCloseChatActionHidesPaneWithoutTearingDownChat() async {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000050")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         initialState.inspector.inspectorVisible = true
         initialState.inspector.inspectorPaneExists = true
         initialState.inspector.activeMode = .chat
+        initialState.inspector.aiChat.sessionID = sessionID
+        initialState.inspector.aiChat.sessionStatus = .active
 
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
@@ -355,9 +358,10 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await store.send(.inspector(.closeChat)) {
             $0.inspector.inspectorVisible = false
         }
-        await store.receive(\.inspector.aiChat.teardownRequested)
 
         XCTAssertEqual(store.state.inspector.activeMode, .chat)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, sessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionStatus, .active)
     }
 
     func testToolbarSparklesOpensInspectorChatMode() async {
@@ -579,7 +583,6 @@ private extension FileManagerWindowInspectorChatRoutingTests {
         await store.receive(\.inspector.closeChat) {
             $0.inspector.inspectorVisible = false
         }
-        await store.receive(\.inspector.aiChat.teardownRequested)
     }
 
     private func assertOpenChatRouting(

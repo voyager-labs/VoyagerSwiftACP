@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
@@ -67,6 +68,24 @@ public struct FileManagerContentFeature {
             }
 
             switch action {
+            case let .aiChat(.executionEvent(event)):
+                return handleBackgroundAiChatExecutionEvent(event, state: &state)
+
+            case let .aiChat(.persistenceFailed(lock, _)):
+                return handleBackgroundAiChatPersistenceEvent(sessionID: lock.context.sessionID, state: &state)
+
+            case let .aiChat(.persistenceRecoverySucceeded(lock)):
+                return handleBackgroundAiChatPersistenceEvent(sessionID: lock.context.sessionID, state: &state)
+
+            case let .aiChat(.persistenceRecoveryRetryFailed(lock, _)):
+                return handleBackgroundAiChatPersistenceEvent(sessionID: lock.context.sessionID, state: &state)
+
+            case let .aiChat(.sessionSnapshotSaved(summary, _, _, _)):
+                return handleBackgroundAiChatPersistenceEvent(sessionID: summary.sessionID, state: &state)
+
+            case .aiChat(.cancelInFlightWork):
+                return .none
+
             case .view(.openContextualAiChatTapped):
                 return .send(.delegate(.openContextualAiChat))
 
@@ -108,4 +127,25 @@ public struct FileManagerContentFeature {
             }
         }
     }
+}
+
+private func handleBackgroundAiChatExecutionEvent(
+    _ event: AiChatEvent,
+    state: inout FileManagerContentState,
+) -> Effect<FileManagerContentAction> {
+    let sessionID = aiChatEventSessionID(event)
+    guard let sessionID, sessionID == state.aiChat.sessionID else {
+        return .none
+    }
+    return .none
+}
+
+private func handleBackgroundAiChatPersistenceEvent(
+    sessionID: AiChatSessionID?,
+    state: inout FileManagerContentState,
+) -> Effect<FileManagerContentAction> {
+    guard let sessionID, sessionID == state.aiChat.sessionID else {
+        return .none
+    }
+    return .none
 }

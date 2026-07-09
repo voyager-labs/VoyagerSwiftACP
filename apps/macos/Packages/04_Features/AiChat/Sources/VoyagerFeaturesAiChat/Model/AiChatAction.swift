@@ -49,9 +49,19 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case sessionDeleteFailed(AiChatSessionID, String)
     case sessionRenameSucceeded(AiChatSessionSummary, customTitle: String?)
     case sessionRenameFailed(AiChatSessionID, String)
-    case sessionSnapshotUpdated(AiChatSessionSummary, requestID: AiChatRequestID, runID: AiChatRunID)
+    case sessionSnapshotUpdated(
+        AiChatSessionSummary,
+        snapshot: AiChatSessionSnapshot? = nil,
+        requestID: AiChatRequestID,
+        runID: AiChatRunID,
+    )
     case sessionSnapshotUpdateFailed(requestID: AiChatRequestID, runID: AiChatRunID)
-    case sessionSnapshotSaved(AiChatSessionSummary)
+    case sessionSnapshotSaved(
+        AiChatSessionSummary,
+        snapshot: AiChatSessionSnapshot? = nil,
+        requestID: AiChatRequestID? = nil,
+        runID: AiChatRunID? = nil,
+    )
     case newChatCreated(AiChatSessionSnapshot)
     case newChatFailed(String)
     case setup(AiChatSetupState)
@@ -80,6 +90,7 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case requestContextResolved(UUID, AiChatResolvedRequestContext)
     case cancelTapped
     case resetTapped
+    case cancelRequestLifecycle(AiChatSessionID)
     case cancelInFlightWork
     case teardownRequested
     case restoreOutcome(

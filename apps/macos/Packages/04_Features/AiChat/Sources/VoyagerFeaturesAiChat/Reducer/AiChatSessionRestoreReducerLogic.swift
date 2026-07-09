@@ -114,9 +114,29 @@ extension AiChatFeature {
     }
 
     func apply(setup: AiChatSetupState, to state: inout State) {
+        let targetSessionID = setup.sessionID ?? setup.restoreSessionID
+        movePendingRequestStartToBackgroundIfNeeded(
+            state: &state,
+            targetSessionID: targetSessionID,
+        )
+        moveVisibleProcessingToBackgroundIfNeeded(
+            state: &state,
+            targetSessionID: targetSessionID,
+        )
         applySetupSession(setup, to: &state)
         applySetupModelState(setup, to: &state)
         clearSetupRuntimeState(&state)
+    }
+
+    private func movePendingRequestStartToBackgroundIfNeeded(
+        state: inout State,
+        targetSessionID: AiChatSessionID?,
+    ) {
+        guard let pendingRequestStart = state.pendingRequestStart,
+              pendingRequestStart.sessionID != targetSessionID
+        else { return }
+        state.backgroundPendingRequestStarts[pendingRequestStart.resolutionID] = pendingRequestStart
+        state.pendingRequestStart = nil
     }
 
     private func applySetupSession(_ setup: AiChatSetupState, to state: inout State) {
@@ -191,7 +211,7 @@ extension AiChatFeature {
     }
 
     func applyRestoredSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
-        let preservedExecutionPhase = preservedNavigationExecutionPhase(for: snapshot.sessionID, state: state)
+        let preservedExecutionPhase = promotedNavigationExecutionPhase(for: snapshot.sessionID, state: &state)
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .active
         state.currentSessionCustomTitle = snapshot.customTitle
@@ -203,27 +223,43 @@ extension AiChatFeature {
         state.lastRequestContextModelHandle = snapshot.lastRequestContext == nil ? nil : snapshot.model
         state.addedAttachments = []
         state.currentContextFolderStructureModes = [:]
+        applyPromotedExecutionTranscript(preservedExecutionPhase, state: &state)
         state.executionPhase = preservedExecutionPhase ?? .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
     }
 
-    private func preservedNavigationExecutionPhase(
-        for _: AiChatSessionID,
-        state: State,
+    func promotedNavigationExecutionPhase(
+        for sessionID: AiChatSessionID,
+        state: inout State,
     ) -> AiChatExecutionPhase? {
         switch state.executionPhase {
-        case let .processing(lock):
-            .processing(lock)
-        case let .failed(lock, failure):
-            .failed(lock, failure)
-        case .idle, .completed, .cancelled, .persistenceRecovery:
-            nil
+        case let .processing(lock) where lock.context.sessionID == sessionID:
+            return .processing(lock)
+        case let .completed(lock) where lock.context.sessionID == sessionID:
+            return .completed(lock)
+        case let .failed(lock, failure) where lock.context.sessionID == sessionID:
+            return .failed(lock, failure)
+        case let .cancelled(lock) where lock.context.sessionID == sessionID:
+            return .cancelled(lock)
+        case let .persistenceRecovery(lock, failure) where lock.context.sessionID == sessionID:
+            return .persistenceRecovery(lock, failure)
+        default:
+            break
         }
+
+        guard let match = state.backgroundExecutionPhases
+            .filter({ _, phase in phase.lock?.context.sessionID == sessionID })
+            .max(by: { lhs, rhs in
+                lhs.value.navigationPromotionPriority < rhs.value.navigationPromotionPriority
+            })
+        else { return nil }
+        state.backgroundExecutionPhases[match.key] = nil
+        return match.value
     }
 
     func applyNewSessionSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
-        let preservedExecutionPhase = preservedNavigationExecutionPhase(for: snapshot.sessionID, state: state)
+        let preservedExecutionPhase = promotedNavigationExecutionPhase(for: snapshot.sessionID, state: &state)
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .idle
         state.currentSessionCustomTitle = snapshot.customTitle
@@ -235,9 +271,39 @@ extension AiChatFeature {
         state.lastRequestContextModelHandle = nil
         state.addedAttachments = []
         state.currentContextFolderStructureModes = [:]
+        applyPromotedExecutionTranscript(preservedExecutionPhase, state: &state)
         state.executionPhase = preservedExecutionPhase ?? .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
+    }
+
+    func applyPromotedExecutionTranscript(_ phase: AiChatExecutionPhase?, state: inout State) {
+        guard let phase else { return }
+        if let promotedSnapshot = phase.lock?.finalSnapshot {
+            applyPromotedFinalSnapshot(promotedSnapshot, state: &state)
+            return
+        }
+        if case .completed = phase { return }
+        guard let lock = phase.lock else { return }
+        state.transcriptHistory = lock.persistenceTranscriptHistory
+        state.lastRequestContext = lock.context.requestContext
+        state.lastRequestContextModelHandle = lock.context.model
+        state.selectedModelHandle = lock.context.model
+        state.selectedThinking = lock.context.selectedThinking
+        state.transcriptAutoScrollVersion += 1
+    }
+
+    func applyPromotedFinalSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
+        state.sessionID = snapshot.sessionID
+        state.sessionStatus = snapshot.status
+        state.currentSessionCustomTitle = snapshot.customTitle
+        state.transcriptHistory = snapshot.transcriptHistory
+        state.lastExecutionFailure = nil
+        state.lastRequestContext = snapshot.lastRequestContext
+        state.lastRequestContextModelHandle = snapshot.lastRequestContext == nil ? nil : snapshot.model
+        state.selectedModelHandle = snapshot.model
+        state.selectedThinking = snapshot.selectedThinking
+        state.transcriptAutoScrollVersion += 1
     }
 
     static func normalizeRestoredSnapshot(
@@ -315,4 +381,21 @@ struct AiChatRestoreContext {
     var catalogRows: [AiModelCatalogRow]
     var selectedHandle: AiModelHandle?
     var selectedThinking: AiThinkingSelection?
+}
+
+private extension AiChatExecutionPhase {
+    var navigationPromotionPriority: Int {
+        switch self {
+        case .processing:
+            4
+        case .persistenceRecovery:
+            3
+        case .completed:
+            2
+        case .failed:
+            1
+        case .cancelled, .idle:
+            0
+        }
+    }
 }

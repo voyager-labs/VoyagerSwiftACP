@@ -390,6 +390,41 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertFalse(state.tabs.first?.isPinned ?? true)
     }
 
+    func testCloseLastAiChatTabPreservesRecentlyClosedSnapshot() async {
+        let sessionID = "chat-1"
+        let aiChatTabID = ContentTabID()
+        let store = TestStore(
+            initialState: ContentTabState(
+                tabs: [
+                    ContentTabItem(
+                        id: aiChatTabID,
+                        page: .aiChat,
+                        anchor: .aiChat(sessionID: sessionID),
+                        isPinned: false,
+                        title: nil,
+                        iconName: nil,
+                    ),
+                ],
+                activeTabID: aiChatTabID,
+                recentlyClosed: nil,
+            ),
+        ) {
+            ContentTabFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.close(aiChatTabID))
+
+        XCTAssertEqual(store.state.recentlyClosed?.anchor, .aiChat(sessionID: sessionID))
+        XCTAssertNotNil(store.state.activeTabID)
+        XCTAssertEqual(store.state.tabs.count, 1)
+        guard let tab = store.state.tabs.first else {
+            return XCTFail("Expected at least one tab after close")
+        }
+        XCTAssertEqual(tab.page, .home)
+        XCTAssertEqual(tab.anchor, .homeDefault)
+    }
+
     // MARK: - CTM-001-restore_last_closed_tab
 
     /// CTM-001-restore_last_closed_tab: 단일 recently closed snapshot을 fresh identity로 복원함

@@ -77,7 +77,10 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
         await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.closeChat) {
             $0.windows[id: fixture.focusedUUID]?.window.inspector.inspectorVisible = false
         }
-        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.aiChat.teardownRequested)
+        XCTAssertEqual(
+            store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.sessionID,
+            fixture.expectedSetup.sessionID,
+        )
     }
 
     private func assertWindowManagerRequest(

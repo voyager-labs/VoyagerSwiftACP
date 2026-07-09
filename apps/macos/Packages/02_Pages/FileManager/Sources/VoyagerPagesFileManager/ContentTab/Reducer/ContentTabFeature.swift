@@ -106,6 +106,18 @@ extension ContentTabFeature {
         }
 
         if state.tabs.count == 1 {
+            if case .aiChat = tab.anchor {
+                let snapshot = ClosedContentTabSnapshot(
+                    page: tab.page,
+                    anchor: tab.anchor,
+                    wasPinned: tab.isPinned,
+                    closedAt: Date(),
+                    title: tab.title,
+                    iconName: tab.iconName,
+                )
+                state.recentlyClosed = snapshot
+            }
+
             state.previousActiveTabID = id
             state.tabs[id: id]?.page = .home
             state.tabs[id: id]?.anchor = .homeDefault

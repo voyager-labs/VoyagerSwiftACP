@@ -11,13 +11,13 @@ public extension DependencyValues {
 public struct AiChatSessionPersistenceClient: Sendable {
     public var listSessions: @Sendable (Int?, String?) async throws -> [AiChatSessionSummary]
     public var loadSession: @Sendable (AiChatSessionID) async throws -> AiChatSessionSnapshot?
-    public var saveSession: @Sendable (AiChatSessionSnapshot) async throws -> Void
+    public var saveSession: @Sendable (AiChatSessionSnapshot) async throws -> AiChatSessionSnapshot
     public var deleteSession: @Sendable (AiChatSessionID) async throws -> Void
 
     public init(
         listSessions: @escaping @Sendable (Int?, String?) async throws -> [AiChatSessionSummary] = { _, _ in [] },
         loadSession: @escaping @Sendable (AiChatSessionID) async throws -> AiChatSessionSnapshot?,
-        saveSession: @escaping @Sendable (AiChatSessionSnapshot) async throws -> Void,
+        saveSession: @escaping @Sendable (AiChatSessionSnapshot) async throws -> AiChatSessionSnapshot,
         deleteSession: @escaping @Sendable (AiChatSessionID) async throws -> Void,
     ) {
         self.listSessions = listSessions
@@ -73,7 +73,7 @@ extension AiChatSessionPersistenceClient: DependencyKey {
     nonisolated public static var testValue: AiChatSessionPersistenceClient {
         AiChatSessionPersistenceClient(
             loadSession: { _ in nil },
-            saveSession: { _ in },
+            saveSession: { snapshot in snapshot },
             deleteSession: { _ in },
         )
     }
@@ -81,7 +81,7 @@ extension AiChatSessionPersistenceClient: DependencyKey {
     nonisolated public static var previewValue: AiChatSessionPersistenceClient {
         AiChatSessionPersistenceClient(
             loadSession: { _ in nil },
-            saveSession: { _ in },
+            saveSession: { snapshot in snapshot },
             deleteSession: { _ in },
         )
     }

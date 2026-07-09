@@ -9,12 +9,12 @@ public struct AiChatFeature {
     public typealias Action = AiChatAction
 
     enum CancelID: Hashable {
-        case request
-        case requestContextResolution
-        case requestStartPersistence
-        case requestFinalPersistence
+        case request(AiChatRequestID)
+        case requestContextResolution(UUID)
+        case requestStartPersistence(AiChatRequestID)
+        case requestFinalPersistence(AiChatRequestID)
         case restore
-        case persistenceRecovery
+        case persistenceRecovery(AiChatRequestID)
         case modelList
         case sessionList
         case sessionDelete
@@ -46,6 +46,20 @@ public struct AiChatFeature {
     var clock
 
     public init() {}
+
+    func matchesRequestLifecycleOwner(
+        requestID: AiChatRequestID,
+        runID: AiChatRunID,
+        state: State,
+    ) -> Bool {
+        if case let .processing(lock) = state.executionPhase,
+           lock.requestID == requestID,
+           lock.runID == runID
+        {
+            return true
+        }
+        return state.backgroundExecutionPhases[requestID]?.lock?.runID == runID
+    }
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -162,6 +176,11 @@ public struct AiChatFeature {
 
             case let .sessionRenameSucceeded(summary, customTitle):
                 state.sessionList.replaceRow(summary)
+                refreshCustomTitleInExecutionOwners(
+                    sessionID: summary.sessionID,
+                    customTitle: customTitle,
+                    state: &state,
+                )
                 if state.sessionID == summary.sessionID {
                     state.currentSessionCustomTitle = customTitle
                 }
@@ -173,15 +192,15 @@ public struct AiChatFeature {
                 state.sessionList.errorMessage = message
                 return .none
 
-            case let .sessionSnapshotUpdated(summary, requestID, runID):
-                guard case let .processing(lock) = state.executionPhase,
-                      lock.requestID == requestID,
-                      lock.runID == runID,
-                      !state.sessionList.deletedSessionIDs.contains(summary.sessionID)
+            case let .sessionSnapshotUpdated(summary, _, requestID, runID):
+                guard !state.sessionList.deletedSessionIDs.contains(summary.sessionID),
+                      matchesRequestLifecycleOwner(requestID: requestID, runID: runID, state: state)
                 else { return .none }
                 state.sessionList.replaceRow(summary)
-                state.sessionList.selectedSessionID = summary.sessionID
-                state.sessionList.unreadCompletedSessionIDs.remove(summary.sessionID)
+                if state.sessionID == summary.sessionID {
+                    state.sessionList.selectedSessionID = summary.sessionID
+                    state.sessionList.unreadCompletedSessionIDs.remove(summary.sessionID)
+                }
                 state.sessionList.errorMessage = nil
                 return .none
 
@@ -192,8 +211,14 @@ public struct AiChatFeature {
                 else { return .none }
                 return .none
 
-            case let .sessionSnapshotSaved(summary):
-                applySessionSnapshotSaved(summary: summary, state: &state)
+            case let .sessionSnapshotSaved(summary, snapshot, requestID, runID):
+                applySessionSnapshotSaved(
+                    summary: summary,
+                    snapshot: snapshot,
+                    requestID: requestID,
+                    runID: runID,
+                    state: &state,
+                )
                 return .none
 
             case .backToSessionsTapped:
@@ -423,8 +448,11 @@ public struct AiChatFeature {
             case .resetTapped:
                 return handleResetTapped(state: &state)
 
+            case let .cancelRequestLifecycle(sessionID):
+                return cancelRequestLifecycle(for: sessionID, state: &state) ?? .none
+
             case .cancelInFlightWork:
-                return cancelAllInFlightWork()
+                return cancelAllInFlightWork(state: &state)
 
             case .teardownRequested:
                 return handleTeardownRequested(state: &state)

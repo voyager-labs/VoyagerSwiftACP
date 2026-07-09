@@ -11,6 +11,20 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
     /// session snapshot이 다음 요청 선택값 대신 locked model/thinking을 사용하는지 검증
     // MARK: - CBW-003-prepare_contextual_chat_request
 
+    func testRequestContextResolutionCancelIDIsScopedByResolutionID() {
+        let firstResolutionID = makeUUID("11111111-1111-1111-1111-111111111141")
+        let secondResolutionID = makeUUID("22222222-2222-2222-2222-222222222242")
+
+        XCTAssertNotEqual(
+            AiChatFeature.CancelID.requestContextResolution(firstResolutionID),
+            AiChatFeature.CancelID.requestContextResolution(secondResolutionID),
+        )
+        XCTAssertEqual(
+            AiChatFeature.CancelID.requestContextResolution(firstResolutionID),
+            AiChatFeature.CancelID.requestContextResolution(firstResolutionID),
+        )
+    }
+
     /// CBW-003-prepare_contextual_chat_request: Make Session Snapshot Uses Locked Model And Thinking Instead Of Next
     /// Request Selection
     /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
@@ -1286,6 +1300,7 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
                 loadSession: { _ in nil },
                 saveSession: { snapshot in
                     savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
                 },
                 deleteSession: { _ in },
             )
