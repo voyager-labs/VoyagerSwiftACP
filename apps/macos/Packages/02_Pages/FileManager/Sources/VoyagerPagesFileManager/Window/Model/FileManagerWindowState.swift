@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
@@ -281,6 +282,31 @@ extension FileManagerWindowState {
 
     mutating func syncContentTabSidebarItems() {
         sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: contentTabs)
+    }
+
+    mutating func syncFixedLocationItems(
+        with locationsClient: FileManagerLocationsClient,
+        entryLoadingClient: EntryLoadingClient,
+    ) {
+        let items = FileManagerHomeDashboardProjection.makeFixedLocations(
+            from: locationsClient.loadLocations(entryLoadingClient),
+        )
+        sidebar.fixedLocationItems = items
+        content.homeLocationItems = items
+    }
+
+    // MARK: - Home Dashboard Projection
+
+    var homeFavoriteItems: [FileManagerHomeFavoriteItem] {
+        FileManagerHomeDashboardProjection.homeFavorites(from: contentTabs)
+    }
+
+    mutating func syncHomeFavoriteItems() {
+        content.homeFavoriteItems = homeFavoriteItems
+    }
+
+    mutating func syncHomeLocationItems() {
+        content.homeLocationItems = sidebar.fixedLocationItems
     }
 
     mutating func applyPinnedContentTabs(_ restoredPinnedState: ContentTabState) {

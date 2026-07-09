@@ -30,10 +30,19 @@ struct FileManagerWindowCommandRoutingReducer {
     private var collectionAlertClient
     @Dependency(\.fileManagerClient)
     private var fileManagerClient
+    @Dependency(\.fileManagerLocationsClient)
+    private var fileManagerLocationsClient
+    @Dependency(\.entryLoadingClient)
+    private var entryLoadingClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case .onAppear:
+                state.syncFixedLocationItems(with: fileManagerLocationsClient, entryLoadingClient: entryLoadingClient)
+                state.syncHomeFavoriteItems()
+                return .none
+
             case let .request(command):
                 return handleRequestedCommand(command, state: &state)
 
@@ -48,6 +57,22 @@ struct FileManagerWindowCommandRoutingReducer {
                       state.contentTabs.tabs[id: activeTabID]?.anchor == .homeDefault
                 else { return .none }
                 return handleHomePageAnchorSelected(anchor, activeTabID: activeTabID)
+
+            case let .content(.delegate(.homeChatHistorySessionSelected(sessionID))):
+                guard let activeTabID = state.contentTabs.activeTabID,
+                      state.contentTabs.tabs[id: activeTabID]?.anchor == .homeDefault
+                else { return .none }
+                return handleHomeChatHistorySessionSelected(sessionID, activeTabID: activeTabID)
+
+            case let .sidebar(.delegate(.selectFixedLocation(id))):
+                guard let activeTabID = state.contentTabs.activeTabID,
+                      let location = state.sidebar.fixedLocationItems.first(where: { $0.id == id })
+                else { return .none }
+                let anchor = ContentTabPageAnchor.directory(path: location.path)
+                return .concatenate(
+                    .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
+                    .send(.navigation(.view(.navigateToPath(location.path)))),
+                )
 
             case let .content(.delegate(.aiChatSessionCreated(sessionID))):
                 return routeActiveAiChatTab(to: sessionID, state: state)
@@ -93,6 +118,37 @@ struct FileManagerWindowCommandRoutingReducer {
         return .merge(
             .send(.navigation(.view(.showAiChat(sessionIDString)))),
             .send(.contentTabs(.updateActivePageAnchor(activeTabID, .aiChat(sessionID: sessionIDString)))),
+        )
+    }
+
+    private func handleHomeChatHistorySessionSelected(
+        _ sessionID: AiChatSessionID,
+        activeTabID: ContentTabID,
+    ) -> Effect<Action> {
+        let sessionString = sessionID.rawValue.uuidString
+        let anchor = ContentTabPageAnchor.aiChat(sessionID: sessionString)
+        let setup = AiChatSetupState(
+            restoreSessionID: sessionID,
+            sessionID: nil,
+            mode: .chat,
+        )
+        let providerLoadEffect: Effect<Action> = .run { [aiConnectionsFileClient] send in
+            let connectionsFile: AIConnectionsFile
+            do {
+                connectionsFile = try await aiConnectionsFileClient.load()
+            } catch {
+                connectionsFile = .empty()
+            }
+            await send(.content(.aiChat(.providerConnectionsUpdated(connectionsFile))))
+        }
+        .cancellable(id: HomeAiChatOpenCancelID(tabID: activeTabID), cancelInFlight: true)
+
+        return .concatenate(
+            .send(.inspector(.closeChat)),
+            .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
+            .send(.navigation(.view(.showAiChat(sessionString)))),
+            .send(.content(.aiChat(.setup(setup)))),
+            providerLoadEffect,
         )
     }
 

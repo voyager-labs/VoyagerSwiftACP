@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
@@ -15,6 +16,10 @@ struct FileManagerWindowRoutingReducer {
     var collectionAlertClient
     @Dependency(\.fileManagerClient)
     var fileManagerClient
+    @Dependency(\.fileManagerLocationsClient)
+    var fileManagerLocationsClient
+    @Dependency(\.entryLoadingClient)
+    var entryLoadingClient
     @Dependency(\.aiConnectionsFileClient)
     var aiConnectionsFileClient
 
@@ -58,6 +63,12 @@ struct FileManagerWindowRoutingReducer {
              .aiChat:
             return false
         }
+    }
+
+    private func syncDashboardProjections(state: inout State) {
+        state.syncContentTabSidebarItems()
+        state.syncHomeLocationItems()
+        state.syncHomeFavoriteItems()
     }
 
     var body: some Reducer<State, Action> {
@@ -126,7 +137,7 @@ struct FileManagerWindowRoutingReducer {
                     removeBackgroundAiChatOwnersPromotedToActiveContent(state: &state)
                     state.restoreInspectorStateForActiveTab()
                 }
-                state.syncContentTabSidebarItems()
+                syncDashboardProjections(state: &state)
                 syncSidebarSelectionForActiveContentTab(state: &state)
                 return .merge(
                     handoffCleanupEffect,
@@ -173,7 +184,7 @@ struct FileManagerWindowRoutingReducer {
                     }
                     state.restoreInspectorStateForActiveTab()
                 }
-                state.syncContentTabSidebarItems()
+                syncDashboardProjections(state: &state)
                 syncSidebarSelectionForActiveContentTab(state: &state)
                 return .merge(
                     handoffCleanupEffect,
@@ -241,7 +252,7 @@ struct FileManagerWindowRoutingReducer {
                     state.syncActiveTabInspectorState()
                     shouldCloseWindow = true
                 }
-                state.syncContentTabSidebarItems()
+                syncDashboardProjections(state: &state)
                 syncSidebarSelectionForActiveContentTab(state: &state)
                 let handoffEffect: Effect<Action> = .merge(
                     handoffCleanupEffect,
@@ -290,7 +301,7 @@ struct FileManagerWindowRoutingReducer {
                         state.recentlyClosedNavigationRoute = nil
                     }
                 }
-                state.syncContentTabSidebarItems()
+                syncDashboardProjections(state: &state)
                 syncSidebarSelectionForActiveContentTab(state: &state)
                 return .merge(
                     handoffCleanupEffect,
@@ -322,7 +333,7 @@ struct FileManagerWindowRoutingReducer {
                 )
 
             case .contentTabs:
-                state.syncContentTabSidebarItems()
+                syncDashboardProjections(state: &state)
                 return .none
 
             case let .closeContentTabRequested(tabID):
