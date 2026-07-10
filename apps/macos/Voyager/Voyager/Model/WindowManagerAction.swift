@@ -1,7 +1,9 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesCollection
 import VoyagerFeaturesEntryArrangements
+import VoyagerPagesFileManager
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
@@ -15,6 +17,8 @@ enum WindowManagerAction: CasePathable {
     case edit(EditCommand)
     case event(WindowEvent)
     case pinnedContentTabsStoreChanged
+    case defaultWindowBootstrapCompleted(requestID: UUID, contentTabs: ContentTabState)
+    case defaultWindowBootstrapFailed(requestID: UUID)
     case windows(IdentifiedActionOf<WindowSessionFeature>)
 
     @CasePathable

@@ -18,6 +18,10 @@ struct WindowManagerFeature {
     typealias State = WindowManagerState
     typealias Action = WindowManagerAction
 
+    nonisolated private enum CancelID: Hashable {
+        case defaultWindowBootstrap
+    }
+
     let pickAttachments: @Sendable () async -> [URL]
 
     init(
@@ -206,10 +210,15 @@ struct WindowManagerFeature {
             case let .event(.windowClosed(id)):
                 let wasFocused = state.focusedWindowID == id
                 state.windows.remove(id: id)
+                state.defaultWindowBootstrapWindowIDs.remove(id)
                 if wasFocused {
                     state.focusedWindowID = state.windows.first?.id
                 }
-                return .none
+                guard state.defaultWindowBootstrapWindowIDs.isEmpty,
+                      state.defaultWindowBootstrapRequestID != nil
+                else { return .none }
+                state.defaultWindowBootstrapRequestID = nil
+                return .cancel(id: CancelID.defaultWindowBootstrap)
 
             case let .event(.focusWindow(path)):
                 return .run { _ in
@@ -223,7 +232,35 @@ struct WindowManagerFeature {
                 return .send(.pinnedContentTabsStoreChanged)
 
             case .pinnedContentTabsStoreChanged:
-                return syncPinnedContentTabsAcrossWindows(state: &state)
+                let syncEffect = syncPinnedContentTabsAcrossWindows(state: &state)
+                state.defaultWindowBootstrapRequestID = nil
+                state.defaultWindowBootstrapWindowIDs.removeAll()
+                return .merge(
+                    .cancel(id: CancelID.defaultWindowBootstrap),
+                    syncEffect,
+                )
+
+            case let .defaultWindowBootstrapCompleted(requestID, restoredState):
+                guard state.defaultWindowBootstrapRequestID == requestID else { return .none }
+                state.defaultWindowBootstrapRequestID = nil
+                let targetWindowIDs = state.windows.ids.filter {
+                    state.defaultWindowBootstrapWindowIDs.contains($0)
+                }
+                state.defaultWindowBootstrapWindowIDs.removeAll()
+                return .merge(
+                    targetWindowIDs.map { id in
+                        .send(.windows(.element(
+                            id: id,
+                            action: .window(.applyPinnedContentTabs(restoredState)),
+                        )))
+                    },
+                )
+
+            case let .defaultWindowBootstrapFailed(requestID):
+                guard state.defaultWindowBootstrapRequestID == requestID else { return .none }
+                state.defaultWindowBootstrapRequestID = nil
+                state.defaultWindowBootstrapWindowIDs.removeAll()
+                return .none
 
             case let .windows(.element(id: _, action: .window(.inspector(.setInspectorWidth(width))))):
                 state.appPreferences.inspectorWidth = max(FileManagerInspectorLayoutMetrics.minWidth, width)
@@ -266,9 +303,14 @@ struct WindowManagerFeature {
         case .window(.closeAllWindows):
             state.windows.removeAll()
             state.focusedWindowID = nil
-            return .run { _ in
-                await fileManagerWindowClient.closeAll()
-            }
+            state.defaultWindowBootstrapRequestID = nil
+            state.defaultWindowBootstrapWindowIDs.removeAll()
+            return .merge(
+                .cancel(id: CancelID.defaultWindowBootstrap),
+                .run { _ in
+                    await fileManagerWindowClient.closeAll()
+                },
+            )
 
         default:
             return .none
@@ -289,12 +331,19 @@ struct WindowManagerFeature {
         state.windows.append(windowSession)
         state.focusedWindowID = windowSession.id
 
+        let bootstrapEffect: Effect<Action> = if path == nil {
+            defaultWindowBootstrapEffectIfNeeded(for: windowSession.id, state: &state)
+        } else {
+            .none
+        }
+
         return .concatenate(
             windowIDChangedEffect(for: windowSession.id),
             appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
             .run { [id = windowSession.id] _ in
                 await open(id)
             },
+            bootstrapEffect,
         )
     }
 
@@ -306,6 +355,7 @@ struct WindowManagerFeature {
 
         state.windows.append(windowSession)
         state.focusedWindowID = windowSession.id
+        let bootstrapEffect = defaultWindowBootstrapEffectIfNeeded(for: windowSession.id, state: &state)
 
         return .concatenate(
             windowIDChangedEffect(for: windowSession.id),
@@ -317,6 +367,7 @@ struct WindowManagerFeature {
             .run { [fileManagerWindowClient, id = windowSession.id] _ in
                 await fileManagerWindowClient.open(id)
             },
+            bootstrapEffect,
         )
     }
 
@@ -366,89 +417,108 @@ struct WindowManagerFeature {
         }
     }
 
-    private func restorePinnedContentTabs(
-        from store: ContentTabPinnedRecordStore,
-    ) -> (state: ContentTabState, didCompact: Bool, droppedCount: Int) {
-        ContentTabState.restoringPinnedRecords(
-            from: store,
-            isRestorableAnchor: { anchor in
-                isRestorablePinnedAnchor(anchor)
-            },
-        )
+    private func defaultWindowBootstrapEffectIfNeeded(
+        for windowID: State.WindowID,
+        state: inout State,
+    ) -> Effect<Action> {
+        state.defaultWindowBootstrapWindowIDs.insert(windowID)
+        guard state.defaultWindowBootstrapRequestID == nil else { return .none }
+        let requestID = uuid()
+        state.defaultWindowBootstrapRequestID = requestID
+        return runDefaultWindowBootstrapEffect(requestID: requestID)
+            .cancellable(id: CancelID.defaultWindowBootstrap, cancelInFlight: true)
     }
 
-    private func isRestorablePinnedAnchor(_ anchor: ContentTabPageAnchor) -> Bool {
-        switch anchor {
-        case let .directory(path):
-            var isDirectory = ObjCBool(false)
-            return fileManagerClient.fileExistsWithIsDirectory(path, &isDirectory) && isDirectory.boolValue
-        case let .collectionFile(url):
-            return fileManagerClient.fileExistsWithIsDirectory(url.path, nil)
-        case .homeDefault,
-             .virtualCollection,
-             .aiChat:
-            return true
+    /// Default window's asynchronous pinned-store bootstrap.
+    /// Concurrent default and Collection windows share one in-flight load.
+    /// Completion applies pinned tabs only to windows that requested this bootstrap.
+    private func runDefaultWindowBootstrapEffect(requestID: UUID) -> Effect<Action> {
+        let pinnedRecordClient = contentTabPinnedRecordClient
+        let favoritesClient = fileManagerFavoritesClient
+        let managerClient = fileManagerClient
+        let loadingClient = entryLoadingClient
+        let defaultsClient = userDefaultsClient
+        let now = date
+
+        return .run { send in
+            do {
+                var store = try pinnedRecordClient.loadStore(defaultsClient)
+
+                // 1. Legacy seed flag
+                if !defaultsClient.bool(SettingsKeys.defaultPinnedTabsSeedCompleted) {
+                    defaultsClient.setBool(true, SettingsKeys.defaultPinnedTabsSeedCompleted)
+                }
+
+                // 2. Finder Favorites seed (if needed)
+                if !defaultsClient.bool(SettingsKeys.finderFavoritesPinnedSeedCompleted) {
+                    if store.records.isEmpty {
+                        let favorites = favoritesClient.loadFavorites(
+                            loadingClient,
+                            defaultsClient,
+                        )
+                        let favoriteRecords = FileManagerFavoritesPinnedRecordMapper.pinnedRecords(
+                            from: favorites,
+                            pinnedAt: now(),
+                            fileExistsWithIsDirectory: { path, isDirectory in
+                                managerClient.fileExistsWithIsDirectory(path, isDirectory)
+                            },
+                        )
+                        if !favoriteRecords.isEmpty {
+                            let seededStore = ContentTabPinnedRecordStore(
+                                schemaVersion: store.schemaVersion,
+                                records: favoriteRecords,
+                            )
+                            do {
+                                try pinnedRecordClient.saveStore(seededStore, defaultsClient)
+                                store = seededStore
+                                defaultsClient.setBool(
+                                    true,
+                                    SettingsKeys.finderFavoritesPinnedSeedCompleted,
+                                )
+                            } catch {
+                                // Save failure: flag stays false for retry
+                            }
+                        } else {
+                            defaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
+                        }
+                    } else {
+                        defaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
+                    }
+                }
+
+                // 3. Restore pinned records with filesystem validation
+                let restoreResult = ContentTabState.restoringPinnedRecords(
+                    from: store,
+                    isRestorableAnchor: { anchor in
+                        switch anchor {
+                        case let .directory(path):
+                            var isDirectory = ObjCBool(false)
+                            return managerClient.fileExistsWithIsDirectory(path, &isDirectory)
+                                && isDirectory.boolValue
+                        case let .collectionFile(url):
+                            return managerClient.fileExistsWithIsDirectory(url.path, nil)
+                        case .homeDefault, .virtualCollection, .aiChat:
+                            return true
+                        }
+                    },
+                )
+
+                // 4. Compact if needed
+                if restoreResult.didCompact {
+                    let compactedStore = ContentTabPinnedRecordStore(
+                        schemaVersion: store.schemaVersion,
+                        records: restoreResult.state.tabs.compactMap { tab in
+                            restoreResult.state.pinnedRecords[tab.id]
+                        },
+                    )
+                    try? pinnedRecordClient.saveStore(compactedStore, defaultsClient)
+                }
+
+                await send(.defaultWindowBootstrapCompleted(requestID: requestID, contentTabs: restoreResult.state))
+            } catch {
+                await send(.defaultWindowBootstrapFailed(requestID: requestID))
+            }
         }
-    }
-
-    private func compactPinnedStoreIfNeeded(
-        _ store: ContentTabPinnedRecordStore,
-        restoreResult: (state: ContentTabState, didCompact: Bool, droppedCount: Int),
-    ) {
-        guard restoreResult.didCompact else { return }
-        let compactedStore = ContentTabPinnedRecordStore(
-            schemaVersion: store.schemaVersion,
-            records: restoreResult.state.tabs.compactMap { tab in
-                restoreResult.state.pinnedRecords[tab.id]
-            },
-        )
-        try? contentTabPinnedRecordClient.saveStore(compactedStore, userDefaultsClient)
-    }
-
-    private func seedDefaultPinnedRecordsIfNeeded(store: inout ContentTabPinnedRecordStore) {
-        seedLegacyDefaultPinnedRecordsIfNeeded(store: &store)
-        seedFinderFavoritesPinnedRecordsIfNeeded(store: &store)
-    }
-
-    private func seedLegacyDefaultPinnedRecordsIfNeeded(store _: inout ContentTabPinnedRecordStore) {
-        let didSeed = userDefaultsClient.bool(SettingsKeys.defaultPinnedTabsSeedCompleted)
-        guard !didSeed else { return }
-
-        userDefaultsClient.setBool(true, SettingsKeys.defaultPinnedTabsSeedCompleted)
-    }
-
-    private func seedFinderFavoritesPinnedRecordsIfNeeded(store: inout ContentTabPinnedRecordStore) {
-        let didSeed = userDefaultsClient.bool(SettingsKeys.finderFavoritesPinnedSeedCompleted)
-        guard !didSeed else { return }
-
-        guard store.records.isEmpty else {
-            userDefaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
-            return
-        }
-
-        let favorites = fileManagerFavoritesClient.loadFavorites(entryLoadingClient, userDefaultsClient)
-        let favoriteRecords = FileManagerFavoritesPinnedRecordMapper.pinnedRecords(
-            from: favorites,
-            pinnedAt: date(),
-            fileExistsWithIsDirectory: fileManagerClient.fileExistsWithIsDirectory,
-        )
-        guard !favoriteRecords.isEmpty else {
-            userDefaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
-            return
-        }
-
-        let seededStore = ContentTabPinnedRecordStore(
-            schemaVersion: store.schemaVersion,
-            records: favoriteRecords,
-        )
-        do {
-            try contentTabPinnedRecordClient.saveStore(seededStore, userDefaultsClient)
-        } catch {
-            return
-        }
-
-        store = seededStore
-        userDefaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
     }
 
     private func makeWindowSession(path: String?, selectEntryID: String? = nil) -> WindowSessionState {
@@ -462,25 +532,13 @@ struct WindowManagerFeature {
             return .init(id: id, window: windowState)
         }
 
-        let windowState: FileManagerWindowFeature.State
-        do {
-            var store = try contentTabPinnedRecordClient.loadStore(userDefaultsClient)
-            seedDefaultPinnedRecordsIfNeeded(store: &store)
-            let restoreResult = restorePinnedContentTabs(from: store)
-            compactPinnedStoreIfNeeded(store, restoreResult: restoreResult)
-
-            windowState = FileManagerWindowFeature.State.makeInitial(
-                path: nil,
-                contentTabs: restoreResult.state,
-                selectEntryID: selectEntryID,
-            )
-        } catch {
-            windowState = FileManagerWindowFeature.State.makeInitial(
-                path: nil,
-                selectEntryID: selectEntryID,
-            )
-        }
-
+        // Default window: Home shell immediately, no synchronous IO.
+        // Pinned store restore/seed/validation runs asynchronously via
+        // runDefaultWindowBootstrapEffect() attached in openWindowSession.
+        let windowState = FileManagerWindowFeature.State.makeInitial(
+            path: nil,
+            selectEntryID: selectEntryID,
+        )
         return .init(id: id, window: windowState)
     }
 }

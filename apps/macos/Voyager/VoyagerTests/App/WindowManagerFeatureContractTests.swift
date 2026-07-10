@@ -143,9 +143,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(openedIDs.value.first, newID, "open에 전달된 ID는 생성된 윈도우 ID와 일치해야 한다")
     }
 
-    /// Default bootstrap(path == nil)에서 pinned record store가 로드되고
-    /// FileManagerFeature.State.makeInitial(path: nil, contentTabs:)에 전달되어
-    /// pinned tab이 포함된 window가 생성됨을 검증한다.
+    /// Default window(path == nil)가 Home shell을 즉시 생성하고,
+    /// async bootstrap effect가 pinned record store를 로드하여 pinned tab을 적용함을 검증한다.
     /// - 검증 내용: pinned record 1개 load → window에 pinned tab 1개 포함
     /// - 사전 조건: contentTabPinnedRecordClient.loadStore가 1개 pinned record 반환
     /// - 기대 결과: window state에 isPinned=true인 tab 1개 존재
@@ -177,11 +176,17 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
         }
-        // WindowManager bootstrap은 open/app-preference 등 부수 child action을 방출하므로,
-        // 이 테스트는 pinned restore 결과 상태만 검증한다.
         store.exhaustivity = .off
 
         await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs))) = action
+            else {
+                return false
+            }
+            return id == newID
+        }
         await store.finish()
 
         let window = store.state.windows.first?.window
@@ -196,7 +201,63 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
-    /// Default bootstrap(path == nil)은 삭제된 pinned Directory record를 제외하고 compact save한다.
+    /// Collection window도 Home shell과 collection navigation을 먼저 구성한 뒤 pinned bootstrap을 비동기로 적용한다.
+    func testCollectionWindowStartsDefaultPinnedBootstrap() async {
+        let newID = UUID()
+        let collectionURL = URL(fileURLWithPath: "/Users/test/Saved.voyagercollection")
+        let loadCount = LockIsolated(0)
+        let pinnedStore = ContentTabPinnedRecordStore(records: [
+            ContentTabPinnedRecord(
+                id: "dir-1",
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Documents"),
+                title: "Documents",
+                iconName: "folder",
+                pinnedAt: Date(timeIntervalSince1970: 443),
+            ),
+        ])
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(newID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in
+                loadCount.withValue { $0 += 1 }
+                return pinnedStore
+            }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+            $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
+                guard path == "/Users/test/Documents" else { return false }
+                isDirectory?.pointee = ObjCBool(true)
+                return true
+            }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.file(.openCollectionFile(collectionURL)))
+        XCTAssertEqual(store.state.windows.count, 1)
+        XCTAssertTrue(store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned).isEmpty == true)
+
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs))) = action
+            else {
+                return false
+            }
+            return id == newID
+        }
+        await store.finish()
+
+        XCTAssertEqual(loadCount.value, 1)
+        XCTAssertEqual(
+            store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
+            ["dir-1"],
+        )
+    }
+
+    /// Default window의 async bootstrap은 삭제된 pinned Directory record를 제외하고 compact save한다.
     /// 삭제된 대상이 placeholder tab으로 반복 복원되지 않도록 WindowManager의 파일 존재 검증과 compaction을 검증한다.
     /// - 검증 내용: valid record만 window에 복원, compacted store 저장
     /// - 사전 조건: valid directory 1개 + deleted directory 1개
@@ -240,11 +301,17 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
         }
-        // newWindow bootstrap은 open/focus delegate 등 부수 child action을 동반하므로,
-        // 이 테스트는 삭제 record compaction과 focused Home 상태만 검증한다.
         store.exhaustivity = .off
 
         await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs))) = action
+            else {
+                return false
+            }
+            return id == newID
+        }
         await store.finish()
 
         let window = store.state.windows.first?.window
@@ -256,7 +323,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(savedStores.value.last?.records.map(\.id), ["valid-dir"])
     }
 
-    /// Collection file이 macOS package(directory)로 보이더라도 정상 pinned record로 복원해야 한다.
+    /// Collection file이 macOS package(directory)로 보이더라도 async bootstrap에서 정상 pinned record로 복원해야 한다.
     /// Finder 문서 패키지를 broken record로 오판하면 sync 시 active pinned tab이 제거되어 탭이 닫힌 것처럼 보인다.
     func testDefaultWindowBootstrapRestoresCollectionPackagePinnedRecord() async {
         let newID = UUID()
@@ -287,11 +354,17 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
         }
-        // newWindow bootstrap은 open/focus delegate 등 부수 child action을 동반하므로,
-        // 이 테스트는 collection package record 복원과 focused Home 상태만 검증한다.
         store.exhaustivity = .off
 
         await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs))) = action
+            else {
+                return false
+            }
+            return id == newID
+        }
         await store.finish()
 
         let window = store.state.windows.first?.window
@@ -469,6 +542,124 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertFalse(window?.contentTabs.tabs[0].isPinned ?? true, "명시적 path window의 tab은 unpinned")
     }
 
+    /// in-flight default bootstrap 완료는 bootstrap을 요청한 window에만 pinned state를 적용한다.
+    /// 명시적 path window가 bootstrap 도중 열려도 해당 window의 directory tab을 유지해야 한다.
+    func testDefaultBootstrapCompletionSkipsExplicitPathWindows() async {
+        let defaultWindowID = UUID()
+        let explicitPathWindowID = UUID()
+        let explicitPath = "/Users/test/Documents"
+        let pinnedStore = ContentTabPinnedRecordStore(records: [
+            ContentTabPinnedRecord(
+                id: "global-pin",
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Pinned"),
+                title: "Pinned",
+                iconName: "folder",
+                pinnedAt: Date(timeIntervalSince1970: 443),
+            ),
+        ])
+        let restoredState = ContentTabState.restoringPinnedRecords(from: pinnedStore).state
+
+        let requestID = UUID()
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            WindowSessionState(id: defaultWindowID, window: .makeInitial(path: nil)),
+            WindowSessionState(id: explicitPathWindowID, window: .makeInitial(path: explicitPath)),
+        ]
+        initialState.defaultWindowBootstrapRequestID = requestID
+        initialState.defaultWindowBootstrapWindowIDs = [defaultWindowID]
+
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.defaultWindowBootstrapCompleted(
+            requestID: requestID,
+            contentTabs: restoredState,
+        ))
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs(contentTabs)))) = action
+            else {
+                return false
+            }
+            return id == defaultWindowID
+                && contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue) == ["global-pin"]
+        }
+
+        XCTAssertEqual(
+            store.state.windows[id: defaultWindowID]?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
+            ["global-pin"],
+        )
+        XCTAssertEqual(store.state.windows[id: explicitPathWindowID]?.window.contentTabs.tabs.count, 1)
+        XCTAssertEqual(
+            store.state.windows[id: explicitPathWindowID]?.window.contentTabs.tabs.first?.anchor,
+            .directory(path: explicitPath),
+        )
+        XCTAssertFalse(store.state.windows[id: explicitPathWindowID]?.window.contentTabs.tabs.first?.isPinned ?? true)
+    }
+
+    /// live pinned store 변경은 진행 중인 bootstrap을 무효화해 오래된 snapshot 적용을 막는다.
+    func testPinnedStoreChangeInvalidatesStaleDefaultBootstrapCompletion() async {
+        let windowID = UUID()
+        let requestID = UUID()
+        let latestStore = ContentTabPinnedRecordStore(records: [
+            ContentTabPinnedRecord(
+                id: "latest-pin",
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Latest"),
+                title: "Latest",
+                iconName: "folder",
+                pinnedAt: Date(timeIntervalSince1970: 444),
+            ),
+        ])
+        let staleStore = ContentTabPinnedRecordStore(records: [
+            ContentTabPinnedRecord(
+                id: "stale-pin",
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Stale"),
+                title: "Stale",
+                iconName: "folder",
+                pinnedAt: Date(timeIntervalSince1970: 443),
+            ),
+        ])
+        let staleState = ContentTabState.restoringPinnedRecords(from: staleStore).state
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [WindowSessionState(id: windowID, window: .makeInitial(path: nil))]
+        initialState.defaultWindowBootstrapRequestID = requestID
+        initialState.defaultWindowBootstrapWindowIDs = [windowID]
+
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.loadStore = { _ in latestStore }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.pinnedContentTabsStoreChanged) {
+            $0.defaultWindowBootstrapRequestID = nil
+            $0.defaultWindowBootstrapWindowIDs = []
+        }
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs(contentTabs)))) = action
+            else { return false }
+            return id == windowID
+                && contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue) == ["latest-pin"]
+        }
+        await store.send(.defaultWindowBootstrapCompleted(
+            requestID: requestID,
+            contentTabs: staleState,
+        ))
+
+        XCTAssertEqual(
+            store.state.windows[id: windowID]?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
+            ["latest-pin"],
+        )
+    }
+
     /// restoreLastClosedTab 코맨드가 포커스된 윈도우의 contentTabs.recentlyClosed로 라우팅되어
     /// recentlyClosed snapshot을 소비하고 새 탭을 추가하는지 검증한다.
     /// - 검증 내용: restore 후 recentlyClosed == nil, tabs.count 1 증가
@@ -580,6 +771,14 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs))) = action
+            else {
+                return false
+            }
+            return id == newID
+        }
         await store.finish()
 
         Self.assertFinderFavoritesSeeded(
@@ -641,6 +840,14 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs))) = action
+            else {
+                return false
+            }
+            return id == newID
+        }
         await store.finish()
 
         Self.assertFinderFavoritesSeeded(
@@ -717,6 +924,14 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs))) = action
+            else {
+                return false
+            }
+            return id == newID
+        }
         await store.finish()
 
         let pinnedTabs = store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned) ?? []
@@ -781,6 +996,14 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs))) = action
+            else {
+                return false
+            }
+            return id == newID
+        }
         await store.finish()
 
         let pinnedTabs = store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned) ?? []
@@ -837,6 +1060,14 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs))) = action
+            else {
+                return false
+            }
+            return id == newID
+        }
         await store.finish()
 
         let pinnedTabs = store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned) ?? []
