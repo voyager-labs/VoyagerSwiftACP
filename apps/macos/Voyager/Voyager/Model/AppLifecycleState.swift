@@ -27,6 +27,11 @@ struct AppLifecycleState: Equatable {
         return accessGateGeneration
     }
 
+    mutating func invalidateAccessCheck() {
+        accessGateGeneration += 1
+        isCheckingAccountAccess = false
+    }
+
     func isCurrentAccessGateGeneration(_ generation: Int) -> Bool {
         accessGateGeneration == generation
     }

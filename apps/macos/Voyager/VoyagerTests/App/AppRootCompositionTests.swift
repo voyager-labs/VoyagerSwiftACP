@@ -549,6 +549,31 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertFalse(store.state.didStartHelper)
     }
 
+    /// 종료 후 늦게 도착한 device binding 성공 응답은 access gate를 통과시키면 안 된다.
+    func testTerminationInvalidatesLateDeviceBindingResponse() async {
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: Date(timeIntervalSince1970: 0),
+            sessionExpiresAt: Date(timeIntervalSince1970: 100),
+        )
+        let store = TestStore(initialState: AppLifecycleFeature.State(accessGateGeneration: 1)) {
+            AppLifecycleFeature()
+        }
+
+        await store.send(.termination(.willTerminate)) {
+            $0.accessGateGeneration = 2
+        }
+        await store.send(.accountAccessGate(.deviceBindingResponse(
+            generation: 1,
+            snapshot: snapshot,
+            result: .success(DeviceBindingResponse(ok: true)),
+        )))
+
+        XCTAssertFalse(store.state.accountAccessGateResolved)
+        XCTAssertFalse(store.state.didStartHelper)
+        await store.finish()
+    }
+
     /// inactive entitlement는 access unlock recovery 상태를 hydrate한 session lapse guard overlay로 전달한다.
     func testAccessStatusInactiveRoutesToAccessUnlockRecovery() async {
         let expiry = Date(timeIntervalSince1970: 100)

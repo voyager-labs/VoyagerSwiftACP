@@ -178,6 +178,7 @@ struct AppLifecycleFeature {
                             result: result,
                         )))
                     }
+                    .cancellable(id: CancelID.accessCheck, cancelInFlight: true)
                 }
 
                 state.isCheckingAccountAccess = false
@@ -454,6 +455,7 @@ struct AppLifecycleFeature {
                 )
 
             case .termination(.willTerminate):
+                state.invalidateAccessCheck()
                 return .merge(
                     .cancel(id: CancelID.accessCheck),
                     .cancel(id: CancelID.helperMonitor),
