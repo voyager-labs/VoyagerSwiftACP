@@ -22,12 +22,23 @@ public extension ContentTabProjection {
                 id: tab.id,
                 title: tab.title,
                 iconName: tab.iconName,
-                targetURL: nil,
+                targetURL: targetURL(for: tab.anchor),
                 tagColorCode: nil,
                 pageType: tab.page,
                 isActive: state.activeTabID == tab.id,
                 isPinned: tab.isPinned,
             )
+        }
+    }
+
+    private static func targetURL(for anchor: ContentTabPageAnchor) -> URL? {
+        switch anchor {
+        case let .directory(path):
+            URL(fileURLWithPath: path)
+        case let .collectionFile(url):
+            url
+        case .homeDefault, .virtualCollection, .aiChat:
+            nil
         }
     }
 

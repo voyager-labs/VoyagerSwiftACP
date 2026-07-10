@@ -5,6 +5,7 @@ import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
 @ObservableState
@@ -17,7 +18,11 @@ public struct FileManagerContentState: Equatable {
     /// 외부에서 오픈 요청된 파일의 선택 focus ID (itemsLoaded 후 소비됨)
     public var pendingSelectEntryID: String?
 
+    var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
+    var homeLocationItems: [FileManagerFixedLocationItem] = []
     var homeDirectoryItemCounts: [FileManagerHomeDirectory: Int] = [:]
+    var homeChatHistoryItems: [FileManagerHomeChatHistoryItem] = []
+    var homeChatHistoryLoadFailed: Bool = false
 
     /// 컴포저 관련
     var resetComposerOnNextDirectoryNavigation: Bool = false

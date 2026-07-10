@@ -2,10 +2,17 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
+
+enum FileManagerFixedLocationsLoadPhase: Equatable {
+    case idle
+    case loading(UUID)
+    case loaded
+}
 
 @ObservableState
 public struct FileManagerWindowState: Equatable {
@@ -19,6 +26,7 @@ public struct FileManagerWindowState: Equatable {
     public var contentTabs: ContentTabState
     public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
     public var pendingContentTabClose: PendingContentTabClose?
+    var fixedLocationsLoadPhase: FileManagerFixedLocationsLoadPhase = .idle
 
     public init() {
         content = .init()
@@ -281,6 +289,39 @@ extension FileManagerWindowState {
 
     mutating func syncContentTabSidebarItems() {
         sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: contentTabs)
+    }
+
+    mutating func syncFixedLocationItems(
+        with locationsClient: FileManagerLocationsClient,
+        entryLoadingClient: EntryLoadingClient,
+        hiddenLocationIDs: Set<FileManagerFixedLocationItem.ID> = [],
+    ) {
+        let items = FileManagerHomeDashboardProjection.makeFixedLocations(
+            from: locationsClient.loadLocations(entryLoadingClient),
+        )
+        applyFixedLocationItems(items, hiddenLocationIDs: hiddenLocationIDs)
+    }
+
+    mutating func applyFixedLocationItems(
+        _ items: [FileManagerFixedLocationItem],
+        hiddenLocationIDs: Set<FileManagerFixedLocationItem.ID> = [],
+    ) {
+        sidebar.setFixedLocationItems(items, hiddenIDs: hiddenLocationIDs)
+        content.homeLocationItems = items
+    }
+
+    // MARK: - Home Dashboard Projection
+
+    var homeFavoriteItems: [FileManagerHomeFavoriteItem] {
+        FileManagerHomeDashboardProjection.homeFavorites(from: contentTabs)
+    }
+
+    mutating func syncHomeFavoriteItems() {
+        content.homeFavoriteItems = homeFavoriteItems
+    }
+
+    mutating func syncHomeLocationItems() {
+        content.homeLocationItems = sidebar.allFixedLocationItems
     }
 
     mutating func applyPinnedContentTabs(_ restoredPinnedState: ContentTabState) {

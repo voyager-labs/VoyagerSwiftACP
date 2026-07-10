@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
@@ -17,6 +18,7 @@ struct HomeAiChatOpenCancelID: Hashable {
 struct FileManagerWindowCommandRoutingReducer {
     nonisolated private enum CancelID: Hashable {
         case contextualAiChatOpen
+        case loadFixedLocations
     }
 
     typealias State = FileManagerWindowState
@@ -30,10 +32,46 @@ struct FileManagerWindowCommandRoutingReducer {
     private var collectionAlertClient
     @Dependency(\.fileManagerClient)
     private var fileManagerClient
+    @Dependency(\.fileManagerLocationsClient)
+    private var fileManagerLocationsClient
+    @Dependency(\.entryLoadingClient)
+    private var entryLoadingClient
+    @Dependency(\.userDefaultsClient)
+    private var userDefaultsClient
+    @Dependency(\.uuid)
+    private var uuid
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case .onAppear:
+                state.syncHomeFavoriteItems()
+                guard state.fixedLocationsLoadPhase == .idle else { return .none }
+                let storedHiddenLocationIDs = hiddenFixedLocationIDs()
+                state.sidebar.hiddenFixedLocationItemIDs = storedHiddenLocationIDs
+                if !state.sidebar.allFixedLocationItems.isEmpty {
+                    state.applyFixedLocationItems(
+                        state.sidebar.allFixedLocationItems,
+                        hiddenLocationIDs: storedHiddenLocationIDs,
+                    )
+                }
+                let requestID = uuid()
+                state.fixedLocationsLoadPhase = .loading(requestID)
+                return .run { [fileManagerLocationsClient, entryLoadingClient] send in
+                    let items = FileManagerHomeDashboardProjection.makeFixedLocations(
+                        from: fileManagerLocationsClient.loadLocations(entryLoadingClient),
+                    )
+                    await send(.internal(.fixedLocationsLoaded(
+                        requestID: requestID,
+                        items: items,
+                    )))
+                }
+                .cancellable(id: CancelID.loadFixedLocations, cancelInFlight: true)
+
+            case .onDisappear:
+                state.fixedLocationsLoadPhase = .idle
+                return .cancel(id: CancelID.loadFixedLocations)
+
             case let .request(command):
                 return handleRequestedCommand(command, state: &state)
 
@@ -48,6 +86,34 @@ struct FileManagerWindowCommandRoutingReducer {
                       state.contentTabs.tabs[id: activeTabID]?.anchor == .homeDefault
                 else { return .none }
                 return handleHomePageAnchorSelected(anchor, activeTabID: activeTabID)
+
+            case let .content(.delegate(.homeChatHistorySessionSelected(sessionID))):
+                guard let activeTabID = state.contentTabs.activeTabID,
+                      state.contentTabs.tabs[id: activeTabID]?.anchor == .homeDefault
+                else { return .none }
+                return handleHomeChatHistorySessionSelected(sessionID, activeTabID: activeTabID)
+
+            case let .sidebar(.delegate(.selectFixedLocation(id))):
+                guard let activeTabID = state.contentTabs.activeTabID,
+                      let location = state.sidebar.fixedLocationItems.first(where: { $0.id == id })
+                else { return .none }
+                let anchor = ContentTabPageAnchor.directory(path: location.path)
+                return .concatenate(
+                    .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
+                    .send(.navigation(.view(.navigateToPath(location.path)))),
+                )
+
+            case let .sidebar(.view(.setFixedLocationVisibility(id, isVisible))):
+                state.sidebar.setFixedLocationVisibility(id: id, isVisible: isVisible)
+                state.syncHomeLocationItems()
+                persistHiddenFixedLocationIDs(state.sidebar.hiddenFixedLocationItemIDs)
+                return .none
+
+            case let .sidebar(.view(.setAllFixedLocationVisibility(isVisible))):
+                state.sidebar.setAllFixedLocationVisibility(isVisible)
+                state.syncHomeLocationItems()
+                persistHiddenFixedLocationIDs(state.sidebar.hiddenFixedLocationItemIDs)
+                return .none
 
             case let .content(.delegate(.aiChatSessionCreated(sessionID))):
                 return routeActiveAiChatTab(to: sessionID, state: state)
@@ -79,10 +145,27 @@ struct FileManagerWindowCommandRoutingReducer {
                     warmUpAIModelCatalogEffect(),
                 )
 
+            case let .internal(.fixedLocationsLoaded(requestID, items)):
+                guard state.fixedLocationsLoadPhase == .loading(requestID) else { return .none }
+                state.fixedLocationsLoadPhase = .loaded
+                state.applyFixedLocationItems(items, hiddenLocationIDs: state.sidebar.hiddenFixedLocationItemIDs)
+                return .none
+
             default:
                 return .none
             }
         }
+    }
+
+    private func hiddenFixedLocationIDs() -> Set<FileManagerFixedLocationItem.ID> {
+        guard let storedIDs = userDefaultsClient.object(SettingsKeys.hiddenFixedLocationIDs) as? [String] else {
+            return []
+        }
+        return Set(storedIDs)
+    }
+
+    private func persistHiddenFixedLocationIDs(_ ids: Set<FileManagerFixedLocationItem.ID>) {
+        userDefaultsClient.setObject(Array(ids).sorted(), SettingsKeys.hiddenFixedLocationIDs)
     }
 
     private func routeActiveAiChatTab(to sessionID: AiChatSessionID, state: State) -> Effect<Action> {
@@ -93,6 +176,37 @@ struct FileManagerWindowCommandRoutingReducer {
         return .merge(
             .send(.navigation(.view(.showAiChat(sessionIDString)))),
             .send(.contentTabs(.updateActivePageAnchor(activeTabID, .aiChat(sessionID: sessionIDString)))),
+        )
+    }
+
+    private func handleHomeChatHistorySessionSelected(
+        _ sessionID: AiChatSessionID,
+        activeTabID: ContentTabID,
+    ) -> Effect<Action> {
+        let sessionString = sessionID.rawValue.uuidString
+        let anchor = ContentTabPageAnchor.aiChat(sessionID: sessionString)
+        let setup = AiChatSetupState(
+            restoreSessionID: sessionID,
+            sessionID: nil,
+            mode: .chat,
+        )
+        let providerLoadEffect: Effect<Action> = .run { [aiConnectionsFileClient] send in
+            let connectionsFile: AIConnectionsFile
+            do {
+                connectionsFile = try await aiConnectionsFileClient.load()
+            } catch {
+                connectionsFile = .empty()
+            }
+            await send(.content(.aiChat(.providerConnectionsUpdated(connectionsFile))))
+        }
+        .cancellable(id: HomeAiChatOpenCancelID(tabID: activeTabID), cancelInFlight: true)
+
+        return .concatenate(
+            .send(.inspector(.closeChat)),
+            .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
+            .send(.navigation(.view(.showAiChat(sessionString)))),
+            .send(.content(.aiChat(.setup(setup)))),
+            providerLoadEffect,
         )
     }
 

@@ -53,6 +53,8 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case homeCollectionPickerFinished(FileManagerHomePickerResult<URL>)
         case homeAiChatSessionCreated(FileManagerHomePickerResult<String>)
         case homeDirectoryItemCountsLoaded([FileManagerHomeDirectory: Int])
+        case homeChatHistoryLoaded([FileManagerHomeChatHistoryItem])
+        case homeChatHistoryLoadFailed
     }
 
     @CasePathable
@@ -66,6 +68,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case openAISettings
         case currentContextChanged(AiChatCurrentContextSnapshot)
         case homePageAnchorSelected(ContentTabPageAnchor)
+        case homeChatHistorySessionSelected(AiChatSessionID)
         case aiChatSessionCreated(AiChatSessionID)
         case aiChatSessionRestored(AiChatSessionID)
     }

@@ -1,88 +1,29 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
+import VoyagerEntitiesAi
+import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 
 struct FileManagerHomePageView: View {
     let store: StoreOf<FileManagerContentFeature>
 
-    private let quickAccessItems: [QuickAccessItem] = [
-        QuickAccessItem(
-            title: "Applications",
-            directory: .applications,
-            symbolName: "folder.fill",
-            badgeSymbolName: "appstore",
-            tint: Color(nsColor: .systemBlue),
-        ),
-        QuickAccessItem(
-            title: "Desktop",
-            directory: .desktop,
-            symbolName: "folder.fill",
-            badgeSymbolName: "desktopcomputer",
-            tint: Color(nsColor: .systemBlue),
-        ),
-        QuickAccessItem(
-            title: "Documents",
-            directory: .documents,
-            symbolName: "folder.fill",
-            badgeSymbolName: "doc.fill",
-            tint: Color(nsColor: .systemBlue),
-        ),
-        QuickAccessItem(
-            title: "Downloads",
-            directory: .downloads,
-            symbolName: "folder.fill",
-            badgeSymbolName: "arrow.down.circle.fill",
-            tint: Color(nsColor: .systemBlue),
-        ),
-    ]
-
-    private let getStartedItems: [GetStartedItem] = [
-        GetStartedItem(
-            title: "Open Directory",
-            subtitle: "Browse and manage folders on your device.",
-            symbolName: "folder",
-            assetName: nil,
-            tint: Color(nsColor: .systemPurple),
-            selection: .openDirectory,
-        ),
-        GetStartedItem(
-            title: "Open Collection",
-            subtitle: "Open a .voycoll collection file.",
-            symbolName: nil,
-            assetName: CollectionConstants.fileIconName,
-            tint: Color(nsColor: .systemGreen),
-            selection: .openCollection,
-        ),
-        GetStartedItem(
-            title: "Start AI Chat",
-            subtitle: "Ask anything and get help from Voyager AI.",
-            symbolName: "sparkles",
-            assetName: nil,
-            tint: Color(nsColor: .systemBlue),
-            selection: .startAiChat,
-        ),
-    ]
-
-    private var quickAccessColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(minimum: 0), spacing: 18, alignment: .top), count: 4)
-    }
-
-    private var getStartedColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(minimum: 0), spacing: 18, alignment: .top), count: 3)
-    }
+    private let dashboardCardWidth: CGFloat = 160
+    private let dashboardCardHeight: CGFloat = 48
+    private let dashboardCardMinimumSpacing: CGFloat = 12
 
     var body: some View {
         GeometryReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 48) {
-                    quickAccessSection
-                    getStartedSection
+                VStack(alignment: .leading, spacing: 34) {
+                    favoritesSection
+                    locationsSection
+                    recentChatsSection
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 52)
-                .padding(.vertical, 44)
-                .frame(minHeight: proxy.size.height, alignment: .center)
+                .padding(.horizontal, 44)
+                .padding(.vertical, 42)
+                .frame(minHeight: proxy.size.height, alignment: .top)
             }
         }
         .background(homeBackground)
@@ -91,32 +32,91 @@ struct FileManagerHomePageView: View {
         }
     }
 
-    private var quickAccessSection: some View {
-        HomeSection(title: "Quick Access") {
-            LazyVGrid(columns: quickAccessColumns, alignment: .leading, spacing: 18) {
-                ForEach(quickAccessItems) { item in
-                    QuickAccessCard(
-                        item: item,
-                        itemCount: store.homeDirectoryItemCounts[item.directory],
-                    ) {
-                        store.send(.view(.homeSelectionTapped(.fixedDirectory(item.directory))))
+    // MARK: - Favorites
+
+    @ViewBuilder
+    private var favoritesSection: some View {
+        let favorites = store.homeFavoriteItems
+        if favorites.isEmpty {
+            HomeSection(title: "Favorites") {
+                Text("No pinned favorites")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(.tertiary)
+                    .padding(.vertical, 12)
+            }
+        } else {
+            HomeSection(title: "Favorites") {
+                DashboardFlowGrid(
+                    items: favorites,
+                    itemWidth: dashboardCardWidth,
+                    minimumSpacing: dashboardCardMinimumSpacing,
+                ) { item in
+                    FavoriteCard(item: item, height: dashboardCardHeight) {
+                        store.send(.view(.homeSelectionTapped(.pageAnchor(item.anchor))))
                     }
                 }
             }
         }
     }
 
-    private var getStartedSection: some View {
-        HomeSection(title: "Get Started") {
-            LazyVGrid(columns: getStartedColumns, alignment: .leading, spacing: 18) {
-                ForEach(getStartedItems) { item in
-                    GetStartedCard(item: item) {
-                        store.send(.view(.homeSelectionTapped(item.selection)))
+    // MARK: - Locations
+
+    @ViewBuilder
+    private var locationsSection: some View {
+        let locations = store.homeLocationItems
+        if !locations.isEmpty {
+            HomeSection(title: "Locations") {
+                DashboardFlowGrid(
+                    items: locations,
+                    itemWidth: dashboardCardWidth,
+                    minimumSpacing: dashboardCardMinimumSpacing,
+                ) { item in
+                    LocationCard(item: item, height: dashboardCardHeight) {
+                        store.send(.view(.homeSelectionTapped(.pageAnchor(.directory(path: item.path)))))
                     }
                 }
             }
         }
     }
+
+    // MARK: - Recent Chats
+
+    @ViewBuilder
+    private var recentChatsSection: some View {
+        let chats = store.homeChatHistoryItems
+        HomeSection(title: "Recent Chats", trailing: { newChatButton }) {
+            if chats.isEmpty {
+                Text("No recent chats")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(.tertiary)
+                    .padding(.vertical, 12)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(chats.prefix(5)), id: \.sessionID) { item in
+                        ChatHistoryRow(item: item) {
+                            guard let uuid = UUID(uuidString: item.sessionID) else { return }
+                            let sessionID = AiChatSessionID(rawValue: uuid)
+                            store.send(.view(.homeSelectionTapped(.chatHistory(sessionID))))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var newChatButton: some View {
+        Button {
+            store.send(.view(.homeSelectionTapped(.startAiChat)))
+        } label: {
+            ToolbarHoverPillButtonLabel(title: "New Chat", isEnabled: true)
+        }
+        .buttonStyle(.borderless)
+        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .help("Start New Chat")
+        .accessibilityLabel("Start New Chat")
+    }
+
+    // MARK: - Background
 
     private var homeBackground: some View {
         LinearGradient(
@@ -131,102 +131,179 @@ struct FileManagerHomePageView: View {
     }
 }
 
-private struct HomeSection<Content: View>: View {
+// MARK: - Dashboard Flow Grid
+
+private struct DashboardFlowGrid<Item: Identifiable, Content: View>: View {
+    let items: [Item]
+    let itemWidth: CGFloat
+    let minimumSpacing: CGFloat
+    @ViewBuilder let content: (Item) -> Content
+
+    var body: some View {
+        DashboardFlowLayout(itemWidth: itemWidth, minimumSpacing: minimumSpacing) {
+            ForEach(items) { item in
+                content(item)
+            }
+        }
+    }
+}
+
+private struct DashboardFlowLayout: Layout {
+    let itemWidth: CGFloat
+    let minimumSpacing: CGFloat
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache _: inout Void,
+    ) -> CGSize {
+        guard !subviews.isEmpty else { return .zero }
+
+        let proposedWidth = proposal.width ?? itemWidth
+        let metrics = metrics(for: proposedWidth, itemCount: subviews.count)
+        let rowHeights = rowHeights(for: subviews, columnCount: metrics.columnCount)
+        let totalHeight = rowHeights.reduce(0, +)
+            + CGFloat(max(0, rowHeights.count - 1)) * minimumSpacing
+
+        return CGSize(width: proposedWidth, height: totalHeight)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal _: ProposedViewSize,
+        subviews: Subviews,
+        cache _: inout Void,
+    ) {
+        guard !subviews.isEmpty else { return }
+
+        let metrics = metrics(for: bounds.width, itemCount: subviews.count)
+        let rowHeights = rowHeights(for: subviews, columnCount: metrics.columnCount)
+        var y = bounds.minY
+
+        for rowIndex in 0 ..< rowHeights.count {
+            let start = rowIndex * metrics.columnCount
+            let end = min(start + metrics.columnCount, subviews.count)
+            var x = bounds.minX
+
+            for index in start ..< end {
+                subviews[index].place(
+                    at: CGPoint(x: x, y: y),
+                    anchor: .topLeading,
+                    proposal: ProposedViewSize(width: itemWidth, height: rowHeights[rowIndex]),
+                )
+                x += itemWidth + metrics.spacing
+            }
+
+            y += rowHeights[rowIndex] + minimumSpacing
+        }
+    }
+
+    private func metrics(for width: CGFloat, itemCount: Int) -> Metrics {
+        let availableWidth = max(itemWidth, width)
+        let maximumColumns = max(
+            1,
+            Int((availableWidth + minimumSpacing) / (itemWidth + minimumSpacing)),
+        )
+        let columnCount = max(1, min(itemCount, maximumColumns))
+        let usedItemWidth = CGFloat(columnCount) * itemWidth
+        let remainingWidth = max(0, availableWidth - usedItemWidth)
+        let spacing = columnCount > 1
+            ? max(minimumSpacing, remainingWidth / CGFloat(columnCount - 1))
+            : minimumSpacing
+
+        return Metrics(columnCount: columnCount, spacing: spacing)
+    }
+
+    private func rowHeights(for subviews: Subviews, columnCount: Int) -> [CGFloat] {
+        stride(from: 0, to: subviews.count, by: columnCount).map { start in
+            let end = min(start + columnCount, subviews.count)
+            return subviews[start ..< end]
+                .map { subview in
+                    subview.sizeThatFits(ProposedViewSize(width: itemWidth, height: nil)).height
+                }
+                .max() ?? 0
+        }
+    }
+
+    private struct Metrics {
+        let columnCount: Int
+        let spacing: CGFloat
+    }
+}
+
+// MARK: - Home Section
+
+private struct HomeSection<Content: View, Trailing: View>: View {
     let title: String
+    @ViewBuilder let trailing: Trailing
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(title)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.primary)
+            HStack(alignment: .center) {
+                Text(title)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                trailing
+            }
             content
         }
     }
 }
 
-private struct QuickAccessItem: Identifiable {
-    var id: String {
-        title
+extension HomeSection where Trailing == EmptyView {
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        trailing = EmptyView()
+        self.content = content()
     }
-
-    let title: String
-    let directory: FileManagerHomeDirectory
-    let symbolName: String
-    let badgeSymbolName: String
-    let tint: Color
 }
 
-private struct GetStartedItem: Identifiable {
-    var id: String {
-        title
-    }
-
-    let title: String
-    let subtitle: String
-    let symbolName: String?
-    let assetName: String?
-    let tint: Color
-    let selection: FileManagerHomeSelection
+private func applicationsSidebarIcon() -> NSImage? {
+    let appIcon = NSImage(
+        contentsOfFile:
+        "/System/Library/CoreServices/CoreTypes.bundle"
+            + "/Contents/Resources/SidebarApplicationsFolder.icns",
+    )
+    appIcon?.isTemplate = true
+    return appIcon
 }
 
-private struct QuickAccessCard: View {
-    let item: QuickAccessItem
-    let itemCount: Int?
-    let action: () -> Void
+// MARK: - LocationCard
 
-    @State private var isHovered = false
+private struct SymbolIconTile: View {
+    let systemName: String
+    let size: CGFloat
+    let cornerRadius: CGFloat
+    let iconSize: CGFloat
 
     var body: some View {
-        Button(action: action) {
-            VStack(alignment: .center, spacing: 22) {
-                FolderSymbol(
-                    symbolName: item.symbolName,
-                    badgeSymbolName: item.badgeSymbolName,
-                    tint: item.tint,
-                )
-
-                VStack(alignment: .center, spacing: 3) {
-                    Text(item.title)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.86)
-                    HStack(spacing: 4) {
-                        Text("Items")
-                        if let itemCount {
-                            Text("\(itemCount)")
-                                .monospacedDigit()
-                        }
-                    }
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                }
+        Group {
+            if isApplicationsIcon, let appIcon = applicationsSidebarIcon() {
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: iconSize + 4, height: iconSize + 4)
+            } else {
+                Image(systemName: systemName)
+                    .font(.system(size: iconSize, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
             }
-            .frame(maxWidth: .infinity, minHeight: 168, alignment: .center)
-            .padding(22)
-            .background(cardBackground)
-            .scaleEffect(isHovered ? 1.012 : 1)
-            .animation(.easeOut(duration: 0.14), value: isHovered)
         }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
+        .foregroundStyle(Color.accentColor)
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 
-    private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color(nsColor: .separatorColor).opacity(isHovered ? 0.34 : 0.18), lineWidth: 1),
-            )
-            .shadow(color: .black.opacity(isHovered ? 0.12 : 0.07), radius: isHovered ? 14 : 10, y: 5)
+    private var isApplicationsIcon: Bool {
+        systemName == "appstore" || systemName == "folder.badge.gearshape"
     }
 }
 
-private struct GetStartedCard: View {
-    let item: GetStartedItem
+private struct LocationCard: View {
+    let item: FileManagerFixedLocationItem
+    let height: CGFloat
     let action: () -> Void
 
     @State private var isHovered = false
@@ -234,33 +311,20 @@ private struct GetStartedCard: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                ActionIcon(symbolName: item.symbolName, assetName: item.assetName, tint: item.tint)
+                SymbolIconTile(systemName: item.iconName, size: 31, cornerRadius: 8, iconSize: 16)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.title)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.9)
-                    Text(item.subtitle)
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(item.title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
 
-                Spacer(minLength: 6)
-
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .offset(x: isHovered ? 2 : 0)
-                    .animation(.easeOut(duration: 0.14), value: isHovered)
+                Spacer(minLength: 4)
             }
-            .frame(maxWidth: .infinity, minHeight: 118, alignment: .leading)
-            .padding(.horizontal, 22)
-            .padding(.vertical, 18)
+            .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .leading)
+            .padding(8)
             .background(cardBackground)
-            .scaleEffect(isHovered ? 1.008 : 1)
+            .scaleEffect(isHovered ? 1.006 : 1)
             .animation(.easeOut(duration: 0.14), value: isHovered)
         }
         .buttonStyle(.plain)
@@ -268,15 +332,149 @@ private struct GetStartedCard: View {
     }
 
     private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(.ultraThinMaterial)
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(Color(nsColor: .separatorColor).opacity(isHovered ? 0.34 : 0.18), lineWidth: 1),
             )
-            .shadow(color: .black.opacity(isHovered ? 0.11 : 0.06), radius: isHovered ? 13 : 9, y: 4)
+            .shadow(color: .black.opacity(isHovered ? 0.08 : 0.04), radius: isHovered ? 8 : 5, y: 2)
     }
 }
+
+// MARK: - FavoriteCard
+
+private struct FavoriteCard: View {
+    let item: FileManagerHomeFavoriteItem
+    let height: CGFloat
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                SymbolIconTile(
+                    systemName: item.iconName ?? "pin.fill",
+                    size: 31,
+                    cornerRadius: 8,
+                    iconSize: 16,
+                )
+
+                Text(item.title ?? "Untitled")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: 4)
+            }
+            .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .leading)
+            .padding(8)
+            .background(cardBackground)
+            .scaleEffect(isHovered ? 1.006 : 1)
+            .animation(.easeOut(duration: 0.14), value: isHovered)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(.ultraThinMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color(nsColor: .separatorColor).opacity(isHovered ? 0.34 : 0.18), lineWidth: 1),
+            )
+            .shadow(color: .black.opacity(isHovered ? 0.08 : 0.04), radius: isHovered ? 8 : 5, y: 2)
+    }
+}
+
+// MARK: - ChatHistoryRow
+
+private struct ChatHistoryRow: View {
+    let item: FileManagerHomeChatHistoryItem
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                AssistantChatGlyph(size: 40, iconSize: 16)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title ?? "Untitled Chat")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    if let detail = item.detail, !detail.isEmpty {
+                        Text(detail)
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 4)
+
+                Text(relativeTimestamp(from: item.updatedAtMs))
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(rowBackground)
+            .scaleEffect(isHovered ? 1.006 : 1)
+            .animation(.easeOut(duration: 0.14), value: isHovered)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+
+    private var rowBackground: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(isHovered ? Color(nsColor: .controlBackgroundColor).opacity(0.4) : .clear)
+    }
+
+    private func relativeTimestamp(from ms: Int64) -> String {
+        let date = Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
+        let interval = Date().timeIntervalSince(date)
+        switch interval {
+        case ..<60: return "just now"
+        case ..<3600: return "\(Int(interval / 60))m ago"
+        case ..<86400: return "\(Int(interval / 3600))h ago"
+        case ..<604_800: return "\(Int(interval / 86400))d ago"
+        default:
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .none
+            return formatter.string(from: date)
+        }
+    }
+}
+
+// MARK: - Assistant Chat Glyph
+
+private struct AssistantChatGlyph: View {
+    let size: CGFloat
+    let iconSize: CGFloat
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Color.primary.opacity(0.07))
+            .frame(width: size, height: size)
+            .overlay(
+                Image(systemName: "sparkles")
+                    .font(.system(size: iconSize, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .accessibilityHidden(true),
+            )
+    }
+}
+
+// MARK: - FolderSymbol
 
 private struct FolderSymbol: View {
     let symbolName: String
@@ -286,18 +484,18 @@ private struct FolderSymbol: View {
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             Image(systemName: symbolName)
-                .font(.system(size: 52, weight: .regular))
+                .font(.system(size: 34, weight: .regular))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(tint)
-                .shadow(color: tint.opacity(0.22), radius: 8, y: 3)
+                .shadow(color: tint.opacity(0.18), radius: 6, y: 2)
 
             badgeImage
-                .frame(width: 28, height: 28)
+                .frame(width: 20, height: 20)
                 .background(Circle().fill(tint.gradient))
                 .overlay(Circle().stroke(.white.opacity(0.7), lineWidth: 1))
-                .offset(x: 4, y: 1)
+                .offset(x: 2, y: 1)
         }
-        .frame(width: 72, height: 58, alignment: .leading)
+        .frame(width: 44, height: 38, alignment: .leading)
     }
 
     @ViewBuilder
@@ -307,51 +505,11 @@ private struct FolderSymbol: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundStyle(.white)
-                .padding(5)
+                .padding(4)
         } else {
             Image(systemName: badgeSymbolName)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white)
-        }
-    }
-
-    private func applicationsSidebarIcon() -> NSImage? {
-        let appIcon = NSImage(
-            contentsOfFile:
-            "/System/Library/CoreServices/CoreTypes.bundle"
-                + "/Contents/Resources/SidebarApplicationsFolder.icns",
-        )
-        appIcon?.isTemplate = true
-        return appIcon
-    }
-}
-
-private struct ActionIcon: View {
-    let symbolName: String?
-    let assetName: String?
-    let tint: Color
-
-    var body: some View {
-        icon
-            .frame(width: 58, height: 58)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(tint.opacity(0.13)),
-            )
-    }
-
-    @ViewBuilder
-    private var icon: some View {
-        if let assetName, let image = NSImage(named: assetName) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 34, height: 34)
-        } else if let symbolName {
-            Image(systemName: symbolName)
-                .font(.system(size: 24, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(tint)
         }
     }
 }

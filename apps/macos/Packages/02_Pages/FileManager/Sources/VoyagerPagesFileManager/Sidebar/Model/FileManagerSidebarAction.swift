@@ -11,10 +11,13 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
     public enum View: CasePathable, Sendable {
         case setSidebarVisible(Bool)
         case setSidebarWidth(CGFloat)
+        case setFixedLocationVisibility(FileManagerFixedLocationItem.ID, Bool)
+        case setAllFixedLocationVisibility(Bool)
     }
 
     @CasePathable
     public enum Delegate: CasePathable, Sendable {
+        case selectFixedLocation(FileManagerFixedLocationItem.ID)
         case selectContentTab(ContentTabID)
         case closeContentTab(ContentTabID)
         case pinContentTab(ContentTabID)

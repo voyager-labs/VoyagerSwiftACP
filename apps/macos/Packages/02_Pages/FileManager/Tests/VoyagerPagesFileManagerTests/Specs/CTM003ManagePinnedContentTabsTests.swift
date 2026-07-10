@@ -1034,6 +1034,16 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             )
             $0.contentTabs.pendingPinnedRecordIDs.insert(tabID)
             $0.syncContentTabSidebarItems()
+            $0.content.homeFavoriteItems = [
+                FileManagerHomeFavoriteItem(
+                    id: tabID,
+                    title: "Documents",
+                    iconName: "folder",
+                    filePath: "/Users/test/Documents",
+                    anchor: directoryAnchor,
+                    page: .directory,
+                ),
+            ]
         }
         await store.receive(\.contentTabs.pinnedRecordSaveSucceeded)
         await store.finish()
@@ -1857,6 +1867,83 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.receive(\.navigation.view.openCollectionFile, collectionURL)
     }
 
+    /// CTM-003-pin_content_tab_s: 다른 window의 pinned tab 동기화가 Home Favorites에도 즉시 반영됨
+    /// - 검증 내용: applyPinnedContentTabs action 처리 직후 homeFavoriteItems projection 갱신
+    /// - 사전 조건: Home이 active이고 기존 pinned Directory가 Home Favorites에 표시됨
+    /// - 기대 결과: 기존 favorite 제거, 새로 동기화된 pinned Directory만 Home Favorites에 표시
+    func testApplyPinnedContentTabsSyncsHomeFavorites() async {
+        let homeID = ContentTabID(rawValue: "home-tab")
+        let oldPinnedID = ContentTabID(rawValue: "old-pin")
+        let newPinnedID = ContentTabID(rawValue: "new-pin")
+        let oldAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Old")
+        let newAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/New")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: oldPinnedID,
+                    page: .directory,
+                    anchor: oldAnchor,
+                    isPinned: true,
+                    title: "Old",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: homeID,
+            pinnedRecords: [
+                oldPinnedID: Self.pinnedRecord(
+                    id: oldPinnedID,
+                    anchor: oldAnchor,
+                    title: "Old",
+                    iconName: "folder",
+                ),
+            ],
+        )
+        state.syncContentTabSidebarItems()
+        state.syncHomeFavoriteItems()
+        let restoredState = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: newPinnedID,
+                    page: .directory,
+                    anchor: newAnchor,
+                    isPinned: true,
+                    title: "New",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: newPinnedID,
+            pinnedRecords: [
+                newPinnedID: Self.pinnedRecord(
+                    id: newPinnedID,
+                    anchor: newAnchor,
+                    title: "New",
+                    iconName: "folder",
+                ),
+            ],
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        XCTAssertEqual(store.state.content.homeFavoriteItems.map(\.title), ["Old"])
+
+        await store.send(.applyPinnedContentTabs(restoredState))
+
+        XCTAssertEqual(store.state.content.homeFavoriteItems.map(\.title), ["New"])
+    }
+
     /// CTM-003-pin_content_tab_s: active pinned tab sync 시 content route 재동기화
     /// 다른 window에서 같은 pinned tab anchor가 변경되면 현재 active content도 새 anchor 기준으로 복원되어야 한다.
     /// - 검증 내용: applyPinnedContentTabs가 active pinned tab의 변경된 anchor를 content navigation에 반영
@@ -2389,6 +2476,70 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.isPinned, false)
         XCTAssertTrue(result.didCompact)
         XCTAssertEqual(result.droppedCount, 3)
+    }
+
+    /// VOY-531: Home Favorites projection은 pinned 상태여도 복원 불가/비대상 anchor를 노출하지 않는다.
+    /// Recents/Tags 후보인 virtualCollection, AI Chat, Home은 ContentTab pinned projection과 분리한다.
+    func testHomeFavoritesProjection_excludesVirtualCollectionAiChatAndHomeTabs() {
+        let directoryID = ContentTabID(rawValue: "favorite-directory")
+        let collectionID = ContentTabID(rawValue: "favorite-collection")
+        let recentsID = ContentTabID(rawValue: "favorite-recents")
+        let aiChatID = ContentTabID(rawValue: "favorite-ai-chat")
+        let homeID = ContentTabID(rawValue: "favorite-home")
+        let contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: directoryID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Documents"),
+                    isPinned: true,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: collectionID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/Users/test/Photos.vcollection")),
+                    isPinned: true,
+                    title: "Photos",
+                    iconName: "rectangle.stack",
+                ),
+                ContentTabItem(
+                    id: recentsID,
+                    page: .collection,
+                    anchor: .virtualCollection(id: "Recents"),
+                    isPinned: true,
+                    title: "Recents",
+                    iconName: "clock",
+                ),
+                ContentTabItem(
+                    id: aiChatID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: "chat-1"),
+                    isPinned: true,
+                    title: "AI Chat",
+                    iconName: "sparkles",
+                ),
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: true,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+
+        let favorites = FileManagerHomeDashboardProjection.homeFavorites(from: contentTabs)
+
+        XCTAssertEqual(favorites.map(\.id), [directoryID, collectionID])
+        XCTAssertEqual(favorites.map(\.anchor), [
+            .directory(path: "/Users/test/Documents"),
+            .collectionFile(url: URL(fileURLWithPath: "/Users/test/Photos.vcollection")),
+        ])
     }
 
     /// CTM-003-go_to_anchored_path_of_pinned_tab: record 순서와 메타데이터 보존

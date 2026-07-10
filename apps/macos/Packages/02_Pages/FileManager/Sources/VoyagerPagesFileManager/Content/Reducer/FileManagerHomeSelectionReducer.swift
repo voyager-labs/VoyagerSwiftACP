@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 
@@ -14,16 +15,33 @@ struct FileManagerHomeSelectionReducer {
     private var homePickerClient
     @Dependency(\.homeAiChatClient)
     private var homeAiChatClient
+    @Dependency(\.aiChatSessionPersistenceClient)
+    private var aiChatSessionPersistenceClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
             case .view(.homeAppeared):
-                return loadHomeDirectoryItemCounts()
+                return .merge(loadHomeDirectoryItemCounts(), loadChatHistory())
 
             case let .internal(.homeDirectoryItemCountsLoaded(counts)):
                 state.homeDirectoryItemCounts = counts
                 return .none
+
+            case let .internal(.homeChatHistoryLoaded(items)):
+                state.homeChatHistoryItems = items
+                state.homeChatHistoryLoadFailed = false
+                return .none
+
+            case .internal(.homeChatHistoryLoadFailed):
+                state.homeChatHistoryItems = []
+                state.homeChatHistoryLoadFailed = true
+                return .none
+
+            // MARK: - Page Anchor: delegate directly (used by Favorites)
+
+            case let .view(.homeSelectionTapped(.pageAnchor(anchor))):
+                return .send(.delegate(.homePageAnchorSelected(anchor)))
 
             // MARK: - Fixed Directory: resolve → delegate
 
@@ -54,6 +72,11 @@ struct FileManagerHomeSelectionReducer {
                     let result = await homeAiChatClient.createSession()
                     await send(.internal(.homeAiChatSessionCreated(result)))
                 }
+
+            // MARK: - Chat History Tap → restore existing session (NOT createSession)
+
+            case let .view(.homeSelectionTapped(.chatHistory(sessionID))):
+                return .send(.delegate(.homeChatHistorySessionSelected(sessionID)))
 
             // MARK: - Directory Picker Result
 
@@ -100,6 +123,23 @@ struct FileManagerHomeSelectionReducer {
                     .count
             }
             await send(.internal(.homeDirectoryItemCountsLoaded(counts)))
+        }
+    }
+
+    private func loadChatHistory() -> Effect<Action> {
+        .run { send in
+            let summaries = try await aiChatSessionPersistenceClient.listSessions(5, nil)
+            let items = summaries.prefix(5).map { summary in
+                FileManagerHomeChatHistoryItem(
+                    sessionID: summary.sessionID.rawValue.uuidString,
+                    title: summary.title,
+                    detail: summary.preview,
+                    updatedAtMs: summary.updatedAtMs,
+                )
+            }
+            await send(.internal(.homeChatHistoryLoaded(items)))
+        } catch: { _, send in
+            await send(.internal(.homeChatHistoryLoadFailed))
         }
     }
 }
