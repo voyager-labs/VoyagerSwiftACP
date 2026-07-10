@@ -84,8 +84,13 @@ struct FileManagerHomePageView: View {
     @ViewBuilder
     private var recentChatsSection: some View {
         let chats = store.homeChatHistoryItems
-        if !chats.isEmpty {
-            HomeSection(title: "Recent Chats", trailing: { newChatButton }) {
+        HomeSection(title: "Recent Chats", trailing: { newChatButton }) {
+            if chats.isEmpty {
+                Text("No recent chats")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(.tertiary)
+                    .padding(.vertical, 12)
+            } else {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(Array(chats.prefix(5)), id: \.sessionID) { item in
                         ChatHistoryRow(item: item) {
