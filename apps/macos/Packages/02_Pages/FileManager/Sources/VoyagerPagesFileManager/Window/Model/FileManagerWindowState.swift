@@ -8,6 +8,12 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
+enum FileManagerFixedLocationsLoadPhase: Equatable {
+    case idle
+    case loading(UUID)
+    case loaded
+}
+
 @ObservableState
 public struct FileManagerWindowState: Equatable {
     public var content: FileManagerContentFeature.State
@@ -20,6 +26,7 @@ public struct FileManagerWindowState: Equatable {
     public var contentTabs: ContentTabState
     public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
     public var pendingContentTabClose: PendingContentTabClose?
+    var fixedLocationsLoadPhase: FileManagerFixedLocationsLoadPhase = .idle
 
     public init() {
         content = .init()
@@ -292,6 +299,13 @@ extension FileManagerWindowState {
         let items = FileManagerHomeDashboardProjection.makeFixedLocations(
             from: locationsClient.loadLocations(entryLoadingClient),
         )
+        applyFixedLocationItems(items, hiddenLocationIDs: hiddenLocationIDs)
+    }
+
+    mutating func applyFixedLocationItems(
+        _ items: [FileManagerFixedLocationItem],
+        hiddenLocationIDs: Set<FileManagerFixedLocationItem.ID> = [],
+    ) {
         sidebar.setFixedLocationItems(items, hiddenIDs: hiddenLocationIDs)
         content.homeLocationItems = items
     }

@@ -286,6 +286,80 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.title), ["Home"])
     }
 
+    /// CTM-004-sidebar_fixed_locations: window appearance마다 Locations를 effect에서 한 번만 조회함
+    /// 같은 appearance의 중복 onAppear는 무시하고, onDisappear 이후 다시 나타날 때만 새 조회를 허용한다.
+    func testWindowAppearanceLoadsFixedLocationsOnceUntilDisappear() async {
+        let requestID = UUID()
+        let loadCount = LockIsolated(0)
+        let sourceLocations = Self.fixedLocationClient().loadLocations(.testValue)
+        let projectedLocations = FileManagerHomeDashboardProjection.makeFixedLocations(from: sourceLocations)
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(requestID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+            $0.fileManagerLocationsClient.loadLocations = { _ in
+                loadCount.withValue { $0 += 1 }
+                return sourceLocations
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.onAppear) {
+            $0.fixedLocationsLoadPhase = .loading(requestID)
+        }
+        await store.receive(\.internal.fixedLocationsLoaded) {
+            $0.fixedLocationsLoadPhase = .loaded
+            $0.applyFixedLocationItems(projectedLocations)
+        }
+
+        await store.send(.onAppear)
+        XCTAssertEqual(loadCount.value, 1)
+
+        await store.send(.onDisappear) {
+            $0.fixedLocationsLoadPhase = .idle
+        }
+        await store.send(.onAppear) {
+            $0.fixedLocationsLoadPhase = .loading(requestID)
+        }
+        await store.receive(\.internal.fixedLocationsLoaded) {
+            $0.fixedLocationsLoadPhase = .loaded
+        }
+
+        XCTAssertEqual(loadCount.value, 2)
+    }
+
+    /// CTM-004-sidebar_fixed_locations_visibility: 진행 중인 Locations 조회는 최신 visibility를 유지함
+    /// 조회 시작 후 숨김 설정이 바뀌어도 완료 payload가 해당 설정을 되돌리지 않아야 한다.
+    func testFixedLocationsCompletionPreservesVisibilityChangedWhileLoading() async throws {
+        let requestID = UUID()
+        let sourceLocations = Self.fixedLocationClient().loadLocations(.testValue)
+        let projectedLocations = FileManagerHomeDashboardProjection.makeFixedLocations(from: sourceLocations)
+        let oneDriveID = try XCTUnwrap(projectedLocations.first { $0.title == "OneDrive" }?.id)
+        var state = FileManagerFeature.State()
+        state.fixedLocationsLoadPhase = .loading(requestID)
+        state.sidebar.hiddenFixedLocationItemIDs = [oneDriveID]
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.internal(.fixedLocationsLoaded(
+            requestID: requestID,
+            items: projectedLocations,
+        ))) {
+            $0.fixedLocationsLoadPhase = .loaded
+            $0.applyFixedLocationItems(projectedLocations, hiddenLocationIDs: [oneDriveID])
+        }
+
+        XCTAssertFalse(store.state.sidebar.fixedLocationItems.contains { $0.id == oneDriveID })
+        XCTAssertTrue(store.state.content.homeLocationItems.contains { $0.id == oneDriveID })
+    }
+
     /// CTM-004-sidebar_fixed_locations: fixed Locations는 Finder/Voyager Locations source를 별도 grid item으로 구성함
     /// Sidebar 상단 icon grid가 iCloud/CloudStorage/home/root/Trash source를 안정적인 id/path로 노출함을 검증한다.
     func testSyncFixedLocationItems_populatesSystemLocations() {

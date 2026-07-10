@@ -277,11 +277,13 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     /// - 사전 조건: 테스트 UserDefaults/date dependency를 주입한 fresh FileManagerFeature.State
     /// - 기대 결과: currentPath가 Home 기본 경로로 유지됨
     func testFeatureOnAppearPreservesDefaultNavigationPath() async {
+        let requestID = UUID()
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
         } withDependencies: {
             $0.userDefaultsClient = .testValue
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .constant(requestID)
         }
         // 비포괄적: onAppear는 여러 초기화 child action을 방출하므로 FMW-001 초기 path 계약만 검증한다.
         store.exhaustivity = .off

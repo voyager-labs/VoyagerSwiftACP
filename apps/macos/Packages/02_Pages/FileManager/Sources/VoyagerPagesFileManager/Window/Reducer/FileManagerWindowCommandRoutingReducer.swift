@@ -18,6 +18,7 @@ struct HomeAiChatOpenCancelID: Hashable {
 struct FileManagerWindowCommandRoutingReducer {
     nonisolated private enum CancelID: Hashable {
         case contextualAiChatOpen
+        case loadFixedLocations
     }
 
     typealias State = FileManagerWindowState
@@ -37,18 +38,31 @@ struct FileManagerWindowCommandRoutingReducer {
     private var entryLoadingClient
     @Dependency(\.userDefaultsClient)
     private var userDefaultsClient
+    @Dependency(\.uuid)
+    private var uuid
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
             case .onAppear:
-                state.syncFixedLocationItems(
-                    with: fileManagerLocationsClient,
-                    entryLoadingClient: entryLoadingClient,
-                    hiddenLocationIDs: hiddenFixedLocationIDs(),
-                )
                 state.syncHomeFavoriteItems()
-                return .none
+                guard state.fixedLocationsLoadPhase == .idle else { return .none }
+                let requestID = uuid()
+                state.fixedLocationsLoadPhase = .loading(requestID)
+                return .run { [fileManagerLocationsClient, entryLoadingClient] send in
+                    let items = FileManagerHomeDashboardProjection.makeFixedLocations(
+                        from: fileManagerLocationsClient.loadLocations(entryLoadingClient),
+                    )
+                    await send(.internal(.fixedLocationsLoaded(
+                        requestID: requestID,
+                        items: items,
+                    )))
+                }
+                .cancellable(id: CancelID.loadFixedLocations, cancelInFlight: true)
+
+            case .onDisappear:
+                state.fixedLocationsLoadPhase = .idle
+                return .cancel(id: CancelID.loadFixedLocations)
 
             case let .request(command):
                 return handleRequestedCommand(command, state: &state)
@@ -122,6 +136,12 @@ struct FileManagerWindowCommandRoutingReducer {
                     forwardProviderConnectionsToOpenAiChat(file: file, state: state),
                     warmUpAIModelCatalogEffect(),
                 )
+
+            case let .internal(.fixedLocationsLoaded(requestID, items)):
+                guard state.fixedLocationsLoadPhase == .loading(requestID) else { return .none }
+                state.fixedLocationsLoadPhase = .loaded
+                state.applyFixedLocationItems(items, hiddenLocationIDs: state.sidebar.hiddenFixedLocationItemIDs)
+                return .none
 
             default:
                 return .none

@@ -13,6 +13,7 @@ import VoyagerWidgetsEntryViewLayout
 public enum FileManagerWindowAction: CasePathable, Sendable {
     case delegate(Delegate)
 
+    case `internal`(Internal)
     case request(WindowCommand)
     case content(FileManagerContentFeature.Action)
     case backgroundAiChat(AiChatAction)
@@ -33,6 +34,14 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case onAppear
     case onDisappear
     case closeWindow
+
+    @CasePathable
+    public enum Internal: Sendable {
+        case fixedLocationsLoaded(
+            requestID: UUID,
+            items: [FileManagerFixedLocationItem],
+        )
+    }
 
     @CasePathable
     public enum WindowCommand: Sendable {
