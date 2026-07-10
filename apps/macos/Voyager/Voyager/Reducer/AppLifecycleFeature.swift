@@ -274,7 +274,6 @@ struct AppLifecycleFeature {
                             snapshot: snapshot,
                             generation: generation,
                             error: .decodingFailure,
-                            snapshotClient: snapshotClient,
                         )
                     }
                     let verifiedSnapshot = AccessStatusSnapshot.fetchResult(
@@ -298,7 +297,6 @@ struct AppLifecycleFeature {
                         snapshot: snapshot,
                         generation: generation,
                         error: error,
-                        snapshotClient: snapshotClient,
                     )
                 }
 
@@ -543,7 +541,6 @@ private func deviceBindingFailureEffects(
     snapshot: AccessStatusSnapshot,
     generation: Int,
     error: DeviceBindingError,
-    snapshotClient: AccessStatusSnapshotClient,
 ) -> Effect<AppLifecycleAction> {
     state.resolveAccessUnlockRequired(snapshot, generation: generation)
     var sessionLapseGuard = AccountAccessFeature.State()
@@ -564,9 +561,6 @@ private func deviceBindingFailureEffects(
             snapshot: snapshot,
             result: .failure(error),
         ))),
-        .run { _ in
-            await snapshotClient.save(snapshot)
-        },
         .send(.delegate(.openInitialWindowIfNeeded)),
     )
 }

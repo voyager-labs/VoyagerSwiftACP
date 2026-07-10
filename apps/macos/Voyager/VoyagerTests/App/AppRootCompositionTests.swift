@@ -507,6 +507,48 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
+    /// Device binding network failure는 현재 launch를 차단하되 이전 verified cache를 보존한다.
+    /// 다음 access-status 조회가 실패해도 검증된 fallback 증거를 잃지 않아야 한다.
+    func testDeviceBindingFailurePreservesVerifiedCachedSnapshot() async {
+        let expiry = Date(timeIntervalSince1970: 4_102_444_800)
+        let verifiedSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            sessionExpiresAt: expiry,
+            deviceBindingVerifiedAt: Date(timeIntervalSince1970: 1_700_000_100),
+        )
+        let unverifiedSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: Date(timeIntervalSince1970: 1_800_000_000),
+            sessionExpiresAt: expiry,
+        )
+        let cached = SnapshotCaptureBox()
+        cached.value = verifiedSnapshot
+
+        let store = TestStore(initialState: AppLifecycleFeature.State()) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.accessStatusSnapshotClient.save = { snapshot in
+                cached.value = snapshot
+            }
+        }
+        // store.exhaustivity = .off: guard projection의 세부 상태보다 cache 보존과 downstream routing을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.accountAccessGate(.deviceBindingResponse(
+            generation: 0,
+            snapshot: unverifiedSnapshot,
+            result: .failure(.networkFailure),
+        )))
+        await store.receive(\.sessionLapseGuard.deviceBindingResponse)
+        await store.receive(\.delegate.openInitialWindowIfNeeded)
+        await store.finish()
+
+        XCTAssertEqual(cached.value, verifiedSnapshot)
+        XCTAssertEqual(store.state.sessionLapseGuard?.accessUnlockPrimaryCTA, .retry)
+        XCTAssertFalse(store.state.didStartHelper)
+    }
+
     /// inactive entitlement는 access unlock recovery 상태를 hydrate한 session lapse guard overlay로 전달한다.
     func testAccessStatusInactiveRoutesToAccessUnlockRecovery() async {
         let expiry = Date(timeIntervalSince1970: 100)
