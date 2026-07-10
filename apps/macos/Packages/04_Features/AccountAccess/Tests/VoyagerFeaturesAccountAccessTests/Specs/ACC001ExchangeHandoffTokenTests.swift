@@ -58,6 +58,20 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         }
     }
 
+    private func canonicalSessionClient(expiresAt: Date) -> AccountSessionClient {
+        let session = AccountSession(
+            accessToken: "ac1-token",
+            status: .none,
+            refreshToken: "ac1-refresh",
+            expiresAt: expiresAt,
+        )
+        return AccountSessionClient(
+            read: { session },
+            persist: { _ in },
+            delete: { _ in },
+        )
+    }
+
     /// handoffPendingState가 설정된 signInInProgress 상태 (callback 대기 중)
     private func awaitingCallbackState(pendingState: String = ACC001ExchangeHandoffTokenTests
         .validState) -> AccountAccessFeature.State
@@ -77,8 +91,9 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
     /// - 기대 결과: hasAccountSession=true, isSignInInProgress=false, didSignInFail=false, fetchGeneration=1
     func testExchangeSuccessSetsLoggedIn() async {
         nonisolated(unsafe) var exchangeCalled = false
+        let persistedSessionExpiry = Date(timeIntervalSince1970: 1_700_003_600)
         let store = makeTestStore(
-            accountSessionClient: .testValue,
+            accountSessionClient: canonicalSessionClient(expiresAt: persistedSessionExpiry),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { ticket, state, context in
                     exchangeCalled = true
@@ -114,6 +129,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
             state.isSignInInProgress = false
             state.hasAccountSession = true
             state.didSignInFail = false
+            state.sessionExpiresAt = persistedSessionExpiry
             state.ttlTimerActive = true
             state.fetchGeneration = 1
         }

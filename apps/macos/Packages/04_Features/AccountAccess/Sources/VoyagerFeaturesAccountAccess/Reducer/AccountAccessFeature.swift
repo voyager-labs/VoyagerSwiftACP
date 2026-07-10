@@ -372,7 +372,10 @@ public struct AccountAccessFeature {
         .run { [authNetwork, sessionClient] send in
             let session = try await authNetwork.exchangeHandoff(ticket, state, context)
             try await sessionClient.persist(session)
-            await send(._handoffExchangeCompleted(.success(session)))
+            guard let persistedSession = try await sessionClient.read() else {
+                throw AppHandoffExchangeError.decodingFailure
+            }
+            await send(._handoffExchangeCompleted(.success(persistedSession)))
         } catch: { error, send in
             let mappedError: AppHandoffExchangeError = if let exchangeError = error as? AppHandoffExchangeError {
                 exchangeError
