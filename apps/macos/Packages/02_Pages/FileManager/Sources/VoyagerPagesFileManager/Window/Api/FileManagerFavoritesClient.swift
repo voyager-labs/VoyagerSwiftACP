@@ -125,22 +125,24 @@ public enum FileManagerFavoritesPinnedRecordMapper {
         favorites.compactMap { favorite in
             var isDirectory = ObjCBool(false)
             let exists = fileExistsWithIsDirectory(favorite.url.path, &isDirectory)
-            if exists, isDirectory.boolValue {
+            guard exists else { return nil }
+
+            if CollectionFileUtils.isCollectionFile(favorite.url) {
                 return ContentTabPinnedRecord(
                     id: favoriteRecordID(for: favorite),
-                    page: .directory,
-                    anchor: .directory(path: favorite.url.path),
+                    page: .collection,
+                    anchor: .collectionFile(url: favorite.url),
                     title: favorite.displayName,
                     iconName: favorite.iconName,
                     pinnedAt: pinnedAt,
                 )
             }
 
-            guard CollectionFileUtils.isCollectionFile(favorite.url), exists else { return nil }
+            guard isDirectory.boolValue else { return nil }
             return ContentTabPinnedRecord(
                 id: favoriteRecordID(for: favorite),
-                page: .collection,
-                anchor: .collectionFile(url: favorite.url),
+                page: .directory,
+                anchor: .directory(path: favorite.url.path),
                 title: favorite.displayName,
                 iconName: favorite.iconName,
                 pinnedAt: pinnedAt,
