@@ -47,6 +47,14 @@ struct FileManagerWindowCommandRoutingReducer {
             case .onAppear:
                 state.syncHomeFavoriteItems()
                 guard state.fixedLocationsLoadPhase == .idle else { return .none }
+                let storedHiddenLocationIDs = hiddenFixedLocationIDs()
+                state.sidebar.hiddenFixedLocationItemIDs = storedHiddenLocationIDs
+                if !state.sidebar.allFixedLocationItems.isEmpty {
+                    state.applyFixedLocationItems(
+                        state.sidebar.allFixedLocationItems,
+                        hiddenLocationIDs: storedHiddenLocationIDs,
+                    )
+                }
                 let requestID = uuid()
                 state.fixedLocationsLoadPhase = .loading(requestID)
                 return .run { [fileManagerLocationsClient, entryLoadingClient] send in

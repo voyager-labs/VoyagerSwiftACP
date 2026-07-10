@@ -332,6 +332,41 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(loadCount.value, 2)
     }
 
+    /// CTM-004-sidebar_fixed_locations_visibility: 새 window appearance는 저장된 숨김 설정을 복원함
+    /// Locations 조회 완료 전 preference를 state에 적용하고 완료 시에도 동일한 설정을 유지한다.
+    func testWindowAppearanceRestoresPersistedHiddenLocationIDs() async throws {
+        let requestID = UUID()
+        let sourceLocations = Self.fixedLocationClient().loadLocations(.testValue)
+        let projectedLocations = FileManagerHomeDashboardProjection.makeFixedLocations(from: sourceLocations)
+        let oneDriveID = try XCTUnwrap(projectedLocations.first { $0.title == "OneDrive" }?.id)
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(requestID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+            $0.fileManagerLocationsClient.loadLocations = { _ in sourceLocations }
+            $0.userDefaultsClient.object = { key in
+                key == SettingsKeys.hiddenFixedLocationIDs ? [oneDriveID] : nil
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.onAppear) {
+            $0.sidebar.hiddenFixedLocationItemIDs = [oneDriveID]
+            $0.fixedLocationsLoadPhase = .loading(requestID)
+        }
+        await store.receive(\.internal.fixedLocationsLoaded) {
+            $0.fixedLocationsLoadPhase = .loaded
+            $0.applyFixedLocationItems(projectedLocations, hiddenLocationIDs: [oneDriveID])
+        }
+
+        XCTAssertFalse(store.state.sidebar.fixedLocationItems.contains { $0.id == oneDriveID })
+        XCTAssertTrue(store.state.content.homeLocationItems.contains { $0.id == oneDriveID })
+    }
+
     /// CTM-004-sidebar_fixed_locations_visibility: 진행 중인 Locations 조회는 최신 visibility를 유지함
     /// 조회 시작 후 숨김 설정이 바뀌어도 완료 payload가 해당 설정을 되돌리지 않아야 한다.
     func testFixedLocationsCompletionPreservesVisibilityChangedWhileLoading() async throws {
