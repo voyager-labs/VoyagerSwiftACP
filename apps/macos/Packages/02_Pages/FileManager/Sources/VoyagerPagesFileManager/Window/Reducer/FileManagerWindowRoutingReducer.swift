@@ -318,6 +318,7 @@ struct FileManagerWindowRoutingReducer {
                 let activeTabIDBeforeSync = state.contentTabs.activeTabID
                 let activeAnchorBeforeSync = activeTabIDBeforeSync.flatMap { state.contentTabs.tabs[id: $0]?.anchor }
                 state.applyPinnedContentTabs(contentTabs)
+                syncDashboardProjections(state: &state)
                 let activeAnchorAfterSync = state.contentTabs.activeTabID
                     .flatMap { state.contentTabs.tabs[id: $0]?.anchor }
                 let shouldResyncContentNavigation = state.contentTabs.activeTabID == activeTabIDBeforeSync
