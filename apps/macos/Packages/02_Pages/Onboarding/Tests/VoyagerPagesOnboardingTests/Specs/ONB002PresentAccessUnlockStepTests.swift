@@ -232,6 +232,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             // OnboardingFeature redirects back to accessUnlock on non-active
             state.currentStep = .accessUnlock
         }
+        await store.receive(\.accessUnlock.delegate.recoveryRequired)
 
         await store.finish()
     }
@@ -473,6 +474,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             state.accessUnlock.isSessionExpired = true
             state.accessUnlock.fetchGeneration = 1
         }
+        await store.receive(\.accessUnlock.delegate.recoveryRequired)
 
         await store.finish()
     }

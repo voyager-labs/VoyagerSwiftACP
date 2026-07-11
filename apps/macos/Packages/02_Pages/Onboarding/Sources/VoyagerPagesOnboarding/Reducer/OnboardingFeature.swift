@@ -13,6 +13,9 @@ struct OnboardingFeature {
     @Dependency(\.onboardingWindowClient)
     var onboardingWindowClient
 
+    @Dependency(\.date)
+    var date
+
     var body: some Reducer<State, Action> {
         Scope(state: \.welcome, action: \.welcome) {
             WelcomeFeature()
@@ -106,19 +109,37 @@ struct OnboardingFeature {
         state: inout State,
         progressClient: OnboardingProgressClient,
     ) -> Effect<Action> {
-        let trustedAccessSnapshot = Self.trustedAccessSnapshot(snapshot.accessSnapshot)
+        let trustedAccessSnapshot = Self.trustedAccessSnapshot(snapshot.accessSnapshot) { date.now }
+        let legacyAccessSnapshot = Self.legacyAccessSnapshot(snapshot.accessSnapshot)
+        let requiresProofValidation = snapshot.accessSnapshot?.currentPeriodEnd != nil
         var trustedStepState = snapshot.stepState
-        if snapshot.stepState.accessUnlockComplete, trustedAccessSnapshot == nil {
+        if snapshot.stepState.accessUnlockComplete,
+           trustedAccessSnapshot == nil,
+           requiresProofValidation || legacyAccessSnapshot == nil
+        {
             trustedStepState.accessUnlockComplete = false
         }
         state.applyStepState(trustedStepState)
-        if snapshot.stepState.accessUnlockComplete, trustedAccessSnapshot == nil {
+        if snapshot.stepState.accessUnlockComplete,
+           trustedAccessSnapshot == nil,
+           requiresProofValidation || legacyAccessSnapshot == nil
+        {
             state.accessUnlock = AccountAccessFeature.State()
             state.currentStep = .accessUnlock
             let updatedSnapshot = state.progressSnapshot
             return Self.saveEffect(updatedSnapshot, progressClient: progressClient)
         }
-        if let accessSnapshot = trustedAccessSnapshot {
+        if let accessSnapshot = trustedAccessSnapshot,
+           snapshot.stepState.accessUnlockComplete,
+           accessSnapshot.isActive
+        {
+            state.currentStep = snapshot.currentStep
+            return .concatenate(
+                Self.saveEffect(snapshot, progressClient: progressClient),
+                .send(.accessUnlock(.hydrateLaunchSnapshot(accessSnapshot))),
+            )
+        }
+        if let accessSnapshot = legacyAccessSnapshot {
             state.accessUnlock.snapshot = accessSnapshot
             state.accessUnlock.status = accessSnapshot.status
             state.accessUnlock.hasAccountSession = accessSnapshot.hasSession
@@ -129,7 +150,7 @@ struct OnboardingFeature {
         }
         state.currentStep = state.lastValidStep(from: snapshot.currentStep)
         let saveEffect = Self.saveEffect(state.progressSnapshot, progressClient: progressClient)
-        guard trustedAccessSnapshot != nil, state.accessUnlock.isComplete else { return saveEffect }
+        guard legacyAccessSnapshot != nil, state.accessUnlock.isComplete else { return saveEffect }
         return .concatenate(saveEffect, .send(.accessUnlock(.onAppear)))
     }
 
@@ -215,7 +236,24 @@ struct OnboardingFeature {
         }
     }
 
-    private static func trustedAccessSnapshot(_ snapshot: AccessStatusSnapshot?) -> AccessStatusSnapshot? {
+    private static func trustedAccessSnapshot(
+        _ snapshot: AccessStatusSnapshot?,
+        now: () -> Date,
+    ) -> AccessStatusSnapshot? {
+        guard let snapshot,
+              snapshot.status.isActive,
+              snapshot.currentPeriodEnd != nil,
+              snapshot.isDeviceBindingVerified,
+              let sessionExpiresAt = snapshot.sessionExpiresAt,
+              sessionExpiresAt > now(),
+              snapshot.deviceBindingVerifiedAt == snapshot.fetchedAt
+        else {
+            return nil
+        }
+        return snapshot
+    }
+
+    private static func legacyAccessSnapshot(_ snapshot: AccessStatusSnapshot?) -> AccessStatusSnapshot? {
         guard let snapshot else { return nil }
         if snapshot.status.isActive, !snapshot.isDeviceBindingVerified || !snapshot.hasSession {
             return nil
