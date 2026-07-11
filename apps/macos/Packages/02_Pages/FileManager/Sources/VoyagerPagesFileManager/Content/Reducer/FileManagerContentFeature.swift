@@ -106,7 +106,11 @@ public struct FileManagerContentFeature {
                       state.aiChat.sessionID == requestedSessionID,
                       isAiChatNavigationRoute(state.navigation.navigationState)
                 else { return .none }
-                let title = AiChatSessionSummary.titleCandidate(from: snapshot) ?? ""
+                let title = restoredAiChatSessionTitle(
+                    sessionID: requestedSessionID,
+                    restoredSnapshot: snapshot,
+                    state: state.aiChat,
+                )
                 return .send(.delegate(.aiChatSessionRestored(sessionID: requestedSessionID, title: title)))
 
             case let .aiChat(.sessionRowTapped(sessionID)):
@@ -150,6 +154,44 @@ public struct FileManagerContentFeature {
         }
         return .send(.entryViewLayout(.delegate(.selectionChanged)))
     }
+}
+
+private func restoredAiChatSessionTitle(
+    sessionID: AiChatSessionID,
+    restoredSnapshot: AiChatSessionSnapshot,
+    state: AiChatFeature.State,
+) -> String {
+    var canonicalSummary = state.sessionList.allRows.first { $0.sessionID == sessionID }
+    if let finalSnapshot = state.executionPhase.lock?.finalSnapshot,
+       finalSnapshot.sessionID == sessionID
+    {
+        let finalSummary = AiChatSessionSummary(snapshot: finalSnapshot)
+        if let currentSummary = canonicalSummary {
+            if finalSummary.isNewer(than: currentSummary) {
+                canonicalSummary = finalSummary
+            }
+        } else {
+            canonicalSummary = finalSummary
+        }
+    }
+    if let title = canonicalSummary?.title.trimmingCharacters(in: .whitespacesAndNewlines),
+       !title.isEmpty
+    {
+        return title
+    }
+    if state.sessionID == sessionID,
+       let title = state.currentSessionCustomTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !title.isEmpty
+    {
+        return title
+    }
+    if state.sessionID == sessionID,
+       let firstUserMessage = state.transcriptHistory.first(where: { $0.role == .user })?.content,
+       !firstUserMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    {
+        return AiChatSessionSummary.automaticTitle(from: firstUserMessage)
+    }
+    return AiChatSessionSummary.titleCandidate(from: restoredSnapshot) ?? ""
 }
 
 private func isAiChatNavigationRoute(_ route: ContentPageNavigationRoute) -> Bool {
