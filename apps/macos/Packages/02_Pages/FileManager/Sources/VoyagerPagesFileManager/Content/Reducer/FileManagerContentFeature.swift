@@ -99,21 +99,24 @@ public struct FileManagerContentFeature {
             case let .aiChat(.newChatCreated(snapshot)):
                 return .send(.delegate(.aiChatSessionCreated(snapshot.sessionID)))
 
-            case let .aiChat(.restoreOutcome(requestedSessionID, _, restoreFailure)):
+            case let .aiChat(.restoreOutcome(requestedSessionID, result, restoreFailure)):
                 guard restoreFailure == nil,
+                      case let .restored(snapshot) = result,
                       state.aiChat.mode == .chat,
                       state.aiChat.sessionID == requestedSessionID,
-                      case .aiChatSessions = state.navigation.navigationState
+                      isAiChatNavigationRoute(state.navigation.navigationState)
                 else { return .none }
-                return .send(.delegate(.aiChatSessionRestored(requestedSessionID)))
+                let title = AiChatSessionSummary.titleCandidate(from: snapshot) ?? ""
+                return .send(.delegate(.aiChatSessionRestored(sessionID: requestedSessionID, title: title)))
 
             case let .aiChat(.sessionRowTapped(sessionID)):
                 guard state.aiChat.executionPhase.isProcessing,
                       state.aiChat.mode == .chat,
                       state.aiChat.sessionID == sessionID,
-                      case .aiChatSessions = state.navigation.navigationState
+                      case .aiChatSessions = state.navigation.navigationState,
+                      let title = state.aiChat.sessionList.allRows.first(where: { $0.sessionID == sessionID })?.title
                 else { return .none }
-                return .send(.delegate(.aiChatSessionRestored(sessionID)))
+                return .send(.delegate(.aiChatSessionRestored(sessionID: sessionID, title: title)))
 
             case let .internal(.setAutomaticRefreshFeedbackSuppressed(isSuppressed)):
                 state.suppressAutomaticRefreshFeedback = isSuppressed
@@ -146,6 +149,16 @@ public struct FileManagerContentFeature {
             return .none
         }
         return .send(.entryViewLayout(.delegate(.selectionChanged)))
+    }
+}
+
+private func isAiChatNavigationRoute(_ route: ContentPageNavigationRoute) -> Bool {
+    switch route {
+    case .aiChat,
+         .aiChatSessions:
+        true
+    default:
+        false
     }
 }
 

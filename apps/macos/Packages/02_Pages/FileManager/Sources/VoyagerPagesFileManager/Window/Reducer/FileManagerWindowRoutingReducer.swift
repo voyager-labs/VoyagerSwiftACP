@@ -385,9 +385,18 @@ struct FileManagerWindowRoutingReducer {
                     customTitle: customTitle,
                     state: &state,
                 )
+                state.updateAiChatTabTitle(sessionID: summary.sessionID, title: summary.title)
                 return .none
 
             case let .content(.aiChat(aiChatAction)):
+                if shouldRefreshActiveAiChatTabTitleFromSessionList(aiChatAction) {
+                    state.refreshActiveAiChatTabTitleFromSessionList()
+                    state.syncContentTabSidebarItems()
+                } else if case .sessionListLoaded = aiChatAction {
+                    state.refreshActiveAiChatTabTitleFromSessionList(onlyIfUsingFallback: true)
+                    state.syncContentTabSidebarItems()
+                }
+                let snapshotSessionID = sessionSnapshotSavedSummary(from: aiChatAction)?.sessionID
                 let effect = routeBackgroundAiChatAction(aiChatAction, state: &state)
                 refreshAiChatFollowUpFromBackgroundIfNeeded(
                     aiChatAction,
@@ -395,16 +404,25 @@ struct FileManagerWindowRoutingReducer {
                     state: &state,
                     skipsActiveContent: true,
                 )
+                if let snapshotSessionID {
+                    state.refreshAiChatTabTitleFromCanonicalSummary(sessionID: snapshotSessionID)
+                }
                 return effect
 
             case let .backgroundAiChat(aiChatAction):
-                return routeBackgroundAiChatAction(aiChatAction, state: &state)
+                let snapshotSessionID = sessionSnapshotSavedSummary(from: aiChatAction)?.sessionID
+                let effect = routeBackgroundAiChatAction(aiChatAction, state: &state)
+                if let snapshotSessionID {
+                    state.refreshAiChatTabTitleFromCanonicalSummary(sessionID: snapshotSessionID)
+                }
+                return effect
 
             case let .backgroundAiChatSnapshotPersisted(snapshot):
                 handleBackgroundAiChatSnapshotPersisted(snapshot, state: &state)
                 return .none
 
             case let .inspector(.aiChat(aiChatAction)):
+                let snapshotSessionID = sessionSnapshotSavedSummary(from: aiChatAction)?.sessionID
                 let effect = routeInactiveInspectorAiChatAction(aiChatAction, state: &state)
                 refreshAiChatFollowUpFromBackgroundIfNeeded(
                     aiChatAction,
@@ -412,10 +430,18 @@ struct FileManagerWindowRoutingReducer {
                     state: &state,
                     skipsActiveInspector: true,
                 )
+                if let snapshotSessionID {
+                    state.refreshAiChatTabTitleFromCanonicalSummary(sessionID: snapshotSessionID)
+                }
                 return effect
 
             case let .backgroundInspectorAiChat(aiChatAction):
-                return routeInactiveInspectorAiChatAction(aiChatAction, state: &state)
+                let snapshotSessionID = sessionSnapshotSavedSummary(from: aiChatAction)?.sessionID
+                let effect = routeInactiveInspectorAiChatAction(aiChatAction, state: &state)
+                if let snapshotSessionID {
+                    state.refreshAiChatTabTitleFromCanonicalSummary(sessionID: snapshotSessionID)
+                }
+                return effect
 
             case let .backgroundInspectorAiChatSnapshotPersisted(snapshot):
                 handleBackgroundInspectorAiChatSnapshotPersisted(snapshot, state: &state)
@@ -1116,6 +1142,17 @@ private struct SessionSnapshotSavedPayload {
     let snapshot: AiChatSessionSnapshot?
 }
 
+private func shouldRefreshActiveAiChatTabTitleFromSessionList(_ action: AiChatAction) -> Bool {
+    switch action {
+    case .submitTapped,
+         .regenerateTapped,
+         .requestContextResolved:
+        true
+    default:
+        false
+    }
+}
+
 private func sessionSnapshotSavedSummary(from aiChatAction: AiChatAction) -> AiChatSessionSummary? {
     sessionSnapshotRefreshPayload(from: aiChatAction)?.summary
 }
@@ -1635,7 +1672,7 @@ private extension AiChatFeature.State {
 
     private func hasNewerSnapshotThanBackground(_ summary: AiChatSessionSummary) -> Bool {
         if let currentRow = sessionList.allRows.first(where: { $0.sessionID == summary.sessionID }),
-           currentRow.isNewerThanBackground(summary)
+           currentRow.isNewer(than: summary)
         {
             return true
         }
@@ -1657,6 +1694,7 @@ private extension AiChatFeature.State {
         snapshot: AiChatSessionSnapshot? = nil,
         backgroundAiChat: AiChatFeature.State,
     ) {
+        guard sessionList.replaceRowIfNewer(summary) else { return }
         if let snapshot {
             currentSessionCustomTitle = snapshot.customTitle
         } else {
@@ -1682,8 +1720,6 @@ private extension AiChatFeature.State {
             executionPhase = executionPhaseToApply
         }
 
-        guard !sessionList.deletedSessionIDs.contains(summary.sessionID) else { return }
-        sessionList.replaceRow(summary)
         if restoreSessionID == nil || restoreSessionID == summary.sessionID {
             sessionList.selectedSessionID = summary.sessionID
         }
@@ -1742,18 +1778,6 @@ private extension AiChatExecutionPhase {
             return nil
         }
         return self
-    }
-}
-
-private extension AiChatSessionSummary {
-    func isNewerThanBackground(_ backgroundSummary: AiChatSessionSummary) -> Bool {
-        if updatedAtMs != backgroundSummary.updatedAtMs {
-            return updatedAtMs > backgroundSummary.updatedAtMs
-        }
-        if messageCount != backgroundSummary.messageCount {
-            return messageCount > backgroundSummary.messageCount
-        }
-        return false
     }
 }
 

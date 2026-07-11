@@ -27,6 +27,7 @@ public struct FileManagerWindowState: Equatable {
     public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
     public var pendingContentTabClose: PendingContentTabClose?
     var fixedLocationsLoadPhase: FileManagerFixedLocationsLoadPhase = .idle
+    var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
 
     public init() {
         content = .init()
@@ -291,6 +292,81 @@ extension FileManagerWindowState {
         sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: contentTabs)
     }
 
+    mutating func updateActiveAiChatTabTitle(_ title: String?) {
+        guard let activeTabID = contentTabs.activeTabID,
+              case .aiChat = contentTabs.tabs[id: activeTabID]?.anchor
+        else { return }
+        let resolvedTitle = aiChatTabTitle(title)
+        contentTabs.tabs[id: activeTabID]?.title = resolvedTitle
+        syncContentTabSidebarItems()
+    }
+
+    mutating func refreshActiveAiChatTabTitleFromSessionList(onlyIfUsingFallback: Bool = false) {
+        guard let activeTabID = contentTabs.activeTabID,
+              !onlyIfUsingFallback || contentTabs.tabs[id: activeTabID]?.title == "AI Chat",
+              case let .aiChat(sessionIDString) = contentTabs.tabs[id: activeTabID]?.anchor,
+              let sessionUUID = UUID(uuidString: sessionIDString),
+              let summary = content.aiChat.sessionList.allRows.first(where: {
+                  $0.sessionID.rawValue == sessionUUID
+              })
+        else { return }
+        let resolvedTitle = aiChatTabTitle(summary.title)
+        contentTabs.tabs[id: activeTabID]?.title = resolvedTitle
+    }
+
+    mutating func updateAiChatTabTitle(sessionID: AiChatSessionID, title: String?) {
+        let sessionIDString = sessionID.rawValue.uuidString
+        let resolvedTitle = aiChatTabTitle(title)
+        for tabID in contentTabs.tabs.ids {
+            guard contentTabs.tabs[id: tabID]?.anchor == .aiChat(sessionID: sessionIDString) else { continue }
+            contentTabs.tabs[id: tabID]?.title = resolvedTitle
+        }
+        syncContentTabSidebarItems()
+    }
+
+    mutating func refreshAiChatTabTitleFromCanonicalSummary(sessionID: AiChatSessionID) {
+        guard let summary = canonicalAiChatSessionSummary(sessionID: sessionID) else { return }
+        updateAiChatTabTitle(sessionID: sessionID, title: summary.title)
+    }
+
+    private func canonicalAiChatSessionSummary(sessionID: AiChatSessionID) -> AiChatSessionSummary? {
+        var canonicalSummary: AiChatSessionSummary?
+
+        func consider(_ aiChat: AiChatFeature.State) {
+            guard let candidate = aiChat.sessionList.allRows.first(where: { $0.sessionID == sessionID }) else { return }
+            guard let currentSummary = canonicalSummary else {
+                canonicalSummary = candidate
+                return
+            }
+            if candidate.isNewer(than: currentSummary) {
+                canonicalSummary = candidate
+            }
+        }
+
+        consider(content.aiChat)
+        for contentState in tabContentStates.values {
+            consider(contentState.aiChat)
+        }
+        consider(inspector.aiChat)
+        for inspectorState in tabInspectorStates.values {
+            consider(inspectorState.aiChat)
+        }
+        for contentState in backgroundAiChatStates.values {
+            consider(contentState.aiChat)
+        }
+        for inspectorState in backgroundInspectorAiChatStates.values {
+            consider(inspectorState.aiChat)
+        }
+        return canonicalSummary
+    }
+
+    private func aiChatTabTitle(_ title: String?) -> String {
+        guard let normalized = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !normalized.isEmpty
+        else { return "AI Chat" }
+        return normalized
+    }
+
     mutating func syncFixedLocationItems(
         with locationsClient: FileManagerLocationsClient,
         entryLoadingClient: EntryLoadingClient,
@@ -312,8 +388,9 @@ extension FileManagerWindowState {
 
     // MARK: - Home Dashboard Projection
 
-    var homeFavoriteItems: [FileManagerHomeFavoriteItem] {
-        FileManagerHomeDashboardProjection.homeFavorites(from: contentTabs)
+    mutating func applyHomeFavoriteItems(_ items: [FileManagerHomeFavoriteItem]) {
+        homeFavoriteItems = items
+        syncHomeFavoriteItems()
     }
 
     mutating func syncHomeFavoriteItems() {
