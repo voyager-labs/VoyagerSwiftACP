@@ -116,6 +116,17 @@ public struct AiChatSessionListState: Equatable, Sendable {
         rows = Self.filteredRows(from: allRows, query: query)
     }
 
+    @discardableResult
+    public mutating func replaceRowIfNewer(_ row: AiChatSessionSummary) -> Bool {
+        guard !deletedSessionIDs.contains(row.sessionID) else { return false }
+        if let currentRow = allRows.first(where: { $0.sessionID == row.sessionID }) {
+            guard !currentRow.isNewer(than: row) else { return false }
+            guard row.isNewer(than: currentRow) || row == currentRow else { return false }
+        }
+        replaceRow(row)
+        return true
+    }
+
     public mutating func beginRenaming(sessionID: AiChatSessionID) {
         renamingSessionID = sessionID
         renameDraftText = allRows.first(where: { $0.sessionID == sessionID })?.title ?? ""

@@ -405,21 +405,26 @@ extension AiChatFeature {
         {
             state.backgroundExecutionPhases[requestID] = nil
         }
-        if case let .completed(lock) = state.executionPhase,
-           lock.requestID == requestID,
-           lock.runID == runID
+        let matchingCompletedLock: AiChatRequestLock? = if case let .completed(lock) = state.executionPhase,
+                                                           lock.requestID == requestID,
+                                                           lock.runID == runID
         {
-            let completedLock = lock.clearingFinalSnapshot()
-            if let snapshot,
-               state.mode == .chat,
-               state.sessionID == snapshot.sessionID,
-               needsVisibleSavedSnapshotRefresh(snapshot, state: state)
-            {
-                applyVisibleSavedSnapshot(snapshot, state: &state)
-            }
-            state.executionPhase = .completed(completedLock)
+            lock
+        } else {
+            nil
         }
-        state.sessionList.replaceRow(summary)
+        if let matchingCompletedLock {
+            state.executionPhase = .completed(matchingCompletedLock.clearingFinalSnapshot())
+        }
+        guard state.sessionList.replaceRowIfNewer(summary) else { return }
+        if matchingCompletedLock != nil,
+           let snapshot,
+           state.mode == .chat,
+           state.sessionID == snapshot.sessionID,
+           needsVisibleSavedSnapshotRefresh(snapshot, state: state)
+        {
+            applyVisibleSavedSnapshot(snapshot, state: &state)
+        }
         if state.restoreSessionID == nil || state.restoreSessionID == summary.sessionID {
             state.sessionList.selectedSessionID = summary.sessionID
         }
