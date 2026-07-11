@@ -4013,6 +4013,48 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
     /// - 검증 내용: late snapshot ignore after deletion, deletedSessionIDs guard, row non-reinsertion
     /// - 사전 조건: processing session 삭제 후 sessionSnapshotUpdated/sessionSnapshotSaved가 늦게 도착한다.
     /// - 기대 결과: 삭제된 session row는 다시 목록에 삽입되지 않는다.
+    func testDeletedSessionSnapshotSavedCleansMatchingOwnersWithoutReinsertingRow() async {
+        let catalogRows = makeCatalogRows()
+        let sessionID = makeCBW005SessionID("89898989-8989-8989-8989-898989898989")
+        let lock = makeCBW005RequestLock(sessionID: sessionID, modelRow: catalogRows[0])
+        let snapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .completed,
+            customTitle: "Deleted session",
+            provider: catalogRows[0].handle.provider,
+            model: catalogRows[0].handle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [AiChatMessage(role: .user, content: "Deleted")],
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            updatedAtMs: 1_700_000_000_500,
+        )
+        let summary = AiChatSessionSummary(snapshot: snapshot)
+        let completedLock = lock.recordingFinalSnapshot(snapshot)
+        var state = AiChatFeature.State()
+        state.executionPhase = .completed(completedLock)
+        state.backgroundExecutionPhases[lock.requestID] = .completed(completedLock)
+        state.sessionList.deletedSessionIDs = [sessionID]
+        let store = TestStore(initialState: state) {
+            AiChatFeature()
+        }
+
+        await store.send(.sessionSnapshotSaved(
+            summary,
+            snapshot: snapshot,
+            requestID: lock.requestID,
+            runID: lock.runID,
+        )) { state in
+            state.backgroundExecutionPhases[lock.requestID] = nil
+            state.executionPhase = .completed(completedLock.clearingFinalSnapshot())
+        }
+
+        XCTAssertTrue(store.state.sessionList.allRows.isEmpty)
+        XCTAssertTrue(store.state.sessionList.deletedSessionIDs.contains(sessionID))
+        XCTAssertNil(store.state.backgroundExecutionPhases[lock.requestID])
+        XCTAssertNil(store.state.executionPhase.lock?.finalSnapshot)
+    }
+
     func testLateSnapshotCallbacksDoNotReinsertDeletedProcessingSession() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("88888888-8888-8888-8888-888888888888"))
         let requestID = AiChatRequestID(rawValue: makeUUID("99999999-9999-9999-9999-999999999999"))
@@ -4846,6 +4888,151 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
     /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
     /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
     /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
+    func testSessionSummaryMergeResultSeparatesRowAcceptanceFromPayloadPermission() {
+        let sessionID = makeCBW005SessionID("12121212-1212-1212-1212-121212121212")
+        let otherSessionID = makeCBW005SessionID("13131313-1313-1313-1313-131313131313")
+        let current = makeSessionSummary(sessionID: sessionID, title: "Current", updatedAtMs: 100)
+        let conflicting = makeSessionSummary(sessionID: sessionID, title: "Conflicting", updatedAtMs: 100)
+        let newer = makeSessionSummary(sessionID: sessionID, title: "Newer", updatedAtMs: 200)
+        let older = makeSessionSummary(sessionID: sessionID, title: "Older", updatedAtMs: 50)
+        let inserted = makeSessionSummary(sessionID: otherSessionID, title: "Inserted", updatedAtMs: 100)
+        var sessionList = AiChatSessionListState(allRows: [current])
+
+        let unchangedResult = sessionList.replaceRowIfNewer(current)
+        XCTAssertEqual(unchangedResult, .unchanged)
+        XCTAssertTrue(unchangedResult.acceptsRow)
+        XCTAssertFalse(unchangedResult.permitsSnapshotPayload)
+
+        XCTAssertEqual(sessionList.replaceRowIfNewer(conflicting), .rejected)
+        XCTAssertEqual(sessionList.replaceRowIfNewer(newer), .merged)
+        XCTAssertEqual(sessionList.replaceRowIfNewer(older), .rejected)
+        XCTAssertEqual(sessionList.replaceRowIfNewer(inserted), .merged)
+
+        sessionList.removeRow(sessionID: otherSessionID)
+        XCTAssertEqual(sessionList.replaceRowIfNewer(inserted), .rejected)
+    }
+
+    func testEqualSummaryMatchingCompletedOwnerAppliesStatusTitleAndTransientCleanup() async {
+        let catalogRows = makeCatalogRows()
+        let sessionID = makeCBW005SessionID("14141414-1414-1414-1414-141414141414")
+        let lock = makeCBW005RequestLock(sessionID: sessionID, modelRow: catalogRows[0])
+        let expectedTranscript = [
+            AiChatMessage(role: .user, content: "Question"),
+            AiChatMessage(role: .assistant, content: "Answer"),
+        ]
+        let snapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: "Saved title",
+            provider: catalogRows[0].handle.provider,
+            model: catalogRows[0].handle,
+            selectedModelRow: catalogRows[0],
+            selectedThinking: .effort(.low),
+            transcriptHistory: expectedTranscript,
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: lock.context.requestContext,
+            updatedAtMs: 1_234_567_890_000,
+        )
+        let summary = AiChatSessionSummary(snapshot: snapshot)
+        let completedLock = lock.recordingFinalSnapshot(snapshot)
+        var state = AiChatFeature.State()
+        state.sessionID = sessionID
+        state.mode = .chat
+        state.sessionStatus = .failed
+        state.currentSessionCustomTitle = "Stale title"
+        state.transcriptHistory = expectedTranscript
+        state.streamingAssistantDraft = "Stale draft"
+        state.catalogRows = catalogRows
+        state.lockedModelHandle = catalogRows[0].handle
+        state.lastRequestContext = snapshot.lastRequestContext
+        state.lastRequestContextModelHandle = catalogRows[0].handle
+        state.selectedModelHandle = catalogRows[0].handle
+        state.selectedThinking = .effort(.low)
+        state.executionPhase = .completed(completedLock)
+        state.sessionList = AiChatSessionListState(allRows: [summary])
+        let store = TestStore(initialState: state) {
+            AiChatFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.sessionSnapshotSaved(
+            summary,
+            snapshot: snapshot,
+            requestID: lock.requestID,
+            runID: lock.runID,
+        ))
+        await store.finish()
+
+        XCTAssertEqual(store.state.transcriptHistory, expectedTranscript)
+        XCTAssertEqual(store.state.selectedThinking, .effort(.low))
+        XCTAssertEqual(store.state.sessionStatus, .active)
+        XCTAssertEqual(store.state.currentSessionCustomTitle, "Saved title")
+        XCTAssertNil(store.state.streamingAssistantDraft)
+        XCTAssertNil(store.state.lockedModelHandle)
+        XCTAssertEqual(store.state.executionPhase, .completed(completedLock.clearingFinalSnapshot()))
+        XCTAssertEqual(store.state.sessionList.allRows, [summary])
+    }
+
+    func testNewerSummaryAppliesStatusTitleAndTransientCleanupWithoutOwner() async {
+        let catalogRows = makeCatalogRows()
+        let sessionID = makeCBW005SessionID("15151515-1515-1515-1515-151515151515")
+        let transcript = [
+            AiChatMessage(role: .user, content: "Question"),
+            AiChatMessage(role: .assistant, content: "Answer"),
+        ]
+        let snapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .completed,
+            customTitle: "Newer title",
+            provider: catalogRows[0].handle.provider,
+            model: catalogRows[0].handle,
+            selectedModelRow: catalogRows[0],
+            selectedThinking: .effort(.low),
+            transcriptHistory: transcript,
+            updatedAtMs: 2000,
+        )
+        let summary = AiChatSessionSummary(snapshot: snapshot)
+        let olderSummary = AiChatSessionSummary(
+            sessionID: summary.sessionID,
+            title: summary.title,
+            preview: summary.preview,
+            messageCount: summary.messageCount,
+            contextTitle: summary.contextTitle,
+            searchText: summary.searchText,
+            provider: summary.provider,
+            model: summary.model,
+            createdAtMs: 1000,
+            updatedAtMs: 1000,
+            status: .active,
+        )
+        var state = AiChatFeature.State()
+        state.sessionID = sessionID
+        state.mode = .chat
+        state.sessionStatus = .failed
+        state.currentSessionCustomTitle = "Stale title"
+        state.transcriptHistory = transcript
+        state.streamingAssistantDraft = "Stale draft"
+        state.catalogRows = catalogRows
+        state.lockedModelHandle = catalogRows[0].handle
+        state.selectedModelHandle = catalogRows[0].handle
+        state.selectedThinking = .effort(.low)
+        state.sessionList = AiChatSessionListState(allRows: [olderSummary])
+        let store = TestStore(initialState: state) {
+            AiChatFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.sessionSnapshotSaved(summary, snapshot: snapshot))
+        await store.finish()
+
+        XCTAssertEqual(store.state.sessionStatus, .completed)
+        XCTAssertEqual(store.state.currentSessionCustomTitle, "Newer title")
+        XCTAssertNil(store.state.streamingAssistantDraft)
+        XCTAssertNil(store.state.lockedModelHandle)
+        XCTAssertEqual(store.state.sessionList.allRows, [summary])
+    }
+
     func testLateSnapshotSavedDoesNotStealSelectionDuringSessionRestore() async {
         let catalogRows = makeCatalogRows()
         let activeSessionID = AiChatSessionID(rawValue: makeUUID("33333333-3333-3333-3333-333333333333"))

@@ -397,7 +397,6 @@ extension AiChatFeature {
         runID: AiChatRunID?,
         state: inout State,
     ) {
-        guard !state.sessionList.deletedSessionIDs.contains(summary.sessionID) else { return }
         if let requestID,
            let runID,
            let backgroundLock = state.backgroundExecutionPhases[requestID]?.lock,
@@ -416,12 +415,13 @@ extension AiChatFeature {
         if let matchingCompletedLock {
             state.executionPhase = .completed(matchingCompletedLock.clearingFinalSnapshot())
         }
-        guard state.sessionList.replaceRowIfNewer(summary) else { return }
-        if matchingCompletedLock != nil,
+        guard !state.sessionList.deletedSessionIDs.contains(summary.sessionID) else { return }
+        let mergeResult = state.sessionList.replaceRowIfNewer(summary)
+        guard mergeResult.acceptsRow else { return }
+        if mergeResult.permitsSnapshotPayload || matchingCompletedLock != nil,
            let snapshot,
            state.mode == .chat,
-           state.sessionID == snapshot.sessionID,
-           needsVisibleSavedSnapshotRefresh(snapshot, state: state)
+           state.sessionID == snapshot.sessionID
         {
             applyVisibleSavedSnapshot(snapshot, state: &state)
         }
@@ -434,13 +434,6 @@ extension AiChatFeature {
             state.sessionList.unreadCompletedSessionIDs.insert(summary.sessionID)
         }
         state.sessionList.errorMessage = nil
-    }
-
-    private func needsVisibleSavedSnapshotRefresh(_ snapshot: AiChatSessionSnapshot, state: State) -> Bool {
-        state.transcriptHistory != snapshot.transcriptHistory
-            || state.lastRequestContext != snapshot.lastRequestContext
-            || state.selectedModelHandle != snapshot.model
-            || state.selectedThinking != snapshot.selectedThinking
     }
 
     private func applyVisibleSavedSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {

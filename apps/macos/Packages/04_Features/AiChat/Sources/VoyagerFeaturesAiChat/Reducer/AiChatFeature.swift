@@ -196,7 +196,7 @@ public struct AiChatFeature {
                 guard !state.sessionList.deletedSessionIDs.contains(summary.sessionID),
                       matchesRequestLifecycleOwner(requestID: requestID, runID: runID, state: state)
                 else { return .none }
-                guard state.sessionList.replaceRowIfNewer(summary) else { return .none }
+                guard state.sessionList.replaceRowIfNewer(summary).acceptsRow else { return .none }
                 if state.sessionID == summary.sessionID {
                     state.sessionList.selectedSessionID = summary.sessionID
                     state.sessionList.unreadCompletedSessionIDs.remove(summary.sessionID)
