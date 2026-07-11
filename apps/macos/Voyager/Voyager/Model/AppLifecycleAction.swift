@@ -6,8 +6,7 @@ import VoyagerFeaturesAccountAccess
 enum AppLifecycleAction: CasePathable {
     case launch(Launch)
     case termination(Termination)
-    case accountAccessGate(AccountAccessGate)
-    case sessionLapseGuard(AccountAccessAction)
+    case accountAccess(AccountAccessAction)
     case sessionExpiredDetected(reason: AccountSessionEndReason?)
     case delegate(Delegate)
 
@@ -16,20 +15,6 @@ enum AppLifecycleAction: CasePathable {
         case willFinishLaunching
         case didFinishLaunching
         case appReopen(hasVisibleWindows: Bool)
-    }
-
-    @CasePathable
-    enum AccountAccessGate: CasePathable, Equatable {
-        case checkAccessStatus
-        case accessStatusResponse(generation: Int, result: Result<AccessStatusResponse, AccessError>)
-        case accessStatusFailed(generation: Int, error: AccessError, sessionExpiresAt: Date?)
-        case deviceBindingResponse(
-            generation: Int,
-            snapshot: AccessStatusSnapshot,
-            result: Result<DeviceBindingResponse, DeviceBindingError>,
-        )
-        case accessUnlockRequired(generation: Int, snapshot: AccessStatusSnapshot)
-        case accountAccessGranted(generation: Int, snapshot: AccessStatusSnapshot)
     }
 
     @CasePathable

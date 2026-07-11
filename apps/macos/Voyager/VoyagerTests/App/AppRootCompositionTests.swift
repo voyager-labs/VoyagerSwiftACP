@@ -41,11 +41,8 @@ final class AppRootCompositionTests: XCTestCase {
         await store.receive(\.updater.checkForUpdates)
     }
 
-    // MARK: - T2a/T2c GREEN: AppRoot launch/access-gate lifecycle → Settings bootstrap/hydration forwarding
+    // MARK: - Launch bootstrap
 
-    /// T2b GREEN: AppRoot가 `.lifecycle(.launch(.willFinishLaunching))`를 관찰해
-    /// `.settings(.bootstrapLocalPreferences)`와 `.settings(.ai(.onAppear))`를 1회씩 전송한다.
-    /// General/Appearance load와 AI bootstrap을 launch에서 함께 시작한다.
     func testAppRootLaunchWillFinishLaunchingForwardsSettingsBootstrapLocalPreferences() async {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
@@ -57,16 +54,9 @@ final class AppRootCompositionTests: XCTestCase {
         await store.receive(\.settings.ai.onAppear)
     }
 
-    /// T2c/T2d GREEN: AppRoot가 `.lifecycle(.accountAccessGate(.accountAccessGranted(snapshot)))`를 관찰해
-    /// Settings-owned access snapshot hydration action만 1회 전송한다.
-    /// AppLifecycle이 fetch한 snapshot을 Settings/Account가 재 fetch 없이 반영하고 (T2c),
-    /// AI bootstrap은 launch에서 이미 시작되었으므로 여기서는 중복 전송하지 않는다.
-    ///
-    /// T11: `OnboardingWindowClient.testValue`가 모든 closure에서 fatalError를 호출하므로
-    /// `accountAccessGranted → .delegate(.openInitialWindowIfNeeded) → WindowManager` 경로가 crash.
-    /// 테스트-로컬 `withDependencies` override로 helperAppClient.start/stop no-op,
-    /// onboardingWindowClient.showIfNeeded={false} 처리. 글로벌 testValue는 미변경.
-    func testAppRootAccountAccessGrantedForwardsSettingsAccessSnapshotHydration() async {
+    // MARK: - AccountAccess delegate routing
+
+    func testAppRootAccountAccessUnlockedForwardsSettingsAccessSnapshotHydration() async {
         let expiry = Date(timeIntervalSince1970: 4_102_444_800)
         let snapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
@@ -75,7 +65,7 @@ final class AppRootCompositionTests: XCTestCase {
         )
         let store = makeAccountAccessGrantedStore()
 
-        await store.send(.lifecycle(.accountAccessGate(.accountAccessGranted(generation: 0, snapshot: snapshot))))
+        await store.send(.lifecycle(.accountAccess(.delegate(.unlocked(snapshot)))))
 
         await store.receive(\.settings.appLifecycleAccessSnapshotReady) { state in
             state.settings.accessStatus = snapshot.status
@@ -94,145 +84,32 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - T11: sessionExpiresAt receive 검증
+    // MARK: - Task 5: AccountAccess delegate signedOut clears Settings
 
-    /// T11: `sessionExpiresAt`가 non-nil인 snapshot이 AppRoot passthrough → Settings → AccountAccess
-    /// 경로로 그대로 전달됨을 state 기반으로 검증.
-    /// AppRootAction이 Equatable이 아니라 receive는 key path form 사용,
-    /// payload 보존은 Settings/AccountAccess state delta(`sessionExpiresAt`, `hasAccountSession`)로 단언.
-    func testAppRootAccountAccessGrantedForwardsSnapshotWithNonNilSessionExpiry() async {
-        let expiry = Date(timeIntervalSince1970: 4_102_444_800)
-        let snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            sessionExpiresAt: expiry,
-            deviceBindingVerifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
-        )
-        let store = makeAccountAccessGrantedStore()
-
-        await store.send(.lifecycle(.accountAccessGate(.accountAccessGranted(generation: 0, snapshot: snapshot))))
-
-        await store.receive(\.settings.appLifecycleAccessSnapshotReady) { state in
-            state.settings.accessStatus = snapshot.status
+    func testAccountAccessSignedOutClearsSettingsTopLevelAccess() async {
+        var initialState = AppRootFeature.State()
+        initialState.settings.accessStatus = .coreLicenseActive
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { $0.finish() }
+            }
         }
-        await store.receive(\.settings.account.access.hydrateLaunchSnapshot) { state in
-            state.settings.accountSettings.access.sessionExpiresAt = expiry
-            state.settings.accountSettings.access.hasAccountSession = true
-            state.settings.accountSettings.access.isComplete = true
-            state.settings.accountSettings.access.didBootstrap = true
-        }
+        store.exhaustivity = .off
 
-        XCTAssertEqual(
-            store.state.settings.accountSettings.access.sessionExpiresAt,
-            expiry,
-            "non-nil sessionExpiresAt 보존",
-        )
-        XCTAssertTrue(
-            store.state.settings.accountSettings.access.hasAccountSession,
-            "session 존재 → hasAccountSession=true",
-        )
-        await store.finish()
-    }
+        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
 
-    /// inactive entitlement snapshot은 FileManager guard overlay와 Settings 상태를 함께 hydrate한다.
-    func testAppRootAccessUnlockRequiredHydratesGuardOverlayAndAccountChild() async {
-        let expiry = Date(timeIntervalSince1970: 4_102_444_800)
-        let snapshot = AccessStatusSnapshot(
-            status: .trialExpired,
-            sessionExpiresAt: expiry,
-        )
-        let store = makeAccountAccessGrantedStore()
-
-        await store.send(.lifecycle(.accountAccessGate(.accessUnlockRequired(
-            generation: 0,
-            snapshot: snapshot,
-        )))) { state in
-            state.lifecycle.accessGatePhase = .unlockRequired(snapshot: snapshot, generation: 0)
-            state.lifecycle.lastAccessStatus = .trialExpired
-            state.lifecycle.accountAccessGateResolved = true
-            state.lifecycle.sessionLapseGuard = AccountAccessFeature.State()
-            state.lifecycle.sessionLapseGuard?.handoffContext = .paywall
-        }
-        await store.receive(\.lifecycle.sessionLapseGuard.hydrateLaunchSnapshot) { state in
-            state.lifecycle.sessionLapseGuard?.status = .trialExpired
-            state.lifecycle.sessionLapseGuard?.snapshot = snapshot
-            state.lifecycle.sessionLapseGuard?.sessionExpiresAt = expiry
-            state.lifecycle.sessionLapseGuard?.hasAccountSession = true
-            state.lifecycle.sessionLapseGuard?.didBootstrap = true
-            state.lifecycle.sessionLapseGuard?.fetchGeneration = 1
-            state.lifecycle.sessionLapseGuard?.ttlTimerActive = true
-        }
-        await store.receive(\.settings.accessStatusLoaded) { state in
-            state.settings.accessStatus = .trialExpired
-        }
-        await store.receive(\.settings.account.access.hydrateLaunchSnapshot) { state in
-            state.settings.accountSettings.access.status = .trialExpired
-            state.settings.accountSettings.access.snapshot = snapshot
-            state.settings.accountSettings.access.sessionExpiresAt = expiry
-            state.settings.accountSettings.access.hasAccountSession = true
-            state.settings.accountSettings.access.didBootstrap = true
-        }
-        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
-
-        XCTAssertEqual(store.state.lifecycle.sessionLapseGuard?.accessUnlockPrimaryCTA, .webPricing)
-        XCTAssertEqual(store.state.settings.accountSettings.access.accessUnlockPrimaryCTA, .webPricing)
-        XCTAssertFalse(store.state.lifecycle.didStartHelper)
-        await store.skipInFlightEffects()
-        await store.finish()
-    }
-
-    /// `sessionExpiresAt == nil`인 active snapshot은 granted passthrough가 아니라 unlock-required로 되돌린다.
-    func testAppRootAccountAccessGrantedRejectsSnapshotWithNilSessionExpiry() async {
-        let snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            sessionExpiresAt: nil,
-            deviceBindingVerifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
-        )
-        let store = makeAccountAccessGrantedStore()
-
-        await store.send(.lifecycle(.accountAccessGate(.accountAccessGranted(generation: 0, snapshot: snapshot))))
-
-        await store.receive(\.lifecycle.accountAccessGate.accessUnlockRequired) { state in
-            state.lifecycle.accessGatePhase = .unlockRequired(snapshot: snapshot, generation: 0)
-            state.lifecycle.lastAccessStatus = .coreLicenseActive
-            state.lifecycle.accountAccessGateResolved = true
-            state.lifecycle.sessionLapseGuard = AccountAccessFeature.State()
-            state.lifecycle.sessionLapseGuard?.handoffContext = .paywall
-        }
-        await store.receive(\.lifecycle.sessionLapseGuard.hydrateLaunchSnapshot) { state in
-            state.lifecycle.sessionLapseGuard?.status = .coreLicenseActive
-            state.lifecycle.sessionLapseGuard?.snapshot = snapshot
-            state.lifecycle.sessionLapseGuard?.sessionExpiresAt = nil
-            state.lifecycle.sessionLapseGuard?.hasAccountSession = false
-            state.lifecycle.sessionLapseGuard?.isComplete = false
-            state.lifecycle.sessionLapseGuard?.didBootstrap = true
-            state.lifecycle.sessionLapseGuard?.fetchGeneration = 1
-        }
         await store.receive(\.settings.accessStatusLoaded) { state in
             state.settings.accessStatus = .none
         }
-        await store.receive(\.settings.account.access.hydrateLaunchSnapshot) { state in
-            state.settings.accountSettings.access.status = .coreLicenseActive
-            state.settings.accountSettings.access.snapshot = snapshot
-            state.settings.accountSettings.access.isComplete = false
-            state.settings.accountSettings.access.sessionExpiresAt = nil
-            state.settings.accountSettings.access.hasAccountSession = false
-            state.settings.accountSettings.access.didBootstrap = true
-        }
-        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
 
-        XCTAssertNil(
-            store.state.settings.accountSettings.access.sessionExpiresAt,
-            "nil sessionExpiresAt 보존",
-        )
-        XCTAssertFalse(
-            store.state.settings.accountSettings.access.hasAccountSession,
-            "session 없음 → hasAccountSession=false",
-        )
+        XCTAssertEqual(store.state.settings.accessStatus, .none)
         await store.finish()
     }
 
-    /// session 만료 감지 시 Settings top-level accessStatus와 Account 탭 child access 상태를 함께 정리한다.
-    /// AccountSettingsView는 child access를 렌더링하므로 top-level만 비우면 stale Signed in UI가 남는다.
     func testSessionExpiredDetectedClearsSettingsAccountChildAccessState() async {
         let expiry = Date(timeIntervalSince1970: 4_102_444_800)
         var initialState = AppRootFeature.State()
@@ -264,15 +141,10 @@ final class AppRootCompositionTests: XCTestCase {
         }
 
         XCTAssertEqual(store.state.settings.accessStatus, .none)
-        XCTAssertEqual(store.state.settings.accountSettings.setAuthState, .signInFailed)
-        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementUnknown)
-        XCTAssertFalse(store.state.settings.accountSettings.isManageAccountAvailable)
+        await store.finish()
     }
 
-    /// 사용자 명시적 로그아웃(reason == .explicitSignOut)은 Settings top-level을 clear하고
-    /// logged_out 보호 정책에 따라 session lapse guard도 표시한다.
-    /// Account child는 이미 `.delegate(.signedOut)`로 처리되므로 만료 액션으로 덮어쓰지 않는다.
-    func testExplicitSignOutClearsSettingsTopLevelAndCreatesSessionLapseGuard() async {
+    func testExplicitSignOutSetsSignedOutPhase() async {
         var initialState = AppRootFeature.State()
         initialState.settings.accessStatus = .coreLicenseActive
         initialState.settings.accountSettings.access.hasAccountSession = true
@@ -281,93 +153,23 @@ final class AppRootCompositionTests: XCTestCase {
 
         await store.send(.lifecycle(.sessionExpiredDetected(reason: .explicitSignOut)))
 
+        // lifecycle scope가 child _sessionExpiredDetected를 먼저 수신
+        await store.receive(\.lifecycle.accountAccess._sessionExpiredDetected)
+        // AppRoot reduceAppLifecycle이 settings 라우팅
         await store.receive(\.settings.accessStatusLoaded) { state in
             state.settings.accessStatus = .none
         }
+        // child가 delegate recoveryRequired → parent가 explicitSignOut 감지 후 signedOut
+        await store.receive(\.lifecycle.accountAccess.delegate) { state in
+            state.lifecycle.accessGatePhase = .signedOut
+        }
 
-        // Account child는 만료 액션을 받지 않아 signed-in 상태가 유지된다.
         XCTAssertTrue(store.state.settings.accountSettings.access.hasAccountSession)
         XCTAssertFalse(store.state.settings.accountSettings.access.didSignInFail)
-        XCTAssertNotNil(store.state.lifecycle.sessionLapseGuard)
+        XCTAssertEqual(store.state.lifecycle.accessGatePhase, .signedOut)
         await store.finish()
     }
 
-    /// 사용자 명시적 로그아웃은 stale access check를 무효화하고 logged_out guard를 만든다.
-    func testExplicitSignOutInvalidatesLifecycleAndCreatesSessionLapseGuard() async {
-        var initialState = AppLifecycleFeature.State()
-        initialState.accessGateGeneration = 1
-        initialState.accessGatePhase = .granted(
-            snapshot: AccessStatusSnapshot(status: .coreLicenseActive),
-            generation: 1,
-        )
-        initialState.lastAccessStatus = .coreLicenseActive
-        initialState.accountAccessGateResolved = true
-
-        let store = TestStore(initialState: initialState) {
-            AppLifecycleFeature()
-        } withDependencies: {
-            $0.onboardingWindowClient.isRequired = { false }
-        }
-        store.exhaustivity = .off
-
-        await store.send(.sessionExpiredDetected(reason: .explicitSignOut)) { state in
-            state.accessGateGeneration = 2
-            state.accessGatePhase = .signedOut(generation: 2)
-            state.lastAccessStatus = nil
-            state.accountAccessGateResolved = false
-            state.sessionEndReason = .explicitSignOut
-            state.sessionLapseGuard = AccountAccessFeature.State()
-            state.sessionLapseGuard?.handoffContext = .paywall
-        }
-
-        XCTAssertNotNil(store.state.sessionLapseGuard)
-        await store.finish()
-    }
-
-    /// guard 재로그인 성공 시 Settings top-level accessStatus와 Account 탭 child access 상태를 함께 복원한다.
-    /// AccountSettingsView는 child state로 렌더링되므로 top-level만 갱신하면 재로그인 후에도 signed-out으로 남는다.
-    func testSessionLapseGuardUnlockedHydratesSettingsAccountChild() async {
-        let expiry = Date(timeIntervalSince1970: 4_102_444_800)
-        let snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            sessionExpiresAt: expiry,
-            deviceBindingVerifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
-        )
-        var initialState = AppRootFeature.State()
-        // AppLifecycleFeature가 unlocked delegate를 정상 처리하려면 sessionLapseGuard
-        // child state가 non-nil이어야 한다 (ifLet reducer가 action을 받을 수 있게).
-        initialState.lifecycle.sessionLapseGuard = AccountAccessFeature.State()
-        let store = makeAccountAccessGrantedStore(initialState: initialState)
-
-        await store.send(.lifecycle(.sessionLapseGuard(.delegate(.unlocked(snapshot))))) { state in
-            state.lifecycle.accessGateGeneration = 1
-            state.lifecycle.accessGatePhase = .granted(snapshot: snapshot, generation: 1)
-            state.lifecycle.lastAccessStatus = .coreLicenseActive
-            state.lifecycle.accountAccessGateResolved = true
-            state.lifecycle.sessionLapseGuard = nil
-        }
-
-        await store.receive(\.settings.accessStatusLoaded) { state in
-            state.settings.accessStatus = .coreLicenseActive
-        }
-        await store.receive(\.settings.account.access.hydrateLaunchSnapshot) { state in
-            state.settings.accountSettings.access.status = .coreLicenseActive
-            state.settings.accountSettings.access.snapshot = snapshot
-            state.settings.accountSettings.access.sessionExpiresAt = expiry
-            state.settings.accountSettings.access.hasAccountSession = true
-            state.settings.accountSettings.access.isComplete = true
-            state.settings.accountSettings.access.didBootstrap = true
-        }
-
-        XCTAssertEqual(store.state.settings.accessStatus, .coreLicenseActive)
-        XCTAssertEqual(store.state.settings.accountSettings.setAuthState, .signedIn)
-        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementActive)
-        await store.finish()
-    }
-
-    /// T2c GREEN: openAISettings gate는 accessStatusSnapshotClient.load() 없이
-    /// `state.settings.accessStatus.isActive`를 읽어 AI tab 딥링크를 결정한다.
-    /// - active 상태: `.settings(.selectSection(.ai))` 전송.
     func testOpenAISettingsSelectsAISectionWhenAccessStatusIsActive() async {
         var initialState = AppRootFeature.State()
         initialState.settings.accessStatus = .coreLicenseActive
@@ -382,8 +184,6 @@ final class AppRootCompositionTests: XCTestCase {
         }
     }
 
-    /// T2c GREEN: openAISettings gate는 inactive 상태일 때 AI tab 딥링크를 보내지 않는다.
-    /// - inactive 상태: `.settings(.selectSection(.ai))` 미전송. native Settings scene은 동일하게 오픈.
     func testOpenAISettingsDoesNotSelectAISectionWhenAccessStatusIsInactive() async {
         var initialState = AppRootFeature.State()
         initialState.settings.accessStatus = .none
@@ -396,748 +196,286 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - T11 test support
+    // MARK: - Task 3: canonical child launch verification
 
-    /// `accountAccessGranted` 경로 테스트용 TestStore.
-    /// `OnboardingWindowClient.testValue`/`HelperAppClient.testValue.start`가 fatalError라
-    /// 테스트-로컬 `withDependencies` override로만 우회. 글로벌 testValue는 미변경.
-    private func makeAccountAccessGrantedStore(
-        initialState: AppRootFeature.State = AppRootFeature.State(),
-    ) -> TestStore<AppRootFeature.State, AppRootFeature.Action> {
-        let store = TestStore(initialState: initialState) {
-            AppRootFeature()
+    /// Task 3: lifecycle는 AccountAccess child가 소유한 access 조회를 직접 시작하지 않는다.
+    /// launch → child onAppear → session restore(nil) → recoveryRequired delegate chain을 검증.
+    func testLifecycleLaunchDelegatesAccessToCanonicalChild() async {
+        let directFetchCount = LockIsolated(0)
+        let store = TestStore(initialState: AppLifecycleFeature.State()) {
+            AppLifecycleFeature()
         } withDependencies: {
-            $0.helperAppClient.start = {}
-            $0.helperAppClient.stop = {}
-            $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.onboardingWindowClient.isRequired = { false }
-            $0.accountSessionClient.delete = { _ in }
-            $0.accessStatusSnapshotClient.save = { _ in }
-            $0.accessStatusSnapshotClient.remove = {}
-            $0.notificationCenterClient.notifications = { _, _ in
-                AsyncStream { continuation in
-                    continuation.finish()
-                }
+            $0.authNetworkClient.fetchAccessStatus = {
+                directFetchCount.withValue { $0 += 1 }
+                return AccessStatusResponse(hasAccess: false, status: "trial_expired", productKey: "trial")
             }
-            // T11: 직접 XCTest 실행 시 도달하는 전이 의존성의 testValue가 fatalError라
-            // 테스트-로컬 deterministic override로만 우회. 글로벌 testValue는 미변경.
-            // - WindowManagerFeature: @Dependency(\.uuid)
-            // - EntryArrangementsApplyReducer: @Dependency(\.date)
-            // - FileManagerWindowClient.open test dependency 미구성
-            $0.uuid = .incrementing
+            $0.accountSessionClient.read = { nil }
             $0.date = .constant(Date(timeIntervalSince1970: 0))
-            $0.fileManagerWindowClient.open = { _ in }
-        }
-        store.exhaustivity = .off
-        return store
-    }
-
-    private func makeAccessFailureStore(
-        openCallCount: LockIsolated<Int>,
-        configureDependencies: ((inout DependencyValues) -> Void)? = nil,
-    ) -> TestStore<AppRootFeature.State, AppRootFeature.Action> {
-        let store = TestStore(initialState: AppRootFeature.State()) {
-            AppRootFeature()
-        } withDependencies: {
-            $0.helperAppClient.start = {}
-            $0.helperAppClient.stop = {}
             $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.onboardingWindowClient.isRequired = { false }
-            $0.accountSessionClient.read = { nil }
-            $0.notificationCenterClient.notifications = { _, _ in
-                AsyncStream { continuation in
-                    continuation.finish()
-                }
-            }
-            $0.uuid = .incrementing
-            $0.date = .constant(Date(timeIntervalSince1970: 0))
-            $0.fileManagerWindowClient.open = { _ in
-                openCallCount.withValue { $0 += 1 }
-            }
-            configureDependencies?(&$0)
-        }
-        store.exhaustivity = .off
-        return store
-    }
-
-    // MARK: - AppLifecycle access session hydration
-
-    /// active access + session 존재: read가 반환한 session.expiresAt가 snapshot에 그대로 주입된다.
-    func testAccessStatusSuccessPopulatesSessionExpiryWhenSessionExists() async {
-        let expiry = Date(timeIntervalSince1970: 100)
-        let session = AccountSession(
-            accessToken: "access-token",
-            status: .coreLicenseActive,
-            refreshToken: "refresh",
-            expiresAt: expiry,
-        )
-        let response = AccessStatusResponse(
-            hasAccess: true,
-            status: "active",
-            productKey: "core",
-        )
-        let saved = SnapshotCaptureBox()
-
-        let store = TestStore(initialState: AppLifecycleFeature.State()) {
-            AppLifecycleFeature()
-        } withDependencies: {
-            // reducer가 date.now를 읽어 snapshot.fetchedAt에 넣는다. deterministic 고정.
-            $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
-            $0.accountSessionClient.read = { session }
-            $0.authNetworkClient.bindDevice = { _ in DeviceBindingResponse(ok: true) }
-            $0.helperAppClient.start = {}
-            $0.helperAppClient.stop = {}
-            $0.accessStatusSnapshotClient.save = { snapshot in
-                saved.value = snapshot
-            }
-        }
-        store.exhaustivity = .off
-
-        await store.send(.accountAccessGate(.accessStatusResponse(generation: 0, result: .success(response))))
-
-        await store.receive(\.accountAccessGate.deviceBindingResponse)
-        await store.receive(\.accountAccessGate.accountAccessGranted)
-        await store.receive(\.delegate.openInitialWindowIfNeeded)
-
-        // sessionExpiresAt == session.expiresAt, status는 access gate 결과 유지.
-        XCTAssertEqual(saved.value?.sessionExpiresAt, expiry)
-        XCTAssertEqual(saved.value?.status, .coreLicenseActive)
-        XCTAssertNotNil(saved.value?.deviceBindingVerifiedAt)
-        XCTAssertNotNil(saved.value)
-        await store.finish()
-    }
-
-    /// Device binding network failure는 현재 launch를 차단하되 이전 verified cache를 보존한다.
-    /// 다음 access-status 조회가 실패해도 검증된 fallback 증거를 잃지 않아야 한다.
-    func testDeviceBindingFailurePreservesVerifiedCachedSnapshot() async {
-        let expiry = Date(timeIntervalSince1970: 4_102_444_800)
-        let verifiedSnapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
-            sessionExpiresAt: expiry,
-            deviceBindingVerifiedAt: Date(timeIntervalSince1970: 1_700_000_100),
-        )
-        let unverifiedSnapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            fetchedAt: Date(timeIntervalSince1970: 1_800_000_000),
-            sessionExpiresAt: expiry,
-        )
-        let cached = SnapshotCaptureBox()
-        cached.value = verifiedSnapshot
-
-        let store = TestStore(initialState: AppLifecycleFeature.State()) {
-            AppLifecycleFeature()
-        } withDependencies: {
-            $0.accessStatusSnapshotClient.save = { snapshot in
-                cached.value = snapshot
-            }
-        }
-        // store.exhaustivity = .off: guard projection의 세부 상태보다 cache 보존과 downstream routing을 검증한다.
-        store.exhaustivity = .off
-
-        await store.send(.accountAccessGate(.deviceBindingResponse(
-            generation: 0,
-            snapshot: unverifiedSnapshot,
-            result: .failure(.networkFailure),
-        )))
-        await store.receive(\.sessionLapseGuard.deviceBindingResponse)
-        await store.receive(\.delegate.openInitialWindowIfNeeded)
-        await store.finish()
-
-        XCTAssertEqual(cached.value, verifiedSnapshot)
-        XCTAssertEqual(store.state.sessionLapseGuard?.accessUnlockPrimaryCTA, .retry)
-        XCTAssertFalse(store.state.didStartHelper)
-    }
-
-    /// 종료 후 늦게 도착한 device binding 성공 응답은 access gate를 통과시키면 안 된다.
-    func testTerminationInvalidatesLateDeviceBindingResponse() async {
-        let snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            fetchedAt: Date(timeIntervalSince1970: 0),
-            sessionExpiresAt: Date(timeIntervalSince1970: 100),
-        )
-        let store = TestStore(initialState: AppLifecycleFeature.State(accessGateGeneration: 1)) {
-            AppLifecycleFeature()
-        }
-
-        await store.send(.termination(.willTerminate)) {
-            $0.accessGateGeneration = 2
-        }
-        await store.send(.accountAccessGate(.deviceBindingResponse(
-            generation: 1,
-            snapshot: snapshot,
-            result: .success(DeviceBindingResponse(ok: true)),
-        )))
-
-        XCTAssertFalse(store.state.accountAccessGateResolved)
-        XCTAssertFalse(store.state.didStartHelper)
-        await store.finish()
-    }
-
-    /// inactive entitlement는 access unlock recovery 상태를 hydrate한 session lapse guard overlay로 전달한다.
-    func testAccessStatusInactiveRoutesToAccessUnlockRecovery() async {
-        let expiry = Date(timeIntervalSince1970: 100)
-        let session = AccountSession(
-            accessToken: "access-token",
-            status: .trialExpired,
-            refreshToken: "refresh",
-            expiresAt: expiry,
-        )
-        let response = AccessStatusResponse(
-            hasAccess: false,
-            status: "trial_expired",
-            productKey: "trial",
-        )
-        let expectedSnapshot = AccessStatusSnapshot(
-            status: .trialExpired,
-            fetchedAt: Date(timeIntervalSince1970: 0),
-            sessionExpiresAt: expiry,
-        )
-        let saved = SnapshotCaptureBox()
-        let store = TestStore(initialState: AppLifecycleFeature.State()) {
-            AppLifecycleFeature()
-        } withDependencies: {
-            $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
-            $0.accountSessionClient.read = { session }
-            $0.accessStatusSnapshotClient.save = { snapshot in
-                saved.value = snapshot
-            }
-            $0.notificationCenterClient.notifications = { _, _ in
-                AsyncStream { continuation in
-                    continuation.finish()
-                }
-            }
-        }
-        store.exhaustivity = .off
-
-        await store.send(.accountAccessGate(.accessStatusResponse(generation: 0, result: .success(response))))
-
-        await store.receive(\.accountAccessGate.accessUnlockRequired) { state in
-            state.accessGatePhase = .unlockRequired(snapshot: expectedSnapshot, generation: 0)
-            state.lastAccessStatus = .trialExpired
-            state.accountAccessGateResolved = true
-            state.isCheckingAccountAccess = false
-            state.sessionLapseGuard = AccountAccessFeature.State()
-            state.sessionLapseGuard?.handoffContext = .paywall
-        }
-        await store.receive(\.sessionLapseGuard.hydrateLaunchSnapshot) { state in
-            state.sessionLapseGuard?.status = .trialExpired
-            state.sessionLapseGuard?.snapshot = expectedSnapshot
-            state.sessionLapseGuard?.sessionExpiresAt = expiry
-            state.sessionLapseGuard?.hasAccountSession = true
-            state.sessionLapseGuard?.didBootstrap = true
-            state.sessionLapseGuard?.fetchGeneration = 1
-            state.sessionLapseGuard?.ttlTimerActive = true
-        }
-        await store.receive(\.delegate.openInitialWindowIfNeeded)
-        XCTAssertNotNil(store.state.sessionLapseGuard)
-        XCTAssertEqual(store.state.sessionLapseGuard?.accessUnlockPrimaryCTA, .webPricing)
-        XCTAssertFalse(store.state.didStartHelper)
-        XCTAssertEqual(saved.value?.status, .trialExpired)
-        XCTAssertEqual(saved.value?.sessionExpiresAt, expiry)
-        await store.skipInFlightEffects()
-        await store.finish()
-    }
-
-    /// active access + session 미존재: read가 nil이면 access gate가 grant되지 않고 unlock guard로 간다.
-    func testAccessStatusSuccessRoutesToUnlockRequiredWhenNoSession() async {
-        let response = AccessStatusResponse(
-            hasAccess: true,
-            status: "active",
-            productKey: "core",
-        )
-        let expectedSnapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            fetchedAt: Date(timeIntervalSince1970: 0),
-        )
-        let saved = SnapshotCaptureBox()
-
-        let store = TestStore(initialState: AppLifecycleFeature.State()) {
-            AppLifecycleFeature()
-        } withDependencies: {
-            $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
-            $0.accountSessionClient.read = { nil }
-            $0.helperAppClient.start = {}
-            $0.helperAppClient.stop = {}
-            $0.authNetworkClient.bindDevice = { _ in
-                XCTFail("세션 없이는 device binding을 호출하면 안 됨")
-                return DeviceBindingResponse(ok: true)
-            }
-            $0.accessStatusSnapshotClient.save = { snapshot in
-                saved.value = snapshot
-            }
-        }
-        store.exhaustivity = .off
-
-        await store.send(.accountAccessGate(.accessStatusResponse(generation: 0, result: .success(response))))
-
-        await store.receive(\.accountAccessGate.accessUnlockRequired) { state in
-            state.accessGatePhase = .unlockRequired(snapshot: expectedSnapshot, generation: 0)
-            state.lastAccessStatus = .coreLicenseActive
-            state.accountAccessGateResolved = true
-            state.isCheckingAccountAccess = false
-            state.sessionLapseGuard = AccountAccessFeature.State()
-            state.sessionLapseGuard?.handoffContext = .paywall
-        }
-        await store.receive(\.sessionLapseGuard.hydrateLaunchSnapshot) { state in
-            state.sessionLapseGuard?.status = .coreLicenseActive
-            state.sessionLapseGuard?.snapshot = expectedSnapshot
-            state.sessionLapseGuard?.sessionExpiresAt = nil
-            state.sessionLapseGuard?.hasAccountSession = false
-            state.sessionLapseGuard?.isComplete = false
-            state.sessionLapseGuard?.didBootstrap = true
-            state.sessionLapseGuard?.fetchGeneration = 1
-        }
-        await store.receive(\.delegate.openInitialWindowIfNeeded)
-
-        XCTAssertNotNil(saved.value, "unlock-required snapshot should be saved for recovery UI")
-        XCTAssertNil(saved.value?.sessionExpiresAt, "no session → sessionExpiresAt must be nil")
-        XCTAssertEqual(saved.value?.status, .coreLicenseActive)
-        XCTAssertFalse(store.state.accessGatePhase.allowsExternalRouteFlush)
-        await store.finish()
-    }
-
-    // MARK: - T5: cache restore path sessionExpiresAt
-
-    /// networkFailure + 유효 캐시 복원 시, cached snapshot이 가진 sessionExpiresAt를 그대로
-    /// 쓰지 않고 `accountSessionClient.read()`로 다시 읽어 최신화한다.
-    /// status/currentPeriodEnd/fetchedAt은 캐시 값을 유지.
-    func testCacheRestoreReReadsSessionExpiryOnNetworkFailure() async {
-        // cached.sessionExpiresAt(과거값)와 fresh session.expiresAt(미래값)을 다르게 설정해서
-        // 캐시 값을 그대로 쓰는지, 다시 읽은 값으로 덮는지 구분한다.
-        let cachedSessionExpiry = Date(timeIntervalSince1970: 50)
-        let freshSessionExpiry = Date(timeIntervalSince1970: 5000)
-        let cachedCurrentPeriodEnd = Date(timeIntervalSince1970: 100_000)
-        let cachedFetchedAt = Date(timeIntervalSince1970: 0)
-        let cached = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            currentPeriodEnd: cachedCurrentPeriodEnd,
-            fetchedAt: cachedFetchedAt,
-            sessionExpiresAt: cachedSessionExpiry,
-            deviceBindingVerifiedAt: cachedFetchedAt,
-        )
-        let session = AccountSession(
-            accessToken: "access-token",
-            status: .coreLicenseActive,
-            refreshToken: "refresh",
-            expiresAt: freshSessionExpiry,
-        )
-        let saved = SnapshotCaptureBox()
-
-        let store = TestStore(initialState: AppLifecycleFeature.State()) {
-            AppLifecycleFeature()
-        } withDependencies: {
-            // dateNow == cachedFetchedAt → 24h TTL 통과, currentPeriodEnd > now 통과.
-            $0.date = DateGenerator { cachedFetchedAt }
-            $0.accessStatusSnapshotClient.load = { cached }
-            $0.accountSessionClient.read = { session }
-            $0.helperAppClient.start = {}
-            $0.helperAppClient.stop = {}
-            $0.accessStatusSnapshotClient.save = { snapshot in
-                saved.value = snapshot
-            }
-        }
-        store.exhaustivity = .off
-
-        await store.send(.accountAccessGate(.accessStatusResponse(generation: 0, result: .failure(.networkFailure))))
-
-        await store.receive(\.accountAccessGate.accountAccessGranted)
-        await store.receive(\.delegate.openInitialWindowIfNeeded)
-
-        // sessionExpiresAt는 fresh read 결과로 덮임 (cached 값 아님).
-        XCTAssertEqual(saved.value?.sessionExpiresAt, freshSessionExpiry)
-        // status/currentPeriodEnd/fetchedAt는 캐시 값 유지.
-        XCTAssertEqual(saved.value?.status, .coreLicenseActive)
-        XCTAssertEqual(saved.value?.currentPeriodEnd, cachedCurrentPeriodEnd)
-        XCTAssertEqual(saved.value?.fetchedAt, cachedFetchedAt)
-        XCTAssertEqual(saved.value?.deviceBindingVerifiedAt, cachedFetchedAt)
-        await store.finish()
-    }
-
-    /// networkFailure + 유효 캐시 복원 시에도 session read가 nil이면 grant하지 않는다.
-    func testCacheRestoreRoutesToUnlockRequiredWhenSessionMissingOnNetworkFailure() async {
-        let cachedSessionExpiry = Date(timeIntervalSince1970: 50)
-        let cachedCurrentPeriodEnd = Date(timeIntervalSince1970: 100_000)
-        let cachedFetchedAt = Date(timeIntervalSince1970: 0)
-        let cached = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            currentPeriodEnd: cachedCurrentPeriodEnd,
-            fetchedAt: cachedFetchedAt,
-            sessionExpiresAt: cachedSessionExpiry,
-            deviceBindingVerifiedAt: cachedFetchedAt,
-        )
-        let expectedSnapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            currentPeriodEnd: cachedCurrentPeriodEnd,
-            fetchedAt: cachedFetchedAt,
-            sessionExpiresAt: nil,
-            deviceBindingVerifiedAt: cachedFetchedAt,
-        )
-        let saved = SnapshotCaptureBox()
-
-        let store = TestStore(initialState: AppLifecycleFeature.State()) {
-            AppLifecycleFeature()
-        } withDependencies: {
-            $0.date = DateGenerator { cachedFetchedAt }
-            $0.accessStatusSnapshotClient.load = { cached }
-            $0.accountSessionClient.read = { nil }
-            $0.helperAppClient.start = {}
-            $0.helperAppClient.stop = {}
-            $0.accessStatusSnapshotClient.save = { snapshot in
-                saved.value = snapshot
-            }
-        }
-        store.exhaustivity = .off
-
-        await store.send(.accountAccessGate(.accessStatusResponse(generation: 0, result: .failure(.networkFailure))))
-
-        await store.receive(\.accountAccessGate.accessUnlockRequired) { state in
-            state.accessGatePhase = .unlockRequired(snapshot: expectedSnapshot, generation: 0)
-            state.lastAccessStatus = .coreLicenseActive
-            state.accountAccessGateResolved = true
-            state.isCheckingAccountAccess = false
-            state.sessionLapseGuard = AccountAccessFeature.State()
-            state.sessionLapseGuard?.handoffContext = .paywall
-        }
-        await store.receive(\.sessionLapseGuard.hydrateLaunchSnapshot) { state in
-            state.sessionLapseGuard?.status = .coreLicenseActive
-            state.sessionLapseGuard?.snapshot = expectedSnapshot
-            state.sessionLapseGuard?.sessionExpiresAt = nil
-            state.sessionLapseGuard?.hasAccountSession = false
-            state.sessionLapseGuard?.isComplete = false
-            state.sessionLapseGuard?.didBootstrap = true
-            state.sessionLapseGuard?.fetchGeneration = 1
-        }
-        await store.receive(\.delegate.openInitialWindowIfNeeded)
-
-        // session read nil → fresh sessionExpiresAt == nil. cached 값은 무시.
-        XCTAssertNotNil(saved.value, "cache restore should save unlock-required snapshot")
-        XCTAssertNil(saved.value?.sessionExpiresAt, "missing session → sessionExpiresAt nil (re-read result)")
-        XCTAssertEqual(saved.value?.status, .coreLicenseActive)
-        XCTAssertEqual(saved.value?.currentPeriodEnd, cachedCurrentPeriodEnd)
-        XCTAssertEqual(saved.value?.fetchedAt, cachedFetchedAt)
-        XCTAssertEqual(saved.value?.deviceBindingVerifiedAt, cachedFetchedAt)
-        await store.finish()
-    }
-
-    /// auth_session_flow.md:111-115, ACC-003-guard_session_lapse.md:26-31
-    /// sessionExpiredDetected(reason:)는 reason과 무관하게 lastAccessStatus/accountAccessGateResolved를
-    /// 즉시 지우고, 이후 appReopen이 reopen delegate를 다시 보내지 못하게 막는다.
-    func testSessionExpiredDetectedInvalidatesAppLifecycleAndBlocksAppReopenForAllReasons() async {
-        let reasons: [AccountSessionEndReason?] = [
-            .explicitSignOut,
-            .sessionExpired,
-            nil,
-        ]
-
-        for reason in reasons {
-            var initialState = AppLifecycleFeature.State()
-            initialState.lastAccessStatus = .coreLicenseActive
-            initialState.accountAccessGateResolved = true
-
-            let store = TestStore(initialState: initialState) {
-                AppLifecycleFeature()
-            } withDependencies: {
-                $0.accountSessionClient.read = { nil }
-                $0.helperAppClient.start = {}
-                $0.helperAppClient.stop = {}
-                $0.onboardingWindowClient.showIfNeeded = { false }
-                $0.onboardingWindowClient.isRequired = { true }
-                $0.notificationCenterClient.notifications = { _, _ in
-                    AsyncStream { continuation in
-                        continuation.finish()
-                    }
-                }
-            }
-
-            await store.send(.sessionExpiredDetected(reason: reason)) { state in
-                state.accessGateGeneration = 1
-                state.accessGatePhase = reason == .explicitSignOut
-                    ? .signedOut(generation: 1)
-                    : .sessionLapsed(reason: reason, generation: 1)
-                state.lastAccessStatus = nil
-                state.accountAccessGateResolved = false
-                state.sessionEndReason = reason
-            }
-
-            await store.send(.launch(.appReopen(hasVisibleWindows: false)))
-            await store.finish()
-        }
-    }
-
-    /// auth_session_flow.md:111-115, ACC-003-guard_session_lapse.md:26-31
-    /// sessionLapseGuard가 이미 존재해도 sessionExpiredDetected(reason:)는 먼저
-    /// lastAccessStatus/accountAccessGateResolved를 무효화해야 stale active access가 남지 않는다.
-    func testSessionExpiredDetectedInvalidatesEvenWhenSessionLapseGuardAlreadyExists() async {
-        var initialState = AppLifecycleFeature.State()
-        initialState.lastAccessStatus = .coreLicenseActive
-        initialState.accountAccessGateResolved = true
-        initialState.sessionLapseGuard = AccountAccessFeature.State()
-
-        let store = TestStore(initialState: initialState) {
-            AppLifecycleFeature()
-        } withDependencies: {
-            $0.accountSessionClient.read = { nil }
-            $0.helperAppClient.start = {}
-            $0.helperAppClient.stop = {}
-            $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.onboardingWindowClient.isRequired = { false }
-            $0.notificationCenterClient.notifications = { _, _ in
-                AsyncStream { continuation in
-                    continuation.finish()
-                }
-            }
-        }
-
-        await store.send(.sessionExpiredDetected(reason: .sessionExpired)) { state in
-            state.accessGateGeneration = 1
-            state.accessGatePhase = .sessionLapsed(reason: .sessionExpired, generation: 1)
-            state.lastAccessStatus = nil
-            state.accountAccessGateResolved = false
-            state.sessionEndReason = .sessionExpired
-        }
-
-        await store.finish()
-    }
-
-    /// session 만료가 access check보다 먼저 도착하면 이후 stale access_status 응답은
-    /// active 상태를 되살리거나 initial window open delegate를 보내면 안 된다.
-    func testSessionExpiredDetectedIgnoresStaleAccessStatusResponse() async {
-        var initialState = AppLifecycleFeature.State()
-        initialState.accessGateGeneration = 1
-        initialState.accessGatePhase = .checking(generation: 1)
-        initialState.isCheckingAccountAccess = true
-        initialState.lastAccessStatus = .coreLicenseActive
-        initialState.accountAccessGateResolved = true
-
-        let store = TestStore(initialState: initialState) {
-            AppLifecycleFeature()
-        } withDependencies: {
             $0.onboardingWindowClient.isRequired = { true }
         }
         store.exhaustivity = .off
 
-        await store.send(.sessionExpiredDetected(reason: .sessionExpired)) { state in
-            state.accessGateGeneration = 2
-            state.accessGatePhase = .sessionLapsed(reason: .sessionExpired, generation: 2)
-            state.isCheckingAccountAccess = false
-            state.lastAccessStatus = nil
-            state.accountAccessGateResolved = false
-            state.sessionEndReason = .sessionExpired
+        await store.send(.launch(.didFinishLaunching)) {
+            $0.didFinishLaunching = true
+            $0.accessGatePhase = .checking
         }
 
-        let response = AccessStatusResponse(
-            hasAccess: true,
-            status: "active",
-            productKey: "core",
-        )
-        await store.send(.accountAccessGate(.accessStatusResponse(generation: 1, result: .success(response))))
-
-        XCTAssertNil(store.state.lastAccessStatus)
-        XCTAssertFalse(store.state.accountAccessGateResolved)
-        XCTAssertNil(store.state.sessionLapseGuard)
-        await store.finish()
-    }
-
-    /// networkFailure + 유효 active cache 없음은 session 만료가 아니라 retry 가능한 access unlock 상태로 전달한다.
-    func testAccessStatusNetworkFailureWithoutCacheRoutesToRetryableAccessUnlock() async {
-        let expiry = Date(timeIntervalSince1970: 100)
-        let expectedSnapshot = AccessStatusSnapshot(
-            status: .networkFailure,
-            fetchedAt: Date(timeIntervalSince1970: 0),
-            sessionExpiresAt: expiry,
-        )
-        let saved = SnapshotCaptureBox()
-        let store = TestStore(initialState: AppRootFeature.State()) {
-            AppRootFeature()
-        } withDependencies: {
-            $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
-            $0.accessStatusSnapshotClient.load = { nil }
-            $0.accessStatusSnapshotClient.save = { snapshot in
-                saved.value = snapshot
-            }
-            $0.accountSessionClient.read = {
-                AccountSession(
-                    accessToken: "access-token",
-                    status: .networkFailure,
-                    refreshToken: "refresh",
-                    expiresAt: expiry,
-                )
-            }
-            $0.helperAppClient.start = {}
-            $0.helperAppClient.stop = {}
-            $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.onboardingWindowClient.isRequired = { false }
-            $0.uuid = .incrementing
-            $0.fileManagerWindowClient.open = { _ in }
-            $0.notificationCenterClient.notifications = { _, _ in
-                AsyncStream { continuation in
-                    continuation.finish()
-                }
-            }
+        await store.receive(\.accountAccess.onAppear)
+        await store.receive(\.accountAccess._onAppearSessionRestored)
+        await store.receive(\.accountAccess.delegate) {
+            $0.accessGatePhase = .recoveryRequired
         }
-        store.exhaustivity = .off
 
-        await store.send(.lifecycle(.accountAccessGate(.accessStatusResponse(
-            generation: 0,
-            result: .failure(.networkFailure),
-        ))))
-
-        await store.receive(\.lifecycle.accountAccessGate.accessUnlockRequired) { state in
-            state.lifecycle.accessGatePhase = .unlockRequired(snapshot: expectedSnapshot, generation: 0)
-            state.lifecycle.lastAccessStatus = .networkFailure
-            state.lifecycle.accountAccessGateResolved = true
-            state.lifecycle.isCheckingAccountAccess = false
-            state.lifecycle.sessionLapseGuard = AccountAccessFeature.State()
-            state.lifecycle.sessionLapseGuard?.handoffContext = .paywall
-        }
-        await store.receive(\.lifecycle.sessionLapseGuard.hydrateLaunchSnapshot) { state in
-            state.lifecycle.sessionLapseGuard?.status = .networkFailure
-            state.lifecycle.sessionLapseGuard?.snapshot = saved.value
-            state.lifecycle.sessionLapseGuard?.sessionExpiresAt = expiry
-            state.lifecycle.sessionLapseGuard?.hasAccountSession = true
-            state.lifecycle.sessionLapseGuard?.didBootstrap = true
-            state.lifecycle.sessionLapseGuard?.fetchGeneration = 1
-            state.lifecycle.sessionLapseGuard?.ttlTimerActive = true
-        }
-        await store.receive(\.settings.accessStatusLoaded) { state in
-            state.settings.accessStatus = .networkFailure
-        }
-        await store.receive(\.settings.account.access.hydrateLaunchSnapshot) { state in
-            state.settings.accountSettings.access.status = .networkFailure
-            state.settings.accountSettings.access.snapshot = saved.value
-            state.settings.accountSettings.access.sessionExpiresAt = expiry
-            state.settings.accountSettings.access.hasAccountSession = true
-            state.settings.accountSettings.access.didBootstrap = true
-        }
-        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
-
-        XCTAssertNotNil(store.state.lifecycle.sessionLapseGuard)
-        XCTAssertFalse(store.state.lifecycle.didStartHelper)
-        XCTAssertEqual(store.state.lifecycle.sessionLapseGuard?.accessUnlockPrimaryCTA, .retry)
-        XCTAssertEqual(store.state.settings.accountSettings.access.accessUnlockPrimaryCTA, .retry)
-        XCTAssertEqual(saved.value?.status, .networkFailure)
-        XCTAssertEqual(saved.value?.sessionExpiresAt, expiry)
+        XCTAssertEqual(directFetchCount.value, 0)
         await store.skipInFlightEffects()
         await store.finish()
     }
 
-    /// decoding/notConfigured 같은 access 조회 실패는 session 만료로 지우지 않고
-    /// access_status 미확정 error/retry guard 경로로 보낸다.
-    func testAccessStatusNonNetworkFailureRoutesToAccessErrorGuard() async {
+    /// Task 3: unlocked delegate가 helper 시작과 initial window를 정확히 한 번 트리거한다.
+    func testLifecycleUnlockedStartsHelperAndOpensWindowOnce() async {
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            sessionExpiresAt: Date(timeIntervalSince1970: 4_102_444_800),
+            deviceBindingVerifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        )
         var initialState = AppLifecycleFeature.State()
-        initialState.accessGateGeneration = 3
-        initialState.accessGatePhase = .checking(generation: 3)
-        initialState.isCheckingAccountAccess = true
-        let expiry = Date(timeIntervalSince1970: 4_102_444_800)
-        var rootState = AppRootFeature.State(lifecycle: initialState)
-        rootState.settings.accessStatus = .coreLicenseActive
-        let snapshotRemoved = expectation(description: "stale active access snapshot removed")
-
-        let store = TestStore(initialState: rootState) {
-            AppRootFeature()
+        initialState.accessGatePhase = .checking
+        let store = TestStore(initialState: initialState) {
+            AppLifecycleFeature()
         } withDependencies: {
-            $0.accountSessionClient.read = {
-                AccountSession(
-                    accessToken: "access-token",
-                    status: .none,
-                    refreshToken: "refresh-token",
-                    expiresAt: expiry,
-                )
-            }
             $0.helperAppClient.start = {}
             $0.helperAppClient.stop = {}
+            $0.helperAppClient.terminationEvents = {
+                AsyncStream { $0.finish() }
+            }
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.onboardingWindowClient.isRequired = { false }
-            $0.fileManagerWindowClient.open = { _ in }
-            $0.uuid = .incrementing
-            $0.date = .constant(Date(timeIntervalSince1970: 0))
-            $0.accessStatusSnapshotClient.remove = {
-                snapshotRemoved.fulfill()
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { $0.finish() }
             }
         }
         store.exhaustivity = .off
 
-        await store.send(.lifecycle(.accountAccessGate(.accessStatusResponse(
-            generation: 3,
-            result: .failure(.decodingFailure),
-        ))))
+        await store.send(.accountAccess(.delegate(.unlocked(snapshot))))
 
-        await store.receive(\.lifecycle.accountAccessGate.accessStatusFailed) { state in
-            state.lifecycle.accessGatePhase = .accessFailure(error: .decodingFailure, generation: 3)
-            state.lifecycle.isCheckingAccountAccess = false
-            state.lifecycle.accountAccessGateResolved = true
-            state.lifecycle.sessionLapseGuard = AccountAccessFeature.State()
-            state.lifecycle.sessionLapseGuard?.handoffContext = .paywall
-            state.lifecycle.sessionLapseGuard?.errorMessage = "Failed to process the response."
-            state.lifecycle.sessionLapseGuard?.hasAccountSession = true
-            state.lifecycle.sessionLapseGuard?.sessionExpiresAt = expiry
-            state.lifecycle.sessionLapseGuard?.didBootstrap = true
-            state.lifecycle.sessionLapseGuard?.fetchGeneration = 1
-        }
-        await store.receive(\.settings.account.access.hydrateAccessFailure) { state in
-            state.settings.accountSettings.access.errorMessage = "Failed to process the response."
-            state.settings.accountSettings.access.hasAccountSession = true
-            state.settings.accountSettings.access.sessionExpiresAt = expiry
-            state.settings.accountSettings.access.didBootstrap = true
-            state.settings.accountSettings.access.fetchGeneration = 1
-        }
-        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
-
-        XCTAssertEqual(store.state.lifecycle.sessionLapseGuard?.accountAccessStepState, .error)
-        XCTAssertEqual(store.state.lifecycle.sessionLapseGuard?.accessUnlockPrimaryCTA, .retry)
-        XCTAssertEqual(store.state.settings.accessStatus, .coreLicenseActive)
-        XCTAssertEqual(store.state.settings.accountSettings.access.accountAccessStepState, .error)
-        XCTAssertEqual(store.state.settings.accountSettings.access.accessUnlockPrimaryCTA, .retry)
-        await fulfillment(of: [snapshotRemoved], timeout: 1.0)
+        XCTAssertEqual(store.state.accessGatePhase, .granted)
+        XCTAssertTrue(store.state.didStartHelper)
         await store.finish()
     }
 
-    // MARK: - PR #295 Codex P1: sessionLapseGuard appReopen 복구
+    /// Task 3: recoveryRequired delegate는 helper를 시작하지 않고 phase만 설정한다.
+    func testLifecycleRecoveryRequiredDoesNotStartHelper() async {
+        let store = TestStore(initialState: AppLifecycleFeature.State()) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.helperAppClient.start = {}
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { $0.finish() }
+            }
+        }
+        store.exhaustivity = .off
 
-    /// sessionLapseGuard가 있고 accountAccessGateResolved=false여도 appReopen이
-    /// reopen delegate를 보내 FileManager 창을 띄워 가드 오버레이를 마운트한다.
-    /// 빈 창 상태에서 세션 만료/로그아웃 후 Dock 재활성화로 가드가 보여야 한다.
-    func testAppReopenReopensWindowWhenSessionLapseGuardPresentAndGateUnresolved() async {
+        await store.send(.accountAccess(.delegate(.recoveryRequired(.sessionRequired)))) {
+            $0.accessGatePhase = .recoveryRequired
+        }
+
+        await store.receive(\.delegate.openInitialWindowIfNeeded)
+
+        XCTAssertEqual(store.state.accessGatePhase, .recoveryRequired)
+        XCTAssertFalse(store.state.didStartHelper)
+        await store.finish()
+    }
+
+    /// Task 3: terminating 상태에서는 unlocked delegate를 거부한다.
+    func testLifecycleUnlockedRejectedWhenTerminating() async {
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            sessionExpiresAt: Date(timeIntervalSince1970: 4_102_444_800),
+            deviceBindingVerifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        )
         var initialState = AppLifecycleFeature.State()
-        initialState.accountAccessGateResolved = false
-        initialState.sessionLapseGuard = AccountAccessFeature.State()
+        initialState.terminationAttemptID = UUID(0)
+        initialState.accessGatePhase = .terminating
+
+        let store = TestStore(initialState: initialState) {
+            AppLifecycleFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.accountAccess(.delegate(.unlocked(snapshot))))
+
+        XCTAssertEqual(store.state.accessGatePhase, .terminating)
+        XCTAssertFalse(store.state.didStartHelper)
+        await store.finish()
+    }
+
+    // MARK: - Task 4: session-end and termination child routing
+
+    /// Task 4: sessionExpiredDetected는 reason을 app-level에 저장하고 child _sessionExpiredDetected로 라우팅한다.
+    /// RED: 현재 코드는 child action을 보내지 않으므로 이 receive가 실패한다.
+    func testSessionExpiredDetectedRoutesChildSessionExpiredDetected() async {
+        let store = TestStore(initialState: AppLifecycleFeature.State()) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.accountSessionClient.delete = { _ in }
+            $0.accessStatusSnapshotClient.remove = {}
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { $0.finish() }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.sessionExpiredDetected(reason: .sessionExpired)) {
+            $0.sessionEndReason = .sessionExpired
+        }
+
+        // Task 4가 적용되면 child가 _sessionExpiredDetected를 수신한다.
+        await store.receive(\.accountAccess._sessionExpiredDetected) { _ in }
+        await store.finish()
+    }
+
+    /// Task 4: termination(.willTerminate)는 child appWillTerminate를 보낸다.
+    /// RED: 현재 코드는 보내지 않으므로 이 receive가 실패한다.
+    func testTerminationWillTerminateSendsChildAppWillTerminate() async {
+        var initialState = AppLifecycleFeature.State()
+        initialState.terminationAttemptID = UUID(0)
 
         let store = TestStore(initialState: initialState) {
             AppLifecycleFeature()
         } withDependencies: {
             $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { $0.finish() }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.termination(.willTerminate)) {
+            $0.accessGatePhase = .terminating
         }
 
-        await store.send(.launch(.appReopen(hasVisibleWindows: false)))
-        await store.receive(\.delegate.reopenWindowIfNeeded)
+        // Task 4가 적용되면 child가 appWillTerminate를 수신한다.
+        await store.receive(\.accountAccess.appWillTerminate)
         await store.finish()
     }
 
-    /// sessionLapseGuard가 없고 accountAccessGateResolved=false면 appReopen은
-    /// reopen delegate를 보내지 않고 그대로 차단된다. (locked/no-session/no-active-access)
-    func testAppReopenStaysBlockedWhenNoSessionLapseGuardAndGateUnresolved() async {
+    /// Task 4: terminating 상태에서는 recoveryRequired delegate를 거부한다.
+    func testLifecycleRecoveryRequiredRejectedWhenTerminating() async {
         var initialState = AppLifecycleFeature.State()
-        initialState.accountAccessGateResolved = false
+        initialState.terminationAttemptID = UUID(0)
+        initialState.accessGatePhase = .terminating
 
         let store = TestStore(initialState: initialState) {
             AppLifecycleFeature()
-        } withDependencies: {
-            $0.onboardingWindowClient.showIfNeeded = { false }
         }
+        store.exhaustivity = .off
 
-        await store.send(.launch(.appReopen(hasVisibleWindows: false)))
+        await store.send(.accountAccess(.delegate(.recoveryRequired(.sessionRequired))))
+
+        XCTAssertEqual(store.state.accessGatePhase, .terminating)
+        XCTAssertFalse(store.state.didStartHelper)
         await store.finish()
     }
 
-    /// guard가 필요한 locked 상태에서는 buffered voyager:// route를 먼저 flush하지 않고,
-    /// guard overlay를 마운트할 FileManager window open만 요청한다.
-    func testOpenInitialWindowDefersPendingExternalRoutesWhenSessionGuardActive() async throws {
+    /// Task 4 QA: terminating phase는 nil attemptID에서도 unlocked delegate를 거부한다.
+    func testLifecycleUnlockedRejectedWhenTerminatingPhaseOnly() async {
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            sessionExpiresAt: Date(timeIntervalSince1970: 4_102_444_800),
+            deviceBindingVerifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        )
+        var initialState = AppLifecycleFeature.State()
+        initialState.accessGatePhase = .terminating
+        // terminationAttemptID는 nil — completeTerminationAttempt 이후 상태 시뮬레이션
+
+        let store = TestStore(initialState: initialState) {
+            AppLifecycleFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.accountAccess(.delegate(.unlocked(snapshot))))
+
+        XCTAssertEqual(store.state.accessGatePhase, .terminating)
+        XCTAssertFalse(store.state.didStartHelper)
+        await store.finish()
+    }
+
+    /// Task 4 QA: terminating phase는 nil attemptID에서도 recoveryRequired delegate를 거부한다.
+    func testLifecycleRecoveryRequiredRejectedWhenTerminatingPhaseOnly() async {
+        var initialState = AppLifecycleFeature.State()
+        initialState.accessGatePhase = .terminating
+
+        let store = TestStore(initialState: initialState) {
+            AppLifecycleFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.accountAccess(.delegate(.recoveryRequired(.sessionRequired))))
+
+        XCTAssertEqual(store.state.accessGatePhase, .terminating)
+        XCTAssertFalse(store.state.didStartHelper)
+        await store.finish()
+    }
+
+    /// Task 4 QA: terminating phase는 nil attemptID에서도 signedOut delegate를 거부한다.
+    func testLifecycleSignedOutRejectedWhenTerminatingPhaseOnly() async {
+        var initialState = AppLifecycleFeature.State()
+        initialState.accessGatePhase = .terminating
+
+        let store = TestStore(initialState: initialState) {
+            AppLifecycleFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.accountAccess(.delegate(.signedOut)))
+
+        XCTAssertEqual(store.state.accessGatePhase, .terminating)
+        XCTAssertFalse(store.state.didStartHelper)
+        await store.finish()
+    }
+
+    // MARK: - External route flush
+
+    /// Task 3 QA: presentedAccountAccess는 recoveryRequired에서만 canonical child를 노출한다.
+    func testPresentedAccountAccessNilOutsideRecovery() {
+        let phases: [AppLifecycleAccessGatePhase] = [
+            .unresolved,
+            .checking,
+            .granted,
+            .signedOut,
+            .terminating,
+        ]
+        for phase in phases {
+            var state = AppLifecycleFeature.State()
+            state.accessGatePhase = phase
+            XCTAssertNil(
+                state.presentedAccountAccess,
+                "\(phase) should not present guard overlay",
+            )
+        }
+    }
+
+    func testPresentedAccountAccessReturnsCanonicalChildDuringRecovery() {
+        var state = AppLifecycleFeature.State()
+        state.accessGatePhase = .recoveryRequired
+        state.accountAccess.status = .trialExpired
+        state.accountAccess.hasAccountSession = true
+
+        let presented = state.presentedAccountAccess
+        XCTAssertNotNil(presented)
+        XCTAssertEqual(presented?.status, .trialExpired)
+        XCTAssertEqual(presented?.hasAccountSession, true)
+    }
+
+    func testOpenInitialWindowDefersPendingExternalRoutesWhenRecoveryRequired() async throws {
         let deepLink = try XCTUnwrap(URL(string: "voyager://open"))
         var initialState = AppRootFeature.State()
         initialState.pendingExternalURLs = [deepLink]
-        initialState.lifecycle.sessionLapseGuard = AccountAccessFeature.State()
-        initialState.lifecycle.accountAccessGateResolved = false
+        initialState.lifecycle.accessGatePhase = .recoveryRequired
 
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
@@ -1157,14 +495,12 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// access 확인 중에는 buffered voyager:// route가 있어도 guard 없는 빈 FileManager 창을 열지 않는다.
-    func testOpenInitialWindowDoesNotOpenEmptyWindowWhileAccessGateChecking() async throws {
+    func testOpenInitialWindowDoesNotOpenEmptyWindowWhileChecking() async throws {
         let deepLink = try XCTUnwrap(URL(string: "voyager://open"))
         var initialState = AppRootFeature.State()
         initialState.pendingExternalURLs = [deepLink]
         initialState.isExternalURLFlushDelegateScheduled = true
-        initialState.lifecycle.accessGatePhase = .checking(generation: 1)
-        initialState.lifecycle.isCheckingAccountAccess = true
+        initialState.lifecycle.accessGatePhase = .checking
 
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
@@ -1177,8 +513,8 @@ final class AppRootCompositionTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded))) { state in
-            state.isExternalURLFlushDelegateScheduled = false
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded))) {
+            $0.isExternalURLFlushDelegateScheduled = false
         }
 
         XCTAssertEqual(store.state.pendingExternalURLs, [deepLink])
@@ -1186,11 +522,52 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - VOY-521 Task 1: Auth callback fallback routing
+    func testAccountAccessUnlockFlushesQueuedRoutes() async throws {
+        let deepLink = try XCTUnwrap(URL(string: "voyager://open"))
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            sessionExpiresAt: Date(timeIntervalSince1970: 4_102_444_800),
+        )
+        var initialState = AppRootFeature.State()
+        initialState.pendingExternalURLs = [deepLink]
 
-    /// `application(_:open:)`이 `voyager://auth/callback`을 수신하고 온보딩이 처리하면
-    /// AppRoot로 폴백 액션을 보내지 않는다 (onboarding-first semantics).
-    /// `resolveAuthCallbackRouting` seam을 true로 override하여 결정론적으로 검증.
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.helperAppClient.start = {}
+            $0.helperAppClient.stop = {}
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.accountSessionClient.delete = { _ in }
+            $0.accessStatusSnapshotClient.save = { _ in }
+            $0.accessStatusSnapshotClient.remove = {}
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { $0.finish() }
+            }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.accountAccess(.delegate(.unlocked(snapshot))))) {
+            // Unlock should set phase to .granted synchronously
+            $0.lifecycle.accessGatePhase = .granted
+        }
+
+        // The lifecycle delegate effect should flush queued routes.
+        // Assert route delivery to prove the flush chain works.
+        await store.receive(\.externalFileRouter.receive)
+
+        XCTAssertTrue(
+            store.state.pendingExternalURLs.isEmpty,
+            "pendingExternalURLs should be cleared after unlock flush, phase=\(store.state.lifecycle.accessGatePhase)",
+        )
+        await store.finish()
+    }
+
+    // MARK: - VOY-521 Auth callback fallback routing
+
     func testAppDelegateSkipsAppRootFallbackWhenOnboardingHandlesCallback() throws {
         let box = ActionBox<AppRootAction>()
         let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
@@ -1204,19 +581,15 @@ final class AppRootCompositionTests: XCTestCase {
         appDelegate.application(NSApp, open: [url])
 
         let sentFallback = box.actions.contains { action in
-            if case .lifecycle(.sessionLapseGuard(.loginCallbackReceived)) = action {
+            if case .lifecycle(.accountAccess(.loginCallbackReceived)) = action {
                 return true
             }
             return false
         }
-        XCTAssertFalse(sentFallback, "온보딩 처리 시 AppRoot sessionLapseGuard 폴백 미전송")
+        XCTAssertFalse(sentFallback)
     }
 
-    /// `application(_:open:)`이 `voyager://auth/callback`을 수신하고 온보딩이 없으면
-    /// AppRoot로 `.lifecycle(.sessionLapseGuard(.loginCallbackReceived(url)))`를 전달한다.
-    /// 폴백 액션에 전달된 URL 페이로드까지 구조적으로 단언.
-    /// `resolveAuthCallbackRouting` seam을 false로 override하여 결정론적으로 검증.
-    func testAppDelegateFallsBackToSessionLapseGuardWhenOnboardingAbsent() throws {
+    func testAppDelegateFallsBackToCanonicalChildWhenOnboardingAbsent() throws {
         let box = ActionBox<AppRootAction>()
         let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
             _ActionRecordingAppRoot(box: box)
@@ -1229,16 +602,14 @@ final class AppRootCompositionTests: XCTestCase {
         appDelegate.application(NSApp, open: [url])
 
         let routed = box.actions.contains { action in
-            if case let .lifecycle(.sessionLapseGuard(.loginCallbackReceived(received))) = action {
+            if case let .lifecycle(.accountAccess(.loginCallbackReceived(received))) = action {
                 return received == url
             }
             return false
         }
-        XCTAssertTrue(routed, "온보딩 부재 시 AppRoot sessionLapseGuard.loginCallbackReceived로 폴백 (URL 페이로드 보존)")
+        XCTAssertTrue(routed)
     }
 
-    /// `application(_:open:)`는 지원하지 않는 외부 scheme을 무시하되,
-    /// voyager:// non-auth deep link는 ExternalFileRouter 경로로 전달한다.
     func testAppDelegateIgnoresUnsupportedURLsAndRoutesVoyagerDeepLinks() throws {
         let box = ActionBox<AppRootAction>()
         let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
@@ -1250,7 +621,7 @@ final class AppRootCompositionTests: XCTestCase {
         try appDelegate.application(NSApp, open: [XCTUnwrap(URL(string: "https://example.com"))])
         appDelegate.application(NSApp, open: [])
 
-        XCTAssertTrue(box.actions.isEmpty, "지원하지 않는 scheme은 AppRoot로 라우팅되지 않아야 함")
+        XCTAssertTrue(box.actions.isEmpty)
 
         let deepLink = try XCTUnwrap(URL(string: "voyager://open"))
         appDelegate.application(NSApp, open: [deepLink])
@@ -1261,22 +632,44 @@ final class AppRootCompositionTests: XCTestCase {
             }
             return false
         }
-        XCTAssertTrue(routed, "voyager:// non-auth deep link는 ExternalFileRouter 경로로 전달")
+        XCTAssertTrue(routed)
+    }
+
+    // MARK: - Test support
+
+    private func makeAccountAccessGrantedStore(
+        initialState: AppRootFeature.State = AppRootFeature.State(),
+    ) -> TestStore<AppRootFeature.State, AppRootFeature.Action> {
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.helperAppClient.start = {}
+            $0.helperAppClient.stop = {}
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.accountSessionClient.delete = { _ in }
+            $0.accessStatusSnapshotClient.save = { _ in }
+            $0.accessStatusSnapshotClient.remove = {}
+            $0.notificationCenterClient.notifications = { _, _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        store.exhaustivity = .off
+        return store
     }
 }
 
-/// snapshot capture용 reference box. `accessStatusSnapshotClient.save` 클로저가
-/// `@Sendable`이므로 box도 Sendable이어야 함. 테스트는 직렬 실행되므로
-/// data race는 없고 `@unchecked Sendable`로 표시.
 private final class SnapshotCaptureBox: @unchecked Sendable {
     var value: AccessStatusSnapshot?
 }
 
 // MARK: - VOY-521 Task 1 test support
 
-/// AppDelegate routing 테스트용 action 레코더. AppRootFeature를 건너뛰고
-/// send된 action만 기록한다. TestStore는 external send 추적이 까다로워
-/// plain Store + recording reducer로 동작 기반 검증.
 private final class ActionBox<T>: @unchecked Sendable {
     var actions: [T] = []
 }
