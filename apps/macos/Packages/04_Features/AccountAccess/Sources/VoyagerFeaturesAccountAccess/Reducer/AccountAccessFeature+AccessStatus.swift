@@ -57,9 +57,11 @@ extension AccountAccessFeature {
         state.deviceBindingRetryCount = 0
         state.isComplete = false
         state.errorMessage = errorMessageForStatus(accessStatus)
-        return .run { [snapshotClient] _ in
+        return .run { [snapshotClient] send in
             await snapshotClient.save(snapshot)
+            await send(.delegate(.recoveryRequired(.snapshot(snapshot))))
         }
+        .cancellable(id: CancelID.fetchStatus, cancelInFlight: true)
     }
 
     func bindCurrentDeviceEffect(generation: Int, snapshot: AccessStatusSnapshot) -> Effect<Action> {
@@ -99,7 +101,7 @@ extension AccountAccessFeature {
         switch result {
         case let .success(response):
             guard response.ok else {
-                return handleDeviceBindingFailure(&state, error: .decodingFailure)
+                return handleDeviceBindingFailure(&state, snapshot: snapshot, error: .decodingFailure)
             }
             let verifiedSnapshot = AccessStatusSnapshot.fetchResult(
                 status: snapshot.status,
@@ -121,16 +123,29 @@ extension AccountAccessFeature {
                 }
             }
             return .run { [snapshotClient] send in
-                await snapshotClient.save(verifiedSnapshot)
-                await send(.delegate(.unlocked(verifiedSnapshot)))
+                do {
+                    try Task.checkCancellation()
+                    await snapshotClient.save(verifiedSnapshot)
+                    try Task.checkCancellation()
+                    await send(.delegate(.unlocked(verifiedSnapshot)))
+                } catch is CancellationError {
+                    return
+                } catch {
+                    return
+                }
             }
+            .cancellable(id: CancelID.fetchStatus, cancelInFlight: true)
 
         case let .failure(error):
-            return handleDeviceBindingFailure(&state, error: error)
+            return handleDeviceBindingFailure(&state, snapshot: snapshot, error: error)
         }
     }
 
-    func handleDeviceBindingFailure(_ state: inout State, error: DeviceBindingError) -> Effect<Action> {
+    func handleDeviceBindingFailure(
+        _ state: inout State,
+        snapshot: AccessStatusSnapshot,
+        error: DeviceBindingError,
+    ) -> Effect<Action> {
         if error == .unauthorized {
             return .send(._sessionExpiredDetected)
         }
@@ -156,7 +171,7 @@ extension AccountAccessFeature {
             break
         }
 
-        return .none
+        return .send(.delegate(.recoveryRequired(.deviceBindingFailure(snapshot: snapshot, error: error))))
     }
 
     func handleAccessStatusFailure(_ state: inout State, error: AccessError) -> Effect<Action> {
@@ -177,17 +192,38 @@ extension AccountAccessFeature {
         }
 
         if error == .notConfigured || error == .decodingFailure {
-            return .none
+            return .send(.delegate(.recoveryRequired(.accessFailure(
+                error: error,
+                sessionExpiresAt: state.sessionExpiresAt,
+            ))))
+        }
+
+        if case .unknownGatewayCode = error {
+            return .send(.delegate(.recoveryRequired(.accessFailure(
+                error: error,
+                sessionExpiresAt: state.sessionExpiresAt,
+            ))))
         }
 
         guard error == .networkFailure else { return .none }
 
         if state.fetchRetryCount >= 3 {
             state.fetchRetryCount = 0
-            return .run { [snapshotClient] send in
+            return .run { [sessionClient, snapshotClient] send in
                 let snapshot = await snapshotClient.load()
-                await send(._cachedSnapshotRestored(snapshot))
+                let session = try? await sessionClient.read()
+                let restoredSnapshot = snapshot.map {
+                    AccessStatusSnapshot.fetchResult(
+                        status: $0.status,
+                        currentPeriodEnd: $0.currentPeriodEnd,
+                        sessionExpiresAt: session?.expiresAt,
+                        fetchedAt: $0.fetchedAt,
+                        deviceBindingVerifiedAt: $0.deviceBindingVerifiedAt,
+                    )
+                }
+                await send(._cachedSnapshotRestored(restoredSnapshot))
             }
+            .cancellable(id: CancelID.fetchStatus, cancelInFlight: true)
         }
 
         let retryStep = state.fetchRetryCount
@@ -230,14 +266,17 @@ extension AccountAccessFeature {
         // failure handler가 이미 status=.networkFailure + errorMessage를 기록했으므로
         // 캐시가 없거나 만료된 snapshot은 거부하고 state를 그대로 둔다.
         guard let snapshot else {
-            return .none
+            return .send(.delegate(.recoveryRequired(.accessFailure(
+                error: .networkFailure,
+                sessionExpiresAt: state.sessionExpiresAt,
+            ))))
         }
 
         let now = date.now
         let isStale = snapshot.isExpired(now: now)
             || now.timeIntervalSince(snapshot.fetchedAt) > Self.cachedSnapshotMaxAge
         if isStale {
-            return .none
+            return .send(.delegate(.recoveryRequired(.snapshot(snapshot))))
         }
 
         // entitlement 축: 캐시된 access status로 복원. 기존 정책 미변경.
@@ -258,7 +297,11 @@ extension AccountAccessFeature {
         // 이후 handleOnAppear가 중복 session read/fetch를 수행하지 않도록 차단.
         state.didBootstrap = true
 
-        return .none
+        if state.isComplete {
+            return .send(.delegate(.unlocked(snapshot)))
+        }
+
+        return .send(.delegate(.recoveryRequired(.snapshot(snapshot))))
     }
 
     func errorMessage(for error: AccessError) -> String {

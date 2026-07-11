@@ -503,6 +503,79 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
 }
 
 extension ACC001CompleteAuthHandoffCallbackTests {
+    private func assertNoQueryCallbackPreservedSession(
+        fetchCount: Int,
+        bindCount: Int,
+        state: AccountAccessFeature.State,
+    ) {
+        XCTAssertEqual(fetchCount, 1)
+        XCTAssertEqual(bindCount, 1)
+        XCTAssertEqual(state.sessionExpiresAt, Self.persistedSessionExpiry)
+        XCTAssertEqual(state.snapshot?.sessionExpiresAt, Self.persistedSessionExpiry)
+    }
+
+    /// ACC-001-complete_auth_handoff_callback: query 없는 callback은 읽은 session expiry를 unlock까지 보존한다.
+    /// 이미 저장된 session을 읽는 callback 경로가 onAppear 복원과 동일하게 TTL과 access 검증을 시작하는지 검증한다.
+    /// - 검증 내용: 고정 expiresAt, TTL 활성화, access 조회와 device binding 각각 한 번, verified snapshot과 unlocked delegate에 동일
+    /// expiry 반영
+    /// - 사전 조건: query 없는 voyager://auth/callback, 고정 미래 expiresAt을 가진 읽기 가능한 AccountSession, active access와 성공 binding
+    /// 응답
+    /// - 기대 결과: sessionExpiresAt과 snapshot.sessionExpiresAt이 고정 expiry와 같고 unlocked delegate가 한 번 전송된다.
+    func testNoQueryCallbackPreservesRestoredSessionExpiryThroughUnlock() async throws {
+        nonisolated(unsafe) var fetchCount = 0
+        nonisolated(unsafe) var bindCount = 0
+        let store = makeTestStore(
+            accountSessionClient: canonicalSessionClient(accessToken: "no-query-token"),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: {
+                    fetchCount += 1
+                    return activeAccessStatusResponse
+                },
+                bindDevice: { _ in
+                    bindCount += 1
+                    return DeviceBindingResponse(ok: true)
+                },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: awaitingCallbackState(),
+        )
+
+        try await store.send(.loginCallbackReceived(XCTUnwrap(URL(string: "voyager://auth/callback"))))
+        await store.receive(\._loginSessionRestored) { state in
+            state.isSignInInProgress = false
+            state.hasAccountSession = true
+            state.didSignInFail = false
+            state.sessionExpiresAt = Self.persistedSessionExpiry
+            state.ttlTimerActive = true
+            state.fetchGeneration = 1
+        }
+        await store.receive(\.accessStatusResponse) { state in
+            state.status = .coreLicenseActive
+            state.isSubmitting = true
+            state.isComplete = false
+            state.errorMessage = nil
+            state.fetchRetryCount = 0
+        }
+        await store.receive(\.deviceBindingResponse) { state in
+            state.snapshot = AccessStatusSnapshot(
+                status: .coreLicenseActive,
+                fetchedAt: self.referenceDate,
+                sessionExpiresAt: Self.persistedSessionExpiry,
+                deviceBindingVerifiedAt: self.referenceDate,
+            )
+            state.isSubmitting = false
+            state.isComplete = true
+            state.errorMessage = nil
+        }
+        await store.receive(\.delegate.unlocked)
+
+        assertNoQueryCallbackPreservedSession(fetchCount: fetchCount, bindCount: bindCount, state: store.state)
+        // TTL 타이머가 in-flight 상태이므로 finish 전에 exhaustivity를 끈다.
+        store.exhaustivity = .off
+        await store.finish()
+    }
+
     /// ACC-001-complete_auth_handoff_callback: 유효한 callback 수신 시 exchangeAppHandoff가 자동 호출된다.
     /// callback 검증 성공 후 exchange_handoff_token 플로우가 자동으로 트리거되는지 검증한다.
     /// - 검증 내용: exchangeAppHandoff 호출, _handoffExchangeCompleted 수신, hasAccountSession=true 전환
@@ -548,9 +621,9 @@ extension ACC001CompleteAuthHandoffCallbackTests {
         await store.receive(\.deviceBindingResponse) { state in
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
-                fetchedAt: referenceDate,
+                fetchedAt: self.referenceDate,
                 sessionExpiresAt: Self.persistedSessionExpiry,
-                deviceBindingVerifiedAt: referenceDate,
+                deviceBindingVerifiedAt: self.referenceDate,
             )
             state.isSubmitting = false
             state.isComplete = true

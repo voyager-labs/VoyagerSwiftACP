@@ -77,8 +77,8 @@ public struct AccountAccessFeature {
             case let ._onAppearSessionRestored(session):
                 return handleOnAppearSessionRestored(&state, session: session)
 
-            case let ._loginSessionRestored(hasSession):
-                return handleLoginSessionRestored(&state, hasSession: hasSession)
+            case let ._loginSessionRestored(session):
+                return handleLoginSessionRestored(&state, session: session)
 
             case let .accessStatusResponse(generation: gen, result: result):
                 return handleAccessStatusResponse(&state, generation: gen, result: result)
@@ -139,6 +139,9 @@ public struct AccountAccessFeature {
             case .signOut:
                 return handleSignOut(&state)
 
+            case .appWillTerminate:
+                return handleAppWillTerminate(&state)
+
             case .delegate:
                 return .none
             }
@@ -169,6 +172,7 @@ public struct AccountAccessFeature {
             return .merge(
                 .cancel(id: CancelID.fetchStatus),
                 .cancel(id: CancelID.ttlTimer),
+                .send(.delegate(.recoveryRequired(.sessionRequired))),
             )
         }
 
@@ -274,7 +278,7 @@ public struct AccountAccessFeature {
 
         return .run { [sessionClient] send in
             let session = try? await sessionClient.read()
-            await send(._loginSessionRestored(session != nil))
+            await send(._loginSessionRestored(session))
         }
     }
 
@@ -339,18 +343,15 @@ public struct AccountAccessFeature {
         return !(components.queryItems?.isEmpty ?? true)
     }
 
-    private func handleLoginSessionRestored(_ state: inout State, hasSession: Bool) -> Effect<Action> {
+    private func handleLoginSessionRestored(_ state: inout State, session: AccountSession?) -> Effect<Action> {
         state.isSignInInProgress = false
 
-        if hasSession {
-            state.hasAccountSession = true
-            state.didSignInFail = false
-            resetSessionRetryBudget(&state)
-            state.fetchGeneration += 1
-            return fetchAccessStatusEffect(generation: state.fetchGeneration)
-        } else {
+        guard let session else {
             return .send(._sessionExpiredDetected)
         }
+
+        state.didSignInFail = false
+        return handleOnAppearSessionRestored(&state, session: session)
     }
 
     private func isValidAuthCallback(_ url: URL, expectedScheme: String) -> Bool {
@@ -561,6 +562,28 @@ private extension AccountAccessFeature {
             .cancel(id: CancelID.ttlTimer),
             .cancel(id: CancelID.fetchRetry),
             .cancel(id: CancelID.refreshToken),
+            .send(.delegate(.recoveryRequired(.sessionRequired))),
+        )
+    }
+
+    private func handleAppWillTerminate(_ state: inout State) -> Effect<Action> {
+        state.fetchGeneration += 1
+        state.isSubmitting = false
+        state.isSignInInProgress = false
+        state.handoffPendingState = nil
+        state.ttlTimerActive = false
+        state.fetchRetryCount = 0
+        state.deviceBindingFailure = nil
+        state.deviceBindingRetryCount = 0
+        state.errorMessage = nil
+
+        return .merge(
+            .cancel(id: CancelID.fetchStatus),
+            .cancel(id: CancelID.fetchRetry),
+            .cancel(id: CancelID.refreshToken),
+            .cancel(id: CancelID.ttlTimer),
+            .cancel(id: CancelID.appDidBecomeActiveObserver),
+            .cancel(id: CancelID.signInHandoff),
         )
     }
 

@@ -104,6 +104,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             state.consecutiveRefreshFailures = 0
             state.fetchGeneration = 1
         }
+        await store.receive(\.delegate.recoveryRequired)
 
         XCTAssertFalse(store.state.hasAccountSession, "세션 무효화")
         XCTAssertFalse(store.state.ttlTimerActive, "TTL 타이머 중단")
@@ -130,6 +131,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             state.consecutiveRefreshFailures = 0
             state.fetchGeneration = 1
         }
+        await store.receive(\.delegate.recoveryRequired)
 
         XCTAssertTrue(store.state.requiresAccountSession, "ACC-002 재평가 트리거: requiresAccountSession=true")
     }
@@ -230,6 +232,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             state.isSessionExpired = true
             state.fetchGeneration = 1
         }
+        await store.receive(\.delegate.recoveryRequired)
 
         let afterFirst = store.state.isSessionExpired
         let hasSessionAfterFirst = store.state.hasAccountSession
@@ -321,6 +324,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             state.consecutiveRefreshFailures = 0
             state.fetchGeneration = 1
         }
+        await store.receive(\.delegate.recoveryRequired)
 
         XCTAssertTrue(store.state.isSessionExpired)
         XCTAssertFalse(store.state.hasAccountSession)

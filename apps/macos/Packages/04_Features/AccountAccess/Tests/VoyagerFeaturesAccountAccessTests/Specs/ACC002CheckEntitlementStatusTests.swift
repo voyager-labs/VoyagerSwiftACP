@@ -283,7 +283,9 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
 
         await store.receive(\.delegate)
     }
+}
 
+extension ACC002CheckEntitlementStatusTests {
     /// ACC-002-check_entitlement_status: active access여도 device binding 실패 시 unlock되지 않는다.
     /// seat capacity 초과는 signed-in blocked state와 Account CTA로 투영된다.
     func testActiveAccessDeviceBindingSeatCapacityDoesNotUnlock() async {
@@ -322,6 +324,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             state.isComplete = false
             state.errorMessage = "This license has reached its device limit. Manage devices or contact support."
         }
+        await store.receive(\.delegate.recoveryRequired)
 
         XCTAssertEqual(store.state.accountAccessStepState, .blocked)
         XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .account)
@@ -367,6 +370,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             state.isComplete = false
             state.errorMessage = "Could not bind this Mac. Please try again."
         }
+        await store.receive(\.delegate.recoveryRequired)
 
         XCTAssertEqual(store.state.accountAccessStepState, .error)
         XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .retry)
@@ -399,6 +403,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             state.deviceBindingRetryCount = 3
             state.isComplete = false
         }
+        await store.receive(\.delegate.recoveryRequired)
 
         XCTAssertEqual(store.state.accountAccessStepState, .error)
         XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .account)
@@ -463,6 +468,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             state.sessionExpiresAt = nil
             state.consecutiveRefreshFailures = 0
         }
+        await store.receive(\.delegate.recoveryRequired)
     }
 
     /// ACC-002-check_entitlement_status: fetchAccessStatus networkFailure 시 error 상태로 전환된다.
@@ -559,9 +565,9 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         XCTAssertTrue(fetchCalled)
     }
 
-    /// ACC-002-check_entitlement_status: inactive 상태 응답은 delegate unlock 없이 isComplete=false를 유지한다.
-    /// trialExpired 등 inactive 상태 응답을 받으면 delegate 없이 error 상태로 전환되는지 검증한다.
-    /// - 검증 내용: inactive 응답 → isComplete=false, delegate 미전송, errorMessage 설정, snapshot 저장
+    /// ACC-002-check_entitlement_status: inactive 상태 응답은 unlock 없이 isComplete=false를 유지한다.
+    /// trialExpired 등 inactive 상태 응답을 받으면 recovery delegate와 함께 error 상태로 전환되는지 검증한다.
+    /// - 검증 내용: inactive 응답 → isComplete=false, errorMessage 설정, snapshot 저장
     /// - 사전 조건: fetchGeneration=1, inactive 상태(trialExpired)의 AccessStatusResponse
     /// - 기대 결과: isComplete=false, status=.trialExpired, errorMessage!=nil, snapshot!=nil
     func testFetchAccessStatusInactiveDoesNotUnlock() async {
@@ -585,6 +591,103 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         XCTAssertNotNil(store.state.snapshot)
     }
 
+    /// ACC-002-check_entitlement_status: inactive access는 앱 경계에 복구 필요 상태를 전달한다.
+    /// 유효한 세션에서 inactive entitlement가 확정되면 AppLifecycle이 private status를 해석하지 않아도 되는지 검증한다.
+    /// - 검증 내용: inactive access snapshot 저장 뒤 semantic delegate가 정확히 한 번 전달된다.
+    /// - 사전 조건: fetchGeneration=1, sessionExpiresAt가 있는 trialExpired 응답.
+    /// - 기대 결과: isComplete=false이며 recovery delegate가 수신된다.
+    func testInactiveAccessSendsTerminalRecoveryDelegate() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        state.hasAccountSession = true
+        state.sessionExpiresAt = sessionExpiry
+        let store = makeTestStore(initialState: state)
+
+        let response = AccessStatusResponse(
+            hasAccess: false,
+            status: "expired",
+            reason: "expired_entitlement",
+            productKey: "trial",
+            source: "polar",
+        )
+        await store.send(.accessStatusResponse(generation: 1, result: .success(response))) { state in
+            state.status = .trialExpired
+            state.snapshot = AccessStatusSnapshot(
+                status: .trialExpired,
+                fetchedAt: self.referenceDate,
+                sessionExpiresAt: sessionExpiry,
+            )
+            state.isComplete = false
+            state.errorMessage = "This trial has expired."
+            state.fetchRetryCount = 0
+        }
+        await store.receive(\.delegate.recoveryRequired)
+    }
+
+    /// ACC-002-check_entitlement_status: final access failure는 내부 오류가 아닌 복구 결과로 전달된다.
+    /// 재시도 정책이 없는 access 구성 오류가 앱 경계에서 recovery로 관찰되는지 검증한다.
+    /// - 검증 내용: notConfigured failure가 semantic delegate를 한 번 전달한다.
+    /// - 사전 조건: fetchGeneration=1, signed-in session이 존재한다.
+    /// - 기대 결과: error projection과 recovery delegate가 함께 남는다.
+    func testFinalAccessFailureSendsTerminalRecoveryDelegate() async {
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        state.hasAccountSession = true
+        state.sessionExpiresAt = referenceDate.addingTimeInterval(3600)
+        let store = makeTestStore(initialState: state)
+
+        await store.send(.accessStatusResponse(generation: 1, result: .failure(.notConfigured))) { state in
+            state.isComplete = false
+            state.errorMessage = "Access service is not configured."
+        }
+        await store.receive(\.delegate.recoveryRequired)
+    }
+
+    /// ACC-002-check_entitlement_status: device binding failure는 후보 snapshot과 함께 복구 결과를 전달한다.
+    /// 기기 좌석 제한으로 verified unlock이 불가능할 때 AppLifecycle이 binding 오류를 직접 해석하지 않는지 검증한다.
+    /// - 검증 내용: binding failure 뒤 semantic delegate가 정확히 한 번 전달된다.
+    /// - 사전 조건: fetchGeneration=1, signed-in active access, bindDevice가 seatCapacityExceeded를 반환한다.
+    /// - 기대 결과: isComplete=false이며 recovery delegate가 수신된다.
+    func testDeviceBindingFailureSendsTerminalRecoveryDelegate() async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        state.hasAccountSession = true
+        state.sessionExpiresAt = sessionExpiry
+        let store = makeTestStore(
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in throw DeviceBindingError.seatCapacityExceeded },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: state,
+        )
+
+        let response = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            source: "polar",
+        )
+        await store.send(.accessStatusResponse(generation: 1, result: .success(response))) { state in
+            state.status = .coreLicenseActive
+            state.isSubmitting = true
+            state.isComplete = false
+            state.errorMessage = nil
+            state.fetchRetryCount = 0
+        }
+        await store.receive(\.deviceBindingResponse) { state in
+            state.isSubmitting = false
+            state.deviceBindingFailure = .seatCapacityExceeded
+            state.isComplete = false
+            state.errorMessage = "This license has reached its device limit. Manage devices or contact support."
+        }
+        await store.receive(\.delegate.recoveryRequired)
+    }
+
     // MARK: - ACC-002-cached-snapshot-fallback
 
     /// ACC-002: fetchAccessStatus 3회 실패 후 캐시된 snapshot이 복원된다.
@@ -605,6 +708,17 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         state.fetchGeneration = 1
         state.fetchRetryCount = 3
         let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: {
+                    AccountSession(
+                        accessToken: "cached-session",
+                        status: .coreLicenseActive,
+                        expiresAt: sessionExpiry,
+                    )
+                },
+                persist: { _ in },
+                delete: { _ in },
+            ),
             snapshotClient: AccessStatusSnapshotClient(
                 load: { cachedSnapshot },
                 save: { _ in },
@@ -628,6 +742,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             state.sessionExpiresAt = sessionExpiry
             state.didBootstrap = true
         }
+        await store.receive(\.delegate.unlocked)
     }
 
     /// ACC-002: fetchAccessStatus 3회 실패 후 캐시된 snapshot이 없으면 error 상태를 유지한다.
@@ -650,6 +765,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             state.fetchRetryCount = 0
         }
         await store.receive(\._cachedSnapshotRestored)
+        await store.receive(\.delegate.recoveryRequired)
 
         XCTAssertEqual(store.state.status, .networkFailure)
         XCTAssertNotEqual(store.state.status, AccessStatus.none)
@@ -740,6 +856,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             state.fetchRetryCount = 0
         }
         await store.receive(\._cachedSnapshotRestored)
+        await store.receive(\.delegate.recoveryRequired)
 
         XCTAssertEqual(store.state.status, .networkFailure)
         XCTAssertNotEqual(store.state.status, AccessStatus.none)
@@ -764,6 +881,17 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         state.fetchGeneration = 1
         state.fetchRetryCount = 3
         let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: {
+                    AccountSession(
+                        accessToken: "cached-session",
+                        status: .coreLicenseActive,
+                        expiresAt: sessionExpiry,
+                    )
+                },
+                persist: { _ in },
+                delete: { _ in },
+            ),
             snapshotClient: AccessStatusSnapshotClient(
                 load: { cachedSnapshot },
                 save: { _ in },
@@ -1096,6 +1224,17 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             deviceBindingVerifiedAt: referenceDate,
         )
         let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: {
+                    AccountSession(
+                        accessToken: "cached-session",
+                        status: .coreLicenseActive,
+                        expiresAt: sessionExpiry,
+                    )
+                },
+                persist: { _ in },
+                delete: { _ in },
+            ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
@@ -1141,6 +1280,119 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             state.sessionExpiresAt = sessionExpiry
             state.didBootstrap = true
         }
+        await store.receive(\.delegate.unlocked)
+    }
+
+    /// ACC-002-check_entitlement_status: fresh verified cache는 현재 세션 만료 시각을 반영한 뒤 unlock한다.
+    /// network fallback이 cached access/binding facts를 보존하면서 재확인한 session expiry만 갱신하는지 검증한다.
+    /// - 검증 내용: cache restore가 status, period, fetchedAt, binding proof를 보존하고 unlocked delegate를 한 번 전달한다.
+    /// - 사전 조건: fresh active+binding-verified cache와 더 늦은 현재 AccountSession expiry가 존재한다.
+    /// - 기대 결과: cache는 다시 저장되지 않고 state와 unlocked snapshot의 sessionExpiresAt만 현재 expiry가 된다.
+    func testFreshVerifiedCacheRefreshesSessionExpiryBeforeUnlock() async {
+        let cachedExpiry = referenceDate.addingTimeInterval(600)
+        let currentExpiry = referenceDate.addingTimeInterval(3600)
+        let periodEnd = referenceDate.addingTimeInterval(86400)
+        let cachedSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: periodEnd,
+            fetchedAt: referenceDate,
+            sessionExpiresAt: cachedExpiry,
+            deviceBindingVerifiedAt: referenceDate,
+        )
+        nonisolated(unsafe) var savedSnapshots: [AccessStatusSnapshot] = []
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        state.fetchRetryCount = 3
+        let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: {
+                    AccountSession(
+                        accessToken: "current-session",
+                        status: .coreLicenseActive,
+                        expiresAt: currentExpiry,
+                    )
+                },
+                persist: { _ in },
+                delete: { _ in },
+            ),
+            snapshotClient: AccessStatusSnapshotClient(
+                load: { cachedSnapshot },
+                save: { savedSnapshots.append($0) },
+                remove: {},
+            ),
+            initialState: state,
+        )
+
+        await store.send(.accessStatusResponse(generation: 1, result: .failure(.networkFailure))) { state in
+            state.status = .networkFailure
+            state.errorMessage = "Network error. Please check your connection and try again."
+            state.fetchRetryCount = 0
+        }
+        let expectedSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: periodEnd,
+            fetchedAt: referenceDate,
+            sessionExpiresAt: currentExpiry,
+            deviceBindingVerifiedAt: referenceDate,
+        )
+        await store.receive(\._cachedSnapshotRestored) { state in
+            state.status = .coreLicenseActive
+            state.snapshot = expectedSnapshot
+            state.isComplete = true
+            state.errorMessage = "일시적인 네트워크 오류"
+            state.hasAccountSession = true
+            state.sessionExpiresAt = currentExpiry
+            state.didBootstrap = true
+        }
+        await store.receive(\.delegate.unlocked)
+
+        XCTAssertTrue(savedSnapshots.isEmpty)
+        XCTAssertEqual(store.state.snapshot, expectedSnapshot)
+    }
+
+    /// ACC-002-check_entitlement_status: binding failure는 기존 verified cache를 덮어쓰지 않는다.
+    /// 새 binding 검증이 실패해도 이전 verified snapshot persistence가 유지되는지 검증한다.
+    /// - 검증 내용: deviceBindingFailure recovery가 발생해도 snapshotClient.save 호출은 없다.
+    /// - 사전 조건: 이미 저장된 verified snapshot, fetchGeneration=1, late binding failure 후보 snapshot.
+    /// - 기대 결과: 저장 recorder에는 기존 snapshot만 남고 recovery delegate가 한 번 수신된다.
+    func testDeviceBindingFailureDoesNotOverwriteVerifiedCache() async {
+        let verifiedSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: referenceDate,
+            sessionExpiresAt: referenceDate.addingTimeInterval(3600),
+            deviceBindingVerifiedAt: referenceDate,
+        )
+        nonisolated(unsafe) var savedSnapshots = [verifiedSnapshot]
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        state.hasAccountSession = true
+        state.isSubmitting = true
+        let store = makeTestStore(
+            snapshotClient: AccessStatusSnapshotClient(
+                load: { nil },
+                save: { savedSnapshots.append($0) },
+                remove: {},
+            ),
+            initialState: state,
+        )
+
+        await store.send(.deviceBindingResponse(
+            generation: 1,
+            snapshot: AccessStatusSnapshot(
+                status: .coreLicenseActive,
+                fetchedAt: referenceDate,
+                sessionExpiresAt: verifiedSnapshot.sessionExpiresAt,
+            ),
+            result: .failure(.seatCapacityExceeded),
+        )) { state in
+            state.isSubmitting = false
+            state.deviceBindingFailure = .seatCapacityExceeded
+            state.isComplete = false
+            state.errorMessage = "This license has reached its device limit. Manage devices or contact support."
+        }
+        await store.receive(\.delegate.recoveryRequired)
+
+        XCTAssertEqual(savedSnapshots, [verifiedSnapshot])
     }
 
     /// ACC-002 Integration: retryTapped → fetchGeneration 증가 → fetchAccessStatus → delegate(.unlocked) 전체 파이프라인을 검증한다.

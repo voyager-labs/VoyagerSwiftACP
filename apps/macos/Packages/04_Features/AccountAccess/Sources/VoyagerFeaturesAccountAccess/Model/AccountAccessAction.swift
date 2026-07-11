@@ -11,7 +11,7 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case loginCallbackReceived(URL)
     case _handoffExchangeCompleted(Result<AccountSession, AppHandoffExchangeError>)
     case _onAppearSessionRestored(AccountSession?)
-    case _loginSessionRestored(Bool)
+    case _loginSessionRestored(AccountSession?)
     case accessStatusResponse(generation: Int, result: Result<AccessStatusResponse, AccessError>)
     case deviceBindingResponse(
         generation: Int,
@@ -34,11 +34,21 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case hydrateLaunchSnapshot(AccessStatusSnapshot)
     case hydrateAccessFailure(error: AccessError, sessionExpiresAt: Date?)
     case signOut
+    case appWillTerminate
     case delegate(Delegate)
+
+    @CasePathable
+    public enum Recovery: Equatable, Sendable {
+        case sessionRequired
+        case snapshot(AccessStatusSnapshot)
+        case accessFailure(error: AccessError, sessionExpiresAt: Date?)
+        case deviceBindingFailure(snapshot: AccessStatusSnapshot, error: DeviceBindingError)
+    }
 
     @CasePathable
     public enum Delegate: CasePathable, Sendable {
         case unlocked(AccessStatusSnapshot)
+        case recoveryRequired(Recovery)
         case signedOut
     }
 }

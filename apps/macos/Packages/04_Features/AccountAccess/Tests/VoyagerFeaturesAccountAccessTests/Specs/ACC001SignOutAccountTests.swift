@@ -475,6 +475,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.sessionExpiresAt = nil
             state.fetchGeneration = 1
         }
+        await store.receive(\.delegate.recoveryRequired)
 
         await store.finish()
         XCTAssertEqual(deleteReason, .sessionExpired)
