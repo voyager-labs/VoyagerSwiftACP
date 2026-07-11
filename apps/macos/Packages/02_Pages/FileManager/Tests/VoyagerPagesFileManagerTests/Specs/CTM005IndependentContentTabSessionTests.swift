@@ -4957,6 +4957,111 @@ extension CTM005IndependentContentTabSessionTests {
         XCTAssertNil(store.state.backgroundAiChatStates[sessionID])
     }
 
+    func testIdenticalSummaryBackgroundSnapshotDoesNotOverwriteDifferentActivePayload() async {
+        let tabID = ContentTabID()
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let staleLock = makeRequestLock(sessionID: sessionID)
+        let currentLock = makeRequestLock(sessionID: sessionID)
+        let sharedUpdatedAtMs: Int64 = 1_234_567_893_500
+        let staleTranscript = [
+            AiChatMessage(role: .user, content: "Same   question"),
+            AiChatMessage(role: .assistant, content: "Same answer"),
+        ]
+        let currentTranscript = [
+            AiChatMessage(role: .user, content: "Same question"),
+            AiChatMessage(role: .assistant, content: "Same answer"),
+        ]
+        let staleSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: "Canonical title",
+            provider: currentLock.context.provider,
+            model: currentLock.context.model,
+            selectedThinking: .effort(.low),
+            transcriptHistory: staleTranscript,
+            lastRequestID: staleLock.requestID,
+            lastRunID: staleLock.runID,
+            lastRequestContext: nil,
+            updatedAtMs: sharedUpdatedAtMs,
+        )
+        let currentSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: "Canonical title",
+            provider: currentLock.context.provider,
+            model: currentLock.context.model,
+            selectedThinking: .effort(.high),
+            transcriptHistory: currentTranscript,
+            lastRequestID: currentLock.requestID,
+            lastRunID: currentLock.runID,
+            lastRequestContext: nil,
+            updatedAtMs: sharedUpdatedAtMs,
+        )
+        let staleSummary = AiChatSessionSummary(snapshot: staleSnapshot)
+        let currentSummary = AiChatSessionSummary(snapshot: currentSnapshot)
+        XCTAssertEqual(staleSummary, currentSummary)
+
+        var activeContent = FileManagerContentFeature.State()
+        activeContent.aiChat.sessionID = sessionID
+        activeContent.aiChat.mode = .chat
+        activeContent.aiChat.sessionStatus = .completed
+        activeContent.aiChat.currentSessionCustomTitle = currentSummary.title
+        activeContent.aiChat.transcriptHistory = currentTranscript
+        activeContent.aiChat.selectedModelHandle = currentLock.context.model
+        activeContent.aiChat.selectedThinking = .effort(.high)
+        activeContent.aiChat.executionPhase = .completed(currentLock)
+        activeContent.aiChat.sessionList = AiChatSessionListState(allRows: [currentSummary])
+
+        var backgroundContent = FileManagerContentFeature.State()
+        backgroundContent.aiChat.sessionID = sessionID
+        backgroundContent.aiChat.mode = .chat
+        backgroundContent.aiChat.sessionStatus = .active
+        backgroundContent.aiChat.transcriptHistory = staleTranscript
+        backgroundContent.aiChat.selectedThinking = .effort(.low)
+        backgroundContent.aiChat.backgroundExecutionPhases[staleLock.requestID] = .completed(
+            staleLock.recordingFinalSnapshot(staleSnapshot),
+        )
+
+        var state = FileManagerFeature.State()
+        state.content = activeContent
+        state.backgroundAiChatStates[sessionID] = backgroundContent
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: sessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: currentSummary.title,
+                    iconName: "message",
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.syncContentTabSidebarItems()
+        let store: TestStore<FileManagerFeature.State, FileManagerWindowAction> = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.backgroundAiChat(.sessionSnapshotSaved(
+            staleSummary,
+            snapshot: staleSnapshot,
+            requestID: staleLock.requestID,
+            runID: staleLock.runID,
+        )))
+        await store.finish()
+
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory, currentTranscript)
+        XCTAssertEqual(store.state.content.aiChat.selectedThinking, .effort(.high))
+        XCTAssertEqual(store.state.content.aiChat.executionPhase, .completed(currentLock))
+        XCTAssertEqual(store.state.content.aiChat.sessionList.allRows, [currentSummary])
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.title, currentSummary.title)
+        XCTAssertEqual(store.state.sidebar.contentTabSidebarItems.first?.title, currentSummary.title)
+        XCTAssertNil(store.state.backgroundAiChatStates[sessionID])
+    }
+
     func testStaleForegroundSnapshotDoesNotOverwriteNewerVisibleTranscript() async {
         let tabID = ContentTabID()
         let sessionID = AiChatSessionID(rawValue: UUID())

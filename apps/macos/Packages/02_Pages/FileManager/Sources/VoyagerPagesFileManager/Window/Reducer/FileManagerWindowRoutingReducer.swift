@@ -1694,30 +1694,33 @@ private extension AiChatFeature.State {
         snapshot: AiChatSessionSnapshot? = nil,
         backgroundAiChat: AiChatFeature.State,
     ) {
-        guard sessionList.replaceRowIfNewer(summary) else { return }
-        if let snapshot {
-            currentSessionCustomTitle = snapshot.customTitle
-        } else {
-            currentSessionCustomTitle = backgroundAiChat.currentSessionCustomTitle
-        }
-        transcriptHistory = snapshot?.transcriptHistory ?? backgroundAiChat.transcriptHistory
-        streamingAssistantDraft = nil
-        transcriptAutoScrollVersion += 1
-        lockedModelHandle = nil
-        lastExecutionFailure = nil
-        lastRequestContext = snapshot?.lastRequestContext ?? backgroundAiChat.lastRequestContext
-        lastRequestContextModelHandle = snapshot?.model ?? backgroundAiChat.lastRequestContextModelHandle
-        selectedModelHandle = snapshot?.model ?? backgroundAiChat.selectedModelHandle
-        selectedThinking = snapshot?.selectedThinking ?? backgroundAiChat.selectedThinking
-        sessionStatus = snapshot?.status ?? .active
-        if let executionPhaseToApply = backgroundAiChat.matchingBackgroundSnapshot(
-            summary: summary,
-            snapshot: snapshot,
-        ) ?? matchingBackgroundSnapshot(
-            summary: summary,
-            snapshot: snapshot,
-        ) {
-            executionPhase = executionPhaseToApply
+        let mergeResult = sessionList.replaceRowIfNewer(summary)
+        guard mergeResult.acceptsRow else { return }
+        if mergeResult.permitsSnapshotPayload {
+            if let snapshot {
+                currentSessionCustomTitle = snapshot.customTitle
+            } else {
+                currentSessionCustomTitle = backgroundAiChat.currentSessionCustomTitle
+            }
+            transcriptHistory = snapshot?.transcriptHistory ?? backgroundAiChat.transcriptHistory
+            streamingAssistantDraft = nil
+            transcriptAutoScrollVersion += 1
+            lockedModelHandle = nil
+            lastExecutionFailure = nil
+            lastRequestContext = snapshot?.lastRequestContext ?? backgroundAiChat.lastRequestContext
+            lastRequestContextModelHandle = snapshot?.model ?? backgroundAiChat.lastRequestContextModelHandle
+            selectedModelHandle = snapshot?.model ?? backgroundAiChat.selectedModelHandle
+            selectedThinking = snapshot?.selectedThinking ?? backgroundAiChat.selectedThinking
+            sessionStatus = snapshot?.status ?? .active
+            if let executionPhaseToApply = backgroundAiChat.matchingBackgroundSnapshot(
+                summary: summary,
+                snapshot: snapshot,
+            ) ?? matchingBackgroundSnapshot(
+                summary: summary,
+                snapshot: snapshot,
+            ) {
+                executionPhase = executionPhaseToApply
+            }
         }
 
         if restoreSessionID == nil || restoreSessionID == summary.sessionID {
