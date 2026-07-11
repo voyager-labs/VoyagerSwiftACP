@@ -157,7 +157,7 @@ struct VoyagerApp: App {
                 },
             ),
             resolveSessionLapseGuardStore: { [appRootStore] in
-                appRootStore.scope(state: \.lifecycle.sessionLapseGuard, action: \.lifecycle.sessionLapseGuard)
+                appRootStore.scope(state: \.lifecycle.presentedAccountAccess, action: \.lifecycle.accountAccess)
             },
         )
     }
