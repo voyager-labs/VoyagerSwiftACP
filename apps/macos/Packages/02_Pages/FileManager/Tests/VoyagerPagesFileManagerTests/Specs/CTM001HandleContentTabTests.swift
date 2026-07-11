@@ -1789,6 +1789,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
             return receivedSessionID == sessionID
         }
         await store.receive { action in
+            guard case let .internal(.aiChatTabTitleUpdated(receivedSessionID, title)) = action else {
+                return false
+            }
+            return receivedSessionID.rawValue.uuidString == sessionID && title == "New Chat"
+        }
+        await store.receive { action in
             guard case let .navigation(.view(.showAiChat(receivedSessionID))) = action else { return false }
             return receivedSessionID == sessionID
         }
@@ -1826,6 +1832,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .aiChat(sessionID: sessionID))
         XCTAssertEqual(tab.page, .aiChat)
+        XCTAssertEqual(tab.title, "New Chat")
+        XCTAssertEqual(store.state.sidebar.contentTabSidebarItems.first?.title, "New Chat")
 
         // ContentPane AI Chat은 .setup 수신 후 즉시 채팅 모드로 열리고 navigation history에 기록된다
         XCTAssertEqual(store.state.content.navigation.navigationState, .aiChat(sessionID))
