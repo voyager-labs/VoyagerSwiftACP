@@ -489,6 +489,49 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertFalse(state.sidebar.isFixedLocationVisible(trashID))
     }
 
+    /// VOY-566: Window appearance는 Finder Favorites를 Home shortcut source로 독립 로드함
+    func testWindowAppearanceLoadsHomeFavoritesIndependentlyFromPinnedTabs() async {
+        let requestID = UUID()
+        let favoriteURL = URL(fileURLWithPath: "/Users/test/Projects")
+        let favorite = SidebarItems.FavoriteItem(
+            name: "Projects",
+            url: favoriteURL,
+            iconName: "folder",
+        )
+        let expectedFavorites = FileManagerHomeDashboardProjection.homeFavorites(
+            from: [favorite],
+            fileExistsWithIsDirectory: { _, isDirectory in
+                isDirectory?.pointee = true
+                return true
+            },
+        )
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(requestID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerFavoritesClient.loadFavorites = { _, _ in [favorite] }
+            $0.entryLoadingClient.fileExistsAtPath = { path, isDirectory in
+                guard path == favoriteURL.path else { return false }
+                isDirectory?.pointee = true
+                return true
+            }
+            $0.fileManagerLocationsClient.loadLocations = { _ in [] }
+            $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.onAppear) {
+            $0.fixedLocationsLoadPhase = .loading(requestID)
+        }
+        await store.receive(\.internal.homeFavoritesLoaded) {
+            $0.applyHomeFavoriteItems(expectedFavorites)
+        }
+
+        XCTAssertEqual(store.state.content.homeFavoriteItems.map(\.title), ["Projects"])
+        XCTAssertTrue(store.state.contentTabs.tabs.filter(\.isPinned).isEmpty)
+    }
+
     /// CTM-004-sidebar_fixed_locations_visibility: 사용자 토글은 hidden ID를 저장하고 Home projection을 즉시 갱신함
     /// - 검증 내용: Sidebar context menu Toggle action → hidden IDs persist → Home Locations에서 제거
     func testFixedLocationVisibilityActionPersistsHiddenIDsAndUpdatesHomeProjection() async throws {
@@ -625,7 +668,16 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         )
         state.syncContentTabSidebarItems()
         state.syncFixedLocationItems(with: Self.fixedLocationClient(), entryLoadingClient: .testValue)
-        state.syncHomeFavoriteItems()
+        state.applyHomeFavoriteItems([
+            FileManagerHomeFavoriteItem(
+                id: ContentTabID(rawValue: "finder-projects"),
+                title: "Projects",
+                iconName: "folder",
+                filePath: "/Users/test/Projects",
+                anchor: .directory(path: "/Users/test/Projects"),
+                page: .directory,
+            ),
+        ])
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
@@ -677,7 +729,6 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         )
         state.syncContentTabSidebarItems()
         state.syncFixedLocationItems(with: Self.fixedLocationClient(), entryLoadingClient: .testValue)
-        state.syncHomeFavoriteItems()
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
