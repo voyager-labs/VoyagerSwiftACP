@@ -103,12 +103,13 @@ extension AccountAccessFeature {
             guard response.ok else {
                 return handleDeviceBindingFailure(&state, snapshot: snapshot, error: .decodingFailure)
             }
+            let verifiedAt = date()
             let verifiedSnapshot = AccessStatusSnapshot.fetchResult(
                 status: snapshot.status,
                 currentPeriodEnd: snapshot.currentPeriodEnd,
                 sessionExpiresAt: snapshot.sessionExpiresAt,
-                fetchedAt: snapshot.fetchedAt,
-                deviceBindingVerifiedAt: date(),
+                fetchedAt: verifiedAt,
+                deviceBindingVerifiedAt: verifiedAt,
             )
             state.status = verifiedSnapshot.status
             state.trialExpiresAt = verifiedSnapshot.currentPeriodEnd
