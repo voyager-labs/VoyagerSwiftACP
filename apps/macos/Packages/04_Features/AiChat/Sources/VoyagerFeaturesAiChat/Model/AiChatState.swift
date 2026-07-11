@@ -35,6 +35,20 @@ public enum AiChatMode: Equatable, Sendable {
     case chat
 }
 
+public enum AiChatSessionRowMergeResult: Equatable, Sendable {
+    case rejected
+    case unchanged
+    case merged
+
+    public var acceptsRow: Bool {
+        self != .rejected
+    }
+
+    public var permitsSnapshotPayload: Bool {
+        self == .merged
+    }
+}
+
 public struct AiChatSessionListState: Equatable, Sendable {
     public var allRows: [AiChatSessionSummary]
     public var rows: [AiChatSessionSummary]
@@ -114,6 +128,21 @@ public struct AiChatSessionListState: Equatable, Sendable {
             return lhs.updatedAtMs > rhs.updatedAtMs
         }
         rows = Self.filteredRows(from: allRows, query: query)
+    }
+
+    @discardableResult
+    public mutating func replaceRowIfNewer(_ row: AiChatSessionSummary) -> AiChatSessionRowMergeResult {
+        guard !deletedSessionIDs.contains(row.sessionID) else { return .rejected }
+        if let currentRow = allRows.first(where: { $0.sessionID == row.sessionID }) {
+            guard !currentRow.isNewer(than: row) else { return .rejected }
+            if row == currentRow {
+                replaceRow(row)
+                return .unchanged
+            }
+            guard row.isNewer(than: currentRow) else { return .rejected }
+        }
+        replaceRow(row)
+        return .merged
     }
 
     public mutating func beginRenaming(sessionID: AiChatSessionID) {

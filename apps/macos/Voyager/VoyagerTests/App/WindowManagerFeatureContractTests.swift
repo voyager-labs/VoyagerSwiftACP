@@ -43,6 +43,47 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
     }
 
+    /// Sidebar Locations 표시 설정은 같은 앱의 다른 열린 창에 즉시 반영된다.
+    func testFixedLocationVisibilityChangeFansOutToOtherWindows() async {
+        let firstID = UUID()
+        let secondID = UUID()
+        let location = FileManagerFixedLocationItem(
+            id: "fixed-location-projects",
+            title: "Projects",
+            path: "/Users/test/Projects",
+            iconName: "folder",
+            accessibilityLabel: "Projects",
+        )
+        let hiddenIDs: Set<FileManagerFixedLocationItem.ID> = [location.id]
+        var firstWindow = WindowSessionState(id: firstID, window: .makeInitial(path: "/a"))
+        firstWindow.window.sidebar.setFixedLocationItems([location], hiddenIDs: hiddenIDs)
+        var secondWindow = WindowSessionState(id: secondID, window: .makeInitial(path: "/b"))
+        secondWindow.window.sidebar.setFixedLocationItems([location])
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [firstWindow, secondWindow]
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: firstID,
+            action: .window(.delegate(.fixedLocationVisibilityChanged(hiddenIDs))),
+        )))
+        await store.receive(.windows(.element(
+            id: secondID,
+            action: .window(.applyHiddenFixedLocationIDs(hiddenIDs)),
+        ))) { state in
+            state.windows[id: secondID]?.window.sidebar.setFixedLocationItems(
+                [location],
+                hiddenIDs: hiddenIDs,
+            )
+        }
+
+        XCTAssertEqual(store.state.windows[id: firstID]?.window.sidebar.fixedLocationItems.isEmpty, true)
+        XCTAssertEqual(store.state.windows[id: secondID]?.window.sidebar.fixedLocationItems.isEmpty, true)
+    }
+
     /// app preference 갱신은 기존 열린 창의 Sidebar 크기/표시 상태를 덮어쓰지 않는다.
     /// 새 창은 생성 시 app preference를 적용하지만, 이미 열린 창은 window-local Sidebar 상태를 유지해야 한다.
     func testApplyAppPreferencesPreservesExistingWindowSidebarState() async {

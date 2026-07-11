@@ -26,6 +26,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case contentTabs(ContentTabAction)
     case applyAppPreferences(AppPreferencesState)
     case applyPinnedContentTabs(ContentTabState)
+    case applyHiddenFixedLocationIDs(Set<FileManagerFixedLocationItem.ID>)
     case aiConnectionsFileUpdated(AIConnectionsFile)
 
     case closeContentTabRequested(ContentTabID)
@@ -41,6 +42,8 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
             requestID: UUID,
             items: [FileManagerFixedLocationItem],
         )
+        case homeFavoritesLoaded([FileManagerHomeFavoriteItem])
+        case aiChatTabTitleUpdated(sessionID: AiChatSessionID, title: String?)
     }
 
     @CasePathable
@@ -83,5 +86,6 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case openPathInNewWindow(String)
         case openAISettings
         case requestAttachmentPicker
+        case fixedLocationVisibilityChanged(Set<FileManagerFixedLocationItem.ID>)
     }
 }

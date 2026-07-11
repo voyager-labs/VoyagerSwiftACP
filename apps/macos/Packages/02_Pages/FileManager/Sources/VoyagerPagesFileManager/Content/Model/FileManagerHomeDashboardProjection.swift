@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesCollection
 
 // MARK: - Home/Favorite Model
 
@@ -76,41 +77,46 @@ public struct FileManagerHomeChatHistoryItem: Equatable, Sendable {
 
 public enum FileManagerHomeDashboardProjection {}
 
-// MARK: - Home Favorites (Pinned ContentTab Projection)
+// MARK: - Home Favorites (Finder Favorites Projection)
 
 public extension FileManagerHomeDashboardProjection {
-    static func homeFavorites(from contentTabs: ContentTabState) -> [FileManagerHomeFavoriteItem] {
-        contentTabs.tabs
-            .filter(\.isPinned)
-            .filter { tab in
-                switch tab.anchor {
-                case .directory, .collectionFile:
-                    true
-                case .homeDefault, .virtualCollection, .aiChat:
-                    false
-                }
+    static func homeFavorites(
+        from favorites: [SidebarItems.FavoriteItem],
+        fileExistsWithIsDirectory: (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
+    ) -> [FileManagerHomeFavoriteItem] {
+        favorites.compactMap { favorite in
+            var isDirectory = ObjCBool(false)
+            guard fileExistsWithIsDirectory(favorite.url.path, &isDirectory) else { return nil }
+
+            let page: ContentTabPage
+            let anchor: ContentTabPageAnchor
+            if CollectionFileUtils.isCollectionFile(favorite.url) {
+                page = .collection
+                anchor = .collectionFile(url: favorite.url)
+            } else if isDirectory.boolValue {
+                page = .directory
+                anchor = .directory(path: favorite.url.path)
+            } else {
+                return nil
             }
-            .map { tab in
-                FileManagerHomeFavoriteItem(
-                    id: tab.id,
-                    title: tab.title,
-                    iconName: tab.iconName,
-                    filePath: filePath(for: tab.anchor),
-                    anchor: tab.anchor,
-                    page: tab.page,
-                )
-            }
+
+            return FileManagerHomeFavoriteItem(
+                id: ContentTabID(rawValue: favoriteID(for: favorite)),
+                title: favorite.displayName,
+                iconName: favorite.iconName,
+                filePath: favorite.url.path,
+                anchor: anchor,
+                page: page,
+            )
+        }
     }
 
-    private static func filePath(for anchor: ContentTabPageAnchor) -> String? {
-        switch anchor {
-        case let .directory(path):
-            path
-        case let .collectionFile(url):
-            url.path
-        case .homeDefault, .virtualCollection, .aiChat:
-            nil
+    private static func favoriteID(for favorite: SidebarItems.FavoriteItem) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let sanitized = favorite.url.absoluteString.unicodeScalars.map { scalar in
+            allowed.contains(scalar) ? Character(scalar) : Character("-")
         }
+        return "home-favorite-\(String(sanitized))"
     }
 }
 

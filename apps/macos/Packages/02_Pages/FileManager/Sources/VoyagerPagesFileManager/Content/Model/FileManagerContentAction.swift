@@ -70,6 +70,6 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case homePageAnchorSelected(ContentTabPageAnchor)
         case homeChatHistorySessionSelected(AiChatSessionID)
         case aiChatSessionCreated(AiChatSessionID)
-        case aiChatSessionRestored(AiChatSessionID)
+        case aiChatSessionRestored(sessionID: AiChatSessionID, title: String)
     }
 }

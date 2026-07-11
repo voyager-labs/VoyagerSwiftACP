@@ -164,6 +164,7 @@ extension ContentHomeChatHistoryTests {
                 return AiChatSessionSnapshot(
                     sessionID: requestedSessionID,
                     status: .active,
+                    customTitle: "Existing session title",
                     provider: nil,
                     model: nil,
                     updatedAtMs: 1_234_567_890,
@@ -216,10 +217,24 @@ extension ContentHomeChatHistoryTests {
             }
             return requestedSessionID == sessionID && snapshot.sessionID == sessionID
         }
+        await store.receive { action in
+            guard case let .content(.delegate(.aiChatSessionRestored(receivedSessionID, title))) = action else {
+                return false
+            }
+            return receivedSessionID == sessionID && title == "Existing session title"
+        }
+        await store.receive { action in
+            guard case let .internal(.aiChatTabTitleUpdated(receivedSessionID, title)) = action else {
+                return false
+            }
+            return receivedSessionID == sessionID && title == "Existing session title"
+        }
 
         XCTAssertEqual(createSessionCallCount.value, 0)
         XCTAssertEqual(loadedSessionIDs.value, [sessionID])
         let activeTab = try XCTUnwrap(store.state.contentTabs.tabs[id: activeTabID])
         XCTAssertEqual(activeTab.anchor, .aiChat(sessionID: sessionUUID.uuidString))
+        XCTAssertEqual(activeTab.title, "Existing session title")
+        XCTAssertEqual(store.state.sidebar.contentTabSidebarItems.first?.title, "Existing session title")
     }
 }

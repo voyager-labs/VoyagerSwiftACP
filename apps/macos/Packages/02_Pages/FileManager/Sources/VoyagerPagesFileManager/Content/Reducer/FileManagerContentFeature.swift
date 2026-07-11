@@ -99,21 +99,28 @@ public struct FileManagerContentFeature {
             case let .aiChat(.newChatCreated(snapshot)):
                 return .send(.delegate(.aiChatSessionCreated(snapshot.sessionID)))
 
-            case let .aiChat(.restoreOutcome(requestedSessionID, _, restoreFailure)):
+            case let .aiChat(.restoreOutcome(requestedSessionID, result, restoreFailure)):
                 guard restoreFailure == nil,
+                      case let .restored(snapshot) = result,
                       state.aiChat.mode == .chat,
                       state.aiChat.sessionID == requestedSessionID,
-                      case .aiChatSessions = state.navigation.navigationState
+                      isAiChatNavigationRoute(state.navigation.navigationState)
                 else { return .none }
-                return .send(.delegate(.aiChatSessionRestored(requestedSessionID)))
+                let title = restoredAiChatSessionTitle(
+                    sessionID: requestedSessionID,
+                    restoredSnapshot: snapshot,
+                    state: state.aiChat,
+                )
+                return .send(.delegate(.aiChatSessionRestored(sessionID: requestedSessionID, title: title)))
 
             case let .aiChat(.sessionRowTapped(sessionID)):
                 guard state.aiChat.executionPhase.isProcessing,
                       state.aiChat.mode == .chat,
                       state.aiChat.sessionID == sessionID,
-                      case .aiChatSessions = state.navigation.navigationState
+                      case .aiChatSessions = state.navigation.navigationState,
+                      let title = state.aiChat.sessionList.allRows.first(where: { $0.sessionID == sessionID })?.title
                 else { return .none }
-                return .send(.delegate(.aiChatSessionRestored(sessionID)))
+                return .send(.delegate(.aiChatSessionRestored(sessionID: sessionID, title: title)))
 
             case let .internal(.setAutomaticRefreshFeedbackSuppressed(isSuppressed)):
                 state.suppressAutomaticRefreshFeedback = isSuppressed
@@ -146,6 +153,54 @@ public struct FileManagerContentFeature {
             return .none
         }
         return .send(.entryViewLayout(.delegate(.selectionChanged)))
+    }
+}
+
+private func restoredAiChatSessionTitle(
+    sessionID: AiChatSessionID,
+    restoredSnapshot: AiChatSessionSnapshot,
+    state: AiChatFeature.State,
+) -> String {
+    var canonicalSummary = state.sessionList.allRows.first { $0.sessionID == sessionID }
+    if let finalSnapshot = state.executionPhase.lock?.finalSnapshot,
+       finalSnapshot.sessionID == sessionID
+    {
+        let finalSummary = AiChatSessionSummary(snapshot: finalSnapshot)
+        if let currentSummary = canonicalSummary {
+            if finalSummary.isNewer(than: currentSummary) {
+                canonicalSummary = finalSummary
+            }
+        } else {
+            canonicalSummary = finalSummary
+        }
+    }
+    if let title = canonicalSummary?.title.trimmingCharacters(in: .whitespacesAndNewlines),
+       !title.isEmpty
+    {
+        return title
+    }
+    if state.sessionID == sessionID,
+       let title = state.currentSessionCustomTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !title.isEmpty
+    {
+        return title
+    }
+    if state.sessionID == sessionID,
+       let firstUserMessage = state.transcriptHistory.first(where: { $0.role == .user })?.content,
+       !firstUserMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    {
+        return AiChatSessionSummary.automaticTitle(from: firstUserMessage)
+    }
+    return AiChatSessionSummary.titleCandidate(from: restoredSnapshot) ?? ""
+}
+
+private func isAiChatNavigationRoute(_ route: ContentPageNavigationRoute) -> Bool {
+    switch route {
+    case .aiChat,
+         .aiChatSessions:
+        true
+    default:
+        false
     }
 }
 

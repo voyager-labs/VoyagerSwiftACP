@@ -1034,16 +1034,6 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             )
             $0.contentTabs.pendingPinnedRecordIDs.insert(tabID)
             $0.syncContentTabSidebarItems()
-            $0.content.homeFavoriteItems = [
-                FileManagerHomeFavoriteItem(
-                    id: tabID,
-                    title: "Documents",
-                    iconName: "folder",
-                    filePath: "/Users/test/Documents",
-                    anchor: directoryAnchor,
-                    page: .directory,
-                ),
-            ]
         }
         await store.receive(\.contentTabs.pinnedRecordSaveSucceeded)
         await store.finish()
@@ -1867,16 +1857,17 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.receive(\.navigation.view.openCollectionFile, collectionURL)
     }
 
-    /// CTM-003-pin_content_tab_s: 다른 window의 pinned tab 동기화가 Home Favorites에도 즉시 반영됨
-    /// - 검증 내용: applyPinnedContentTabs action 처리 직후 homeFavoriteItems projection 갱신
-    /// - 사전 조건: Home이 active이고 기존 pinned Directory가 Home Favorites에 표시됨
-    /// - 기대 결과: 기존 favorite 제거, 새로 동기화된 pinned Directory만 Home Favorites에 표시
-    func testApplyPinnedContentTabsSyncsHomeFavorites() async {
+    /// VOY-566: pinned tab 동기화는 Finder Favorites 기반 Home Favorites를 변경하지 않음
+    /// - 검증 내용: applyPinnedContentTabs 이후에도 독립적으로 로드된 Home Favorites projection 유지
+    /// - 사전 조건: Home이 active이고 Finder Favorites 기반 shortcut이 로드된 상태
+    /// - 기대 결과: pinned tab 목록만 교체되고 Home Favorites는 기존 shortcut 유지
+    func testApplyPinnedContentTabsPreservesIndependentHomeFavorites() async {
         let homeID = ContentTabID(rawValue: "home-tab")
         let oldPinnedID = ContentTabID(rawValue: "old-pin")
         let newPinnedID = ContentTabID(rawValue: "new-pin")
         let oldAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Old")
         let newAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/New")
+        let favoriteAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Favorite")
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
             tabs: [
@@ -1908,7 +1899,16 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             ],
         )
         state.syncContentTabSidebarItems()
-        state.syncHomeFavoriteItems()
+        state.applyHomeFavoriteItems([
+            FileManagerHomeFavoriteItem(
+                id: ContentTabID(rawValue: "finder-favorite"),
+                title: "Favorite",
+                iconName: "folder",
+                filePath: "/Users/test/Favorite",
+                anchor: favoriteAnchor,
+                page: .directory,
+            ),
+        ])
         let restoredState = ContentTabState(
             tabs: [
                 ContentTabItem(
@@ -1937,18 +1937,16 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        XCTAssertEqual(store.state.content.homeFavoriteItems.map(\.title), ["Old"])
-
         await store.send(.applyPinnedContentTabs(restoredState))
 
-        XCTAssertEqual(store.state.content.homeFavoriteItems.map(\.title), ["New"])
+        XCTAssertEqual(store.state.content.homeFavoriteItems.map(\.title), ["Favorite"])
     }
 
-    /// CTM-003-pin_content_tab_s: active pinned tab sync 시 content route 재동기화
-    /// 다른 window에서 같은 pinned tab anchor가 변경되면 현재 active content도 새 anchor 기준으로 복원되어야 한다.
-    /// - 검증 내용: applyPinnedContentTabs가 active pinned tab의 변경된 anchor를 content navigation에 반영
-    /// - 사전 조건: active pinned tab이 old directory content를 표시 중이고 global store는 같은 id의 new directory anchor를 보유
-    /// - 기대 결과: active tab id는 유지되고 content/tabContentStates currentPath가 new directory로 갱신
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: 저장된 pinned record store에서 pinned tab 복원
+    /// Home과 Directory record가 있는 store를 복원하면 pinned tab과 focused Home tab이 함께 생성됨을 검증한다.
+    /// - 검증 내용: pinned tabs 2개 + 기본 Home tab 1개, activeTabID는 기본 Home
+    /// - 사전 조건: 유효한 Home + Directory record 2개
+    /// - 기대 결과: pinnedRecords에 2개 entry가 유지되고 기본 Home tab이 active
     func testApplyPinnedContentTabs_resyncsActivePinnedTabWhenAnchorChanges() {
         let pinnedID = ContentTabID(rawValue: "shared-pin")
         let oldAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Old")
@@ -1997,11 +1995,6 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(state.tabContentStates[pinnedID]?.navigation.currentPath, "/Users/test/New")
     }
 
-    /// CTM-003-pin_content_tab_s: inactive pinned tab sync 시 stale content state 제거
-    /// 다른 window에서 inactive pinned tab anchor가 변경되면 다음 선택 시 새 anchor 기준으로 복원되어야 한다.
-    /// - 검증 내용: applyPinnedContentTabs가 inactive pinned tab의 변경된 anchor에 대한 cached content state를 제거
-    /// - 사전 조건: active Home tab과 old directory content state를 가진 inactive pinned tab
-    /// - 기대 결과: pinned tab anchor는 new directory로 갱신되고 기존 tabContentStates entry는 제거
     func testApplyPinnedContentTabsClearsInactivePinnedTabStateWhenAnchorChanges() {
         let homeID = ContentTabID(rawValue: "home-tab")
         let pinnedID = ContentTabID(rawValue: "shared-pin")
@@ -2059,11 +2052,6 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertNil(state.tabContentStates[pinnedID])
     }
 
-    /// CTM-003-pin_content_tab_s: sync 중 pinned tab이 모두 제거될 때 Home content 복원
-    /// 다른 window의 unpin sync로 현재 window의 active pinned tab이 사라지면 Home fallback과 content pane이 함께 맞춰져야 한다.
-    /// - 검증 내용: applyPinnedContentTabs가 빈 restored pinned state에서 Home tab을 만들고 content navigation을 Home 기준으로 초기화
-    /// - 사전 조건: active pinned directory tab만 있고 content pane은 old directory를 표시 중
-    /// - 기대 결과: active tab은 Home이고 content/tabContentStates는 directory path 없이 Home 상태로 복원
     func testApplyPinnedContentTabsRestoresHomeContentWhenActivePinnedTabRemoved() throws {
         let pinnedID = ContentTabID(rawValue: "removed-pin")
         let oldAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Removed")
@@ -2099,11 +2087,6 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(state.tabContentStates[activeTabID]?.navigation.currentPath, "Home")
     }
 
-    /// CTM-003-pin_content_tab_s: pinned tab global sync가 recentlyClosed snapshot을 보존
-    /// VOY-440 fix 검증: applyPinnedContentTabs 호출 후 recentlyClosed restore candidate가 초기화되지 않아야 한다.
-    /// - 검증 내용: applyPinnedContentTabs 후 recentlyClosed가 nil이 아닌 동일 snapshot 유지
-    /// - 사전 조건: pinned directory tab + unpinned Home tab + .directory recentlyClosed snapshot
-    /// - 기대 결과: recentlyClosed의 page/anchor가 변경 전과 동일하고 pinned tab 갱신 및 unpinned tab 보존
     func testApplyPinnedContentTabs_preservesRecentlyClosedSnapshot() {
         let pinnedID = ContentTabID(rawValue: "pinned-dir")
         let homeID = ContentTabID(rawValue: "home-tab")
@@ -2186,11 +2169,6 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(state.contentTabs.activeTabID, homeID)
     }
 
-    /// CTM-003-go_to_anchored_path_of_pinned_tab: 저장된 pinned record store에서 pinned tab 복원
-    /// Home과 Directory record가 있는 store를 복원하면 pinned tab과 focused Home tab이 함께 생성됨을 검증한다.
-    /// - 검증 내용: pinned tabs 2개 + 기본 Home tab 1개, activeTabID는 기본 Home
-    /// - 사전 조건: 유효한 Home + Directory record 2개
-    /// - 기대 결과: pinnedRecords에 2개 entry가 유지되고 기본 Home tab이 active
     func testPinnedRecordRestore_rehydratesPinnedTabs() {
         let pinnedAt = Self.pinnedAt
         let store = ContentTabPinnedRecordStore(records: [
@@ -2478,67 +2456,30 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(result.droppedCount, 3)
     }
 
-    /// VOY-531: Home Favorites projection은 pinned 상태여도 복원 불가/비대상 anchor를 노출하지 않는다.
-    /// Recents/Tags 후보인 virtualCollection, AI Chat, Home은 ContentTab pinned projection과 분리한다.
-    func testHomeFavoritesProjection_excludesVirtualCollectionAiChatAndHomeTabs() {
-        let directoryID = ContentTabID(rawValue: "favorite-directory")
-        let collectionID = ContentTabID(rawValue: "favorite-collection")
-        let recentsID = ContentTabID(rawValue: "favorite-recents")
-        let aiChatID = ContentTabID(rawValue: "favorite-ai-chat")
-        let homeID = ContentTabID(rawValue: "favorite-home")
-        let contentTabs = ContentTabState(
-            tabs: [
-                ContentTabItem(
-                    id: directoryID,
-                    page: .directory,
-                    anchor: .directory(path: "/Users/test/Documents"),
-                    isPinned: true,
-                    title: "Documents",
-                    iconName: "folder",
-                ),
-                ContentTabItem(
-                    id: collectionID,
-                    page: .collection,
-                    anchor: .collectionFile(url: URL(fileURLWithPath: "/Users/test/Photos.vcollection")),
-                    isPinned: true,
-                    title: "Photos",
-                    iconName: "rectangle.stack",
-                ),
-                ContentTabItem(
-                    id: recentsID,
-                    page: .collection,
-                    anchor: .virtualCollection(id: "Recents"),
-                    isPinned: true,
-                    title: "Recents",
-                    iconName: "clock",
-                ),
-                ContentTabItem(
-                    id: aiChatID,
-                    page: .aiChat,
-                    anchor: .aiChat(sessionID: "chat-1"),
-                    isPinned: true,
-                    title: "AI Chat",
-                    iconName: "sparkles",
-                ),
-                ContentTabItem(
-                    id: homeID,
-                    page: .home,
-                    anchor: .homeDefault,
-                    isPinned: true,
-                    title: "Home",
-                    iconName: "house",
-                ),
-            ],
-            activeTabID: homeID,
-            recentlyClosed: nil,
+    /// VOY-566: Home Favorites projection은 Finder Favorites의 Directory/Collection만 노출함
+    func testHomeFavoritesProjectionMapsFinderFavoritesAndExcludesUnsupportedFiles() {
+        let directoryURL = URL(fileURLWithPath: "/Users/test/Documents")
+        let collectionURL = URL(fileURLWithPath: "/Users/test/Photos.voycoll")
+        let fileURL = URL(fileURLWithPath: "/Users/test/notes.txt")
+        let favorites = [
+            SidebarItems.FavoriteItem(name: "Documents", url: directoryURL, iconName: "folder"),
+            SidebarItems.FavoriteItem(name: "Photos", url: collectionURL, iconName: "rectangle.stack"),
+            SidebarItems.FavoriteItem(name: "notes.txt", url: fileURL, iconName: "doc"),
+        ]
+
+        let projected = FileManagerHomeDashboardProjection.homeFavorites(
+            from: favorites,
+            fileExistsWithIsDirectory: { path, isDirectory in
+                guard [directoryURL.path, collectionURL.path, fileURL.path].contains(path) else { return false }
+                isDirectory?.pointee = ObjCBool(path != fileURL.path)
+                return true
+            },
         )
 
-        let favorites = FileManagerHomeDashboardProjection.homeFavorites(from: contentTabs)
-
-        XCTAssertEqual(favorites.map(\.id), [directoryID, collectionID])
-        XCTAssertEqual(favorites.map(\.anchor), [
-            .directory(path: "/Users/test/Documents"),
-            .collectionFile(url: URL(fileURLWithPath: "/Users/test/Photos.vcollection")),
+        XCTAssertEqual(projected.map(\.title), ["Documents", "Photos"])
+        XCTAssertEqual(projected.map(\.anchor), [
+            .directory(path: directoryURL.path),
+            .collectionFile(url: collectionURL),
         ])
     }
 
