@@ -228,6 +228,21 @@ struct WindowManagerFeature {
             case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewWindow(path))))):
                 return .send(.file(.newWindow(path: path)))
 
+            case let .windows(.element(
+                id: sourceWindowID,
+                action: .window(.delegate(.fixedLocationVisibilityChanged(hiddenIDs))),
+            )):
+                return .merge(
+                    state.windows.ids
+                        .filter { $0 != sourceWindowID }
+                        .map { windowID in
+                            .send(.windows(.element(
+                                id: windowID,
+                                action: .window(.applyHiddenFixedLocationIDs(hiddenIDs)),
+                            )))
+                        },
+                )
+
             case .windows(.element(id: _, action: .window(.contentTabs(.pinnedRecordSaveSucceeded)))):
                 return .send(.pinnedContentTabsStoreChanged)
 
