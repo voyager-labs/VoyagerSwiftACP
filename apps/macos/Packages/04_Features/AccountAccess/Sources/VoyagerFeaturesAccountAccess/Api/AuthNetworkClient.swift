@@ -32,7 +32,7 @@ public struct AuthNetworkClient: Sendable {
         refreshToken: @escaping @Sendable () async throws -> AccountSession,
         syncSession: @escaping @Sendable (_ intent: SessionSyncIntent, _ device: DeviceBindingRequest) async throws
             -> SessionSyncResult = { _, _ in throw SessionSyncError.capabilityMiss },
-        syncSessionWithRequestID: (@escaping @Sendable (
+        syncSessionWithRequestID: (@Sendable (
             _ intent: SessionSyncIntent,
             _ device: DeviceBindingRequest,
             _ requestID: String,
@@ -42,8 +42,12 @@ public struct AuthNetworkClient: Sendable {
         self.fetchAccessStatus = fetchAccessStatus
         self.bindDevice = bindDevice
         self.refreshToken = refreshToken
-        syncSessionOperation = syncSessionWithRequestID ?? { intent, device, _ in
-            try await syncSession(intent, device)
+        if let syncSessionWithRequestID {
+            syncSessionOperation = syncSessionWithRequestID
+        } else {
+            syncSessionOperation = { intent, device, _ in
+                try await syncSession(intent, device)
+            }
         }
     }
 

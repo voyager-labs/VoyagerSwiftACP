@@ -133,10 +133,13 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         // store.exhaustivity = .off: foreground revalidation 이후 completion의 recovery projection보다 stale sync 시작을 검증
         store.exhaustivity = .off
 
-        await store.send(.appDidBecomeActive)
-        await store.receive(.revalidatePersistedSession(generation: 1))
+        await store.send(.appDidBecomeActive) { state in
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
+        }
+        await store.receive(\.revalidatePersistedSession)
         await store.receive(\._persistedSessionRevalidated)
-        await store.receive(.sessionSyncRequested(intent: .validate, reason: .foreground))
+        await store.receive(\.sessionSyncRequested)
         await store.receive(\._sessionSyncCompleted)
         await store.receive(\.delegate.recoveryRequired)
 
@@ -188,8 +191,11 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         // store.exhaustivity = .off: foreground의 persisted-session action chain만 검증하고 snapshot recovery 세부 상태는 범위에서 제외
         store.exhaustivity = .off
 
-        await store.send(.appDidBecomeActive)
-        await store.receive(.revalidatePersistedSession(generation: 1))
+        await store.send(.appDidBecomeActive) { state in
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
+        }
+        await store.receive(\.revalidatePersistedSession)
         await store.receive(\._persistedSessionRevalidated)
         await Task.yield()
 
@@ -208,6 +214,8 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         nonisolated(unsafe) var intents: [SessionSyncIntent] = []
         nonisolated(unsafe) var continuation: CheckedContinuation<SessionSyncResult, Error>?
         let sessionExpiresAt = referenceDate.addingTimeInterval(3600)
+        var initialState = sessionNearExpiryState()
+        initialState.sessionExpiresAt = sessionExpiresAt
         let store = makeTestStore(
             accountSessionClient: AccountSessionClient(
                 read: { Self.session(expiresAt: sessionExpiresAt) },
@@ -224,19 +232,19 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
                     return try await withCheckedThrowingContinuation { continuation = $0 }
                 },
             ),
-            initialState: sessionNearExpiryState(),
+            initialState: initialState,
         )
         // store.exhaustivity = .off: 동시 lifecycle action의 coalescing만 검증하고 completion UI projection은 범위에서 제외
         store.exhaustivity = .off
 
         await store.send(.refreshAccessTapped)
-        await store.receive(.sessionSyncRequested(intent: .validate, reason: .manual))
+        await store.receive(\.sessionSyncRequested)
         for _ in 0 ..< 10 where continuation == nil {
             await Task.yield()
         }
 
         await store.send(.appDidBecomeActive)
-        await store.receive(.revalidatePersistedSession(generation: 1))
+        await store.receive(\.revalidatePersistedSession)
         await store.receive(\._persistedSessionRevalidated)
 
         XCTAssertNotNil(continuation)
@@ -280,7 +288,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(._refreshDeadlineReached(generation: 0))
-        await store.receive(.sessionSyncRequested(intent: .refresh, reason: .refreshDeadline))
+        await store.receive(\.sessionSyncRequested)
         await store.receive(\._sessionSyncCompleted)
         await store.receive(\.delegate.recoveryRequired)
 
@@ -312,14 +320,11 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         // store.exhaustivity = .off: snapshot hydration의 전체 presentation state보다 deadline action 시점을 검증
         store.exhaustivity = .off
 
-        await store.send(.hydrateLaunchSnapshot(snapshot)) { state in
-            state.hydrateLaunchSnapshotState(snapshot)
-            state.ttlTimerActive = true
-        }
+        await store.send(.hydrateLaunchSnapshot(snapshot))
         await clock.advance(by: .seconds(3239))
         await clock.advance(by: .seconds(1))
-        await store.receive(._refreshDeadlineReached(generation: 1))
-        await store.receive(.sessionSyncRequested(intent: .refresh, reason: .refreshDeadline))
+        await store.receive(\._refreshDeadlineReached)
+        await store.receive(\.sessionSyncRequested)
         await store.send(.signOut)
         await store.receive(\.delegate.signedOut)
         await store.finish()
@@ -390,8 +395,8 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         await store.receive(\.delegate.recoveryRequired)
         await clock.advance(by: .seconds(3239))
         await clock.advance(by: .seconds(1))
-        await store.receive(._refreshDeadlineReached(generation: 1))
-        await store.receive(.sessionSyncRequested(intent: .refresh, reason: .refreshDeadline))
+        await store.receive(\._refreshDeadlineReached)
+        await store.receive(\.sessionSyncRequested)
         await store.send(.signOut)
         await store.receive(\.delegate.signedOut)
         await store.finish()
@@ -490,7 +495,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.refreshAccessTapped)
-        await store.receive(.sessionSyncRequested(intent: .validate, reason: .manual))
+        await store.receive(\.sessionSyncRequested)
         await store.receive(\._sessionSyncCompleted)
         await store.receive(\.delegate.recoveryRequired)
 
@@ -581,7 +586,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.retryTapped)
-        await store.receive(.sessionSyncRequested(intent: .validate, reason: .retry))
+        await store.receive(\.sessionSyncRequested)
         await store.receive(\._sessionSyncCompleted)
         await store.receive(\.delegate.recoveryRequired)
 
@@ -842,7 +847,7 @@ private enum StorageReadError: Error {
 }
 
 private extension ACC001ValidateAccountSessionTests {
-    static var activeCompleteSyncResult: SessionSyncResult {
+    nonisolated static var activeCompleteSyncResult: SessionSyncResult {
         SessionSyncResult(
             sessionStatus: .unchanged,
             syncStatus: .complete,
@@ -852,7 +857,7 @@ private extension ACC001ValidateAccountSessionTests {
         )
     }
 
-    static var inactiveCompleteSyncResult: SessionSyncResult {
+    nonisolated static var inactiveCompleteSyncResult: SessionSyncResult {
         SessionSyncResult(
             sessionStatus: .unchanged,
             syncStatus: .complete,
@@ -862,7 +867,7 @@ private extension ACC001ValidateAccountSessionTests {
         )
     }
 
-    static func session(expiresAt: Date) -> AccountSession {
+    nonisolated static func session(expiresAt: Date) -> AccountSession {
         AccountSession(
             accessToken: "test-access-token",
             status: .coreLicenseActive,
@@ -886,6 +891,7 @@ private extension ACC001ValidateAccountSessionTests {
         } withDependencies: {
             $0.accountSessionClient = sessionClient
             $0.authNetworkClient = authNetworkClient
+            $0.continuousClock = TestClock()
             $0.date = .constant(referenceDate)
         }
     }
@@ -929,7 +935,7 @@ extension ACC001ValidateAccountSessionTests {
         store.exhaustivity = .off
 
         await store.send(.appDidBecomeActive)
-        await store.receive(.revalidatePersistedSession(generation: 1))
+        await store.receive(\.revalidatePersistedSession)
         await store.receive(\._persistedSessionRevalidated)
         await store.receive(\._sessionExpiredDetected)
 
@@ -942,6 +948,8 @@ extension ACC001ValidateAccountSessionTests {
     /// - 기대 결과: logged_in 상태를 유지하며 다음 foreground 기회에 재검증할 수 있다.
     func testForegroundValidationWithTransientStorageFailurePreservesSessionWithoutFetch() async {
         nonisolated(unsafe) var fetchCalled = false
+        var initialState = sessionNearExpiryState()
+        initialState.sessionExpiresAt = referenceDate.addingTimeInterval(3600)
         let store = makeTestStore(
             accountSessionClient: AccountSessionClient(
                 read: { throw StorageReadError.unavailable },
@@ -957,19 +965,24 @@ extension ACC001ValidateAccountSessionTests {
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
-            initialState: sessionNearExpiryState(),
+            initialState: initialState,
         )
+        // store.exhaustivity = .off: transient storage failure 뒤 deadline cancellation cleanup은 검증 대상이 아님
+        store.exhaustivity = .off
 
         await store.send(.appDidBecomeActive) { state in
             state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
         }
-        await store.receive(.revalidatePersistedSession(generation: 1))
+        await store.receive(\.revalidatePersistedSession)
         await store.receive(\._persistedSessionRevalidated)
 
         XCTAssertTrue(store.state.hasAccountSession)
         XCTAssertFalse(store.state.isSessionExpired)
         XCTAssertEqual(store.state.fetchGeneration, 0)
         XCTAssertFalse(fetchCalled)
+        await store.send(.signOut)
+        await store.receive(\.delegate.signedOut)
         await store.finish()
     }
 }

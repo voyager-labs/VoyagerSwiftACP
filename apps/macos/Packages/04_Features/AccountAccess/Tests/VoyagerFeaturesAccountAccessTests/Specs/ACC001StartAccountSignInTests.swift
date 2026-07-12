@@ -95,7 +95,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
 
                 return await withTaskCancellationHandler(operation: {
                     do {
-                        try await ContinuousClock().sleep(for: .minutes(1))
+                        try await ContinuousClock().sleep(for: .seconds(60))
                         return .awaitingCallback(state: pending.state)
                     } catch {
                         return .cancelled

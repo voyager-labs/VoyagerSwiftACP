@@ -38,9 +38,6 @@ public struct AccountAccessFeature {
     @Dependency(\.deviceIdentityClient)
     var deviceIdentityClient
 
-    @Dependency(\.uuid)
-    var uuid
-
     enum CancelID: Hashable {
         case signInHandoff(AccountAccessHandoffScope)
         case handoffClaim(AccountAccessHandoffScope)
@@ -52,7 +49,7 @@ public struct AccountAccessFeature {
         static let refreshDeadline = "accountAccessRefreshDeadline"
     }
 
-    static let handoffCallbackTimeout: Duration = .minutes(5)
+    static let handoffCallbackTimeout: Duration = .seconds(300)
     static let sessionSyncFreshness: TimeInterval = 5 * 60
     static let sessionSyncRetryDelays: [Duration] = [.seconds(1), .seconds(2), .seconds(4)]
 
@@ -193,8 +190,10 @@ public struct AccountAccessFeature {
         state.didBootstrap = true
         return .merge(
             .run { [sessionClient] send in
-                let restoration: AccountSessionRestoration = if let session = try? await sessionClient.read() {
-                    .available(sessionExpiresAt: session.expiresAt)
+                let restoration: AccountSessionRestoration = if let session = try? await sessionClient.read(),
+                                                                let expiresAt = session.expiresAt
+                {
+                    .available(sessionExpiresAt: expiresAt)
                 } else {
                     .missing
                 }
@@ -232,7 +231,7 @@ public struct AccountAccessFeature {
             return .merge(
                 .cancel(id: CancelID.sessionSync),
                 cancelRefreshDeadline(&state),
-                .cancel(id: .handoffCallbackTimeout(state.handoffScope)),
+                .cancel(id: CancelID.handoffCallbackTimeout(state.handoffScope)),
                 cancelHandoffClaimAndExchange(scope: state.handoffScope),
                 clearStoredHandoff(expectedState: expectedState, owner: state.handoffScope),
                 .send(.delegate(.recoveryRequired(.sessionRequired))),
@@ -249,7 +248,7 @@ public struct AccountAccessFeature {
         let refreshDeadlineEffect = scheduleRefreshDeadline(&state)
 
         return .merge(
-            .cancel(id: .handoffCallbackTimeout(state.handoffScope)),
+            .cancel(id: CancelID.handoffCallbackTimeout(state.handoffScope)),
             cancelHandoffClaimAndExchange(scope: state.handoffScope),
             clearStoredHandoff(expectedState: expectedState, owner: state.handoffScope),
             .cancel(id: CancelID.sessionSync),
@@ -293,7 +292,7 @@ public struct AccountAccessFeature {
         let handoffScope = state.handoffScope
 
         return .merge(
-            .cancel(id: .handoffCallbackTimeout(handoffScope)),
+            .cancel(id: CancelID.handoffCallbackTimeout(handoffScope)),
             cancelHandoffClaimAndExchange(scope: handoffScope),
             .run { [signInHandoffClient] send in
                 let result = await signInHandoffClient.beginHandoff(requestedContext, handoffScope)
@@ -316,7 +315,7 @@ public struct AccountAccessFeature {
 
         return .merge(
             .cancel(id: CancelID.signInHandoff(state.handoffScope)),
-            .cancel(id: .handoffCallbackTimeout(state.handoffScope)),
+            .cancel(id: CancelID.handoffCallbackTimeout(state.handoffScope)),
             cancelHandoffClaimAndExchange(scope: state.handoffScope),
             clearStoredHandoff(expectedState: expectedState, owner: state.handoffScope),
         )
@@ -344,7 +343,7 @@ public struct AccountAccessFeature {
             state.handoffPendingState = nil
             state.handoffExchangeState = nil
             return .merge(
-                .cancel(id: .handoffCallbackTimeout(state.handoffScope)),
+                .cancel(id: CancelID.handoffCallbackTimeout(state.handoffScope)),
                 cancelHandoffClaimAndExchange(scope: state.handoffScope),
             )
 
@@ -356,7 +355,7 @@ public struct AccountAccessFeature {
             state.handoffPendingState = nil
             state.handoffExchangeState = nil
             return .merge(
-                .cancel(id: .handoffCallbackTimeout(state.handoffScope)),
+                .cancel(id: CancelID.handoffCallbackTimeout(state.handoffScope)),
                 cancelHandoffClaimAndExchange(scope: state.handoffScope),
                 clearStoredHandoff(expectedState: expectedState, owner: state.handoffScope),
             )
@@ -368,7 +367,7 @@ public struct AccountAccessFeature {
             state.handoffPendingState = nil
             state.handoffExchangeState = nil
             return .merge(
-                .cancel(id: .handoffCallbackTimeout(state.handoffScope)),
+                .cancel(id: CancelID.handoffCallbackTimeout(state.handoffScope)),
                 cancelHandoffClaimAndExchange(scope: state.handoffScope),
                 clearStoredHandoff(expectedState: expectedState, owner: state.handoffScope),
             )
@@ -385,8 +384,10 @@ public struct AccountAccessFeature {
         }
 
         return .run { [sessionClient] send in
-            let restoration: AccountSessionRestoration = if let session = try? await sessionClient.read() {
-                .available(sessionExpiresAt: session.expiresAt)
+            let restoration: AccountSessionRestoration = if let session = try? await sessionClient.read(),
+                                                            let expiresAt = session.expiresAt
+            {
+                .available(sessionExpiresAt: expiresAt)
             } else {
                 .missing
             }
@@ -410,7 +411,7 @@ public struct AccountAccessFeature {
 
         guard case let .available(sessionExpiresAt) = restoration else {
             return .merge(
-                .cancel(id: .handoffCallbackTimeout(state.handoffScope)),
+                .cancel(id: CancelID.handoffCallbackTimeout(state.handoffScope)),
                 cancelHandoffClaimAndExchange(scope: state.handoffScope),
                 clearStoredHandoff(expectedState: expectedState, owner: state.handoffScope),
                 .send(._sessionExpiredDetected),
@@ -427,7 +428,7 @@ public struct AccountAccessFeature {
         invalidateSessionSync(&state)
         state.lastCompleteSyncAt = nil
         return .merge(
-            .cancel(id: .handoffCallbackTimeout(state.handoffScope)),
+            .cancel(id: CancelID.handoffCallbackTimeout(state.handoffScope)),
             cancelHandoffClaimAndExchange(scope: state.handoffScope),
             clearStoredHandoff(expectedState: expectedState, owner: state.handoffScope),
             .cancel(id: CancelID.sessionSync),
@@ -444,7 +445,7 @@ public struct AccountAccessFeature {
     }
 }
 
-private extension AccountAccessFeature {
+extension AccountAccessFeature {
     private func revalidatePersistedSession(
         state: State,
         generation: Int,
@@ -455,8 +456,10 @@ private extension AccountAccessFeature {
         return .run { [sessionClient] send in
             let result: Action.PersistedSessionRevalidationResult
             do {
-                if let session = try await sessionClient.read() {
-                    result = .valid(sessionExpiresAt: session.expiresAt)
+                if let session = try await sessionClient.read(),
+                   let expiresAt = session.expiresAt
+                {
+                    result = .valid(sessionExpiresAt: expiresAt)
                 } else {
                     result = .missing
                 }
@@ -492,7 +495,7 @@ private extension AccountAccessFeature {
             return .merge(
                 .cancel(id: CancelID.sessionSync),
                 cancelRefreshDeadline(&state),
-                .cancel(id: .handoffCallbackTimeout(state.handoffScope)),
+                .cancel(id: CancelID.handoffCallbackTimeout(state.handoffScope)),
                 .cancel(id: CancelID.appDidBecomeActiveObserver),
             )
         }
@@ -511,7 +514,7 @@ private extension AccountAccessFeature {
         .cancellable(id: CancelID.appDidBecomeActiveObserver, cancelInFlight: true)
     }
 
-    private func scheduleRefreshDeadline(_ state: inout State) -> Effect<Action> {
+    func scheduleRefreshDeadline(_ state: inout State) -> Effect<Action> {
         guard let expiresAt = state.sessionExpiresAt else {
             return cancelRefreshDeadline(&state)
         }
@@ -571,7 +574,7 @@ private extension AccountAccessFeature {
             state.handoffExchangeState = nil
             return .merge(
                 .cancel(id: CancelID.signInHandoff(state.handoffScope)),
-                .cancel(id: .handoffCallbackTimeout(state.handoffScope)),
+                .cancel(id: CancelID.handoffCallbackTimeout(state.handoffScope)),
                 cancelHandoffClaimAndExchange(scope: state.handoffScope),
                 clearStoredHandoff(expectedState: expectedState, owner: state.handoffScope),
             )
@@ -595,7 +598,7 @@ private extension AccountAccessFeature {
             cancelRefreshDeadline(&state),
             .cancel(id: CancelID.sessionSync),
             .cancel(id: CancelID.sessionRevalidation),
-            .cancel(id: .handoffCallbackTimeout(state.handoffScope)),
+            .cancel(id: CancelID.handoffCallbackTimeout(state.handoffScope)),
             cancelHandoffClaimAndExchange(scope: state.handoffScope),
             clearStoredHandoff(expectedState: expectedState, owner: state.handoffScope),
         )
@@ -631,7 +634,7 @@ private extension AccountAccessFeature {
             .cancel(id: CancelID.sessionSync),
             cancelRefreshDeadline(&state),
             .cancel(id: CancelID.sessionRevalidation),
-            .cancel(id: .handoffCallbackTimeout(state.handoffScope)),
+            .cancel(id: CancelID.handoffCallbackTimeout(state.handoffScope)),
             cancelHandoffClaimAndExchange(scope: state.handoffScope),
             clearStoredHandoff(expectedState: expectedState, owner: state.handoffScope),
             .send(.delegate(.recoveryRequired(.sessionRequired))),
@@ -659,7 +662,7 @@ private extension AccountAccessFeature {
             cancelRefreshDeadline(&state),
             .cancel(id: CancelID.appDidBecomeActiveObserver),
             .cancel(id: CancelID.signInHandoff(state.handoffScope)),
-            .cancel(id: .handoffCallbackTimeout(state.handoffScope)),
+            .cancel(id: CancelID.handoffCallbackTimeout(state.handoffScope)),
             cancelHandoffClaimAndExchange(scope: state.handoffScope),
             clearStoredHandoff(expectedState: expectedState, owner: state.handoffScope),
         )

@@ -1,3 +1,4 @@
+import Clocks
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
 import XCTest
@@ -16,7 +17,7 @@ import XCTest
 final class ACC001DetectSessionExpiryTests: XCTestCase {
     private let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
 
-    private static func session(expiresAt: Date) -> AccountSession {
+    nonisolated private static func session(expiresAt: Date) -> AccountSession {
         AccountSession(
             accessToken: "test-access-token",
             status: .coreLicenseActive,
@@ -35,11 +36,12 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             persist: { _ in },
             delete: { _ in },
         )
-        TestStore(initialState: initialState) {
+        return TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
             $0.accountSessionClient = sessionClient
             $0.authNetworkClient = authNetworkClient
+            $0.continuousClock = TestClock()
             $0.date = .constant(referenceDate)
         }
     }
@@ -149,10 +151,12 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             state.didSignInFail = true
             state.isSessionExpired = true
             state.fetchGeneration = 1
+            state.syncGeneration = 1
+            state.revalidationGeneration = 1
             state.ttlTimerActive = false
+            state.refreshDeadlineGeneration = 1
             state.sessionExpiresAt = nil
             state.consecutiveRefreshFailures = 0
-            state.fetchGeneration = 1
         }
         await store.receive(\.delegate.recoveryRequired)
 
@@ -176,10 +180,12 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             state.didSignInFail = true
             state.isSessionExpired = true
             state.fetchGeneration = 1
+            state.syncGeneration = 1
+            state.revalidationGeneration = 1
             state.ttlTimerActive = false
+            state.refreshDeadlineGeneration = 1
             state.sessionExpiresAt = nil
             state.consecutiveRefreshFailures = 0
-            state.fetchGeneration = 1
         }
         await store.receive(\.delegate.recoveryRequired)
 
@@ -281,6 +287,9 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             state.didSignInFail = true
             state.isSessionExpired = true
             state.fetchGeneration = 1
+            state.syncGeneration = 1
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
         }
         await store.receive(\.delegate.recoveryRequired)
 
@@ -301,8 +310,9 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
     /// - 사전 조건: fetchGeneration=1
     /// - 기대 결과: _sessionExpiredDetected 수신, isSessionExpired=true, hasAccountSession=false, fetchRetryCount=0
     func testUnauthorizedOnFetchTriggersSessionExpiryImmediately() async {
-        var state = AccountAccessFeature.State()
-        state.fetchGeneration = 1
+        var state = signedInState()
+        state.syncGeneration = 1
+        state.inFlightSyncReason = .foreground
         let store = makeTestStore(
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
@@ -315,7 +325,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
         // store.exhaustivity = .off: _sessionExpiredDetected가 다수 상태를 동시 갱신하나 검증 대상은 최종 상태만 해당
         store.exhaustivity = .off
 
-        await store.send(.accessStatusResponse(generation: 1, result: .failure(.unauthorized)))
+        await store.send(._sessionSyncCompleted(generation: 1, result: .failure(.invalidCredential)))
         await store.receive(\._sessionExpiredDetected)
 
         XCTAssertTrue(store.state.isSessionExpired, "unauthorized → isSessionExpired=true")
@@ -360,10 +370,12 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             state.didSignInFail = true
             state.isSessionExpired = true
             state.fetchGeneration = 1
+            state.syncGeneration = 1
+            state.revalidationGeneration = 1
             state.ttlTimerActive = false
+            state.refreshDeadlineGeneration = 1
             state.sessionExpiresAt = nil
             state.consecutiveRefreshFailures = 0
-            state.fetchGeneration = 1
         }
         await store.receive(\.delegate.recoveryRequired)
 

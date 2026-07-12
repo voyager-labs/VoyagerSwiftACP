@@ -9,7 +9,8 @@ extension AccountAccessFeature {
         reason _: SyncReason,
         generation: UInt64,
     ) -> Effect<Action> {
-        .run { [authNetwork, continuousClock, deviceIdentityClient, uuid] send in
+        let retryDelays = intent == .refresh ? [Duration.seconds(5)] : Self.sessionSyncRetryDelays
+        return .run { [authNetwork, continuousClock, deviceIdentityClient, retryDelays] send in
             let device: DeviceBindingRequest
             do {
                 device = try DeviceBindingRequest(
@@ -23,8 +24,7 @@ extension AccountAccessFeature {
                 return
             }
 
-            let requestID = uuid().uuidString
-            let retryDelays = intent == .refresh ? [Duration.seconds(5)] : Self.sessionSyncRetryDelays
+            let requestID = UUID().uuidString
             var retryIndex = 0
             while true {
                 do {
@@ -36,7 +36,7 @@ extension AccountAccessFeature {
                     await send(._sessionSyncCompleted(generation: generation, result: .success(result)))
                     return
                 } catch let error as SessionSyncError {
-                    guard canRetrySessionSync(error), retryIndex < retryDelays.count else {
+                    guard case .upstream = error, retryIndex < retryDelays.count else {
                         await send(._sessionSyncCompleted(generation: generation, result: .failure(error)))
                         return
                     }
@@ -61,13 +61,6 @@ extension AccountAccessFeature {
     func invalidateSessionSync(_ state: inout State) {
         state.syncGeneration += 1
         state.inFlightSyncReason = nil
-    }
-
-    private func canRetrySessionSync(_ error: SessionSyncError) -> Bool {
-        if case .upstream = error {
-            return true
-        }
-        return false
     }
 
     func handleRefreshAccessTapped(_ state: inout State) -> Effect<Action> {

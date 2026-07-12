@@ -39,7 +39,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             persist: { _ in },
             delete: { _ in },
         )
-        TestStore(initialState: initialState) {
+        return TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
             $0.accountSessionClient = sessionClient

@@ -57,7 +57,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     }
 
     private func storePendingHandoff(
-        state: String = Self.validState,
+        state: String = "xyz789",
         context: AppHandoffContext = .onboarding,
         owner: AccountAccessHandoffScope = .onboarding,
     ) async {
