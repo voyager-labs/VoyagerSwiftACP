@@ -87,4 +87,4 @@ This section defines **who** owns what and **when** to split. For the mechanics 
 
 - Composition mechanics (how to wire child reducers, `Scope`, `.merge` ordering): `../../../implementer/tca-contract/references/tca-contract.md`
 - One-owner-per-concern principle and reuse-before-new heuristics: `../../../implementer/tca-contract/references/development-rules.md`
-- Test setup patterns (exhaustivity, dependency overrides, test scope alignment): `../../../verifier/testing/references/testing-playbook.md`
+- Test setup patterns (exhaustivity, dependency overrides, test scope alignment): `../../../implementer/references/testing-playbook.md`

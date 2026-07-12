@@ -6,9 +6,9 @@
 2. **Discover read-only** — inspect owners, reducer/effect routes, cancellation boundaries, reusable symbols, and focused test surface before editing.
 3. **Route** — choose role entry points from `skill-map.md`.
 4. **Load references** — read the selected role's reference files and any cross-role references listed in `skill-map.md`.
-    - For local SwiftPM package graph, product, target, dependency, or consumer wiring changes, load `../../verifier/verification/references/package-integration-verification.md` through the verification role.
+    - For local SwiftPM package graph, product, target, dependency, or consumer wiring changes, load `../../../code-tooling/references/package-integration.md`.
 5. **Execute** — perform the smallest implementation/review/verification step that matches the selected role.
-6. **Verify** — run `../../verifier/verification/SKILL.md` and any role-specific checks.
+6. **Verify** — apply `.agents/rules/00-core/02-verification.md`, load `../../../code-tooling/SKILL.md` for executor selection, and run any role-specific checks.
 7. **Report** — summarize role decisions, touched files, commands run, and remaining risks.
 
 ## Anti-absorption rule

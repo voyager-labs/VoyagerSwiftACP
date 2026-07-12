@@ -5,7 +5,7 @@
 ## Entry point
 
 - Use `orchestrator/SKILL.md` as the main skill entry point for non-trivial `apps/macos/**` work.
-- The orchestrator routes to role entry points under `planner/`, `implementer/`, `reviewer/`, and `verifier/`.
+- The orchestrator routes to role entry points under `planner/`, `implementer/`, and `reviewer/`.
 - Source-of-truth references live under the owning role's `references/` directory.
 
 ## Trigger scope
@@ -22,9 +22,8 @@ Route through this namespace for:
 
 - `orchestrator/` — task classification, routing, integration, and structure validation.
 - `planner/` — scaffold, decompose, and reuse-evaluation planning.
-- `implementer/` — TCA contract and observation implementation mechanics.
+- `implementer/` — TCA contract, observation, and spec AC test authoring mechanics; load `references/testing-playbook.md` for Voyager test selection and failure analysis.
 - `reviewer/` — architecture-gate and boundary review.
-- `verifier/` — spec test authoring, test execution/failure analysis, and final verification discipline.
 - Role `references/` directories — canonical Voyager-dev references owned by the role that uses them most directly. Do not duplicate long policy text across roles.
 
 ## Rules

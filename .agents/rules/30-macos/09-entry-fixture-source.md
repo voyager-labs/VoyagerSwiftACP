@@ -12,7 +12,7 @@ schemaVersion: 2
 
 ## Default Actions
 
-1. For entry, collection, `.voycoll`, ingestion, metadata, path-display, or File Manager tests, load `.agents/skills/voyager-dev/verifier/spec-test-authoring/SKILL.md` and select the smallest representative `fixtures/fixtures/**` category.
+1. For entry, collection, `.voycoll`, ingestion, metadata, path-display, or File Manager tests, load `.agents/skills/voyager-dev/implementer/spec-test-authoring/SKILL.md` and select the smallest representative `fixtures/fixtures/**` category.
 2. Initialize the submodule, use repo-relative fixture paths in helpers/comments/evidence, and keep a target-local flat `Support/` path helper.
 3. Use `FixtureSandbox.copyingFile(from:)` or `copyingDirectory(from:)` with deferred cleanup for reducer action inputs that mutate, rename, delete, write metadata, change permissions, or create path variants.
 4. Use direct read-only fixture paths only for non-mutating inspection; mock `NSWorkspace`, QuickLook, sharing, pasteboard, Trash, and other OS-boundary clients.

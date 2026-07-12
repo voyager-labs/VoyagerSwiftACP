@@ -123,7 +123,7 @@ Core policy at `.agents/rules/00-core/02-verification.md` owns the required veri
 
 Before the first available XcodeBuildMCP build, run, or test operation in a session, call `XcodeBuildMCP_session_show_defaults()`. Use an MCP operation only when both the operation and its required scope are exposed; do not call raw `xcodebuild` from an agent as a substitute for this matrix.
 
-Load `references/xcodebuild-mcp.md` for session setup and the supported simulator operations. Load `.agents/skills/voyager-dev/verifier/verification/references/verification.md` for focused-before-broad selection and package integration requirements.
+Load `references/xcodebuild-mcp.md` for session setup and the supported simulator operations. Load `references/package-integration.md` for local SwiftPM product, target, dependency, and consumer wiring verification. Load `references/swift6-package-rules.md` when creating packages, adding or moving types into packages, editing `Package.swift`, or fixing Sendable errors.
 
 ### 5. Periphery for dead code scans
 
@@ -148,13 +148,15 @@ If you need both definition AND references — call `codegraph_node` and `codegr
 
 Do NOT read all reference files at once. Load only what the current task needs:
 
-| Task type                    | Read                                      | Skip       |
-| ---------------------------- | ----------------------------------------- | ---------- |
-| Find definition / references | `codegraph.md`                            | All others |
-| Search or rewrite patterns   | `ast-grep.md`                             | All others |
-| Build / test / compile check | `xcodebuild-mcp.md` and capability matrix | All others |
-| Unused code scan             | `periphery.md`                            | All others |
-| Multiple concerns            | Load only the files for tools you'll use  | Others     |
+| Task type                    | Read                                      | Skip                      |
+| ---------------------------- | ----------------------------------------- | ------------------------- |
+| Find definition / references | `codegraph.md`                            | All others                |
+| Search or rewrite patterns   | `ast-grep.md`                             | All others                |
+| Build / test / compile check | `xcodebuild-mcp.md` and capability matrix | All others                |
+| SwiftPM package integration  | `package-integration.md`                  | Unrelated tool references |
+| Swift 6 package rules        | `swift6-package-rules.md`                 | Unrelated tool references |
+| Unused code scan             | `periphery.md`                            | All others                |
+| Multiple concerns            | Load only the files for tools you'll use  | Others                    |
 
 ## Related Skills
 
@@ -162,4 +164,3 @@ Do NOT read all reference files at once. Load only what the current task needs:
 | ----------------- | ---------------------------------------------------- |
 | `codegraph-usage` | Deep CodeGraph guides with Voyager-specific examples |
 | `voyager-dev`     | Voyager macOS TCA + FSD orchestrator                 |
-| `verification`    | Build/test verification gates                        |
