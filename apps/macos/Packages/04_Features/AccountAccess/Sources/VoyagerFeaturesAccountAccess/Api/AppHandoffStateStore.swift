@@ -17,11 +17,6 @@ actor AppHandoffStateStore {
         return true
     }
 
-    /// 현재 활성 handoff를 시작한 surface를 반환한다.
-    func pendingOwner() -> AccountAccessHandoffScope? {
-        pending?.owner
-    }
-
     /// expectedState와 일치하면 보류 상태를 반환하고 제거한다.
     /// 불일치 또는 미저장 시 nil을 반환한다.
     func claim(

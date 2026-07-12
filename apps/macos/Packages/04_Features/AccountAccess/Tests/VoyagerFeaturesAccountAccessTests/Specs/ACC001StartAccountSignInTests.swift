@@ -262,7 +262,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
     }
 
     /// ACC-001-start_account_sign_in: 서로 다른 표면의 동시 handoff 시작은 하나만 승인한다.
-    /// - 검증 내용: 두 owner의 begin 결과 중 하나만 true이고, 저장된 owner가 승인된 owner와 일치
+    /// - 검증 내용: 두 owner의 begin 결과 중 하나만 true이고, claim이 승인된 owner와 일치
     /// - 사전 조건: onboarding 및 settings surface가 활성 handoff 없이 동시에 시작 요청
     /// - 기대 결과: 하나의 PendingAppHandoff만 유지되고 뒤 요청은 기존 owner를 덮어쓰지 않음
     func testSimultaneousCrossScopeAdmissionAllowsOnlyOneOwner() async {
@@ -284,11 +284,20 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         let admissions = await (onboardingAccepted, settingsAccepted)
 
         XCTAssertEqual([admissions.0, admissions.1].count(where: { $0 }), 1)
-        let owner = await AppHandoffStateStore.shared.pendingOwner()
         if admissions.0 {
-            XCTAssertEqual(owner, .onboarding)
+            let claimed = await AppHandoffStateStore.shared.claim(
+                expectedState: onboardingPending.state,
+                context: onboardingPending.context,
+                owner: .onboarding,
+            )
+            XCTAssertEqual(claimed?.owner, .onboarding)
         } else {
-            XCTAssertEqual(owner, .settings)
+            let claimed = await AppHandoffStateStore.shared.claim(
+                expectedState: settingsPending.state,
+                context: settingsPending.context,
+                owner: .settings,
+            )
+            XCTAssertEqual(claimed?.owner, .settings)
         }
     }
 
@@ -337,8 +346,12 @@ final class ACC001StartAccountSignInTests: XCTestCase {
 
         XCTAssertFalse(store.state.didSignInFail)
         XCTAssertNil(store.state.handoffPendingState)
-        let owner = await AppHandoffStateStore.shared.pendingOwner()
-        XCTAssertEqual(owner, .onboarding)
+        let claimed = await AppHandoffStateStore.shared.claim(
+            expectedState: activePending.state,
+            context: activePending.context,
+            owner: .onboarding,
+        )
+        XCTAssertEqual(claimed?.owner, .onboarding)
         await store.finish()
     }
 
@@ -405,17 +418,18 @@ final class ACC001StartAccountSignInTests: XCTestCase {
             state.didSignInFail = false
         }
         await gate.waitUntilStarted()
-        let admittedOwner = await AppHandoffStateStore.shared.pendingOwner()
-        XCTAssertEqual(admittedOwner, .onboarding)
+        let mismatchedClaim = await AppHandoffStateStore.shared.claim(
+            expectedState: pending.state,
+            context: pending.context,
+            owner: .settings,
+        )
+        XCTAssertNil(mismatchedClaim)
 
         await store.send(.cancelSignIn) { state in
             state.isSignInInProgress = false
             state.didSignInFail = false
         }
         await gate.waitUntilCancelled()
-        let ownerAfterCancellation = await AppHandoffStateStore.shared.pendingOwner()
-        XCTAssertNil(ownerAfterCancellation)
-
         let futurePending = PendingAppHandoff(
             state: "settings-state-456",
             context: .paywall,
@@ -429,12 +443,12 @@ final class ACC001StartAccountSignInTests: XCTestCase {
             owner: .onboarding,
         )
         XCTAssertFalse(mismatchedClear)
-        let retainedOwner = await AppHandoffStateStore.shared.pendingOwner()
-        XCTAssertEqual(retainedOwner, .settings)
-        _ = await AppHandoffStateStore.shared.clear(
+        let claimedFutureHandoff = await AppHandoffStateStore.shared.claim(
             expectedState: futurePending.state,
+            context: futurePending.context,
             owner: futurePending.owner,
         )
+        XCTAssertEqual(claimedFutureHandoff?.owner, .settings)
         await store.finish()
     }
 

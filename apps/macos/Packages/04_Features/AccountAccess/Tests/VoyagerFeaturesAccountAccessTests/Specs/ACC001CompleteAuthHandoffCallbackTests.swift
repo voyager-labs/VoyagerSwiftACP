@@ -414,7 +414,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     }
 
     /// ACC-001-complete_auth_handoff_callback: malformed stale callback은 더 새로운 handoff를 변경하지 않는다.
-    /// - 검증 내용: exchange 미호출, local progress 유지, shared pending owner 유지
+    /// - 검증 내용: exchange 미호출, local progress 유지, shared pending handoff 유지
     /// - 사전 조건: settings owner의 새 paywall handoff가 pending이고 context가 빠진 이전 callback 수신
     /// - 기대 결과: malformed callback은 no-op이며 새 flow와 PendingAppHandoff가 보존
     func testMalformedStaleCallbackPreservesNewerFlowAndPendingStore() async throws {
@@ -438,8 +438,12 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
 
         XCTAssertTrue(store.state.isSignInInProgress)
         XCTAssertEqual(store.state.handoffPendingState, "new-state-456")
-        let owner = await AppHandoffStateStore.shared.pendingOwner()
-        XCTAssertEqual(owner, .settings)
+        let preservedHandoff = await AppHandoffStateStore.shared.claim(
+            expectedState: "new-state-456",
+            context: .paywall,
+            owner: .settings,
+        )
+        XCTAssertEqual(preservedHandoff?.owner, .settings)
         await store.finish()
     }
 

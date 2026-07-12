@@ -12,17 +12,13 @@ public struct SignInHandoffClient: Sendable {
         _ context: AppHandoffContext,
         _ owner: AccountAccessHandoffScope,
     ) async -> SignInHandoffResult
-    public var resolvePendingOwner: @Sendable () async -> AccountAccessHandoffScope?
-
     nonisolated public init(
         performHandoff: @escaping @Sendable (_ context: AppHandoffContext) async -> SignInHandoffResult,
-        resolvePendingOwner: @escaping @Sendable () async -> AccountAccessHandoffScope? = { nil },
     ) {
         self.performHandoff = performHandoff
         beginHandoff = { context, _ in
             await performHandoff(context)
         }
-        self.resolvePendingOwner = resolvePendingOwner
     }
 
     nonisolated public init(
@@ -30,13 +26,11 @@ public struct SignInHandoffClient: Sendable {
             _ context: AppHandoffContext,
             _ owner: AccountAccessHandoffScope,
         ) async -> SignInHandoffResult,
-        resolvePendingOwner: @escaping @Sendable () async -> AccountAccessHandoffScope? = { nil },
     ) {
         performHandoff = { context in
             await beginHandoff(context, .onboarding)
         }
         self.beginHandoff = beginHandoff
-        self.resolvePendingOwner = resolvePendingOwner
     }
 }
 
@@ -92,9 +86,6 @@ extension SignInHandoffClient: DependencyKey {
                         await AppHandoffStateStore.shared.clear(expectedState: state, owner: owner)
                     }
                 })
-            },
-            resolvePendingOwner: {
-                await AppHandoffStateStore.shared.pendingOwner()
             },
         )
     }
