@@ -1074,6 +1074,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Voyager$(VOYAGER_APP_SUFFIX) (Debug)";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_SUEnableAutomaticChecks = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -1084,7 +1085,7 @@
 					"-Xlinker",
 					"-interposable",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.dev;
 				PRODUCT_MODULE_NAME = Voyager;
 				PRODUCT_NAME = "$(TARGET_NAME)$(VOYAGER_APP_SUFFIX)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1101,6 +1102,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
+				VOYAGER_CALLBACK_SCHEME = voyager-dev;
 			};
 			name = Debug;
 		};
@@ -1132,6 +1134,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Voyager;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_SUEnableAutomaticChecks = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -1149,6 +1152,7 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
+				VOYAGER_CALLBACK_SCHEME = voyager;
 			};
 			name = Release;
 		};
