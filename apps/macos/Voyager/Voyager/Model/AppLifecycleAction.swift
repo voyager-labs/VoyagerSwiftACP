@@ -7,6 +7,7 @@ enum AppLifecycleAction: CasePathable {
     case launch(Launch)
     case termination(Termination)
     case accountAccess(AccountAccessAction)
+    case accountAccessCallbackReceived(URL, owner: AccountAccessHandoffScope)
     case sessionExpiredDetected(reason: AccountSessionEndReason?)
     case delegate(Delegate)
 

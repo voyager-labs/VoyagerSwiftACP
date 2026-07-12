@@ -85,7 +85,7 @@ struct OnboardingFeature {
         case let .accessStatusResponse(generation: _, result: .success(response)):
             return handleAccessStatusSuccess(response, state: &state, progressClient: progressClient)
 
-        case ._onAppearSessionRestored(nil),
+        case ._onAppearSessionRestored(.missing),
              ._sessionExpiredDetected,
              .delegate(.recoveryRequired):
             state.currentStep = .accessUnlock

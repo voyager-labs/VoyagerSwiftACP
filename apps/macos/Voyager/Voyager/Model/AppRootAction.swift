@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesSettings
@@ -13,6 +14,7 @@ enum AppRootAction: CasePathable {
     case receiveExternalURL(URL)
     /// ACC-001 소유 인증 callback 수신. FMW 라우터가 소유하지 않는 route를 명시적으로 분리한다.
     case receiveAuthCallbackURL(URL)
+    case _authCallbackOwnerResolved(URL, AccountAccessHandoffScope?)
     /// 외부 file:// URL 수신 (System Open Event, NSServices)
     case receiveExternalFileURL(URL, source: RouteSource, mode: DeepLinkMode)
     /// 외부 `.voycoll` 문서 열기 수신. RCL collection open 경로로 분리한다.

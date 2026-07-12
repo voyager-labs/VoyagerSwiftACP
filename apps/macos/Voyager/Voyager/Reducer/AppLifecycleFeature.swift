@@ -88,7 +88,7 @@ struct AppLifecycleFeature {
 
             // MARK: - AccountAccess delegate routing
 
-            case let .accountAccess(.delegate(.unlocked)):
+            case .accountAccess(.delegate(.unlocked)):
                 guard state.accessGatePhase != .terminating else { return .none }
                 guard state.accessGatePhase != .granted else { return .none }
                 state.accessGatePhase = .granted
@@ -118,6 +118,22 @@ struct AppLifecycleFeature {
             case .accountAccess(.delegate(.signedOut)):
                 guard state.accessGatePhase != .terminating else { return .none }
                 state.accessGatePhase = .signedOut
+                return .none
+
+            case let .accountAccessCallbackReceived(url, owner):
+                state.accountAccess.handoffScope = owner
+                if !state.accountAccess.isSignInInProgress {
+                    state.accountAccess.isSignInInProgress = true
+                    state.accountAccess.didSignInFail = false
+                    state.accountAccess.handoffPendingState = nil
+                    state.accountAccess.handoffExchangeState = nil
+                }
+                return .send(.accountAccess(.loginCallbackReceived(url)))
+
+            case .accountAccess(.cancelSignIn),
+                 .accountAccess(._handoffCallbackTimedOut),
+                 .accountAccess(._handoffExchangeCompleted):
+                state.accountAccess.handoffScope = .lifecycle
                 return .none
 
             case .accountAccess:

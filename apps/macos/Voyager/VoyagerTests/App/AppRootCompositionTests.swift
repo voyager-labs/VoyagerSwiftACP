@@ -54,124 +54,280 @@ final class AppRootCompositionTests: XCTestCase {
         await store.receive(\.settings.ai.onAppear)
     }
 
-    // MARK: - AccountAccess delegate routing
+    // MARK: - ACC-001-settings_lifecycle_bridge
 
-    func testAppRootAccountAccessUnlockedForwardsSettingsAccessSnapshotHydration() async {
-        let expiry = Date(timeIntervalSince1970: 4_102_444_800)
-        let snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            sessionExpiresAt: expiry,
-            deviceBindingVerifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
+    /// ACC-001-settings_lifecycle_bridge: signed-out Settings Sign In은 canonical lifecycle에 한 번만 전달된다.
+    /// Settings가 local AccountAccess runtime 없이 narrow delegate로 sign-in을 요청하는 경로를 검증한다.
+    /// - 검증 내용: signInRequested가 lifecycle AccountAccess.loginTapped 한 번과 presentation 갱신으로 번역됨
+    /// - 사전 조건: canonical lifecycle AccountAccess가 signed-out이고 Settings는 projection consumer임
+    /// - 기대 결과: lifecycle만 handoff를 시작하고 Settings에는 sign-in progress projection만 반영됨
+    func testSettingsSignedOutSignInRoutesToCanonicalLifecycleExactlyOnce() async {
+        let store = makeSettingsAccountBridgeStore(
+            signInHandoffClient: SignInHandoffClient { _ in
+                .awaitingCallback(state: "settings-intent-state")
+            },
         )
-        let store = makeAccountAccessGrantedStore()
-
-        await store.send(.lifecycle(.accountAccess(.delegate(.unlocked(snapshot)))))
-
-        await store.receive(\.settings.appLifecycleAccessSnapshotReady) { state in
-            state.settings.accessStatus = snapshot.status
-        }
-        await store.receive(\.settings.account.access.hydrateLaunchSnapshot) { state in
-            state.settings.accountSettings.access.status = .coreLicenseActive
-            state.settings.accountSettings.access.snapshot = snapshot
-            state.settings.accountSettings.access.isComplete = true
-            state.settings.accountSettings.access.sessionExpiresAt = expiry
-            state.settings.accountSettings.access.hasAccountSession = true
-            state.settings.accountSettings.access.didBootstrap = true
-        }
-
-        XCTAssertEqual(store.state.settings.accountSettings.access.sessionExpiresAt, expiry)
-        XCTAssertTrue(store.state.settings.accountSettings.access.hasAccountSession)
-        await store.finish()
-    }
-
-    // MARK: - Task 5: AccountAccess delegate signedOut clears Settings
-
-    func testAccountAccessSignedOutClearsSettingsTopLevelAccess() async {
-        var initialState = AppRootFeature.State()
-        initialState.settings.accessStatus = .coreLicenseActive
-        let store = TestStore(initialState: initialState) {
-            AppRootFeature()
-        } withDependencies: {
-            $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.onboardingWindowClient.isRequired = { false }
-            $0.notificationCenterClient.notifications = { _, _ in
-                AsyncStream { $0.finish() }
-            }
-        }
+        // store.exhaustivity = .off: root, lifecycle, AccountAccess의 multi-reducer 효과 순서를 함께 검증함
         store.exhaustivity = .off
 
-        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
-
-        await store.receive(\.settings.accessStatusLoaded) { state in
-            state.settings.accessStatus = .none
+        await store.send(.settings(.delegate(.account(.signInRequested))))
+        await store.receive(\.lifecycle.accountAccess.loginTapped) { state in
+            state.lifecycle.accountAccess.isSignInInProgress = true
         }
+        await store.receive(\.settings.accountAccessPresentationUpdated) { state in
+            state.settings.accountSettings.presentation = AccountAccessPresentation(
+                isSignInInProgress: true,
+            )
+        }
+        await store.receive(\.lifecycle.accountAccess.signInHandoffCompleted) { state in
+            state.lifecycle.accountAccess.handoffPendingState = "settings-intent-state"
+        }
+        await store.receive(\.settings.accountAccessPresentationUpdated)
 
-        XCTAssertEqual(store.state.settings.accessStatus, .none)
+        await store.send(.lifecycle(.accountAccess(.cancelSignIn))) { state in
+            state.lifecycle.accountAccess.isSignInInProgress = false
+            state.lifecycle.accountAccess.handoffPendingState = nil
+            state.lifecycle.accountAccess.handoffScope = .lifecycle
+        }
+        await store.receive(\.settings.accountAccessPresentationUpdated) { state in
+            state.settings.accountSettings.presentation = AccountAccessPresentation()
+        }
         await store.finish()
     }
 
-    func testSessionExpiredDetectedClearsSettingsAccountChildAccessState() async {
-        let expiry = Date(timeIntervalSince1970: 4_102_444_800)
+    /// ACC-001-settings_lifecycle_bridge: signed-in Settings Sign In은 canonical session 기준으로 no-op이다.
+    /// 오래된 Settings projection이 signed-out을 표시해도 canonical lifecycle session을 재인증하지 않는지 검증한다.
+    /// - 검증 내용: signInRequested에 lifecycle AccountAccess.loginTapped effect가 없음
+    /// - 사전 조건: lifecycle AccountAccess는 signed-in이고 Settings projection은 의도적으로 stale signed-out임
+    /// - 기대 결과: state와 effect가 변하지 않음
+    func testSettingsSignedInSignInIsDeterministicNoOp() async {
         var initialState = AppRootFeature.State()
-        initialState.settings.accessStatus = .coreLicenseActive
-        initialState.settings.accountSettings.access.status = .coreLicenseActive
-        initialState.settings.accountSettings.access.snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            sessionExpiresAt: expiry,
-        )
-        initialState.settings.accountSettings.access.isComplete = true
-        initialState.settings.accountSettings.access.hasAccountSession = true
-        initialState.settings.accountSettings.access.sessionExpiresAt = expiry
+        initialState.lifecycle.accountAccess.hasAccountSession = true
+        let store = makeSettingsAccountBridgeStore(initialState: initialState)
 
-        let store = makeAccountAccessGrantedStore(initialState: initialState)
-
-        await store.send(.lifecycle(.sessionExpiredDetected(reason: .sessionExpired)))
-
-        await store.receive(\.settings.accessStatusLoaded) { state in
-            state.settings.accessStatus = .none
-        }
-        await store.receive(\.settings.account.access._sessionExpiredDetected) { state in
-            state.settings.accountSettings.access.status = nil
-            state.settings.accountSettings.access.snapshot = nil
-            state.settings.accountSettings.access.isComplete = false
-            state.settings.accountSettings.access.hasAccountSession = false
-            state.settings.accountSettings.access.didSignInFail = true
-            state.settings.accountSettings.access.isSessionExpired = true
-            state.settings.accountSettings.access.sessionExpiresAt = nil
-        }
-
-        XCTAssertEqual(store.state.settings.accessStatus, .none)
+        await store.send(.settings(.delegate(.account(.signInRequested))))
         await store.finish()
     }
 
-    func testExplicitSignOutSetsSignedOutPhase() async {
+    /// ACC-001-settings_lifecycle_bridge: confirmed Settings Sign Out은 canonical lifecycle에서 한 번 처리된다.
+    /// Settings confirmation reducer가 만든 signOutRequested delegate의 composition boundary를 검증한다.
+    /// - 검증 내용: signOutRequested가 lifecycle AccountAccess.signOut으로 번역되고 signed-out projection이 반영됨
+    /// - 사전 조건: canonical lifecycle AccountAccess에 활성 session이 있음
+    /// - 기대 결과: Settings는 local session을 지우지 않고 canonical 결과 projection만 수신함
+    func testSettingsConfirmedSignOutRoutesToCanonicalLifecycleExactlyOnce() async {
         var initialState = AppRootFeature.State()
-        initialState.settings.accessStatus = .coreLicenseActive
-        initialState.settings.accountSettings.access.hasAccountSession = true
+        initialState.lifecycle.accountAccess.hasAccountSession = true
+        let store = makeSettingsAccountBridgeStore(initialState: initialState)
+        // store.exhaustivity = .off: sign-out은 persistence cleanup과 lifecycle delegate를 함께 생성함
+        store.exhaustivity = .off
 
-        let store = makeAccountAccessGrantedStore(initialState: initialState)
-
-        await store.send(.lifecycle(.sessionExpiredDetected(reason: .explicitSignOut)))
-
-        // lifecycle scope가 child _sessionExpiredDetected를 먼저 수신
-        await store.receive(\.lifecycle.accountAccess._sessionExpiredDetected)
-        // AppRoot reduceAppLifecycle이 settings 라우팅
-        await store.receive(\.settings.accessStatusLoaded) { state in
-            state.settings.accessStatus = .none
+        await store.send(.settings(.delegate(.account(.signOutRequested))))
+        await store.receive(\.lifecycle.accountAccess.signOut) { state in
+            state.lifecycle.accountAccess.revalidationGeneration = 1
+            state.lifecycle.accountAccess.hasAccountSession = false
+            state.lifecycle.accountAccess.isSessionExpired = true
+            state.lifecycle.accountAccess.fetchGeneration = 1
+            state.lifecycle.accountAccess.syncGeneration = 1
+            state.lifecycle.accountAccess.refreshDeadlineGeneration = 1
         }
-        // child가 delegate recoveryRequired → parent가 explicitSignOut 감지 후 signedOut
+        await store.receive(\.settings.accountAccessPresentationUpdated)
         await store.receive(\.lifecycle.accountAccess.delegate) { state in
             state.lifecycle.accessGatePhase = .signedOut
         }
+        await store.receive(\.settings.accountAccessPresentationUpdated)
 
-        XCTAssertTrue(store.state.settings.accountSettings.access.hasAccountSession)
-        XCTAssertFalse(store.state.settings.accountSettings.access.didSignInFail)
-        XCTAssertEqual(store.state.lifecycle.accessGatePhase, .signedOut)
-        XCTAssertNotNil(store.state.lifecycle.presentedAccountAccess)
-        XCTAssertEqual(
-            store.state.lifecycle.presentedAccountAccess,
-            store.state.lifecycle.accountAccess,
+        XCTAssertFalse(store.state.lifecycle.accountAccess.hasAccountSession)
+        XCTAssertEqual(store.state.settings.accountSettings.presentation, AccountAccessPresentation())
+        await store.finish()
+    }
+
+    /// ACC-001-settings_lifecycle_bridge: Settings Retry는 canonical lifecycle sync intent로 한 번만 전달된다.
+    /// Settings가 local fetch를 시작하지 않고 canonical AccountAccess public action만 요청하는지 검증한다.
+    /// - 검증 내용: retryRequested가 retryTapped와 sessionSyncRequested로 이어짐
+    /// - 사전 조건: signed-out canonical lifecycle state
+    /// - 기대 결과: Settings local state/effect 없이 canonical reducer가 retry를 판정함
+    func testSettingsRetryRoutesToCanonicalLifecycleExactlyOnce() async {
+        let store = makeSettingsAccountBridgeStore()
+        // store.exhaustivity = .off: retry의 downstream sync policy는 AccountAccess suite에서 별도로 검증됨
+        store.exhaustivity = .off
+
+        await store.send(.settings(.delegate(.account(.retryRequested))))
+        await store.receive(\.lifecycle.accountAccess.retryTapped)
+        await store.receive(\.settings.accountAccessPresentationUpdated)
+        await store.receive(\.lifecycle.accountAccess.sessionSyncRequested)
+        await store.finish()
+    }
+
+    /// ACC-001-settings_lifecycle_bridge: canonical lifecycle presentation은 Settings value projection을 갱신한다.
+    /// lifecycle unlocked delegate가 Settings에 AccountAccess state나 store를 노출하지 않는 경로를 검증한다.
+    /// - 검증 내용: canonical account facts가 accountAccessPresentationUpdated로 전달됨
+    /// - 사전 조건: lifecycle AccountAccess는 active session snapshot을 보유하고 access gate는 이미 granted임
+    /// - 기대 결과: Settings access status와 equatable presentation이 canonical facts와 일치함
+    func testCanonicalLifecycleAccountAccessUpdatesSettingsProjection() async {
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            sessionExpiresAt: Date(timeIntervalSince1970: 4_102_444_800),
         )
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.lifecycle.accountAccess.hasAccountSession = true
+        initialState.lifecycle.accountAccess.status = snapshot.status
+        initialState.lifecycle.accountAccess.snapshot = snapshot
+        let store = makeSettingsAccountBridgeStore(initialState: initialState)
+
+        await store.send(.lifecycle(.accountAccess(.delegate(.unlocked(snapshot)))))
+        await store.receive(\.settings.accountAccessPresentationUpdated) { state in
+            let presentation = AccountAccessPresentation(
+                hasAccountSession: true,
+                accessStatus: .coreLicenseActive,
+            )
+            state.settings.accessStatus = .coreLicenseActive
+            state.settings.accountSettings.presentation = presentation
+        }
+
+        XCTAssertEqual(store.state.settings.accountSettings.setAuthState, .signedIn)
+        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementActive)
+        await store.finish()
+    }
+
+    /// ACC-001-settings_lifecycle_bridge: session expiry는 canonical lifecycle failure projection으로 Settings를 갱신한다.
+    /// session-end notification이 legacy Settings child action 없이 lifecycle AccountAccess만 종료하는지 검증한다.
+    /// - 검증 내용: sessionExpiredDetected가 canonical child teardown과 signed-out failure presentation으로 이어짐
+    /// - 사전 조건: active session을 가진 lifecycle AccountAccess와 recoveryRequired gate
+    /// - 기대 결과: Settings는 didSignInFail=true, accessStatus=.none projection을 수신함
+    func testSessionExpiryUpdatesSettingsFromCanonicalLifecycleProjection() async {
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .recoveryRequired
+        initialState.lifecycle.accountAccess.hasAccountSession = true
+        initialState.lifecycle.accountAccess.status = .coreLicenseActive
+        let store = makeSettingsAccountBridgeStore(initialState: initialState)
+        // store.exhaustivity = .off: session-expiry cleanup과 lifecycle recovery delegate를 함께 검증함
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.sessionExpiredDetected(reason: .sessionExpired))) { state in
+            state.lifecycle.sessionEndReason = .sessionExpired
+        }
+        await store.receive(\.lifecycle.accountAccess._sessionExpiredDetected) { state in
+            state.lifecycle.accountAccess.revalidationGeneration = 1
+            state.lifecycle.accountAccess.hasAccountSession = false
+            state.lifecycle.accountAccess.didSignInFail = true
+            state.lifecycle.accountAccess.isSessionExpired = true
+            state.lifecycle.accountAccess.status = nil
+            state.lifecycle.accountAccess.fetchGeneration = 1
+            state.lifecycle.accountAccess.syncGeneration = 1
+            state.lifecycle.accountAccess.refreshDeadlineGeneration = 1
+        }
+        await store.receive(\.settings.accountAccessPresentationUpdated) { state in
+            state.settings.accountSettings.presentation = AccountAccessPresentation(didSignInFail: true)
+        }
+        await store.receive(\.lifecycle.accountAccess.delegate)
+        await store.receive(\.settings.accountAccessPresentationUpdated)
+
+        XCTAssertEqual(store.state.settings.accessStatus, AccessStatus.none)
+        XCTAssertTrue(store.state.settings.accountSettings.presentation.didSignInFail)
+        await store.finish()
+    }
+
+    /// ACC-001-settings_lifecycle_bridge: legacy settings owner callback은 canonical lifecycle ingress로 전달된다.
+    /// 이전 settings metadata가 남아 있어도 Settings child reducer 없이 lifecycle AccountAccess가 callback을 받는지 검증한다.
+    /// - 검증 내용: settings owner resolution이 lifecycle compatibility action과 loginCallbackReceived로 번역됨
+    /// - 사전 조건: persisted legacy Settings owner가 남아 있고 resolver가 .settings를 반환함
+    /// - 기대 결과: canonical child가 callback 대기 상태와 legacy scope로 전환되고 Settings child action은 생성되지 않음
+    func testLegacySettingsOwnerCallbackRoutesToCanonicalLifecycleAccountAccess() async throws {
+        let callbackURL = try XCTUnwrap(
+            URL(string: "voyager://auth/callback?ticket=legacy-ticket&state=legacy-state&context=paywall"),
+        )
+        let store = makeSettingsAccountBridgeStore(
+            signInHandoffClient: SignInHandoffClient(
+                beginHandoff: { _, _ in .failure },
+                resolvePendingOwner: { .settings },
+            ),
+        )
+        // store.exhaustivity = .off: callback claim/exchange atomics는 AccountAccess spec suite가 소유함
+        store.exhaustivity = .off
+
+        await store.send(.receiveAuthCallbackURL(callbackURL))
+        await store.receive(\._authCallbackOwnerResolved)
+        await store.receive(\.lifecycle.accountAccessCallbackReceived) { state in
+            state.lifecycle.accountAccess.handoffScope = .settings
+            state.lifecycle.accountAccess.isSignInInProgress = true
+        }
+        await store.receive(\.lifecycle.accountAccess.loginCallbackReceived)
+        await store.receive(\.settings.accountAccessPresentationUpdated) { state in
+            state.settings.accountSettings.presentation = AccountAccessPresentation(
+                isSignInInProgress: true,
+            )
+        }
+        await store.receive(\.lifecycle.accountAccess._handoffClaimCompleted)
+        await store.receive(\.settings.accountAccessPresentationUpdated)
+
+        XCTAssertEqual(store.state.lifecycle.accountAccess.handoffScope, .settings)
+        XCTAssertTrue(store.state.lifecycle.accountAccess.isSignInInProgress)
+        await store.finish()
+    }
+
+    /// ACC-001-settings_lifecycle_bridge: cancellation은 canonical lifecycle handoff만 종료하고 Settings projection을 갱신한다.
+    /// legacy owner compatibility 중 cancel이 local Settings runtime을 요구하지 않는지 검증한다.
+    /// - 검증 내용: cancelSignIn이 canonical pending state를 제거하고 signed-out projection을 발행함
+    /// - 사전 조건: lifecycle canonical child가 legacy settings scope의 pending handoff를 보유함
+    /// - 기대 결과: pending state가 제거되고 Settings는 projection만 갱신됨
+    func testLegacySettingsHandoffCancellationStaysInCanonicalLifecycle() async {
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accountAccess.isSignInInProgress = true
+        initialState.lifecycle.accountAccess.handoffPendingState = "cancel-state"
+        initialState.lifecycle.accountAccess.handoffScope = .settings
+        let store = makeSettingsAccountBridgeStore(initialState: initialState)
+
+        await store.send(.lifecycle(.accountAccess(.cancelSignIn))) { state in
+            state.lifecycle.accountAccess.isSignInInProgress = false
+            state.lifecycle.accountAccess.handoffPendingState = nil
+            state.lifecycle.accountAccess.handoffScope = .lifecycle
+        }
+        await store.receive(\.settings.accountAccessPresentationUpdated)
+
+        XCTAssertEqual(store.state.lifecycle.accountAccess.handoffScope, .lifecycle)
+        await store.finish()
+    }
+
+    /// ACC-001-settings_lifecycle_bridge: timeout 뒤 late settings callback은 canonical state를 되살리지 않는다.
+    /// timeout과 stale callback이 compatibility owner routing을 우회해 terminal state를 바꾸지 않는지 검증한다.
+    /// - 검증 내용: timeout failure projection 뒤 late callback은 claim/exchange 없이 canonical ingress에서 종료됨
+    /// - 사전 조건: legacy settings scope pending handoff와 timeout 이후 동일 callback URL
+    /// - 기대 결과: didSignInFail=true를 유지하고 pending/exchange state가 재생성되지 않음
+    func testLegacySettingsHandoffTimeoutRejectsLateCallback() async throws {
+        let callbackURL = try XCTUnwrap(
+            URL(string: "voyager://auth/callback?ticket=late-ticket&state=timeout-state&context=paywall"),
+        )
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accountAccess.isSignInInProgress = true
+        initialState.lifecycle.accountAccess.handoffPendingState = "timeout-state"
+        initialState.lifecycle.accountAccess.handoffScope = .settings
+        let store = makeSettingsAccountBridgeStore(
+            initialState: initialState,
+            signInHandoffClient: SignInHandoffClient(
+                beginHandoff: { _, _ in .failure },
+                resolvePendingOwner: { nil },
+            ),
+        )
+        // store.exhaustivity = .off: stale callback은 terminal timeout state의 no-op 여부만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.accountAccess(._handoffCallbackTimedOut(state: "timeout-state")))) { state in
+            state.lifecycle.accountAccess.isSignInInProgress = false
+            state.lifecycle.accountAccess.didSignInFail = true
+            state.lifecycle.accountAccess.handoffPendingState = nil
+            state.lifecycle.accountAccess.handoffScope = .lifecycle
+        }
+        await store.receive(\.settings.accountAccessPresentationUpdated) { state in
+            state.settings.accountSettings.presentation = AccountAccessPresentation(didSignInFail: true)
+        }
+
+        await store.send(.receiveAuthCallbackURL(callbackURL))
+        await store.receive(\._authCallbackOwnerResolved)
+
+        XCTAssertTrue(store.state.lifecycle.accountAccess.didSignInFail)
+        XCTAssertNil(store.state.lifecycle.accountAccess.handoffPendingState)
+        XCTAssertNil(store.state.lifecycle.accountAccess.handoffExchangeState)
         await store.finish()
     }
 
@@ -593,6 +749,11 @@ final class AppRootCompositionTests: XCTestCase {
 
     // MARK: - VOY-521 Auth callback fallback routing
 
+    /// ACC-001-complete_auth_handoff_callback: Onboarding이 callback을 소유하면 AppRoot fallback을 전송하지 않는다.
+    /// 앱 조합 경계에서 중복 callback 전달을 막는 최소 AppDelegate routing 계약을 검증한다.
+    /// - 검증 내용: onboarding routing 성공 시 receiveAuthCallbackURL 미전송
+    /// - 사전 조건: AppDelegate의 onboarding callback resolver가 true를 반환
+    /// - 기대 결과: AppRoot는 fallback callback action을 받지 않음
     func testAppDelegateSkipsAppRootFallbackWhenOnboardingHandlesCallback() throws {
         let box = ActionBox<AppRootAction>()
         let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
@@ -607,7 +768,7 @@ final class AppRootCompositionTests: XCTestCase {
         appDelegate.application(NSApp, open: [url])
 
         let sentFallback = box.actions.contains { action in
-            if case .lifecycle(.accountAccess(.loginCallbackReceived)) = action {
+            if case .receiveAuthCallbackURL = action {
                 return true
             }
             return false
@@ -615,7 +776,12 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertFalse(sentFallback)
     }
 
-    func testAppDelegateFallsBackToCanonicalChildWhenOnboardingAbsent() throws {
+    /// ACC-001-complete_auth_handoff_callback: Onboarding이 callback을 처리하지 않으면 AppRoot로 fallback한다.
+    /// 앱 조합 경계가 활성 인증 소유자를 찾을 수 있도록 callback을 한 번만 전달하는지 검증한다.
+    /// - 검증 내용: receiveAuthCallbackURL에 원본 callback URL 전달
+    /// - 사전 조건: AppDelegate의 onboarding callback resolver가 false를 반환
+    /// - 기대 결과: AppRoot fallback action이 한 번 전송됨
+    func testAppDelegateFallsBackToAppRootWhenOnboardingAbsent() throws {
         let box = ActionBox<AppRootAction>()
         let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
             _ActionRecordingAppRoot(box: box)
@@ -629,12 +795,47 @@ final class AppRootCompositionTests: XCTestCase {
         appDelegate.application(NSApp, open: [url])
 
         let routed = box.actions.contains { action in
-            if case let .lifecycle(.accountAccess(.loginCallbackReceived(received))) = action {
+            if case let .receiveAuthCallbackURL(received) = action {
                 return received == url
             }
             return false
         }
         XCTAssertTrue(routed)
+    }
+
+    /// ACC-001-complete_auth_handoff_callback: AppRoot fallback은 local surface flag 대신 저장된 owner로 callback을 라우팅한다.
+    /// - 검증 내용: settings가 진행 중이어도 lifecycle owner에만 하나의 child action 전달
+    /// - 사전 조건: onboarding window는 없고 resolver가 lifecycle owner를 반환
+    /// - 기대 결과: lifecycle AccountAccess만 callback action을 수신
+    func testAppRootRoutesAuthCallbackToStoredLifecycleOwner() async throws {
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accountAccess.isSignInInProgress = true
+        initialState.lifecycle.accountAccess.handoffPendingState = "lifecycle-state"
+        initialState.settings.accountSettings.presentation = AccountAccessPresentation(
+            isSignInInProgress: true,
+        )
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.signInHandoffClient = SignInHandoffClient(
+                beginHandoff: { _, _ in .failure },
+                resolvePendingOwner: { .lifecycle },
+            )
+        }
+        let callbackURL = try XCTUnwrap(
+            URL(string: "voyager://auth/callback?ticket=old&state=old-state&context=onboarding"),
+        )
+
+        await store.send(.receiveAuthCallbackURL(callbackURL))
+        await store.receive(\._authCallbackOwnerResolved)
+        await store.receive(\.lifecycle.accountAccess.loginCallbackReceived)
+        await store.receive(\.settings.accountAccessPresentationUpdated)
+
+        XCTAssertEqual(
+            store.state.settings.accountSettings.presentation,
+            AccountAccessPresentation(isSignInInProgress: true),
+        )
+        await store.finish()
     }
 
     func testAppDelegateIgnoresUnsupportedURLsAndRoutesVoyagerDeepLinks() throws {
@@ -680,7 +881,7 @@ final class AppRootCompositionTests: XCTestCase {
         appDelegate.application(NSApp, open: [url])
 
         let routed = box.actions.contains { action in
-            if case let .lifecycle(.accountAccess(.loginCallbackReceived(received))) = action {
+            if case let .receiveAuthCallbackURL(received) = action {
                 return received == url
             }
             return false
@@ -703,7 +904,7 @@ final class AppRootCompositionTests: XCTestCase {
 
         let anyExternalAction = box.actions.contains { action in
             if case .receiveExternalURL = action { return true }
-            if case .lifecycle(.accountAccess(.loginCallbackReceived)) = action { return true }
+            if case .receiveAuthCallbackURL = action { return true }
             return false
         }
         XCTAssertFalse(anyExternalAction)
@@ -724,7 +925,7 @@ final class AppRootCompositionTests: XCTestCase {
 
         let anyExternalAction = box.actions.contains { action in
             if case .receiveExternalURL = action { return true }
-            if case .lifecycle(.accountAccess(.loginCallbackReceived)) = action { return true }
+            if case .receiveAuthCallbackURL = action { return true }
             return false
         }
         XCTAssertFalse(anyExternalAction)
@@ -776,10 +977,11 @@ final class AppRootCompositionTests: XCTestCase {
 
     // MARK: - Test support
 
-    private func makeAccountAccessGrantedStore(
+    private func makeSettingsAccountBridgeStore(
         initialState: AppRootFeature.State = AppRootFeature.State(),
+        signInHandoffClient: SignInHandoffClient = SignInHandoffClient { _ in .failure },
     ) -> TestStore<AppRootFeature.State, AppRootFeature.Action> {
-        let store = TestStore(initialState: initialState) {
+        TestStore(initialState: initialState) {
             AppRootFeature()
         } withDependencies: {
             $0.helperAppClient.start = {}
@@ -789,6 +991,7 @@ final class AppRootCompositionTests: XCTestCase {
             $0.accountSessionClient.delete = { _ in }
             $0.accessStatusSnapshotClient.save = { _ in }
             $0.accessStatusSnapshotClient.remove = {}
+            $0.signInHandoffClient = signInHandoffClient
             $0.notificationCenterClient.notifications = { _, _ in
                 AsyncStream { continuation in
                     continuation.finish()
@@ -797,9 +1000,8 @@ final class AppRootCompositionTests: XCTestCase {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 0))
             $0.fileManagerWindowClient.open = { _ in }
+            $0.appHandoffTarget = .voyager
         }
-        store.exhaustivity = .off
-        return store
     }
 }
 

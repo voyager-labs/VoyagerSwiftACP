@@ -146,10 +146,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func routeAuthCallback(_ url: URL) {
         MainActor.assumeIsolated {
             // resolveAuthCallbackRouting == true → 온보딩이 처리했으므로 AppRoot 폴백 생략.
-            // false → sessionLapseGuard 폴백. guard state가 nil이면 ifLet가 action을 무시.
+            // false → AppRoot가 현재 handoff owner를 선택하는 폴백.
             guard resolveAuthCallbackRouting(url) else {
                 withAppRootStore {
-                    $0.send(.lifecycle(.accountAccess(.loginCallbackReceived(url))))
+                    $0.send(.receiveAuthCallbackURL(url))
                 }
                 return
             }
