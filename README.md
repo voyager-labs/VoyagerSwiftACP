@@ -58,8 +58,13 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
     - (대안) Xcode 프로젝트: `xed apps/macos/Voyager/Voyager.xcodeproj`
     - Terminal/Agent에서 실행:
         - 기본 개발 앱 실행: `mise run macos-launch`
+        - 온보딩 표시 토글(Debug 전용): `Voyager-Dev`가 유일한 개발 scheme입니다. `VOYAGER_SCHEME_FORCE_ONBOARDING` launch 환경변수가 `0`이거나 없으면 저장된 진행 상태에 따라 동작하고, 정확히 `1`이면 저장된 진행 상태를 지우지 않은 채 온보딩을 강제로 표시합니다. 이 값은 `.env` 설정이 아니며 Release/Prod에서는 지원하지 않습니다.
+        - 일회성 강제 표시: `mise run macos-launch -- --scheme Voyager-Dev --configuration Debug --env VOYAGER_SCHEME_FORCE_ONBOARDING=1`
         - 다른 scheme 실행: `mise run macos-launch -- --scheme SettingsHost-Dev --configuration Debug`
         - 빌드만 확인: `mise run macos-launch -- --scheme Voyager-Dev --configuration Debug --no-launch`
+    - Xcode에서 실행:
+        - `Voyager-Dev` scheme의 Debug Run 환경변수 `VOYAGER_SCHEME_FORCE_ONBOARDING`을 `0` 또는 제거하면 저장된 진행 상태를 사용합니다.
+        - 같은 환경변수를 정확히 `1`로 설정하면 진행 상태를 유지한 채 온보딩을 강제로 표시합니다.
     - VSCode 류 IDE(Sweetpad Extension)에서 실행:
         - Xcode 프로젝트 열기: Sweetpad로 `apps/macos/Voyager/Voyager.xcodeproj` 오픈
         - 태스크로 실행 (권장):
@@ -73,6 +78,7 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
                 - `OnboardingHost Dev: Launch (Release)` - 온보딩 호스트 Release 모드로 빌드 및 실행
                 - `SettingsHost Dev: Launch (Debug)` - 설정 호스트 Debug 모드로 빌드 및 실행
                 - `SettingsHost Dev: Launch (Release)` - 설정 호스트 Release 모드로 빌드 및 실행
+            - `Voyager Dev: Launch (Debug)` task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 바꾸면 진행 상태를 유지한 채 온보딩을 강제로 표시합니다. 이 값은 launch 환경이며 `.env` 설정이 아니고 Release/Prod에서는 지원하지 않습니다.
             - 참고: Sweetpad는 `.vscode/settings.json`의 shared xcodebuild wrapper를 사용합니다. 버튼을 통한 직접 실행은 xcscheme의 환경변수가 제대로 주입되지 않을 수 있어 태스크 실행을 권장합니다.
     - Zed 에디터에서 실행 (`.zed/tasks.json`):
         - 태스크 실행: `task: spawn` (단축키 `opt-shift-t`)으로 태스크 선택 모달 열기
@@ -86,6 +92,7 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
             - `FileManagerHost Dev: Launch (Debug)` / `FileManagerHost Dev: Launch (Release)`
             - `Voyager Dev: Build Only (Debug)` - 빌드만 (런치 없음)
             - `Voyager Dev: Test` - Voyager-Dev 스킴 테스트
+        - `Voyager Dev: Launch (Debug)` task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 바꾸면 진행 상태를 유지한 채 온보딩을 강제로 표시합니다. 이 값은 launch 환경이며 `.env` 설정이 아니고 Release/Prod에서는 지원하지 않습니다.
         - 내부 동작: `scripts/dev/macos-launch.sh`가 xcodebuild 빌드 → `.app` 산출물 해석 → 태스크별 launch 환경변수 주입 후 실행파일 직접 실행
         - Zed 태스크의 환경변수는 `.zed/tasks.json`에서 명시적으로 전달합니다. 런타임 `.env` 표준화는 별도 이슈(VOY-432)에서 다룹니다.
     - Build (CLI): `mise run macos-build`

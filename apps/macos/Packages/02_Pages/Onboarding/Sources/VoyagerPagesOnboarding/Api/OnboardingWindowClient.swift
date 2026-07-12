@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import Foundation
 import VoyagerFeaturesAccountAccess
 
 @MainActor private var onboardingWindowController: OnboardingWindowController?
@@ -72,14 +73,31 @@ extension OnboardingWindowClient: DependencyKey {
         authNetworkClient: AuthNetworkClient? = nil,
         signInHandoffClient: SignInHandoffClient? = nil,
         permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
+        forceOnboardingEnvironmentValue: @escaping @Sendable () -> String? = {
+            ProcessInfo.processInfo.environment["VOYAGER_SCHEME_FORCE_ONBOARDING"]
+        },
+        forceFDAEnvironmentValue: @escaping @Sendable () -> String? = {
+            ProcessInfo.processInfo.environment["VOYAGER_SCHEME_FORCE_FDA_GRANTED"]
+        },
     ) -> OnboardingWindowClient {
-        makeClient(
+        let isForceOnboardingEnabled = isForceOnboardingEnabled(
+            environmentValue: forceOnboardingEnvironmentValue(),
+            isDebugBuild: isDebugBuild,
+        )
+        let isForceFullDiskAccessGrantedEnabled = isForceFullDiskAccessGrantedEnabled(
+            environmentValue: forceFDAEnvironmentValue(),
+            isDebugBuild: isDebugBuild,
+        )
+
+        return makeClient(
             progressClient: OnboardingProgressClient.liveValue,
             openMainWindow: openMainWindow,
             accountSessionClient: accountSessionClient,
             authNetworkClient: authNetworkClient,
             signInHandoffClient: signInHandoffClient,
             permissionDebugScenario: permissionDebugScenario,
+            isForceOnboardingEnabled: isForceOnboardingEnabled,
+            isForceFullDiskAccessGrantedEnabled: isForceFullDiskAccessGrantedEnabled,
         )
     }
 
@@ -92,6 +110,8 @@ extension OnboardingWindowClient: DependencyKey {
         permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
         showWindow customShowWindow: (@Sendable () async -> Void)? = nil,
         closeWindow customCloseWindow: (@Sendable () async -> Void)? = nil,
+        isForceOnboardingEnabled: Bool = false,
+        isForceFullDiskAccessGrantedEnabled: Bool = false,
     ) -> OnboardingWindowClient {
         let presentationGate = OnboardingPresentationGate()
         let showWindow: @Sendable () async -> Void = customShowWindow ?? {
@@ -103,6 +123,7 @@ extension OnboardingWindowClient: DependencyKey {
                         authNetworkClient: authNetworkClient,
                         signInHandoffClient: signInHandoffClient,
                         permissionDebugScenario: permissionDebugScenario,
+                        isForceFullDiskAccessGrantedEnabled: isForceFullDiskAccessGrantedEnabled,
                     )
                 }
 
@@ -121,13 +142,14 @@ extension OnboardingWindowClient: DependencyKey {
             await closeWindowBase()
             await presentationGate.reset()
         }
+        let isRequired: @Sendable () -> Bool = {
+            isForceOnboardingEnabled || isOnboardingRequired(progressClient)
+        }
 
         return OnboardingWindowClient(
-            isRequired: {
-                isOnboardingRequired(progressClient)
-            },
+            isRequired: isRequired,
             showIfNeeded: {
-                let required = isOnboardingRequired(progressClient)
+                let required = isRequired()
 
                 if required {
                     Task {
@@ -152,6 +174,28 @@ extension OnboardingWindowClient: DependencyKey {
         case .empty, .resetRequired:
             true
         }
+    }
+
+    nonisolated static func isForceOnboardingEnabled(
+        environmentValue: String?,
+        isDebugBuild: Bool,
+    ) -> Bool {
+        isDebugBuild && environmentValue == "1"
+    }
+
+    nonisolated static func isForceFullDiskAccessGrantedEnabled(
+        environmentValue: String?,
+        isDebugBuild: Bool,
+    ) -> Bool {
+        isDebugBuild && environmentValue == "1"
+    }
+
+    nonisolated private static var isDebugBuild: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
     }
 
     nonisolated public static var testValue: OnboardingWindowClient {

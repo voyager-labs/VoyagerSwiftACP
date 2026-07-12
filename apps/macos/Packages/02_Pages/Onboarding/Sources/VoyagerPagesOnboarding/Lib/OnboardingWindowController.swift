@@ -18,6 +18,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         authNetworkClient: AuthNetworkClient? = nil,
         signInHandoffClient: SignInHandoffClient? = nil,
         permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
+        isForceFullDiskAccessGrantedEnabled: Bool = false,
     ) {
         store = Store(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -40,12 +41,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             if let signInHandoffClient {
                 $0.signInHandoffClient = signInHandoffClient
             }
-            if let permissionDebugScenario {
-                $0.fullDiskAccessClient = FullDiskAccessClient(
-                    status: {
-                        permissionDebugScenario()?.fullDiskAccessStatus ?? FullDiskAccessClient.liveValue.status()
-                    },
+            if isForceFullDiskAccessGrantedEnabled || permissionDebugScenario != nil {
+                $0.fullDiskAccessClient = Self.makeFullDiskAccessClient(
+                    permissionDebugScenario: permissionDebugScenario,
+                    isForceFullDiskAccessGrantedEnabled: isForceFullDiskAccessGrantedEnabled,
+                    liveClient: FullDiskAccessClient.liveValue,
                 )
+            }
+            if let permissionDebugScenario {
                 $0.helperFolderAccessClient = HelperFolderAccessClient(
                     checkAccess: {
                         if let helperFolderAccess = permissionDebugScenario()?.helperFolderAccess {
@@ -106,6 +109,21 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             y: screenFrame.midY - desiredSize.height / 2,
         )
         window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
+    }
+
+    nonisolated static func makeFullDiskAccessClient(
+        permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)?,
+        isForceFullDiskAccessGrantedEnabled: Bool,
+        liveClient: FullDiskAccessClient,
+    ) -> FullDiskAccessClient {
+        FullDiskAccessClient(
+            status: {
+                if isForceFullDiskAccessGrantedEnabled {
+                    return .granted
+                }
+                return permissionDebugScenario?()?.fullDiskAccessStatus ?? liveClient.status()
+            },
+        )
     }
 
     override func showWindow(_ sender: Any?) {
