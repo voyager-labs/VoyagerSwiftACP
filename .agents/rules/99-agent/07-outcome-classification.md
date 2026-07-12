@@ -1,11 +1,12 @@
 ---
 description: "Canonical taxonomy for task outcomes and exception ledger policy."
 alwaysApply: true
+schemaVersion: 2
 ---
 
 # Outcome Classification
 
-## Canonical taxonomy
+## Outcome
 
 | Classification | Meaning                                                                                                                             |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
@@ -15,22 +16,13 @@ alwaysApply: true
 | **exception**  | An unexpected condition blocked normal completion (tool failure, environment issue, missing dependency). Root cause may be unknown. |
 | **blocked**    | Work cannot proceed due to an external dependency or prerequisite not met. Not a quality issue.                                     |
 
-## Must
-
 - Classify every task outcome using exactly one term from the taxonomy above.
 - Use the same terminology across all rule files, evidence artifacts, and status reports.
 - For degraded outcomes: document what specifically is reduced (scope, confidence, coverage).
 - For exception outcomes: record the exception in the exception ledger (see below).
 - For blocked outcomes: identify the blocking dependency and what is needed to unblock.
 
-## Must not
-
-- Invent outcome labels not in the taxonomy.
-- Use "pass" when any intent item is unverified.
-- Use "fail" when the issue is an external blocker (use "blocked" instead).
-- Leave an exception outcome without a ledger entry.
-
-## Execution steps
+## Default Actions
 
 1. After completing a task or subtask, review the original intent items.
 2. If all intent items are verified with no gaps, classify as **pass**.
@@ -40,7 +32,9 @@ alwaysApply: true
 6. If work cannot proceed due to an external dependency, classify as **blocked** and identify the dependency.
 7. Record the classification in the plan-scoped task evidence file (`.sisyphus/evidence/{plan_slug}/task-{N}-*.*`).
 
-## Exception ledger policy
+## Decision Rules
+
+### Exception ledger policy
 
 Each exception gets a ledger entry with:
 
@@ -52,6 +46,13 @@ Each exception gets a ledger entry with:
 6. **Resolution detail**: how it was addressed (when resolved or mitigated).
 
 The ledger lives in the plan-scoped task evidence file (`.sisyphus/evidence/{plan_slug}/task-{N}-*.*`), in a dedicated `## Exception ledger` section. Unresolved exceptions are carried forward into handoff notes.
+
+## Stop Conditions
+
+- Invent outcome labels not in the taxonomy.
+- Use "pass" when any intent item is unverified.
+- Use "fail" when the issue is an external blocker (use "blocked" instead).
+- Leave an exception outcome without a ledger entry.
 
 ## Verification
 

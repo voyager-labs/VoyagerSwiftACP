@@ -1,37 +1,40 @@
 ---
 description: "Reducer-owned external observation lifecycle for SwiftUI + TCA views."
 globs: "apps/macos/**/*.swift"
+schemaVersion: 2
 ---
 
 # TCA Observation Lifecycle
 
-## Must
+## Outcome
 
-- Keep external observation ownership in TCA reducers, not in SwiftUI views.
-- Introduce or extend feature `State` and `Action` when a view needs system-driven behavior.
-- Model observation lifecycle explicitly with start/stop actions.
-- Run long-lived observation in reducer effects using dependency clients and cancellation IDs.
-- Keep views limited to rendering, UI-only local state, and sending lifecycle/user actions.
-- Translate raw external events into semantic feature actions before mutating state or forwarding to child reducers.
-- Add or update focused reducer tests for observation start, cancellation, and event routing.
-- For migration-heavy refactors, load the `voyager-dev` orchestrator entry at `.agents/skills/voyager-dev/orchestrator/SKILL.md` and apply its reducer-owned observation playbook.
+- External and system observation is owned by a feature reducer, with explicit start/stop actions, dependency-backed effects, cancellation ownership, semantic event routing, and focused reducer coverage.
+- Views remain lifecycle/action senders; UI-only local presentation state may remain in the view.
+- This rule is the canonical invariant owner. `.agents/skills/voyager-dev/implementer/observation/SKILL.md` and `.agents/skills/voyager-dev/implementer/observation/references/observation-lifecycle-spec.md` own the migration procedure.
 
-## Must not
+## Default Actions
 
-- Use `NotificationCenter.default.publisher`, `.onReceive(...)`, observer tokens, or long-lived `Task` loops inside `Ui/*.swift` for external/system events.
-- Add `@Dependency` to SwiftUI views for external observation.
-- Store system observation lifecycle in view-local `@State` when the behavior affects feature state or child reducers.
-- Start long-lived observation without cancellation handling.
+1. Classify the signal as UI-local or external/system-driven.
+2. For external/system signals, add or extend feature `State`/`Action`, explicit start/stop lifecycle actions, a dependency client, and a feature-owned cancellation ID.
+3. Route raw callbacks through a semantic feature action before state mutation or child forwarding; keep the view limited to lifecycle/user action sends.
+4. Load the observation implementer and add focused reducer tests for start, cancellation, and semantic event routing.
 
-## Execution steps
+## Decision Rules
 
-1. Detect whether the external signal is truly system-driven or just UI-local.
-2. Keep system-driven observation in reducers and keep views as action senders only.
-3. Verify the moved behavior with reducer-owned tests and search-based checks.
+- Treat a signal as reducer-owned when it originates outside the view tree, must survive rendering, or affects feature state or child reducers.
+- UI-only geometry, temporary hover/focus visuals, and one-off local animations can stay view-owned.
+- Start long-lived effects with `.cancellable(id: ..., cancelInFlight: true)` and stop them with `.cancel(id: ...)`.
+- For migration-heavy work, load `.agents/skills/voyager-dev/orchestrator/SKILL.md` before the observation playbook.
+
+## Stop Conditions
+
+- Do not use `NotificationCenter.default.publisher`, `.onReceive(...)`, observer tokens, long-lived task loops, or `@Dependency` in `Ui/*.swift` for external/system observation.
+- Do not store external observation lifecycle in view-local `@State` or start a long-lived observation without cancellation.
+- Do not move UI-only local interaction into reducers merely for symmetry.
 
 ## Verification
 
-- Confirm target views do not contain `NotificationCenter.default.publisher` or `.onReceive(` for the moved external signal.
-- Confirm the owning reducer contains start/stop actions and uses `.cancellable(id: ..., cancelInFlight: true)` plus `.cancel(id: ...)`.
+- Confirm the moved signal is absent from `NotificationCenter.default.publisher` and `.onReceive(` in the target view.
+- Confirm reducer start/stop actions, `.cancellable`, `.cancel`, and semantic event routing exist.
+- Confirm focused reducer tests cover start, stop/cancellation, and routed semantic actions.
 - Confirm touched Swift files have no LSP errors.
-- Confirm focused reducer tests cover observation start, stop, and routed semantic actions.

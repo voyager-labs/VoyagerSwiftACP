@@ -1,11 +1,23 @@
 ---
 description: "Routing rules: which domain rules to load by path/task."
 alwaysApply: true
+schemaVersion: 2
 ---
 
 # Rule Routing
 
-## Routing map
+## Outcome
+
+- Load only relevant rules to reduce context bloat.
+- Escalate to broader rule sets only when scope expands.
+
+## Default Actions
+
+1. At task start, identify changed or intended paths before selecting domain rules.
+2. Apply the routing map below to load the smallest complete rule set for those paths.
+3. If scope expands into another path family, load the newly relevant rules before editing further.
+
+## Decision Rules
 
 - If touching `apps/backend/**`:
     - Load `20-backend/00-backend-rules.md`
@@ -30,20 +42,9 @@ alwaysApply: true
     - Load `99-agent/00-rule-authoring.md` when editing `.agents/rules/**`.
     - Load `99-agent/02-harness-placement.md` when editing `.agents/skills/**`.
 
-## Must
-
-- Load only relevant rules to reduce context bloat.
-- Escalate to broader rule sets only when scope expands.
-
-## Must not
+## Stop Conditions
 
 - Blindly load every rule file for small localized tasks.
-
-## Execution steps
-
-- At task start, identify changed or intended paths before selecting domain rules.
-- Apply the routing map above to load the smallest complete rule set for those paths.
-- If scope expands into another path family, load the newly relevant rules before editing further.
 
 ## Verification
 

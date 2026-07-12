@@ -1,11 +1,12 @@
 ---
 description: "Security baseline: secrets, logs, and sensitive data handling."
 alwaysApply: true
+schemaVersion: 2
 ---
 
 # Safety and Secrets
 
-## Must
+## Outcome
 
 - Keep secrets in environment variables only.
 - Treat `.env.dev` as local-only and gitignored.
@@ -13,17 +14,19 @@ alwaysApply: true
 - Redact tokens and sensitive values in logs.
 - Validate required env vars before use.
 
-## Must not
-
-- Commit `.env`, API keys, DB snapshots, or credentials.
-- Print full request payloads containing sensitive data.
-- Embed secrets in bundled binaries or resource files.
-
-## Execution steps
+## Default Actions
 
 1. Check whether changed files touch config, auth, or logging.
 2. Confirm secret paths remain ignored and not staged.
 3. Confirm logs include metadata only.
+
+## Decision Rules
+
+## Stop Conditions
+
+- Commit `.env`, API keys, DB snapshots, or credentials.
+- Print full request payloads containing sensitive data.
+- Embed secrets in bundled binaries or resource files.
 
 ## Verification
 

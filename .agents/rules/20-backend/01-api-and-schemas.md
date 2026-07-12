@@ -1,11 +1,12 @@
 ---
 description: "HTTP contracts, status semantics, and schema conventions."
 globs: "apps/backend/**/*.py"
+schemaVersion: 2
 ---
 
 # Backend API and Schemas
 
-## Must
+## Outcome
 
 - Prefer response envelope:
     - Success: `{ "data": ... }`
@@ -14,20 +15,20 @@ globs: "apps/backend/**/*.py"
 - Use Pydantic models for request/response contracts.
 - Keep request and response schemas separated when intent differs.
 
-## Current exception (known)
+## Default Actions
+
+1. Check the existing route contract and callers.
+2. Apply additive schema changes first when possible.
+3. Update tests for status code and payload shape changes.
+
+## Decision Rules
 
 - Search endpoints under `apps/backend/src/app/search/routes.py` still return top-level `SearchResponse` and may encode failure via `error` while returning `200`.
 
-## Must not
+## Stop Conditions
 
 - Break contract shape silently.
 - Return raw internal errors to clients.
-
-## Execution steps
-
-1. Check existing route contract and callers.
-2. Apply additive schema changes first when possible.
-3. Update tests for status code and payload shape changes.
 
 ## Verification
 

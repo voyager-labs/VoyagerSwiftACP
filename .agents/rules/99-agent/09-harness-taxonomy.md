@@ -1,11 +1,12 @@
 ---
 description: "Define shared project harness scope versus local agent artifacts."
 globs: ".agents/**"
+schemaVersion: 2
 ---
 
 # Harness Taxonomy
 
-## Must
+## Outcome
 
 - Treat the shared project harness as tracked, reusable infrastructure that helps humans and agents execute, verify, review, and hand off changes consistently.
 - Include these tracked surfaces when evaluating harness scope:
@@ -20,15 +21,7 @@ globs: ".agents/**"
 - When compound-review finds a repeated pattern, decide whether the durable promotion target is a skill, rule, script, CI check, hook, test harness, or configuration template.
 - Use documentation to explain harness policy and ownership; do not count docs themselves as agent harness runtime.
 
-## Must not
-
-- Equate harness work with skill edits only.
-- Commit local evidence, session state, machine-specific config, secrets, tokens, or user-managed runtime files.
-- Treat `opencode.json` as shared harness unless the user explicitly asks to convert a safe subset into a tracked template/default.
-- Hide local artifacts by broad `.gitignore` changes unless repository policy explicitly changes.
-- Add CI, hook, or script automation without documenting its scope, runtime cost, and rollback path.
-
-## Execution steps
+## Default Actions
 
 1. Classify the requested harness change as one or more of: agent, CI, script, hook, test, config, or local artifact.
 2. If the source is local evidence (per `99-agent/01-agent-harness-artifacts.md`), extract the reusable lesson and choose a tracked promotion target.
@@ -36,6 +29,16 @@ globs: ".agents/**"
 4. Check existing harness surfaces before adding a new one, and prefer extending the canonical owner.
 5. Evaluate whether the proposed change improves the target behavior compared with baseline.
 6. Record what remains local-only and what becomes shared through tracked files.
+
+## Decision Rules
+
+## Stop Conditions
+
+- Equate harness work with skill edits only.
+- Commit local evidence, session state, machine-specific config, secrets, tokens, or user-managed runtime files.
+- Treat `opencode.json` as shared harness unless the user explicitly asks to convert a safe subset into a tracked template/default.
+- Hide local artifacts by broad `.gitignore` changes unless repository policy explicitly changes.
+- Add CI, hook, or script automation without documenting its scope, runtime cost, and rollback path.
 
 ## Verification
 

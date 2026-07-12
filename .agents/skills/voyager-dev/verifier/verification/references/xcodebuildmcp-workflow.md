@@ -1,15 +1,15 @@
 # Voyager Dev XcodeBuildMCP Workflow
 
-Use this reference when the task needs Xcode project listing, build, or test execution for Voyager.
+Use this reference when the task needs a simulator XcodeBuildMCP operation for Voyager. The capability matrix in `.agents/skills/code-tooling/SKILL.md` selects the executor for every verification scope.
 
 ## Preferred path
 
-- Prefer XcodeBuildMCP tools over raw `xcodebuild` CLI when the MCP server is already available in the client.
+- Prefer XcodeBuildMCP tools when the MCP server exposes an operation that supports the required simulator scope.
 - Use XcodeBuildMCP first for:
     - project or scheme listing
     - build execution
     - focused or full test execution
-- Do not default to raw `xcodebuild` if XcodeBuildMCP is already installed and reachable.
+- Inspect `session_show_defaults` before the first available MCP build, run, or test operation in a session.
 
 ## Harness setup expectation
 
@@ -18,47 +18,16 @@ Use this reference when the task needs Xcode project listing, build, or test exe
 - For any other CLI or harness, ask the user to add the equivalent XcodeBuildMCP configuration to that harness themselves.
 - Do not assume one client command works everywhere; the exact config shape depends on the harness.
 
-## If XcodeBuildMCP is missing
+## Unsupported capability
 
-- If the client does not expose XcodeBuildMCP tools yet, guide the user to install or configure it before continuing with build/test-heavy work.
-- Do not assume the agent should run `codex mcp add` itself.
-- Instead, ask the user to add XcodeBuildMCP in the harness they are actually using.
-- For Codex CLI, one concrete command the user can run is:
-
-```bash
-codex mcp add XcodeBuildMCP -- npx -y xcodebuildmcp@latest mcp
-```
-
-- The equivalent `~/.codex/config.toml` entry is:
-
-```toml
-[mcp_servers.XcodeBuildMCP]
-command = "npx"
-args = ["-y", "xcodebuildmcp@latest", "mcp"]
-```
-
-## If `npx` is missing
-
-- Do not silently fall back to raw `xcodebuild` for the main recommended workflow.
-- Tell the user that the recommended `npx`-based XcodeBuildMCP setup requires `npx`, which usually means installing Node.js 18+ so `npx` is available.
-- After `npx` is available, ask the user to add XcodeBuildMCP to the harness they are using, or use the Codex example above when the harness is Codex CLI.
-- If the user does not want a Node-based install, mention the Homebrew alternative:
-
-```bash
-brew tap getsentry/xcodebuildmcp
-brew install xcodebuildmcp
-```
-
-## Requirements
-
-- macOS 14.5 or later
-- Xcode 16.x or later
-- Node.js 18.x or later for the `npx` flow
+- For macOS scheme verification, use the existing `mise run macos-build` or `mise run macos-test` route selected by the matrix.
+- For package-local verification, use the matrix-selected `xcrun swift build` or `xcrun swift test --package-path` route.
+- For physical-device work or a simulator request not supported by an exposed MCP operation, stop and report the missing capability. Do not install/configure MCP tools or call raw `xcodebuild` as an ad-hoc substitute.
 
 ## Verification posture
 
-- Once XcodeBuildMCP is available, use its project-listing, build, and test tools for verification.
-- Until then, treat the missing MCP as an environment/setup blocker and surface the exact harness-specific install step to the user.
+- Once an operation is both available and scope-compatible, use its project-listing, build, and test tools for simulator verification.
+- Otherwise, follow the matrix fallback or stop condition rather than treating missing MCP as a universal blocker.
 - Keep the repository-specific verification expectations from `verification.md`:
     - focused tests first when possible
     - expand to the full suite when shared reducers or cross-feature boundaries changed

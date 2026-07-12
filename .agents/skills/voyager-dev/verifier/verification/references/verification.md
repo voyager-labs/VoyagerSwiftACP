@@ -22,48 +22,27 @@
     - Every new package uses `swift-tools-version:6.0`. Every type in a package is `Sendable` or explicitly annotated.
     - Build the package directly (`swift build --package-path`) after type changes — the app target runs in Swift 5 mode and will not catch strict concurrency errors.
 
-## Preferred execution surface
+## Executor selection
 
-- For Xcode project listing, build, and test execution, load `xcodebuildmcp-workflow.md` and prefer XcodeBuildMCP tools over raw `xcodebuild` when the MCP server is available.
-- If XcodeBuildMCP is not available yet, guide the user through its installation/configuration first.
+- `.agents/rules/00-core/02-verification.md` owns required outcomes and tiers. Select the executor from `.agents/skills/code-tooling/SKILL.md` before running a build or test.
+- Load `xcodebuildmcp-workflow.md` only for a simulator operation supported by the exposed XcodeBuildMCP surface; inspect `session_show_defaults` before the first such operation.
+- Use the repository `mise` macOS tasks or package-local `xcrun swift` commands when the matrix selects them. Unsupported device/macOS capability without a matrix fallback is a stop, not an invented MCP use.
 
 ## Focused verification (preferred first)
-
-```bash
-xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj -only-testing:VoyagerTests/<TargetTests>
-```
 
 For callback-heavy or lifecycle-heavy work, prefer focused suites that prove both boundary behavior and downstream execution-chain behavior before expanding outward.
 
 For multi-step async flows, focused verification must cover cancellation, superseded requests, and stale completions when those outcomes could otherwise write durable state or trigger persistence.
 
-For Swift SPM packages, use: `xcrun swift test --package-path <path> --filter 'Pattern1|Pattern2'`. Split evidence by test class. See `../../../../../rules/30-macos/04-xcode-test-plan-visibility.md` for package test visibility.
+For Swift SPM packages, use `xcrun swift test --package-path <path> --filter 'Pattern1|Pattern2'`. Split evidence by test class. See `../../../../../rules/30-macos/04-xcode-test-plan-visibility.md` for package test visibility.
 
 For local package graph, product, target, dependency, or consumer wiring changes, also apply `package-integration-verification.md`; standalone `swift build` / `swift test` evidence is not enough when Xcode targets or downstream packages consume the product.
 
-## Full verification
-
-```bash
-xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj
-```
-
-## Optional pre-check
-
-```bash
-xcodebuild -list -project apps/macos/Voyager/Voyager.xcodeproj
-```
-
 Use focused tests first, then expand to full suite when changing shared reducers or cross-feature dependencies.
-
-If the exact focused target is unclear but the work stays inside Voyager unit tests, prefer this intermediate fallback before the full suite:
-
-```bash
-xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj -only-testing:VoyagerTests
-```
 
 ## Formatting and lint
 
-Run formatting/lint whenever touched files include `apps/macos/**/*.swift`.
+Run formatting/lint whenever touched files include `apps/macos/**/*.swift`, using the matrix-selected repository commands.
 
 ```bash
 mise exec -- swiftlint --config apps/macos/.swiftlint.yml --reporter xcode apps/macos

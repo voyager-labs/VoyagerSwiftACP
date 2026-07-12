@@ -12,8 +12,6 @@ metadata:
 
 ## Instructions
 
-1. Load `references/observation-lifecycle-spec.md` and `../tca-contract/references/tca-contract.md`.
-2. Keep views as lifecycle/action senders; reducers own external/system observation.
-3. Use dependency clients and explicit start/stop lifecycle actions.
-4. Assign a feature-owned cancellation boundary and verify start/cancel behavior.
-5. Add `../../verifier/testing/references/testing-playbook.md` when lifecycle or reducer tests change.
+1. Load `.agents/rules/30-macos/02-tca-observation-lifecycle.md` for the canonical lifecycle invariant, then load `references/observation-lifecycle-spec.md` and `../tca-contract/references/tca-contract.md` for procedure.
+2. Keep views as lifecycle/action senders; reducers own external/system observation through dependency clients, explicit start/stop actions, and feature-owned cancellation.
+3. Verify start, cancellation, and semantic event routing; add `../../verifier/testing/references/testing-playbook.md` when lifecycle or reducer tests change.

@@ -7,16 +7,14 @@ Block implementation choices that violate clean architecture or FSD dependency d
 ## Mandatory gates
 
 1. Layer direction gate
-    - Must satisfy:
-        - `App -> Pages -> (Widgets|Features|Entities|Shared)`
-        - `Widgets -> (Features|Entities|Shared)`
-        - `Features -> (Entities|Shared)`
-        - `Entities -> Shared`
+    - Load `../../boundary/references/layer-and-segment-rules.md` as the canonical FSD layer and segment contract; reject reverse dependencies and invalid placement.
 2. Boundary gate
     - UI adapters must not call network/filesystem/system SDK directly.
     - External calls must go through dependency clients.
     - In UIKit/AppKit coordinators, react to feature state via TCA `observe { ... }`, not `store.publisher`/`sink`.
     - Do not introduce Combine-based state subscriptions in coordinators.
+    - Keep physical AppKit state (framework-owned selection, drag session, window, or callback lifetime) separate from logical feature state. An AppKit callback may translate physical state into a semantic action, but it must not directly own feature mutation, service work, or competing visual cleanup.
+    - Isolate AppKit callbacks in a coordinator/adapter boundary; the reducer remains the logical-state and effect owner, including one canonical cleanup path across success, cancellation, reload, and teardown.
 3. Slice boundary gate
     - Same-layer cross-slice references must be treated as a violation unless there is explicit architectural justification.
     - Do not depend on another slice's internal helpers or decomposition files when a stable boundary should exist.
@@ -38,7 +36,7 @@ Block implementation choices that violate clean architecture or FSD dependency d
     - Each new type, file, or test suite must reside in the package that matches its ownership scope, not in a lower layer just because it compiles there.
     - One-slice code must not be placed in `06_Shared`. If only one feature/spec consumes the code, it belongs in `04_Features`, `05_Entities`, or the app layer.
     - Naming collision gate: new types must not reuse names that conflict with well-known external services or libraries (e.g., `OpenRouter` the LLM provider). Check for external name conflicts before naming.
-    - See `layer-and-segment-rules.md` "Package placement decision tree" for the mandatory checklist.
+    - See `../../boundary/references/layer-and-segment-rules.md` "Package placement decision tree" for the mandatory checklist.
 
 ## Violation handling
 

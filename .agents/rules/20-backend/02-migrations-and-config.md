@@ -1,11 +1,12 @@
 ---
 description: "Database migration and backend configuration rules."
 globs: "apps/backend/**/*.py"
+schemaVersion: 2
 ---
 
 # Backend Migrations and Config
 
-## Must
+## Outcome
 
 - Keep config source of truth in `apps/backend/src/app/config.py`.
 - Respect env precedence:
@@ -15,14 +16,21 @@ globs: "apps/backend/**/*.py"
 - Keep migrations atomic and reversible when practical.
 - Keep seed/bootstrap logic outside migration bodies.
 
-## Alembic commands
+## Default Actions
+
+- Keep migrations atomic and reversible when practical.
+- Keep seed/bootstrap logic outside migration bodies.
+
+## Decision Rules
+
+### Alembic commands
 
 - Create migration:
     - `cd apps/backend && uv run alembic -c src/infra/db/alembic.ini revision --autogenerate -m "<message>"`
 - Apply migration:
     - `cd apps/backend && uv run alembic -c src/infra/db/alembic.ini upgrade head`
 
-## Must not
+## Stop Conditions
 
 - Hardcode secrets in config defaults.
 - Mix schema migration and large data migration logic in one revision.

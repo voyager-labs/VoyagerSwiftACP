@@ -1,11 +1,12 @@
 ---
 description: "Defines discrete task units, their entry/exit invariants, and provenance anchor separation."
 alwaysApply: true
+schemaVersion: 2
 ---
 
 # Task Boundary Contract
 
-## Must
+## Outcome
 
 - Treat a task as a discrete unit bounded by one intent, one scope, and one outcome.
 - Record the task intent before starting work (what this task exists to achieve).
@@ -14,21 +15,23 @@ alwaysApply: true
 - At task exit, confirm: (a) stated intent was addressed, (b) scope did not drift beyond the stated boundary, (c) outcome is explicitly classified.
 - If a task cannot be completed within its boundary, stop and report a blocked outcome rather than silently expanding scope.
 
-## Must not
+## Default Actions
+
+1. Before work, state the task intent in one sentence and list the scope boundary (files, modules, or domains affected).
+2. During work, if scope expands, pause, log the drift, and decide whether to split into a new task or reclassify.
+3. After work, run verification matching the intent (see `99-agent/06-verification-intent-parity.md`).
+4. Classify the outcome using the taxonomy in `99-agent/07-outcome-classification.md`.
+5. Write evidence to the canonical location with provenance anchors in a separate section from findings.
+
+## Decision Rules
+
+## Stop Conditions
 
 - Start work without a stated intent.
 - Expand scope mid-task without acknowledging the boundary change and reclassifying.
 - Mix provenance anchors into derivative artifacts. Anchors are immutable references; derivatives are mutable outputs.
 - Treat partial completion as pass. Use degraded or exception classification from `99-agent/07-outcome-classification.md`.
 - Carry uncommitted side effects across task boundaries. Each task exits with a clean or explicitly documented state.
-
-## Execution steps
-
-1. Before work: state the task intent in one sentence and list the scope boundary (files, modules, or domains affected).
-2. During work: if scope expands, pause, log the drift, and decide whether to split into a new task or reclassify.
-3. After work: run verification matching the intent (see `99-agent/06-verification-intent-parity.md`).
-4. Classify the outcome using the taxonomy in `99-agent/07-outcome-classification.md`.
-5. Write evidence to the canonical location with provenance anchors in a separate section from findings.
 
 ## Verification
 

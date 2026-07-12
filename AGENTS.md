@@ -35,43 +35,10 @@ mise tasks
 - Never automatically reset, revert, or discard changes in `opencode.json`.
 - Never include `opencode.json` in commits unless the user explicitly asks for it.
 
-## Commit attribution
+## Core policies
 
-- Agents must **never** add `Co-authored-by: Sisyphus`, `Co-authored-by: Sisyphus <...>`, `Ultraworked with Sisyphus`, or any similar AI/Sisyphus co-author trailer to commit messages.
-- This applies to commit subjects, bodies, and footers alike.
-- The only exception is when the user explicitly requests such a trailer.
-
-## Validation
-
-Run the commands that match your change scope.
-
-### Backend (Python/FastAPI)
-
-```bash
-cd apps/backend
-uv run pytest          # tests
-uv run pyright         # type check
-uv run ruff check      # linter
-```
-
-### macOS (Voyager)
-
-```bash
-mise run macos-build   # Dev build
-mise run macos-test    # Dev tests
-```
-
-Swift lint/format:
-```bash
-mise exec -- swiftlint --config apps/macos/.swiftlint.yml apps/macos
-mise exec -- swiftformat --config apps/macos/.swiftformat apps/macos --verbose
-```
-
-### General
-
-```bash
-git diff --check       # whitespace/conflict markers
-```
+- Commit authorization, destructive-history limits, and attribution rules: `.agents/rules/00-core/03-commit-and-pr.md`.
+- Required verification outcomes, scope tiers, and commands: `.agents/rules/00-core/02-verification.md`.
 
 ## PR review rules
 

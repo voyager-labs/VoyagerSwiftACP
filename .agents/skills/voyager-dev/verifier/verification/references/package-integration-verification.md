@@ -13,7 +13,7 @@ Package-local verification proves the package can compile by itself. Integration
 - A package, product, target, dependency edge, or consumer link is removed.
 - Public API, exported types, imports, or module names change.
 - Files are moved inside a package in a way that may expose stale Xcode, linker, or consumer assumptions.
-- `swift build --package-path` passes but `xcodebuild` fails at the consumer level.
+- `swift build --package-path` passes but the selected consumer build route fails.
 - Imports need auditing before removal, or public surface exposure needs checking.
 - Linker errors appear after dependency changes, or test targets need wiring verification.
 
@@ -30,26 +30,16 @@ Layer 1 passing while Layer 3 fails is the most common integration problem. `swi
 
 ## Command surfaces
 
-Use XcodeBuildMCP when available for Xcode project/workspace listing, build, and test execution. Load `xcodebuildmcp-workflow.md` before choosing raw `xcodebuild`.
+Use the capability matrix in `.agents/skills/code-tooling/SKILL.md`: package-local layers use `xcrun swift`; simulator consumers use a supported XcodeBuildMCP operation; macOS consumers use existing `mise` tasks while no macOS MCP operation is exposed. Load `xcodebuildmcp-workflow.md` only for supported simulator operations.
 
-### XcodeBuildMCP commands
-
-Package-local:
+### Simulator consumer commands
 
 ```
-XcodeBuildMCP_build_sim          # compile for simulator
-XcodeBuildMCP_test_sim           # run tests on simulator
-XcodeBuildMCP_build_run_sim      # build, install, and launch
+XcodeBuildMCP_build_sim          # with configured workspace/scheme/simulator defaults
+XcodeBuildMCP_test_sim           # with focused test filters when the simulator scope supports them
 ```
 
-Consumer-boundary:
-
-```
-XcodeBuildMCP_build_sim          # with workspace/scheme defaults
-XcodeBuildMCP_test_sim           # with focused test filters
-```
-
-### Raw xcodebuild fallback
+### Package-local SwiftPM route
 
 Package-local:
 
@@ -58,51 +48,21 @@ xcrun swift build --package-path apps/macos/Packages/<Package>
 xcrun swift test --package-path apps/macos/Packages/<Package>
 ```
 
-Consumer-boundary:
-
-```bash
-xcodebuild build -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug
-xcodebuild test -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -only-testing:VoyagerTests/<ConsumerTests>
-```
-
-Use the narrowest consumer build/test that proves the changed product is linked and imported. Expand to the full app or host build when product exposure, target membership, or dependency removal can affect multiple consumers.
+For a macOS consumer boundary, use `mise run macos-build` and `mise run macos-test`; for a simulator consumer, use the supported XcodeBuildMCP route. Use the narrowest available route that proves the changed product is linked and imported. Expand to the full app or host build when product exposure, target membership, or dependency removal can affect multiple consumers.
 
 ## Phase 1: Pre-change baseline
 
 ### 1.1 Capture build baseline
 
-```bash
-xcodebuild build \
-  -workspace apps/macos/Voyager/Voyager.xcworkspace \
-  -scheme Voyager-Dev \
-  -destination 'platform=macOS' \
-  -resultBundlePath /tmp/baseline-build.xcresult \
-  | tee /tmp/baseline-build.log
-```
-
-Record: pass/fail, and if fail, the list of errors.
+Run the matrix-selected consumer build route before the change: `mise run macos-build` for the macOS development scheme, or a supported XcodeBuildMCP simulator build after session-default inspection. Record pass/fail and the first errors in task evidence.
 
 ### 1.2 Capture test baseline
 
-```bash
-xcodebuild test \
-  -workspace apps/macos/Voyager/Voyager.xcworkspace \
-  -scheme Voyager-Dev \
-  -destination 'platform=macOS' \
-  -resultBundlePath /tmp/baseline-tests.xcresult \
-  | tee /tmp/baseline-tests.log
-```
-
-Record: total tests, failures, list of failing test names.
+Run the matrix-selected consumer test route before the change: `mise run macos-test` for the macOS development scheme, or a supported focused XcodeBuildMCP simulator test after session-default inspection. Record total tests, failures, and failing test names in task evidence.
 
 ### 1.3 Save baseline state
 
-```bash
-grep -E "(error:|failed|Test Suite)" /tmp/baseline-build.log > /tmp/baseline-summary.txt
-grep -E "(error:|failed|Test Suite)" /tmp/baseline-tests.log >> /tmp/baseline-summary.txt
-```
-
-If the baseline has failures, document them. You will need to classify test failures later.
+Persist the selected executor, operation or command, target scope, exit result, and failing-test summary in task evidence. If the baseline has failures, document them for later classification.
 
 ## Phase 2: Make changes
 
@@ -136,13 +96,7 @@ This checks the package's own test suite. If the package has no tests, skip this
 
 ### 3.3 Layer 3: Consumer build (integration boundary)
 
-```bash
-xcodebuild build \
-  -workspace apps/macos/Voyager/Voyager.xcworkspace \
-  -scheme Voyager-Dev \
-  -destination 'platform=macOS' \
-  | tee /tmp/post-change-build.log
-```
+For macOS consumers, run `mise run macos-build`. For simulator consumers, run the matrix-selected supported XcodeBuildMCP build operation after session-default inspection.
 
 **Common failure modes at this layer:**
 
@@ -157,13 +111,7 @@ xcodebuild build \
 
 ### 3.4 Layer 4: Consumer tests
 
-```bash
-xcodebuild test \
-  -workspace apps/macos/Voyager/Voyager.xcworkspace \
-  -scheme Voyager-Dev \
-  -destination 'platform=macOS' \
-  | tee /tmp/post-change-tests.log
-```
+For macOS consumers, run `mise run macos-test`. For simulator consumers, run the matrix-selected supported XcodeBuildMCP test operation after session-default inspection.
 
 Run focused tests first when the change scope is narrow, then expand to the full suite.
 
@@ -173,10 +121,10 @@ Run focused tests first when the change scope is narrow, then expand to the full
 
 After all four layers pass:
 
-- [ ] `swift build --package-path apps/macos/Packages/<Package>` passes (Layer 1)
-- [ ] `swift test --package-path apps/macos/Packages/<Package>` passes or no tests exist (Layer 2)
-- [ ] `xcodebuild build` at consumer level passes (Layer 3)
-- [ ] `xcodebuild test` at consumer level passes (Layer 4)
+- [ ] `xcrun swift build --package-path apps/macos/Packages/<Package>` passes (Layer 1)
+- [ ] `xcrun swift test --package-path apps/macos/Packages/<Package>` passes or no tests exist (Layer 2)
+- [ ] Matrix-selected consumer build passes (Layer 3)
+- [ ] Matrix-selected consumer test passes (Layer 4)
 - [ ] No new warnings introduced (check the build log)
 - [ ] DerivedData was clean or stale artifacts were ruled out
 
@@ -241,7 +189,7 @@ For each import suspected to be unused:
 
 1. Check all six categories above against the file's source
 2. If none apply, temporarily remove the import
-3. Build at Layer 3 (xcodebuild consumer build, not just `swift build`)
+3. Build at Layer 3 using the matrix-selected consumer route, not just `swift build`
 4. If build fails, the import was needed. Restore it.
 5. If build passes, the import was unused. Leave it removed.
 
@@ -309,15 +257,7 @@ App targets resolve package dependencies automatically in most cases. Test targe
 
 ### 6.3 Verify test compilation and linking
 
-```bash
-xcodebuild build-for-testing \
-  -workspace apps/macos/Voyager/Voyager.xcworkspace \
-  -scheme Voyager-Dev \
-  -destination 'platform=macOS' \
-  | tee /tmp/test-target-build.log
-```
-
-Check for linker errors. If you see `Undefined symbol` for package types, the test target is missing a link product reference.
+Run the matrix-selected consumer test route and inspect the result for linker errors. If `Undefined symbol` appears for package types, the test target is missing a link product reference.
 
 ## Phase 7: Dependency evidence table
 
@@ -359,21 +299,11 @@ For KEEP decisions:
 
 ### 8.1 Run post-change tests
 
-```bash
-xcodebuild test \
-  -workspace apps/macos/Voyager/Voyager.xcworkspace \
-  -scheme Voyager-Dev \
-  -destination 'platform=macOS' \
-  -resultBundlePath /tmp/post-change-tests.xcresult \
-  | tee /tmp/post-change-tests.log
-```
+Run the same matrix-selected consumer test route used for the baseline, focused first and broadened only when the changed boundary requires it.
 
 ### 8.2 Diff against baseline
 
-```bash
-# Compare failing tests
-diff <(grep "failed" /tmp/baseline-tests.log) <(grep "failed" /tmp/post-change-tests.log)
-```
+Compare the failing-test names recorded in baseline evidence with the names recorded after the change.
 
 ### 8.3 Classify each failure
 
@@ -424,7 +354,7 @@ For each failing test:
 
 ### Build fails at Layer 3 only (consumer boundary)
 
-Symptoms: `swift build` passes, `xcodebuild build` fails.
+Symptoms: `swift build` passes, but the matrix-selected consumer build fails.
 
 Causes:
 
@@ -471,14 +401,7 @@ Causes:
 2. Different simulator or SDK version
 3. CI resolves dependencies differently (different Package.resolved)
 
-Fix: Reproduce with a clean build locally:
-
-```bash
-rm -rf ~/Library/Developer/Xcode/DerivedData/<project>-*
-xcodebuild clean -workspace apps/macos/Voyager/Voyager.xcworkspace -scheme Voyager-Dev
-xcodebuild test -workspace apps/macos/Voyager/Voyager.xcworkspace -scheme Voyager-Dev \
-  -destination 'platform=macOS'
-```
+Fix: Use the matrix-selected repository or supported MCP route with a clean build only when its cleanup capability is exposed and the cleanup is in scope. Record the environment difference and result in evidence.
 
 ### SourceKit or LSP stale module context
 

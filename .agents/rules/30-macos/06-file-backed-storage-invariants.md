@@ -1,37 +1,33 @@
 ---
 description: "Invariants for file-backed credential/auth storage in Voyager macOS."
 globs: "apps/macos/**/*.swift"
+schemaVersion: 2
 ---
 
 # File-Backed Storage Invariants
 
-## Must
+## Outcome
 
-- Use `FileManager.replaceItemAt(_:withItemAt:)` for atomic writes. Not `moveItem` or direct writes.
-- Acquire POSIX `flock` (via `open(O_CREAT | O_RDWR)`) before reading or writing storage files when concurrent access is possible.
-- Set file permissions to `0600` (owner read/write only) after every write.
-- When stored JSON is corrupt or unreadable, quarantine by renaming to a timestamped `.corrupted-*` backup and return empty/default state. Do not silently discard or overwrite.
-- Use `@preconcurrency import Foundation` when Swift 6 actor isolation and `FileManager` calls require it.
+- This is the canonical owner for file-backed storage: concurrent mutation is locked, writes are atomic, files are `0600`, corrupt JSON is quarantined, and secrets never enter ordinary file storage.
 
-## Must not
+## Default Actions
 
-- Do not use `FileManager.moveItem` for atomic writes — use `replaceItemAt`.
-- Do not leave storage files with default permissions after writes.
-- Do not silently discard corrupt files — always quarantine first.
-- Do not store secrets in plist, UserDefaults, or plain text files.
+1. Open with `O_CREAT | O_RDWR` and acquire POSIX `flock` before concurrent read/write access.
+2. Parse existing content; quarantine unreadable or corrupt JSON to a timestamped `.corrupted-*` backup and return empty/default state.
+3. Write updated content to a temporary file, atomically replace with `FileManager.replaceItemAt(_:withItemAt:)`, set `0600`, then release the lock and close the descriptor.
+4. Use `@preconcurrency import Foundation` where Swift 6 isolation requires it for `FileManager` calls.
 
-## Execution steps
+## Decision Rules
 
-1. Open the storage file with `O_CREAT | O_RDWR` and acquire `flock`.
-2. Read and parse existing content; if corrupt, quarantine and return defaults.
-3. Write updated content to a temporary file.
-4. Atomically replace the original with `FileManager.replaceItemAt`.
-5. Set permissions to `0600` on the new file.
-6. Release `flock` and close file descriptor.
+- Apply this rule to credential, OAuth, provider snapshot, settings, and other file-backed storage changes.
+- Acquire the lock whenever concurrent access is possible; do not weaken corruption recovery because a caller can recreate defaults.
+
+## Stop Conditions
+
+- Do not directly overwrite or use `FileManager.moveItem` as an atomic-write substitute.
+- Do not leave default permissions, silently discard corrupt data, or store secrets in plist, `UserDefaults`, or plain-text files.
 
 ## Verification
 
-- `grep -r 'replaceItemAt' apps/macos/Packages/**/Sources/` confirms atomic write usage.
-- `grep -r '0600\|S_IRUSR' apps/macos/Packages/**/Sources/` confirms permission setting.
-- `grep -r '\.corrupted' apps/macos/Packages/**/Sources/` confirms quarantine pattern.
-- No `moveItem` usage in storage write paths.
+- Confirm storage writes use `replaceItemAt`, locking where concurrent access is possible, `0600` permissions, and `.corrupted-*` quarantine.
+- Confirm no `moveItem` is used in the touched storage write path and test corrupt-content recovery where that path changes.

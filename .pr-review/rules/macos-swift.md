@@ -16,68 +16,35 @@ Prioritize these checks over generic bug finding:
 6. Are lifecycle, cancellation, teardown, rollback, and late-event paths handled by the correct owner?
 7. Does the implementation follow the established repository pattern in intent, not just in syntax?
 
-## FSD architecture model
+## Canonical architecture references and minimum review gates
 
-Layer direction (top-to-bottom only):
+Load these repository-root paths for the complete contracts:
 
-```text
-01_App -> 02_Pages -> 03_Widgets -> 04_Features -> 05_Entities -> 06_Shared
-```
+- `.agents/skills/voyager-dev/reviewer/boundary/references/layer-and-segment-rules.md`
+- `.agents/skills/voyager-dev/reviewer/boundary/references/public-boundary-spec.md`
+- `.agents/skills/voyager-dev/reviewer/architecture-gate/references/decision-matrix.md`
+- `.agents/skills/voyager-dev/reviewer/architecture-gate/references/architecture-gate-spec.md`
+- `.agents/skills/voyager-dev/planner/reuse-evaluation/references/reuse-discovery-spec.md`
 
-- `01_App` may orchestrate global app lifecycle, commands, menu state, and window management.
-- `02_Pages` may assemble lower layers for a page-level experience.
-- `03_Widgets` may provide reusable page sections, usually UI-oriented and injected from above.
-- `04_Features` owns use-case logic and reusable feature flows.
-- `05_Entities` owns domain concepts such as Entry or Collection.
-- `06_Shared` owns globally reusable clients, config, utilities, design tokens, and common models.
+These references own the detailed FSD, segment, public-boundary, reuse-scoring,
+and AppKit/system architecture prose. If a reference cannot load, retain these
+standalone strict checks rather than treating the review rule as links-only:
 
-Flag these patterns:
-
-- `Entities` importing or depending on `Features`, `Pages`, or `App`.
-- `Features` depending on `Pages` or page-specific UI containers.
-- Same-layer slices directly depending on each other when the shared concept should move lower.
-- `Shared` depending on any higher layer.
-- App/Page layers accumulating domain logic that belongs in a Feature, Entity, or Shared client.
-
-## TCA and segment ownership
-
-Use these segment responsibilities:
-
-- `Ui/`: SwiftUI views and view adapters. Views should render state and send actions.
-- `Reducer/`: TCA reducer orchestration, child reducer composition, effect routing, cancellation IDs.
-- `Model/`: state, actions, domain/display models, value types.
-- `Api/`: dependency clients, live/test values, external service boundaries.
-- `Lib/`: helpers, coordinators, delegates, adapters, AppKit/system integration glue.
-- `Config/`: constants, design tokens, configuration.
-
-Flag changes where:
-
-- A SwiftUI view performs network, filesystem, system SDK, persistence, or long-lived observation work.
-- A reducer directly constructs external services instead of using dependency clients.
-- A dependency client owns UI policy or presentation copy.
-- A coordinator starts owning domain decisions that should be reducer state.
-- A model/helper is placed in `Shared` even though it is page-specific.
-- State or action types are split in a way that hides ownership rather than clarifying it.
-
-## Reuse and duplicate detection
-
-Before accepting any new abstraction, search mentally through the existing codebase patterns and ask:
-
-- Is there already a dependency client for this external capability?
-- Is there already a reducer/helper/adapter for this command or lifecycle?
-- Is there already an entity model or display model that represents this concept?
-- Is this new type a compatibility wrapper that could be removed by extending the canonical type?
-- Is this new utility duplicating a mapping, label, icon, provider, status, or formatting helper?
-
-Flag high-confidence duplication when:
-
-- Two types represent the same domain concept with different names.
-- Two helpers perform the same mapping across layers.
-- A new service bypasses an existing dependency client.
-- A new view model duplicates an existing display model.
-- A new compatibility wrapper exists only because the new code did not adapt the existing owner.
-
-Do not flag reuse speculatively. Cite the existing path/type/pattern that should be reused.
+- Flag a lower FSD layer importing a higher layer: `Entities` -> `Features`,
+  `Pages`, or `App`; `Features` -> `Pages`; or `Shared` -> any higher layer.
+  Flag same-layer slice coupling without an explicit narrow boundary.
+- Flag a new client, model, helper, view model, or wrapper that duplicates an
+  identified existing path/type, bypasses an existing dependency client, or has
+  no independent translation, migration, or protection responsibility. Cite the
+  existing path/type; do not speculate about reuse.
+- Flag package/app reverse dependencies, imports of peer-slice internals, and
+  unjustified public-surface expansion without a cross-package consumer. Do not
+  flag compiler-required visibility for a public enum associated value or a
+  public-class protocol witness.
+- Flag UI adapters that call network, filesystem, system SDK, persistence, or
+  long-lived observation work directly. Flag AppKit callbacks/coordinators that
+  mutate feature state, own service work, or compete with reducer-owned cleanup
+  instead of translating physical state into semantic actions.
 
 ## Cross-feature command routing
 
@@ -99,25 +66,12 @@ Flag:
 
 ## AppKit coordinator review
 
-For AppKit and SwiftUI coordinator code, verify the distinction between logical reducer intent and physical AppKit state.
-
-Physical state includes:
-
-- `NSSplitView` arranged subviews
-- actual view hierarchy membership
-- visible frame width/height
-- first responder/focus state
-- window lifecycle
-- delegate callbacks
-- mounted/teardown state
-
-Flag issues where:
-
-- The reducer assumes an AppKit view is physically mounted before the coordinator confirms it.
-- Menu or toolbar state derives from logical intent when the user-visible state depends on physical mount.
-- A coordinator mutates reducer state before the AppKit operation actually succeeds.
-- A close/unmount path does not cancel pending open/setup effects.
-- Retry logic can get stuck in a logical-open / physically-missing state.
+Use the AppKit/system boundary in
+`.agents/skills/voyager-dev/reviewer/architecture-gate/references/architecture-gate-spec.md`
+for the detailed physical-state contract. Independently verify that a coordinator
+confirms physical mount/operation success before reporting it as reducer state,
+and that close/unmount cancels pending setup so a late event cannot recreate a
+physically missing feature.
 
 ## Async lifecycle and cancellation
 
@@ -167,7 +121,8 @@ mismatch and secret exposure:
 - Build scripts must copy only intended secret-free production templates and must not make local `.env.dev` values part of the app bundle.
 - `Info.plist`, entitlements, and scheme changes must not silently weaken sandboxing, helper lookup, network access, or release behavior.
 
-Treat leaked secrets as P0 and boot/runtime environment mismatches as P1 when the failure is concrete.
+Treat concrete leaked secrets and boot/runtime environment mismatches according to
+the severity policy in `.pr-review/config.yaml`.
 
 ## Helper and XPC contracts
 
@@ -180,18 +135,18 @@ review the contract across all participating targets:
 - Do not bypass the shared XPC/helper contract with global notifications, singleton state, direct file mutation, or app-only assumptions.
 - The app and helper must agree on storage paths, environment, protocol version, and failure semantics.
 
-Flag mismatched contracts, missing failure paths, and one-sided app/helper updates as P1 runtime risks.
+Flag mismatched contracts, missing failure paths, and one-sided app/helper updates
+as concrete runtime risks.
 
 ## Package and public boundaries
 
-When a PR touches Swift packages or promotes code across package boundaries:
-
-- Package targets must not import the app target or higher FSD layers; use dependency injection, adapters, or lower-layer promotion instead.
-- Avoid `@testable import Voyager` or app-only fixtures in package tests.
-- Public API promotions must expose the initializer, stored properties, enum cases, and dependency surfaces needed by real consumers.
-- Wrapper-only compatibility types should be removed or folded into the canonical owner unless they represent a stable external boundary.
-
-Flag package reverse dependencies, incomplete public surfaces, and compatibility wrappers that hide ownership drift as P1 maintainability risks.
+Use `.agents/skills/voyager-dev/reviewer/boundary/references/public-boundary-spec.md`
+for the detailed public-boundary contract and
+`.agents/skills/voyager-dev/reviewer/boundary/references/layer-and-segment-rules.md`
+for package placement. Retain the strict checks above for package reverse
+dependencies, peer internals, unjustified public expansion, and wrapper-only
+compatibility types. Also flag package tests that rely on `@testable import Voyager`
+or app-only fixtures instead of an independent package consumer boundary.
 
 ## Test review
 
