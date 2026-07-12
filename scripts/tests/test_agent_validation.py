@@ -177,7 +177,7 @@ class AgentValidationTests(unittest.TestCase):
             routing_root = Path(routing_temp)
             self.write(
                 routing_root,
-                ".agents/rules/10-routing/00-routing.md",
+                ".agents/rules/00-core/04-routing.md",
                 RULE + "\n- Load `00-core/missing.md`.\n",
             )
             routing_result, routing_payload = self.run_cli(
@@ -264,7 +264,7 @@ class AgentValidationTests(unittest.TestCase):
                 "{bad",
             ),
             "HARNESS_DEAD_ROUTING": (
-                ".agents/rules/10-routing/00-routing.md",
+                ".agents/rules/00-core/04-routing.md",
                 RULE + "\n- Load `00-core/missing.md`.\n",
             ),
         }

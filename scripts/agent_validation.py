@@ -240,7 +240,7 @@ def validate_harness(root: Path, paths: set[str], mode: str) -> list[Diagnostic]
                     )
                 )
 
-    routing = root / ".agents/rules/10-routing/00-routing.md"
+    routing = root / ".agents/rules/00-core/04-routing.md"
     if routing.is_file() and routing.relative_to(root).as_posix() in paths:
         for line_number, line in enumerate(
             routing.read_text(encoding="utf-8").splitlines(), 1
