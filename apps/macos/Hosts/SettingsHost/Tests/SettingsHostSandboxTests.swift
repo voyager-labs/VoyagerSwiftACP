@@ -1,8 +1,8 @@
 import ComposableArchitecture
+@testable import SettingsHost
 import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
-import VoyagerFeaturesAccountAccess
-@testable import VoyagerPagesSettings
+import VoyagerPagesSettings
 import XCTest
 
 final class SettingsHostSandboxTests: XCTestCase {
@@ -20,57 +20,6 @@ final class SettingsHostSandboxTests: XCTestCase {
             persistence: persistence,
             failureLatency: failureLatency,
         )
-    }
-
-    // MARK: - Account / Auth axis
-
-    func testSignedInProducesActiveSession() async throws {
-        let deps = SettingsHostSandbox.dependencies(for: scenario(accountAuth: .signedIn))
-        let session = try await deps.accountSessionClient.read()
-        XCTAssertEqual(session?.status.isActive, true, "signedIn should yield an active session")
-        XCTAssertEqual(session?.accessToken.isEmpty, false, "signedIn session should carry a deterministic token")
-    }
-
-    func testSignedOutProducesNilSession() async throws {
-        let deps = SettingsHostSandbox.dependencies(for: scenario(accountAuth: .signedOut))
-        let session = try await deps.accountSessionClient.read()
-        XCTAssertNil(session, "signedOut should yield no session")
-    }
-
-    func testSignedOutSignInHandoffCreatesActiveSession() async throws {
-        let deps = SettingsHostSandbox.dependencies(for: scenario(accountAuth: .signedOut))
-
-        let result = await deps.signInHandoffClient.performHandoff(.paywall)
-        guard case let .success(callbackURL) = result else {
-            XCTFail("signedOut sign-in handoff should succeed in SettingsHost sandbox")
-            return
-        }
-
-        XCTAssertEqual(callbackURL.absoluteString, "voyager://auth/callback")
-        let session = try await deps.accountSessionClient.read()
-        XCTAssertEqual(session?.status.isActive, true, "sign-in should make sandbox session active")
-
-        let status = try await deps.authNetworkClient.fetchAccessStatus()
-        XCTAssertTrue(status.hasAccess, "sign-in should make sandbox access status active")
-    }
-
-    func testAuthExpiredProducesSessionWithPastExpiry() async throws {
-        let deps = SettingsHostSandbox.dependencies(for: scenario(accountAuth: .authExpired))
-        let session = try await deps.accountSessionClient.read()
-        let expiry = try XCTUnwrap(session?.expiresAt)
-        XCTAssertLessThan(expiry.timeIntervalSince1970, 0, "authExpired session should be rooted at epoch (past)")
-    }
-
-    func testAccountErrorThrowsOnRead() async {
-        let deps = SettingsHostSandbox.dependencies(
-            for: scenario(accountAuth: .error, failureLatency: .error),
-        )
-        do {
-            _ = try await deps.accountSessionClient.read()
-            XCTFail("accountAuth .error should throw on read")
-        } catch {
-            // expected
-        }
     }
 
     // MARK: - AI connection axis
@@ -134,13 +83,6 @@ final class SettingsHostSandboxTests: XCTestCase {
     }
 
     // MARK: - Determinism
-
-    func testAccountSessionDeterministicAcrossRuns() async throws {
-        let scenario = scenario(accountAuth: .signedIn)
-        let first = try await SettingsHostSandbox.dependencies(for: scenario).accountSessionClient.read()
-        let second = try await SettingsHostSandbox.dependencies(for: scenario).accountSessionClient.read()
-        XCTAssertEqual(first?.accessToken, second?.accessToken, "signedIn token must be deterministic")
-    }
 
     func testAIConnectionsDeterministicAcrossRuns() async throws {
         let scenario = scenario(aiConnection: .connected)

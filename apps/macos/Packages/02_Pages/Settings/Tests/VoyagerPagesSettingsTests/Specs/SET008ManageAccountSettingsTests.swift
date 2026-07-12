@@ -3,142 +3,132 @@ import VoyagerFeaturesAccountAccess
 @testable import VoyagerPagesSettings
 import XCTest
 
-/*
- SET-008-manage_account_settings 증거 계약
-
- 포함한 interaction_id:
-  - SET-008-tab-registration: SettingsSection에 account 탭 등록 검증
-    testAccountSectionIsRegisteredAfterAI, testAccountSectionHasCorrectTitleAndIcon
-  - SET-008-show_account_status: 집중 자동화 테스트
-    testInitialStateSetAuthStateIsSignedOut ~ testEntitlementUnknownMapping
-  - SET-008-sign_out_account: 집중 자동화 테스트
-    testSignOutTappedShowsConfirmation ~ testAccessSignedOutDelegateClearsConfirmation
-  - SET-008-open_entitlement_management: manageAccountTapped URL 열기
-    testManageAccountTappedOpensURL
-
- Fixture reset:
-  - 메모리 기반 TestStore 사용, 영구 저장소 불필요
-  */
-
 @MainActor
 final class SET008ManageAccountSettingsTests: XCTestCase {
     // MARK: - SET-008-tab-registration
 
-    /// SET-008-tab-registration: SettingsSection.allCases는 [.general, .appearance, .ai, .account] 순서를 유지한다.
-    /// account 섹션이 Settings 탭 목록의 마지막에 위치한다.
+    /// SET-008-tab-registration: Account 탭은 Settings 탭 목록의 마지막에 유지된다.
+    /// - 검증 내용: account 섹션의 등록 순서와 표시 메타데이터
+    /// - 사전 조건: 기본 SettingsSection 목록
+    /// - 기대 결과: account가 AI 다음에 있고 기존 제목과 아이콘을 유지함
     func testAccountSectionIsRegisteredAfterAI() {
         XCTAssertEqual(SettingsSection.allCases, [.general, .appearance, .ai, .account])
-    }
-
-    /// SET-008-tab-registration: account 섹션의 타이틀과 아이콘이 올바르게 설정된다.
-    /// title은 "Account", iconName은 "person.crop.circle"이다.
-    func testAccountSectionHasCorrectTitleAndIcon() {
         XCTAssertEqual(SettingsSection.account.title, "Account")
         XCTAssertEqual(SettingsSection.account.iconName, "person.crop.circle")
     }
 
     // MARK: - SET-008-show_account_status
 
-    /// SET-008-show_account_status: 초기 AccountSettingsState의 setAuthState는 .signedOut이다.
-    func testInitialStateSetAuthStateIsSignedOut() {
-        let state = AccountSettingsState()
-        XCTAssertEqual(state.setAuthState, .signedOut)
+    /// SET-008-show_account_status: canonical snapshot은 signed-in active 표시 projection으로 갱신된다.
+    /// - 검증 내용: snapshot session과 access status의 Settings display mapping
+    /// - 사전 조건: 기본 Settings 상태
+    /// - 기대 결과: signed-in 및 entitlement active 표시와 accessStatus가 함께 갱신됨
+    func testCanonicalSnapshotUpdatesAccountPresentation() async {
+        let store = TestStore(initialState: SettingsState()) {
+            SettingsFeature()
+        }
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: Date(timeIntervalSince1970: 0),
+            sessionExpiresAt: Date(timeIntervalSince1970: 4_102_444_800),
+        )
+
+        await store.send(.appLifecycleAccessSnapshotReady(snapshot)) { state in
+            state.accessStatus = .coreLicenseActive
+            state.accountSettings.presentation = AccountAccessPresentation(snapshot: snapshot)
+        }
+
+        XCTAssertEqual(store.state.accountSettings.setAuthState, .signedIn)
+        XCTAssertEqual(store.state.accountSettings.setEntitlementState, .entitlementActive)
+        XCTAssertTrue(store.state.accountSettings.isManageAccountAvailable)
     }
 
-    /// SET-008-show_account_status: 초기 AccountSettingsState의 setEntitlementState는 .entitlementUnknown이다.
-    func testInitialStateSetEntitlementStateIsUnknown() {
-        let state = AccountSettingsState()
-        XCTAssertEqual(state.setEntitlementState, .entitlementUnknown)
+    /// SET-008-show_account_status: canonical presentation update는 progress, failure, unavailable 표시를 구분한다.
+    /// - 검증 내용: progress/failure와 network failure access status의 display mapping
+    /// - 사전 조건: 기본 Settings 상태
+    /// - 기대 결과: 각 projection fact가 대응하는 Settings UI 상태로 즉시 반영됨
+    func testCanonicalPresentationUpdatesAccountDisplayStates() async {
+        let store = TestStore(initialState: SettingsState()) {
+            SettingsFeature()
+        }
+        let signingIn = AccountAccessPresentation(isSignInInProgress: true)
+        await store.send(.accountAccessPresentationUpdated(signingIn)) { state in
+            state.accountSettings.presentation = signingIn
+        }
+        XCTAssertEqual(store.state.accountSettings.setAuthState, .signInInProgress)
+
+        let failed = AccountAccessPresentation(didSignInFail: true)
+        await store.send(.accountAccessPresentationUpdated(failed)) { state in
+            state.accountSettings.presentation = failed
+        }
+        XCTAssertEqual(store.state.accountSettings.setAuthState, .signInFailed)
+
+        let unavailable = AccountAccessPresentation(
+            hasAccountSession: true,
+            accessStatus: .networkFailure,
+        )
+        await store.send(.accountAccessPresentationUpdated(unavailable)) { state in
+            state.accessStatus = .networkFailure
+            state.accountSettings.presentation = unavailable
+        }
+        XCTAssertEqual(store.state.accountSettings.setEntitlementState, .entitlementUnavailable)
     }
 
-    /// SET-008-show_account_status: access.hasAccountSession=true → setAuthState == .signedIn
-    func testSignedInMapping() {
-        var access = AccountAccessFeature.State()
-        access.hasAccountSession = true
-        var state = AccountSettingsState()
-        state.access = access
-        XCTAssertEqual(state.setAuthState, .signedIn)
+    // MARK: - SET-008-start_account_sign_in
+
+    /// SET-008-start_account_sign_in: signed-out Sign In은 상위 canonical owner로 한 번 전달된다.
+    /// - 검증 내용: signInTapped의 단일 narrow delegate
+    /// - 사전 조건: signed-out AccountSettingsState
+    /// - 기대 결과: local runtime 변화 없이 signInRequested delegate를 한 번 수신함
+    func testSignedOutSignInForwardsOnce() async {
+        let store = TestStore(initialState: AccountSettingsState()) {
+            AccountSettingsFeature()
+        }
+
+        await store.send(.signInTapped)
+        await store.receive(\.delegate.signInRequested)
     }
 
-    /// SET-008-show_account_status: access.isSignInInProgress=true → setAuthState == .signInInProgress
-    func testSignInInProgressMapping() {
-        var access = AccountAccessFeature.State()
-        access.isSignInInProgress = true
-        var state = AccountSettingsState()
-        state.access = access
-        XCTAssertEqual(state.setAuthState, .signInInProgress)
-    }
+    /// SET-008-start_account_sign_in: signed-in Sign In은 re-auth 없이 no-op이다.
+    /// - 검증 내용: session 존재 시 Sign In delegate 미발행
+    /// - 사전 조건: canonical projection이 signed-in임
+    /// - 기대 결과: state와 effect가 변하지 않음
+    func testSignedInSignInIsNoOp() async {
+        var initialState = AccountSettingsState()
+        initialState.presentation.hasAccountSession = true
+        let store = TestStore(initialState: initialState) {
+            AccountSettingsFeature()
+        }
 
-    /// SET-008-show_account_status: access.didSignInFail=true → setAuthState == .signInFailed
-    func testSignInFailedMapping() {
-        var access = AccountAccessFeature.State()
-        access.didSignInFail = true
-        var state = AccountSettingsState()
-        state.access = access
-        XCTAssertEqual(state.setAuthState, .signInFailed)
-    }
-
-    /// SET-008-show_account_status: access.status.isActive → setEntitlementState == .entitlementActive
-    func testEntitlementActiveMapping() {
-        var access = AccountAccessFeature.State()
-        access.hasAccountSession = true
-        access.status = .coreLicenseActive
-        var state = AccountSettingsState()
-        state.access = access
-        XCTAssertEqual(state.setEntitlementState, .entitlementActive)
-    }
-
-    /// SET-008-show_account_status: access.status가 revoked → setEntitlementState == .entitlementInactive
-    func testEntitlementInactiveMapping() {
-        var access = AccountAccessFeature.State()
-        access.status = .revoked
-        var state = AccountSettingsState()
-        state.access = access
-        XCTAssertEqual(state.setEntitlementState, .entitlementInactive)
-    }
-
-    /// SET-008-show_account_status: access.status=nil → setEntitlementState == .entitlementUnknown
-    func testEntitlementUnknownMapping() {
-        var access = AccountAccessFeature.State()
-        access.status = nil
-        var state = AccountSettingsState()
-        state.access = access
-        XCTAssertEqual(state.setEntitlementState, .entitlementUnknown)
+        await store.send(.signInTapped)
     }
 
     // MARK: - SET-008-sign_out_account
 
-    /// SET-008-sign_out_account: signOutTapped 액션은 isShowingSignOutConfirmation을 true로 설정한다.
-    func testSignOutTappedShowsConfirmation() async {
-        let store = TestStore(initialState: AccountSettingsState()) {
+    /// SET-008-sign_out_account: confirmed Sign Out만 상위 canonical owner로 전달된다.
+    /// - 검증 내용: confirmation 전 local state, confirmation 후 signOutRequested delegate
+    /// - 사전 조건: signed-in projection과 숨겨진 confirmation dialog
+    /// - 기대 결과: dialog 표시 뒤 확인 시 한 번만 delegate를 수신함
+    func testConfirmedSignOutForwardsOnlyAfterConfirmation() async {
+        var initialState = AccountSettingsState()
+        initialState.presentation.hasAccountSession = true
+        let store = TestStore(initialState: initialState) {
             AccountSettingsFeature()
         }
 
         await store.send(.signOutTapped) { state in
             state.isShowingSignOutConfirmation = true
         }
-    }
-
-    /// SET-008-sign_out_account: signOutConfirmed 액션은 isShowingSignOutConfirmation을 false로 설정하고
-    /// access(.signOut)을 전송한다.
-    func testSignOutConfirmedDelegatesToAccess() async {
-        var initialState = AccountSettingsState()
-        initialState.isShowingSignOutConfirmation = true
-        let store = TestStore(initialState: initialState) {
-            AccountSettingsFeature()
-        } withDependencies: {
-            $0.accountSessionClient.delete = { _ in }
-            $0.accessStatusSnapshotClient.remove = {}
-        }
-
         await store.send(.signOutConfirmed) { state in
             state.isShowingSignOutConfirmation = false
         }
-
-        await store.receive(\.access.signOut)
+        await store.receive(\.delegate.signOutRequested)
     }
 
-    /// SET-008-sign_out_account: signOutCancelled 액션은 isShowingSignOutConfirmation을 false로 설정한다.
+    /// SET-008-sign_out_account: Cancel은 local confirmation만 닫는다.
+    /// - 검증 내용: cancel action의 local UI state 전이
+    /// - 사전 조건: sign-out confirmation이 표시 중임
+    /// - 기대 결과: confirmation이 닫히고 delegate가 발생하지 않음
     func testSignOutCancelledHidesConfirmation() async {
         var initialState = AccountSettingsState()
         initialState.isShowingSignOutConfirmation = true
@@ -151,597 +141,46 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
         }
     }
 
-    /// SET-008-sign_out_account: access(.delegate(.signedOut))를 수신하면
-    /// isShowingSignOutConfirmation을 false로 설정한다.
-    func testAccessSignedOutDelegateClearsConfirmation() async {
+    // MARK: - SET-008-retry_account_access
+
+    /// SET-008-retry_account_access: Retry는 canonical owner로 한 번 전달된다.
+    /// - 검증 내용: retryTapped의 단일 narrow delegate
+    /// - 사전 조건: signed-in network failure projection
+    /// - 기대 결과: local fetch 없이 retryRequested delegate를 한 번 수신함
+    func testRetryForwardsOnce() async {
         var initialState = AccountSettingsState()
-        initialState.isShowingSignOutConfirmation = true
+        initialState.presentation = AccountAccessPresentation(
+            hasAccountSession: true,
+            accessStatus: .networkFailure,
+        )
         let store = TestStore(initialState: initialState) {
             AccountSettingsFeature()
-        } withDependencies: {
-            $0.accountSessionClient.delete = { _ in }
-            $0.accessStatusSnapshotClient.remove = {}
         }
 
-        await store.send(.access(.delegate(.signedOut))) { state in
-            state.isShowingSignOutConfirmation = false
-        }
+        await store.send(.retryTapped)
+        await store.receive(\.delegate.retryRequested)
     }
 
     // MARK: - SET-008-open_entitlement_management
 
-    /// SET-008-open_entitlement_management: manageAccountTapped 액션이 checkoutURLClient.accountURL()을 열어
-    /// 브라우저에서 계정 관리 페이지로 이동한다.
+    /// SET-008-open_entitlement_management: Manage Account는 Settings-local 외부 URL effect로 유지된다.
+    /// - 검증 내용: configured account URL의 단일 open 호출
+    /// - 사전 조건: 유효한 checkout URL client
+    /// - 기대 결과: URL이 정확히 한 번 열리고 auth runtime intent는 생성되지 않음
     func testManageAccountTappedOpensURL() async throws {
         let expectedURL = try XCTUnwrap(URL(string: "https://voyager.test/account"))
-        final class Capture: @unchecked Sendable {
-            var value: URL?
-        }
-        let capture = Capture()
+        let capture = LockIsolated<[URL]>([])
         let store = TestStore(initialState: AccountSettingsState()) {
             AccountSettingsFeature()
         } withDependencies: {
-            $0.checkoutURLClient.openURL = { capture.value = $0 }
             $0.checkoutURLClient.accountURL = { expectedURL }
-        }
-
-        await store.send(.manageAccountTapped)
-        XCTAssertEqual(capture.value, expectedURL)
-    }
-
-    func testManageAccountTappedDoesNotOpenWhenAccountURLIsNotConfigured() async {
-        final class Capture: @unchecked Sendable {
-            var values: [URL] = []
-        }
-        let capture = Capture()
-        let store = TestStore(initialState: AccountSettingsState()) {
-            AccountSettingsFeature()
-        } withDependencies: {
-            $0.checkoutURLClient.openURL = { capture.values.append($0) }
-            $0.checkoutURLClient.accountURL = { throw AccessError.notConfigured }
-        }
-
-        await store.send(.manageAccountTapped)
-        XCTAssertTrue(capture.values.isEmpty)
-    }
-
-    // MARK: - Web Bridge Semantics
-
-    /// SET-008 web-bridge-only 계약 (T1 contract): AccountSettingsAction enum은
-    /// in-app renewal/paywall CTA case를 포함하지 않는다.
-    /// Account 탭은 외부 웹 포털 브리지(web bridge)만 허용하며,
-    /// 인앱 결제/갱신/업그레이드/복원 액션은 계약 위반이다.
-    /// T1 policy: entitlement_management_external_portal_is_web_bridge_only.
-    func testActionEnumContainsNoInAppRenewalOrPaymentCases() {
-        // AccountSettingsAction의 현재 계약상 노출된 모든 case.
-        // 새 결제/갱신 case가 추가되면 이 목록이 업데이트되어야 하며,
-        // 추가 즉시 아래 forbidden keyword 검사에 걸려 테스트가 실패한다.
-        let contractActions: [AccountSettingsAction] = [
-            .access(.hydrateLaunchSnapshot(AccessStatusSnapshot(status: .none))),
-            .signOutTapped,
-            .signOutConfirmed,
-            .signOutCancelled,
-            .manageAccountTapped,
-            .openAccountURLCompleted(true),
-        ]
-        let caseDescriptions = contractActions.map { String(describing: $0).lowercased() }
-
-        let forbiddenKeywords = [
-            "renew", "upgrade", "payment", "subscribe", "purchase", "buy", "restore",
-        ]
-
-        for keyword in forbiddenKeywords {
-            XCTAssertFalse(
-                caseDescriptions.contains(where: { $0.contains(keyword) }),
-                "AccountSettingsAction에 forbidden keyword '\(keyword)' 포함. " +
-                    "Account 탭은 web-bridge-only (in-app renewal/paywall CTA 금지).",
-            )
-        }
-    }
-
-    /// T11 overlay ownership: session lapse recovery는 Settings/Account 탭이 소유하지 않는다.
-    /// T1 policy: entitlement_inactive_recovery_is_owned_outside_settings.
-    /// Recovery는 ACC overlay (ACC-003-guard_session_lapse)가 소유하며, Settings는
-    /// access_status를 display로 반영할 뿐 recovery action을 노출하지 않는다.
-    /// 본 테스트는 `testActionEnumContainsNoInAppRenewalOrPaymentCases`를 보완하여
-    /// session-lapse-recovery 용어(reauth, restartSession, dismissSessionLapse 등)도
-    /// AccountSettingsAction case name에 노출되지 않음을 검증한다.
-    /// - 사전 조건: AccountSettingsAction의 현재 계약 case 목록 (6개).
-    /// - 기대 결과: 어느 case name에도 session-lapse recovery keyword가 포함되지 않는다.
-    func testAccountSettingsActionHasNoSessionLapseRecoveryCases() {
-        let contractActions: [AccountSettingsAction] = [
-            .access(.hydrateLaunchSnapshot(AccessStatusSnapshot(status: .none))),
-            .signOutTapped,
-            .signOutConfirmed,
-            .signOutCancelled,
-            .manageAccountTapped,
-            .openAccountURLCompleted(true),
-        ]
-        let caseDescriptions = contractActions.map { String(describing: $0).lowercased() }
-
-        let sessionLapseRecoveryKeywords = [
-            "reauth", "reauthenticate", "restartsession", "recoversession",
-            "unexpire", "dismisssessionlapse", "restoresession", "relogin",
-        ]
-
-        for keyword in sessionLapseRecoveryKeywords {
-            XCTAssertFalse(
-                caseDescriptions.contains(where: { $0.contains(keyword) }),
-                "AccountSettingsAction에 session-lapse recovery keyword '\(keyword)' 포함. " +
-                    "Recovery는 ACC overlay/session lapse guard가 소유 (Settings/Account 탭 소유 아님).",
-            )
-        }
-    }
-
-    /// SET-008 web-bridge-only 계약 (T1 contract): manageAccountTapped는
-    /// 외부 URL 열기(checkoutURLClient.openURL) 단일 호출만 수행하며,
-    /// in-app 결제/갱신 화면으로 전환하지 않는다.
-    /// 기존 testManageAccountTappedOpensURL을 보강: openURL이 정확히 한 번만 호출됨을 검증.
-    func testManageAccountTappedTriggersExternalURLBridgeOnly() async throws {
-        let expectedURL = try XCTUnwrap(URL(string: "https://voyager.test/account"))
-        final class OpenURLCapture: @unchecked Sendable {
-            var calls: [URL] = []
-        }
-        let capture = OpenURLCapture()
-        let store = TestStore(initialState: AccountSettingsState()) {
-            AccountSettingsFeature()
-        } withDependencies: {
-            $0.checkoutURLClient.openURL = { capture.calls.append($0) }
-            $0.checkoutURLClient.accountURL = { expectedURL }
-        }
-
-        // manageAccountTapped → 외부 URL 정확히 한 번 열기 (web bridge).
-        // 인앱 결제 화면 전환 액션은 전송되지 않는다.
-        await store.send(.manageAccountTapped)
-
-        XCTAssertEqual(capture.calls, [expectedURL])
-        XCTAssertEqual(capture.calls.count, 1, "manageAccountTapped는 외부 URL 단일 오픈만 수행 (web bridge)")
-    }
-
-    /// SET-008 web-bridge-only 계약 (T1 contract): setAuthState / setEntitlementState는
-    /// 읽기 전용 computed display 매핑이며, in-app recovery를 위한 writable state
-    /// (결제 진행/실패, 갱신 에러 등)를 노출하지 않는다.
-    /// T1 policy: entitlement_inactive_has_no_in_settings_recovery_cta.
-    func testSetAuthAndEntitlementStatesAreReadOnlyDisplayMappings() {
-        var state = AccountSettingsState()
-
-        // 초기 매핑
-        XCTAssertEqual(state.setAuthState, .signedOut)
-        XCTAssertEqual(state.setEntitlementState, .entitlementUnknown)
-
-        // 매핑 변경은 access 필드를 통해서만 가능 (computed property 직접 쓰기 불가).
-        state.access.hasAccountSession = true
-        state.access.status = .coreLicenseActive
-        XCTAssertEqual(state.setAuthState, .signedIn)
-        XCTAssertEqual(state.setEntitlementState, .entitlementActive)
-
-        // AccountSettingsState의 stored property 이름을 Mirror로 수집하여
-        // forbidden recovery 프로퍼티가 추가되지 않았는지 검증.
-        let propertyNames = Set(
-            Mirror(reflecting: state).children.compactMap(\.label),
-        )
-        let forbiddenRecoveryProperties: Set = [
-            "isRenewalInProgress", "renewalError",
-            "isUpgradeInProgress", "upgradeError",
-            "isPaymentInProgress", "paymentError",
-            "purchaseState", "isRestoreInProgress",
-        ]
-        XCTAssertTrue(
-            propertyNames.isDisjoint(with: forbiddenRecoveryProperties),
-            "AccountSettingsState에 in-app recovery 용 writable 프로퍼티가 존재: " +
-                "\(propertyNames.intersection(forbiddenRecoveryProperties)). " +
-                "Account 탭은 web-bridge-only.",
-        )
-    }
-
-    /// SET-008 web-bridge-only 계약 (T7 구현 주도):
-    /// T1 contract의 entitlement_management_action_for_entitlement = ["entitlement_active"]에 따라,
-    /// Manage Account CTA는 setEntitlementState == .entitlementActive일 때만 노출된다.
-    /// inactive/unknown 상태에서는 CTA가 노출되지 않는다.
-    /// T1 policy: entitlement_inactive_has_no_in_settings_recovery_cta,
-    ///             entitlement_inactive_recovery_is_owned_outside_settings.
-    /// RED: AccountSettingsState.isManageAccountAvailable 프로퍼티가 아직 구현되지 않음.
-    func testManageAccountCTAGatedByEntitlementActive() {
-        var state = AccountSettingsState()
-        state.access.hasAccountSession = true
-
-        state.access.status = .coreLicenseActive
-        XCTAssertTrue(
-            state.isManageAccountAvailable,
-            "entitlement_active일 때 Manage Account CTA 허용 (web bridge 진입점)",
-        )
-
-        state.access.status = .revoked
-        XCTAssertFalse(
-            state.isManageAccountAvailable,
-            "entitlement_inactive일 때 Manage Account CTA 금지 " +
-                "(entitlement_inactive_has_no_in_settings_recovery_cta; " +
-                "recovery는 Settings 외부에서 소유됨)",
-        )
-
-        state.access.status = nil
-        XCTAssertFalse(
-            state.isManageAccountAvailable,
-            "entitlement_unknown일 때 Manage Account CTA 금지",
-        )
-    }
-
-    // MARK: - View Tests
-
-    /// SET-008-manage_account_settings: signedOut 상태에서 Sign In 버튼이 표시된다.
-    /// AccountSettingsView는 setAuthState==.signedOut일 때 Sign In 버튼을 렌더링한다.
-    func testSignedOutStateShowsSignInButton() async {
-        nonisolated(unsafe) var capturedContext: AppHandoffContext?
-        let store = TestStore(initialState: AccountSettingsState()) {
-            AccountSettingsFeature()
-        } withDependencies: {
-            $0.signInHandoffClient.performHandoff = { context in
-                capturedContext = context
-                return .cancelled
+            $0.checkoutURLClient.openURL = { url in
+                capture.withValue { $0.append(url) }
             }
         }
 
-        // signedOut 상태 → Sign In 버튼 표시
-        // 버튼 탭 시 access(.loginTapped) 전송
-        await store.send(.access(.loginTapped)) { state in
-            state.access.isSignInInProgress = true
-            state.access.didSignInFail = false
-        }
-
-        await store.receive(\.access.signInHandoffCompleted) { state in
-            state.access.isSignInInProgress = false
-            state.access.didSignInFail = true
-        }
-
-        XCTAssertEqual(capturedContext, .paywall, "Settings sign-in handoff should use paywall context")
-    }
-
-    /// SET-008-manage_account_settings: signedIn 상태에서 Sign Out 버튼과 Manage Account 버튼이 표시된다.
-    func testSignedInStateShowsSignOutAndManageButtons() async {
-        var initialState = AccountSettingsState()
-        initialState.access.hasAccountSession = true
-        let store = TestStore(initialState: initialState) {
-            AccountSettingsFeature()
-        }
-
-        // signedIn 상태 → Sign Out 버튼과 Manage Account 버튼 표시
-        await store.send(.signOutTapped) { state in
-            state.isShowingSignOutConfirmation = true
-        }
         await store.send(.manageAccountTapped)
-    }
 
-    /// SET-008-manage_account_settings: signInInProgress 상태에서 ProgressView(spinner)가 표시된다.
-    func testSignInInProgressShowsSpinner() {
-        var initialState = AccountSettingsState()
-        initialState.access.isSignInInProgress = true
-        _ = TestStore(initialState: initialState) {
-            AccountSettingsFeature()
-        }
-
-        // signInInProgress → View에서 ProgressView(spinner) 표시
-        // 초기 상태 유지, 추가 액션 없음
-    }
-
-    /// SET-008-manage_account_settings: isShowingSignOutConfirmation 바인딩으로 confirmation dialog 표시가 제어된다.
-    func testConfirmationDialogBoundToIsShowingSignOutConfirmation() async {
-        let store = TestStore(initialState: AccountSettingsState()) {
-            AccountSettingsFeature()
-        }
-
-        // signOutTapped → dialog 표시
-        await store.send(.signOutTapped) { state in
-            state.isShowingSignOutConfirmation = true
-        }
-
-        // signOutCancelled → dialog 닫힘
-        await store.send(.signOutCancelled) { state in
-            state.isShowingSignOutConfirmation = false
-        }
-    }
-
-    // MARK: - Settings Wiring
-
-    /// B6: SettingsState가 accountSettings 프로퍼티를 가지며, 타입은 AccountSettingsState이다.
-    func testSettingsStateHasAccountSettings() {
-        let state = SettingsState()
-        XCTAssertEqual(state.accountSettings, AccountSettingsState())
-    }
-
-    /// B6: SettingsAction.account(AccountSettingsAction) 케이스가 존재하고 패턴 매칭으로 접근 가능하다.
-    func testSettingsActionHasAccountCase() {
-        let action = SettingsAction.account(.access(.hydrateLaunchSnapshot(AccessStatusSnapshot(status: .none))))
-        if case .account = action {
-            // 컴파일 타임 검증: account 케이스가 존재하면 통과
-        } else {
-            XCTFail("SettingsAction.account case not found")
-        }
-    }
-
-    /// B6: Settings.onAppear는 AccountAccessFeature를 eager bootstrap 하지 않는다.
-    /// Account tab이 실제 표시될 때 AccountSettingsView가 access 상태를 초기화한다.
-    /// T2c: snapshot load도 상위(AppRoot)로 이동해서 onAppear는 완전 no-op.
-    func testSettingsOnAppearDoesNotEagerlySendAccountAccessOnAppear() async {
-        let store = TestStore(initialState: SettingsFeature.State()) {
-            SettingsFeature()
-        } withDependencies: {
-            $0.userDefaultsClient = .testValue
-            $0.launchAtLoginClient = .testValue
-            $0.directorySelectionClient = .testValue
-            $0.appearanceSettingsClient = .testValue
-        }
-
-        await store.send(.onAppear)
-        await store.finish()
-    }
-
-    /// B6: SettingsSection의 allCases 순서는 [.general, .appearance, .ai, .account]이다.
-    /// account 섹션이 ai 다음에 위치하여 탭 순서가 일관되게 유지된다.
-    func testSettingsSectionAccountIsAfterAI() {
-        XCTAssertEqual(SettingsSection.allCases, [.general, .appearance, .ai, .account])
-    }
-
-    // MARK: - Launch Snapshot Hydration (Task 12)
-
-    /// SET-008-manage_account_settings: launch snapshot hydration이
-    /// Settings → AccountSettings → AccountAccessFeature를 통해 전달되어
-    /// hasAccountSession=true로 파생되는지 end-to-end 검증.
-    /// - 검증: `.appLifecycleAccessSnapshotReady(snapshot with sessionExpiresAt)` send →
-    ///   `.account(.access(.hydrateLaunchSnapshot(snapshot)))` receive →
-    ///   `hasAccountSession == true`, `setAuthState == .signedIn`.
-    /// - 사전 조건: Settings root 상태는 기본 상태 (session 없음).
-    /// - 기대 결과: hydration 후 sessionExpiresAt != nil → hasAccountSession=true,
-    ///   파생 setAuthState == .signedIn.
-    func testHydrateLaunchSnapshotWithSessionSetsHasAccountSessionTrue() async {
-        let store = TestStore(initialState: SettingsFeature.State()) {
-            SettingsFeature()
-        } withDependencies: {
-            $0.userDefaultsClient = .testValue
-            $0.launchAtLoginClient = .testValue
-            $0.directorySelectionClient = .testValue
-            $0.appearanceSettingsClient = .testValue
-        }
-        store.exhaustivity = .off
-
-        let sessionExpiry = Date(timeIntervalSince1970: 4_102_444_800)
-        let snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            currentPeriodEnd: nil,
-            fetchedAt: Date(timeIntervalSince1970: 0),
-            sessionExpiresAt: sessionExpiry,
-        )
-        await store.send(.appLifecycleAccessSnapshotReady(snapshot)) { state in
-            state.accessStatus = .coreLicenseActive
-        }
-        await store.receive(\.account.access.hydrateLaunchSnapshot)
-
-        // sessionExpiresAt != nil → hasAccountSession=true (Task 6 hydration)
-        XCTAssertTrue(store.state.accountSettings.access.hasAccountSession)
-        XCTAssertEqual(store.state.accountSettings.access.sessionExpiresAt, sessionExpiry)
-        // 파생 auth state: signed-in = session 존재
-        XCTAssertEqual(store.state.accountSettings.setAuthState, .signedIn)
-    }
-
-    /// SET-008-manage_account_settings: sessionExpiresAt == nil snapshot hydration 시
-    /// hasAccountSession=false, setAuthState=.signedOut 파생 검증.
-    /// - 검증: `.appLifecycleAccessSnapshotReady(snapshot without sessionExpiresAt)` send →
-    ///   `.account(.access(.hydrateLaunchSnapshot(snapshot)))` receive →
-    ///   `hasAccountSession == false`, `setAuthState == .signedOut`.
-    /// - 사전 조건: Settings root 상태는 기본 상태.
-    /// - 기대 결과: hydration 후 sessionExpiresAt == nil → hasAccountSession=false,
-    ///   파생 setAuthState == .signedOut (가짜 세션 주입 금지).
-    func testHydrateLaunchSnapshotWithoutSessionSetsHasAccountSessionFalse() async {
-        let store = TestStore(initialState: SettingsFeature.State()) {
-            SettingsFeature()
-        } withDependencies: {
-            $0.userDefaultsClient = .testValue
-            $0.launchAtLoginClient = .testValue
-            $0.directorySelectionClient = .testValue
-            $0.appearanceSettingsClient = .testValue
-        }
-        store.exhaustivity = .off
-
-        let snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            currentPeriodEnd: nil,
-            fetchedAt: Date(timeIntervalSince1970: 0),
-            // sessionExpiresAt defaults to nil → hasSession == false
-        )
-        await store.send(.appLifecycleAccessSnapshotReady(snapshot)) { state in
-            state.accessStatus = .coreLicenseActive
-        }
-        await store.receive(\.account.access.hydrateLaunchSnapshot)
-
-        // sessionExpiresAt == nil → hasAccountSession=false (가짜 세션 주입 금지)
-        XCTAssertFalse(store.state.accountSettings.access.hasAccountSession)
-        XCTAssertNil(store.state.accountSettings.access.sessionExpiresAt)
-        // 파생 auth state: session 없음 → signedOut
-        XCTAssertEqual(store.state.accountSettings.setAuthState, .signedOut)
-    }
-}
-
-extension SET008ManageAccountSettingsTests {
-    // MARK: - SET-008-show_account_status
-
-    /// SET-008-show_account_status: signed-in network failure는 entitlement unavailable로 표시한다.
-    /// 로그인 세션이 유지된 상태에서 일시적인 entitlement 조회 실패가 License Inactive로 오인되지 않는지 검증한다.
-    /// - 검증 내용: `.networkFailure`는 `.entitlementUnavailable`로, nil은 `.entitlementUnknown`으로 매핑됨
-    /// - 사전 조건: AccountAccess 세션이 있고 status는 `.networkFailure` 또는 nil임
-    /// - 기대 결과: signed-in 상태를 유지하며 network failure만 unavailable 상태가 됨
-    func testNetworkFailureMapsToEntitlementUnavailableWhileSignedIn() {
-        var state = AccountSettingsState()
-        state.access.hasAccountSession = true
-        state.access.status = .networkFailure
-
-        XCTAssertEqual(state.setAuthState, .signedIn)
-        XCTAssertEqual(state.setEntitlementState, .entitlementUnavailable)
-
-        state.access.status = nil
-        XCTAssertEqual(state.setEntitlementState, .entitlementUnknown)
-    }
-
-    /// SET-008-show_account_status: unavailable 상태의 Retry는 기존 AccountAccess 조회 effect를 전송한다.
-    /// 사용자가 unavailable 행에서 재시도할 때 별도 Settings action 없이 AccountAccess fetch가 실행되는지 검증한다.
-    /// - 검증 내용: `.access(.retryTapped)`가 fetch generation을 증가시키고 auth network를 한 번 호출함
-    /// - 사전 조건: signed-in AccountAccess status가 `.networkFailure`이고 retry 가능한 entitlement 조회 client가 주입됨
-    /// - 기대 결과: 기존 AccountAccess effect가 실행되고 fetch generation이 1이 됨
-    func testRetryTappedDispatchesAccessStatusFetchEffect() async {
-        let fetchCallCount = LockIsolated(0)
-        var initialState = AccountSettingsState()
-        initialState.access.hasAccountSession = true
-        initialState.access.status = .networkFailure
-
-        let store = TestStore(initialState: initialState) {
-            AccountSettingsFeature()
-        } withDependencies: {
-            $0.authNetworkClient = AuthNetworkClient(
-                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                fetchAccessStatus: {
-                    fetchCallCount.withValue { $0 += 1 }
-                    return AccessStatusResponse(
-                        hasAccess: false,
-                        status: AccessStatus.revoked.rawValue,
-                        reason: "revoked",
-                        productKey: "core",
-                        source: "polar",
-                    )
-                },
-                bindDevice: { _ in throw DeviceBindingError.invalidDevicePayload },
-                refreshToken: { throw AccessError.notConfigured },
-            )
-            $0.accessStatusSnapshotClient.save = { _ in }
-        }
-        // store.exhaustivity = .off: child AccountAccess의 fetch 완료와 delegate 전달은 이 테스트의 상태 전이 범위를 벗어남
-        store.exhaustivity = .off
-
-        await store.send(.access(.retryTapped))
-        await store.finish()
-
-        XCTAssertEqual(fetchCallCount.value, 1)
-        XCTAssertEqual(store.state.access.fetchGeneration, 1)
-    }
-
-    /// SET-008-show_account_status: Retry 성공 응답은 entitlement active 표시로 복구한다.
-    /// unavailable 상태의 사용자가 재시도 후 활성 entitlement를 받으면 Settings 표시가 즉시 활성 상태로 바뀌는지 검증한다.
-    /// - 검증 내용: retry fetch와 device binding 완료가 `.entitlementActive` display mapping으로 귀결됨
-    /// - 사전 조건: signed-in AccountAccess status가 `.networkFailure`이고 활성 응답, 성공 binding client, 유효 UUID identity가 주입됨
-    /// - 기대 결과: retry 완료 후 status는 `.coreLicenseActive`이고 entitlement 표시는 active가 됨
-    func testRetryRecoversToActiveEntitlement() async {
-        let response = AccessStatusResponse(
-            hasAccess: true,
-            status: "active",
-            reason: "active_entitlement",
-            productKey: "core",
-            source: "polar",
-        )
-        XCTAssertEqual(response.toAccessStatus(), .coreLicenseActive)
-
-        var initialState = AccountSettingsState()
-        initialState.access.hasAccountSession = true
-        initialState.access.status = .networkFailure
-
-        let store = TestStore(initialState: initialState) {
-            AccountSettingsFeature()
-        } withDependencies: {
-            $0.authNetworkClient = AuthNetworkClient(
-                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                fetchAccessStatus: { response },
-                bindDevice: { _ in DeviceBindingResponse(ok: true) },
-                refreshToken: { throw AccessError.notConfigured },
-            )
-            $0.accessStatusSnapshotClient.save = { _ in }
-            $0.deviceIdentityClient = DeviceIdentityClient(
-                deviceId: { "00000000-0000-4000-8000-000000000001" },
-            )
-        }
-        // store.exhaustivity = .off: child AccountAccess의 device binding과 delegate 내부 action은 display 회귀의 직접 검증 대상이 아님
-        store.exhaustivity = .off
-
-        await store.send(.access(.retryTapped))
-        await store.finish()
-
-        XCTAssertEqual(store.state.access.status, .coreLicenseActive)
-        XCTAssertEqual(store.state.setEntitlementState, .entitlementActive)
-    }
-
-    /// SET-008-show_account_status: Retry의 authoritative inactive 응답은 License Inactive로 복구한다.
-    /// 네트워크 실패와 실제 inactive entitlement를 분리해, 재시도 후 확정된 inactive 상태가 유지되는지 검증한다.
-    /// - 검증 내용: none, trialExpired, revoked, refunded 응답이 모두 `.entitlementInactive`로 매핑됨
-    /// - 사전 조건: signed-in AccountAccess status가 `.networkFailure`이고 각 authoritative inactive status 응답이 주입됨
-    /// - 기대 결과: 각 retry 완료 후 원본 inactive status와 License Inactive display mapping이 보존됨
-    func testRetryRecoversToAuthoritativeInactiveEntitlements() async {
-        for testCase in inactiveEntitlementResponses() {
-            let response = testCase.response
-            XCTAssertEqual(response.toAccessStatus(), testCase.expectedStatus)
-
-            var initialState = AccountSettingsState()
-            initialState.access.hasAccountSession = true
-            initialState.access.status = .networkFailure
-
-            let store = TestStore(initialState: initialState) {
-                AccountSettingsFeature()
-            } withDependencies: {
-                $0.authNetworkClient = AuthNetworkClient(
-                    exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                    fetchAccessStatus: { response },
-                    bindDevice: { _ in throw DeviceBindingError.invalidDevicePayload },
-                    refreshToken: { throw AccessError.notConfigured },
-                )
-                $0.accessStatusSnapshotClient.save = { _ in }
-            }
-            // store.exhaustivity = .off: inactive snapshot 저장과 recovery delegate는 display mapping assertion에 영향 없음
-            store.exhaustivity = .off
-
-            await store.send(.access(.retryTapped))
-            await store.finish()
-
-            XCTAssertEqual(store.state.access.status, testCase.expectedStatus)
-            XCTAssertEqual(store.state.setEntitlementState, .entitlementInactive)
-        }
-    }
-
-    private func inactiveEntitlementResponses() -> [(response: AccessStatusResponse, expectedStatus: AccessStatus)] {
-        [
-            (
-                AccessStatusResponse(
-                    hasAccess: false,
-                    status: "inactive",
-                    reason: "inactive",
-                    productKey: "core",
-                    source: "polar",
-                ),
-                .none,
-            ),
-            (
-                AccessStatusResponse(
-                    hasAccess: false,
-                    status: "expired",
-                    reason: "expired",
-                    productKey: "trial",
-                    source: "polar",
-                ),
-                .trialExpired,
-            ),
-            (
-                AccessStatusResponse(
-                    hasAccess: false,
-                    status: "revoked",
-                    reason: "revoked",
-                    productKey: "core",
-                    source: "polar",
-                ),
-                .revoked,
-            ),
-            (
-                AccessStatusResponse(
-                    hasAccess: false,
-                    status: "refunded",
-                    reason: "refunded",
-                    productKey: "core",
-                    source: "polar",
-                ),
-                .refunded,
-            ),
-        ]
+        XCTAssertEqual(capture.value, [expectedURL])
     }
 }

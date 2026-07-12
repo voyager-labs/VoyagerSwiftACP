@@ -2,15 +2,27 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 
-struct DirectorySelectionClient {
-    var pickDirectory: @Sendable () async -> String?
-    var pathExists: @Sendable (_ path: String) -> Bool
-    var isDirectory: @Sendable (_ path: String) -> Bool
-    var defaultHomePath: @Sendable () -> String
+public struct DirectorySelectionClient: Sendable {
+    public var pickDirectory: @Sendable () async -> String?
+    public var pathExists: @Sendable (_ path: String) -> Bool
+    public var isDirectory: @Sendable (_ path: String) -> Bool
+    public var defaultHomePath: @Sendable () -> String
+
+    public init(
+        pickDirectory: @escaping @Sendable () async -> String?,
+        pathExists: @escaping @Sendable (_ path: String) -> Bool,
+        isDirectory: @escaping @Sendable (_ path: String) -> Bool,
+        defaultHomePath: @escaping @Sendable () -> String,
+    ) {
+        self.pickDirectory = pickDirectory
+        self.pathExists = pathExists
+        self.isDirectory = isDirectory
+        self.defaultHomePath = defaultHomePath
+    }
 }
 
 extension DirectorySelectionClient: DependencyKey {
-    nonisolated static var liveValue: DirectorySelectionClient {
+    nonisolated public static var liveValue: DirectorySelectionClient {
         DirectorySelectionClient(
             pickDirectory: {
                 await MainActor.run {
@@ -42,7 +54,7 @@ extension DirectorySelectionClient: DependencyKey {
         )
     }
 
-    nonisolated static var testValue: DirectorySelectionClient {
+    nonisolated public static var testValue: DirectorySelectionClient {
         DirectorySelectionClient(
             pickDirectory: { nil },
             pathExists: { _ in false },
@@ -52,8 +64,8 @@ extension DirectorySelectionClient: DependencyKey {
     }
 }
 
-extension DependencyValues {
-    var directorySelectionClient: DirectorySelectionClient {
+public extension DependencyValues {
+    nonisolated var directorySelectionClient: DirectorySelectionClient {
         get { self[DirectorySelectionClient.self] }
         set { self[DirectorySelectionClient.self] = newValue }
     }

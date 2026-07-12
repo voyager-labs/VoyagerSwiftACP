@@ -38,7 +38,14 @@ public struct SettingsFeature {
 
             if case let .appLifecycleAccessSnapshotReady(snapshot) = action {
                 state.accessStatus = snapshot.status
-                return .send(.account(.access(.hydrateLaunchSnapshot(snapshot))))
+                state.accountSettings.presentation = AccountAccessPresentation(snapshot: snapshot)
+                return .none
+            }
+
+            if case let .accountAccessPresentationUpdated(presentation) = action {
+                state.accessStatus = presentation.accessStatus ?? .none
+                state.accountSettings.presentation = presentation
+                return .none
             }
 
             if case .onAppear = action {
@@ -69,14 +76,8 @@ public struct SettingsFeature {
                 return .none
             }
 
-            if case let .account(.access(.delegate(.unlocked(snapshot)))) = action {
-                state.accessStatus = snapshot.status
-                return .none
-            }
-
-            if case .account(.access(.delegate(.signedOut))) = action {
-                state.accessStatus = .none
-                return .none
+            if case let .account(.delegate(delegate)) = action {
+                return .send(.delegate(.account(delegate)))
             }
 
             if case let .ai(.delegate(.connectionsFileUpdated(file))) = action {

@@ -40,9 +40,6 @@ struct AccountSettingsView: View {
                 store.send(.signOutConfirmed)
             }
         }
-        .onAppear {
-            store.send(.access(.onAppear))
-        }
     }
 
     // MARK: - Account status
@@ -58,7 +55,7 @@ struct AccountSettingsView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("Sign In") {
-                    store.send(.access(.loginTapped))
+                    store.send(.signInTapped)
                 }
             }
 
@@ -92,7 +89,7 @@ struct AccountSettingsView: View {
                     .foregroundStyle(.red)
                 Spacer()
                 Button("Retry") {
-                    store.send(.access(.loginTapped))
+                    store.send(.retryTapped)
                 }
             }
         }
@@ -120,7 +117,7 @@ struct AccountSettingsView: View {
                     .foregroundStyle(.orange)
                 Spacer()
                 Button("Retry") {
-                    store.send(.access(.retryTapped))
+                    store.send(.retryTapped)
                 }
             }
 
