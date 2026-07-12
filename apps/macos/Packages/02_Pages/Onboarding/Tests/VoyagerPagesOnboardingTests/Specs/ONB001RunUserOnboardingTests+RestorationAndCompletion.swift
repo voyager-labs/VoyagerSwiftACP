@@ -139,6 +139,97 @@ extension ONB001RunUserOnboardingTests {
         await store.finish()
     }
 
+    /// ONB-001-resume_onboarding_session: permissions 단계로 복원된 완료 access가 access 확인 실패를 알리면 Access 단계로 되돌린다.
+    /// AccountAccess가 access failure 상태를 소유한 채 semantic recovery delegate만 부모에 전달할 때, 부모가 이후 단계 재개를 막는지 검증합니다.
+    /// - 검증 내용: `currentStep`을 accessUnlock으로 되돌리고, 미완료 access progress를 저장하며 main window를 열지 않습니다.
+    /// - 사전 조건: permissions 단계로 복원되어 access/permissions가 완료되었고, AccountAccess가 access failure 후 미완료 상태입니다.
+    /// - 기대 결과: `currentStep = .accessUnlock`, `accessUnlock.isComplete = false`, 저장된 `accessUnlockComplete = false`,
+    ///   저장된 `accessSnapshot = nil`, 열린 main window가 없습니다.
+    func testAccessFailureFromRestoredPermissionsReturnsToAccessUnlockAndPersistsRollback() async {
+        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
+        let pathRecorder = PathRecorder()
+        var initialState = OnboardingFeature.State()
+        initialState.currentStep = .permissions
+        StateMutation.applyPersistedCompletedAccessStep(state: &initialState)
+        initialState.permissions.isComplete = true
+        // AccountAccess가 access failure를 처리한 뒤 parent에 delegate를 전달한 상태입니다.
+        initialState.accessUnlock.isComplete = false
+        initialState.accessUnlock.snapshot = nil
+
+        let store = TestStore(initialState: initialState) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
+            $0.onboardingWindowClient = WindowClient.recording(
+                pathRecorder: pathRecorder,
+                closeRecorder: CloseRecorder(),
+            )
+        }
+
+        await store.send(.accessUnlock(.delegate(.recoveryRequired(.accessFailure(
+            error: .networkFailure,
+            sessionExpiresAt: StateMutation.activeSessionExpiry,
+        ))))) { state in
+            state.currentStep = .accessUnlock
+        }
+
+        XCTAssertEqual(store.state.currentStep, .accessUnlock)
+        XCTAssertFalse(store.state.accessUnlock.isComplete)
+        XCTAssertEqual(saveRecorder.value?.currentStep, .accessUnlock)
+        XCTAssertEqual(saveRecorder.value?.stepState.accessUnlockComplete, false)
+        XCTAssertNil(saveRecorder.value?.accessSnapshot)
+        let openedPaths = await pathRecorder.snapshot()
+        XCTAssertTrue(openedPaths.isEmpty)
+
+        await store.finish()
+    }
+
+    /// ONB-001-resume_onboarding_session: complete 단계로 복원된 완료 access가 access 확인 실패를 알리면 완료 우회를 취소한다.
+    /// 완료 화면이 이미 복원되었어도 AccountAccess의 access failure recovery delegate가 access 재확인을 강제하는지 검증합니다.
+    /// - 검증 내용: `currentStep`을 accessUnlock으로 되돌리고, 미완료 access progress를 저장하며 main window를 열지 않습니다.
+    /// - 사전 조건: complete 단계로 복원되어 모든 단계가 완료되었고, AccountAccess가 access failure 후 미완료 상태입니다.
+    /// - 기대 결과: `currentStep = .accessUnlock`, `accessUnlock.isComplete = false`, 저장된 `accessUnlockComplete = false`,
+    ///   저장된 `accessSnapshot = nil`, 열린 main window가 없습니다.
+    func testAccessFailureFromRestoredCompleteReturnsToAccessUnlockAndPersistsRollback() async {
+        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
+        let pathRecorder = PathRecorder()
+        var initialState = OnboardingFeature.State()
+        initialState.currentStep = .complete
+        StateMutation.applyPersistedCompletedAccessStep(state: &initialState)
+        initialState.permissions.isComplete = true
+        initialState.complete.isComplete = true
+        // AccountAccess가 access failure를 처리한 뒤 parent에 delegate를 전달한 상태입니다.
+        initialState.accessUnlock.isComplete = false
+        initialState.accessUnlock.snapshot = nil
+
+        let store = TestStore(initialState: initialState) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
+            $0.onboardingWindowClient = WindowClient.recording(
+                pathRecorder: pathRecorder,
+                closeRecorder: CloseRecorder(),
+            )
+        }
+
+        await store.send(.accessUnlock(.delegate(.recoveryRequired(.accessFailure(
+            error: .networkFailure,
+            sessionExpiresAt: StateMutation.activeSessionExpiry,
+        ))))) { state in
+            state.currentStep = .accessUnlock
+        }
+
+        XCTAssertEqual(store.state.currentStep, .accessUnlock)
+        XCTAssertFalse(store.state.accessUnlock.isComplete)
+        XCTAssertEqual(saveRecorder.value?.currentStep, .accessUnlock)
+        XCTAssertEqual(saveRecorder.value?.stepState.accessUnlockComplete, false)
+        XCTAssertNil(saveRecorder.value?.accessSnapshot)
+        let openedPaths = await pathRecorder.snapshot()
+        XCTAssertTrue(openedPaths.isEmpty)
+
+        await store.finish()
+    }
+
     /// ONB-001-resume_onboarding_session: legacy access snapshot이 있어도 저장된 미완료 Access step은 완료로 덮어쓰지 않는다.
     /// legacy snapshot의 복원 컨텍스트를 유지하면서도 persisted completion flag를 정본으로 처리하는지 검증합니다.
     /// - 검증 내용: `accessUnlockComplete = false`이면 active legacy snapshot이 있어도 accessUnlock에 머물고 fresh revoked 결과로 교체합니다.

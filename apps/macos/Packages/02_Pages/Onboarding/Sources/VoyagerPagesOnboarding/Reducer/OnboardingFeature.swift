@@ -87,7 +87,7 @@ struct OnboardingFeature {
 
         case ._onAppearSessionRestored(nil),
              ._sessionExpiredDetected,
-             .delegate(.recoveryRequired(.deviceBindingFailure)):
+             .delegate(.recoveryRequired):
             state.currentStep = .accessUnlock
 
         default:
