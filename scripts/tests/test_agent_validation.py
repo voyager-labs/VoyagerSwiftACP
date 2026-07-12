@@ -121,7 +121,7 @@ class AgentValidationTests(unittest.TestCase):
     def test_valid_harness_fixture_is_clean(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            self.write(root, ".agents/rules/00-core/00-fixture.md", RULE)
+            self.write(root, ".agents/rules/00-fixture.md", RULE)
             self.write(root, ".agents/skills/fixture/evals/evals.json", '{"evals": []}')
             result, payload = self.run_cli(VALIDATE, root, "--all")
             self.assertEqual(result.returncode, 0)
@@ -130,17 +130,17 @@ class AgentValidationTests(unittest.TestCase):
     def test_invalid_harness_fixtures_have_exact_diagnostics(self) -> None:
         cases = {
             "heading": (
-                ".agents/rules/00-core/00-fixture.md",
+                ".agents/rules/00-fixture.md",
                 RULE.replace("## Outcome", "## Bad"),
                 "HARNESS_V2_HEADING_ORDER",
             ),
             "applicability": (
-                ".agents/rules/00-core/00-fixture.md",
+                ".agents/rules/00-fixture.md",
                 RULE.replace("alwaysApply: true\n", 'alwaysApply: true\nglobs: "**"\n'),
                 "HARNESS_APPLICABILITY",
             ),
             "dead-link": (
-                ".agents/rules/00-core/00-fixture.md",
+                ".agents/rules/00-fixture.md",
                 RULE + "\n[missing](missing.md)\n",
                 "HARNESS_DEAD_REFERENCE",
             ),
@@ -162,7 +162,7 @@ class AgentValidationTests(unittest.TestCase):
                 result, payload = self.run_cli(VALIDATE, root, "--all")
                 self.assert_exact_diagnostic(result, payload, code)
 
-    def test_routing_and_staged_artifact_fixtures_fail(self) -> None:
+    def test_staged_artifact_fixture_fails(self) -> None:
         temp = self.make_repo()
         self.addCleanup(temp.cleanup)
         root = Path(temp.name)
@@ -173,25 +173,11 @@ class AgentValidationTests(unittest.TestCase):
             artifact_result, artifact_payload, "HARNESS_STAGED_ARTIFACT"
         )
 
-        with tempfile.TemporaryDirectory() as routing_temp:
-            routing_root = Path(routing_temp)
-            self.write(
-                routing_root,
-                ".agents/rules/00-core/02-routing.md",
-                RULE + "\n- Load `00-core/missing.md`.\n",
-            )
-            routing_result, routing_payload = self.run_cli(
-                VALIDATE, routing_root, "--all"
-            )
-            self.assert_exact_diagnostic(
-                routing_result, routing_payload, "HARNESS_DEAD_ROUTING"
-            )
-
     def test_scope_modes_select_working_tree_staged_and_base_ref(self) -> None:
         temp = self.make_repo()
         self.addCleanup(temp.cleanup)
         root = Path(temp.name)
-        self.write(root, ".agents/rules/00-core/00-fixture.md", RULE)
+        self.write(root, ".agents/rules/00-fixture.md", RULE)
         subprocess.run(["git", "add", "."], cwd=root, check=True)
         subprocess.run(["git", "commit", "-qm", "fixture"], cwd=root, check=True)
         base_ref = subprocess.run(
@@ -203,7 +189,7 @@ class AgentValidationTests(unittest.TestCase):
         ).stdout.strip()
         self.write(
             root,
-            ".agents/rules/00-core/00-fixture.md",
+            ".agents/rules/00-fixture.md",
             RULE.replace("## Outcome", "## Bad"),
         )
         result, payload = self.run_cli(VALIDATE, root, "--working-tree")
@@ -236,23 +222,23 @@ class AgentValidationTests(unittest.TestCase):
     def test_every_emitted_diagnostic_has_an_exact_fixture(self) -> None:
         harness_cases = {
             "HARNESS_MISSING_FRONTMATTER": (
-                ".agents/rules/00-core/00-fixture.md",
+                ".agents/rules/00-fixture.md",
                 "# Fixture\n",
             ),
             "HARNESS_MISSING_DESCRIPTION": (
-                ".agents/rules/00-core/00-fixture.md",
+                ".agents/rules/00-fixture.md",
                 RULE.replace('description: "fixture"\n', ""),
             ),
             "HARNESS_APPLICABILITY": (
-                ".agents/rules/00-core/00-fixture.md",
+                ".agents/rules/00-fixture.md",
                 RULE.replace("alwaysApply: true\n", 'alwaysApply: true\nglobs: "**"\n'),
             ),
             "HARNESS_V2_HEADING_ORDER": (
-                ".agents/rules/00-core/00-fixture.md",
+                ".agents/rules/00-fixture.md",
                 RULE.replace("## Outcome", "## Bad"),
             ),
             "HARNESS_DEAD_REFERENCE": (
-                ".agents/rules/00-core/00-fixture.md",
+                ".agents/rules/00-fixture.md",
                 RULE + "\n[missing](missing.md)\n",
             ),
             "HARNESS_INVALID_PLACEMENT": (
@@ -262,10 +248,6 @@ class AgentValidationTests(unittest.TestCase):
             "HARNESS_INVALID_EVAL_JSON": (
                 ".agents/skills/fixture/evals/evals.json",
                 "{bad",
-            ),
-            "HARNESS_DEAD_ROUTING": (
-                ".agents/rules/00-core/02-routing.md",
-                RULE + "\n- Load `00-core/missing.md`.\n",
             ),
         }
         seen_codes: set[str] = set()
@@ -293,7 +275,7 @@ class AgentValidationTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            relative = ".agents/rules/00-core/00-fixture.md"
+            relative = ".agents/rules/00-fixture.md"
             self.write(root, relative, RULE.replace("schemaVersion: 2\n", ""))
             result, payload = self.run_cli(VALIDATE, root, relative)
             self.assert_exact_diagnostic(result, payload, "HARNESS_SCHEMA_VERSION")
@@ -337,7 +319,7 @@ class AgentValidationTests(unittest.TestCase):
             capture_output=True,
             check=True,
         ).stdout.strip()
-        relative = ".agents/rules/00-core/00-legacy.md"
+        relative = ".agents/rules/00-legacy.md"
         legacy_rule = RULE.replace("schemaVersion: 2\n", "")
         self.write(root, relative, legacy_rule)
 

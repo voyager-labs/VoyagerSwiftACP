@@ -27,7 +27,6 @@ V2_HEADINGS = [
 PLAN_SECTIONS = ["TL;DR", "Context", "Work Objectives", "TODOs"]
 PLAN_TODO_FIELDS = ["What to do", "Must NOT do", "Acceptance", "QA", "Commit"]
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^]]*]\(([^)#]+)(?:#[^)]+)?\)")
-ROUTING_REFERENCE = re.compile(r"(?<![\w/])((?:\d{2}-[\w-]+/)+[\w-]+\.md)")
 TODO = re.compile(r"^- \[[ xX]] \d+\. .+")
 
 
@@ -240,22 +239,6 @@ def validate_harness(root: Path, paths: set[str], mode: str) -> list[Diagnostic]
                     )
                 )
 
-    routing = root / ".agents/rules/00-core/02-routing.md"
-    if routing.is_file() and routing.relative_to(root).as_posix() in paths:
-        for line_number, line in enumerate(
-            routing.read_text(encoding="utf-8").splitlines(), 1
-        ):
-            for reference in (str(value) for value in ROUTING_REFERENCE.findall(line)):
-                if not (root / ".agents/rules" / reference).is_file():
-                    diagnostics.append(
-                        diagnostic(
-                            routing,
-                            root,
-                            line_number,
-                            "HARNESS_DEAD_ROUTING",
-                            f"routing target does not exist: {reference}",
-                        )
-                    )
     return diagnostics
 
 

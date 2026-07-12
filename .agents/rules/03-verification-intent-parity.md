@@ -12,17 +12,17 @@ schemaVersion: 2
 - If the intent is "refactor X to use Y", verify that X now uses Y (not just that tests still pass).
 - If the intent is "add feature Z", verify Z works end-to-end, not just that it compiles.
 - Map each intent item to at least one specific verification action.
-- When intent has multiple parts, verify each part independently. Partial verification yields a degraded outcome (per `99-agent/03-outcome-classification.md`).
-- Use the scope-based check matrix in `00-core/01-verification.md` for required checks, then add intent-specific checks on top.
+- When intent has multiple parts, verify each part independently. Partial verification yields a degraded outcome (per `04-outcome-classification.md`).
+- Use the applicable skill or repository guidance for required checks, then add intent-specific checks on top.
 
 ## Default Actions
 
-1. Read the task intent statement (from `99-agent/01-task-boundary-contract.md`).
+1. Read the task intent statement (from `02-task-boundary-contract.md`).
 2. List what "done" means for that intent specifically.
-3. Run the scope-required checks from `00-core/01-verification.md`.
+3. Run the scope-required checks from applicable skill or repository guidance.
 4. For each intent item, design and run a check that directly confirms that item.
 5. If any intent item lacks a matching verification action, flag it as an unverified intent gap.
-6. Classify the overall verification outcome using `99-agent/03-outcome-classification.md`.
+6. Classify the overall verification outcome using `04-outcome-classification.md`.
 
 ## Decision Rules
 
@@ -39,4 +39,4 @@ schemaVersion: 2
 - Every stated intent item has at least one corresponding verification action.
 - No intent item is verified only by proxy (e.g., "build passes" for a behavioral change).
 - Any unverified intent gaps are explicitly documented in the evidence.
-- Verification outcome matches the classification in `99-agent/03-outcome-classification.md`.
+- Verification outcome matches the classification in `04-outcome-classification.md`.

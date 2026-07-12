@@ -109,7 +109,7 @@ Load `references/ast-grep.md` for pattern syntax, examples, and custom rules.
 
 ### 4. Capability-based build and test executor selection
 
-Core policy at `.agents/rules/00-core/01-verification.md` owns the required verification outcome and tier. This matrix owns executor selection; it applies to interactive agents, while repository `mise` tasks remain valid human and CI paths.
+This matrix owns executor selection and applies to interactive agents, while repository `mise` tasks remain valid human and CI paths.
 
 | Required outcome                                      | Preferred executor                                                                      | Supported scope                                                              | Existing fallback                                                                                  | Stop condition                                                                                                       |
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |

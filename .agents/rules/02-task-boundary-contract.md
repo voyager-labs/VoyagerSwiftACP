@@ -10,7 +10,7 @@ schemaVersion: 2
 
 - Treat a task as a discrete unit bounded by one intent, one scope, and one outcome.
 - Record the task intent before starting work (what this task exists to achieve).
-- Record the task outcome when work finishes (pass, fail, degraded, or exception, per `99-agent/03-outcome-classification.md`).
+- Record the task outcome when work finishes (pass, fail, degraded, or exception, per `04-outcome-classification.md`).
 - Keep provenance anchors (origin sources: issue refs, plan checkboxes, design docs) separate from derivative artifacts (generated code, evidence files, reports).
 - At task exit, confirm: (a) stated intent was addressed, (b) scope did not drift beyond the stated boundary, (c) outcome is explicitly classified.
 - If a task cannot be completed within its boundary, stop and report a blocked outcome rather than silently expanding scope.
@@ -19,8 +19,8 @@ schemaVersion: 2
 
 1. Before work, state the task intent in one sentence and list the scope boundary (files, modules, or domains affected).
 2. During work, if scope expands, pause, log the drift, and decide whether to split into a new task or reclassify.
-3. After work, run verification matching the intent (see `99-agent/02-verification-intent-parity.md`).
-4. Classify the outcome using the taxonomy in `99-agent/03-outcome-classification.md`.
+3. After work, run verification matching the intent (see `03-verification-intent-parity.md`).
+4. Classify the outcome using the taxonomy in `04-outcome-classification.md`.
 5. Write evidence to the canonical location with provenance anchors in a separate section from findings.
 
 ## Decision Rules
@@ -30,7 +30,7 @@ schemaVersion: 2
 - Start work without a stated intent.
 - Expand scope mid-task without acknowledging the boundary change and reclassifying.
 - Mix provenance anchors into derivative artifacts. Anchors are immutable references; derivatives are mutable outputs.
-- Treat partial completion as pass. Use degraded or exception classification from `99-agent/03-outcome-classification.md`.
+- Treat partial completion as pass. Use degraded or exception classification from `04-outcome-classification.md`.
 - Carry uncommitted side effects across task boundaries. Each task exits with a clean or explicitly documented state.
 
 ## Verification

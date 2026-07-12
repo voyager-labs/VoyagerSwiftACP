@@ -73,16 +73,16 @@ Use this skill for `.agents/rules/**` authoring and placement only. It does not 
 
 | Artifact kind                      | Target path                            | Examples                                                                                                         |
 | ---------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Cross-cutting deterministic rules  | `.agents/rules/00-core/`               | `00-execution-contract.md`, `02-verification.md`                                                                 |
+| Cross-cutting deterministic rules  | `.agents/rules/`                       | `00-execution-contract.md`, `03-verification-intent-parity.md`                                                   |
 | Platform-specific execution checks | Owning platform skill references       | `voyager-dev/orchestrator/references/voyager-app-workflow.md`, `code-tooling/references/test-plan-visibility.md` |
 | All new skills                     | `.agents/skills/<kebab-case>/SKILL.md` | `pr-review`, `compound-review`                                                                                   |
-| Agent-harness infrastructure rules | `.agents/rules/99-agent/`              | `00-scope-diff-isolation.md`, `01-task-boundary-contract.md`                                                     |
+| Agent-harness infrastructure rules | `.agents/rules/`                       | `01-scope-diff-isolation.md`, `02-task-boundary-contract.md`                                                     |
 
 1. Classify the artifact as cross-cutting, platform-specific, skill, or harness infrastructure.
 2. Select the target directory from the placement taxonomy and list its existing rules before assigning the next sequential number.
 3. Keep skill directory names in `kebab-case` and keep each rule file to 150 lines or fewer.
 
-- Place cross-cutting rules, which apply regardless of platform, in `00-core/`.
+- Place cross-cutting rules, which apply regardless of platform, in `.agents/rules/`.
 - Place rules applying only to `apps/macos/**` or `apps/backend/**` in the matching domain directory.
 - Do not create `.agents/rules/voyager/` or a subdirectory that duplicates the `30-macos/` domain split.
-- Do not place cross-cutting rules in `20-backend/` or `30-macos/`, or platform-specific rules in `00-core/` or `99-agent/`.
+- Do not place cross-cutting rules in `20-backend/` or `30-macos/`, or platform-specific rules in `.agents/rules/`.
