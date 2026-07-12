@@ -108,6 +108,14 @@ run = "python3 scripts/dev/check_swift_version.py"
 description = "Git hooks 재설치 (강제)"
 run = "lefthook install --force"
 
+[tasks.validate-harness]
+description = "에이전트 하네스 구조 검증"
+run = "python3 -m scripts.validate_harness"
+
+[tasks.verify-plan]
+description = "계획 Markdown 구조 검증"
+run = "python3 -m scripts.verify_plan"
+
 # ── CodeGraph ─────────────────────────────────────────────────
 
 [tasks.codegraph-init]

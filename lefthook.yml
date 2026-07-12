@@ -44,6 +44,10 @@ pre-commit:
           echo "Run: git reset HEAD -- .sisyphus/" >&2
           exit 1
         fi
+    agent-harness:
+      run: |
+        python3 -m scripts.validate_harness --staged
+        python3 -m scripts.verify_plan --staged
     ast-grep:
       glob: "apps/macos/**/*.swift"
       run: |
