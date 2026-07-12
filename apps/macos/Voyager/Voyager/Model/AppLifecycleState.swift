@@ -15,10 +15,15 @@ struct AppLifecycleState: Equatable {
         accessGatePhase.allowsExternalRouteFlush
     }
 
-    /// recoveryRequired 단계에서만 guard overlay가 canonical child state를 사용한다.
+    /// recoveryRequired와 signedOut 단계에서 guard overlay가 canonical child state를 사용한다.
     /// 두 번째 stored state 없이 phase 기반 presentation만 제공한다.
     var presentedAccountAccess: AccountAccessFeature.State? {
-        accessGatePhase == .recoveryRequired ? accountAccess : nil
+        switch accessGatePhase {
+        case .recoveryRequired, .signedOut:
+            accountAccess
+        case .unresolved, .checking, .granted, .terminating:
+            nil
+        }
     }
 
     private static func makeAccountAccessState() -> AccountAccessFeature.State {

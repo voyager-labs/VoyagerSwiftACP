@@ -167,6 +167,11 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertTrue(store.state.settings.accountSettings.access.hasAccountSession)
         XCTAssertFalse(store.state.settings.accountSettings.access.didSignInFail)
         XCTAssertEqual(store.state.lifecycle.accessGatePhase, .signedOut)
+        XCTAssertNotNil(store.state.lifecycle.presentedAccountAccess)
+        XCTAssertEqual(
+            store.state.lifecycle.presentedAccountAccess,
+            store.state.lifecycle.accountAccess,
+        )
         await store.finish()
     }
 
@@ -440,13 +445,12 @@ final class AppRootCompositionTests: XCTestCase {
 
     // MARK: - External route flush
 
-    /// Task 3 QA: presentedAccountAccess는 recoveryRequired에서만 canonical child를 노출한다.
-    func testPresentedAccountAccessNilOutsideRecovery() {
+    /// Task 3 QA: presentedAccountAccess는 guard가 없는 phase에서 nil을 반환한다.
+    func testPresentedAccountAccessNilOutsideGuardPhases() {
         let phases: [AppLifecycleAccessGatePhase] = [
             .unresolved,
             .checking,
             .granted,
-            .signedOut,
             .terminating,
         ]
         for phase in phases {
@@ -467,6 +471,7 @@ final class AppRootCompositionTests: XCTestCase {
 
         let presented = state.presentedAccountAccess
         XCTAssertNotNil(presented)
+        XCTAssertEqual(presented, state.accountAccess)
         XCTAssertEqual(presented?.status, .trialExpired)
         XCTAssertEqual(presented?.hasAccountSession, true)
     }
@@ -492,6 +497,26 @@ final class AppRootCompositionTests: XCTestCase {
         await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
 
         XCTAssertEqual(store.state.pendingExternalURLs, [deepLink])
+        await store.finish()
+    }
+
+    func testOpenInitialWindowDefersPendingExternalRoutesWhenSignedOut() async throws {
+        let deepLink = try XCTUnwrap(URL(string: "voyager://open"))
+        var initialState = AppRootFeature.State()
+        initialState.pendingExternalURLs = [deepLink]
+        initialState.lifecycle.accessGatePhase = .signedOut
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { false }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
+
+        XCTAssertEqual(store.state.pendingExternalURLs, [deepLink])
+        XCTAssertTrue(store.state.windowManager.windows.isEmpty)
         await store.finish()
     }
 
