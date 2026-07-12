@@ -67,18 +67,35 @@ struct OnboardingFeature {
         case .aiProviderSetup(.setUpLaterTapped):
             return handleSetUpLaterTapped(state: &state, progressClient: progressClient)
 
-        case let .accessUnlock(.accessStatusResponse(generation: _, result: .success(response))):
-            return handleAccessStatusSuccess(response, state: &state, progressClient: progressClient)
+        case let .accessUnlock(action):
+            return handleAccessUnlockAction(action, state: &state, progressClient: progressClient)
 
-        case .accessUnlock(._onAppearSessionRestored(nil)), .accessUnlock(._sessionExpiredDetected):
-            state.currentStep = .accessUnlock
-            let snapshot = state.progressSnapshot
-            return Self.saveEffect(snapshot, progressClient: progressClient)
-
-        case .welcome, .accessUnlock, .permissions, .aiProviderSetup, .complete:
+        case .welcome, .permissions, .aiProviderSetup, .complete:
             let snapshot = state.progressSnapshot
             return Self.saveEffect(snapshot, progressClient: progressClient)
         }
+    }
+
+    private func handleAccessUnlockAction(
+        _ action: AccountAccessAction,
+        state: inout State,
+        progressClient: OnboardingProgressClient,
+    ) -> Effect<Action> {
+        switch action {
+        case let .accessStatusResponse(generation: _, result: .success(response)):
+            return handleAccessStatusSuccess(response, state: &state, progressClient: progressClient)
+
+        case ._onAppearSessionRestored(nil),
+             ._sessionExpiredDetected,
+             .delegate(.recoveryRequired(.deviceBindingFailure)):
+            state.currentStep = .accessUnlock
+
+        default:
+            break
+        }
+
+        let snapshot = state.progressSnapshot
+        return Self.saveEffect(snapshot, progressClient: progressClient)
     }
 
     private func handleOnAppear(
