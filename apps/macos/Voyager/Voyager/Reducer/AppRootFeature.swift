@@ -21,8 +21,6 @@ struct AppRootFeature {
     private var notificationCenterClient
     @Dependency(\.onboardingWindowClient)
     private var onboardingWindowClient
-    @Dependency(\.signInHandoffClient)
-    private var signInHandoffClient
 
     private enum CancelID {
         static let appDidBecomeActiveObserver = "appDidBecomeActiveObserver"
@@ -294,22 +292,7 @@ struct AppRootFeature {
     ) -> Effect<Action> {
         switch action {
         case let .receiveAuthCallbackURL(url):
-            .run { [signInHandoffClient] send in
-                let owner = await signInHandoffClient.resolvePendingOwner()
-                await send(._authCallbackOwnerResolved(url, owner))
-            }
-
-        case let ._authCallbackOwnerResolved(url, owner):
-            switch owner {
-            case .lifecycle:
-                .send(.lifecycle(.accountAccess(.loginCallbackReceived(url))))
-
-            case .settings:
-                .send(.lifecycle(.accountAccessCallbackReceived(url, owner: .settings)))
-
-            case .onboarding, .none:
-                .none
-            }
+            .send(.lifecycle(.accountAccess(.loginCallbackReceived(url))))
 
         default:
             .none

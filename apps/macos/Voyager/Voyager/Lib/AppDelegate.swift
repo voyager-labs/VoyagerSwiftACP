@@ -4,18 +4,10 @@ import VoyagerEntitiesCollection
 import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
-import VoyagerPagesOnboarding
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var appRootStore: StoreOf<AppRootFeature>?
-
-    /// Auth callback routing 결정 seam. true 반환 = 온보딩이 처리, false 반환 = AppRoot
-    /// sessionLapseGuard 폴백. 기본 동작은 전역 onboarding controller 존재 여부 조회.
-    /// 테스트에서 override하여 onboarding-present/absent 경로를 결정론적으로 검증.
-    var resolveAuthCallbackRouting: @MainActor (URL) -> Bool = { url in
-        VoyagerPagesOnboarding.routeAuthCallbackToOnboardingIfPresent(url)
-    }
 
     /// 현재 앱 신원에 맞는 callback scheme. 테스트에서 override하여 Dev/Prod 동작 검증.
     /// AppHandoffTarget으로 런타임 bundle ID 기반 결정.
@@ -144,15 +136,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func routeAuthCallback(_ url: URL) {
-        MainActor.assumeIsolated {
-            // resolveAuthCallbackRouting == true → 온보딩이 처리했으므로 AppRoot 폴백 생략.
-            // false → AppRoot가 현재 handoff owner를 선택하는 폴백.
-            guard resolveAuthCallbackRouting(url) else {
-                withAppRootStore {
-                    $0.send(.receiveAuthCallbackURL(url))
-                }
-                return
-            }
+        withAppRootStore {
+            $0.send(.receiveAuthCallbackURL(url))
         }
     }
 

@@ -120,16 +120,6 @@ struct AppLifecycleFeature {
                 state.accessGatePhase = .signedOut
                 return .none
 
-            case let .accountAccessCallbackReceived(url, owner):
-                state.accountAccess.handoffScope = owner
-                if !state.accountAccess.isSignInInProgress {
-                    state.accountAccess.isSignInInProgress = true
-                    state.accountAccess.didSignInFail = false
-                    state.accountAccess.handoffPendingState = nil
-                    state.accountAccess.handoffExchangeState = nil
-                }
-                return .send(.accountAccess(.loginCallbackReceived(url)))
-
             case .accountAccess(.cancelSignIn),
                  .accountAccess(._handoffCallbackTimedOut),
                  .accountAccess(._handoffExchangeCompleted):
@@ -242,9 +232,6 @@ struct AppLifecycleFeature {
                 return .none
 
             case .delegate:
-                return .none
-
-            default:
                 return .none
             }
         }
