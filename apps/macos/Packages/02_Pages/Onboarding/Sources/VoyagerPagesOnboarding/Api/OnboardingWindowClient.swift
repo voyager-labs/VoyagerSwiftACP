@@ -114,6 +114,7 @@ extension OnboardingWindowClient: DependencyKey {
         isForceFullDiskAccessGrantedEnabled: Bool = false,
     ) -> OnboardingWindowClient {
         let presentationGate = OnboardingPresentationGate()
+        let forceOnboarding = LockIsolated(isForceOnboardingEnabled)
         let showWindow: @Sendable () async -> Void = customShowWindow ?? {
             await MainActor.run {
                 if onboardingWindowController == nil {
@@ -142,18 +143,17 @@ extension OnboardingWindowClient: DependencyKey {
             await closeWindowBase()
             await presentationGate.reset()
         }
-        let isRequired: @Sendable () -> Bool = {
-            isForceOnboardingEnabled || isOnboardingRequired(progressClient)
-        }
-
         return OnboardingWindowClient(
-            isRequired: isRequired,
+            isRequired: {
+                forceOnboarding.value || isOnboardingRequired(progressClient)
+            },
             showIfNeeded: {
-                let required = isRequired()
+                let required = forceOnboarding.value || isOnboardingRequired(progressClient)
 
                 if required {
                     Task {
                         if await presentationGate.claimPresentation() {
+                            forceOnboarding.withValue { $0 = false }
                             await showWindow()
                         }
                     }
