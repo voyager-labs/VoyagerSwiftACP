@@ -49,6 +49,50 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         }
     }
 
+    private func assertTerminalAccessFailure(
+        error: AccessError,
+        errorMessage: String,
+    ) async {
+        let sessionExpiry = referenceDate.addingTimeInterval(3600)
+        let trialExpiry = referenceDate.addingTimeInterval(7200)
+        var state = AccountAccessFeature.State()
+        state.status = .coreLicenseActive
+        state.snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: trialExpiry,
+            fetchedAt: referenceDate,
+            sessionExpiresAt: sessionExpiry,
+            deviceBindingVerifiedAt: referenceDate,
+        )
+        state.isComplete = true
+        state.trialExpiresAt = trialExpiry
+        state.hasAccountSession = true
+        state.didBootstrap = true
+        state.fetchGeneration = 41
+        state.sessionExpiresAt = sessionExpiry
+        let store = makeTestStore(initialState: state)
+        await store.send(.accessStatusResponse(generation: 41, result: .failure(error))) { state in
+            state.status = nil
+            state.snapshot = nil
+            state.isComplete = false
+            state.trialExpiresAt = nil
+            state.errorMessage = errorMessage
+        }
+        await store.receive(\.delegate.recoveryRequired.accessFailure)
+
+        XCTAssertNil(store.state.status)
+        XCTAssertNil(store.state.snapshot)
+        XCTAssertNil(store.state.trialExpiresAt)
+        XCTAssertFalse(store.state.isComplete)
+        XCTAssertEqual(store.state.errorMessage, errorMessage)
+        XCTAssertTrue(store.state.hasAccountSession)
+        XCTAssertEqual(store.state.sessionExpiresAt, sessionExpiry)
+        XCTAssertEqual(store.state.fetchGeneration, 41)
+        XCTAssertTrue(store.state.didBootstrap)
+        XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .retry)
+        XCTAssertTrue(store.state.canRetry)
+    }
+
     // MARK: - ACC-002-check_entitlement_status
 
     /// ACC-002-check_entitlement_status: onAppear에서 session 복원 후 fetchAccessStatus가 자동 트리거된다.
@@ -489,22 +533,42 @@ extension ACC002CheckEntitlementStatusTests {
         XCTAssertFalse(store.state.isComplete)
     }
 
-    /// ACC-002-check_entitlement_status: fetchAccessStatus decoding 실패 시 errorMessage만 설정된다.
-    /// networkFailure 외 에러는 status를 변경하지 않고 errorMessage만 설정하는지 검증한다.
-    /// - 검증 내용: failure(.decodingFailure) → status 유지, errorMessage 설정, isComplete=false
-    /// - 사전 조건: fetchGeneration=1, status는 nil
-    /// - 기대 결과: status=nil (변경 없음), errorMessage!=nil, isComplete=false
-    func testFetchAccessStatusDecodingFailureSetsErrorMessage() async {
-        var state = AccountAccessFeature.State()
-        state.fetchGeneration = 1
-        let store = makeTestStore(initialState: state)
-        store.exhaustivity = .off
+    /// ACC-002-check_entitlement_status: notConfigured terminal failure는 stale verified access fact를 제거한다.
+    /// access status를 확정할 수 없는 구성 오류가 기존 unlock 사실을 재사용하지 않도록 검증한다.
+    /// - 검증 내용: verified active 상태에서 failure(.notConfigured) → entitlement fact 제거, session fact 및 recovery payload 보존
+    /// - 사전 조건: signed-in, device binding 검증 완료, isComplete=true, didBootstrap=true, fetchGeneration=41
+    /// - 기대 결과: status/snapshot/trialExpiresAt=nil, isComplete=false, retry CTA, accessFailure delegate 1회
+    func testFetchAccessStatusNotConfiguredFailureClearsStaleActiveEntitlementFacts() async {
+        await assertTerminalAccessFailure(
+            error: .notConfigured,
+            errorMessage: "Access service is not configured.",
+        )
+    }
 
-        await store.send(.accessStatusResponse(generation: 1, result: .failure(.decodingFailure)))
+    /// ACC-002-check_entitlement_status: decodingFailure terminal failure는 stale verified access fact를 제거한다.
+    /// access status를 해석할 수 없는 응답이 기존 unlock 사실을 재사용하지 않도록 검증한다.
+    /// - 검증 내용: verified active 상태에서 failure(.decodingFailure) → entitlement fact 제거, session fact 및 recovery payload
+    /// 보존
+    /// - 사전 조건: signed-in, device binding 검증 완료, isComplete=true, didBootstrap=true, fetchGeneration=41
+    /// - 기대 결과: status/snapshot/trialExpiresAt=nil, isComplete=false, retry CTA, accessFailure delegate 1회
+    func testFetchAccessStatusDecodingFailureClearsStaleActiveEntitlementFacts() async {
+        await assertTerminalAccessFailure(
+            error: .decodingFailure,
+            errorMessage: "Failed to process the response.",
+        )
+    }
 
-        XCTAssertNil(store.state.status)
-        XCTAssertNotNil(store.state.errorMessage)
-        XCTAssertFalse(store.state.isComplete)
+    /// ACC-002-check_entitlement_status: unknownGatewayCode terminal failure는 stale verified access fact를 제거한다.
+    /// gateway의 알 수 없는 오류 코드가 기존 unlock 사실을 재사용하지 않도록 검증한다.
+    /// - 검증 내용: verified active 상태에서 failure(.unknownGatewayCode) → entitlement fact 제거, session fact 및 recovery
+    /// payload 보존
+    /// - 사전 조건: signed-in, device binding 검증 완료, isComplete=true, didBootstrap=true, fetchGeneration=41
+    /// - 기대 결과: status/snapshot/trialExpiresAt=nil, isComplete=false, retry CTA, accessFailure delegate 1회
+    func testFetchAccessStatusUnknownGatewayCodeFailureClearsStaleActiveEntitlementFacts() async {
+        await assertTerminalAccessFailure(
+            error: .unknownGatewayCode("unexpected_gateway_code"),
+            errorMessage: "An unexpected error occurred.",
+        )
     }
 
     /// ACC-002-check_entitlement_status: stale generation 응답은 무시된다.
@@ -621,25 +685,6 @@ extension ACC002CheckEntitlementStatusTests {
             state.isComplete = false
             state.errorMessage = "This trial has expired."
             state.fetchRetryCount = 0
-        }
-        await store.receive(\.delegate.recoveryRequired)
-    }
-
-    /// ACC-002-check_entitlement_status: final access failure는 내부 오류가 아닌 복구 결과로 전달된다.
-    /// 재시도 정책이 없는 access 구성 오류가 앱 경계에서 recovery로 관찰되는지 검증한다.
-    /// - 검증 내용: notConfigured failure가 semantic delegate를 한 번 전달한다.
-    /// - 사전 조건: fetchGeneration=1, signed-in session이 존재한다.
-    /// - 기대 결과: error projection과 recovery delegate가 함께 남는다.
-    func testFinalAccessFailureSendsTerminalRecoveryDelegate() async {
-        var state = AccountAccessFeature.State()
-        state.fetchGeneration = 1
-        state.hasAccountSession = true
-        state.sessionExpiresAt = referenceDate.addingTimeInterval(3600)
-        let store = makeTestStore(initialState: state)
-
-        await store.send(.accessStatusResponse(generation: 1, result: .failure(.notConfigured))) { state in
-            state.isComplete = false
-            state.errorMessage = "Access service is not configured."
         }
         await store.receive(\.delegate.recoveryRequired)
     }

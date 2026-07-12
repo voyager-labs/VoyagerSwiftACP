@@ -192,18 +192,18 @@ extension AccountAccessFeature {
             state.status = .networkFailure
         }
 
-        if error == .notConfigured || error == .decodingFailure {
+        switch error {
+        case .notConfigured, .decodingFailure, .unknownGatewayCode:
+            state.status = nil
+            state.snapshot = nil
+            state.trialExpiresAt = nil
             return .send(.delegate(.recoveryRequired(.accessFailure(
                 error: error,
                 sessionExpiresAt: state.sessionExpiresAt,
             ))))
-        }
 
-        if case .unknownGatewayCode = error {
-            return .send(.delegate(.recoveryRequired(.accessFailure(
-                error: error,
-                sessionExpiresAt: state.sessionExpiresAt,
-            ))))
+        case .networkFailure, .unauthorized:
+            break
         }
 
         guard error == .networkFailure else { return .none }
