@@ -54,7 +54,7 @@ func sessionFromExchangeResponse(_ response: ExchangeSuccessResponse) throws -> 
 
 func extractErrorCode(from data: Data) -> String? {
     guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-    return json["code"] as? String
+    return json["code"] as? String ?? json["error"] as? String
 }
 
 func throwMappedExchangeError(_ code: String?) throws -> AccountSession {
@@ -65,5 +65,30 @@ func throwMappedExchangeError(_ code: String?) throws -> AccountSession {
     case "account_mismatch": throw AppHandoffExchangeError.accountMismatch
     case "supabase_session_issuance_failed": throw AppHandoffExchangeError.sessionIssuanceFailed
     default: throw AppHandoffExchangeError.unknownGatewayCode(code ?? "unknown")
+    }
+}
+
+func mappedDeviceBindingError(statusCode: Int, code: String?) -> DeviceBindingError {
+    switch (statusCode, code) {
+    case (401, _):
+        .unauthorized
+    case (403, "no_active_access"), (403, "access_not_active"):
+        .noActiveAccess
+    case (403, _):
+        .noActiveAccess
+    case (409, "seat_capacity_exceeded"), (409, "device_limit_reached"):
+        .seatCapacityExceeded
+    case (409, _):
+        .seatCapacityExceeded
+    case (400, "invalid_device_id"):
+        .invalidDevicePayload
+    case (400, _):
+        .invalidDevicePayload
+    case (503, "device_binding_failed"):
+        .serverFailure
+    case (500 ... 599, _):
+        .serverFailure
+    default:
+        .unknownGatewayCode(code ?? "http_\(statusCode)")
     }
 }

@@ -7,7 +7,7 @@ import XCTest
 /*
  ACC-005-auth_network_client spec-owner 테스트
 
- AuthNetworkClient의 3개 메서드(exchangeHandoff, fetchAccessStatus, refreshToken)의
+ AuthNetworkClient의 메서드(exchangeHandoff, fetchAccessStatus, bindDevice, refreshToken)의
  계약을 mock closure로 검증한다. 네트워크 동작은 모의(mock)하고, 각 메서드가
  올바른 입출력 계약을 따르는지 확인한다.
  */
@@ -30,6 +30,7 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in expectedSession },
             fetchAccessStatus: { throw AccessError.notConfigured },
+            bindDevice: { _ in DeviceBindingResponse(ok: true) },
             refreshToken: { throw AccessError.notConfigured },
         )
 
@@ -49,6 +50,7 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AppHandoffExchangeError.ticketAlreadyUsed },
             fetchAccessStatus: { throw AccessError.notConfigured },
+            bindDevice: { _ in DeviceBindingResponse(ok: true) },
             refreshToken: { throw AccessError.notConfigured },
         )
 
@@ -69,6 +71,7 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AppHandoffExchangeError.stateMismatch },
             fetchAccessStatus: { throw AccessError.notConfigured },
+            bindDevice: { _ in DeviceBindingResponse(ok: true) },
             refreshToken: { throw AccessError.notConfigured },
         )
 
@@ -89,6 +92,7 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AppHandoffExchangeError.networkFailure },
             fetchAccessStatus: { throw AccessError.notConfigured },
+            bindDevice: { _ in DeviceBindingResponse(ok: true) },
             refreshToken: { throw AccessError.notConfigured },
         )
 
@@ -109,6 +113,7 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AppHandoffExchangeError.invalidOrExpiredTicket },
             fetchAccessStatus: { throw AccessError.notConfigured },
+            bindDevice: { _ in DeviceBindingResponse(ok: true) },
             refreshToken: { throw AccessError.notConfigured },
         )
 
@@ -137,6 +142,7 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
             fetchAccessStatus: { throw AccessError.notConfigured },
+            bindDevice: { _ in DeviceBindingResponse(ok: true) },
             refreshToken: { newSession },
         )
 
@@ -156,6 +162,7 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
             fetchAccessStatus: { throw AccessError.notConfigured },
+            bindDevice: { _ in DeviceBindingResponse(ok: true) },
             refreshToken: { throw AccessError.networkFailure },
         )
 
@@ -176,6 +183,7 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
             fetchAccessStatus: { throw AccessError.notConfigured },
+            bindDevice: { _ in DeviceBindingResponse(ok: true) },
             refreshToken: { throw AccessError.decodingFailure },
         )
 
@@ -196,6 +204,7 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
             fetchAccessStatus: { throw AccessError.notConfigured },
+            bindDevice: { _ in DeviceBindingResponse(ok: true) },
             refreshToken: { throw AccessError.unauthorized },
         )
 
@@ -227,6 +236,7 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
             fetchAccessStatus: { expectedResponse },
+            bindDevice: { _ in DeviceBindingResponse(ok: true) },
             refreshToken: { throw AccessError.notConfigured },
         )
 
@@ -249,6 +259,7 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
             fetchAccessStatus: { throw AccessError.networkFailure },
+            bindDevice: { _ in DeviceBindingResponse(ok: true) },
             refreshToken: { throw AccessError.notConfigured },
         )
 
@@ -269,6 +280,7 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
             fetchAccessStatus: { throw AccessError.decodingFailure },
+            bindDevice: { _ in DeviceBindingResponse(ok: true) },
             refreshToken: { throw AccessError.notConfigured },
         )
 
@@ -289,6 +301,7 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
             fetchAccessStatus: { throw AccessError.notConfigured },
+            bindDevice: { _ in DeviceBindingResponse(ok: true) },
             refreshToken: { throw AccessError.notConfigured },
         )
 
@@ -309,6 +322,7 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
             fetchAccessStatus: { throw AccessError.unauthorized },
+            bindDevice: { _ in DeviceBindingResponse(ok: true) },
             refreshToken: { throw AccessError.notConfigured },
         )
 
@@ -322,9 +336,83 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
 
     // MARK: - ACC-005-test_value
 
+    /// ACC-005-bind_device: bindDevice 성공 시 DeviceBindingResponse를 반환한다.
+    /// mock bindDevice closure가 정상 응답을 반환할 때 호출자에게 응답이 전달되는지 검증한다.
+    func testBindDeviceSuccessReturnsResponse() async throws {
+        let client = AuthNetworkClient(
+            exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+            fetchAccessStatus: { throw AccessError.notConfigured },
+            bindDevice: { request in
+                XCTAssertEqual(request.deviceId, "device-1")
+                return DeviceBindingResponse(ok: true)
+            },
+            refreshToken: { throw AccessError.notConfigured },
+        )
+
+        let response = try await client.bindDevice(DeviceBindingRequest(deviceId: "device-1"))
+
+        XCTAssertTrue(response.ok)
+    }
+
+    /// ACC-005-bind_device: bindDevice가 seat capacity 오류를 전파한다.
+    func testBindDeviceSeatCapacityExceededThrows() async {
+        let client = AuthNetworkClient(
+            exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+            fetchAccessStatus: { throw AccessError.notConfigured },
+            bindDevice: { _ in throw DeviceBindingError.seatCapacityExceeded },
+            refreshToken: { throw AccessError.notConfigured },
+        )
+
+        do {
+            _ = try await client.bindDevice(DeviceBindingRequest(deviceId: "device-1"))
+            XCTFail("seatCapacityExceeded 에러가 throw되어야 함")
+        } catch {
+            XCTAssertEqual(error as? DeviceBindingError, .seatCapacityExceeded)
+        }
+    }
+
+    /// ACC-005-bind_device: Gateway request body는 snake_case 필드를 사용한다.
+    func testDeviceBindingRequestEncodesSnakeCaseFields() throws {
+        let request = DeviceBindingRequest(
+            deviceId: "device-1",
+            deviceName: "Mac Studio",
+            appVersion: "1.2.3",
+            osVersion: "Version 15.0",
+        )
+
+        let data = try JSONEncoder().encode(request)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: String])
+
+        XCTAssertEqual(object["device_id"], "device-1")
+        XCTAssertEqual(object["device_name"], "Mac Studio")
+        XCTAssertEqual(object["app_version"], "1.2.3")
+        XCTAssertEqual(object["os_version"], "Version 15.0")
+        XCTAssertNil(object["deviceId"])
+    }
+
+    /// ACC-005-bind_device: HTTP status/error code를 recovery 가능한 binding error로 매핑한다.
+    func testMappedDeviceBindingErrors() {
+        XCTAssertEqual(
+            mappedDeviceBindingError(statusCode: 401, code: "missing_token"),
+            .unauthorized,
+        )
+        XCTAssertEqual(
+            mappedDeviceBindingError(statusCode: 403, code: "no_active_access"),
+            .noActiveAccess,
+        )
+        XCTAssertEqual(
+            mappedDeviceBindingError(statusCode: 409, code: "seat_capacity_exceeded"),
+            .seatCapacityExceeded,
+        )
+        XCTAssertEqual(
+            mappedDeviceBindingError(statusCode: 503, code: "device_binding_failed"),
+            .serverFailure,
+        )
+    }
+
     /// ACC-005-test_value: testValue의 모든 closure가 notConfigured를 throw한다.
     /// DependencyKey.testValue가 안전한 기본값을 제공하는지 검증한다.
-    /// - 검증 내용: exchangeHandoff/fetchAccessStatus/refreshToken 모두 notConfigured throw
+    /// - 검증 내용: exchangeHandoff/fetchAccessStatus/bindDevice/refreshToken 모두 notConfigured throw
     /// - 사전 조건: AuthNetworkClient.testValue 사용
     /// - 기대 결과: 3개 메서드 모두 AccessError.notConfigured throw
     func testTestValueIsSafeDefault() async {
@@ -349,6 +437,13 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
             XCTFail("testValue refreshToken이 notConfigured를 throw해야 함")
         } catch {
             XCTAssertEqual(error as? AccessError, .notConfigured)
+        }
+
+        do {
+            _ = try await client.bindDevice(DeviceBindingRequest(deviceId: "device-1"))
+            XCTFail("testValue bindDevice가 notConfigured를 throw해야 함")
+        } catch {
+            XCTAssertEqual(error as? DeviceBindingError, .notConfigured)
         }
     }
 }

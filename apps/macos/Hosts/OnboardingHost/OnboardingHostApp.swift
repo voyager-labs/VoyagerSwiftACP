@@ -274,6 +274,7 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
                 authNetworkClient: AuthNetworkClient(
                     exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                     fetchAccessStatus: { accessStatusResponse },
+                    bindDevice: { _ in DeviceBindingResponse(ok: true) },
                     refreshToken: { throw AccessError.notConfigured },
                 ),
                 signInHandoffClient: makeMockSignInHandoffClient(),
@@ -354,10 +355,14 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
             defaults.set(data, forKey: "onboardingStepState")
         }
 
+        let fetchedAt = Date()
+        let sessionExpiresAt = Date(timeIntervalSince1970: 1_800_000_000)
         let snapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
-            currentPeriodEnd: Date(timeIntervalSinceNow: 86400),
-            fetchedAt: Date(),
+            currentPeriodEnd: sessionExpiresAt,
+            fetchedAt: fetchedAt,
+            sessionExpiresAt: sessionExpiresAt,
+            deviceBindingVerifiedAt: fetchedAt,
         )
         if let data = try? JSONEncoder().encode(snapshot) {
             defaults.set(data, forKey: "onboardingAccessSnapshot")

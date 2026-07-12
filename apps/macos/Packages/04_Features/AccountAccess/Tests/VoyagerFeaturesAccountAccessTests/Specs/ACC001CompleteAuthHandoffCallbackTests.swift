@@ -29,6 +29,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     private static let validTicket = "abc123"
     private static let validState = "xyz789"
     private static let validContext = "onboarding"
+    private static let persistedSessionExpiry = Date(timeIntervalSince1970: 1_700_003_600)
 
     private static var validCallbackURL: URL {
         URL(string: "voyager://auth/callback?ticket=\(validTicket)&state=\(validState)&context=\(validContext)")!
@@ -59,6 +60,20 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             $0.date = .constant(referenceDate)
             $0.appHandoffTarget = appHandoffTarget
         }
+    }
+
+    private func canonicalSessionClient(accessToken: String) -> AccountSessionClient {
+        let session = AccountSession(
+            accessToken: accessToken,
+            status: .none,
+            refreshToken: "persisted-refresh-token",
+            expiresAt: Self.persistedSessionExpiry,
+        )
+        return AccountSessionClient(
+            read: { session },
+            persist: { _ in },
+            delete: { _ in },
+        )
     }
 
     /// handoffPendingState가 설정된 signInInProgress 상태 (callback 대기 중)
@@ -207,61 +222,6 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
         XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager"))
     }
 
-    /// ACC-001-complete_auth_handoff_callback: 유효한 callback 수신 시 exchangeAppHandoff가 자동 호출된다.
-    /// callback 검증 성공 후 exchange_handoff_token 플로우가 자동으로 트리거되는지 검증한다.
-    /// - 검증 내용: exchangeAppHandoff 호출, _handoffExchangeCompleted 수신, hasAccountSession=true 전환
-    /// - 사전 조건: awaitingCallbackState에서 유효한 callback URL 수신, exchangeAppHandoff가 성공 응답 반환
-    /// - 기대 결과: handoffPendingState가 해제되고 hasAccountSession=true, isSignInInProgress=false, fetchGeneration=1
-    func testValidCallbackAutoTriggersExchange() async {
-        nonisolated(unsafe) var exchangeCalled = false
-        let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in },
-            ),
-            authNetworkClient: AuthNetworkClient(
-                exchangeHandoff: { ticket, state, context in
-                    exchangeCalled = true
-                    XCTAssertEqual(ticket, "abc123")
-                    XCTAssertEqual(state, "xyz789")
-                    XCTAssertEqual(context, .onboarding)
-                    return AccountSession(accessToken: "exchanged-token", status: .coreLicenseActive)
-                },
-                fetchAccessStatus: { activeAccessStatusResponse },
-                refreshToken: { throw AccessError.notConfigured },
-            ),
-            initialState: awaitingCallbackState(),
-        )
-
-        await store.send(.loginCallbackReceived(Self.validCallbackURL)) { state in
-            state.handoffPendingState = nil
-        }
-
-        await store.receive(\._handoffExchangeCompleted) { state in
-            state.isSignInInProgress = false
-            state.hasAccountSession = true
-            state.didSignInFail = false
-            state.ttlTimerActive = true
-            state.fetchGeneration = 1
-        }
-
-        XCTAssertTrue(exchangeCalled, "검증 성공 시 exchange_handoff_token 자동 트리거")
-        await store.receive(\.accessStatusResponse) { state in
-            state.status = .coreLicenseActive
-            state.isComplete = true
-            state.snapshot = AccessStatusSnapshot(
-                status: .coreLicenseActive,
-                fetchedAt: self.referenceDate,
-            )
-        }
-        await store.receive(\.delegate.unlocked)
-        XCTAssertTrue(store.state.hasAccountSession)
-        // TTL 타이머가 in-flight 상태이므로 finish 전에 exhaustivity를 끈다.
-        store.exhaustivity = .off
-        await store.finish()
-    }
-
     /// ACC-001-complete_auth_handoff_callback: 유효한 인증 흐름의 callback이 정상 처리된다.
     /// handoffPendingState와 일치하는 state의 callback이 정상적으로 exchange 경로로 진입하는지 검증한다.
     /// - 검증 내용: state 일치 시 exchangeAppHandoff 호출, context는 onboarding으로 전달
@@ -270,11 +230,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     func testValidFlowCallbackProcessedNormally() async {
         nonisolated(unsafe) var exchangeCalled = false
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: canonicalSessionClient(accessToken: "valid-flow-token"),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in
                     exchangeCalled = true
@@ -289,6 +245,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(pendingState: "xyz789"),
@@ -304,6 +261,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             state.isSignInInProgress = false
             state.hasAccountSession = true
             state.didSignInFail = false
+            state.sessionExpiresAt = Self.persistedSessionExpiry
             state.ttlTimerActive = true
             state.fetchGeneration = 1
         }
@@ -325,11 +283,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     func testMismatchedCallbackContextRejectedAgainstPendingContext() async {
         nonisolated(unsafe) var exchangeCalled = false
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: canonicalSessionClient(accessToken: "paywall-token"),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in
                     exchangeCalled = true
@@ -344,6 +298,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(handoffContext: .paywall),
@@ -369,11 +324,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     func testMatchingPendingCallbackContextProcessedNormally() async {
         nonisolated(unsafe) var exchangeCalled = false
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: canonicalSessionClient(accessToken: "obh-token"),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { ticket, state, context in
                     exchangeCalled = true
@@ -383,6 +334,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     return AccountSession(accessToken: "paywall-token", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: { activeAccessStatusResponse },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(handoffContext: .paywall),
@@ -398,6 +350,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             state.isSignInInProgress = false
             state.hasAccountSession = true
             state.didSignInFail = false
+            state.sessionExpiresAt = Self.persistedSessionExpiry
             state.ttlTimerActive = true
             state.fetchGeneration = 1
         }
@@ -417,11 +370,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     func testInvalidatedFlowCallbackRejectedByCurrentImpl() async {
         nonisolated(unsafe) var exchangeCalled = false
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: canonicalSessionClient(accessToken: "obh-token"),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in
                     exchangeCalled = true
@@ -436,6 +385,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(pendingState: "new-state-456"),
@@ -509,59 +459,6 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
         XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager"))
     }
 
-    /// onboardingHost target 환경에서 voyager-onboarding-host:// callback이 정상 처리되는지 검증한다.
-    func testOnboardingHostTargetAcceptsOnboardingHostCallback() async throws {
-        nonisolated(unsafe) var exchangeCalled = false
-        let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in },
-            ),
-            authNetworkClient: AuthNetworkClient(
-                exchangeHandoff: { _, _, _ in
-                    exchangeCalled = true
-                    return AccountSession(accessToken: "obh-token", status: .coreLicenseActive)
-                },
-                fetchAccessStatus: {
-                    AccessStatusResponse(
-                        hasAccess: true,
-                        status: "active",
-                        reason: "active_entitlement",
-                        productKey: "core",
-                        source: "polar",
-                    )
-                },
-                refreshToken: { throw AccessError.notConfigured },
-            ),
-            initialState: awaitingCallbackState(),
-            appHandoffTarget: .onboardingHost,
-        )
-
-        let obhURL =
-            try XCTUnwrap(
-                URL(string: "voyager-onboarding-host://auth/callback?ticket=abc123&state=xyz789&context=onboarding"),
-            )
-
-        await store.send(.loginCallbackReceived(obhURL)) { state in
-            state.handoffPendingState = nil
-        }
-
-        await store.receive(\._handoffExchangeCompleted) { state in
-            state.isSignInInProgress = false
-            state.hasAccountSession = true
-            state.didSignInFail = false
-            state.ttlTimerActive = true
-            state.fetchGeneration = 1
-        }
-
-        XCTAssertTrue(exchangeCalled, "onboardingHost target + onboardingHost callback → exchange 호출")
-        store.exhaustivity = .off
-        await store.receive(\.accessStatusResponse)
-        await store.receive(\.delegate.unlocked)
-        await store.finish()
-    }
-
     /// onboardingHost target 환경에서 voyager:// callback이 거부되는지 검증한다.
     func testOnboardingHostTargetRejectsVoyagerCallback() async {
         nonisolated(unsafe) var exchangeCalled = false
@@ -585,6 +482,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(),
@@ -600,6 +498,234 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
         }
 
         XCTAssertFalse(exchangeCalled, "onboardingHost target + voyager callback → 거부")
+        await store.finish()
+    }
+}
+
+extension ACC001CompleteAuthHandoffCallbackTests {
+    private func assertNoQueryCallbackPreservedSession(
+        fetchCount: Int,
+        bindCount: Int,
+        state: AccountAccessFeature.State,
+    ) {
+        XCTAssertEqual(fetchCount, 1)
+        XCTAssertEqual(bindCount, 1)
+        XCTAssertEqual(state.sessionExpiresAt, Self.persistedSessionExpiry)
+        XCTAssertEqual(state.snapshot?.sessionExpiresAt, Self.persistedSessionExpiry)
+    }
+
+    /// ACC-001-complete_auth_handoff_callback: query 없는 callback은 읽은 session expiry를 unlock까지 보존한다.
+    /// 이미 저장된 session을 읽는 callback 경로가 onAppear 복원과 동일하게 TTL과 access 검증을 시작하는지 검증한다.
+    /// - 검증 내용: 고정 expiresAt, TTL 활성화, access 조회와 device binding 각각 한 번, verified snapshot과 unlocked delegate에 동일
+    /// expiry 반영
+    /// - 사전 조건: query 없는 voyager://auth/callback, 고정 미래 expiresAt을 가진 읽기 가능한 AccountSession, active access와 성공 binding
+    /// 응답
+    /// - 기대 결과: sessionExpiresAt과 snapshot.sessionExpiresAt이 고정 expiry와 같고 unlocked delegate가 한 번 전송된다.
+    func testNoQueryCallbackPreservesRestoredSessionExpiryThroughUnlock() async throws {
+        nonisolated(unsafe) var fetchCount = 0
+        nonisolated(unsafe) var bindCount = 0
+        let store = makeTestStore(
+            accountSessionClient: canonicalSessionClient(accessToken: "no-query-token"),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: {
+                    fetchCount += 1
+                    return activeAccessStatusResponse
+                },
+                bindDevice: { _ in
+                    bindCount += 1
+                    return DeviceBindingResponse(ok: true)
+                },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: awaitingCallbackState(),
+        )
+
+        try await store.send(.loginCallbackReceived(XCTUnwrap(URL(string: "voyager://auth/callback"))))
+        await store.receive(\._loginSessionRestored) { state in
+            state.isSignInInProgress = false
+            state.hasAccountSession = true
+            state.didSignInFail = false
+            state.sessionExpiresAt = Self.persistedSessionExpiry
+            state.ttlTimerActive = true
+            state.fetchGeneration = 1
+        }
+        await store.receive(\.accessStatusResponse) { state in
+            state.status = .coreLicenseActive
+            state.isSubmitting = true
+            state.isComplete = false
+            state.errorMessage = nil
+            state.fetchRetryCount = 0
+        }
+        await store.receive(\.deviceBindingResponse) { state in
+            state.snapshot = AccessStatusSnapshot(
+                status: .coreLicenseActive,
+                fetchedAt: self.referenceDate,
+                sessionExpiresAt: Self.persistedSessionExpiry,
+                deviceBindingVerifiedAt: self.referenceDate,
+            )
+            state.isSubmitting = false
+            state.isComplete = true
+            state.errorMessage = nil
+        }
+        await store.receive(\.delegate.unlocked)
+
+        assertNoQueryCallbackPreservedSession(fetchCount: fetchCount, bindCount: bindCount, state: store.state)
+        // TTL 타이머가 in-flight 상태이므로 finish 전에 exhaustivity를 끈다.
+        store.exhaustivity = .off
+        await store.finish()
+    }
+
+    /// ACC-001-complete_auth_handoff_callback: 유효한 callback 수신 시 exchangeAppHandoff가 자동 호출된다.
+    /// callback 검증 성공 후 exchange_handoff_token 플로우가 자동으로 트리거되는지 검증한다.
+    /// - 검증 내용: exchangeAppHandoff 호출, _handoffExchangeCompleted 수신, hasAccountSession=true 전환
+    /// - 사전 조건: awaitingCallbackState에서 유효한 callback URL 수신, exchangeAppHandoff가 성공 응답 반환
+    /// - 기대 결과: handoffPendingState가 해제되고 hasAccountSession=true, isSignInInProgress=false, fetchGeneration=1
+    func testValidCallbackAutoTriggersExchange() async {
+        let store = makeTestStore(
+            accountSessionClient: canonicalSessionClient(accessToken: "exchanged-token"),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { ticket, state, context in
+                    XCTAssertEqual(ticket, "abc123")
+                    XCTAssertEqual(state, "xyz789")
+                    XCTAssertEqual(context, .onboarding)
+                    return AccountSession(accessToken: "exchanged-token", status: .coreLicenseActive)
+                },
+                fetchAccessStatus: { activeAccessStatusResponse },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: awaitingCallbackState(),
+        )
+
+        await store.send(.loginCallbackReceived(Self.validCallbackURL)) { state in
+            state.handoffPendingState = nil
+        }
+
+        await store.receive(\._handoffExchangeCompleted) { state in
+            state.isSignInInProgress = false
+            state.hasAccountSession = true
+            state.didSignInFail = false
+            state.sessionExpiresAt = Self.persistedSessionExpiry
+            state.ttlTimerActive = true
+            state.fetchGeneration = 1
+        }
+
+        await store.receive(\.accessStatusResponse) { state in
+            state.status = .coreLicenseActive
+            state.isSubmitting = true
+            state.isComplete = false
+            state.errorMessage = nil
+            state.fetchRetryCount = 0
+        }
+        await store.receive(\.deviceBindingResponse) { state in
+            state.snapshot = AccessStatusSnapshot(
+                status: .coreLicenseActive,
+                fetchedAt: self.referenceDate,
+                sessionExpiresAt: Self.persistedSessionExpiry,
+                deviceBindingVerifiedAt: self.referenceDate,
+            )
+            state.isSubmitting = false
+            state.isComplete = true
+            state.errorMessage = nil
+        }
+        await store.receive(\.delegate.unlocked)
+        XCTAssertTrue(store.state.hasAccountSession)
+        // TTL 타이머가 in-flight 상태이므로 finish 전에 exhaustivity를 끈다.
+        store.exhaustivity = .off
+        await store.finish()
+    }
+
+    /// ACC-001-complete_auth_handoff_callback: 만료 시각 없는 handoff session도 persisted fallback으로 unlock한다.
+    /// exchange 응답의 nil expiry가 token store의 canonical fallback expiry로 정규화된 뒤 binding success까지 이어지는지 검증한다.
+    /// - 검증 내용: persisted session의 fallback expiry 반영, active access 확인, device binding success, delegate unlocked 수신
+    /// - 사전 조건: expiresAt=nil과 refresh token을 가진 handoff session, TemporaryHomeFixture 기반 live AccountSessionClient
+    /// - 기대 결과: sessionExpiresAt이 nil이 아니고 verified snapshot으로 unlocked delegate가 전송
+    func testNilExpiryHandoffSessionUsesPersistedFallbackBeforeUnlock() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let tokenStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let accountSessionClient = AccountSessionClient.live(store: tokenStore)
+        let store = makeTestStore(
+            accountSessionClient: accountSessionClient,
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in
+                    AccountSession(
+                        accessToken: "nil-expiry-access-token",
+                        status: .coreLicenseActive,
+                        refreshToken: "nil-expiry-refresh-token",
+                    )
+                },
+                fetchAccessStatus: { activeAccessStatusResponse },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: awaitingCallbackState(),
+        )
+        // store.exhaustivity = .off: TTL timer가 장기 실행되므로 handoff-to-unlock 체인만 소비한다.
+        store.exhaustivity = .off
+
+        await store.send(.loginCallbackReceived(Self.validCallbackURL))
+        await store.receive(\._handoffExchangeCompleted)
+        XCTAssertNotNil(store.state.sessionExpiresAt)
+        await store.receive(\.accessStatusResponse)
+        await store.receive(\.deviceBindingResponse)
+        await store.receive(\.delegate.unlocked)
+
+        XCTAssertTrue(store.state.isComplete)
+        XCTAssertNotNil(store.state.snapshot?.sessionExpiresAt)
+        XCTAssertNotNil(store.state.snapshot?.deviceBindingVerifiedAt)
+        await store.skipInFlightEffects()
+        await store.finish()
+    }
+
+    /// onboardingHost target 환경에서 voyager-onboarding-host:// callback이 정상 처리되는지 검증한다.
+    func testOnboardingHostTargetAcceptsOnboardingHostCallback() async throws {
+        nonisolated(unsafe) var exchangeCalled = false
+        let store = makeTestStore(
+            accountSessionClient: canonicalSessionClient(accessToken: "obh-token"),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in
+                    exchangeCalled = true
+                    return AccountSession(accessToken: "obh-token", status: .coreLicenseActive)
+                },
+                fetchAccessStatus: {
+                    AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
+                },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: awaitingCallbackState(),
+            appHandoffTarget: .onboardingHost,
+        )
+
+        let obhURL =
+            try XCTUnwrap(
+                URL(string: "voyager-onboarding-host://auth/callback?ticket=abc123&state=xyz789&context=onboarding"),
+            )
+
+        await store.send(.loginCallbackReceived(obhURL)) { state in
+            state.handoffPendingState = nil
+        }
+
+        await store.receive(\._handoffExchangeCompleted) { state in
+            state.isSignInInProgress = false
+            state.hasAccountSession = true
+            state.didSignInFail = false
+            state.sessionExpiresAt = Self.persistedSessionExpiry
+            state.ttlTimerActive = true
+            state.fetchGeneration = 1
+        }
+
+        XCTAssertTrue(exchangeCalled, "onboardingHost target + onboardingHost callback → exchange 호출")
+        store.exhaustivity = .off
+        await store.receive(\.accessStatusResponse)
+        await store.receive(\.delegate.unlocked)
         await store.finish()
     }
 }

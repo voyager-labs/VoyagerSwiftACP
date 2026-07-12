@@ -7,6 +7,7 @@ public struct AccountAccessState: Equatable {
     public var snapshot: AccessStatusSnapshot?
     public var isSubmitting: Bool = false
     public var errorMessage: String?
+    public var deviceBindingFailure: DeviceBindingFailure?
     public var isComplete: Bool = false
     public var trialExpiresAt: Date?
     public var hasAccountSession: Bool = false
@@ -18,6 +19,8 @@ public struct AccountAccessState: Equatable {
     public var fetchGeneration: Int = 0
     /// fetchAccessStatus 재시도 횟수 (최대 3). 성공 시 0으로 리셋.
     public var fetchRetryCount: Int = 0
+    /// device binding transient 실패 누적 횟수. 임계값 이후 support/account 경로로 escalates.
+    public var deviceBindingRetryCount: Int = 0
     /// 현재 대기 중인 handoff state. awaitingCallback에서 설정, callback 처리 후 초기화.
     public var handoffPendingState: String?
 
@@ -36,6 +39,9 @@ public struct AccountAccessState: Equatable {
     public init() {}
 
     public var showsRetry: Bool {
+        if deviceBindingFailure?.isRetryable == true {
+            return accessUnlockPrimaryCTA == .retry
+        }
         guard let status else { return false }
         return !status.isActive
     }
@@ -59,8 +65,17 @@ public struct AccountAccessState: Equatable {
         if isSignInInProgress {
             return .pending
         }
+        if isSubmitting {
+            return .pending
+        }
         if !hasAccountSession {
             return .blocked
+        }
+        if let deviceBindingFailure {
+            return deviceBindingFailure.stepState
+        }
+        if isComplete, status?.isActive == true {
+            return .complete
         }
         guard let status else {
             // status를 아직 모르지만 조회 실패(decoding/notConfigured)가 발생했으면 error.
@@ -69,7 +84,7 @@ public struct AccountAccessState: Equatable {
         }
         switch status {
         case .coreLicenseActive, .trialActive, .internalTestActive:
-            return .complete
+            return .pending
         case .networkFailure:
             return .error
         case .none, .trialExpired, .revoked, .refunded:
@@ -84,11 +99,17 @@ public struct AccountAccessState: Equatable {
     }
 
     public var canRefreshAccess: Bool {
-        accountAccessAuthAxis == .signedIn && !isSubmitting && !isSignInInProgress
+        accountAccessAuthAxis == .signedIn
+            && !isSubmitting
+            && !isSignInInProgress
+            && deviceBindingFailure == nil
     }
 
     public var canRetry: Bool {
-        accountAccessStepState == .error && !isSubmitting
+        if deviceBindingFailure?.isRetryable == true {
+            return accessUnlockPrimaryCTA == .retry && !isSubmitting
+        }
+        return accountAccessStepState == .error && !isSubmitting
     }
 
     public var requiresAccountSession: Bool {
@@ -98,18 +119,24 @@ public struct AccountAccessState: Equatable {
     /// VOY-397: 화면에 표시할 primary CTA를 상태에서 도출.
     /// direct checkout은 core ONB recovery 경로에서 숨김.
     public var accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA {
-        if isComplete {
-            return .next
+        if isSubmitting {
+            return .pending
         }
         if !hasAccountSession {
             return .login
+        }
+        if isComplete, status?.isActive == true {
+            return .next
+        }
+        if let deviceBindingFailure {
+            return primaryCTA(for: deviceBindingFailure)
         }
         guard let status else {
             return errorMessage == nil ? .pending : .retry
         }
         switch status {
         case .coreLicenseActive, .trialActive, .internalTestActive:
-            return .next
+            return .pending
         case .networkFailure:
             return .retry
         case .none, .trialExpired, .revoked, .refunded:
@@ -122,15 +149,26 @@ public struct AccountAccessState: Equatable {
         status = snapshot.status
         self.snapshot = snapshot
         trialExpiresAt = snapshot.currentPeriodEnd
+        deviceBindingFailure = nil
+        isComplete = snapshot.isActive && snapshot.isDeviceBindingVerified && snapshot.hasSession
         isSignInInProgress = false
         didSignInFail = false
         handoffPendingState = nil
         errorMessage = nil
+        deviceBindingFailure = nil
+        deviceBindingRetryCount = 0
         hasAccountSession = snapshot.hasSession
         sessionExpiresAt = snapshot.sessionExpiresAt
         isSessionExpired = false
         didBootstrap = true
         fetchGeneration += 1
+    }
+
+    private func primaryCTA(for deviceBindingFailure: DeviceBindingFailure) -> AccessUnlockPrimaryCTA {
+        if deviceBindingFailure.isRetryable, deviceBindingRetryCount >= 3 {
+            return .account
+        }
+        return deviceBindingFailure.primaryCTA
     }
 
     /// access_status를 확정할 수 없는 실패를 세션 만료와 분리해 error 축으로 반영한다.
@@ -145,6 +183,8 @@ public struct AccountAccessState: Equatable {
         didSignInFail = false
         handoffPendingState = nil
         errorMessage = Self.errorMessage(for: error)
+        deviceBindingFailure = nil
+        deviceBindingRetryCount = 0
         hasAccountSession = sessionExpiresAt != nil
         self.sessionExpiresAt = sessionExpiresAt
         isSessionExpired = false

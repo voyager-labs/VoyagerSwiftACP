@@ -46,8 +46,6 @@ public enum FileManagerHostFixture {
             if scenario == .signInFailed {
                 guardState?.didSignInFail = true
             }
-            // ponytail: EmptyReducer 사용 — host는 guard view 표시만 검증.
-            // 의존성 주입 불필요 (reducer가 실행되지 않으므로 previewValue crash 경로 없음).
             return Store<AccountAccessFeature.State?, AccountAccessAction>(
                 initialState: guardState,
             ) {

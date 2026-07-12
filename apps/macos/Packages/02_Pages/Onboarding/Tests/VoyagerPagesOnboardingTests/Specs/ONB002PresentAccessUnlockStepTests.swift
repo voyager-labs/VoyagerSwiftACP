@@ -206,6 +206,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             $0.authNetworkClient = AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { revokedResponse },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             )
             $0.date = .constant(testDate)
@@ -231,6 +232,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             // OnboardingFeature redirects back to accessUnlock on non-active
             state.currentStep = .accessUnlock
         }
+        await store.receive(\.accessUnlock.delegate.recoveryRequired)
 
         await store.finish()
     }
@@ -260,11 +262,24 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         var state = OnboardingFeature.State()
         state.currentStep = .accessUnlock
         state.accessUnlock.hasAccountSession = true
+        state.accessUnlock.sessionExpiresAt = Date(timeIntervalSince1970: 4_102_444_800)
         state.accessUnlock.status = .coreLicenseActive
         state.accessUnlock.isComplete = true
 
         XCTAssertTrue(state.canGoNext, "complete 상태에서 canGoNext가 true여야 함")
         XCTAssertTrue(state.accessUnlock.isComplete)
+    }
+
+    /// ONB-002 UI: active/binding complete flag가 있어도 session이 없으면 Next는 비활성화된다.
+    func testOnboardingAccessUnlockCompleteWithoutSessionCannotGoNext() {
+        var state = OnboardingFeature.State()
+        state.currentStep = .accessUnlock
+        state.accessUnlock.status = .coreLicenseActive
+        state.accessUnlock.isComplete = true
+        state.accessUnlock.hasAccountSession = false
+
+        XCTAssertFalse(state.canGoNext, "session 없는 accessUnlock complete flag는 Next를 열면 안 됨")
+        XCTAssertEqual(state.accessUnlock.accessUnlockPrimaryCTA, .login)
     }
 
     /// ONB-002 UI: loginTapped는 직접 entitlement 상태를 변경하지 않고 sign-in 진행 상태만 설정한다.
@@ -312,6 +327,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             $0.authNetworkClient = AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { StateMutation.activeAccessResponse },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             )
         }
@@ -458,6 +474,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             state.accessUnlock.isSessionExpired = true
             state.accessUnlock.fetchGeneration = 1
         }
+        await store.receive(\.accessUnlock.delegate.recoveryRequired)
 
         await store.finish()
     }

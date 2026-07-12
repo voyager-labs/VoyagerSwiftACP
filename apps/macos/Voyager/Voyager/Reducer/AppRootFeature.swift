@@ -85,7 +85,6 @@ struct AppRootFeature {
     ) -> Effect<Action> {
         switch action {
         case .lifecycle(.launch(.willFinishLaunching)):
-            // ponytail: launch 1회 bootstrap — General/Appearance load를 SettingsFeature가 담당.
             .merge(
                 startLaunchObservers(),
                 .send(.settings(.bootstrapLocalPreferences)),
@@ -99,10 +98,6 @@ struct AppRootFeature {
             .cancel(id: CancelID.appDidBecomeActiveObserver)
 
         case let .lifecycle(.sessionExpiredDetected(reason)):
-            // 명시적 로그아웃(reason == .explicitSignOut)은 이미 Account child가
-            // `.delegate(.signedOut)`로 처리하므로 만료 액션으로 덮어쓰지 않는다.
-            // 세션 만료(reason == .sessionExpired 또는 nil)만 top-level clear +
-            // child `_sessionExpiredDetected`로 라우팅한다.
             if reason == .explicitSignOut {
                 .send(.settings(.accessStatusLoaded(.none)))
             } else {
@@ -112,54 +107,17 @@ struct AppRootFeature {
                 )
             }
 
-        case let .lifecycle(.sessionLapseGuard(.delegate(.unlocked(snapshot)))):
-            // guard 재로그인 성공 시 Settings top-level accessStatus와 Account 탭
-            // child access 상태를 함께 복원한다. AccountSettingsView는 child state로
-            // 렌더링되므로 top-level만 갱신하면 재로그인 후에도 signed-out 상태로 남는다.
-            // `.appLifecycleAccessSnapshotReady`와 동일한 child hydration 경로를 사용한다.
-            .merge(
-                .send(.settings(.accessStatusLoaded(snapshot.status))),
-                .send(.settings(.account(.access(.hydrateLaunchSnapshot(snapshot))))),
-            )
+        case let .lifecycle(.accountAccess(.delegate(.unlocked(snapshot)))):
+            .send(.settings(.appLifecycleAccessSnapshotReady(snapshot)))
 
-        case let .lifecycle(.accountAccessGate(gateAction)):
-            reduceAccountAccessGate(gateAction)
+        case .lifecycle(.accountAccess(.delegate(.recoveryRequired))):
+            .none
+
+        case .lifecycle(.accountAccess(.delegate(.signedOut))):
+            .send(.settings(.accessStatusLoaded(.none)))
 
         case .appDidBecomeActive:
             .none
-
-        default:
-            .none
-        }
-    }
-
-    private func reduceAccountAccessGate(
-        _ gateAction: AppLifecycleAction.AccountAccessGate,
-    ) -> Effect<Action> {
-        switch gateAction {
-        case let .accessUnlockRequired(generation: _, snapshot: snapshot):
-            // 비활성 entitlement/retry 상태는 AppLifecycle guard overlay가 소유한다.
-            // Settings는 사용자가 직접 열었을 때 같은 상태를 볼 수 있도록 hydrate만 맞춘다.
-            .merge(
-                .send(.settings(.accessStatusLoaded(snapshot.status))),
-                .send(.settings(.account(.access(.hydrateLaunchSnapshot(snapshot))))),
-            )
-
-        case let .accessStatusFailed(
-            generation: _,
-            error: error,
-            sessionExpiresAt: sessionExpiresAt,
-        ):
-            // access_status 미확정 실패는 auth session 만료로 지우지 않고 error 축으로 표시한다.
-            .send(.settings(.account(.access(.hydrateAccessFailure(
-                error: error,
-                sessionExpiresAt: sessionExpiresAt,
-            )))))
-
-        case let .accountAccessGranted(generation: _, snapshot: snapshot):
-            // ponytail: AppLifecycle이 fetch한 launch snapshot을 Settings hydration으로 1회 전달 +
-            // AI bootstrap은 launch 시점으로 이동. didBootstrap가 탭 렌더 중복 send를 no-op 처리한다.
-            .send(.settings(.appLifecycleAccessSnapshotReady(snapshot)))
 
         default:
             .none
@@ -176,7 +134,7 @@ struct AppRootFeature {
                 state.isExternalURLFlushDelegateScheduled = false
                 guard !onboardingWindowClient.isRequired() else { return .none }
                 guard canFlushPendingExternalRoutes(state) else {
-                    guard state.lifecycle.sessionLapseGuard != nil else { return .none }
+                    guard state.lifecycle.accessGatePhase == .recoveryRequired else { return .none }
                     return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
                 }
                 return flushPendingExternalRoutes(state: &state)
@@ -229,7 +187,6 @@ struct AppRootFeature {
             return .send(.openAISettings)
 
         case .openAISettings:
-            // ponytail: in-state gate. AppLifecycle snapshot hydration이 이미 state를 채움.
             // 활성 상태일 때만 AI tab 딥링크 선택. native Settings scene은 항상 오픈.
             let selectAI: Effect<Action> = state.settings.accessStatus.isActive
                 ? .send(.settings(.selectSection(.ai)))

@@ -37,6 +37,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
             authNetwork: AuthNetworkClient(
                 exchangeHandoff: exchangeHandoff,
                 fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             sessionClient: AccountSessionClient.live(store: store),
@@ -55,6 +56,20 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
             $0.authNetworkClient = authNetworkClient
             $0.date = .constant(referenceDate)
         }
+    }
+
+    private func canonicalSessionClient(expiresAt: Date) -> AccountSessionClient {
+        let session = AccountSession(
+            accessToken: "ac1-token",
+            status: .none,
+            refreshToken: "ac1-refresh",
+            expiresAt: expiresAt,
+        )
+        return AccountSessionClient(
+            read: { session },
+            persist: { _ in },
+            delete: { _ in },
+        )
     }
 
     /// handoffPendingState가 설정된 signInInProgress 상태 (callback 대기 중)
@@ -76,8 +91,9 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
     /// - 기대 결과: hasAccountSession=true, isSignInInProgress=false, didSignInFail=false, fetchGeneration=1
     func testExchangeSuccessSetsLoggedIn() async {
         nonisolated(unsafe) var exchangeCalled = false
+        let persistedSessionExpiry = Date(timeIntervalSince1970: 1_700_003_600)
         let store = makeTestStore(
-            accountSessionClient: .testValue,
+            accountSessionClient: canonicalSessionClient(expiresAt: persistedSessionExpiry),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { ticket, state, context in
                     exchangeCalled = true
@@ -99,6 +115,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(),
@@ -112,6 +129,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
             state.isSignInInProgress = false
             state.hasAccountSession = true
             state.didSignInFail = false
+            state.sessionExpiresAt = persistedSessionExpiry
             state.ttlTimerActive = true
             state.fetchGeneration = 1
         }
@@ -139,6 +157,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
                     throw AppHandoffExchangeError.networkFailure
                 },
                 fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(),
@@ -173,6 +192,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
                     throw AppHandoffExchangeError.ticketAlreadyUsed
                 },
                 fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(),

@@ -14,6 +14,7 @@ final class ACC002EvaluateAccessLevelTests: XCTestCase {
         var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .coreLicenseActive
+        state.isComplete = true
 
         XCTAssertEqual(state.accountAccessAuthAxis, .signedIn)
         XCTAssertEqual(state.accountAccessStepState, .complete)
@@ -29,6 +30,7 @@ final class ACC002EvaluateAccessLevelTests: XCTestCase {
         var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .trialActive
+        state.isComplete = true
 
         XCTAssertEqual(state.accountAccessAuthAxis, .signedIn)
         XCTAssertEqual(state.accountAccessStepState, .complete)
@@ -44,6 +46,7 @@ final class ACC002EvaluateAccessLevelTests: XCTestCase {
         var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .internalTestActive
+        state.isComplete = true
 
         XCTAssertEqual(state.accountAccessAuthAxis, .signedIn)
         XCTAssertEqual(state.accountAccessStepState, .complete)

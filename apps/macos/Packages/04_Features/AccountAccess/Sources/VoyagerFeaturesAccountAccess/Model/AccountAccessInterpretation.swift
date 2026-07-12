@@ -22,6 +22,7 @@ nonisolated public enum AccountAccessStepState: Equatable, Sendable {
 /// direct checkout(.checkout)은 core ONB recovery에서 숨김.
 nonisolated public enum AccessUnlockPrimaryCTA: Equatable, Sendable {
     case login
+    case account
     case webPricing
     case retry
     case next

@@ -51,6 +51,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
     private func makeTestStore(
         accountSessionClient: AccountSessionClient = .testValue,
         authNetworkClient: AuthNetworkClient = .testValue,
+        snapshotClient: AccessStatusSnapshotClient = .testValue,
         notificationCenterClient: NotificationCenterClient? = nil,
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
@@ -60,6 +61,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         } withDependencies: {
             $0.accountSessionClient = accountSessionClient
             $0.authNetworkClient = authNetworkClient
+            $0.accessStatusSnapshotClient = snapshotClient
             $0.notificationCenterClient = notificationCenterClient
             $0.date = .constant(referenceDate)
         }
@@ -234,6 +236,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
     /// - 기대 결과: didSignInFail=true, isSessionExpired=true, canStartLogin=true
     func testExpiredSessionRestoreFailsSetsSessionExpired() async throws {
         nonisolated(unsafe) var fetchCalled = false
+        nonisolated(unsafe) var bindCalled = false
         var initialState = AccountAccessFeature.State()
         initialState.isSignInInProgress = true
 
@@ -257,6 +260,10 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in
+                    bindCalled = true
+                    return DeviceBindingResponse(ok: true)
+                },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: initialState,
@@ -274,8 +281,10 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             state.isSessionExpired = true
             state.fetchGeneration = 1
         }
+        await store.receive(\.delegate.recoveryRequired)
 
         XCTAssertFalse(fetchCalled)
+        XCTAssertFalse(bindCalled)
         XCTAssertTrue(store.state.didSignInFail)
         XCTAssertEqual(store.state.accountAccessAuthAxis, .signInFailed)
         XCTAssertTrue(store.state.canStartLogin)
@@ -493,6 +502,68 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .login)
         await store.finish()
     }
+}
+
+extension ACC001RestoreAccountSessionTests {
+    /// ACC-001-restore_account_session: app termination은 late binding response를 무시한다.
+    /// 종료 시작 뒤 이전 generation의 binding completion이 durable snapshot이나 semantic delegate를 재주입하지 않는지 검증한다.
+    /// - 검증 내용: appWillTerminate가 generation을 무효화하고 transient state를 비운 뒤 stale binding response를 거부한다.
+    /// - 사전 조건: fetchGeneration=1, submission/sign-in/retry transient state와 in-flight binding 후보 snapshot이 존재한다.
+    /// - 기대 결과: save recorder는 비어 있고 snapshot, unlock, recovery가 생성되지 않으며 store가 clean하게 종료된다.
+    func testAppWillTerminateRejectsLateBindingResponse() async {
+        let candidateSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: referenceDate,
+            sessionExpiresAt: referenceDate.addingTimeInterval(3600),
+        )
+        nonisolated(unsafe) var savedSnapshots: [AccessStatusSnapshot] = []
+        var initialState = AccountAccessFeature.State()
+        initialState.fetchGeneration = 1
+        initialState.isSubmitting = true
+        initialState.isSignInInProgress = true
+        initialState.handoffPendingState = "pending-handoff"
+        initialState.ttlTimerActive = true
+        initialState.fetchRetryCount = 2
+        initialState.deviceBindingFailure = .retryable
+        initialState.deviceBindingRetryCount = 2
+        initialState.errorMessage = "binding in progress"
+        let store = makeTestStore(
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            snapshotClient: AccessStatusSnapshotClient(
+                load: { nil },
+                save: { savedSnapshots.append($0) },
+                remove: {},
+            ),
+            initialState: initialState,
+        )
+
+        await store.send(.appWillTerminate) { state in
+            state.fetchGeneration = 2
+            state.isSubmitting = false
+            state.isSignInInProgress = false
+            state.handoffPendingState = nil
+            state.ttlTimerActive = false
+            state.fetchRetryCount = 0
+            state.deviceBindingFailure = nil
+            state.deviceBindingRetryCount = 0
+            state.errorMessage = nil
+        }
+        await store.send(.deviceBindingResponse(
+            generation: 1,
+            snapshot: candidateSnapshot,
+            result: .success(DeviceBindingResponse(ok: true)),
+        ))
+
+        XCTAssertTrue(savedSnapshots.isEmpty)
+        XCTAssertNil(store.state.snapshot)
+        XCTAssertFalse(store.state.isComplete)
+        await store.finish()
+    }
 
     /// ACC-001-restore_account_session: 앱 최초 실행 시 token 파일이 없으면 logged_out으로 진입한다.
     /// 앱 최초 실행 시 token 파일이 존재하지 않을 때 logged_out 상태가 되는지 검증한다.
@@ -587,5 +658,64 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         let dirAttrs = try FileManager.default.attributesOfItem(atPath: fixture.voyagerHomeURL.path)
         let dirPerms = dirAttrs[.posixPermissions] as? NSNumber
         XCTAssertEqual(dirPerms?.int16Value, 0o700, "디렉토리 권한은 0o700")
+    }
+}
+
+extension ACC001RestoreAccountSessionTests {
+    /// ACC-001-restore_account_session: query 없는 callback에서 session read 오류는 fail-closed로 처리한다.
+    /// read() 오류가 nil session과 동일하게 세션 만료 경로로 축약되어 access 조회나 binding을 시작하지 않는지 검증한다.
+    /// - 검증 내용: didSignInFail, isSessionExpired, fetch=0, bind=0, unlocked delegate 없음
+    /// - 사전 조건: isSignInInProgress=true, query 없는 voyager://auth/callback, sessionClient.read가 오류 throw
+    /// - 기대 결과: _sessionExpiredDetected가 수신되고 access query, device binding, unlock 없이 종료된다.
+    func testThrowingSessionRestoreFailsClosedWithoutAccessQueryOrBinding() async throws {
+        nonisolated(unsafe) var fetchCalled = false
+        nonisolated(unsafe) var bindCalled = false
+        var initialState = AccountAccessFeature.State()
+        initialState.isSignInInProgress = true
+
+        let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: { throw AccessError.notConfigured },
+                persist: { _ in },
+                delete: { _ in },
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: {
+                    fetchCalled = true
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
+                },
+                bindDevice: { _ in
+                    bindCalled = true
+                    return DeviceBindingResponse(ok: true)
+                },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: initialState,
+        )
+
+        try await store.send(.loginCallbackReceived(XCTUnwrap(URL(string: "voyager://auth/callback"))))
+        await store.receive(\._loginSessionRestored) { state in
+            state.isSignInInProgress = false
+        }
+        await store.receive(\._sessionExpiredDetected) { state in
+            state.didSignInFail = true
+            state.hasAccountSession = false
+            state.isSessionExpired = true
+            state.fetchGeneration = 1
+        }
+        await store.receive(\.delegate.recoveryRequired)
+
+        XCTAssertFalse(fetchCalled)
+        XCTAssertFalse(bindCalled)
+        XCTAssertTrue(store.state.didSignInFail)
+        XCTAssertEqual(store.state.accountAccessAuthAxis, .signInFailed)
+        await store.finish()
     }
 }

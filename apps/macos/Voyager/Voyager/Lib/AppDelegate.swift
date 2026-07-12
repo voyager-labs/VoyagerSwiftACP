@@ -140,7 +140,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // false → sessionLapseGuard 폴백. guard state가 nil이면 ifLet가 action을 무시.
             guard resolveAuthCallbackRouting(url) else {
                 withAppRootStore {
-                    $0.send(.lifecycle(.sessionLapseGuard(.loginCallbackReceived(url))))
+                    $0.send(.lifecycle(.accountAccess(.loginCallbackReceived(url))))
                 }
                 return
             }

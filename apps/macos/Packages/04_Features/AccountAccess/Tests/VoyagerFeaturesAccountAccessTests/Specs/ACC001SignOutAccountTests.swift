@@ -388,6 +388,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
                         source: "polar",
                     )
                 },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             )
             $0.date = .constant(referenceDate)
@@ -474,6 +475,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.sessionExpiresAt = nil
             state.fetchGeneration = 1
         }
+        await store.receive(\.delegate.recoveryRequired)
 
         await store.finish()
         XCTAssertEqual(deleteReason, .sessionExpired)

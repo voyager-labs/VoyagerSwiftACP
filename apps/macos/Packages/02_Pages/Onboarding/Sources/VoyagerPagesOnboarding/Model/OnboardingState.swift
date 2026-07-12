@@ -36,7 +36,7 @@ struct OnboardingState: Equatable {
             currentStep: currentStep,
             stepState: OnboardingStepState(
                 welcomeComplete: welcome.isComplete,
-                accessUnlockComplete: accessUnlock.isComplete,
+                accessUnlockComplete: accessUnlock.isComplete && accessUnlock.hasAccountSession,
                 permissionsComplete: permissions.isComplete,
                 aiProviderSetupComplete: aiProviderSetup.isComplete,
                 aiProviderSetupSkipped: aiProviderSetup.status == .skipped,
@@ -53,7 +53,7 @@ struct OnboardingState: Equatable {
         case .welcome:
             welcome.isComplete
         case .accessUnlock:
-            accessUnlock.isComplete
+            accessUnlock.isComplete && accessUnlock.hasAccountSession
         case .permissions:
             permissions.isComplete
         case .aiProviderSetup:
