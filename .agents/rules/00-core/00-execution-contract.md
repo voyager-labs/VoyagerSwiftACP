@@ -18,7 +18,7 @@ schemaVersion: 2
 
 ## Default Actions
 
-1. Identify the affected area using `00-core/04-routing.md`.
+1. Identify the affected area using `00-core/02-routing.md`.
 2. Read nearby code and matching rules before editing.
 3. Apply the smallest correct change.
 4. Run relevant verification.

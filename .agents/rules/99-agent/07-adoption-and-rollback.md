@@ -39,7 +39,7 @@ Check that all conditions in the patch spec's `adoption_prerequisites` field are
 
 1. Read the `adoption_prerequisites` list from the patch spec.
 2. For each prerequisite, confirm the condition holds (e.g., prior patch adopted, finding no longer reproduces, ≥2 authoritative runs exist).
-3. Confirm `99-agent/10-harness-change-evaluation.md` produced an `adopt` verdict, or that the operator explicitly accepted a documented `defer` with rationale.
+3. Confirm `99-agent/09-harness-change-evaluation.md` produced an `adopt` verdict, or that the operator explicitly accepted a documented `defer` with rationale.
 4. If prerequisites are empty, proceed.
 
 ### 3. Human review checkpoint
@@ -93,7 +93,7 @@ git revert <adoption-commit-hash>
 #### Post-rollback verification
 
 1. Confirm the reverted files are restored to their pre-adoption state.
-2. Check for orphan references in routing files (`00-core/04-routing.md`) and other rule files that may reference the adopted file.
+2. Check for orphan references in routing files (`00-core/02-routing.md`) and other rule files that may reference the adopted file.
 3. Remove any orphan references if found.
 4. The rejected artifacts remain in `.sisyphus/` as local-only reference material — do not delete them.
 
