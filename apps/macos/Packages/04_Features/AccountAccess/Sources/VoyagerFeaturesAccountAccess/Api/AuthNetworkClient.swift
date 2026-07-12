@@ -4,13 +4,19 @@ import VoyagerShared
 
 /// `/auth/app-handoff/exchange`, fetchAccessStatus, `/auth/token/refresh` 등
 /// auth 네트워크 호출을 담당하는 의존성 클라이언트.
-/// 네트워크 요청만 수행하고, 결과 영속성은 호출한 Reducer가 담당한다.
+/// sync session은 credential 저장소 경계를 포함하고, reducer에는 민감하지 않은 typed result만 전달한다.
 public struct AuthNetworkClient: Sendable {
     public var exchangeHandoff: @Sendable (_ ticket: String, _ state: String, _ context: AppHandoffContext) async throws
         -> AccountSession
     public var fetchAccessStatus: @Sendable () async throws -> AccessStatusResponse
     public var bindDevice: @Sendable (_ request: DeviceBindingRequest) async throws -> DeviceBindingResponse
     public var refreshToken: @Sendable () async throws -> AccountSession
+    private var syncSessionOperation: @Sendable (
+        _ intent: SessionSyncIntent,
+        _ device: DeviceBindingRequest,
+        _ requestID: String,
+    ) async throws
+        -> SessionSyncResult
 
     public init(
         exchangeHandoff: @escaping @Sendable (
@@ -24,11 +30,36 @@ public struct AuthNetworkClient: Sendable {
             throw DeviceBindingError.notConfigured
         },
         refreshToken: @escaping @Sendable () async throws -> AccountSession,
+        syncSession: @escaping @Sendable (_ intent: SessionSyncIntent, _ device: DeviceBindingRequest) async throws
+            -> SessionSyncResult = { _, _ in throw SessionSyncError.capabilityMiss },
+        syncSessionWithRequestID: (@escaping @Sendable (
+            _ intent: SessionSyncIntent,
+            _ device: DeviceBindingRequest,
+            _ requestID: String,
+        ) async throws -> SessionSyncResult)? = nil,
     ) {
         self.exchangeHandoff = exchangeHandoff
         self.fetchAccessStatus = fetchAccessStatus
         self.bindDevice = bindDevice
         self.refreshToken = refreshToken
+        syncSessionOperation = syncSessionWithRequestID ?? { intent, device, _ in
+            try await syncSession(intent, device)
+        }
+    }
+
+    public func syncSession(
+        intent: SessionSyncIntent,
+        device: DeviceBindingRequest,
+    ) async throws -> SessionSyncResult {
+        try await syncSession(intent: intent, device: device, requestID: UUID().uuidString)
+    }
+
+    public func syncSession(
+        intent: SessionSyncIntent,
+        device: DeviceBindingRequest,
+        requestID: String,
+    ) async throws -> SessionSyncResult {
+        try await syncSessionOperation(intent, device, requestID)
     }
 }
 
@@ -48,6 +79,9 @@ public extension AuthNetworkClient {
             },
             refreshToken: {
                 try await refreshTokenLive()
+            },
+            syncSessionWithRequestID: { intent, device, requestID in
+                try await syncSessionLive(intent: intent, device: device, requestID: requestID)
             },
         )
     }
@@ -225,6 +259,168 @@ public extension AuthNetworkClient {
             expiresAt: sessionPayload.expiresAt.map { Date(timeIntervalSince1970: $0) },
         )
     }
+
+    private static func syncSessionLive(
+        intent: SessionSyncIntent,
+        device: DeviceBindingRequest,
+        requestID: String,
+    ) async throws -> SessionSyncResult {
+        let store = AccountTokenFileStore.withDefaultHome()
+        let file: AccountTokensFile
+        do {
+            guard let storedFile = try await store.read() else { throw SessionSyncError.storageFailure }
+            file = storedFile
+        } catch let error as SessionSyncError {
+            throw error
+        } catch {
+            throw SessionSyncError.storageFailure
+        }
+
+        guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL"),
+              let baseURL = URL(string: gatewayURLString)
+        else {
+            throw SessionSyncError.upstream(0)
+        }
+
+        var request = URLRequest(url: baseURL.appendingPathComponent("auth/session/sync"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if intent == .validate {
+            request.setValue("Bearer \(file.accessToken)", forHTTPHeaderField: "Authorization")
+        }
+        let body = SessionSyncRequest(
+            mode: intent,
+            requestID: requestID,
+            deviceID: device.deviceId,
+            deviceName: device.deviceName,
+            appVersion: device.appVersion,
+            osVersion: device.osVersion,
+            refreshToken: intent == .refresh ? file.refreshToken : nil,
+        )
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw SessionSyncError.upstream(0)
+        }
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw SessionSyncError.upstream(0)
+        }
+
+        if httpResponse.statusCode == 200 {
+            let decoded: SessionSyncResponse
+            do {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                decoded = try decoder.decode(SessionSyncResponse.self, from: data)
+            } catch {
+                throw SessionSyncError.upstream(200)
+            }
+            if intent == .refresh, decoded.session.status == .rotated {
+                let rotated = try rotatedTokensFile(from: decoded.session, replacing: file)
+                do {
+                    try await store.write(rotated)
+                } catch {
+                    throw SessionSyncError.storageFailure
+                }
+            }
+            return decoded.result()
+        }
+
+        guard let syncError = sessionSyncError(for: httpResponse.statusCode) else {
+            return try await legacySessionSync(intent: intent, device: device, store: store)
+        }
+        throw syncError
+    }
+
+    static func sessionSyncError(for statusCode: Int) -> SessionSyncError? {
+        switch statusCode {
+        case 404, 405:
+            nil
+        case 401:
+            .invalidCredential
+        default:
+            .upstream(statusCode)
+        }
+    }
+
+    private static func legacySessionSync(
+        intent: SessionSyncIntent,
+        device: DeviceBindingRequest,
+        store: AccountTokenFileStore,
+    ) async throws -> SessionSyncResult {
+        if intent == .refresh {
+            let session: AccountSession
+            do {
+                session = try await refreshTokenLive()
+                guard let tokens = AccountTokenSessionMapper.sessionToTokensFile(session) else {
+                    throw SessionSyncError.storageFailure
+                }
+                try await store.write(tokens)
+            } catch let error as SessionSyncError {
+                throw error
+            } catch let error as AccessError where error == .unauthorized {
+                throw SessionSyncError.invalidCredential
+            } catch {
+                throw SessionSyncError.capabilityMiss
+            }
+        }
+
+        let access: AccessStatusResponse
+        do {
+            access = try await fetchAccessStatusLive()
+        } catch let error as AccessError where error == .unauthorized {
+            throw SessionSyncError.invalidCredential
+        } catch {
+            throw SessionSyncError.capabilityMiss
+        }
+
+        let outcome: SessionSyncDeviceBindingOutcome
+        if access.toAccessStatus().isActive {
+            do {
+                _ = try await bindDeviceLive(device)
+                outcome = .bound
+            } catch let error as DeviceBindingError where error == .seatCapacityExceeded {
+                outcome = .deviceLimitReached
+            } catch {
+                outcome = .notAttempted
+            }
+        } else {
+            outcome = .notAttempted
+        }
+        return SessionSyncResult(
+            sessionStatus: intent == .refresh ? .rotated : .unchanged,
+            syncStatus: .complete,
+            accessStatus: access,
+            deviceBindingOutcome: outcome,
+            connectedDeviceAvailability: .unavailable,
+        )
+    }
+
+    private static func rotatedTokensFile(
+        from session: SessionSyncResponse.Session,
+        replacing previous: AccountTokensFile,
+    ) throws -> AccountTokensFile {
+        guard let accessToken = session.accessToken,
+              let refreshToken = session.refreshToken,
+              let expiresAt = session.expiresAt
+        else {
+            throw SessionSyncError.storageFailure
+        }
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let expiresAtMs = expiresAt * 1000
+        return AccountTokensFile(
+            updatedAtMs: now,
+            accessToken: accessToken,
+            accessTokenExpiresAtMs: expiresAtMs,
+            accessTokenExpiresIn: session.expiresIn ?? max(0, expiresAtMs - now),
+            refreshToken: refreshToken,
+            refreshTokenExpiresAtMs: (session.refreshTokenExpiresAt ?? previous.refreshTokenExpiresAtMs / 1000) * 1000,
+        )
+    }
 }
 
 // MARK: - DependencyKey
@@ -240,6 +436,7 @@ extension AuthNetworkClient: DependencyKey {
             fetchAccessStatus: { throw AccessError.notConfigured },
             bindDevice: { _ in throw DeviceBindingError.notConfigured },
             refreshToken: { throw AccessError.notConfigured },
+            syncSession: { _, _ in throw SessionSyncError.capabilityMiss },
         )
     }
 

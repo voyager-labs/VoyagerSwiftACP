@@ -9,19 +9,40 @@ actor AppHandoffStateStore {
 
     init() {}
 
-    func store(_ pending: PendingAppHandoff) {
+    /// 활성 handoff가 없을 때만 새 보류 상태를 저장한다.
+    @discardableResult
+    func begin(_ pending: PendingAppHandoff) -> Bool {
+        guard self.pending == nil else { return false }
         self.pending = pending
+        return true
+    }
+
+    /// 현재 활성 handoff를 시작한 surface를 반환한다.
+    func pendingOwner() -> AccountAccessHandoffScope? {
+        pending?.owner
     }
 
     /// expectedState와 일치하면 보류 상태를 반환하고 제거한다.
     /// 불일치 또는 미저장 시 nil을 반환한다.
-    func retrieveAndClear(expectedState: String) -> PendingAppHandoff? {
-        guard let current = pending, current.state == expectedState else { return nil }
+    func claim(
+        expectedState: String,
+        context: AppHandoffContext,
+        owner: AccountAccessHandoffScope,
+    ) -> PendingAppHandoff? {
+        guard let current = pending,
+              current.state == expectedState,
+              current.context == context,
+              current.owner == owner
+        else { return nil }
         pending = nil
         return current
     }
 
-    func clear() {
+    /// state와 owner가 모두 일치할 때만 보류 상태를 제거한다.
+    @discardableResult
+    func clear(expectedState: String, owner: AccountAccessHandoffScope) -> Bool {
+        guard pending?.state == expectedState, pending?.owner == owner else { return false }
         pending = nil
+        return true
     }
 }

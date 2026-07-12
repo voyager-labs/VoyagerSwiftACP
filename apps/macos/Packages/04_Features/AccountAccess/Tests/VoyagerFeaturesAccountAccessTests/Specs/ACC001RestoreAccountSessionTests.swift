@@ -128,89 +128,68 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         await store.skipInFlightEffects()
     }
 
-    /// ACC-001-restore_account_session: refreshToken 성공 시 기존 snapshot의 session 축만 갱신된다.
-    /// snapshot이 이미 있을 때 refresh 성공이 sessionExpiresAt만 동기화하고 entitlement 축은 보존하는지 검증한다.
-    /// - 검증 내용: _refreshTokenResult(.success) → state.sessionExpiresAt 갱신, snapshot.status/currentPeriodEnd/fetchedAt
-    /// 보존
-    /// - 사전 조건: 기존 snapshot이 존재하고 sessionExpiresAt가 오래된 값이다.
-    /// - 기대 결과: snapshot.sessionExpiresAt만 새 만료 시각으로 교체된다.
-    func testRefreshTokenSuccessSyncsExistingSnapshotSessionExpiry() async {
-        let oldExpiry = referenceDate.addingTimeInterval(300)
-        let newExpiry = referenceDate.addingTimeInterval(3600)
-        let initialSnapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            currentPeriodEnd: referenceDate.addingTimeInterval(86400),
-            fetchedAt: referenceDate,
-            sessionExpiresAt: oldExpiry,
-        )
-        let expectedSnapshot = AccessStatusSnapshot(
-            status: initialSnapshot.status,
-            currentPeriodEnd: initialSnapshot.currentPeriodEnd,
-            fetchedAt: initialSnapshot.fetchedAt,
-            sessionExpiresAt: newExpiry,
-        )
-
+    /// ACC-001-restore_account_session: complete session sync는 freshness를 기록한다.
+    /// complete result가 다음 foreground gate에 사용할 시각을 소유하는지 검증한다.
+    /// - 검증 내용: complete sync → lastCompleteSyncAt 갱신과 recovery snapshot projection.
+    /// - 사전 조건: 유효한 session과 in-flight manual sync.
+    /// - 기대 결과: current date가 complete freshness로 기록된다.
+    func testCompleteSessionSyncRecordsFreshness() async {
         var initialState = AccountAccessFeature.State()
         initialState.hasAccountSession = true
-        initialState.ttlTimerActive = true
-        initialState.sessionExpiresAt = oldExpiry
-        initialState.status = initialSnapshot.status
-        initialState.trialExpiresAt = initialSnapshot.currentPeriodEnd
-        initialState.snapshot = initialSnapshot
-        initialState.consecutiveRefreshFailures = 2
-
+        initialState.sessionExpiresAt = referenceDate.addingTimeInterval(3600)
+        initialState.syncGeneration = 1
+        initialState.inFlightSyncReason = .manual
         let store = makeTestStore(initialState: initialState)
+        // store.exhaustivity = .off: complete result의 recovery projection보다 freshness 기록을 검증
+        store.exhaustivity = .off
 
-        await store.send(._refreshTokenResult(.success(
-            AccountSession(
-                accessToken: "refreshed-token",
-                status: .coreLicenseActive,
-                expiresAt: newExpiry,
-            ),
-        ))) { state in
-            state.consecutiveRefreshFailures = 0
-            state.sessionExpiresAt = newExpiry
-            state.snapshot = expectedSnapshot
-        }
+        await store.send(._sessionSyncCompleted(
+            generation: 1,
+            result: .success(SessionSyncResult(
+                sessionStatus: .unchanged,
+                syncStatus: .complete,
+                accessStatus: AccessStatusResponse(hasAccess: false, status: "none"),
+                deviceBindingOutcome: .notAttempted,
+                connectedDeviceAvailability: .available,
+            )),
+        ))
+        await store.receive(\.delegate.recoveryRequired)
 
-        XCTAssertEqual(store.state.sessionExpiresAt, newExpiry)
-        XCTAssertEqual(store.state.snapshot, expectedSnapshot)
+        XCTAssertEqual(store.state.lastCompleteSyncAt, referenceDate)
         await store.finish()
     }
 
-    /// ACC-001-restore_account_session: refreshToken 성공 시 snapshot이 없으면 새 snapshot을 만들지 않는다.
-    /// snapshot nil 상태에서 refresh 성공이 sessionExpiresAt만 갱신하고 snapshot은 nil로 유지하는지 검증한다.
-    /// - 검증 내용: _refreshTokenResult(.success) → state.sessionExpiresAt 갱신, state.snapshot은 nil 유지
-    /// - 사전 조건: snapshot이 nil이고 sessionExpiresAt가 존재한다.
-    /// - 기대 결과: session 만료 시각만 갱신되고 snapshot은 생성되지 않는다.
-    func testRefreshTokenSuccessDoesNotCreateSnapshotWhenMissing() async {
-        let oldExpiry = referenceDate.addingTimeInterval(300)
-        let newExpiry = referenceDate.addingTimeInterval(3600)
-
+    /// ACC-001-restore_account_session: partial session sync는 freshness를 기록하지 않는다.
+    /// partial result가 complete snapshot처럼 다음 foreground gate를 열지 않음을 검증한다.
+    /// - 검증 내용: partial sync → lastCompleteSyncAt 유지와 unlock 차단.
+    /// - 사전 조건: 기존 complete freshness와 in-flight manual sync.
+    /// - 기대 결과: 기존 freshness가 그대로 유지된다.
+    func testPartialSessionSyncDoesNotRecordFreshness() async {
+        let lastCompleteSyncAt = referenceDate.addingTimeInterval(-60)
         var initialState = AccountAccessFeature.State()
         initialState.hasAccountSession = true
-        initialState.ttlTimerActive = true
-        initialState.sessionExpiresAt = oldExpiry
-        initialState.status = .coreLicenseActive
-        initialState.trialExpiresAt = referenceDate.addingTimeInterval(86400)
-        initialState.snapshot = nil
-        initialState.consecutiveRefreshFailures = 2
-
+        initialState.sessionExpiresAt = referenceDate.addingTimeInterval(3600)
+        initialState.lastCompleteSyncAt = lastCompleteSyncAt
+        initialState.syncGeneration = 1
+        initialState.inFlightSyncReason = .manual
         let store = makeTestStore(initialState: initialState)
+        // store.exhaustivity = .off: partial result의 recovery projection보다 freshness 불변을 검증
+        store.exhaustivity = .off
 
-        await store.send(._refreshTokenResult(.success(
-            AccountSession(
-                accessToken: "refreshed-token",
-                status: .coreLicenseActive,
-                expiresAt: newExpiry,
-            ),
-        ))) { state in
-            state.consecutiveRefreshFailures = 0
-            state.sessionExpiresAt = newExpiry
-        }
+        await store.send(._sessionSyncCompleted(
+            generation: 1,
+            result: .success(SessionSyncResult(
+                sessionStatus: .unchanged,
+                syncStatus: .partial,
+                accessStatus: AccessStatusResponse(hasAccess: false, status: "none"),
+                deviceBindingOutcome: .notAttempted,
+                connectedDeviceAvailability: .unavailable,
+                partial: SessionSyncPartial(stage: "access", reason: "temporarily_unavailable"),
+            )),
+        ))
+        await store.receive(\.delegate.recoveryRequired)
 
-        XCTAssertEqual(store.state.sessionExpiresAt, newExpiry)
-        XCTAssertNil(store.state.snapshot)
+        XCTAssertEqual(store.state.lastCompleteSyncAt, lastCompleteSyncAt)
         await store.finish()
     }
 
@@ -438,7 +417,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         // exhaustivity=.off: reducer가 다수 필드를 갱신하나 검증 대상은 regression 스펙 필드만.
         store.exhaustivity = .off
 
-        await store.send(._onAppearSessionRestored(nil))
+        await store.send(._onAppearSessionRestored(.missing))
 
         XCTAssertFalse(store.state.hasAccountSession)
         XCTAssertNil(store.state.status)
@@ -489,7 +468,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         )
         store.exhaustivity = .off
 
-        await store.send(._onAppearSessionRestored(nil))
+        await store.send(._onAppearSessionRestored(.missing))
 
         // stale generation(1) 응답 → 현재 fetchGeneration(2)과 불일치 → 무시
         await store.send(.accessStatusResponse(generation: 1, result: .success(activeResponse)))

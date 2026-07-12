@@ -22,17 +22,41 @@ final class ACC001RestoreAccountSessionForegroundObserverTests: XCTestCase {
     }
 
     private func makeTestStore(
+        accountSessionClient: AccountSessionClient,
         authNetworkClient: AuthNetworkClient,
         notificationCenterClient: NotificationCenterClient,
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         TestStore(initialState: AccountAccessFeature.State()) {
             AccountAccessFeature()
         } withDependencies: {
-            $0.accountSessionClient = .testValue
+            $0.accountSessionClient = accountSessionClient
             $0.authNetworkClient = authNetworkClient
             $0.notificationCenterClient = notificationCenterClient
             $0.date = .constant(referenceDate)
         }
+    }
+
+    private static func makeAccountSessionClient(expiresAt: Date) -> AccountSessionClient {
+        AccountSessionClient(
+            read: {
+                AccountSession(
+                    accessToken: "test-access-token",
+                    status: .coreLicenseActive,
+                    expiresAt: expiresAt,
+                )
+            },
+            persist: { _ in },
+            delete: { _ in },
+        )
+    }
+
+    private func makeLaunchSnapshot(sessionExpiry: Date) -> AccessStatusSnapshot {
+        AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: referenceDate.addingTimeInterval(86400),
+            fetchedAt: referenceDate,
+            sessionExpiresAt: sessionExpiry,
+        )
     }
 
     private func sendDidBecomeActive(_ continuation: inout AsyncStream<Notification>.Continuation?) {
@@ -70,16 +94,12 @@ final class ACC001RestoreAccountSessionForegroundObserverTests: XCTestCase {
 
     func testHydrateLaunchSnapshotWithSessionStartsForegroundObserver() async {
         let sessionExpiry = referenceDate.addingTimeInterval(3600)
-        let snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            currentPeriodEnd: referenceDate.addingTimeInterval(86400),
-            fetchedAt: referenceDate,
-            sessionExpiresAt: sessionExpiry,
-        )
+        let snapshot = makeLaunchSnapshot(sessionExpiry: sessionExpiry)
         nonisolated(unsafe) var notificationContinuation: AsyncStream<Notification>.Continuation?
         nonisolated(unsafe) var fetchCalled = false
 
         let store = makeTestStore(
+            accountSessionClient: Self.makeAccountSessionClient(expiresAt: sessionExpiry),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
@@ -115,7 +135,10 @@ final class ACC001RestoreAccountSessionForegroundObserverTests: XCTestCase {
         await Task.yield()
         sendDidBecomeActive(&notificationContinuation)
 
-        await store.receive(\.appDidBecomeActive) { state in
+        await store.receive(\.appDidBecomeActive)
+        await store.receive(\.revalidatePersistedSession)
+        await store.receive(\._persistedSessionRevalidated) { state in
+            state.sessionExpiresAt = sessionExpiry
             state.fetchGeneration = 2
         }
 

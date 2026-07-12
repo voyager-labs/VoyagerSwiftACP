@@ -1,5 +1,3 @@
-// swiftlint:disable force_unwrapping
-
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
 import XCTest
@@ -19,20 +17,58 @@ import XCTest
 final class ACC002HandleEntitlementChangeTests: XCTestCase {
     private let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
 
+    private static func session(expiresAt: Date) -> AccountSession {
+        AccountSession(
+            accessToken: "test-access-token",
+            status: .coreLicenseActive,
+            expiresAt: expiresAt,
+        )
+    }
+
     private func makeTestStore(
-        accountSessionClient: AccountSessionClient = .testValue,
+        accountSessionClient: AccountSessionClient? = nil,
         authNetworkClient: AuthNetworkClient = .testValue,
         snapshotClient: AccessStatusSnapshotClient = .testValue,
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
+        let persistedSession = Self.session(
+            expiresAt: initialState.sessionExpiresAt ?? referenceDate.addingTimeInterval(3600),
+        )
+        let sessionClient = accountSessionClient ?? AccountSessionClient(
+            read: { persistedSession },
+            persist: { _ in },
+            delete: { _ in },
+        )
         TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
-            $0.accountSessionClient = accountSessionClient
+            $0.accountSessionClient = sessionClient
             $0.authNetworkClient = authNetworkClient
             $0.accessStatusSnapshotClient = snapshotClient
             $0.date = .constant(referenceDate)
         }
+    }
+
+    private func receiveValidForegroundRevalidation(
+        from store: TestStore<AccountAccessFeature.State, AccountAccessFeature.Action>,
+        sessionExpiry: Date,
+        fetchGeneration: Int,
+    ) async {
+        await store.receive(\.revalidatePersistedSession)
+        await store.receive(\._persistedSessionRevalidated) { state in
+            state.sessionExpiresAt = sessionExpiry
+            state.fetchGeneration = fetchGeneration
+        }
+    }
+
+    private func expectedSnapshot(status: AccessStatus, sessionExpiry: Date) -> AccessStatusSnapshot {
+        AccessStatusSnapshot(
+            status: status,
+            currentPeriodEnd: nil,
+            fetchedAt: referenceDate,
+            sessionExpiresAt: sessionExpiry,
+            deviceBindingVerifiedAt: referenceDate,
+        )
     }
 
     // MARK: - ACC-002-handle_entitlement_change
@@ -162,6 +198,11 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
         XCTAssertEqual(store.state.fetchGeneration, 0)
 
         await store.send(.appDidBecomeActive)
+        await receiveValidForegroundRevalidation(
+            from: store,
+            sessionExpiry: referenceDate.addingTimeInterval(3600),
+            fetchGeneration: 1,
+        )
 
         XCTAssertEqual(store.state.fetchGeneration, 1)
         XCTAssertTrue(fetchCalled)
@@ -193,7 +234,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             ),
         )
 
-        XCTAssertEqual(store.state.hasAccountSession, false)
+        XCTAssertFalse(store.state.hasAccountSession)
         XCTAssertEqual(store.state.fetchGeneration, 0)
 
         await store.send(.appDidBecomeActive)
@@ -234,12 +275,27 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
         XCTAssertEqual(store.state.fetchGeneration, 0)
 
         await store.send(.appDidBecomeActive)
+        await receiveValidForegroundRevalidation(
+            from: store,
+            sessionExpiry: referenceDate.addingTimeInterval(3600),
+            fetchGeneration: 1,
+        )
         XCTAssertEqual(store.state.fetchGeneration, 1)
 
         await store.send(.appDidBecomeActive)
+        await receiveValidForegroundRevalidation(
+            from: store,
+            sessionExpiry: referenceDate.addingTimeInterval(3600),
+            fetchGeneration: 2,
+        )
         XCTAssertEqual(store.state.fetchGeneration, 2)
 
         await store.send(.appDidBecomeActive)
+        await receiveValidForegroundRevalidation(
+            from: store,
+            sessionExpiry: referenceDate.addingTimeInterval(3600),
+            fetchGeneration: 3,
+        )
         XCTAssertEqual(store.state.fetchGeneration, 3)
     }
 
@@ -271,9 +327,12 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             initialState: initialState,
         )
 
-        await store.send(.appDidBecomeActive) { state in
-            state.fetchGeneration = 1
-        }
+        await store.send(.appDidBecomeActive)
+        await receiveValidForegroundRevalidation(
+            from: store,
+            sessionExpiry: referenceDate.addingTimeInterval(3600),
+            fetchGeneration: 1,
+        )
 
         let expectedSnapshot = AccessStatusSnapshot(
             status: .trialActive,
@@ -372,18 +431,15 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
         )
 
         // Step 1: appDidBecomeActive → fetchGeneration 증가
-        await store.send(.appDidBecomeActive) { state in
-            state.fetchGeneration = 1
-        }
+        await store.send(.appDidBecomeActive)
+        await receiveValidForegroundRevalidation(
+            from: store,
+            sessionExpiry: sessionExpiry,
+            fetchGeneration: 1,
+        )
 
         // Step 2: fetchAccessStatus 성공 응답 → status/snapshot 갱신
-        let expectedSnapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            currentPeriodEnd: nil,
-            fetchedAt: referenceDate,
-            sessionExpiresAt: sessionExpiry,
-            deviceBindingVerifiedAt: referenceDate,
-        )
+        let expectedSnapshot = expectedSnapshot(status: .coreLicenseActive, sessionExpiry: sessionExpiry)
         await store.receive(\.accessStatusResponse) { state in
             state.status = .coreLicenseActive
             state.isSubmitting = true

@@ -5,5 +5,6 @@ import Foundation
 struct PendingAppHandoff: Equatable {
     let state: String
     let context: AppHandoffContext
+    let owner: AccountAccessHandoffScope
     let createdAt: Date
 }

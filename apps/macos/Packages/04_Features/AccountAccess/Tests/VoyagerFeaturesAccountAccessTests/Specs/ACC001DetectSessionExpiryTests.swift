@@ -16,15 +16,29 @@ import XCTest
 final class ACC001DetectSessionExpiryTests: XCTestCase {
     private let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
 
+    private static func session(expiresAt: Date) -> AccountSession {
+        AccountSession(
+            accessToken: "test-access-token",
+            status: .coreLicenseActive,
+            expiresAt: expiresAt,
+        )
+    }
+
     private func makeTestStore(
-        accountSessionClient: AccountSessionClient = .testValue,
+        accountSessionClient: AccountSessionClient? = nil,
         authNetworkClient: AuthNetworkClient = .testValue,
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
+        let persistedSession = Self.session(expiresAt: initialState.sessionExpiresAt ?? referenceDate)
+        let sessionClient = accountSessionClient ?? AccountSessionClient(
+            read: { persistedSession },
+            persist: { _ in },
+            delete: { _ in },
+        )
         TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
-            $0.accountSessionClient = accountSessionClient
+            $0.accountSessionClient = sessionClient
             $0.authNetworkClient = authNetworkClient
             $0.date = .constant(referenceDate)
         }
@@ -40,6 +54,47 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
 
     // MARK: - ACC-001-detect_session_expiry
 
+    /// ACC-001-detect_session_expiry: capability miss만 legacy fallback 후보이고 credential·upstream 오류는 직접 반환한다.
+    /// session-sync HTTP 경계가 오류 종류에 따라 fallback을 허용하는지 검증한다.
+    /// - 검증 내용: 404/405는 nil fallback signal, 401은 invalid credential, 429/503은 upstream status mapping.
+    /// - 사전 조건: session-sync HTTP status code.
+    /// - 기대 결과: 401/429/503이 legacy call의 trigger로 해석되지 않는다.
+    func testSessionSyncFallbackBoundaryMapsOnlyCapabilityMisses() {
+        XCTAssertNil(AuthNetworkClient.sessionSyncError(for: 404))
+        XCTAssertNil(AuthNetworkClient.sessionSyncError(for: 405))
+        XCTAssertEqual(AuthNetworkClient.sessionSyncError(for: 401), .invalidCredential)
+        XCTAssertEqual(AuthNetworkClient.sessionSyncError(for: 429), .upstream(429))
+        XCTAssertEqual(AuthNetworkClient.sessionSyncError(for: 503), .upstream(503))
+    }
+
+    /// ACC-001-detect_session_expiry: 실행 중 persisted session 손실은 in-memory session을 한 번만 만료 처리한다.
+    /// - 검증 내용: foreground 재검증의 nil 결과가 _sessionExpiredDetected를 거쳐 session_expired로 전환하고 이후 TTL tick을 무시한다.
+    /// - 사전 조건: 로그인된 in-memory session과 삭제된 persisted token 파일을 나타내는 nil read.
+    /// - 기대 결과: in-memory session과 TTL이 무효화되며 만료 전환은 한 번만 수행된다.
+    func testRuntimePersistedSessionLossInvalidatesInMemorySessionOnce() async {
+        let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: { nil },
+                persist: { _ in },
+                delete: { _ in },
+            ),
+            initialState: signedInState(),
+        )
+        store.exhaustivity = .off
+
+        await store.send(.appDidBecomeActive)
+        await store.receive(\.revalidatePersistedSession)
+        await store.receive(\._persistedSessionRevalidated)
+        await store.receive(\._sessionExpiredDetected)
+
+        XCTAssertFalse(store.state.hasAccountSession)
+        XCTAssertTrue(store.state.isSessionExpired)
+        XCTAssertFalse(store.state.ttlTimerActive)
+
+        await store.send(._refreshDeadlineReached(generation: 0))
+        XCTAssertTrue(store.state.isSessionExpired)
+    }
+
     /// ACC-001-detect_session_expiry: 영구적 refresh 실패 시 세션 만료 상태로 전환된다.
     /// decodingFailure 발생 시 _sessionExpiredDetected action을 통해 상태가 올바르게 전환되는지 검증한다.
     /// - 검증 내용: decodingFailure → _sessionExpiredDetected → didSignInFail=true, isSessionExpired=true,
@@ -47,26 +102,21 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
     /// - 사전 조건: 로그인된 세션 상태.
     /// - 기대 결과: didSignInFail=true, isSessionExpired=true, accountAccessAuthAxis==.signInFailed.
     func testPermanentFailureTransitionsToSessionExpired() async {
-        let store = makeTestStore(
-            authNetworkClient: AuthNetworkClient(
-                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                fetchAccessStatus: { throw AccessError.notConfigured },
-                bindDevice: { _ in DeviceBindingResponse(ok: true) },
-                refreshToken: { throw AccessError.decodingFailure },
-            ),
-            initialState: signedInState(),
-        )
-        // store.exhaustivity = .off: _sessionExpiredDetected가 다수 상태를 동시 갱신하나 검증 대상은
-        // didSignInFail/isSessionExpired/accountAccessAuthAxis만 해당
+        var state = signedInState()
+        state.syncGeneration = 1
+        state.inFlightSyncReason = .refreshDeadline
+        let store = makeTestStore(initialState: state)
+        // store.exhaustivity = .off: session expiry cleanup의 다수 presentation 상태보다 invalid credential 전환을 검증
         store.exhaustivity = .off
 
-        await store.send(AccountAccessAction._ttlTimerTicked)
-        await store.receive(\._refreshTokenResult)
+        await store.send(._sessionSyncCompleted(generation: 1, result: .failure(.invalidCredential)))
         await store.receive(\._sessionExpiredDetected)
+        await store.receive(\.delegate.recoveryRequired)
 
         XCTAssertTrue(store.state.didSignInFail, "영구 실패 → didSignInFail=true")
         XCTAssertTrue(store.state.isSessionExpired, "영구 실패 → isSessionExpired=true")
         XCTAssertEqual(store.state.accountAccessAuthAxis, .signInFailed, "auth_state → signInFailed")
+        await store.finish()
     }
 
     /// ACC-001-detect_session_expiry: 세션 만료 시 guard 표시 조건이 올바르게 설정된다.
@@ -279,30 +329,21 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
     /// - 사전 조건: 로그인된 세션 상태.
     /// - 기대 결과: hasAccountSession=true, isSessionExpired=false, ttlTimerActive=true, consecutiveRefreshFailures=1.
     func testNetworkErrorDoesNotTriggerSessionExpiry() async {
-        let store = makeTestStore(
-            authNetworkClient: AuthNetworkClient(
-                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                fetchAccessStatus: { throw AccessError.notConfigured },
-                bindDevice: { _ in DeviceBindingResponse(ok: true) },
-                refreshToken: { throw AccessError.networkFailure },
-            ),
-            initialState: signedInState(),
-        )
-        // store.exhaustivity = .off: networkFailure 처리가 다수 상태를 갱신할 수 있으나 검증 대상은 consecutiveRefreshFailures 증가와 세션 유지만
-        // 해당
+        var state = signedInState()
+        state.syncGeneration = 1
+        state.inFlightSyncReason = .refreshDeadline
+        let store = makeTestStore(initialState: state)
+        // store.exhaustivity = .off: transient sync failure의 recovery projection보다 세션 유지와 expiry 미전파를 검증
         store.exhaustivity = .off
 
-        await store.send(AccountAccessAction._ttlTimerTicked)
+        await store.send(._sessionSyncCompleted(generation: 1, result: .failure(.upstream(503))))
+        await store.receive(\.delegate.recoveryRequired)
 
-        await store.receive(\._refreshTokenResult) { state in
-            state.consecutiveRefreshFailures = 1
-        }
-
-        // _sessionExpiredDetected가 전송되지 않아야 함
         XCTAssertTrue(store.state.hasAccountSession, "네트워크 오류 → 세션 유지")
         XCTAssertFalse(store.state.isSessionExpired, "네트워크 오류 → 만료 미감지")
         XCTAssertTrue(store.state.ttlTimerActive, "네트워크 오류 → TTL 타이머 지속")
-        XCTAssertEqual(store.state.consecutiveRefreshFailures, 1, "연속 실패 카운터 증가")
+        XCTAssertEqual(store.state.status, .networkFailure, "네트워크 오류 → access status 기록")
+        await store.finish()
     }
 
     /// ACC-001-detect_session_expiry: 복수 경로를 통한 중복 만료 처리가 방지된다.
