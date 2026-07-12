@@ -21,7 +21,7 @@ schemaVersion: 2
 
 ## Decision Rules
 
-- Use `.agents/skills/voyager-dev/reviewer/boundary/references/layer-and-segment-rules.md` for layer/segment direction and `.agents/skills/voyager-dev/reviewer/boundary/references/public-boundary-spec.md` for visibility decisions.
+- Use `../../reviewer/review/references/layer-and-segment-rules.md` for layer/segment direction and `../../reviewer/review/references/public-boundary-spec.md` for visibility decisions.
 - Delegate logging, analytics, and navigation as `Action.Delegate` intent or dependency-client work; the consuming layer performs the side effect.
 - Use `nonisolated(unsafe)`, `@preconcurrency`, or `MainActor.assumeIsolated` only when their safety boundary is established; do not use them to hide an unresolved boundary.
 

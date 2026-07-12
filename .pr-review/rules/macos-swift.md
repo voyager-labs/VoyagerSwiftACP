@@ -20,10 +20,10 @@ Prioritize these checks over generic bug finding:
 
 Load these repository-root paths for the complete contracts:
 
-- `.agents/skills/voyager-dev/reviewer/boundary/references/layer-and-segment-rules.md`
-- `.agents/skills/voyager-dev/reviewer/boundary/references/public-boundary-spec.md`
-- `.agents/skills/voyager-dev/reviewer/architecture-gate/references/decision-matrix.md`
-- `.agents/skills/voyager-dev/reviewer/architecture-gate/references/architecture-gate-spec.md`
+- `.agents/skills/voyager-dev/reviewer/review/references/layer-and-segment-rules.md`
+- `.agents/skills/voyager-dev/reviewer/review/references/public-boundary-spec.md`
+- `.agents/skills/voyager-dev/reviewer/review/references/decision-matrix.md`
+- `.agents/skills/voyager-dev/reviewer/review/references/architecture-gate-spec.md`
 - `.agents/skills/voyager-dev/planner/reuse-evaluation/references/reuse-discovery-spec.md`
 
 These references own the detailed FSD, segment, public-boundary, reuse-scoring,
@@ -67,7 +67,7 @@ Flag:
 ## AppKit coordinator review
 
 Use the AppKit/system boundary in
-`.agents/skills/voyager-dev/reviewer/architecture-gate/references/architecture-gate-spec.md`
+`.agents/skills/voyager-dev/reviewer/review/references/architecture-gate-spec.md`
 for the detailed physical-state contract. Independently verify that a coordinator
 confirms physical mount/operation success before reporting it as reducer state,
 and that close/unmount cancels pending setup so a late event cannot recreate a
@@ -140,9 +140,9 @@ as concrete runtime risks.
 
 ## Package and public boundaries
 
-Use `.agents/skills/voyager-dev/reviewer/boundary/references/public-boundary-spec.md`
+Use `.agents/skills/voyager-dev/reviewer/review/references/public-boundary-spec.md`
 for the detailed public-boundary contract and
-`.agents/skills/voyager-dev/reviewer/boundary/references/layer-and-segment-rules.md`
+`.agents/skills/voyager-dev/reviewer/review/references/layer-and-segment-rules.md`
 for package placement. Retain the strict checks above for package reverse
 dependencies, peer internals, unjustified public expansion, and wrapper-only
 compatibility types. Also flag package tests that rely on `@testable import Voyager`

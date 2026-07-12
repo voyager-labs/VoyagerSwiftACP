@@ -10,7 +10,7 @@ schemaVersion: 2
 
 - External and system observation is owned by a feature reducer, with explicit start/stop actions, dependency-backed effects, cancellation ownership, semantic event routing, and focused reducer coverage.
 - Views remain lifecycle/action senders; UI-only local presentation state may remain in the view.
-- This rule is the canonical invariant owner. `.agents/skills/voyager-dev/implementer/observation/SKILL.md` and `.agents/skills/voyager-dev/implementer/observation/references/observation-lifecycle-spec.md` own the migration procedure.
+- This rule is the canonical invariant owner. `../SKILL.md` and `observation-lifecycle-spec.md` own the migration procedure.
 
 ## Default Actions
 

@@ -26,7 +26,7 @@ schemaVersion: 2
 - If touching `apps/macos/**`:
     - Load `30-macos/00-macos-rules.md`
     - Load `30-macos/01-http-and-env.md` for network/env/bootstrap work.
-    - If touching Voyager app, package, host, helper, XPC, or macOS test code, also load `30-macos/03-voyager-app-workflow.md`:
+    - If touching Voyager app, package, host, helper, XPC, or macOS test code, load `.agents/skills/voyager-dev/orchestrator/SKILL.md` and `references/voyager-app-workflow.md`:
         - `apps/macos/Voyager/Voyager/**`
         - `apps/macos/Voyager/VoyagerHelper/**`
         - `apps/macos/Voyager/FilterSearchXPC/**`
