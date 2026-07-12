@@ -8,5 +8,6 @@ Load order:
 2. Domain rules
 3. `99-agent/`
 
-Rules are operational contracts, not human tutorials.
-Keep rules short, imperative, and verifiable.
+Rules are operational contracts, not human tutorials. `99-agent/` contains OMO-overriding task and harness-governance rules numbered sequentially from `00` through `06`.
+
+Use the `rule-authoring` skill when creating or updating `.agents/rules/**`; it owns the v2 schema and placement taxonomy.

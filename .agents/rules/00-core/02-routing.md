@@ -36,8 +36,7 @@ schemaVersion: 2
 - If touching both backend and macOS:
     - Load both backend and macOS domain rules.
 - If docs-only:
-    - Load `99-agent/00-rule-authoring.md` when editing `.agents/rules/**`.
-    - Load `99-agent/02-harness-placement.md` when editing `.agents/skills/**`.
+    - Load skill `rule-authoring` when editing `.agents/rules/**`.
 
 ## Stop Conditions
 

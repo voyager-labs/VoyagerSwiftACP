@@ -39,7 +39,7 @@ Check that all conditions in the patch spec's `adoption_prerequisites` field are
 
 1. Read the `adoption_prerequisites` list from the patch spec.
 2. For each prerequisite, confirm the condition holds (e.g., prior patch adopted, finding no longer reproduces, ≥2 authoritative runs exist).
-3. Confirm `99-agent/09-harness-change-evaluation.md` produced an `adopt` verdict, or that the operator explicitly accepted a documented `defer` with rationale.
+3. Confirm `99-agent/06-harness-change-evaluation.md` produced an `adopt` verdict, or that the operator explicitly accepted a documented `defer` with rationale.
 4. If prerequisites are empty, proceed.
 
 ### 3. Human review checkpoint
