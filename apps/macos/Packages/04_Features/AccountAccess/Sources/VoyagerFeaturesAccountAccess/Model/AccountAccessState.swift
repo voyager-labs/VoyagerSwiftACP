@@ -202,7 +202,7 @@ public struct AccountAccessState: Equatable {
         case .decodingFailure:
             "Failed to process the response."
         case .unauthorized:
-            "Session expired. Log in again to continue."
+            "Session expired. Sign in again to continue."
         case .unknownGatewayCode:
             "An unexpected error occurred."
         }

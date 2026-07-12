@@ -82,21 +82,21 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
     func testDialogTitleMatchesAuthState() {
         XCTAssertEqual(
             SessionLapseGuardView.dialogTitle(didSignInFail: true),
-            "Session expired. Log in again to continue.",
+            "Session expired. Sign in again to continue.",
         )
         XCTAssertEqual(
             SessionLapseGuardView.dialogTitle(didSignInFail: false),
-            "Log in to continue.",
+            "Sign in to continue.",
         )
     }
 
     func testLoginButtonTitleIsStable() {
-        XCTAssertEqual(SessionLapseGuardView.loginButtonTitle, "Log in")
+        XCTAssertEqual(SessionLapseGuardView.loginButtonTitle, "Sign in")
         XCTAssertEqual(SessionLapseGuardView.accountButtonTitle, "Open account")
     }
 
     func testPrimaryButtonTitleMatchesAccessRecoveryCTA() {
-        XCTAssertEqual(SessionLapseGuardView.primaryButtonTitle(for: .login), "Log in")
+        XCTAssertEqual(SessionLapseGuardView.primaryButtonTitle(for: .login), "Sign in")
         XCTAssertEqual(SessionLapseGuardView.primaryButtonTitle(for: .account), "Open account")
         XCTAssertEqual(SessionLapseGuardView.primaryButtonTitle(for: .retry), "Retry")
         XCTAssertEqual(SessionLapseGuardView.primaryButtonTitle(for: .webPricing), "View pricing")
