@@ -32,7 +32,7 @@ under `rules/` and updating the lefthook scan block accordingly.
 
 ## Execution
 
-- **Automatic**: lefthook pre-push hook runs rules per segment
+- **Automatic**: lefthook pre-commit hook runs rules per segment
     - `common/`, `model/`, `reducer/` → all non-test sources
     - `ui/` → `*/Ui/*.swift` only (avoids false positives in Api/Infrastructure)
 - **Manual**: `mise exec -- ast-grep scan --rule .ast-grep/rules/<segment>/<rule>.yaml`

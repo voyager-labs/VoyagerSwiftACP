@@ -54,6 +54,12 @@ Do NOT read all reference files at once. Load only what the current task needs:
 | "Removing CodeGraph"        | `15-removal.md`                       | All others            |
 | Need tool parameter details | Specific tool file (01-10)            | Others in 01-10       |
 
+## Related Skills
+
+| Skill          | Purpose                                              |
+| -------------- | ---------------------------------------------------- |
+| `code-tooling` | Routing guide for code navigation, search, and build |
+
 ## Prerequisites
 
 - `.codegraph/` index must exist in the project root.
