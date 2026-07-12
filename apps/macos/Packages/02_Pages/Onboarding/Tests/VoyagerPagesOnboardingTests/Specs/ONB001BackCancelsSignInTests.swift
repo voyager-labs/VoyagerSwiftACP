@@ -1,11 +1,26 @@
 import ComposableArchitecture
 import Dependencies
+import VoyagerFeaturesAccountAccess
 @testable import VoyagerPagesOnboarding
 import VoyagerShared
 import XCTest
 
 @MainActor
 final class ONB001BackCancelsSignInTests: XCTestCase {
+    // MARK: - ONB-001-back_cancels_sign_in
+
+    /// ONB-001-back_cancels_sign_in: access step의 Back intent는 canonical sign-in cancellation으로 변환된다.
+    /// wizard navigation은 core에 남기고 sign-in cancellation만 narrow access owner에 전달합니다.
+    /// - 검증 내용: cancel intent가 canonical `AccountAccessAction.cancelSignIn`으로 매핑됩니다.
+    /// - 사전 조건: access unlock 단계에서 sign-in handoff가 진행 중입니다.
+    /// - 기대 결과: Onboarding core는 AccountAccess child action을 저장하거나 직접 전송하지 않습니다.
+    func testBackCancelIntentRoutesToCanonicalAccessAction() {
+        guard case .cancelSignIn = OnboardingAccessIntent.cancelSignIn.accountAccessAction else {
+            XCTFail("cancel intent must route to AccountAccessAction.cancelSignIn")
+            return
+        }
+    }
+
     /// ONB-001-update_onboarding_step_state: access snapshot 없이 후속 진행 상태를 저장해도 기존 access snapshot을 지우지 않는다.
     /// 후속 step 저장이 `accessSnapshot=nil`인 스냅샷을 전달해도 이전 access unlock 근거를 보존하는지 검증합니다.
     /// - 검증 내용: access snapshot 저장 후 nil snapshot 저장 → load 시 accessSnapshot 보존
@@ -47,31 +62,5 @@ final class ONB001BackCancelsSignInTests: XCTestCase {
         XCTAssertTrue(loadedSnapshot.stepState.accessUnlockComplete)
         XCTAssertTrue(loadedSnapshot.stepState.permissionsComplete)
         XCTAssertEqual(loadedSnapshot.accessSnapshot, StateMutation.activeAccessSnapshot)
-    }
-
-    func testGoBackFromAccessUnlockCancelsPendingSignIn() async {
-        var initialState = OnboardingFeature.State()
-        initialState.currentStep = .accessUnlock
-        initialState.welcome.isComplete = true
-        initialState.accessUnlock.isSignInInProgress = true
-        initialState.accessUnlock.handoffPendingState = "pending-state-abc"
-
-        let store = TestStore(initialState: initialState) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = ProgressClient.noOp
-        }
-
-        await store.send(.backTapped) { state in
-            state.currentStep = .welcome
-        }
-
-        await store.receive(\.accessUnlock.cancelSignIn) { state in
-            state.accessUnlock.isSignInInProgress = false
-            state.accessUnlock.didSignInFail = false
-            state.accessUnlock.handoffPendingState = nil
-        }
-
-        await store.finish()
     }
 }

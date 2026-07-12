@@ -244,7 +244,7 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
     private func makeOnboardingWindowClient() -> OnboardingWindowClient {
         let authClients = makeAuthClients()
 
-        return OnboardingWindowClient.makeLive(
+        return OnboardingWindowClient.makeStandaloneHost(
             openMainWindow: { _ in
                 await MainActor.run {
                     NSApp.terminate(nil)

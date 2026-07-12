@@ -20,6 +20,7 @@ let kPackage = Package(
         .package(url: "https://github.com/pointfreeco/swift-concurrency-extras", exact: "1.3.2"),
         .package(url: "https://github.com/pointfreeco/swift-dependencies", exact: "1.10.0"),
         .package(url: "https://github.com/pointfreeco/swift-identified-collections", exact: "1.1.1"),
+        .package(url: "https://github.com/pointfreeco/swift-navigation", exact: "2.8.0"),
         .package(url: "https://github.com/pointfreeco/swift-perception", exact: "2.0.8"),
     ],
     targets: [
@@ -36,7 +37,7 @@ let kPackage = Package(
                 .product(name: "ConcurrencyExtras", package: "swift-concurrency-extras"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
-                .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
+                .product(name: "SwiftNavigation", package: "swift-navigation"),
                 .product(name: "Perception", package: "swift-perception"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
             ],

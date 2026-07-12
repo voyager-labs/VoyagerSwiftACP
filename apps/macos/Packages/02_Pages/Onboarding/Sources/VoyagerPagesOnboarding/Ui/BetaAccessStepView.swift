@@ -8,6 +8,11 @@ struct AccessStepView: View {
     let store: StoreOf<AccountAccessFeature>
 
     var body: some View {
-        UnlockAccessStepView(store: store)
+        UnlockAccessStepView(
+            store: store.scope(
+                state: OnboardingAccessProjection.init(accountAccess:),
+                action: { (intent: OnboardingAccessIntent) in intent.accountAccessAction },
+            ),
+        )
     }
 }
