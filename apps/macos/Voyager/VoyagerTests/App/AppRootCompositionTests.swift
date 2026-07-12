@@ -600,6 +600,7 @@ final class AppRootCompositionTests: XCTestCase {
         }
         let appDelegate = AppDelegate()
         appDelegate.configure(appRootStore: store)
+        appDelegate.callbackScheme = "voyager" // Prod identity for test focus
         appDelegate.resolveAuthCallbackRouting = { _ in true }
 
         let url = try XCTUnwrap(URL(string: "voyager://auth/callback?code=abc"))
@@ -621,6 +622,7 @@ final class AppRootCompositionTests: XCTestCase {
         }
         let appDelegate = AppDelegate()
         appDelegate.configure(appRootStore: store)
+        appDelegate.callbackScheme = "voyager" // Prod identity for test focus
         appDelegate.resolveAuthCallbackRouting = { _ in false }
 
         let url = try XCTUnwrap(URL(string: "voyager://auth/callback?code=abc"))
@@ -642,6 +644,7 @@ final class AppRootCompositionTests: XCTestCase {
         }
         let appDelegate = AppDelegate()
         appDelegate.configure(appRootStore: store)
+        appDelegate.callbackScheme = "voyager" // Prod identity for test focus
 
         try appDelegate.application(NSApp, open: [XCTUnwrap(URL(string: "https://example.com"))])
         appDelegate.application(NSApp, open: [])
@@ -649,6 +652,117 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertTrue(box.actions.isEmpty)
 
         let deepLink = try XCTUnwrap(URL(string: "voyager://open"))
+        appDelegate.application(NSApp, open: [deepLink])
+
+        let routed = box.actions.contains { action in
+            if case let .receiveExternalURL(received) = action {
+                return received == deepLink
+            }
+            return false
+        }
+        XCTAssertTrue(routed)
+    }
+
+    // MARK: - Scheme acceptance (Dev/Prod)
+
+    /// Dev callbackScheme에서 voyager-dev:// auth/callback이 routeAuthCallback으로 라우팅되는지 검증
+    func testAppDelegateWithDevSchemeAcceptsVoyagerDevCallback() throws {
+        let box = ActionBox<AppRootAction>()
+        let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
+            _ActionRecordingAppRoot(box: box)
+        }
+        let appDelegate = AppDelegate()
+        appDelegate.configure(appRootStore: store)
+        appDelegate.callbackScheme = "voyager-dev"
+        appDelegate.resolveAuthCallbackRouting = { _ in false }
+
+        let url = try XCTUnwrap(URL(string: "voyager-dev://auth/callback?code=abc"))
+        appDelegate.application(NSApp, open: [url])
+
+        let routed = box.actions.contains { action in
+            if case let .lifecycle(.accountAccess(.loginCallbackReceived(received))) = action {
+                return received == url
+            }
+            return false
+        }
+        XCTAssertTrue(routed)
+    }
+
+    /// Dev callbackScheme에서 voyager:// URL은 무시되는지 검증 (cross-scheme rejection)
+    func testAppDelegateWithDevSchemeRejectsVoyagerURL() throws {
+        let box = ActionBox<AppRootAction>()
+        let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
+            _ActionRecordingAppRoot(box: box)
+        }
+        let appDelegate = AppDelegate()
+        appDelegate.configure(appRootStore: store)
+        appDelegate.callbackScheme = "voyager-dev"
+
+        let voyagerURL = try XCTUnwrap(URL(string: "voyager://auth/callback?code=abc"))
+        appDelegate.application(NSApp, open: [voyagerURL])
+
+        let anyExternalAction = box.actions.contains { action in
+            if case .receiveExternalURL = action { return true }
+            if case .lifecycle(.accountAccess(.loginCallbackReceived)) = action { return true }
+            return false
+        }
+        XCTAssertFalse(anyExternalAction)
+    }
+
+    /// Prod callbackScheme에서 voyager-dev:// URL은 무시되는지 검증 (cross-scheme rejection)
+    func testAppDelegateWithProdSchemeRejectsVoyagerDevURL() throws {
+        let box = ActionBox<AppRootAction>()
+        let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
+            _ActionRecordingAppRoot(box: box)
+        }
+        let appDelegate = AppDelegate()
+        appDelegate.configure(appRootStore: store)
+        appDelegate.callbackScheme = "voyager"
+
+        let devURL = try XCTUnwrap(URL(string: "voyager-dev://auth/callback?code=abc"))
+        appDelegate.application(NSApp, open: [devURL])
+
+        let anyExternalAction = box.actions.contains { action in
+            if case .receiveExternalURL = action { return true }
+            if case .lifecycle(.accountAccess(.loginCallbackReceived)) = action { return true }
+            return false
+        }
+        XCTAssertFalse(anyExternalAction)
+    }
+
+    /// Prod callbackScheme에서 voyager:// deep link는 정상 라우팅되는지 검증
+    func testAppDelegateWithProdSchemeAcceptsVoyagerDeepLink() throws {
+        let box = ActionBox<AppRootAction>()
+        let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
+            _ActionRecordingAppRoot(box: box)
+        }
+        let appDelegate = AppDelegate()
+        appDelegate.configure(appRootStore: store)
+        appDelegate.callbackScheme = "voyager"
+
+        let deepLink = try XCTUnwrap(URL(string: "voyager://open"))
+        appDelegate.application(NSApp, open: [deepLink])
+
+        let routed = box.actions.contains { action in
+            if case let .receiveExternalURL(received) = action {
+                return received == deepLink
+            }
+            return false
+        }
+        XCTAssertTrue(routed)
+    }
+
+    /// Dev callbackScheme에서 voyager-dev:// deep link는 정상 라우팅되는지 검증
+    func testAppDelegateWithDevSchemeAcceptsVoyagerDevDeepLink() throws {
+        let box = ActionBox<AppRootAction>()
+        let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
+            _ActionRecordingAppRoot(box: box)
+        }
+        let appDelegate = AppDelegate()
+        appDelegate.configure(appRootStore: store)
+        appDelegate.callbackScheme = "voyager-dev"
+
+        let deepLink = try XCTUnwrap(URL(string: "voyager-dev://open"))
         appDelegate.application(NSApp, open: [deepLink])
 
         let routed = box.actions.contains { action in

@@ -17,6 +17,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         VoyagerPagesOnboarding.routeAuthCallbackToOnboardingIfPresent(url)
     }
 
+    /// 현재 앱 신원에 맞는 callback scheme. 테스트에서 override하여 Dev/Prod 동작 검증.
+    /// AppHandoffTarget으로 런타임 bundle ID 기반 결정.
+    var callbackScheme: String = AppHandoffTarget.liveValue.callbackScheme
+
     override init() {
         super.init()
     }
@@ -26,6 +30,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillFinishLaunching(_: Notification) {
+        // 현재 앱 신원에 맞는 scheme으로 ExternalFileRouter 초기화
+        let scheme = AppHandoffTarget.liveValue.callbackScheme
+        withAppRootStore {
+            $0.send(.externalFileRouter(.setExpectedScheme(scheme)))
+        }
         UpdaterClient.registerRelaunchHandlers(
             prepareForRelaunch: {
                 await VoyagerTerminationCoordinator.shared.begin(.sparkleRelaunch)
@@ -94,7 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func routeOpenedURL(_ url: URL, to store: StoreOf<AppRootFeature>) {
         switch url.scheme?.lowercased() {
-        case "voyager":
+        case callbackScheme.lowercased():
             if isAuthCallback(url) {
                 routeAuthCallback(url)
             } else {

@@ -5,11 +5,12 @@ import Foundation
 /// Bundle.main 식별자로 런타임에 감지하며, app_target query와 callback scheme을 결정한다.
 public enum AppHandoffTarget: Sendable, Equatable, DependencyKey {
     case voyager
+    case voyagerDev
     case onboardingHost
 
     nonisolated public static var liveValue: AppHandoffTarget {
         let bundleId = Bundle.main.bundleIdentifier ?? ""
-        return bundleId.contains("OnboardingHost") ? .onboardingHost : .voyager
+        return resolve(bundleId: bundleId)
     }
 
     nonisolated public static var testValue: AppHandoffTarget {
@@ -24,6 +25,7 @@ public enum AppHandoffTarget: Sendable, Equatable, DependencyKey {
     public var rawValue: String {
         switch self {
         case .voyager: "voyager"
+        case .voyagerDev: "voyager_dev"
         case .onboardingHost: "onboarding_host"
         }
     }
@@ -32,7 +34,22 @@ public enum AppHandoffTarget: Sendable, Equatable, DependencyKey {
     public var callbackScheme: String {
         switch self {
         case .voyager: "voyager"
+        case .voyagerDev: "voyager-dev"
         case .onboardingHost: "voyager-onboarding-host"
+        }
+    }
+
+    /// 정확한 bundle identifier로 AppHandoffTarget을 결정한다.
+    /// - fm.voyager.Voyager.dev → .voyagerDev
+    /// - fm.voyager.Voyager → .voyager
+    /// - fm.voyager.OnboardingHost → .onboardingHost
+    /// - 그 외 → .voyager (fallback)
+    public static func resolve(bundleId: String) -> AppHandoffTarget {
+        switch bundleId {
+        case "fm.voyager.Voyager.dev": .voyagerDev
+        case "fm.voyager.Voyager": .voyager
+        case "fm.voyager.OnboardingHost": .onboardingHost
+        default: .voyager
         }
     }
 }
