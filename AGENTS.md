@@ -34,6 +34,7 @@ mise tasks
 - Treat `opencode.json` as a user-managed local file.
 - Never automatically reset, revert, or discard changes in `opencode.json`.
 - Never include `opencode.json` in commits unless the user explicitly asks for it.
+- `.env.prod` is copied into the Release app bundle. Never include secrets in `.env.prod`.
 
 ## Core policies
 
