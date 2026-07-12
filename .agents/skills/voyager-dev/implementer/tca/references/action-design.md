@@ -213,6 +213,44 @@ Reduce { state, action in
 }
 ```
 
+## Recovery enum — 종단 delegate 경계 패턴
+
+네트워크 상태 기계를 가지는 feature에서 내부 retry 스케줄링과 종단 복구 결과를 분리하는 패턴. 내부 retry는 private, 최종 복구 결과만 semantic `Recovery` enum으로 delegate 전송한다.
+
+```swift
+// Child feature action
+enum Action {
+    case delegate(Delegate)
+
+    enum Delegate: CasePathable {
+        case unlocked(AccessStatusSnapshot)
+        case recoveryRequired(Recovery)  // 종단 복구 경계
+        case signedOut
+    }
+}
+
+// Recovery — semantic 복구 사유 (내부 retry 상태 아님)
+@CasePathable
+enum Recovery: Equatable, Sendable {
+    case sessionRequired
+    case snapshot(AccessStatusSnapshot)
+    case accessFailure(error: AccessError, sessionExpiresAt: Date?)
+    case deviceBindingFailure(snapshot: AccessStatusSnapshot, error: DeviceBindingError)
+}
+```
+
+부모는 `@CasePathable` 매칭으로 `.delegate(.recoveryRequired)`를 catch-all로 처리한다. 모든 하위 사유(sessionRequired, snapshot, accessFailure, deviceBindingFailure)가 하나의 case로 매칭된다.
+
+```swift
+// Parent — catch-all로 모든 recovery 사유 처리
+case .accountAccess(.delegate(.recoveryRequired)):
+    state.currentStep = .accessUnlock  // 모든 복구 사유 → 동일한 rollback
+```
+
+**언제 사용하나:** feature가 네트워크 요청 + retry budget + 복구 UI를 모두 가질 때. retry 횟수나 backoff 정책이 바뀌어도 부모 delegate contract는 변경되지 않는다.
+
+> **출처:** PR #329 Task 2. `kw-20260712-recovery-enum-delegate`
+
 ## 관련 문서
 
 - `state-modeling.md` -- State 설계 원칙

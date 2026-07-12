@@ -92,6 +92,25 @@ If the spec ID is the same in both targets, a grep for the spec ID should find t
 ## TCA TestStore patterns
 
 - Use `TestStore(initialState:) { Reducer() } withDependencies: { ... }` for deterministic mock injection. Test both state mutations (in `send` closure) and received effects (`store.receive`). Use `.off` exhaustivity for complex reducer flows with computed properties.
+- `skipInFlightEffects()`는 effect 처리 중 새로 생성된 downstream effect를 **재귀적으로 처리하지 않는다**. 다단계 effect chain에서는 각 downstream effect를 명시적으로 `receive`해야 한다.
+
+### skipInFlightEffects 한계 및 대응
+
+`skipInFlightEffects()`는 현재 대기 중인 effect만 처리한다. effect 실행 중 새로 생성된 effect는 자동으로 처리되지 않는다.
+
+```swift
+// 다단계 chain: unlock delegate → openInitialWindowIfNeeded → externalFileRouter.receive
+// BAD: skipInFlightEffects로는 externalFileRouter.receive를 잡을 수 없음
+await store.send(.lifecycle(.accountAccess(.delegate(.unlocked(snapshot)))))
+store.skipInFlightEffects()  // ← openInitialWindowIfNeeded까지만 처리
+
+// GOOD: 각 downstream effect를 명시적으로 receive
+await store.send(.lifecycle(.accountAccess(.delegate(.unlocked(snapshot)))))
+await store.receive(\.lifecycle.delegate.openInitialWindowIfNeeded)
+await store.receive(\.externalFileRouter.receive)  // ← 명시적 receive
+```
+
+> **출처:** PR #329 Task 5. `kw-20260712-tca-teststore-skipinflighteffects`
 
 ## Dependency testing rules
 
@@ -120,6 +139,20 @@ If the spec ID is the same in both targets, a grep for the spec ID should find t
 ## Helper Extraction for Test Maintenance
 
 When test files grow large with repeated dependency setup, extract helpers to reduce duplication and improve readability.
+
+### SwiftLint file_length / type_body_length 위반 대응
+
+spec 테스트 파일이 SwiftLint `file_length`(기본 400줄) 또는 `type_body_length`(기본 300줄) 위반 시, suppression comment 없이 3가지로 대응한다. repo 정책상 per-edit suppression(`swiftlint:disable` 등)은 금지이다.
+
+| 우선순위     | 방식                            | 설명                                                                                                                                       |
+| ------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **A (권장)** | Support/ 폴더로 helper 추출     | `setUp`, fixture builder, mutation helper를 `Tests/.../Support/` 파일로 추출하여 class body 축소. 기존 `StateMutation.swift` 패턴과 일관됨 |
+| **B (차선)** | 별개 테스트 클래스로 spec 분할  | `ONB001RestorationTests: XCTestCase` 처럼 별개 클래스로 분할. spec ID는 유지하되 테스트 클래스를 나눔                                      |
+| **C (정책)** | `.swiftlint.yml` threshold 상향 | `file_length: 1200` 등 limit 자체 상향. project-wide policy change이므로 user 명시적 승인 필요                                             |
+
+extension 파일 분할(`+Subtopic.swift`)도 동작하지만, 같은 타입을 여러 파일에 분산시켜 가독성이 떨어질 수 있다. Support 추출을 우선 시도할 것.
+
+> **출처:** PR #329 Task 8. `kw-20260712-swiftlint-file-length-type-body-length-spec`
 
 ### When to extract
 

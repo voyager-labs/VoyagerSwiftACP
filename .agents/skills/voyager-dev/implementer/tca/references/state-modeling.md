@@ -150,6 +150,41 @@ var body: some Reducer<State, Action> {
 // scope closure는 외부 상태를 참조하지 않고 State만 사용해야 함
 ```
 
+## 비옵셔널 child + 옵셔널 projection 패턴 (Guard Overlay)
+
+비옵셔널 canonical child state를 유지하면서 조건부 view 마운팅이 필요한 경우, computed 옵셔널 projection을 사용한다. 이 패턴은 `IfLetStore`가 항상 렌더링되는 문제를 해결한다.
+
+**문제:** 비옵셔널 `Store<Child.State, Child.Action>`을 `IfLetStore`에 직접 연결하면 store가 항상 non-nil이므로 overlay가 항상 렌더링된다.
+
+**해결:** 부모 State에는 비옵셔널 child를 유지하고, computed property로 phase에 따라 옵셔널을 반환한다.
+
+```swift
+@ObservableState
+struct State {
+    var accessGatePhase: AccessGatePhase = .unresolved
+    var accountAccess: AccountAccessFeature.State = .init()  // 비옵셔널 canonical child
+}
+
+// phase에 따라 옵셔널 projection
+var presentedAccountAccess: AccountAccessFeature.State? {
+    switch accessGatePhase {
+    case .recoveryRequired, .signedOut:
+        accountAccess  // guard가 필요한 phase에서만 반환
+    case .unresolved, .checking, .granted, .terminating:
+        nil            // otherwise nil
+    }
+}
+```
+
+```swift
+// View에서 scope 시 projection 사용
+appRootStore.scope(state: \.lifecycle.presentedAccountAccess, action: \.lifecycle.accountAccess)
+```
+
+**주의:** FileManager 등 외부 API는 `Store<Child.State?, Child.Action>` 옵셔널 semantic을 유지해야 `IfLetStore`가 정상 동작한다. 부모의 비옵셔널 child와 외부 옵셔널 store 사이의 bridge가 이 projection이다.
+
+> **출처:** PR #329 Task 3 QA fix. `kw-20260712-tca-optional-projection-guard-overlay`
+
 ## 관련 문서
 
 - `action-design.md` -- State 변화를 유발하는 action 설계

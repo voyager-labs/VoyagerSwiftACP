@@ -187,6 +187,46 @@ case .startMonitoring:
     }
 ```
 
+## Reducer 합성 순서 — Scope을 Reduce 앞에
+
+여러 reducer를 합성할 때 `Scope(state:action:)`은 부모 `Reduce`보다 **반드시 먼저** 배치해야 한다. 그래야 부모의 delegate handler가 자식 reducer 실행 후의 갱신된 상태를 관찰할 수 있다.
+
+TCA effect ordering 규칙:
+
+- `Scope` effect가 `Reduce` effect보다 **먼저** 반환된다.
+- 자식 reducer가 `.delegate(.recoveryRequired(...))` 같은 delegate action을 전송하면, 부모 `Reduce`가 그 delegate를 받아 처리한다.
+- `Scope`이 `Reduce` 뒤에 있으면 delegate handler가 stale child state를 읽게 된다.
+
+```swift
+// GOOD: Scope이 먼저, Reduce가 나중
+var body: some Reducer<State, Action> {
+    Scope(state: \.accountAccess, action: \.accountAccess) {
+        AccountAccessFeature()
+    }
+    Reduce { state, action in
+        switch action {
+        case .accountAccess(.delegate(.unlocked(let snapshot))):
+            // 자식 reducer가 이미 상태를 갱신한 후 이 handler가 실행됨
+            state.accessGatePhase = .granted
+            return .send(.delegate(.openInitialWindowIfNeeded))
+        default:
+            return .none
+        }
+    }
+}
+```
+
+TestStore에서 다단계 delegate chain을 테스트할 때도 이 순서가 반영된다. 자식 action(delegate 포함)을 부모 routing action보다 먼저 `receive`해야 한다.
+
+```swift
+// 다단계 chain: session expired → child가 delegate 전송 → 부모가 phase 변경
+await store.send(.lifecycle(.accountAccess(._sessionExpiredDetected)))
+await store.receive(\.lifecycle.accountAccess.delegate.recoveryRequired)  // 자식 delegate 먼저
+await store.receive(\.lifecycle.delegate.signedOutPhaseSet)               // 그 다음 부모 routing
+```
+
+> **출처:** PR #329 Task 3-4. `kw-20260712-tca-reducer-scope-reduce`
+
 ## 관련 문서
 
 - `action-design.md` -- Effect 결과를 받을 action 설계
