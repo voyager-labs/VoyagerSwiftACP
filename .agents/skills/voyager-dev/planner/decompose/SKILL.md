@@ -14,6 +14,6 @@ metadata:
 
 1. Build an owner table for state, actions, effects, cancellation, lifecycle, and child routing before editing.
 2. Load `references/orchestrator-spec.md` plus TCA references from `../../implementer/tca-contract/references/`.
-3. Add `../../implementer/references/testing-playbook.md` when routing or reducer tests change.
+3. Add `../../implementer/spec-test-authoring/references/testing-playbook.md` when routing or reducer tests change.
 4. Emit the parent/child reducer split, action boundary, cancellation owner, and focused test surface.
 5. Do not split purely for file-count reduction; split only when ownership becomes clearer.

@@ -22,7 +22,7 @@ Route through this namespace for:
 
 - `orchestrator/` — task classification, routing, integration, and structure validation.
 - `planner/` — scaffold, decompose, and reuse-evaluation planning.
-- `implementer/` — TCA contract, observation, and spec AC test authoring mechanics; load `references/testing-playbook.md` for Voyager test selection and failure analysis.
+- `implementer/` — TCA contract, observation, and spec AC test authoring mechanics; load `spec-test-authoring/references/testing-playbook.md` for Voyager test selection and failure analysis.
 - `reviewer/` — architecture-gate and boundary review.
 - Role `references/` directories — canonical Voyager-dev references owned by the role that uses them most directly. Do not duplicate long policy text across roles.
 

@@ -4,11 +4,11 @@ description: Guides Voyager macOS Swift/TCA spec AC test authoring and topology.
 compatibility: opencode
 metadata:
     parent_skill: voyager-dev
-    role: verifier
+    role: implementer
     shape: spec-test-authoring
 ---
 
-# Voyager Dev Spec Test Authoring
+# Voyager Dev Spec Test Authoring (Implementer)
 
 ## Core rule
 
@@ -25,7 +25,7 @@ One spec = one owning test suite named `<SpecID><PascalCaseSpecTitle>Tests.swift
 7. Before every executable interaction test method, write a `///` doc comment using the required traceability shape: first line `<SPEC-ID>-<interaction_id>: <scenario>`, then one intent sentence, then `- 검증 내용`, `- 사전 조건`, and `- 기대 결과` bullets.
 8. Put fixtures, recorders, dependency doubles, builders, and helper assertions under `Support/`; support files must not own product behavior.
 9. For entry-manipulation, entry collection, `.voycoll`, or entry path-display specs, apply `.agents/rules/30-macos/09-entry-fixture-source.md` as the canonical fixture contract.
-10. After authoring, load `../references/testing-playbook.md` for focused command selection, execution, failure analysis, and reruns; the initial filter should target the suite class such as `--filter <SpecID><PascalCaseSpecTitle>Tests`, not the test target name.
+10. After authoring, load `references/testing-playbook.md` for focused command selection, execution, failure analysis, and reruns; the initial filter should target the suite class such as `--filter <SpecID><PascalCaseSpecTitle>Tests`, not the test target name.
 11. When an interaction doc has `status: "planned"` but the AC is not yet implemented, load `references/incomplete-interaction-protocol.md` for the XCTSkip placeholder pattern, doc status → test action mapping, and lifecycle rules. Do not write XCTSkip for `"drafted"`, `"deprecated"`, or `[DECISION NEEDED]` interactions.
 
 ## Second-pass rules

@@ -172,4 +172,4 @@ or refreshes, add at least one focused regression test for the race that matters
 
 ## Scope boundary
 
-This reference covers TestStore authoring mechanics and gotchas. For test execution commands, failure analysis, rerun loops, and dependency testing rules, load `../../testing/references/testing-playbook.md`.
+This reference covers TestStore authoring mechanics and gotchas. For test execution commands, failure analysis, rerun loops, and dependency testing rules, load `testing-playbook.md`.
