@@ -20,12 +20,9 @@ schemaVersion: 2
 ## Decision Rules
 
 - If touching `apps/backend/**`:
-    - Load `20-backend/00-backend-rules.md`
-    - Load `20-backend/01-api-and-schemas.md`
-    - Load `20-backend/02-migrations-and-config.md` when config/db changes.
+    - Load domain rules.
 - If touching `apps/macos/**`:
-    - Load `30-macos/00-macos-rules.md`
-    - Load `30-macos/01-http-and-env.md` for network/env/bootstrap work.
+    - Load domain rules.
     - If touching Voyager app, package, host, helper, XPC, or macOS test code, load `.agents/skills/voyager-dev/orchestrator/SKILL.md` and `references/voyager-app-workflow.md`:
         - `apps/macos/Voyager/Voyager/**`
         - `apps/macos/Voyager/VoyagerHelper/**`
