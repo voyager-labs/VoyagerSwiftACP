@@ -110,6 +110,7 @@ extension OnboardingWindowClient: DependencyKey {
         permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
         showWindow customShowWindow: (@Sendable () async -> Void)? = nil,
         closeWindow customCloseWindow: (@Sendable () async -> Void)? = nil,
+        presentationAttemptCompleted: @escaping @Sendable () -> Void = {},
         isForceOnboardingEnabled: Bool = false,
         isForceFullDiskAccessGrantedEnabled: Bool = false,
     ) -> OnboardingWindowClient {
@@ -152,10 +153,10 @@ extension OnboardingWindowClient: DependencyKey {
 
                 if required {
                     Task {
-                        if await presentationGate.claimPresentation() {
-                            forceOnboarding.withValue { $0 = false }
-                            await showWindow()
-                        }
+                        defer { presentationAttemptCompleted() }
+                        guard await presentationGate.claimPresentation() else { return }
+                        forceOnboarding.withValue { $0 = false }
+                        await showWindow()
                     }
                 }
                 return required
