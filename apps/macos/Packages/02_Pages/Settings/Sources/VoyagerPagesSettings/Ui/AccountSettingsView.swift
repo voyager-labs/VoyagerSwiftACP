@@ -111,6 +111,19 @@ struct AccountSettingsView: View {
                     .foregroundStyle(.green)
             }
 
+        case .entitlementUnavailable:
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+                Text("License status unavailable")
+                    .foregroundStyle(.orange)
+                Spacer()
+                Button("Retry") {
+                    store.send(.access(.retryTapped))
+                }
+            }
+
         case .entitlementInactive:
             HStack(spacing: 8) {
                 Image(systemName: "xmark.circle.fill")

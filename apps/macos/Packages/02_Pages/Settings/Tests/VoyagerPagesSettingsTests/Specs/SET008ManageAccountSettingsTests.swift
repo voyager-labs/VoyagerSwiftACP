@@ -559,3 +559,189 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
         XCTAssertEqual(store.state.accountSettings.setAuthState, .signedOut)
     }
 }
+
+extension SET008ManageAccountSettingsTests {
+    // MARK: - SET-008-show_account_status
+
+    /// SET-008-show_account_status: signed-in network failure는 entitlement unavailable로 표시한다.
+    /// 로그인 세션이 유지된 상태에서 일시적인 entitlement 조회 실패가 License Inactive로 오인되지 않는지 검증한다.
+    /// - 검증 내용: `.networkFailure`는 `.entitlementUnavailable`로, nil은 `.entitlementUnknown`으로 매핑됨
+    /// - 사전 조건: AccountAccess 세션이 있고 status는 `.networkFailure` 또는 nil임
+    /// - 기대 결과: signed-in 상태를 유지하며 network failure만 unavailable 상태가 됨
+    func testNetworkFailureMapsToEntitlementUnavailableWhileSignedIn() {
+        var state = AccountSettingsState()
+        state.access.hasAccountSession = true
+        state.access.status = .networkFailure
+
+        XCTAssertEqual(state.setAuthState, .signedIn)
+        XCTAssertEqual(state.setEntitlementState, .entitlementUnavailable)
+
+        state.access.status = nil
+        XCTAssertEqual(state.setEntitlementState, .entitlementUnknown)
+    }
+
+    /// SET-008-show_account_status: unavailable 상태의 Retry는 기존 AccountAccess 조회 effect를 전송한다.
+    /// 사용자가 unavailable 행에서 재시도할 때 별도 Settings action 없이 AccountAccess fetch가 실행되는지 검증한다.
+    /// - 검증 내용: `.access(.retryTapped)`가 fetch generation을 증가시키고 auth network를 한 번 호출함
+    /// - 사전 조건: signed-in AccountAccess status가 `.networkFailure`이고 retry 가능한 entitlement 조회 client가 주입됨
+    /// - 기대 결과: 기존 AccountAccess effect가 실행되고 fetch generation이 1이 됨
+    func testRetryTappedDispatchesAccessStatusFetchEffect() async {
+        let fetchCallCount = LockIsolated(0)
+        var initialState = AccountSettingsState()
+        initialState.access.hasAccountSession = true
+        initialState.access.status = .networkFailure
+
+        let store = TestStore(initialState: initialState) {
+            AccountSettingsFeature()
+        } withDependencies: {
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: {
+                    fetchCallCount.withValue { $0 += 1 }
+                    return AccessStatusResponse(
+                        hasAccess: false,
+                        status: AccessStatus.revoked.rawValue,
+                        reason: "revoked",
+                        productKey: "core",
+                        source: "polar",
+                    )
+                },
+                bindDevice: { _ in throw DeviceBindingError.invalidDevicePayload },
+                refreshToken: { throw AccessError.notConfigured },
+            )
+            $0.accessStatusSnapshotClient.save = { _ in }
+        }
+        // store.exhaustivity = .off: child AccountAccess의 fetch 완료와 delegate 전달은 이 테스트의 상태 전이 범위를 벗어남
+        store.exhaustivity = .off
+
+        await store.send(.access(.retryTapped))
+        await store.finish()
+
+        XCTAssertEqual(fetchCallCount.value, 1)
+        XCTAssertEqual(store.state.access.fetchGeneration, 1)
+    }
+
+    /// SET-008-show_account_status: Retry 성공 응답은 entitlement active 표시로 복구한다.
+    /// unavailable 상태의 사용자가 재시도 후 활성 entitlement를 받으면 Settings 표시가 즉시 활성 상태로 바뀌는지 검증한다.
+    /// - 검증 내용: retry fetch와 device binding 완료가 `.entitlementActive` display mapping으로 귀결됨
+    /// - 사전 조건: signed-in AccountAccess status가 `.networkFailure`이고 활성 응답, 성공 binding client, 유효 UUID identity가 주입됨
+    /// - 기대 결과: retry 완료 후 status는 `.coreLicenseActive`이고 entitlement 표시는 active가 됨
+    func testRetryRecoversToActiveEntitlement() async {
+        let response = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            source: "polar",
+        )
+        XCTAssertEqual(response.toAccessStatus(), .coreLicenseActive)
+
+        var initialState = AccountSettingsState()
+        initialState.access.hasAccountSession = true
+        initialState.access.status = .networkFailure
+
+        let store = TestStore(initialState: initialState) {
+            AccountSettingsFeature()
+        } withDependencies: {
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { response },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
+                refreshToken: { throw AccessError.notConfigured },
+            )
+            $0.accessStatusSnapshotClient.save = { _ in }
+            $0.deviceIdentityClient = DeviceIdentityClient(
+                deviceId: { "00000000-0000-4000-8000-000000000001" },
+            )
+        }
+        // store.exhaustivity = .off: child AccountAccess의 device binding과 delegate 내부 action은 display 회귀의 직접 검증 대상이 아님
+        store.exhaustivity = .off
+
+        await store.send(.access(.retryTapped))
+        await store.finish()
+
+        XCTAssertEqual(store.state.access.status, .coreLicenseActive)
+        XCTAssertEqual(store.state.setEntitlementState, .entitlementActive)
+    }
+
+    /// SET-008-show_account_status: Retry의 authoritative inactive 응답은 License Inactive로 복구한다.
+    /// 네트워크 실패와 실제 inactive entitlement를 분리해, 재시도 후 확정된 inactive 상태가 유지되는지 검증한다.
+    /// - 검증 내용: none, trialExpired, revoked, refunded 응답이 모두 `.entitlementInactive`로 매핑됨
+    /// - 사전 조건: signed-in AccountAccess status가 `.networkFailure`이고 각 authoritative inactive status 응답이 주입됨
+    /// - 기대 결과: 각 retry 완료 후 원본 inactive status와 License Inactive display mapping이 보존됨
+    func testRetryRecoversToAuthoritativeInactiveEntitlements() async {
+        for testCase in inactiveEntitlementResponses() {
+            let response = testCase.response
+            XCTAssertEqual(response.toAccessStatus(), testCase.expectedStatus)
+
+            var initialState = AccountSettingsState()
+            initialState.access.hasAccountSession = true
+            initialState.access.status = .networkFailure
+
+            let store = TestStore(initialState: initialState) {
+                AccountSettingsFeature()
+            } withDependencies: {
+                $0.authNetworkClient = AuthNetworkClient(
+                    exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                    fetchAccessStatus: { response },
+                    bindDevice: { _ in throw DeviceBindingError.invalidDevicePayload },
+                    refreshToken: { throw AccessError.notConfigured },
+                )
+                $0.accessStatusSnapshotClient.save = { _ in }
+            }
+            // store.exhaustivity = .off: inactive snapshot 저장과 recovery delegate는 display mapping assertion에 영향 없음
+            store.exhaustivity = .off
+
+            await store.send(.access(.retryTapped))
+            await store.finish()
+
+            XCTAssertEqual(store.state.access.status, testCase.expectedStatus)
+            XCTAssertEqual(store.state.setEntitlementState, .entitlementInactive)
+        }
+    }
+
+    private func inactiveEntitlementResponses() -> [(response: AccessStatusResponse, expectedStatus: AccessStatus)] {
+        [
+            (
+                AccessStatusResponse(
+                    hasAccess: false,
+                    status: "inactive",
+                    reason: "inactive",
+                    productKey: "core",
+                    source: "polar",
+                ),
+                .none,
+            ),
+            (
+                AccessStatusResponse(
+                    hasAccess: false,
+                    status: "expired",
+                    reason: "expired",
+                    productKey: "trial",
+                    source: "polar",
+                ),
+                .trialExpired,
+            ),
+            (
+                AccessStatusResponse(
+                    hasAccess: false,
+                    status: "revoked",
+                    reason: "revoked",
+                    productKey: "core",
+                    source: "polar",
+                ),
+                .revoked,
+            ),
+            (
+                AccessStatusResponse(
+                    hasAccess: false,
+                    status: "refunded",
+                    reason: "refunded",
+                    productKey: "core",
+                    source: "polar",
+                ),
+                .refunded,
+            ),
+        ]
+    }
+}

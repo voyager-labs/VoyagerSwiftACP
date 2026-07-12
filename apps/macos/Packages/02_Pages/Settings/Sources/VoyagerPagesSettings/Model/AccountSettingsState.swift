@@ -10,9 +10,10 @@ public enum SetAuthState: Equatable, Sendable {
     case signInFailed
 }
 
-/// SET-008 entitlement status 표시용 상태 (3 states)
+/// SET-008 entitlement status 표시용 상태 (4 states)
 public enum SetEntitlementState: Equatable, Sendable {
     case entitlementUnknown
+    case entitlementUnavailable
     case entitlementActive
     case entitlementInactive
 }
@@ -36,10 +37,11 @@ public struct AccountSettingsState: Equatable {
     }
 
     /// SET-008 surface entitlement 상태 매핑 (read-only display mapping).
-    /// ACC-002 entitlement 상태를 SET의 3개 user-visible status로 변환한다.
+    /// ACC-002 entitlement 상태를 SET의 4개 user-visible status로 변환한다.
     public var setEntitlementState: SetEntitlementState {
         guard let status = access.status else { return .entitlementUnknown }
         if status.isActive { return .entitlementActive }
+        if status == .networkFailure { return .entitlementUnavailable }
         return .entitlementInactive
     }
 
