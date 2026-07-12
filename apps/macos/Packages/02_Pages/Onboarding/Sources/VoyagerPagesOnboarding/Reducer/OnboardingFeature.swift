@@ -261,6 +261,7 @@ struct OnboardingFeature {
         guard let snapshot,
               snapshot.status.isActive,
               snapshot.currentPeriodEnd != nil,
+              !snapshot.isExpired(now: now()),
               snapshot.isDeviceBindingVerified,
               let sessionExpiresAt = snapshot.sessionExpiresAt,
               sessionExpiresAt > now(),

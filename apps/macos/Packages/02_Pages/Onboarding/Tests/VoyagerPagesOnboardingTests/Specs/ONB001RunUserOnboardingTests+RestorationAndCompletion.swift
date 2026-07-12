@@ -515,6 +515,48 @@ extension ONB001RunUserOnboardingTests {
         }
     }
 
+    /// ONB-001-resume_onboarding_session: 만료된 currentPeriodEnd를 가진 access snapshot은 완료된 온보딩 상태를 복원하지 않는다.
+    /// entitlement period가 이미 지난 snapshot이 trusted hydration으로 live 재검증을 건너뛰는 것을 방지하는지 검증합니다.
+    /// - 검증 내용: 과거 `currentPeriodEnd`를 가진 active snapshot은 access completion을 unlock하지 않습니다.
+    /// - 사전 조건: active 상태, 미래 session 만료, 일치하는 binding proof를 가지지만 `currentPeriodEnd`가 현재 시각보다 과거인 AI Provider 단계
+    /// snapshot입니다.
+    /// - 기대 결과: currentStep은 accessUnlock이고 accessUnlockComplete는 false입니다.
+    func testResumeExpiredPeriodSnapshotReturnsToAccessStep() async {
+        let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let snapshot = OnboardingProgressSnapshot(
+            currentStep: .aiProviderSetup,
+            stepState: OnboardingStepState(
+                welcomeComplete: true,
+                accessUnlockComplete: true,
+                permissionsComplete: true,
+                aiProviderSetupComplete: false,
+                completeComplete: false,
+            ),
+            accessSnapshot: AccessStatusSnapshot(
+                status: .coreLicenseActive,
+                currentPeriodEnd: referenceDate.addingTimeInterval(-1),
+                fetchedAt: referenceDate,
+                sessionExpiresAt: referenceDate.addingTimeInterval(3600),
+                deviceBindingVerifiedAt: referenceDate,
+            ),
+        )
+
+        let store = TestStore(initialState: OnboardingFeature.State()) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
+            $0.date = .constant(referenceDate)
+        }
+
+        await store.send(.onAppear) { state in
+            state.currentStep = .accessUnlock
+            state.welcome.isComplete = true
+            state.accessUnlock.isComplete = false
+            state.permissions.isComplete = true
+            state.complete.isComplete = false
+        }
+    }
+
     /// ONB-001-resume_onboarding_session: fetchedAt와 다른 binding proof 시각의 access snapshot은 완료된 온보딩 상태를 복원하지 않는다.
     /// 저장 시점과 binding 검증 시점이 일치하지 않는 proof가 access 완료를 다시 열지 않는지 검증합니다.
     /// - 검증 내용: `deviceBindingVerifiedAt != fetchedAt`인 active snapshot은 access completion을 unlock하지 않습니다.
