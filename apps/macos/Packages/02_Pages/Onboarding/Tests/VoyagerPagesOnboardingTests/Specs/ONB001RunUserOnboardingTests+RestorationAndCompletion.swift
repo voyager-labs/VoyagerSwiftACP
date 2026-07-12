@@ -48,6 +48,114 @@ extension ONB001RunUserOnboardingTests {
         XCTAssertNil(saveRecorder.value?.accessSnapshot)
     }
 
+    /// ONB-001-resume_onboarding_session: legacy access snapshot이 있어도 저장된 미완료 Access step은 완료로 덮어쓰지 않는다.
+    /// legacy snapshot의 복원 컨텍스트를 유지하면서도 persisted completion flag를 정본으로 처리하는지 검증합니다.
+    /// - 검증 내용: `accessUnlockComplete = false`이면 active legacy snapshot이 있어도 accessUnlock에 머물고 fresh revoked 결과로 교체합니다.
+    /// - 사전 조건: permissions 단계가 저장되었지만 Access step은 미완료이며 active legacy access snapshot이 함께 저장되어 있습니다.
+    /// - 기대 결과: `currentStep = .accessUnlock`, `accessUnlockComplete = false`, canonical revoked snapshot이 저장됩니다.
+    func testResumeIncompleteAccessStepPreservesCompletionFlagAndRefreshesLegacySnapshot() async {
+        let testDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
+        let accessSnapshotRecorder = AccessSnapshotRecorder()
+        let fixture = makeIncompleteAccessRestoreFixture(
+            testDate: testDate,
+            saveRecorder: saveRecorder,
+            accessSnapshotRecorder: accessSnapshotRecorder,
+        )
+        let store = fixture.store
+        let revokedSnapshot = fixture.revokedSnapshot
+        // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
+        store.exhaustivity = .off
+
+        await store.send(.onAppear) { state in
+            state.currentStep = .accessUnlock
+            state.welcome.isComplete = true
+            state.accessUnlock.status = .coreLicenseActive
+            state.accessUnlock.snapshot = StateMutation.activeAccessSnapshot
+            state.accessUnlock.hasAccountSession = true
+            state.accessUnlock.sessionExpiresAt = StateMutation.activeSessionExpiry
+            state.accessUnlock.isComplete = false
+            state.permissions.isComplete = false
+            state.complete.isComplete = false
+        }
+
+        await store.receive(\.accessUnlock.onAppear)
+        await store.receive(\.accessUnlock._onAppearSessionRestored) { state in
+            state.accessUnlock.hasAccountSession = true
+            state.accessUnlock.fetchGeneration = 1
+            state.accessUnlock.ttlTimerActive = true
+        }
+
+        await store.receive(\.accessUnlock.accessStatusResponse) { state in
+            state.currentStep = .accessUnlock
+            state.accessUnlock.status = .revoked
+            state.accessUnlock.snapshot = revokedSnapshot
+            state.accessUnlock.isComplete = false
+            state.accessUnlock.errorMessage = "This license has been revoked."
+        }
+
+        XCTAssertEqual(store.state.currentStep, .accessUnlock)
+        XCTAssertFalse(store.state.accessUnlock.isComplete)
+        XCTAssertEqual(store.state.accessUnlock.status, .revoked)
+        XCTAssertEqual(store.state.accessUnlock.snapshot, revokedSnapshot)
+        XCTAssertEqual(saveRecorder.value?.currentStep, .accessUnlock)
+        XCTAssertEqual(saveRecorder.value?.stepState.accessUnlockComplete, false)
+        let savedAccessSnapshots = await accessSnapshotRecorder.snapshot()
+        XCTAssertEqual(savedAccessSnapshots, [revokedSnapshot])
+    }
+
+    private func makeIncompleteAccessRestoreFixture(
+        testDate: Date,
+        saveRecorder: LockIsolated<OnboardingProgressSnapshot?>,
+        accessSnapshotRecorder: AccessSnapshotRecorder,
+    ) -> (
+        store: TestStore<OnboardingFeature.State, OnboardingFeature.Action>,
+        revokedSnapshot: AccessStatusSnapshot,
+    ) {
+        let snapshot = OnboardingProgressSnapshot(
+            currentStep: .permissions,
+            stepState: OnboardingStepState(
+                welcomeComplete: true,
+                accessUnlockComplete: false,
+                permissionsComplete: false,
+                completeComplete: false,
+            ),
+            accessSnapshot: StateMutation.activeAccessSnapshot,
+        )
+        let revokedResponse = AccessStatusResponse(
+            hasAccess: false,
+            status: "revoked",
+            reason: "revoked_entitlement",
+            source: "polar",
+        )
+        let revokedSnapshot = AccessStatusSnapshot(status: .revoked, fetchedAt: testDate)
+        let store = TestStore(initialState: OnboardingFeature.State()) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.resumingAndRecording(
+                snapshot: snapshot,
+                saveRecorder: saveRecorder,
+            )
+            $0.accountSessionClient = AccountSessionClient(
+                read: { AccountSession(accessToken: "test-token", status: .coreLicenseActive) },
+                persist: { _ in },
+                delete: { _ in },
+            )
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { revokedResponse },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
+                refreshToken: { throw AccessError.notConfigured },
+            )
+            $0.accessStatusSnapshotClient = AccessSnapshotClient.recording(
+                recorder: accessSnapshotRecorder,
+                load: StateMutation.activeAccessSnapshot,
+            )
+            $0.date = .constant(testDate)
+        }
+        return (store, revokedSnapshot)
+    }
+
     /// ONB-001-resume_onboarding_session: active snapshot이 있어도 세션이 없으면 후속 step에 머물지 않고 Access step으로 되돌린다.
     /// 저장된 access completion만으로 후속 단계 진행을 허용하지 않는 VOY-299 계약을 검증합니다.
     /// - 검증 내용: `currentStep=.aiProviderSetup`, active access snapshot 복원 후 session=nil이면 accessUnlock로 rollback 저장.

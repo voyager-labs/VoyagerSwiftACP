@@ -144,13 +144,14 @@ struct OnboardingFeature {
             state.accessUnlock.status = accessSnapshot.status
             state.accessUnlock.hasAccountSession = accessSnapshot.hasSession
             state.accessUnlock.sessionExpiresAt = accessSnapshot.sessionExpiresAt
-            state.accessUnlock.isComplete = accessSnapshot.isActive
+            state.accessUnlock.isComplete = snapshot.stepState.accessUnlockComplete
+                && accessSnapshot.isActive
                 && accessSnapshot.isDeviceBindingVerified
                 && accessSnapshot.hasSession
         }
         state.currentStep = state.lastValidStep(from: snapshot.currentStep)
         let saveEffect = Self.saveEffect(state.progressSnapshot, progressClient: progressClient)
-        guard legacyAccessSnapshot != nil, state.accessUnlock.isComplete else { return saveEffect }
+        guard legacyAccessSnapshot != nil else { return saveEffect }
         return .concatenate(saveEffect, .send(.accessUnlock(.onAppear)))
     }
 
