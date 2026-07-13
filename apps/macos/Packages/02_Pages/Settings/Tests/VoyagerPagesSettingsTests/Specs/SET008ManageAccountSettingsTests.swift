@@ -89,6 +89,34 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
         await store.receive(\.delegate.signInRequested)
     }
 
+    /// SET-008-start_account_sign_in: 만료된 세션의 Sign In은 refresh가 아닌 새 로그인을 요청한다.
+    /// - 검증 내용: sign-in failure projection에서 signInTapped의 narrow delegate
+    /// - 사전 조건: 세션이 없고 didSignInFail이 설정된 AccountSettingsState
+    /// - 기대 결과: retryRequested가 아니라 signInRequested delegate를 한 번 수신함
+    func testExpiredSessionSignInForwardsOnce() async {
+        var initialState = AccountSettingsState()
+        initialState.presentation.didSignInFail = true
+        let store = TestStore(initialState: initialState) {
+            AccountSettingsFeature()
+        }
+
+        XCTAssertEqual(store.state.setAuthState, .signInFailed)
+
+        await store.send(.signInTapped)
+        await store.receive(\.delegate.signInRequested)
+    }
+
+    /// SET-008-start_account_sign_in: 실패 상태 CTA는 refresh Retry가 아닌 Sign In으로 매핑된다.
+    /// - 검증 내용: AccountSettingsView가 실제 사용하는 button title/action mapping
+    /// - 사전 조건: signInFailed account status rendering
+    /// - 기대 결과: "Sign In" 표시와 signInTapped action
+    func testSignInFailedCTAStartsSignIn() {
+        XCTAssertEqual(AccountSettingsView.signInButtonTitle, "Sign In")
+        if case .signInTapped = AccountSettingsView.signInButtonAction {} else {
+            XCTFail("Sign-in failure CTA must start a new sign-in flow")
+        }
+    }
+
     /// SET-008-start_account_sign_in: signed-in Sign In은 re-auth 없이 no-op이다.
     /// - 검증 내용: session 존재 시 Sign In delegate 미발행
     /// - 사전 조건: canonical projection이 signed-in임

@@ -100,6 +100,14 @@ struct SessionSyncResponse: Codable {
     var device: Device
     var partial: SessionSyncPartial?
 
+    enum CodingKeys: String, CodingKey {
+        case syncStatus = "sync_status"
+        case session
+        case access
+        case device
+        case partial
+    }
+
     struct Session: Codable {
         var status: SessionSyncSessionStatus
         var accessToken: String?

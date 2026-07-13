@@ -119,7 +119,7 @@ private enum SmokeMode {
     }
 }
 
-private enum OnboardingHostAuthMode: String, CaseIterable {
+enum OnboardingHostAuthMode: String, CaseIterable {
     case mock
     case mockNoEntitlement
     case mockRestoredAccess
@@ -167,12 +167,130 @@ private enum OnboardingHostAuthMode: String, CaseIterable {
             )
         }
     }
+
+    var mockDeviceBindingOutcome: SessionSyncDeviceBindingOutcome {
+        switch self {
+        case .mock: .bound
+        case .mockNoEntitlement: .notAttempted
+        case .mockRestoredAccess: .alreadyBound
+        case .live: .notAttempted
+        }
+    }
+
+    var mockConnectedDeviceAvailability: ConnectedDeviceAvailability {
+        switch self {
+        case .mock, .mockRestoredAccess: .available
+        case .mockNoEntitlement: .unavailable
+        case .live: .unknown
+        }
+    }
 }
 
-private struct OnboardingHostAuthClients {
+struct OnboardingHostAuthClients {
     let accountSessionClient: AccountSessionClient
     let authNetworkClient: AuthNetworkClient
     let signInHandoffClient: SignInHandoffClient
+}
+
+enum OnboardingHostMockAuthAssembly {
+    static func make(
+        mode: OnboardingHostAuthMode,
+        sessionHolder: MockSignInState,
+    ) -> OnboardingHostAuthClients {
+        seedRestoredAccessSessionIfNeeded(mode: mode, sessionHolder: sessionHolder)
+
+        let accessStatusResponse = mode.mockAccessStatusResponse
+        let sessionStatus: AccessStatus = accessStatusResponse.hasAccess ? .coreLicenseActive : .none
+        let deviceBindingOutcome = mode.mockDeviceBindingOutcome
+        let connectedDeviceAvailability = mode.mockConnectedDeviceAvailability
+
+        return OnboardingHostAuthClients(
+            accountSessionClient: AccountSessionClient(
+                read: { sessionHolder.session },
+                persist: { session in sessionHolder.setSession(session) },
+                delete: { _ in sessionHolder.setSession(nil) },
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in throw DeviceBindingError.notConfigured },
+                refreshToken: { throw AccessError.notConfigured },
+                syncSession: { intent, _ in
+                    switch intent {
+                    case .validate:
+                        return SessionSyncResult(
+                            sessionStatus: .unchanged,
+                            syncStatus: .complete,
+                            accessStatus: accessStatusResponse,
+                            deviceBindingOutcome: deviceBindingOutcome,
+                            connectedDeviceAvailability: connectedDeviceAvailability,
+                            sessionExpiresAt: sessionHolder.session?.expiresAt,
+                        )
+                    case .refresh:
+                        let renewedSession = AccountSession(
+                            accessToken: "mock-onboarding-refreshed-token",
+                            status: sessionStatus,
+                            expiresAt: Date().addingTimeInterval(3600),
+                        )
+                        sessionHolder.setSession(renewedSession)
+                        return SessionSyncResult(
+                            sessionStatus: .rotated,
+                            syncStatus: .complete,
+                            accessStatus: accessStatusResponse,
+                            deviceBindingOutcome: deviceBindingOutcome,
+                            connectedDeviceAvailability: connectedDeviceAvailability,
+                            sessionExpiresAt: renewedSession.expiresAt,
+                        )
+                    }
+                },
+            ),
+            signInHandoffClient: SignInHandoffClient { _ in
+                .failure
+            },
+        )
+    }
+
+    static func resetRestoredAccessSession(
+        sessionHolder: MockSignInState,
+    ) -> AccountSession {
+        let session = restoredAccessSession()
+        sessionHolder.setSession(session)
+        return session
+    }
+
+    static func restoredAccessSnapshot(
+        session: AccountSession,
+        fetchedAt: Date,
+    ) -> AccessStatusSnapshot? {
+        guard let sessionExpiresAt = session.expiresAt else {
+            return nil
+        }
+
+        return AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: sessionExpiresAt,
+            fetchedAt: fetchedAt,
+            sessionExpiresAt: sessionExpiresAt,
+            deviceBindingVerifiedAt: fetchedAt,
+        )
+    }
+
+    private static func restoredAccessSession() -> AccountSession {
+        AccountSession(
+            accessToken: "mock-onboarding-restored-token",
+            status: .coreLicenseActive,
+            expiresAt: Date().addingTimeInterval(3600),
+        )
+    }
+
+    private static func seedRestoredAccessSessionIfNeeded(
+        mode: OnboardingHostAuthMode,
+        sessionHolder: MockSignInState,
+    ) {
+        if mode == .mockRestoredAccess, sessionHolder.session == nil {
+            _ = resetRestoredAccessSession(sessionHolder: sessionHolder)
+        }
+    }
 }
 
 @main
@@ -264,19 +382,13 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
         let authMode = debugStore.currentAuthMode
         switch authMode {
         case .mock, .mockNoEntitlement, .mockRestoredAccess:
-            let accessStatusResponse = authMode.mockAccessStatusResponse
+            let mockClients = OnboardingHostMockAuthAssembly.make(
+                mode: authMode,
+                sessionHolder: sessionHolder,
+            )
             return OnboardingHostAuthClients(
-                accountSessionClient: AccountSessionClient(
-                    read: { self.sessionHolder.session },
-                    persist: { _ in },
-                    delete: { _ in self.sessionHolder.setSession(nil) },
-                ),
-                authNetworkClient: AuthNetworkClient(
-                    exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                    fetchAccessStatus: { accessStatusResponse },
-                    bindDevice: { _ in DeviceBindingResponse(ok: true) },
-                    refreshToken: { throw AccessError.notConfigured },
-                ),
+                accountSessionClient: mockClients.accountSessionClient,
+                authNetworkClient: mockClients.authNetworkClient,
                 signInHandoffClient: makeMockSignInHandoffClient(),
             )
         case .live:
@@ -293,6 +405,7 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
             let mockSession = AccountSession(
                 accessToken: "mock-onboarding-token",
                 status: .coreLicenseActive,
+                expiresAt: Date().addingTimeInterval(3600),
             )
             sessionHolder.setSession(mockSession)
             guard let callbackURL = URL(string: "voyager-onboarding-host://auth/callback") else {
@@ -331,11 +444,14 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
     private func resetOnboardingProgress() {
         OnboardingWindowClient.liveValue.resetStoredProgress()
         if debugStore.currentAuthMode.seedsRestoredAccessProgress {
-            seedRestoredAccessProgress()
+            let restoredSession = OnboardingHostMockAuthAssembly.resetRestoredAccessSession(
+                sessionHolder: sessionHolder,
+            )
+            seedRestoredAccessProgress(session: restoredSession)
         }
     }
 
-    private func seedRestoredAccessProgress() {
+    private func seedRestoredAccessProgress(session: AccountSession) {
         let defaults = UserDefaults.standard
         defaults.set(1.2, forKey: "onboardingProgressVersion")
         defaults.set("aiProviderSetup", forKey: "onboardingCurrentStep")
@@ -355,16 +471,11 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
             defaults.set(data, forKey: "onboardingStepState")
         }
 
-        let fetchedAt = Date()
-        let sessionExpiresAt = Date(timeIntervalSince1970: 1_800_000_000)
-        let snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            currentPeriodEnd: sessionExpiresAt,
-            fetchedAt: fetchedAt,
-            sessionExpiresAt: sessionExpiresAt,
-            deviceBindingVerifiedAt: fetchedAt,
+        let snapshot = OnboardingHostMockAuthAssembly.restoredAccessSnapshot(
+            session: session,
+            fetchedAt: Date(),
         )
-        if let data = try? JSONEncoder().encode(snapshot) {
+        if let snapshot, let data = try? JSONEncoder().encode(snapshot) {
             defaults.set(data, forKey: "onboardingAccessSnapshot")
         }
     }

@@ -16,20 +16,24 @@ public enum OnboardingOpenMainWindowRequest: Equatable, Sendable {
     case explicitPath(String)
 }
 
-private actor OnboardingPresentationGate {
-    private var hasRequestedPresentation = false
+private struct OnboardingPresentationGate {
+    private let hasRequestedPresentation = LockIsolated(false)
 
     func claimPresentation() -> Bool {
-        if hasRequestedPresentation {
-            return false
+        hasRequestedPresentation.withValue { hasRequestedPresentation in
+            guard !hasRequestedPresentation else { return false }
+            hasRequestedPresentation = true
+            return true
         }
-        hasRequestedPresentation = true
-        return true
     }
 
     func reset() {
-        hasRequestedPresentation = false
+        hasRequestedPresentation.setValue(false)
     }
+}
+
+private enum OnboardingOpenMainWindowAuthorization {
+    @TaskLocal static var isAuthorized = false
 }
 
 @MainActor
@@ -93,11 +97,11 @@ extension OnboardingWindowClient: DependencyKey {
         return makeClient(
             progressClient: OnboardingProgressClient.liveValue,
             openMainWindow: openMainWindow,
-            makeComposition: {
+            makeComposition: { onboardingWindowClient in
                 let accountAccessStore = resolveAccountAccessStore()
                 let onboardingStore = makeOnboardingStore(
                     progressClient: OnboardingProgressClient.liveValue,
-                    openMainWindow: openMainWindow,
+                    onboardingWindowClient: onboardingWindowClient,
                     permissionDebugScenario: nil,
                     isForceFullDiskAccessGrantedEnabled: isForceFullDiskAccessGrantedEnabled,
                 )
@@ -137,7 +141,7 @@ extension OnboardingWindowClient: DependencyKey {
         return makeClient(
             progressClient: progressClient,
             openMainWindow: openMainWindow,
-            makeComposition: {
+            makeComposition: { onboardingWindowClient in
                 var accountAccessState = AccountAccessFeature.State()
                 accountAccessState.handoffScope = .onboarding
                 let accountAccessStore = Store(initialState: accountAccessState) {
@@ -155,7 +159,7 @@ extension OnboardingWindowClient: DependencyKey {
                 }
                 let onboardingStore = makeOnboardingStore(
                     progressClient: progressClient,
-                    openMainWindow: openMainWindow,
+                    onboardingWindowClient: onboardingWindowClient,
                     permissionDebugScenario: permissionDebugScenario,
                     isForceFullDiskAccessGrantedEnabled: isForceFullDiskAccessGrantedEnabled,
                 )
@@ -172,31 +176,12 @@ extension OnboardingWindowClient: DependencyKey {
     nonisolated private static func makeClient(
         progressClient: OnboardingProgressClient,
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
-        makeComposition: @escaping @MainActor @Sendable () -> OnboardingWindowComposition,
-        showWindow customShowWindow: (@Sendable () async -> Void)? = nil,
-        closeWindow customCloseWindow: (@Sendable () async -> Void)? = nil,
-        presentationAttemptCompleted: @escaping @Sendable () -> Void = {},
+        makeComposition: @escaping @MainActor @Sendable (OnboardingWindowClient) -> OnboardingWindowComposition,
         isForceOnboardingEnabled: Bool = false,
     ) -> OnboardingWindowClient {
         let presentationGate = OnboardingPresentationGate()
         let forceOnboarding = LockIsolated(isForceOnboardingEnabled)
-        let showWindow: @Sendable () async -> Void = customShowWindow ?? {
-            await MainActor.run {
-                if onboardingWindowController == nil {
-                    let composition = makeComposition()
-                    onboardingWindowController = OnboardingWindowController(
-                        onboardingStore: composition.onboardingStore,
-                        accountAccessStore: composition.accountAccessStore,
-                        handlesAuthCallback: composition.handlesAuthCallback,
-                    )
-                }
-
-                onboardingWindowController?.showWindow(nil)
-                onboardingWindowController?.window?.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-            }
-        }
-        let closeWindowBase: @Sendable () async -> Void = customCloseWindow ?? {
+        let closeWindowBase: @Sendable () async -> Void = {
             await MainActor.run {
                 onboardingWindowController?.dismissWithoutTerminate()
                 onboardingWindowController = nil
@@ -204,8 +189,17 @@ extension OnboardingWindowClient: DependencyKey {
         }
         let closeWindow: @Sendable () async -> Void = {
             await closeWindowBase()
-            await presentationGate.reset()
+            forceOnboarding.withValue { $0 = false }
+            presentationGate.reset()
         }
+        let onboardingWindowClient = makeNestedOnboardingWindowClient(
+            closeWindow: closeWindow,
+            openMainWindow: openMainWindow,
+        )
+        let showWindow = makeShowWindow(
+            onboardingWindowClient: onboardingWindowClient,
+            makeComposition: makeComposition,
+        )
         return OnboardingWindowClient(
             isRequired: {
                 forceOnboarding.value || isOnboardingRequired(progressClient)
@@ -213,11 +207,12 @@ extension OnboardingWindowClient: DependencyKey {
             showIfNeeded: {
                 let required = forceOnboarding.value || isOnboardingRequired(progressClient)
 
-                if required {
+                if required, OnboardingOpenMainWindowAuthorization.isAuthorized {
+                    return false
+                }
+
+                if required, presentationGate.claimPresentation() {
                     Task {
-                        defer { presentationAttemptCompleted() }
-                        guard await presentationGate.claimPresentation() else { return }
-                        forceOnboarding.withValue { $0 = false }
                         await showWindow()
                     }
                 }
@@ -230,10 +225,49 @@ extension OnboardingWindowClient: DependencyKey {
         )
     }
 
+    nonisolated private static func makeShowWindow(
+        onboardingWindowClient: OnboardingWindowClient,
+        makeComposition: @escaping @MainActor @Sendable (OnboardingWindowClient) -> OnboardingWindowComposition,
+    ) -> @Sendable () async -> Void {
+        {
+            await MainActor.run {
+                if onboardingWindowController == nil {
+                    let composition = makeComposition(onboardingWindowClient)
+                    onboardingWindowController = OnboardingWindowController(
+                        onboardingStore: composition.onboardingStore,
+                        accountAccessStore: composition.accountAccessStore,
+                        handlesAuthCallback: composition.handlesAuthCallback,
+                    )
+                }
+
+                onboardingWindowController?.showWindow(nil)
+                onboardingWindowController?.window?.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        }
+    }
+
+    nonisolated private static func makeNestedOnboardingWindowClient(
+        closeWindow: @escaping @Sendable () async -> Void,
+        openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
+    ) -> OnboardingWindowClient {
+        OnboardingWindowClient(
+            isRequired: { false },
+            showIfNeeded: { false },
+            showWindow: {},
+            closeWindow: closeWindow,
+            openMainWindow: { request in
+                await OnboardingOpenMainWindowAuthorization.$isAuthorized.withValue(true) {
+                    await openMainWindow(request)
+                }
+            },
+        )
+    }
+
     @MainActor
     private static func makeOnboardingStore(
         progressClient: OnboardingProgressClient,
-        openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
+        onboardingWindowClient: OnboardingWindowClient,
         permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)?,
         isForceFullDiskAccessGrantedEnabled: Bool,
     ) -> StoreOf<OnboardingFeature> {
@@ -241,18 +275,7 @@ extension OnboardingWindowClient: DependencyKey {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = progressClient
-            $0.onboardingWindowClient = OnboardingWindowClient(
-                isRequired: { false },
-                showIfNeeded: { false },
-                showWindow: {},
-                closeWindow: {
-                    await MainActor.run {
-                        onboardingWindowController?.dismissWithoutTerminate()
-                        onboardingWindowController = nil
-                    }
-                },
-                openMainWindow: openMainWindow,
-            )
+            $0.onboardingWindowClient = onboardingWindowClient
             configurePermissionDependencies(
                 &$0,
                 permissionDebugScenario: permissionDebugScenario,
