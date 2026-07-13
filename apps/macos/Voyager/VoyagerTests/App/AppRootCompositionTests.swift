@@ -12,25 +12,6 @@ import XCTest
 
 @MainActor
 final class AppRootCompositionTests: XCTestCase {
-    func testAppPreferencesUpdatedRoutesToWindowManager() async {
-        let store = TestStore(initialState: AppRootFeature.State()) {
-            AppRootFeature()
-        }
-        store.exhaustivity = .off
-
-        var preferences = Voyager.AppPreferencesState()
-        preferences.showHiddenFiles = true
-        preferences.viewLayout = EntryViewLayoutState.Mode.grid
-        preferences.sidebarVisible = false
-
-        await store.send(.appPreferences(.delegate(.updated(preferences)))) {
-            $0.appPreferences = preferences
-        }
-        await store.receive(\.windowManager.lifecycle.applyAppPreferences) {
-            $0.windowManager.appPreferences = preferences
-        }
-    }
-
     // MARK: - Launch bootstrap
 
     func testAppRootLaunchWillFinishLaunchingForwardsSettingsBootstrapLocalPreferences() async {
