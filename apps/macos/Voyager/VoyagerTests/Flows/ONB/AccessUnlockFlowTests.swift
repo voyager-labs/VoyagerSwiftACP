@@ -16,6 +16,7 @@ import XCTest
 final class AccessUnlockFlowTests: XCTestCase {
     // FLOW-PATH: happy_path
 
+    /// ONB access_unlock: happy_path
     /// 활성 계정 접근 상태가 프로덕션 observer를 통해 Onboarding을 unlock하는지 검증한다.
     func testActiveAccessUnlocksOnboardingThroughProductionObserver() throws {
         let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
