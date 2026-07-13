@@ -45,6 +45,8 @@ enum FileManagerContentEntryOpsCoordinator {
         showHidden: Bool,
     ) -> Effect<FileManagerContentAction> {
         switch navigationState {
+        case .home:
+            .none
         case let .folder(path):
             sendEntryOperations(.loading(.loadItems(path: path, showHidden: showHidden)))
         case .recents:
@@ -56,7 +58,7 @@ enum FileManagerContentEntryOpsCoordinator {
             )))
         case .computer:
             sendEntryOperations(.loading(.loadComputerItems))
-        case .collection:
+        case .collection, .aiChat, .aiChatSessions:
             .none
         }
     }

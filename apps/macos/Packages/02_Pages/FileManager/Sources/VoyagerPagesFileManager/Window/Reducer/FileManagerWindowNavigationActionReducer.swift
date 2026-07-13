@@ -38,7 +38,11 @@ struct FileManagerNavigationActionReducer {
         _ action: ContentPageNavigationAction,
         state: inout State,
     ) -> Effect<Action> {
-        switch action {
+        guard state.pendingContentTabClose == nil || !isUserNavigationRequest(action) else {
+            return .none
+        }
+
+        return switch action {
         case let .view(viewAction):
             handleViewAction(viewAction, state: &state)
 
@@ -63,7 +67,9 @@ struct FileManagerNavigationActionReducer {
         case .navigateToPath,
              .showRecents,
              .showComputer,
-             .showTag:
+             .showTag,
+             .showAiChat,
+             .showAiChatSessions:
             handleDirectNavigationAction(action, state: &state)
 
         case .goBack,
@@ -90,25 +96,26 @@ struct FileManagerNavigationActionReducer {
         switch action {
         case .collectionFileLoaded,
              .navigateToCollection:
-            return handleCollectionNavigationAction(action, state: &state)
+            handleCollectionNavigationAction(action, state: &state)
 
         case .showUnsavedNavigationAlert,
              .unsavedNavigationAlertResponse,
              .performNavigation:
-            return handleUnsavedNavigationAction(action, state: &state)
+            handleUnsavedNavigationAction(action, state: &state)
 
         case .performNavigateToPath,
              .performShowRecents,
              .performShowComputer,
              .performShowTag,
+             .performShowAiChat,
+             .performShowAiChatSessions,
              .prepareCollectionFileOpen,
              .rollbackBackHistoryOnce,
              .appendBackHistory,
              .clearForwardHistory,
              .setNavigationState,
              .setPendingNavigation:
-            syncSidebarSelection(state: &state, computerName: fileManagerClient.displayName("/"))
-            return .none
+            .none
         }
     }
 
@@ -132,6 +139,12 @@ struct FileManagerNavigationActionReducer {
 
         case let .showTag(tagName):
             return .send(.navigation(.internal(.performShowTag(tagName))))
+
+        case let .showAiChat(sessionID):
+            return .send(.navigation(.internal(.performShowAiChat(sessionID))))
+
+        case let .showAiChatSessions(sessionID):
+            return .send(.navigation(.internal(.performShowAiChatSessions(sessionID))))
 
         default:
             return .none
@@ -242,6 +255,10 @@ struct FileManagerNavigationActionReducer {
     }
 }
 
+struct OpenCollectionFileCancelID: Hashable {
+    let windowID: UUID?
+}
+
 private func handleOpenCollectionFile(
     _ url: URL,
     state: inout FileManagerWindowState,
@@ -277,7 +294,10 @@ private func handleOpenCollectionFile(
             )
         }
     }
-    .cancellable(id: "openCollectionFile", cancelInFlight: true)
+    .cancellable(
+        id: OpenCollectionFileCancelID(windowID: state.content.entryViewLayout.entryOperations.windowID),
+        cancelInFlight: true,
+    )
 
     return .concatenate(
         .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(true))))),
@@ -482,16 +502,13 @@ nonisolated private func collectionScopeRootModified(
 
 private func handleCollectionFileLoadedFailure(
     _ error: ContentPageNavigationErrorFingerprint,
-    state: inout FileManagerWindowState,
+    state _: inout FileManagerWindowState,
     collectionAlertClient: CollectionAlertClient,
 ) -> Effect<FileManagerWindowAction> {
     var effects: [Effect<FileManagerWindowAction>] = [
         .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
         .send(.navigation(.internal(.rollbackBackHistoryOnce))),
     ]
-    if state.sidebar.pendingSidebarSelectionRestore != nil {
-        effects.append(.send(.sidebar(.internal(.restoreSidebarSelection))))
-    }
     effects.append(.send(.content(.collection(.sessionResetRequested))))
     effects.append(.send(.content(.internal(.exitCollectionMode))))
     effects.append(.send(.content(.composer(.resetComposerAndSync(
@@ -528,4 +545,11 @@ private func handleEmptyCollectionFile(
             )
         },
     )
+}
+
+private func isUserNavigationRequest(_ action: ContentPageNavigationAction) -> Bool {
+    if case .view = action {
+        return true
+    }
+    return false
 }

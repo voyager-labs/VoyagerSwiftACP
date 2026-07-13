@@ -35,11 +35,26 @@ public enum AiChatMode: Equatable, Sendable {
     case chat
 }
 
+public enum AiChatSessionRowMergeResult: Equatable, Sendable {
+    case rejected
+    case unchanged
+    case merged
+
+    public var acceptsRow: Bool {
+        self != .rejected
+    }
+
+    public var permitsSnapshotPayload: Bool {
+        self == .merged
+    }
+}
+
 public struct AiChatSessionListState: Equatable, Sendable {
     public var allRows: [AiChatSessionSummary]
     public var rows: [AiChatSessionSummary]
     public var query: String
     public var isLoading: Bool
+    public var hasLoadedRows: Bool
     public var errorMessage: String?
     public var selectedSessionID: AiChatSessionID?
     public var unreadCompletedSessionIDs: Set<AiChatSessionID>
@@ -52,6 +67,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
         rows: [AiChatSessionSummary]? = nil,
         query: String = "",
         isLoading: Bool = false,
+        hasLoadedRows: Bool = false,
         errorMessage: String? = nil,
         selectedSessionID: AiChatSessionID? = nil,
         unreadCompletedSessionIDs: Set<AiChatSessionID> = [],
@@ -62,6 +78,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
         self.allRows = allRows
         self.query = query
         self.isLoading = isLoading
+        self.hasLoadedRows = hasLoadedRows
         self.errorMessage = errorMessage
         self.selectedSessionID = selectedSessionID
         self.unreadCompletedSessionIDs = unreadCompletedSessionIDs
@@ -72,6 +89,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
     }
 
     public mutating func setLoadedRows(_ rows: [AiChatSessionSummary]) {
+        hasLoadedRows = true
         let visibleRows = rows.filter { !deletedSessionIDs.contains($0.sessionID) }
         allRows = visibleRows
         self.rows = Self.filteredRows(from: visibleRows, query: query)
@@ -110,6 +128,21 @@ public struct AiChatSessionListState: Equatable, Sendable {
             return lhs.updatedAtMs > rhs.updatedAtMs
         }
         rows = Self.filteredRows(from: allRows, query: query)
+    }
+
+    @discardableResult
+    public mutating func replaceRowIfNewer(_ row: AiChatSessionSummary) -> AiChatSessionRowMergeResult {
+        guard !deletedSessionIDs.contains(row.sessionID) else { return .rejected }
+        if let currentRow = allRows.first(where: { $0.sessionID == row.sessionID }) {
+            guard !currentRow.isNewer(than: row) else { return .rejected }
+            if row == currentRow {
+                replaceRow(row)
+                return .unchanged
+            }
+            guard row.isNewer(than: currentRow) else { return .rejected }
+        }
+        replaceRow(row)
+        return .merged
     }
 
     public mutating func beginRenaming(sessionID: AiChatSessionID) {
@@ -185,7 +218,9 @@ public struct AiChatState: Equatable, Sendable {
     public var lastRequestContext: AiChatLockedRequestContextSnapshot?
     public var lastRequestContextModelHandle: AiModelHandle?
     public var pendingRequestStart: AiChatPendingRequestStart?
+    public var backgroundPendingRequestStarts: [UUID: AiChatPendingRequestStart]
     public var executionPhase: AiChatExecutionPhase
+    public var backgroundExecutionPhases: [AiChatRequestID: AiChatExecutionPhase]
     public var modelListRequestID: UUID?
     public var modelListProvider: AiProvider?
     public var modelListProviderOrder: [AiProvider]
@@ -225,7 +260,9 @@ public struct AiChatState: Equatable, Sendable {
         lastRequestContext: AiChatLockedRequestContextSnapshot? = nil,
         lastRequestContextModelHandle: AiModelHandle? = nil,
         pendingRequestStart: AiChatPendingRequestStart? = nil,
+        backgroundPendingRequestStarts: [UUID: AiChatPendingRequestStart] = [:],
         executionPhase: AiChatExecutionPhase = .idle,
+        backgroundExecutionPhases: [AiChatRequestID: AiChatExecutionPhase] = [:],
         modelListRequestID: UUID? = nil,
         modelListProvider: AiProvider? = nil,
         modelListProviderOrder: [AiProvider] = [],
@@ -265,7 +302,9 @@ public struct AiChatState: Equatable, Sendable {
         self.lastRequestContext = lastRequestContext
         self.lastRequestContextModelHandle = lastRequestContextModelHandle
         self.pendingRequestStart = pendingRequestStart
+        self.backgroundPendingRequestStarts = backgroundPendingRequestStarts
         self.executionPhase = executionPhase
+        self.backgroundExecutionPhases = backgroundExecutionPhases
         self.modelListRequestID = modelListRequestID
         self.modelListProvider = modelListProvider
         self.modelListProviderOrder = modelListProviderOrder

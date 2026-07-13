@@ -342,6 +342,90 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
     }
 
+    /// EVM-001-home_navigation_clears_hidden_entries: Home route 적용 시 숨은 folder selection 정리
+    /// Home 화면 진입 후에도 이전 folder entry/selection이 메뉴 command projection에 남지 않도록 검증.
+    /// - 검증 내용: applyNavigationState(.home)이 selectedIds와 entry list를 명시적으로 비움
+    /// - 사전 조건: folder route에서 선택된 entry가 있는 상태
+    /// - 기대 결과: selectedIds와 entries가 비워지고 Home currentPath로 전환
+    func testHomeNavigationClearsHiddenEntrySelectionAndItems() async {
+        let previousEntry = EntryModel.temporaryFolder(
+            id: "/tmp/voyager-hidden-selection",
+            name: "voyager-hidden-selection",
+        )
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/tmp")
+        state.entryViewLayout.entries = [previousEntry]
+        state.entryViewLayout.selectedIds = [previousEntry.id]
+        state.entryViewLayout.lastSelectedId = previousEntry.id
+        state.entryViewLayout.rangeAnchorId = previousEntry.id
+        state.entryViewLayout.entryOperations.loadingContext.items = [previousEntry]
+
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.internal(.applyNavigationState(.home)))
+        await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receive(\.entryViewLayout.internal.applyClearSelection)
+        await store.receive(\.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.finish()
+
+        XCTAssertEqual(store.state.entryViewLayout.currentPath, "Home")
+        XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
+        XCTAssertTrue(store.state.entryViewLayout.entries.isEmpty)
+        XCTAssertTrue(store.state.entryViewLayout.entryOperations.loadingContext.items.isEmpty)
+    }
+
+    /// EVM-001-ai_chat_navigation_clears_hidden_entries: AI Chat route 적용 시 숨은 folder selection 정리
+    /// AI Chat 화면 진입 후에도 이전 folder entry/selection이 command projection에 남지 않도록 검증.
+    func testAiChatNavigationClearsHiddenEntrySelectionAndItems() async {
+        await assertAiChatNavigationClearsHiddenEntrySelectionAndItems(.aiChat(Self.aiChatRouteSessionID))
+    }
+
+    /// EVM-001-ai_chat_sessions_navigation_clears_hidden_entries: AI Chat History route 적용 시 숨은 folder selection 정리
+    /// AI Chat History 화면도 파일 command와 분리되어야 하므로 이전 entry projection을 비움.
+    func testAiChatSessionsNavigationClearsHiddenEntrySelectionAndItems() async {
+        await assertAiChatNavigationClearsHiddenEntrySelectionAndItems(.aiChatSessions(Self.aiChatRouteSessionID))
+    }
+
+    private static let aiChatRouteSessionID = "E621E1F8-C36C-495A-93FC-0C247A3E6E5F"
+
+    private func assertAiChatNavigationClearsHiddenEntrySelectionAndItems(
+        _ navigationState: ContentPageNavigationRoute,
+    ) async {
+        let previousEntry = EntryModel.temporaryFolder(
+            id: "/tmp/voyager-ai-chat-hidden-selection",
+            name: "voyager-ai-chat-hidden-selection",
+        )
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/tmp")
+        state.entryViewLayout.entries = [previousEntry]
+        state.entryViewLayout.selectedIds = [previousEntry.id]
+        state.entryViewLayout.lastSelectedId = previousEntry.id
+        state.entryViewLayout.rangeAnchorId = previousEntry.id
+        state.entryViewLayout.entryOperations.loadingContext.items = [previousEntry]
+
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.internal(.applyNavigationState(navigationState)))
+        await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receive(\.entryViewLayout.internal.applyClearSelection)
+        await store.receive(\.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.finish()
+
+        XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
+        XCTAssertTrue(store.state.entryViewLayout.entries.isEmpty)
+        XCTAssertTrue(store.state.entryViewLayout.entryOperations.loadingContext.items.isEmpty)
+    }
+
     private func makeStore(initialState: FileManagerContentState)
         -> TestStore<FileManagerContentState, FileManagerContentAction>
     {

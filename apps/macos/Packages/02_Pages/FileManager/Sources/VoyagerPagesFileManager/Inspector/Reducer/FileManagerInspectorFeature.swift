@@ -42,7 +42,7 @@ public struct FileManagerInspectorFeature {
 
             case .closeChat:
                 state.inspectorVisible = false
-                return .send(.aiChat(.teardownRequested))
+                return .none
 
             case .sessionHeaderNewChatTapped:
                 return .send(.aiChat(.newChatTapped))
@@ -54,12 +54,17 @@ public struct FileManagerInspectorFeature {
                 state.inspectorVisible = true
                 state.activeMode = .chat
 
-                guard !state.aiChat.executionPhase.isProcessing else {
-                    return .none
+                if let setupSessionID = setup.sessionID,
+                   state.aiChat.executionPhase.processingSessionID == setupSessionID
+                {
+                    return .send(.aiChat(.providerConnectionsUpdated(connectionsFile)))
                 }
 
-                guard state.aiChat.sessionID == nil else {
-                    return .none
+                if let currentSessionID = state.aiChat.sessionID,
+                   let setupSessionID = setup.sessionID,
+                   currentSessionID == setupSessionID
+                {
+                    return .send(.aiChat(.providerConnectionsUpdated(connectionsFile)))
                 }
 
                 return .concatenate(

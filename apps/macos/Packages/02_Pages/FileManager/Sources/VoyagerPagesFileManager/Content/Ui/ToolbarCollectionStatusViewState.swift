@@ -18,7 +18,7 @@ struct ToolbarCollectionStatusViewState: Equatable {
         showsUnsavedIndicator = isCollectionMode && (!openedCollectionURLExists || isOpenedCollectionDirty)
         showsStaleIndicator = isCollectionMode && isOpenedCollectionStale
         showsRefreshAffordance = isCollectionMode && isOpenedCollectionStale && refreshBlockingReason == nil
-        isRefreshEnabled = refreshBlockingReason == nil
+        isRefreshEnabled = showsRefreshAffordance
         self.refreshBlockingReason = refreshBlockingReason
     }
 }

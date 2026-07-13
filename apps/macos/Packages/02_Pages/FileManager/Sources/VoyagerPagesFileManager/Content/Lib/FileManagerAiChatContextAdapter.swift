@@ -72,6 +72,9 @@ enum FileManagerAiChatContextAdapter {
 
     private static func currentViewTitle(for navigationState: ContentPageNavigationRoute) -> String {
         switch navigationState {
+        case .home:
+            return "Home"
+
         case let .folder(path):
             if path == "/" {
                 return "Computer"
@@ -88,6 +91,12 @@ enum FileManagerAiChatContextAdapter {
         case .computer:
             return "Computer"
 
+        case .aiChat:
+            return "AI Chat"
+
+        case .aiChatSessions:
+            return "AI Chat Sessions"
+
         case let .collection(collectionNavigation):
             switch collectionNavigation.kind {
             case .temporary:
@@ -100,6 +109,8 @@ enum FileManagerAiChatContextAdapter {
 
     private static func currentViewIdentifier(for navigationState: ContentPageNavigationRoute) -> String {
         switch navigationState {
+        case .home:
+            "Home"
         case let .folder(path):
             path
         case .recents:
@@ -108,6 +119,10 @@ enum FileManagerAiChatContextAdapter {
             tagName
         case .computer:
             "Computer"
+        case let .aiChat(sessionID):
+            "AI Chat:\(sessionID)"
+        case let .aiChatSessions(sessionID):
+            "AI Chat Sessions:\(sessionID)"
         case let .collection(collectionNavigation):
             switch collectionNavigation.kind {
             case .temporary:
@@ -120,6 +135,8 @@ enum FileManagerAiChatContextAdapter {
 
     private static func currentViewMetadata(for navigationState: ContentPageNavigationRoute) -> [String: String] {
         switch navigationState {
+        case .home:
+            ["route": "home"]
         case let .folder(path):
             ["route": "folder", "path": path]
         case .recents:
@@ -128,6 +145,10 @@ enum FileManagerAiChatContextAdapter {
             ["route": "tags", "path": tagName]
         case .computer:
             ["route": "computer"]
+        case let .aiChat(sessionID):
+            ["route": "aiChat", "sessionID": sessionID]
+        case let .aiChatSessions(sessionID):
+            ["route": "aiChatSessions", "sessionID": sessionID]
         case let .collection(collectionNavigation):
             switch collectionNavigation.kind {
             case .temporary:

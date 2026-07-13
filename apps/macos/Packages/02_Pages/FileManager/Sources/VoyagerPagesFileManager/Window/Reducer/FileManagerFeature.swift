@@ -27,6 +27,10 @@ public struct FileManagerFeature {
             FileManagerInspectorFeature()
         }
 
+        Scope(state: \.contentTabs, action: \.contentTabs) {
+            ContentTabFeature()
+        }
+
         FileManagerWindowNavigationReducer()
         FileManagerWindowLifecycleReducer()
         FileManagerWindowPreferencesReducer()

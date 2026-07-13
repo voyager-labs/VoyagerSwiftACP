@@ -5,6 +5,9 @@ import VoyagerShared
 
 @Reducer
 struct FileManagerSidebarPreferenceReducer {
+    typealias State = FileManagerSidebarState
+    typealias Action = FileManagerSidebarAction
+
     @Dependency(\.userDefaultsClient)
     private var userDefaultsClient
 
@@ -25,18 +28,6 @@ struct FileManagerSidebarPreferenceReducer {
                 }
                 state.sidebarWidth = clampedWidth
                 userDefaultsClient.setDouble(clampedWidth, SettingsKeys.sidebarWidth)
-                return .none
-
-            case .view(.toggleFavoritesSection):
-                state.isFavoritesCollapsed.toggle()
-                return .none
-
-            case .view(.toggleLocationsSection):
-                state.isLocationsCollapsed.toggle()
-                return .none
-
-            case .view(.toggleTagsSection):
-                state.isTagsCollapsed.toggle()
                 return .none
 
             default:

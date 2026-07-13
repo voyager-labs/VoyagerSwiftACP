@@ -282,7 +282,14 @@ struct AiChatStateDisplayModelBuilder {
     }
 
     private var hasInFlightRequest: Bool {
-        state.executionPhase.isProcessing
+        if state.executionPhase.isProcessing { return true }
+        guard let sessionID = state.sessionID else { return false }
+        if state.backgroundPendingRequestStarts.values.contains(where: { $0.sessionID == sessionID }) {
+            return true
+        }
+        return state.backgroundExecutionPhases.values.contains { phase in
+            phase.lock?.context.sessionID == sessionID
+        }
     }
 
     private func isVisibleRequest(lock: AiChatRequestLock) -> Bool {

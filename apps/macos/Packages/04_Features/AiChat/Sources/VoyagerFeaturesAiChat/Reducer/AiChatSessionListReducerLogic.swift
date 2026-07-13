@@ -21,35 +21,23 @@ extension AiChatFeature {
         _ executionPhase: AiChatExecutionPhase,
         state: inout State,
     ) {
-        guard case .processing = executionPhase else { return }
-        state.executionPhase = executionPhase
+        guard let lock = executionPhase.lock else { return }
+
+        switch executionPhase {
+        case .processing, .completed, .persistenceRecovery:
+            state.backgroundExecutionPhases[lock.requestID] = executionPhase
+            if state.executionPhase.requestID == lock.requestID {
+                state.executionPhase = .idle
+            }
+
+        case .idle, .failed, .cancelled:
+            break
+        }
     }
 
     func startNewUnselectedChat(state: inout State) -> AiChatSessionSnapshot {
         let sessionID = AiChatSessionID(rawValue: uuid())
-        state.sessionID = sessionID
-        state.emptyDraftSessionID = sessionID
-        state.sessionStatus = .idle
-        state.mode = .chat
-        state.restoreSessionID = nil
-        state.currentSessionCustomTitle = nil
-        state.restoreOutcome = nil
-        state.restoreFailure = nil
-        state.sessionList.selectedSessionID = nil
-        state.sessionList.errorMessage = nil
-        state.transcriptHistory = []
-        state.draftText = ""
-        state.streamingAssistantDraft = nil
-        state.lockedModelHandle = nil
-        state.lastExecutionFailure = nil
-        state.lastRequestContext = nil
-        state.lastRequestContextModelHandle = nil
-        state.addedAttachments = []
-        state.currentContextFolderStructureModes = [:]
-        state.executionPhase = .idle
-        state.selectedModelHandle = nil
-        state.selectedThinking = nil
-        state.unavailableSelectedModelHandle = nil
+        prepareEmptyDraftChatSession(sessionID, selectedSessionID: nil, state: &state)
 
         return AiChatSessionSnapshot(
             sessionID: sessionID,
@@ -70,8 +58,8 @@ extension AiChatFeature {
     func saveNewChat(_ snapshot: AiChatSessionSnapshot) -> Effect<Action> {
         .run { [aiChatSessionPersistenceClient] send in
             do {
-                try await aiChatSessionPersistenceClient.saveSession(snapshot)
-                await send(.newChatCreated(snapshot))
+                let persistedSnapshot = try await aiChatSessionPersistenceClient.saveSession(snapshot)
+                await send(.newChatCreated(persistedSnapshot))
             } catch is CancellationError {
                 return
             } catch {
@@ -79,6 +67,77 @@ extension AiChatFeature {
             }
         }
         .cancellable(id: CancelID.newChat, cancelInFlight: true)
+    }
+
+    func routeToChatSession(_ sessionID: AiChatSessionID, state: inout State) -> Effect<Action> {
+        state.sessionList.cancelRenaming()
+        state.sessionList.errorMessage = nil
+
+        if state.sessionID == sessionID {
+            if let restoreSessionID = state.restoreSessionID, restoreSessionID != sessionID {
+                state.restoreSessionID = nil
+                if state.sessionList.selectedSessionID == restoreSessionID {
+                    state.sessionList.selectedSessionID = nil
+                }
+            }
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            if let promotedExecutionPhase = promotedNavigationExecutionPhase(for: sessionID, state: &state) {
+                state.executionPhase = promotedExecutionPhase
+            }
+            state.mode = .chat
+            return .cancel(id: CancelID.restore)
+        }
+
+        if state.restoreSessionID == sessionID {
+            return .none
+        }
+
+        if state.sessionList.allRows.contains(where: { $0.sessionID == sessionID }) {
+            if state.sessionID != sessionID {
+                moveVisibleProcessingToBackgroundIfNeeded(state: &state, targetSessionID: sessionID)
+                state.currentContextFolderStructureModes = [:]
+            }
+            state.sessionList.selectedSessionID = sessionID
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.restoreSessionID = sessionID
+            state.mode = .sessions
+            return restoreSession(sessionID: sessionID, state: state)
+        }
+
+        prepareEmptyDraftChatSession(sessionID, selectedSessionID: sessionID, state: &state)
+        return .cancel(id: CancelID.restore)
+    }
+
+    func prepareEmptyDraftChatSession(
+        _ sessionID: AiChatSessionID,
+        selectedSessionID: AiChatSessionID?,
+        state: inout State,
+    ) {
+        state.sessionID = sessionID
+        state.emptyDraftSessionID = sessionID
+        state.sessionStatus = .idle
+        state.mode = .chat
+        state.restoreSessionID = nil
+        state.currentSessionCustomTitle = nil
+        state.restoreOutcome = nil
+        state.restoreFailure = nil
+        state.sessionList.selectedSessionID = selectedSessionID
+        state.sessionList.errorMessage = nil
+        state.transcriptHistory = []
+        state.draftText = ""
+        state.streamingAssistantDraft = nil
+        state.lockedModelHandle = nil
+        state.lastExecutionFailure = nil
+        state.lastRequestContext = nil
+        state.lastRequestContextModelHandle = nil
+        state.addedAttachments = []
+        state.currentContextFolderStructureModes = [:]
+        state.executionPhase = .idle
+        state.selectedModelHandle = nil
+        state.selectedThinking = nil
+        state.unavailableSelectedModelHandle = nil
     }
 
     func renameSession(sessionID: AiChatSessionID, title: String) -> Effect<Action> {
@@ -89,10 +148,10 @@ extension AiChatFeature {
                     return
                 }
                 let renamedSnapshot = Self.snapshot(snapshot, renamedTo: title, updatedAtMs: snapshot.updatedAtMs)
-                try await aiChatSessionPersistenceClient.saveSession(renamedSnapshot)
+                let persistedSnapshot = try await aiChatSessionPersistenceClient.saveSession(renamedSnapshot)
                 await send(.sessionRenameSucceeded(
-                    AiChatSessionSummary(snapshot: renamedSnapshot),
-                    customTitle: renamedSnapshot.customTitle,
+                    AiChatSessionSummary(snapshot: persistedSnapshot),
+                    customTitle: persistedSnapshot.customTitle,
                 ))
             } catch is CancellationError {
                 return
@@ -123,6 +182,47 @@ extension AiChatFeature {
             lastRequestContext: snapshot.lastRequestContext,
             updatedAtMs: updatedAtMs,
         )
+    }
+
+    func refreshCustomTitleInExecutionOwners(
+        sessionID: AiChatSessionID,
+        customTitle: String?,
+        state: inout State,
+    ) {
+        state.executionPhase = executionPhase(
+            state.executionPhase,
+            updatingCustomTitle: customTitle,
+            for: sessionID,
+        )
+        for (requestID, phase) in state.backgroundExecutionPhases {
+            state.backgroundExecutionPhases[requestID] = executionPhase(
+                phase,
+                updatingCustomTitle: customTitle,
+                for: sessionID,
+            )
+        }
+    }
+
+    private func executionPhase(
+        _ phase: AiChatExecutionPhase,
+        updatingCustomTitle customTitle: String?,
+        for sessionID: AiChatSessionID,
+    ) -> AiChatExecutionPhase {
+        guard phase.lock?.context.sessionID == sessionID else { return phase }
+        switch phase {
+        case .idle:
+            return .idle
+        case let .processing(lock):
+            return .processing(lock.recordingCustomTitle(customTitle))
+        case let .completed(lock):
+            return .completed(lock.recordingCustomTitle(customTitle))
+        case let .failed(lock, failure):
+            return .failed(lock.recordingCustomTitle(customTitle), failure)
+        case let .cancelled(lock):
+            return .cancelled(lock.recordingCustomTitle(customTitle))
+        case let .persistenceRecovery(lock, failure):
+            return .persistenceRecovery(lock.recordingCustomTitle(customTitle), failure)
+        }
     }
 
     func deleteSession(_ sessionID: AiChatSessionID) -> Effect<Action> {
@@ -230,7 +330,10 @@ extension AiChatFeature {
                     wasCancelled: true,
                 ))
             }
-            preDeleteEffects.append(cancelRequestLifecycle())
+        }
+        let deletedSessionEffects = cancelRequestLifecycle(for: sessionID, state: &state)
+        if let deletedSessionEffects {
+            preDeleteEffects.append(deletedSessionEffects)
         }
         guard !preDeleteEffects.isEmpty else {
             return deleteSession(sessionID)
@@ -248,6 +351,7 @@ extension AiChatFeature {
         state.sessionList.unreadCompletedSessionIDs.remove(sessionID)
         state.sessionList.errorMessage = nil
         if state.sessionID != sessionID {
+            moveVisibleProcessingToBackgroundIfNeeded(state: &state, targetSessionID: sessionID)
             state.currentContextFolderStructureModes = [:]
         }
 
@@ -286,9 +390,41 @@ extension AiChatFeature {
         )
     }
 
-    func applySessionSnapshotSaved(summary: AiChatSessionSummary, state: inout State) {
+    func applySessionSnapshotSaved(
+        summary: AiChatSessionSummary,
+        snapshot: AiChatSessionSnapshot?,
+        requestID: AiChatRequestID?,
+        runID: AiChatRunID?,
+        state: inout State,
+    ) {
+        if let requestID,
+           let runID,
+           let backgroundLock = state.backgroundExecutionPhases[requestID]?.lock,
+           backgroundLock.runID == runID
+        {
+            state.backgroundExecutionPhases[requestID] = nil
+        }
+        let matchingCompletedLock: AiChatRequestLock? = if case let .completed(lock) = state.executionPhase,
+                                                           lock.requestID == requestID,
+                                                           lock.runID == runID
+        {
+            lock
+        } else {
+            nil
+        }
+        if let matchingCompletedLock {
+            state.executionPhase = .completed(matchingCompletedLock.clearingFinalSnapshot())
+        }
         guard !state.sessionList.deletedSessionIDs.contains(summary.sessionID) else { return }
-        state.sessionList.replaceRow(summary)
+        let mergeResult = state.sessionList.replaceRowIfNewer(summary)
+        guard mergeResult.acceptsRow else { return }
+        if mergeResult.permitsSnapshotPayload || matchingCompletedLock != nil,
+           let snapshot,
+           state.mode == .chat,
+           state.sessionID == snapshot.sessionID
+        {
+            applyVisibleSavedSnapshot(snapshot, state: &state)
+        }
         if state.restoreSessionID == nil || state.restoreSessionID == summary.sessionID {
             state.sessionList.selectedSessionID = summary.sessionID
         }
@@ -298,6 +434,21 @@ extension AiChatFeature {
             state.sessionList.unreadCompletedSessionIDs.insert(summary.sessionID)
         }
         state.sessionList.errorMessage = nil
+    }
+
+    private func applyVisibleSavedSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
+        state.sessionID = snapshot.sessionID
+        state.sessionStatus = snapshot.status
+        state.currentSessionCustomTitle = snapshot.customTitle
+        state.transcriptHistory = snapshot.transcriptHistory
+        state.streamingAssistantDraft = nil
+        state.lockedModelHandle = nil
+        state.lastExecutionFailure = nil
+        state.lastRequestContext = snapshot.lastRequestContext
+        state.lastRequestContextModelHandle = snapshot.lastRequestContext == nil ? nil : snapshot.model
+        state.selectedModelHandle = snapshot.model
+        state.selectedThinking = snapshot.selectedThinking
+        state.transcriptAutoScrollVersion += 1
     }
 
     func applyNewChatCreated(snapshot: AiChatSessionSnapshot, state: inout State) {

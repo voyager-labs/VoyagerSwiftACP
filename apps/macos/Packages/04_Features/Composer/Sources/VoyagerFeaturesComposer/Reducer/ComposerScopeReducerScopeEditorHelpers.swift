@@ -154,5 +154,5 @@ func handleClearAll(
     state.lastFiltersResponse = nil
     state.lastScopeChangeFeedback = nil
     applyQueryPhaseTransition(.reset, state: &state)
-    return .cancel(id: ComposerFeature.CancelID.filters)
+    return .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.cancellationOwnerID))
 }
