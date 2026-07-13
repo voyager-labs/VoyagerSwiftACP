@@ -7,6 +7,7 @@ public enum ContentTabAction: Sendable {
     case setCurrent(ContentTabID)
     case close(ContentTabID)
     case restore
+    case duplicate(sourceID: ContentTabID, duplicateID: ContentTabID)
     case pin(ContentTabID)
     case unpin(ContentTabID)
     case updateActivePageAnchor(ContentTabID, ContentTabPageAnchor)

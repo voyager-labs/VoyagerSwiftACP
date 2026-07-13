@@ -35,6 +35,9 @@ public struct ContentTabFeature {
             case .restore:
                 return restore(state: &state)
 
+            case let .duplicate(sourceID, duplicateID):
+                return duplicate(sourceID: sourceID, duplicateID: duplicateID, state: &state)
+
             case let .pin(id):
                 return pin(id: id, state: &state)
 
@@ -194,6 +197,50 @@ extension ContentTabFeature {
         state.activeTabID = item.id
         state.recentlyClosed = nil
         return .none
+    }
+
+    private func duplicate(sourceID: ContentTabID, duplicateID: ContentTabID,
+                           state: inout ContentTabState) -> Effect<ContentTabAction>
+    {
+        guard let source = state.tabs[id: sourceID] else { return .none }
+        guard state.tabs[id: duplicateID] == nil else { return .none }
+        guard state.tabs.count < ContentTabConstants.maxTabs else { return .none }
+        guard isValidDuplicateAnchor(source.anchor) else { return .none }
+
+        let duplicateItem = ContentTabItem(
+            id: duplicateID,
+            page: source.page,
+            anchor: source.anchor,
+            isPinned: false,
+            title: source.title,
+            iconName: source.iconName,
+        )
+
+        if source.isPinned {
+            state.tabs.append(duplicateItem)
+        } else {
+            let sourceIndex = state.tabs.index(id: sourceID)!
+            state.tabs.insert(duplicateItem, at: sourceIndex + 1)
+            state.previousActiveTabID = state.activeTabID
+            state.activeTabID = duplicateID
+        }
+
+        return .none
+    }
+
+    private func isValidDuplicateAnchor(_ anchor: ContentTabPageAnchor) -> Bool {
+        switch anchor {
+        case .homeDefault:
+            true
+        case let .directory(path):
+            UUID(uuidString: path) == nil
+        case .collectionFile:
+            true
+        case .virtualCollection:
+            true
+        case let .aiChat(sessionID):
+            UUID(uuidString: sessionID) != nil
+        }
     }
 
     private func pin(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {
