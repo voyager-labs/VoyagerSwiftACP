@@ -181,6 +181,20 @@ class MacOSTestFlowTests(unittest.TestCase):
             1,
         )
 
+    def test_discover_flow_docs_limits_checker_to_managed_categories(self) -> None:
+        self.add_doc("onb", "access_unlock")
+        self.add_doc("cbw", "chat_session_management")
+
+        self.assertEqual(
+            [
+                (category, slug)
+                for category, slug, _ in macos_test_flow.discover_flow_docs(
+                    self.docs_root
+                )
+            ],
+            [("onb", "access_unlock")],
+        )
+
     def test_flow_missing_document_or_suite(self) -> None:
         self.assertEqual(
             macos_test_flow.main(

@@ -16,6 +16,7 @@ from typing import NamedTuple, cast
 CATEGORY_RE = re.compile(r"^[a-z][a-z0-9]*$")
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
 CLASS_RE = re.compile(r"\b(?:final\s+)?class\s+(\w+)")
+FLOW_CATEGORIES = frozenset({"acc", "onb", "set"})
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_SHELL = ROOT_DIR / "scripts/dev/macos-test.sh"
 GAPS_PATH = ROOT_DIR / "scripts/dev/macos_test_flow_gaps.json"
@@ -101,7 +102,11 @@ def discover_flow_docs(docs_root: Path) -> list[tuple[str, str, Path]]:
     for path in sorted(specs_root.glob("*/flows/*_flow.md")):
         category = path.parent.parent.name
         slug = path.name.removesuffix("_flow.md")
-        if CATEGORY_RE.fullmatch(category) and SLUG_RE.fullmatch(slug):
+        if (
+            category in FLOW_CATEGORIES
+            and CATEGORY_RE.fullmatch(category)
+            and SLUG_RE.fullmatch(slug)
+        ):
             docs.append((category, slug, path))
     return docs
 

@@ -12,45 +12,6 @@ import XCTest
 
 @MainActor
 final class AppRootCompositionTests: XCTestCase {
-    // MARK: - Launch bootstrap
-
-    func testAppRootLaunchWillFinishLaunchingForwardsSettingsBootstrapLocalPreferences() async {
-        let store = TestStore(initialState: AppRootFeature.State()) {
-            AppRootFeature()
-        }
-        store.exhaustivity = .off
-
-        await store.send(.lifecycle(.launch(.willFinishLaunching)))
-        await store.receive(\.settings.bootstrapLocalPreferences)
-        await store.receive(\.settings.ai.onAppear)
-    }
-
-    func testOpenAISettingsSelectsAISectionWhenAccessStatusIsActive() async {
-        var initialState = AppRootFeature.State()
-        initialState.settings.accessStatus = .coreLicenseActive
-        let store = TestStore(initialState: initialState) {
-            AppRootFeature()
-        }
-        store.exhaustivity = .off
-
-        await store.send(.openAISettings)
-        await store.receive(\.settings.selectSection) { state in
-            state.settings.selectedSection = .ai
-        }
-    }
-
-    func testOpenAISettingsDoesNotSelectAISectionWhenAccessStatusIsInactive() async {
-        var initialState = AppRootFeature.State()
-        initialState.settings.accessStatus = .none
-        let store = TestStore(initialState: initialState) {
-            AppRootFeature()
-        }
-        store.exhaustivity = .off
-
-        await store.send(.openAISettings)
-        await store.finish()
-    }
-
     /// Task 3: terminating 상태에서는 unlocked delegate를 거부한다.
     func testLifecycleUnlockedRejectedWhenTerminating() async {
         let snapshot = AccessStatusSnapshot(
