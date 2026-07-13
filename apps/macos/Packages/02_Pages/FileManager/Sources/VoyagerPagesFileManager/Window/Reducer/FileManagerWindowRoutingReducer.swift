@@ -97,6 +97,9 @@ struct FileManagerWindowRoutingReducer {
             case .sidebar(.delegate(.openContentTab)):
                 return .send(.contentTabs(.open(.homeDefault)))
 
+            case let .sidebar(.delegate(.duplicateContentTab(sourceID))):
+                return .send(.request(.duplicateContentTab(sourceID)))
+
             case .content(.delegate(.closeWindow)):
                 return .send(.closeWindow)
 
@@ -333,6 +336,74 @@ struct FileManagerWindowRoutingReducer {
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
 
+            case let .contentTabs(.duplicate(sourceID, duplicateID)):
+                // Post-reduce branch: ContentTabFeature가 row를 생성한 후 handoff/rollback 처리
+                // tabs[id: duplicateID]가 없으면 core guard가 no-op이므로 projection만 유지
+                guard state.contentTabs.tabs[id: duplicateID] != nil else {
+                    syncDashboardProjections(state: &state)
+                    return .none
+                }
+
+                // Pending close 상태: exact duplicateID row/cache 제거 후 pending state 복원
+                if keepPendingDuplicateContentTabCloseFocused(
+                    duplicateID: duplicateID,
+                    state: &state,
+                ) {
+                    return .none
+                }
+
+                // Duplicate가 active가 아니면 pinned-source → projection만 동기화
+                guard state.contentTabs.activeTabID == duplicateID else {
+                    syncDashboardProjections(state: &state)
+                    return .none
+                }
+
+                // === Active duplicate: .contentTabs(.open) handoff 패턴 적용 ===
+                let sourceAnchor = state.contentTabs.tabs[id: sourceID]?.anchor
+                let duplicateAnchor = state.contentTabs.tabs[id: duplicateID]?.anchor
+                let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
+                    || state.activeTabContentStateMissing
+                let handoffCleanupEffect: Effect<Action>
+                if shouldResyncContentNavigation {
+                    let aiChatLifecycleSessionIDs = aiChatLifecycleSessionIDsToPreserve(state.content.aiChat)
+                    if aiChatLifecycleSessionIDs.isEmpty {
+                        handoffCleanupEffect = prepareContentForActiveTabHandoff(state: &state.content)
+                    } else {
+                        for aiChatSessionID in aiChatLifecycleSessionIDs {
+                            state.addBackgroundAiChatState(sessionID: aiChatSessionID, state: state.content)
+                        }
+                        handoffCleanupEffect = prepareContentForActiveTabHandoff(
+                            state: &state.content,
+                            skipAiChatCleanup: true,
+                        )
+                    }
+                } else {
+                    handoffCleanupEffect = .none
+                }
+                if shouldResyncContentNavigation {
+                    state.saveCurrentContentStateForPreviousActiveTab()
+                    state.saveCurrentInspectorStateForPreviousActiveTab()
+                    // Duplicate anchor 기반 fresh Content state 생성 (source Content state 복사 금지)
+                    state.content = FileManagerContentFeature.State.initialContent(
+                        for: duplicateAnchor ?? sourceAnchor,
+                        inheritingWindowContextFrom: state.content,
+                    )
+                    state.syncActiveTabContentState()
+                    state.restoreInspectorStateForActiveTab()
+                }
+                syncDashboardProjections(state: &state)
+                syncSidebarSelectionForActiveContentTab(state: &state)
+                return .merge(
+                    handoffCleanupEffect,
+                    activeTabHandoffEffect(
+                        shouldResyncContentNavigation,
+                        state: state,
+                        aiConnectionsFileClient: aiConnectionsFileClient,
+                        skipAiChatCancel: true,
+                    ),
+                    closeInspectorForActiveAiChatEffect(state: state),
+                )
+
             case .contentTabs:
                 syncDashboardProjections(state: &state)
                 return .none
@@ -504,6 +575,23 @@ private extension FileManagerWindowRoutingReducer {
         state.syncActiveTabInspectorState()
         state.syncContentTabSidebarItems()
         syncSidebarSelectionForActiveContentTab(state: &state)
+    }
+
+    /// Pending close rollback variant: exact duplicateID row/cache만 제거하고 기존 pending state를 복원한다.
+    /// active가 안 바뀌었으므로 active/Content/Inspector/projection을 건드리지 않는다.
+    func keepPendingDuplicateContentTabCloseFocused(
+        duplicateID: ContentTabID,
+        state: inout State,
+    ) -> Bool {
+        guard state.pendingContentTabClose != nil else { return false }
+        // Exact duplicateID row/cache 제거
+        state.contentTabs.tabs.remove(id: duplicateID)
+        state.removeContentState(for: duplicateID)
+        state.removeInspectorState(for: duplicateID)
+        // Pending target/active/Content/Inspector/projection은 변경하지 않음
+        state.syncContentTabSidebarItems()
+        syncSidebarSelectionForActiveContentTab(state: &state)
+        return true
     }
 
     func handleCloseContentTabRequested(

@@ -1,6 +1,9 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAi
+import VoyagerEntitiesEntry
 @testable import VoyagerPagesFileManager
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -418,5 +421,157 @@ final class CTM001DuplicateContentTabTests: XCTestCase {
         XCTAssertEqual(state.pinnedRecords, originalPinnedRecords)
         XCTAssertEqual(state.pendingPinnedRecordIDs, originalPendingIDs)
         XCTAssertEqual(state.recentlyClosed, originalRecentlyClosed)
+    }
+}
+
+// MARK: - CTM-001-duplicate_pending_close_rollback
+
+@MainActor
+extension CTM001DuplicateContentTabTests {
+    /// CTM-001-duplicate_pending_close_rollback: pending close 중 direct duplicate action이 exact row/cache를
+    /// 제거하고 pending state를 보존함
+    /// keepPendingDuplicateContentTabCloseFocused는 exact duplicateID만 제거하고 기존 pending target/active/Content/Inspector를
+    /// 건드리지 않는다.
+    /// - 검증 내용: duplicateID의 row가 tabs에서 제거되고, cache도 제거되며, pending state와 active tab은 유지됨
+    /// - 사전 조건: Active tab에 pendingContentTabClose가 설정됨
+    /// - 기대 결과: duplicate row가 제거되고, pending 상태 유지, activeTabID는 기존 pending target
+    func testDuplicate_pendingCloseRollback_removesExactDuplicateRowAndPreservesPending() async {
+        let pendingTabID = ContentTabID()
+        let sourceID = ContentTabID()
+        let duplicateID = ContentTabID()
+        let directoryPath = "/Users/test/Desktop"
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(id: pendingTabID, page: .directory, anchor: .directory(path: directoryPath),
+                               isPinned: false, title: "Desktop", iconName: "folder"),
+                ContentTabItem(id: sourceID, page: .home, anchor: .homeDefault, isPinned: false,
+                               title: "Home", iconName: "house"),
+                // duplicateID row가 이미 존재하는 상태 (ContentTabFeature를 거치지 않고 직접 전송)
+                ContentTabItem(id: duplicateID, page: .directory, anchor: .directory(path: directoryPath),
+                               isPinned: false, title: "Desktop", iconName: "folder"),
+            ],
+            activeTabID: pendingTabID,
+            recentlyClosed: nil,
+        )
+        var content = FileManagerContentFeature.State()
+        content.navigation.seedInitialFolderPath(directoryPath)
+        state.content = content
+        state.tabContentStates = [
+            pendingTabID: content,
+            sourceID: FileManagerContentFeature.State(),
+            duplicateID: content,
+        ]
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: pendingTabID,
+            previousActiveTabID: nil,
+        )
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off
+
+        // Direct duplicate action (simulating post-reduce entry with pending close)
+        await store.send(.contentTabs(.duplicate(sourceID: sourceID, duplicateID: duplicateID)))
+
+        // Pending close state is preserved
+        XCTAssertNotNil(store.state.pendingContentTabClose)
+        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, pendingTabID)
+        // Exact duplicateID row 제거됨
+        XCTAssertNil(store.state.contentTabs.tabs[id: duplicateID])
+        // Source row는 유지됨
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: sourceID])
+        // Pending target row는 유지됨
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: pendingTabID])
+        // Active tab unchanged (pending target 유지)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, pendingTabID)
+        // Duplicate cache 제거됨
+        XCTAssertNil(store.state.tabContentStates[duplicateID])
+        XCTAssertNil(store.state.tabInspectorStates[duplicateID])
+        await store.finish()
+    }
+
+    /// CTM-001-duplicate_pending_close_rollback: pending close 없을 때는 post-reduce duplicate가 정상 동작
+    /// keepPendingDuplicateContentTabCloseFocused의 guard가 false를 반환하면 일반 duplicate handoff로 이어진다.
+    /// CTM-001-duplicate_via_contentTabs: ContentTabFeature.duplicate 직접 전송 시 row 생성
+    /// Scope 수준에서 .contentTabs(.duplicate) action이 올바르게 row를 생성하는지 검증한다.
+    func testDuplicate_viaDirectContentTabsAction() async {
+        let sourceID = ContentTabID()
+        let duplicateID = ContentTabID()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: sourceID,
+                page: .collection,
+                anchor: .virtualCollection(id: "Recents"),
+                isPinned: false,
+                title: "Recents",
+                iconName: "clock",
+            )],
+            activeTabID: sourceID,
+            recentlyClosed: nil,
+        )
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.duplicate(sourceID: sourceID, duplicateID: duplicateID)))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
+        await store.finish()
+    }
+
+    /// CTM-001-duplicate_via_request: .request(.duplicateContentTab)을 거쳐 command reducer가 ContentTabFeature에 전달
+    func testDuplicate_viaRequestAction() async {
+        let sourceID = ContentTabID()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: sourceID,
+                page: .collection,
+                anchor: .virtualCollection(id: "Recents"),
+                isPinned: false,
+                title: "Recents",
+                iconName: "clock",
+            )],
+            activeTabID: sourceID,
+            recentlyClosed: nil,
+        )
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.request(.duplicateContentTab(sourceID)))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
+        XCTAssertNil(store.state.pendingContentTabClose)
+        await store.finish()
     }
 }

@@ -311,18 +311,25 @@ struct FileManagerWindowCommandRoutingReducer {
     private func handleRequestedCommand(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
         switch command {
         case .openNewContentTab:
-            .send(.contentTabs(.open(.homeDefault)))
+            return Effect<Action>.send(.contentTabs(.open(.homeDefault)))
 
         case .closeActiveContentTab:
-            state.contentTabs.activeTabID
-                .map { .send(.closeContentTabRequested($0)) }
-                ?? .none
+            return state.contentTabs.activeTabID
+                .map { Effect<Action>.send(.closeContentTabRequested($0)) }
+                ?? Effect<Action>.none
 
         case .toggleActiveContentTabPin:
-            toggleActiveContentTabPin(state: state)
+            return toggleActiveContentTabPin(state: state)
 
         case .restoreLastClosedContentTab:
-            handleRestoreLastClosedContentTab(state: &state)
+            return handleRestoreLastClosedContentTab(state: &state)
+
+        case let .duplicateContentTab(sourceID):
+            return handleDuplicateContentTabRequested(sourceID: sourceID, state: &state)
+
+        case .duplicateActiveContentTab:
+            guard let activeTabID = state.contentTabs.activeTabID else { return .none }
+            return handleDuplicateContentTabRequested(sourceID: activeTabID, state: &state)
 
         case .newFolder,
              .openSelectedItem,
@@ -336,22 +343,22 @@ struct FileManagerWindowCommandRoutingReducer {
              .selectAll,
              .copyAbsolutePaths,
              .copyURLs:
-            handleEntryRequest(command, state: &state)
+            return handleEntryRequest(command, state: &state)
 
         case .saveCollection,
              .saveCollectionAs,
              .toggleComposer,
              .openContextualAiChat,
              .presentContextualAiChat:
-            handleComposerRequest(command, state: &state)
+            return handleComposerRequest(command, state: &state)
 
         case .goBack,
              .goForward,
              .goToEnclosingDirectory:
             if state.pendingContentTabClose != nil {
-                .none
+                return Effect<Action>.none
             } else {
-                handleNavigationRequest(command)
+                return handleNavigationRequest(command)
             }
 
         case .toggleSidebar,
@@ -359,11 +366,11 @@ struct FileManagerWindowCommandRoutingReducer {
              .setGroupKey,
              .setSortKey,
              .setSortOrder:
-            handleLayoutRequest(command, state: &state)
+            return handleLayoutRequest(command, state: &state)
 
         case .requestUndo,
              .requestRedo:
-            handleUndoRedoRequest(command)
+            return handleUndoRedoRequest(command)
         }
     }
 
@@ -702,6 +709,95 @@ struct FileManagerWindowCommandRoutingReducer {
         return .run { _ in
             await collectionAlertClient.showCollectionOpenErrorAlert(
                 "Cannot Restore Tab",
+                message,
+            )
+        }
+    }
+
+    // MARK: - Duplicate Content Tab
+
+    private enum DuplicateFailureReason {
+        case missingDirectory
+        case missingCollectionFile
+        case invalidAiChatSession
+        case temporaryCollection
+    }
+
+    private func handleDuplicateContentTabRequested(
+        sourceID: ContentTabID,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.pendingContentTabClose == nil else { return .none }
+        guard let source = state.contentTabs.tabs[id: sourceID] else { return .none }
+        guard state.contentTabs.tabs.count < ContentTabConstants.maxTabs else { return .none }
+
+        // source Content state 결정: active면 state.content, inactive면 tabContentStates[sourceID]
+        let isActiveSource = sourceID == state.contentTabs.activeTabID
+        let sourceContentState: FileManagerContentFeature.State? = isActiveSource
+            ? state.content
+            : state.tabContentStates[sourceID]
+
+        // anchor 기반 검증
+        if let failureReason = duplicateFailureReason(
+            for: source.anchor,
+            contentState: sourceContentState,
+        ) {
+            return duplicateFailureFeedbackEffect(failureReason)
+        }
+
+        // cached Content state가 있을 때만 temporary/unsaved Collection mode mismatch 거부
+        if let contentState = sourceContentState {
+            if contentState.isCollectionMode, !contentState.canSaveCollection {
+                return .none
+            }
+        }
+
+        let duplicateID = ContentTabID()
+        return .send(.contentTabs(.duplicate(sourceID: sourceID, duplicateID: duplicateID)))
+    }
+
+    private func duplicateFailureReason(
+        for anchor: ContentTabPageAnchor,
+        contentState _: FileManagerContentFeature.State?,
+    ) -> DuplicateFailureReason? {
+        switch anchor {
+        case .homeDefault, .virtualCollection:
+            return nil
+
+        case let .directory(path):
+            var isDirectory = ObjCBool(false)
+            guard fileManagerClient.fileExistsWithIsDirectory(path, &isDirectory),
+                  isDirectory.boolValue
+            else { return .missingDirectory }
+            return nil
+
+        case let .collectionFile(url):
+            guard fileManagerClient.fileExistsWithIsDirectory(url.path, nil)
+            else { return .missingCollectionFile }
+            return nil
+
+        case let .aiChat(sessionID):
+            guard UUID(uuidString: sessionID) != nil
+            else { return .invalidAiChatSession }
+            return nil
+        }
+    }
+
+    private func duplicateFailureFeedbackEffect(_ reason: DuplicateFailureReason) -> Effect<Action> {
+        let collectionAlertClient = collectionAlertClient
+        let message = switch reason {
+        case .missingDirectory:
+            "The directory no longer exists."
+        case .missingCollectionFile:
+            "The collection file no longer exists."
+        case .invalidAiChatSession:
+            "The AI Chat session is no longer valid."
+        case .temporaryCollection:
+            "Cannot duplicate a temporary collection. Save the collection first."
+        }
+        return .run { _ in
+            await collectionAlertClient.showCollectionOpenErrorAlert(
+                "Cannot Duplicate Tab",
                 message,
             )
         }

@@ -9669,6 +9669,332 @@ extension CTM005IndependentContentTabSessionTests {
         await store.skipReceivedActions()
         await store.finish()
     }
+
+    // MARK: - CTM-005-content_tab_duplicate
+
+    /// CTM-005-content_tab_duplicate: Active Directory source duplicate 시 fresh content state와 handoff가 생성됨
+    func testDuplicate_activeDirectorySource_createsFreshContentAndHandoff() async throws {
+        let sourceID = ContentTabID()
+        let directoryPath = "/Users/test/Desktop"
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: sourceID,
+                page: .directory,
+                anchor: .directory(path: directoryPath),
+                isPinned: false,
+                title: "Desktop",
+                iconName: "folder",
+            )],
+            activeTabID: sourceID,
+            recentlyClosed: nil,
+        )
+        state.content.navigation.seedInitialFolderPath(directoryPath)
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            var client = FileManagerClient.testValue
+            client.fileExistsWithIsDirectory = { path, isDir in
+                if path == directoryPath { isDir?.pointee = true
+                    return true
+                }
+                return false
+            }
+            $0.fileManagerClient = client
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.request(.duplicateActiveContentTab))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
+        XCTAssertEqual(store.state.contentTabs.tabs[1].anchor, .directory(path: directoryPath))
+        XCTAssertNotEqual(store.state.contentTabs.activeTabID, sourceID)
+        let duplicateID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+        XCTAssertEqual(store.state.content.navigation.currentPath, directoryPath)
+        XCTAssertNotNil(store.state.tabContentStates[sourceID])
+        _ = duplicateID
+        await store.finish()
+    }
+
+    /// CTM-005-content_tab_duplicate: Active Collection file duplicate 시 fresh content/navigation 생성
+    func testDuplicate_activeCollectionFileSource_createsFreshCollectionContent() async throws {
+        let sourceID = ContentTabID()
+        let collectionURL = URL(fileURLWithPath: "/tmp/test.voycoll")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: sourceID,
+                page: .collection,
+                anchor: .collectionFile(url: collectionURL),
+                isPinned: false,
+                title: "Collection",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: sourceID,
+            recentlyClosed: nil,
+        )
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            var client = FileManagerClient.testValue
+            client.fileExistsWithIsDirectory = { path, _ in path == "/tmp/test.voycoll" }
+            $0.fileManagerClient = client
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.request(.duplicateActiveContentTab))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
+        let duplicateID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+        XCTAssertNotEqual(duplicateID, sourceID)
+        // Duplicate tab metadata는 collectionFile anchor를 유지
+        XCTAssertEqual(store.state.contentTabs.tabs[id: duplicateID]?.anchor, .collectionFile(url: collectionURL))
+        XCTAssertEqual(store.state.contentTabs.tabs[id: duplicateID]?.page, .collection)
+        await store.finish()
+    }
+
+    /// CTM-005-content_tab_duplicate: active AI Chat in-flight source duplicate는 같은 session ID 유지
+    func testDuplicate_activeAiChatInFlight_preservesLifecycleAndCreatesFreshContent() async throws {
+        let sourceID = ContentTabID()
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let sessionIDString = aiSessionID.rawValue.uuidString
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+            .recordingFinalSnapshot(AiChatSessionSnapshot(
+                sessionID: aiSessionID, status: .active, provider: nil, model: nil,
+                selectedModelRow: nil, selectedThinking: nil,
+                transcriptHistory: [
+                    AiChatMessage(role: .user, content: "test"),
+                    AiChatMessage(role: .assistant, content: "done"),
+                ],
+                lastRequestID: nil, lastRunID: nil, lastRequestContext: nil,
+                updatedAtMs: 1_234_567_890_000,
+            ))
+        var aiChatContent = FileManagerContentFeature.State()
+        aiChatContent.navigation.navigationState = .aiChat(sessionIDString)
+        aiChatContent.aiChat.sessionID = aiSessionID
+        aiChatContent.aiChat.sessionStatus = .active
+        aiChatContent.aiChat.executionPhase = .processing(requestLock)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: sourceID, page: .aiChat, anchor: .aiChat(sessionID: sessionIDString),
+                isPinned: false, title: "AI Chat", iconName: "sparkles",
+            )],
+            activeTabID: sourceID, recentlyClosed: nil,
+        )
+        state.content = aiChatContent
+        state.tabContentStates = [sourceID: aiChatContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            var client = FileManagerClient.testValue
+            client.fileExistsWithIsDirectory = { _, _ in false }
+            $0.fileManagerClient = client
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.request(.duplicateActiveContentTab))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
+        let duplicateID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+        XCTAssertNotEqual(duplicateID, sourceID)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: duplicateID]?.anchor, .aiChat(sessionID: sessionIDString))
+        XCTAssertEqual(store.state.tabContentStates[sourceID]?.aiChat.executionPhase, .processing(requestLock))
+        XCTAssertNil(store.state.tabContentStates[duplicateID]?.aiChat.sessionID)
+        XCTAssertNotNil(store.state.backgroundAiChatStates[aiSessionID])
+        await store.finish()
+    }
+
+    /// CTM-005-content_tab_duplicate: Virtual Collection source duplicate는 항상 허용됨
+    func testDuplicate_virtualCollectionSource_allowed() async {
+        let sourceID = ContentTabID()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: sourceID, page: .collection, anchor: .virtualCollection(id: "Recents"),
+                isPinned: false, title: "Recents", iconName: "clock",
+            )],
+            activeTabID: sourceID, recentlyClosed: nil,
+        )
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            var client = FileManagerClient.testValue
+            client.fileExistsWithIsDirectory = { _, _ in false }
+            $0.fileManagerClient = client
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.request(.duplicateActiveContentTab))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
+        XCTAssertNotEqual(store.state.contentTabs.activeTabID, sourceID)
+        await store.finish()
+    }
+
+    /// CTM-005-content_tab_duplicate: Inactive pinned source duplicate는 append되고 active 탭이 변경되지 않음
+    func testDuplicate_pinnedInactiveSource_doesNotChangeActive() async throws {
+        let pinID = ContentTabID()
+        let homeID = ContentTabID()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(id: pinID, page: .directory, anchor: .directory(path: "/pinned"),
+                               isPinned: true, title: "Pinned", iconName: "folder"),
+                ContentTabItem(id: homeID, page: .home, anchor: .homeDefault, isPinned: false,
+                               title: "Home", iconName: "house"),
+            ],
+            activeTabID: homeID, recentlyClosed: nil,
+        )
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            var client = FileManagerClient.testValue
+            client.fileExistsWithIsDirectory = { path, isDir in
+                if path == "/pinned" { isDir?.pointee = true
+                    return true
+                }
+                return false
+            }
+            $0.fileManagerClient = client
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.request(.duplicateContentTab(pinID)))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 3)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, homeID)
+        let lastTab = try XCTUnwrap(store.state.contentTabs.tabs.last)
+        XCTAssertEqual(lastTab.anchor, .directory(path: "/pinned"))
+        XCTAssertFalse(lastTab.isPinned)
+        await store.finish()
+    }
+
+    /// CTM-005-content_tab_duplicate: Inactive source duplicate는 source ID의 cache를 사용해 검증
+    func testDuplicate_inactiveSource_usesTabContentStateForValidation() async {
+        let homeID = ContentTabID()
+        let directoryID = ContentTabID()
+        let directoryPath = "/Users/test/Desktop"
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath("/home")
+        var directoryContent = FileManagerContentFeature.State()
+        directoryContent.navigation.seedInitialFolderPath(directoryPath)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(id: homeID, page: .home, anchor: .homeDefault, isPinned: false,
+                               title: "Home", iconName: "house"),
+                ContentTabItem(id: directoryID, page: .directory, anchor: .directory(path: directoryPath),
+                               isPinned: false, title: "Desktop", iconName: "folder"),
+            ],
+            activeTabID: homeID, recentlyClosed: nil,
+        )
+        state.content = homeContent
+        state.tabContentStates = [homeID: homeContent, directoryID: directoryContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            var client = FileManagerClient.testValue
+            client.fileExistsWithIsDirectory = { path, isDir in
+                if path == directoryPath { isDir?.pointee = true
+                    return true
+                }
+                return false
+            }
+            $0.fileManagerClient = client
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.request(.duplicateContentTab(directoryID)))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 3)
+        XCTAssertNotEqual(store.state.contentTabs.activeTabID, homeID)
+        XCTAssertNotNil(store.state.contentTabs.activeTabID)
+        XCTAssertEqual(store.state.tabContentStates[directoryID]?.navigation.currentPath, directoryPath)
+        XCTAssertNotNil(store.state.tabContentStates[homeID])
+        await store.finish()
+    }
+
+    /// CTM-005-content_tab_duplicate: missing path/file → no-op
+    func testDuplicate_missingPath_noop() async {
+        let sourceID = ContentTabID()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: sourceID, page: .directory, anchor: .directory(path: "/nonexistent"),
+                isPinned: false, title: "Missing", iconName: "folder",
+            )],
+            activeTabID: sourceID, recentlyClosed: nil,
+        )
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            var client = FileManagerClient.testValue
+            client.fileExistsWithIsDirectory = { _, _ in false }
+            $0.fileManagerClient = client
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.request(.duplicateActiveContentTab))
+
+        // Validation failed → no effects, state unchanged
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 1)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, sourceID)
+        await store.finish()
+    }
 }
 
 // MARK: - Helpers

@@ -23,6 +23,7 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case pinContentTab(ContentTabID)
         case unpinContentTab(ContentTabID)
         case openContentTab
+        case duplicateContentTab(ContentTabID)
     }
 
     @CasePathable

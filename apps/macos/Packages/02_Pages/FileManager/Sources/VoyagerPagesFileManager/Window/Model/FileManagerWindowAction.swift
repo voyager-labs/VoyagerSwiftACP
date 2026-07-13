@@ -79,6 +79,8 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case closeActiveContentTab
         case toggleActiveContentTabPin
         case restoreLastClosedContentTab
+        case duplicateContentTab(ContentTabID)
+        case duplicateActiveContentTab
     }
 
     @CasePathable
