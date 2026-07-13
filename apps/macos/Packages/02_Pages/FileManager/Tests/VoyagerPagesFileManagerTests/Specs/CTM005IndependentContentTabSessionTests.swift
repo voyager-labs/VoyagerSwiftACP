@@ -10071,6 +10071,59 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    /// CTM-005-content_tab_duplicate: active AI Chat in-flight 실패는 disk restore 없이 duplicate에 전파
+    func testDuplicate_activeAiChatInFlight_hydratesFailureWithoutDiskRestore() async throws {
+        let sourceID = ContentTabID()
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+        let loadedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+        let state = makeInFlightAiChatDuplicateState(
+            sourceID: sourceID,
+            sessionID: aiSessionID,
+            requestLock: requestLock,
+            sourceIsPinned: false,
+        )
+        let store = makeInFlightAiChatDuplicateStore(
+            state: state,
+            loadedSessionIDs: loadedSessionIDs,
+            staleSnapshot: makeAiChatSessionSnapshot(sessionID: aiSessionID),
+        )
+
+        await store.send(.request(.duplicateActiveContentTab))
+        await store.receive { action in
+            guard case let .contentTabs(.duplicate(receivedSourceID, _)) = action else { return false }
+            return receivedSourceID == sourceID
+        }
+
+        let duplicateID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+        XCTAssertNil(store.state.content.aiChat.sessionID)
+        XCTAssertNotNil(store.state.backgroundAiChatStates[aiSessionID])
+        XCTAssertEqual(loadedSessionIDs.value, [])
+
+        await store.send(.backgroundAiChat(.executionEvent(.failed(
+            context: requestLock.context,
+            reason: .network,
+        ))))
+
+        let failedLock = requestLock.recordingTerminal(
+            at: 1_234_567_890_000,
+            failure: .network,
+            wasCancelled: false,
+        )
+        XCTAssertEqual(store.state.content.aiChat.sessionID, aiSessionID)
+        XCTAssertEqual(store.state.content.aiChat.executionPhase, .failed(failedLock, .network))
+        XCTAssertEqual(store.state.content.aiChat.lastExecutionFailure, .network)
+        XCTAssertEqual(store.state.tabContentStates[duplicateID]?.aiChat.sessionID, aiSessionID)
+        XCTAssertEqual(store.state.tabContentStates[sourceID]?.aiChat.executionPhase, .failed(failedLock, .network))
+        XCTAssertNotNil(store.state.backgroundAiChatStates[aiSessionID])
+        XCTAssertEqual(loadedSessionIDs.value, [])
+
+        XCTAssertEqual(store.state.content.aiChat.sessionID, aiSessionID)
+        XCTAssertEqual(store.state.content.aiChat.executionPhase, .failed(failedLock, .network))
+        XCTAssertEqual(loadedSessionIDs.value, [])
+        await store.finish()
+    }
+
     /// CTM-005-content_tab_duplicate: pinned AI Chat in-flight duplicate 선택은 disk restore 없이 final snapshot으로 hydrate
     func testDuplicate_pinnedAiChatInFlight_selectingDuplicateHydratesFromFinalSnapshot() async throws {
         let sourceID = ContentTabID()
@@ -10119,6 +10172,55 @@ extension CTM005IndependentContentTabSessionTests {
             finalSnapshot.transcriptHistory,
         )
         XCTAssertNil(store.state.backgroundAiChatStates[aiSessionID])
+        XCTAssertEqual(loadedSessionIDs.value, [])
+        await store.finish()
+    }
+
+    /// CTM-005-content_tab_duplicate: pinned AI Chat persistence recovery는 duplicate에 최신 snapshot을 전파
+    func testDuplicate_pinnedAiChatInFlight_hydratesPersistenceRecoveryWithoutDiskRestore() async throws {
+        let sourceID = ContentTabID()
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+        let finalSnapshot = makeFinalAiChatSessionSnapshot(sessionID: aiSessionID, requestLock: requestLock)
+        let ownerLock = requestLock.recordingFinalSnapshot(finalSnapshot)
+        let loadedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+        var state = makeInFlightAiChatDuplicateState(
+            sourceID: sourceID,
+            sessionID: aiSessionID,
+            requestLock: ownerLock,
+            sourceIsPinned: true,
+        )
+        state.content.aiChat.executionPhase = .persistenceRecovery(ownerLock, .unknown)
+        state.content.aiChat.lastExecutionFailure = .unknown
+        state.tabContentStates[sourceID] = state.content
+        let store = makeInFlightAiChatDuplicateStore(
+            state: state,
+            loadedSessionIDs: loadedSessionIDs,
+            staleSnapshot: makeAiChatSessionSnapshot(sessionID: aiSessionID),
+        )
+
+        await store.send(.request(.duplicateActiveContentTab))
+        await store.skipReceivedActions()
+        let duplicateID = try XCTUnwrap(store.state.contentTabs.tabs.last?.id)
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, sourceID)
+        XCTAssertNil(store.state.tabContentStates[duplicateID]?.aiChat.sessionID)
+        XCTAssertEqual(loadedSessionIDs.value, [])
+
+        await store.send(.content(.aiChat(.persistenceRecoverySucceeded(ownerLock))))
+        XCTAssertEqual(store.state.tabContentStates[duplicateID]?.aiChat.sessionID, aiSessionID)
+        XCTAssertEqual(store.state.tabContentStates[duplicateID]?.aiChat.executionPhase, .completed(ownerLock))
+        XCTAssertEqual(
+            store.state.tabContentStates[duplicateID]?.aiChat.transcriptHistory,
+            finalSnapshot.transcriptHistory,
+        )
+
+        await store.send(.contentTabs(.setCurrent(duplicateID)))
+        await store.skipReceivedActions()
+        XCTAssertEqual(store.state.content.aiChat.sessionID, aiSessionID)
+        XCTAssertEqual(store.state.content.aiChat.executionPhase, .completed(ownerLock))
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory, finalSnapshot.transcriptHistory)
+        XCTAssertNil(store.state.content.aiChat.lastExecutionFailure)
         XCTAssertEqual(loadedSessionIDs.value, [])
         await store.finish()
     }

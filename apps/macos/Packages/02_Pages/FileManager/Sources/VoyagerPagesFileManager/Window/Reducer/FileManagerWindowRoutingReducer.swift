@@ -1600,7 +1600,12 @@ private func refreshAiChatFailureFromBackgroundIfNeeded(
     skipsActiveContent: Bool = false,
     skipsActiveInspector: Bool = false,
 ) {
-    guard context.sessionID != nil else { return }
+    guard let sessionID = context.sessionID else { return }
+    admitFreshAiChatContentForBackgroundTerminalStateIfNeeded(
+        sessionID: sessionID,
+        state: &state,
+        skipsActiveContent: skipsActiveContent,
+    )
 
     if !skipsActiveContent,
        state.content.aiChat.canRefreshFailureFromBackground(context: context)
@@ -1644,7 +1649,12 @@ private func refreshAiChatRecoveryFromBackgroundIfNeeded(
     skipsActiveContent: Bool = false,
     skipsActiveInspector: Bool = false,
 ) {
-    guard lock.context.sessionID != nil else { return }
+    guard let sessionID = lock.context.sessionID else { return }
+    admitFreshAiChatContentForBackgroundTerminalStateIfNeeded(
+        sessionID: sessionID,
+        state: &state,
+        skipsActiveContent: skipsActiveContent,
+    )
 
     if !skipsActiveContent,
        state.content.aiChat.canRefreshRecoveryFromBackground(lock: lock)
@@ -1678,6 +1688,32 @@ private func refreshAiChatRecoveryFromBackgroundIfNeeded(
             lock: lock,
             backgroundAiChat: backgroundAiChat,
         )
+    }
+}
+
+private func admitFreshAiChatContentForBackgroundTerminalStateIfNeeded(
+    sessionID: AiChatSessionID,
+    state: inout FileManagerWindowState,
+    skipsActiveContent: Bool,
+) {
+    let anchor = ContentTabPageAnchor.aiChat(sessionID: sessionID.rawValue.uuidString)
+
+    if !skipsActiveContent,
+       let activeTabID = state.contentTabs.activeTabID,
+       state.contentTabs.tabs[id: activeTabID]?.anchor == anchor,
+       state.content.aiChat.canAdmitBackgroundTerminalState
+    {
+        state.content.aiChat.sessionID = sessionID
+    }
+
+    for tabID in state.tabContentStates.keys {
+        guard tabID != state.contentTabs.activeTabID,
+              state.contentTabs.tabs[id: tabID]?.anchor == anchor,
+              state.tabContentStates[tabID]?.aiChat.canAdmitBackgroundTerminalState == true
+        else {
+            continue
+        }
+        state.tabContentStates[tabID]?.aiChat.sessionID = sessionID
     }
 }
 
@@ -1903,6 +1939,12 @@ private extension AiChatFeature.State {
         if case let .failed(_, failure) = matchingPhase {
             lastExecutionFailure = failure
         }
+    }
+
+    var canAdmitBackgroundTerminalState: Bool {
+        sessionID == nil
+            && restoreSessionID == nil
+            && pendingRequestStart == nil
     }
 
     func canAdmitPersistedBackgroundSnapshot(summary: AiChatSessionSummary) -> Bool {
