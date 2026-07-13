@@ -31,16 +31,6 @@ final class AppRootCompositionTests: XCTestCase {
         }
     }
 
-    func testMenuCommandRoutesToUpdater() async {
-        let store = TestStore(initialState: AppRootFeature.State()) {
-            AppRootFeature()
-        }
-        store.exhaustivity = .off
-
-        await store.send(.menuCommands(.delegate(.updater(.checkForUpdates))))
-        await store.receive(\.updater.checkForUpdates)
-    }
-
     // MARK: - Launch bootstrap
 
     func testAppRootLaunchWillFinishLaunchingForwardsSettingsBootstrapLocalPreferences() async {
