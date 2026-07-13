@@ -17,7 +17,7 @@ schemaVersion: 2
     - shared configuration templates or defaults that are secret-free and machine-independent
 - Treat local runtime artifacts as untracked session state; lefthook's `sisyphus-artifacts-guard` prevents staging `.sisyphus/` paths.
 - Promote only reusable, deterministic, secret-free changes into tracked files.
-- Evaluate harness changes with `07-harness-change-evaluation.md` before treating them as adopted improvements.
+- Evaluate harness changes with `.agents/skills/common/internal/compound-review/references/change-evaluation.md` before treating them as adopted improvements.
 - When compound-review finds a repeated pattern, decide whether the durable promotion target is a skill, rule, script, CI check, hook, test harness, or configuration template.
 - Use documentation to explain harness policy and ownership; do not count docs themselves as agent harness runtime.
 

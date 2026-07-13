@@ -16,12 +16,12 @@ schemaVersion: 2
 ## Default Actions
 
 1. Before starting a task on a branch with prior commits, capture a baseline:
-   Record the SHA in the plan-scoped task evidence file (`.sisyphus/evidence/{plan_slug}/task-{N}-*.*`) or a dedicated baseline file at `.sisyphus/evidence/{plan_slug}/baseline-<task-id>.txt`.
+   Record the SHA in task evidence or a dedicated baseline record.
 2. After completing the task, generate the scope diff:
    `git diff <baseline>..HEAD --name-only` for the file list,
    `git diff <baseline>..HEAD --stat` for the summary.
 3. Compare the changed files against the task's allowed and forbidden paths.
-4. Record the baseline SHA, the diff output, and the scope verdict in the plan-scoped task evidence file (`.sisyphus/evidence/{plan_slug}/task-{N}-*.*`).
+4. Record the baseline SHA, the diff output, and the scope verdict in task evidence.
 
 ## Decision Rules
 
@@ -45,7 +45,7 @@ These show how the rule applies in practice. The paths below are examples, not n
 
 ## Verification
 
-- Confirm the plan-scoped evidence file includes a baseline commit SHA or equivalent boundary reference.
+- Confirm task evidence includes a baseline commit SHA or equivalent boundary reference.
 - Confirm the diff command in evidence uses the baseline, not the branch root or merge base against main.
 - Confirm scope confidence is `limited` or `unverified` when only accumulated diffs are available.
 - Confirm no scope-fidelity claim relies on a diff that includes files from other tasks.

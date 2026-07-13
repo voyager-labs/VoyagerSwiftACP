@@ -73,10 +73,10 @@ Use this skill for `.agents/rules/**` authoring and placement only. It does not 
 
 | Artifact kind                      | Target path                            | Examples                                                                                                         |
 | ---------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Cross-cutting deterministic rules  | `.agents/rules/`                       | `00-execution-contract.md`, `03-verification-intent-parity.md`                                                   |
+| Cross-cutting deterministic rules  | `.agents/rules/`                       | `00-execution-contract.md`, `02-outcome-classification.md`                                                       |
 | Platform-specific execution checks | Owning platform skill references       | `voyager-dev/orchestrator/references/voyager-app-workflow.md`, `code-tooling/references/test-plan-visibility.md` |
 | All new skills                     | `.agents/skills/<kebab-case>/SKILL.md` | `pr-review`, `compound-review`                                                                                   |
-| Agent-harness infrastructure rules | `.agents/rules/`                       | `01-scope-diff-isolation.md`, `02-task-boundary-contract.md`                                                     |
+| Agent-harness infrastructure rules | `.agents/rules/`                       | `01-scope-diff-isolation.md`, `03-harness-taxonomy.md`                                                           |
 
 1. Classify the artifact as cross-cutting, platform-specific, skill, or harness infrastructure.
 2. Select the target directory from the placement taxonomy and list its existing rules before assigning the next sequential number.

@@ -67,7 +67,8 @@ git diff --check            # Check for whitespace errors before commit
 
 | Path                             | Purpose                                                     |
 | -------------------------------- | ----------------------------------------------------------- |
-| `.agents/rules/`                 | Sisyphus workflow governance and execution contract         |
+| `.agents/rules/`                 | Agent workflow governance and execution contract            |
+| `.agents/skills/common/`         | Shared compound-review references and common agent skills   |
 | `.agents/skills/voyager-dev/`    | Voyager macOS TCA/FSD orchestrator + implementer + reviewer |
 | `.agents/skills/code-tooling/`   | Build/test executor routing and capability matrix           |
 | `.agents/skills/rule-authoring/` | Rule v2 schema governance and placement strategy            |
