@@ -9672,77 +9672,153 @@ extension CTM005IndependentContentTabSessionTests {
 
     // MARK: - CTM-005-content_tab_duplicate
 
-    /// CTM-005-content_tab_duplicate: Active Directory source duplicate 시 fresh content state와 handoff가 생성됨
-    func testDuplicate_activeDirectorySource_createsFreshContentAndHandoff() async throws {
+    /// CTM-005-content_tab_duplicate: Active Directory source duplicate는 Content state와 history를 값 복사
+    func testDuplicate_activeDirectorySource_copiesContentStateAndHistory() async throws {
         let sourceID = ContentTabID()
         let directoryPath = "/Users/test/Desktop"
-        var state = FileManagerFeature.State()
-        state.contentTabs = ContentTabState(
-            tabs: [ContentTabItem(
-                id: sourceID,
-                page: .directory,
-                anchor: .directory(path: directoryPath),
-                isPinned: false,
-                title: "Desktop",
-                iconName: "folder",
-            )],
-            activeTabID: sourceID,
-            recentlyClosed: nil,
+        let backHistory = [
+            ContentPageNavigationHistorySnapshot(navigationState: .home),
+            ContentPageNavigationHistorySnapshot(navigationState: .folder("/Users/test")),
+        ]
+        let forwardHistory = [
+            ContentPageNavigationHistorySnapshot(navigationState: .folder("/Users/test/Downloads")),
+        ]
+        var state = makeDirectoryDuplicateState(
+            sourceID: sourceID,
+            directoryPath: directoryPath,
+            backHistory: backHistory,
+            forwardHistory: forwardHistory,
         )
-        state.content.navigation.seedInitialFolderPath(directoryPath)
+        state.content.pendingSelectEntryID = "entry-id"
         state.syncActiveTabContentState()
-        state.syncContentTabSidebarItems()
-
-        let store = TestStore(initialState: state) {
-            FileManagerFeature()
-        } withDependencies: {
-            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            var client = FileManagerClient.testValue
-            client.fileExistsWithIsDirectory = { path, isDir in
-                if path == directoryPath { isDir?.pointee = true
-                    return true
-                }
-                return false
-            }
-            $0.fileManagerClient = client
-            $0.fileChangeGatewayClient.observeEvents = {
-                AsyncStream { continuation in continuation.finish() }
-            }
-        }
-        store.exhaustivity = .off
+        let store = makeContentTabDuplicateStore(state: state, existingDirectoryPath: directoryPath)
 
         await store.send(.request(.duplicateActiveContentTab))
         await store.skipReceivedActions()
 
-        XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
-        XCTAssertEqual(store.state.contentTabs.tabs[1].anchor, .directory(path: directoryPath))
-        XCTAssertNotEqual(store.state.contentTabs.activeTabID, sourceID)
         let duplicateID = try XCTUnwrap(store.state.contentTabs.activeTabID)
-        XCTAssertEqual(store.state.content.navigation.currentPath, directoryPath)
-        XCTAssertNotNil(store.state.tabContentStates[sourceID])
-        _ = duplicateID
+        XCTAssertNotEqual(duplicateID, sourceID)
+        XCTAssertEqual(store.state.content.navigation.backHistory, backHistory)
+        XCTAssertEqual(store.state.content.navigation.forwardHistory, forwardHistory)
+        XCTAssertEqual(store.state.content.pendingSelectEntryID, "entry-id")
+        XCTAssertEqual(store.state.tabContentStates[sourceID]?.navigation.backHistory, backHistory)
+        XCTAssertEqual(store.state.tabContentStates[duplicateID]?.navigation.forwardHistory, forwardHistory)
+
+        let duplicateOnlyHistory = ContentPageNavigationHistorySnapshot(navigationState: .folder("/duplicate-only"))
+        await store.send(.navigation(.internal(.appendBackHistory(duplicateOnlyHistory))))
+        XCTAssertEqual(store.state.content.navigation.backHistory, backHistory + [duplicateOnlyHistory])
+        XCTAssertEqual(store.state.tabContentStates[sourceID]?.navigation.backHistory, backHistory)
         await store.finish()
     }
 
-    /// CTM-005-content_tab_duplicate: Active Collection file duplicate 시 fresh content/navigation 생성
-    func testDuplicate_activeCollectionFileSource_createsFreshCollectionContent() async throws {
+    /// CTM-005-content_tab_duplicate: Inactive unpinned source는 active tab이 아닌 source cache 전체를 복제
+    func testDuplicate_inactiveUnpinnedSource_copiesSourceCache() async throws {
+        let activeID = ContentTabID()
         let sourceID = ContentTabID()
-        let collectionURL = URL(fileURLWithPath: "/tmp/test.voycoll")
+        let sourceHistory = [ContentPageNavigationHistorySnapshot(navigationState: .home)]
+        var sourceContent = FileManagerContentFeature.State()
+        sourceContent.navigation.navigationState = .recents
+        sourceContent.navigation.backHistory = sourceHistory
+        sourceContent.pendingSelectEntryID = "source-entry"
+        var state = makeInactiveDuplicateState(activeID: activeID, sourceID: sourceID, sourceIsPinned: false)
+        state.tabContentStates[sourceID] = sourceContent
+        let store = makeContentTabDuplicateStore(state: state)
+
+        await store.send(.request(.duplicateContentTab(sourceID)))
+        await store.skipReceivedActions()
+
+        let duplicateID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+        XCTAssertNotEqual(duplicateID, activeID)
+        XCTAssertNotEqual(duplicateID, sourceID)
+        XCTAssertEqual(store.state.content.navigation.navigationState, .recents)
+        XCTAssertEqual(store.state.content.navigation.backHistory, sourceHistory)
+        XCTAssertEqual(store.state.content.pendingSelectEntryID, "source-entry")
+        XCTAssertEqual(store.state.tabContentStates[sourceID], sourceContent)
+        await store.finish()
+    }
+
+    /// CTM-005-content_tab_duplicate: Pinned source는 active를 유지하면서 duplicate cache에 전체 state를 복제
+    func testDuplicate_pinnedSource_copiesSourceCacheWithoutActivation() async throws {
+        let activeID = ContentTabID()
+        let sourceID = ContentTabID()
+        let sourceHistory = [ContentPageNavigationHistorySnapshot(navigationState: .home)]
+        var sourceContent = FileManagerContentFeature.State()
+        sourceContent.navigation.navigationState = .recents
+        sourceContent.navigation.backHistory = sourceHistory
+        sourceContent.pendingSelectEntryID = "pinned-entry"
+        var state = makeInactiveDuplicateState(activeID: activeID, sourceID: sourceID, sourceIsPinned: true)
+        state.tabContentStates[sourceID] = sourceContent
+        let store = makeContentTabDuplicateStore(state: state)
+
+        await store.send(.request(.duplicateContentTab(sourceID)))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        let duplicateID = try XCTUnwrap(store.state.contentTabs.tabs.last?.id)
+        XCTAssertNotEqual(duplicateID, sourceID)
+        XCTAssertEqual(store.state.tabContentStates[duplicateID]?.navigation.navigationState, .recents)
+        XCTAssertEqual(store.state.tabContentStates[duplicateID]?.navigation.backHistory, sourceHistory)
+        XCTAssertEqual(store.state.tabContentStates[duplicateID]?.pendingSelectEntryID, "pinned-entry")
+        XCTAssertEqual(store.state.tabContentStates[sourceID], sourceContent)
+        await store.finish()
+    }
+
+    /// CTM-005-content_tab_duplicate: Active pinned source는 live content 전체를 duplicate cache에 복제
+    func testDuplicate_activePinnedSource_copiesLiveContentWithoutActivation() async throws {
+        let sourceID = ContentTabID()
+        let sourceHistory = [ContentPageNavigationHistorySnapshot(navigationState: .home)]
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
             tabs: [ContentTabItem(
                 id: sourceID,
                 page: .collection,
-                anchor: .collectionFile(url: collectionURL),
-                isPinned: false,
-                title: "Collection",
-                iconName: "rectangle.stack",
+                anchor: .virtualCollection(id: "Recents"),
+                isPinned: true,
+                title: "Recents",
+                iconName: "clock",
             )],
             activeTabID: sourceID,
             recentlyClosed: nil,
         )
+        state.content.navigation.navigationState = .recents
+        state.content.navigation.backHistory = sourceHistory
+        state.content.pendingSelectEntryID = "active-pinned-entry"
         state.syncActiveTabContentState()
+        var staleCachedContent = state.content
+        staleCachedContent.navigation.navigationState = .home
+        staleCachedContent.navigation.backHistory = []
+        staleCachedContent.pendingSelectEntryID = "stale-cache-entry"
+        state.tabContentStates[sourceID] = staleCachedContent
         state.syncContentTabSidebarItems()
+        let store = makeContentTabDuplicateStore(state: state)
+
+        await store.send(.request(.duplicateContentTab(sourceID)))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, sourceID)
+        let duplicateID = try XCTUnwrap(store.state.contentTabs.tabs.last?.id)
+        XCTAssertNotEqual(duplicateID, sourceID)
+        XCTAssertEqual(store.state.tabContentStates[duplicateID]?.navigation.navigationState, .recents)
+        XCTAssertEqual(store.state.tabContentStates[duplicateID]?.navigation.backHistory, sourceHistory)
+        XCTAssertEqual(store.state.tabContentStates[duplicateID]?.pendingSelectEntryID, "active-pinned-entry")
+        await store.finish()
+    }
+
+    /// CTM-005-content_tab_duplicate: Active Collection file duplicate 시 전체 Collection state 복제
+    func testDuplicate_activeCollectionFileSource_copiesCollectionContentState() async throws {
+        let sourceID = ContentTabID()
+        let collectionURL = URL(fileURLWithPath: "/tmp/test.voycoll")
+        let collectionContext = CollectionContext(
+            query: "kind:document",
+            scopes: ["/tmp"],
+            conditions: [],
+        )
+        let state = makeLoadedCollectionDuplicateState(
+            sourceID: sourceID,
+            collectionURL: collectionURL,
+            collectionContext: collectionContext,
+        )
+        XCTAssertFalse(state.content.canSaveCollection)
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
@@ -9766,6 +9842,84 @@ extension CTM005IndependentContentTabSessionTests {
         // Duplicate tab metadata는 collectionFile anchor를 유지
         XCTAssertEqual(store.state.contentTabs.tabs[id: duplicateID]?.anchor, .collectionFile(url: collectionURL))
         XCTAssertEqual(store.state.contentTabs.tabs[id: duplicateID]?.page, .collection)
+        XCTAssertTrue(store.state.content.entryViewLayout.isCollectionMode)
+        XCTAssertEqual(store.state.content.collection.collectionContext, collectionContext)
+        XCTAssertEqual(
+            store.state.content.collection.collectionSession.metadata.baseline,
+            .init(context: collectionContext),
+        )
+        XCTAssertEqual(store.state.tabContentStates[sourceID]?.collection.collectionContext, collectionContext)
+        XCTAssertEqual(store.state.tabContentStates[duplicateID]?.collection.collectionContext, collectionContext)
+        await store.finish()
+    }
+
+    /// CTM-005-content_tab_duplicate: Collection ownerless 작업 중에는 duplicate를 생성하지 않음
+    func testDuplicate_activeCollectionOperationInProgress_isBlocked() async {
+        await assertCollectionDuplicateBlocked(
+            phase: .opened(kind: .definition, base: .ready, inflight: .none),
+            isSaving: true,
+        )
+        await assertCollectionDuplicateBlocked(
+            phase: .reopening(kind: .definition, base: .ready, inflight: .none),
+        )
+        await assertCollectionDuplicateBlocked(
+            phase: .opened(kind: .definition, base: .stale, inflight: .refreshingHydratedSnapshot),
+        )
+        await assertCollectionDuplicateBlocked(
+            phase: .opened(kind: .definition, base: .stale, inflight: .writingBackRefreshedSnapshot),
+        )
+    }
+
+    /// CTM-005-content_tab_duplicate: 기존 AI Chat session duplicate는 같은 session을 fresh content에 복원
+    func testDuplicate_activeAiChatSession_restoresSameSessionInFreshContent() async throws {
+        let sourceID = ContentTabID()
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let sessionIDString = aiSessionID.rawValue.uuidString
+        let loadedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+        let snapshot = makeAiChatSessionSnapshot(sessionID: aiSessionID)
+        let providerFixture = makeConnectedAiProviderFixture()
+        let duplicateUUID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
+        let state = makeSettledAiChatWindowState(
+            sourceID: sourceID,
+            sessionID: aiSessionID,
+        )
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .constant(duplicateUUID)
+            $0.aiConnectionsFileClient.load = { providerFixture.connectionsFile }
+            $0.aiProviderModelListClient = AiProviderModelListClient { provider, credential in
+                XCTAssertEqual(provider, .openai)
+                XCTAssertEqual(credential, providerFixture.credential)
+                return [providerFixture.model]
+            }
+            $0.aiChatSessionPersistenceClient.loadSession = { requestedSessionID in
+                loadedSessionIDs.withValue { $0.append(requestedSessionID) }
+                return snapshot
+            }
+            $0.aiChatSessionPersistenceClient.saveSession = { savedSnapshot in savedSnapshot }
+            var client = FileManagerClient.testValue
+            client.fileExistsWithIsDirectory = { _, _ in false }
+            $0.fileManagerClient = client
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.request(.duplicateActiveContentTab))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
+        let duplicateID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+        XCTAssertNotEqual(duplicateID, sourceID)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: duplicateID]?.anchor, .aiChat(sessionID: sessionIDString))
+        XCTAssertEqual(store.state.content.aiChat.sessionID, aiSessionID)
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory, snapshot.transcriptHistory)
+        XCTAssertEqual(store.state.content.aiChat.modelListState, .loaded([providerFixture.model]))
+        XCTAssertEqual(loadedSessionIDs.value, [aiSessionID])
         await store.finish()
     }
 
@@ -9999,7 +10153,249 @@ extension CTM005IndependentContentTabSessionTests {
 
 // MARK: - Helpers
 
+private struct ConnectedAiProviderFixture {
+    let connectionsFile: AIConnectionsFile
+    let credential: StoredCredentialPayload
+    let model: AiProviderModel
+}
+
 private extension CTM005IndependentContentTabSessionTests {
+    func makeDirectoryDuplicateState(
+        sourceID: ContentTabID,
+        directoryPath: String,
+        backHistory: [ContentPageNavigationHistorySnapshot],
+        forwardHistory: [ContentPageNavigationHistorySnapshot],
+    ) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: sourceID,
+                    page: .directory,
+                    anchor: .directory(path: directoryPath),
+                    isPinned: false,
+                    title: "Desktop",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: sourceID,
+            recentlyClosed: nil,
+        )
+        state.content.navigation.seedInitialFolderPath(directoryPath)
+        state.content.navigation.backHistory = backHistory
+        state.content.navigation.forwardHistory = forwardHistory
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    func makeLoadedCollectionDuplicateState(
+        sourceID: ContentTabID,
+        collectionURL: URL,
+        collectionContext: CollectionContext,
+    ) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: sourceID,
+                    page: .collection,
+                    anchor: .collectionFile(url: collectionURL),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: sourceID,
+            recentlyClosed: nil,
+        )
+        state.content.entryViewLayout.isCollectionMode = true
+        state.content.collection.collectionContext = collectionContext
+        state.content.collection.collectionSession.document = .init(
+            url: collectionURL,
+            name: "test",
+        )
+        state.content.collection.collectionSession.metadata.baseline = .init(context: collectionContext)
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    func assertCollectionDuplicateBlocked(
+        phase: CollectionSessionPhase,
+        isSaving: Bool = false,
+    ) async {
+        let sourceID = ContentTabID()
+        let collectionURL = URL(fileURLWithPath: "/tmp/test.voycoll")
+        let alerts = LockIsolated<[String]>([])
+        var state = makeLoadedCollectionDuplicateState(
+            sourceID: sourceID,
+            collectionURL: collectionURL,
+            collectionContext: CollectionContext(query: "", scopes: ["/tmp"], conditions: []),
+        )
+        state.content.collection.collectionSession.phase = phase
+        state.content.collection.isSaving = isSaving
+        state.syncActiveTabContentState()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            var fileManagerClient = FileManagerClient.testValue
+            fileManagerClient.fileExistsWithIsDirectory = { path, _ in path == collectionURL.path }
+            $0.fileManagerClient = fileManagerClient
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                alerts.withValue { $0.append("\(title): \(message)") }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.request(.duplicateActiveContentTab))
+        await store.finish()
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 1)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, sourceID)
+        XCTAssertEqual(
+            alerts.value,
+            ["Cannot Duplicate Tab: Wait for the current collection operation to finish, then try again."],
+        )
+    }
+
+    func makeInactiveDuplicateState(
+        activeID: ContentTabID,
+        sourceID: ContentTabID,
+        sourceIsPinned: Bool,
+    ) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: sourceID,
+                    page: .collection,
+                    anchor: .virtualCollection(id: "Recents"),
+                    isPinned: sourceIsPinned,
+                    title: "Recents",
+                    iconName: "clock",
+                ),
+                ContentTabItem(
+                    id: activeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: activeID,
+            recentlyClosed: nil,
+        )
+        state.tabContentStates = [activeID: state.content]
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    func makeContentTabDuplicateStore(
+        state: FileManagerFeature.State,
+        existingDirectoryPath: String? = nil,
+    ) -> TestStore<FileManagerFeature.State, FileManagerWindowAction> {
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            var client = FileManagerClient.testValue
+            client.fileExistsWithIsDirectory = { path, isDirectory in
+                guard path == existingDirectoryPath else { return false }
+                isDirectory?.pointee = true
+                return true
+            }
+            $0.fileManagerClient = client
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off
+        return store
+    }
+
+    func makeConnectedAiProviderFixture() -> ConnectedAiProviderFixture {
+        let modelHandle = AiModelHandle(provider: .openai, rawValue: "gpt-test")
+        let credential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-test"))
+        return ConnectedAiProviderFixture(
+            connectionsFile: AIConnectionsFile(
+                updatedAtMs: 1,
+                lastUsedProviderId: .openai,
+                providers: [
+                    AiProvider.openai.rawValue: ProviderRecordFile(
+                        providerId: .openai,
+                        authMethod: .apiKey,
+                        credential: credential,
+                        snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                    ),
+                ],
+            ),
+            credential: credential,
+            model: AiProviderModel(
+                id: modelHandle,
+                provider: .openai,
+                rawModelID: "gpt-test",
+                displayName: "GPT Test",
+                providerDisplayName: "OpenAI",
+                thinkingCapability: .unsupported(reason: AiThinkingUnavailableReason(message: "unsupported")),
+            ),
+        )
+    }
+
+    func makeAiChatSessionSnapshot(sessionID: AiChatSessionID) -> AiChatSessionSnapshot {
+        AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: "Existing session",
+            provider: nil,
+            model: nil,
+            transcriptHistory: [AiChatMessage(role: .user, content: "duplicate me")],
+            updatedAtMs: 1_234_567_890_000,
+        )
+    }
+
+    func makeSettledAiChatContent(
+        sessionID: AiChatSessionID,
+        sessionIDString: String,
+    ) -> FileManagerContentFeature.State {
+        var content = FileManagerContentFeature.State()
+        content.navigation.navigationState = .aiChat(sessionIDString)
+        content.aiChat.sessionID = sessionID
+        content.aiChat.sessionStatus = .active
+        return content
+    }
+
+    func makeSettledAiChatWindowState(
+        sourceID: ContentTabID,
+        sessionID: AiChatSessionID,
+    ) -> FileManagerFeature.State {
+        let sessionIDString = sessionID.rawValue.uuidString
+        let content = makeSettledAiChatContent(
+            sessionID: sessionID,
+            sessionIDString: sessionIDString,
+        )
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: sourceID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: sessionIDString),
+                    isPinned: false,
+                    title: "Existing session",
+                    iconName: "sparkles",
+                ),
+            ],
+            activeTabID: sourceID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [sourceID: content]
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
     func makeDirtyCollectionContent() -> FileManagerContentFeature.State {
         var content = FileManagerContentFeature.State()
         content.entryViewLayout.isCollectionMode = true

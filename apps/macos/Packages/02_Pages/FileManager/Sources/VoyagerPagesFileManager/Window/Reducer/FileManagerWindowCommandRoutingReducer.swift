@@ -721,6 +721,7 @@ struct FileManagerWindowCommandRoutingReducer {
         case missingCollectionFile
         case invalidAiChatSession
         case temporaryCollection
+        case collectionOperationInProgress
     }
 
     private func handleDuplicateContentTabRequested(
@@ -745,20 +746,13 @@ struct FileManagerWindowCommandRoutingReducer {
             return duplicateFailureFeedbackEffect(failureReason)
         }
 
-        // cached Content state가 있을 때만 temporary/unsaved Collection mode mismatch 거부
-        if let contentState = sourceContentState {
-            if contentState.isCollectionMode, !contentState.canSaveCollection {
-                return .none
-            }
-        }
-
         let duplicateID = ContentTabID()
         return .send(.contentTabs(.duplicate(sourceID: sourceID, duplicateID: duplicateID)))
     }
 
     private func duplicateFailureReason(
         for anchor: ContentTabPageAnchor,
-        contentState _: FileManagerContentFeature.State?,
+        contentState: FileManagerContentFeature.State?,
     ) -> DuplicateFailureReason? {
         switch anchor {
         case .homeDefault, .virtualCollection:
@@ -774,6 +768,14 @@ struct FileManagerWindowCommandRoutingReducer {
         case let .collectionFile(url):
             guard fileManagerClient.fileExistsWithIsDirectory(url.path, nil)
             else { return .missingCollectionFile }
+            if let collection = contentState?.collection,
+               collection.isSaving
+               || collection.collectionSession.phase.isOpening
+               || collection.collectionSession.phase.isInflightRefresh
+               || collection.collectionSession.phase.isInflightWriteBack
+            {
+                return .collectionOperationInProgress
+            }
             return nil
 
         case let .aiChat(sessionID):
@@ -794,6 +796,8 @@ struct FileManagerWindowCommandRoutingReducer {
             "The AI Chat session is no longer valid."
         case .temporaryCollection:
             "Cannot duplicate a temporary collection. Save the collection first."
+        case .collectionOperationInProgress:
+            "Wait for the current collection operation to finish, then try again."
         }
         return .run { _ in
             await collectionAlertClient.showCollectionOpenErrorAlert(

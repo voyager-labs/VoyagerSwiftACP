@@ -352,24 +352,40 @@ struct FileManagerWindowRoutingReducer {
                     return .none
                 }
 
-                // Duplicate가 active가 아니면 pinned-source → projection만 동기화
+                let sourceAnchor = state.contentTabs.tabs[id: sourceID]?.anchor
+                let duplicateAnchor = state.contentTabs.tabs[id: duplicateID]?.anchor
+                let sourceContentState = duplicateSourceContentState(
+                    sourceID: sourceID,
+                    duplicateID: duplicateID,
+                    state: state,
+                )
+                let sourceAiChatLifecycleSessionIDs = sourceContentState.map {
+                    aiChatLifecycleSessionIDsToPreserve($0.aiChat)
+                } ?? []
+                let duplicatedContentState = makeDuplicatedContentState(
+                    sourceContentState,
+                    anchor: duplicateAnchor ?? sourceAnchor,
+                    inheritingWindowContextFrom: state.content,
+                    sourceAiChatLifecycleSessionIDs: sourceAiChatLifecycleSessionIDs,
+                )
+
+                // Pinned source는 active를 유지하므로 duplicate cache만 source snapshot으로 초기화한다.
                 guard state.contentTabs.activeTabID == duplicateID else {
+                    state.tabContentStates[duplicateID] = duplicatedContentState
                     syncDashboardProjections(state: &state)
                     return .none
                 }
 
                 // === Active duplicate: .contentTabs(.open) handoff 패턴 적용 ===
-                let sourceAnchor = state.contentTabs.tabs[id: sourceID]?.anchor
-                let duplicateAnchor = state.contentTabs.tabs[id: duplicateID]?.anchor
                 let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
                     || state.activeTabContentStateMissing
+                let outgoingAiChatLifecycleSessionIDs = aiChatLifecycleSessionIDsToPreserve(state.content.aiChat)
                 let handoffCleanupEffect: Effect<Action>
                 if shouldResyncContentNavigation {
-                    let aiChatLifecycleSessionIDs = aiChatLifecycleSessionIDsToPreserve(state.content.aiChat)
-                    if aiChatLifecycleSessionIDs.isEmpty {
+                    if outgoingAiChatLifecycleSessionIDs.isEmpty {
                         handoffCleanupEffect = prepareContentForActiveTabHandoff(state: &state.content)
                     } else {
-                        for aiChatSessionID in aiChatLifecycleSessionIDs {
+                        for aiChatSessionID in outgoingAiChatLifecycleSessionIDs {
                             state.addBackgroundAiChatState(sessionID: aiChatSessionID, state: state.content)
                         }
                         handoffCleanupEffect = prepareContentForActiveTabHandoff(
@@ -383,23 +399,36 @@ struct FileManagerWindowRoutingReducer {
                 if shouldResyncContentNavigation {
                     state.saveCurrentContentStateForPreviousActiveTab()
                     state.saveCurrentInspectorStateForPreviousActiveTab()
-                    // Duplicate anchor 기반 fresh Content state 생성 (source Content state 복사 금지)
-                    state.content = FileManagerContentFeature.State.initialContent(
-                        for: duplicateAnchor ?? sourceAnchor,
-                        inheritingWindowContextFrom: state.content,
-                    )
+                    state.content = duplicatedContentState
                     state.syncActiveTabContentState()
                     state.restoreInspectorStateForActiveTab()
                 }
+                let duplicatedAiChatRestoreEffect: Effect<Action> = if sourceAiChatLifecycleSessionIDs.isEmpty,
+                                                                       case let .aiChat(sessionID) = duplicateAnchor ??
+                                                                       sourceAnchor,
+                                                                       let sessionUUID = UUID(uuidString: sessionID)
+                {
+                    .send(.content(.aiChat(.setup(AiChatSetupState(
+                        restoreSessionID: AiChatSessionID(rawValue: sessionUUID),
+                        sessionID: nil,
+                        mode: .chat,
+                    )))))
+                } else {
+                    .none
+                }
                 syncDashboardProjections(state: &state)
                 syncSidebarSelectionForActiveContentTab(state: &state)
+                let handoffEffect = activeTabHandoffEffect(
+                    shouldResyncContentNavigation,
+                    state: state,
+                    aiConnectionsFileClient: aiConnectionsFileClient,
+                    skipAiChatCancel: true,
+                )
                 return .merge(
-                    handoffCleanupEffect,
-                    activeTabHandoffEffect(
-                        shouldResyncContentNavigation,
-                        state: state,
-                        aiConnectionsFileClient: aiConnectionsFileClient,
-                        skipAiChatCancel: true,
+                    .concatenate(
+                        handoffCleanupEffect,
+                        duplicatedAiChatRestoreEffect,
+                        handoffEffect,
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
@@ -741,6 +770,58 @@ private extension FileManagerWindowRoutingReducer {
             state.tabContentStates[previousActiveTabID] = previousActiveContent
             state.tabInspectorStates[previousActiveTabID] = state.inspector.tabSnapshot()
         }
+    }
+}
+
+private func duplicateSourceContentState(
+    sourceID: ContentTabID,
+    duplicateID: ContentTabID,
+    state: FileManagerWindowState,
+) -> FileManagerContentFeature.State? {
+    if state.contentTabs.activeTabID == duplicateID {
+        if state.contentTabs.previousActiveTabID == sourceID {
+            return state.content
+        }
+        return state.tabContentStates[sourceID]
+    }
+    if state.contentTabs.activeTabID == sourceID {
+        return state.content
+    }
+    return state.tabContentStates[sourceID]
+}
+
+private func makeDuplicatedContentState(
+    _ sourceContentState: FileManagerContentFeature.State?,
+    anchor: ContentTabPageAnchor?,
+    inheritingWindowContextFrom windowContentState: FileManagerContentFeature.State,
+    sourceAiChatLifecycleSessionIDs: [AiChatSessionID],
+) -> FileManagerContentFeature.State {
+    guard let sourceContentState, sourceAiChatLifecycleSessionIDs.isEmpty else {
+        return FileManagerContentFeature.State.initialContent(
+            for: anchor,
+            inheritingWindowContextFrom: sourceContentState ?? windowContentState,
+        )
+    }
+
+    var duplicatedContentState = sourceContentState
+    duplicatedContentState.navigation.pendingNavigation = nil
+    clearInFlightComposerStateOnTabSwitch(state: &duplicatedContentState.composer)
+    clearInFlightCollectionStateOnTabDuplicate(state: &duplicatedContentState.collection)
+    clearInFlightAiChatStateOnTabSwitch(state: &duplicatedContentState.aiChat)
+    duplicatedContentState.entryViewLayout.entryOperations.isLoading = false
+    duplicatedContentState.entryViewLayout.entryOperations.isReloading = false
+    return duplicatedContentState
+}
+
+private func clearInFlightCollectionStateOnTabDuplicate(state: inout CollectionState) {
+    let wasOpening = state.collectionSession.phase.isOpening
+    state.pendingSave = nil
+    state.pendingSaveContext = nil
+    state.isSaving = false
+    state.collectionSession.finishOpeningTransition()
+    state.collectionSession.finishRefreshWithoutWriteBack()
+    if wasOpening {
+        state.collectionSession.document = nil
     }
 }
 
