@@ -67,6 +67,41 @@ xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodepro
 
 If the spec ID is the same in both targets, a grep for the spec ID should find tests in both locations. Report pass/fail per target; do not merge results.
 
+### Flow suite selection
+
+Canonical flow-document suites under `VoyagerTests/Flows/<CATEGORY>/` are selected by flow ID, not by directory path.
+
+**Human/CI commands** (via mise):
+
+```bash
+# Run one flow
+mise run macos-test-flow -- --flow onb.access_unlock
+
+# Run all flows in a category
+mise run macos-test-flow -- --category onb
+
+# List all mapped flow suites
+mise run macos-test-flow -- --list
+
+# Check structural integrity of mapped suites
+mise run macos-test-flow -- --check
+```
+
+**Agent verification rule**: Agents MUST use XcodeBuildMCP for Swift test execution, NOT the mise/shell commands above. Use the Python runner only to resolve selectors and check structure:
+
+```bash
+# Resolve the selector for an agent XcodeBuildMCP run
+python3 scripts/dev/macos_test_flow.py --flow onb.access_unlock --dry-run
+# Output: scripts/dev/macos-test.sh -only-testing:VoyagerTests/AccessUnlockFlowTests
+# Agent uses: -only-testing:VoyagerTests/AccessUnlockFlowTests in XcodeBuildMCP test_sim or equivalent
+```
+
+**v1 migration scope**: The checker reports unmigrated canonical flow documents without failing. Existing mapped suites are strict: structural mismatches (orphan suite, class/file mismatch, missing FLOW-ID marker) cause checker exit 1. Do not treat unmigrated docs as covered or blocked in v1.
+
+See `../spec-test-authoring/references/flow-test-topology.md` for the complete mapping contract.
+
+**Rollout status (v1)**: Pilot first: `AccessUnlockFlowTests` is the initial mapped suite. New and modified flows opt in next. Strict all-flow coverage is deferred to a separate approved task. No manifest, dependency graph, or CI workflow is required or planned for v1.
+
 ### Task-shape rules
 
 - `scaffold`
