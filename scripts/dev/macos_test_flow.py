@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 
 CATEGORY_RE = re.compile(r"^[a-z][a-z0-9]*$")
@@ -17,6 +18,7 @@ SLUG_RE = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
 CLASS_RE = re.compile(r"\b(?:final\s+)?class\s+(\w+)")
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_SHELL = ROOT_DIR / "scripts/dev/macos-test.sh"
+GAPS_PATH = ROOT_DIR / "scripts/dev/macos_test_flow_gaps.json"
 
 
 class FlowMapping(NamedTuple):
@@ -102,6 +104,58 @@ def discover_flow_docs(docs_root: Path) -> list[tuple[str, str, Path]]:
         if CATEGORY_RE.fullmatch(category) and SLUG_RE.fullmatch(slug):
             docs.append((category, slug, path))
     return docs
+
+
+def load_product_gaps(path: Path | None = None) -> dict[str, object]:
+    """Load registered product gaps from the versioned JSON config."""
+    path = path or GAPS_PATH
+    try:
+        config: object = json.loads(path.read_text())
+    except FileNotFoundError as error:
+        raise ValueError(f"Missing product gaps config: {path}") from error
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Invalid product gaps config: {error}") from error
+    if not isinstance(config, dict) or config.get("version") != 1:
+        raise ValueError("Invalid product gaps config version")
+    config = cast(dict[str, object], config)
+    product_gaps = config.get("product_gaps")
+    if not isinstance(product_gaps, dict):
+        raise ValueError("Invalid product gaps config: product_gaps must be an object")
+    return cast(dict[str, object], product_gaps)
+
+
+def check_product_gaps(
+    product_gaps: dict[str, object], mappings: set[str], suites: set[str]
+) -> list[str]:
+    """Return validation errors for product gaps registered against flow docs."""
+    errors: list[str] = []
+    for flow_id, record in sorted(product_gaps.items()):
+        try:
+            _ = parse_flow_id(flow_id)
+        except ValueError as error:
+            errors.append(f"invalid product gap ID {flow_id}: {error}")
+        if flow_id not in mappings:
+            errors.append(f"unknown product gap document: {flow_id}")
+        if flow_id in suites:
+            errors.append(f"product gap has executable suite: {flow_id}")
+        if not isinstance(record, dict):
+            errors.append(f"invalid product gap record: {flow_id}")
+            continue
+        record = cast(dict[str, object], record)
+        reason = record.get("reason")
+        if not isinstance(reason, str) or not reason.strip():
+            errors.append(f"product gap missing reason: {flow_id}")
+        missing_symbols = record.get("missing_symbols")
+        if (
+            not isinstance(missing_symbols, list)
+            or not missing_symbols
+            or any(
+                not isinstance(symbol, str) or not symbol.strip()
+                for symbol in missing_symbols
+            )
+        ):
+            errors.append(f"product gap missing symbols: {flow_id}")
+    return errors
 
 
 def suite_flow_id(path: Path) -> str | None:
@@ -216,7 +270,16 @@ def main(argv: list[str] | None = None) -> int:
                 for category, slug, _ in discover_flow_docs(docs_root)
             }
             suites = set(list_mappings(tests_root))
-            for flow_id in sorted(mappings - suites):
+            try:
+                product_gaps = load_product_gaps()
+            except ValueError as error:
+                product_gaps = {}
+                errors.append(str(error))
+            errors.extend(check_product_gaps(product_gaps, mappings, suites))
+            gap_ids = set(product_gaps)
+            for flow_id in sorted(gap_ids):
+                print(f"product-gap: {flow_id}")
+            for flow_id in sorted(mappings - suites - gap_ids):
                 print(f"unmigrated: {flow_id}")
             for error in errors:
                 print(error, file=sys.stderr)

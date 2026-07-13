@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import os
 import sys
 import tempfile
@@ -21,6 +22,7 @@ class MacOSTestFlowTests(unittest.TestCase):
     shell = Path()
     old_root = Path()
     old_shell = Path()
+    old_gaps = Path()
 
     def setUp(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
@@ -30,14 +32,18 @@ class MacOSTestFlowTests(unittest.TestCase):
         self.shell = self.root / "macos-test.sh"
         self.old_root = macos_test_flow.ROOT_DIR
         self.old_shell = macos_test_flow.DEFAULT_SHELL
+        self.old_gaps = macos_test_flow.GAPS_PATH
         macos_test_flow.ROOT_DIR = self.root
         macos_test_flow.DEFAULT_SHELL = self.shell
+        macos_test_flow.GAPS_PATH = self.root / "macos_test_flow_gaps.json"
         self.shell.write_text("#!/bin/sh\nexit 0\n")
         os.chmod(self.shell, 0o755)
+        macos_test_flow.GAPS_PATH.write_text('{"version": 1, "product_gaps": {}}')
 
     def tearDown(self) -> None:
         macos_test_flow.ROOT_DIR = self.old_root
         macos_test_flow.DEFAULT_SHELL = self.old_shell
+        macos_test_flow.GAPS_PATH = self.old_gaps
         for path in sorted(self.root.rglob("*"), reverse=True):
             if path.is_file():
                 path.unlink()
@@ -71,6 +77,12 @@ class MacOSTestFlowTests(unittest.TestCase):
         marker_line = f"// FLOW-ID: {category}.{slug}\n" if marker else ""
         path.write_text(f"{marker_line}final class {class_name}: XCTestCase {{}}\n")
         return path
+
+    def add_gap_config(self, product_gaps: dict[str, object]) -> Path:
+        macos_test_flow.GAPS_PATH.write_text(
+            json.dumps({"version": 1, "product_gaps": product_gaps})
+        )
+        return macos_test_flow.GAPS_PATH
 
     def run_main(self, args: list[str]) -> tuple[int, str, str]:
         stdout = io.StringIO()
@@ -227,6 +239,119 @@ class MacOSTestFlowTests(unittest.TestCase):
             ),
             0,
         )
+
+    def test_checker_classifies_registered_product_gap(self) -> None:
+        self.add_doc("set", "settings_shortcuts")
+        self.add_gap_config(
+            {
+                "set.settings_shortcuts": {
+                    "reason": "Missing production support",
+                    "missing_symbols": ["KeyboardShortcutsFeature"],
+                }
+            }
+        )
+        result, stdout, stderr = self.run_main(
+            ["--check", "--docs-root", str(self.docs_root)]
+        )
+        self.assertEqual(result, 0)
+        self.assertEqual(stderr, "")
+        self.assertIn("product-gap: set.settings_shortcuts", stdout)
+        self.assertNotIn("unmigrated:", stdout)
+
+    def test_checker_rejects_unknown_product_gap_document(self) -> None:
+        self.add_gap_config(
+            {
+                "set.settings_shortcuts": {
+                    "reason": "Missing production support",
+                    "missing_symbols": ["KeyboardShortcutsFeature"],
+                }
+            }
+        )
+        result, _, stderr = self.run_main(
+            ["--check", "--docs-root", str(self.docs_root)]
+        )
+        self.assertEqual(result, 1)
+        self.assertIn("unknown product gap document: set.settings_shortcuts", stderr)
+
+    def test_checker_rejects_product_gap_without_reason(self) -> None:
+        self.add_doc("set", "settings_shortcuts")
+        self.add_gap_config(
+            {
+                "set.settings_shortcuts": {
+                    "missing_symbols": ["KeyboardShortcutsFeature"],
+                }
+            }
+        )
+        result, _, stderr = self.run_main(
+            ["--check", "--docs-root", str(self.docs_root)]
+        )
+        self.assertEqual(result, 1)
+        self.assertIn("product gap missing reason: set.settings_shortcuts", stderr)
+
+    def test_checker_rejects_product_gap_without_missing_symbols(self) -> None:
+        self.add_doc("set", "settings_shortcuts")
+        self.add_gap_config(
+            {"set.settings_shortcuts": {"reason": "Missing production support"}}
+        )
+        result, _, stderr = self.run_main(
+            ["--check", "--docs-root", str(self.docs_root)]
+        )
+        self.assertEqual(result, 1)
+        self.assertIn("product gap missing symbols: set.settings_shortcuts", stderr)
+
+    def test_checker_rejects_product_gap_suite_collision(self) -> None:
+        self.add_doc("set", "settings_shortcuts")
+        self.add_suite("set", "settings_shortcuts")
+        self.add_gap_config(
+            {
+                "set.settings_shortcuts": {
+                    "reason": "Missing production support",
+                    "missing_symbols": ["KeyboardShortcutsFeature"],
+                }
+            }
+        )
+        result, _, stderr = self.run_main(
+            ["--check", "--docs-root", str(self.docs_root)]
+        )
+        self.assertEqual(result, 1)
+        self.assertIn(
+            "product gap has executable suite: set.settings_shortcuts", stderr
+        )
+
+    def test_checker_omits_unmigrated_when_docs_are_suites_or_gaps(self) -> None:
+        self.add_doc("onb", "access_unlock")
+        self.add_suite("onb", "access_unlock")
+        self.add_doc("set", "settings_shortcuts")
+        self.add_gap_config(
+            {
+                "set.settings_shortcuts": {
+                    "reason": "Missing production support",
+                    "missing_symbols": ["KeyboardShortcutsFeature"],
+                }
+            }
+        )
+        result, stdout, stderr = self.run_main(
+            ["--check", "--docs-root", str(self.docs_root)]
+        )
+        self.assertEqual(result, 0)
+        self.assertEqual(stderr, "")
+        self.assertEqual(stdout, "product-gap: set.settings_shortcuts\n")
+
+    def test_product_gap_flow_still_requires_suite(self) -> None:
+        self.add_doc("set", "settings_shortcuts")
+        self.add_gap_config(
+            {
+                "set.settings_shortcuts": {
+                    "reason": "Missing production support",
+                    "missing_symbols": ["KeyboardShortcutsFeature"],
+                }
+            }
+        )
+        result, _, stderr = self.run_main(
+            ["--flow", "set.settings_shortcuts", "--docs-root", str(self.docs_root)]
+        )
+        self.assertEqual(result, 2)
+        self.assertIn("Missing flow suite", stderr)
 
     def test_flow_dry_run_uses_xctest_passthrough_selector(self) -> None:
         self.add_doc("onb", "access_unlock")

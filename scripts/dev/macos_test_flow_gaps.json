@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "product_gaps": {
+    "set.settings_shortcuts": {
+      "canonical_path": "set/flows/settings_shortcuts_flow.md",
+      "reason": "Missing production SettingsSection.shortcuts and keyboard-shortcut reducer/action/storage",
+      "missing_symbols": ["SettingsSection.shortcuts", "KeyboardShortcutsFeature"]
+    }
+  }
+}
