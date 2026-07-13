@@ -812,11 +812,27 @@ private func restoreActiveAiChatSessionIfNeededEffect(
         return .none
     }
 
+    let aiChatSessionID = AiChatSessionID(rawValue: sessionUUID)
+    guard !hasBackgroundAiChatLifecycleOwner(sessionID: aiChatSessionID, state: state) else {
+        return .none
+    }
+
     return .send(.content(.aiChat(.setup(AiChatSetupState(
-        restoreSessionID: AiChatSessionID(rawValue: sessionUUID),
+        restoreSessionID: aiChatSessionID,
         sessionID: nil,
         mode: .chat,
     )))))
+}
+
+private func hasBackgroundAiChatLifecycleOwner(
+    sessionID: AiChatSessionID,
+    state: FileManagerWindowState,
+) -> Bool {
+    state.backgroundAiChatStates.values.contains {
+        $0.aiChat.hasLifecycleOwner(sessionID: sessionID)
+    } || state.backgroundInspectorAiChatStates.values.contains {
+        $0.aiChat.hasLifecycleOwner(sessionID: sessionID)
+    }
 }
 
 private func navigationRouteForClosingTab(
@@ -1427,24 +1443,24 @@ private func handleBackgroundAiChatSnapshotPersisted(
     state: inout FileManagerWindowState,
 ) {
     let summary = AiChatSessionSummary(snapshot: snapshot)
-    guard var backgroundContent = state.backgroundAiChatStates[snapshot.sessionID] else { return }
+    guard let backgroundContent = state.backgroundAiChatStates[snapshot.sessionID] else { return }
     let ownerRemoval = backgroundAiChatOwnerRemoval(
         requestID: snapshot.lastRequestID,
         runID: snapshot.lastRunID,
         backgroundAiChat: backgroundContent.aiChat,
     )
+    admitFreshAiChatContentForPersistedSnapshotIfNeeded(summary: summary, state: &state)
     refreshAiChatSnapshotsFromBackgroundIfNeeded(
         summary: summary,
         snapshot: snapshot,
         backgroundAiChat: backgroundContent.aiChat,
         state: &state,
     )
-    backgroundContent.aiChat.removeBackgroundOwner(ownerRemoval)
-    if backgroundContent.aiChat.hasRemainingBackgroundLifecycleOwner {
-        state.backgroundAiChatStates[snapshot.sessionID] = backgroundContent
-    } else {
-        state.removeBackgroundAiChatState(sessionID: snapshot.sessionID)
-    }
+    removeBackgroundAiChatOwnerFromContentAliases(
+        ownerRemoval,
+        canonicalSessionID: snapshot.sessionID,
+        state: &state,
+    )
 }
 
 private func handleBackgroundInspectorAiChatSnapshotPersisted(
@@ -1452,23 +1468,61 @@ private func handleBackgroundInspectorAiChatSnapshotPersisted(
     state: inout FileManagerWindowState,
 ) {
     let summary = AiChatSessionSummary(snapshot: snapshot)
-    guard var inspectorState = state.backgroundInspectorAiChatStates[snapshot.sessionID] else { return }
+    guard let inspectorState = state.backgroundInspectorAiChatStates[snapshot.sessionID] else { return }
     let ownerRemoval = backgroundAiChatOwnerRemoval(
         requestID: snapshot.lastRequestID,
         runID: snapshot.lastRunID,
         backgroundAiChat: inspectorState.aiChat,
     )
+    admitFreshAiChatContentForPersistedSnapshotIfNeeded(summary: summary, state: &state)
     refreshAiChatSnapshotsFromBackgroundIfNeeded(
         summary: summary,
         snapshot: snapshot,
         backgroundAiChat: inspectorState.aiChat,
         state: &state,
     )
-    inspectorState.aiChat.removeBackgroundOwner(ownerRemoval)
-    if inspectorState.aiChat.hasRemainingBackgroundLifecycleOwner {
-        state.backgroundInspectorAiChatStates[snapshot.sessionID] = inspectorState.tabSnapshot()
-    } else {
-        state.removeBackgroundInspectorAiChatState(sessionID: snapshot.sessionID)
+    removeBackgroundAiChatOwnerFromInspectorAliases(
+        ownerRemoval,
+        canonicalSessionID: snapshot.sessionID,
+        state: &state,
+    )
+}
+
+private func removeBackgroundAiChatOwnerFromContentAliases(
+    _ ownerRemoval: BackgroundAiChatOwnerRemoval?,
+    canonicalSessionID: AiChatSessionID,
+    state: inout FileManagerWindowState,
+) {
+    let sessionIDs = ownerRemoval?.requestID == nil
+        ? [canonicalSessionID]
+        : Array(state.backgroundAiChatStates.keys)
+    for sessionID in sessionIDs {
+        guard var backgroundContent = state.backgroundAiChatStates[sessionID] else { continue }
+        backgroundContent.aiChat.removeBackgroundOwner(ownerRemoval)
+        if backgroundContent.aiChat.hasRemainingBackgroundLifecycleOwner {
+            state.backgroundAiChatStates[sessionID] = backgroundContent
+        } else {
+            state.removeBackgroundAiChatState(sessionID: sessionID)
+        }
+    }
+}
+
+private func removeBackgroundAiChatOwnerFromInspectorAliases(
+    _ ownerRemoval: BackgroundAiChatOwnerRemoval?,
+    canonicalSessionID: AiChatSessionID,
+    state: inout FileManagerWindowState,
+) {
+    let sessionIDs = ownerRemoval?.requestID == nil
+        ? [canonicalSessionID]
+        : Array(state.backgroundInspectorAiChatStates.keys)
+    for sessionID in sessionIDs {
+        guard var inspectorState = state.backgroundInspectorAiChatStates[sessionID] else { continue }
+        inspectorState.aiChat.removeBackgroundOwner(ownerRemoval)
+        if inspectorState.aiChat.hasRemainingBackgroundLifecycleOwner {
+            state.backgroundInspectorAiChatStates[sessionID] = inspectorState.tabSnapshot()
+        } else {
+            state.removeBackgroundInspectorAiChatState(sessionID: sessionID)
+        }
     }
 }
 
@@ -1624,6 +1678,31 @@ private func refreshAiChatRecoveryFromBackgroundIfNeeded(
             lock: lock,
             backgroundAiChat: backgroundAiChat,
         )
+    }
+}
+
+private func admitFreshAiChatContentForPersistedSnapshotIfNeeded(
+    summary: AiChatSessionSummary,
+    state: inout FileManagerWindowState,
+) {
+    let anchor = ContentTabPageAnchor.aiChat(sessionID: summary.sessionID.rawValue.uuidString)
+
+    if let activeTabID = state.contentTabs.activeTabID,
+       state.contentTabs.tabs[id: activeTabID]?.anchor == anchor,
+       state.content.aiChat.canAdmitPersistedBackgroundSnapshot(summary: summary)
+    {
+        state.content.aiChat.sessionID = summary.sessionID
+    }
+
+    for tabID in state.tabContentStates.keys {
+        guard tabID != state.contentTabs.activeTabID,
+              state.contentTabs.tabs[id: tabID]?.anchor == anchor,
+              state.tabContentStates[tabID]?.aiChat
+              .canAdmitPersistedBackgroundSnapshot(summary: summary) == true
+        else {
+            continue
+        }
+        state.tabContentStates[tabID]?.aiChat.sessionID = summary.sessionID
     }
 }
 
@@ -1824,6 +1903,13 @@ private extension AiChatFeature.State {
         if case let .failed(_, failure) = matchingPhase {
             lastExecutionFailure = failure
         }
+    }
+
+    func canAdmitPersistedBackgroundSnapshot(summary: AiChatSessionSummary) -> Bool {
+        sessionID == nil
+            && restoreSessionID == nil
+            && pendingRequestStart == nil
+            && !hasNewerSnapshotThanBackground(summary)
     }
 
     func canRefreshFromBackground(

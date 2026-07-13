@@ -5689,6 +5689,60 @@ extension CTM005IndependentContentTabSessionTests {
         XCTAssertNotNil(store.state.backgroundAiChatStates[sessionID])
     }
 
+    func testBackgroundPersistedSnapshotRemovesOwnerFromAllContentAliases() async {
+        let fixture = makeAliasedAiChatOwnerFixture()
+        var state = FileManagerFeature.State()
+        state.backgroundAiChatStates = [
+            fixture.sessionID: fixture.backgroundContent,
+            fixture.aliasSessionID: fixture.backgroundContent,
+        ]
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.backgroundAiChatSnapshotPersisted(fixture.snapshot))
+
+        XCTAssertEqual(store.state.backgroundAiChatStates.count, 2)
+        for backgroundContent in store.state.backgroundAiChatStates.values {
+            XCTAssertEqual(backgroundContent.aiChat.executionPhase, .idle)
+            XCTAssertNotNil(backgroundContent.aiChat.backgroundExecutionPhases[fixture.aliasRequestID])
+        }
+
+        await store.send(.backgroundAiChatSnapshotPersisted(fixture.aliasSnapshot))
+
+        XCTAssertTrue(store.state.backgroundAiChatStates.isEmpty)
+        await store.finish()
+    }
+
+    func testBackgroundPersistedSnapshotRemovesOwnerFromAllInspectorAliases() async {
+        let fixture = makeAliasedAiChatOwnerFixture()
+        var inspectorState = FileManagerInspectorFeature.State()
+        inspectorState.aiChat = fixture.backgroundContent.aiChat
+        var state = FileManagerFeature.State()
+        state.backgroundInspectorAiChatStates = [
+            fixture.sessionID: inspectorState,
+            fixture.aliasSessionID: inspectorState,
+        ]
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.backgroundInspectorAiChatSnapshotPersisted(fixture.snapshot))
+
+        XCTAssertEqual(store.state.backgroundInspectorAiChatStates.count, 2)
+        for backgroundInspector in store.state.backgroundInspectorAiChatStates.values {
+            XCTAssertEqual(backgroundInspector.aiChat.executionPhase, .idle)
+            XCTAssertNotNil(backgroundInspector.aiChat.backgroundExecutionPhases[fixture.aliasRequestID])
+        }
+
+        await store.send(.backgroundInspectorAiChatSnapshotPersisted(fixture.aliasSnapshot))
+
+        XCTAssertTrue(store.state.backgroundInspectorAiChatStates.isEmpty)
+        await store.finish()
+    }
+
     func testAddBackgroundAiChatStatePreservesExistingPendingResolver() throws {
         let aiSessionID = AiChatSessionID(rawValue: UUID())
         let oldLock = makeRequestLock(sessionID: aiSessionID)
@@ -9969,51 +10023,25 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
-    /// CTM-005-content_tab_duplicate: active AI Chat in-flight source duplicate는 같은 session ID 유지
-    func testDuplicate_activeAiChatInFlight_preservesLifecycleAndCreatesFreshContent() async throws {
+    /// CTM-005-content_tab_duplicate: active AI Chat in-flight duplicate는 final snapshot으로 hydrate
+    func testDuplicate_activeAiChatInFlight_preservesLifecycleAndHydratesFromFinalSnapshot() async throws {
         let sourceID = ContentTabID()
         let aiSessionID = AiChatSessionID(rawValue: UUID())
-        let sessionIDString = aiSessionID.rawValue.uuidString
         let requestLock = makeRequestLock(sessionID: aiSessionID)
-            .recordingFinalSnapshot(AiChatSessionSnapshot(
-                sessionID: aiSessionID, status: .active, provider: nil, model: nil,
-                selectedModelRow: nil, selectedThinking: nil,
-                transcriptHistory: [
-                    AiChatMessage(role: .user, content: "test"),
-                    AiChatMessage(role: .assistant, content: "done"),
-                ],
-                lastRequestID: nil, lastRunID: nil, lastRequestContext: nil,
-                updatedAtMs: 1_234_567_890_000,
-            ))
-        var aiChatContent = FileManagerContentFeature.State()
-        aiChatContent.navigation.navigationState = .aiChat(sessionIDString)
-        aiChatContent.aiChat.sessionID = aiSessionID
-        aiChatContent.aiChat.sessionStatus = .active
-        aiChatContent.aiChat.executionPhase = .processing(requestLock)
-        var state = FileManagerFeature.State()
-        state.contentTabs = ContentTabState(
-            tabs: [ContentTabItem(
-                id: sourceID, page: .aiChat, anchor: .aiChat(sessionID: sessionIDString),
-                isPinned: false, title: "AI Chat", iconName: "sparkles",
-            )],
-            activeTabID: sourceID, recentlyClosed: nil,
+        let finalSnapshot = makeFinalAiChatSessionSnapshot(sessionID: aiSessionID, requestLock: requestLock)
+        let ownerLock = requestLock.recordingFinalSnapshot(finalSnapshot)
+        let loadedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+        let state = makeInFlightAiChatDuplicateState(
+            sourceID: sourceID,
+            sessionID: aiSessionID,
+            requestLock: ownerLock,
+            sourceIsPinned: false,
         )
-        state.content = aiChatContent
-        state.tabContentStates = [sourceID: aiChatContent]
-        state.syncContentTabSidebarItems()
-
-        let store = TestStore(initialState: state) {
-            FileManagerFeature()
-        } withDependencies: {
-            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            var client = FileManagerClient.testValue
-            client.fileExistsWithIsDirectory = { _, _ in false }
-            $0.fileManagerClient = client
-            $0.fileChangeGatewayClient.observeEvents = {
-                AsyncStream { continuation in continuation.finish() }
-            }
-        }
-        store.exhaustivity = .off
+        let store = makeInFlightAiChatDuplicateStore(
+            state: state,
+            loadedSessionIDs: loadedSessionIDs,
+            staleSnapshot: makeAiChatSessionSnapshot(sessionID: aiSessionID),
+        )
 
         await store.send(.request(.duplicateActiveContentTab))
         await store.skipReceivedActions()
@@ -10021,10 +10049,129 @@ extension CTM005IndependentContentTabSessionTests {
         XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
         let duplicateID = try XCTUnwrap(store.state.contentTabs.activeTabID)
         XCTAssertNotEqual(duplicateID, sourceID)
-        XCTAssertEqual(store.state.contentTabs.tabs[id: duplicateID]?.anchor, .aiChat(sessionID: sessionIDString))
-        XCTAssertEqual(store.state.tabContentStates[sourceID]?.aiChat.executionPhase, .processing(requestLock))
-        XCTAssertNil(store.state.tabContentStates[duplicateID]?.aiChat.sessionID)
+        XCTAssertEqual(store.state.tabContentStates[sourceID]?.aiChat.executionPhase, .processing(ownerLock))
+        XCTAssertNotEqual(store.state.content.aiChat.transcriptHistory, finalSnapshot.transcriptHistory)
         XCTAssertNotNil(store.state.backgroundAiChatStates[aiSessionID])
+        XCTAssertEqual(loadedSessionIDs.value, [])
+
+        await store.send(.backgroundAiChatSnapshotPersisted(finalSnapshot))
+
+        XCTAssertEqual(store.state.content.aiChat.sessionID, aiSessionID)
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory, finalSnapshot.transcriptHistory)
+        XCTAssertEqual(
+            store.state.tabContentStates[duplicateID]?.aiChat.transcriptHistory,
+            finalSnapshot.transcriptHistory,
+        )
+        XCTAssertEqual(
+            store.state.tabContentStates[sourceID]?.aiChat.transcriptHistory,
+            finalSnapshot.transcriptHistory,
+        )
+        XCTAssertNil(store.state.backgroundAiChatStates[aiSessionID])
+        XCTAssertEqual(loadedSessionIDs.value, [])
+        await store.finish()
+    }
+
+    /// CTM-005-content_tab_duplicate: pinned AI Chat in-flight duplicate 선택은 disk restore 없이 final snapshot으로 hydrate
+    func testDuplicate_pinnedAiChatInFlight_selectingDuplicateHydratesFromFinalSnapshot() async throws {
+        let sourceID = ContentTabID()
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+        let finalSnapshot = makeFinalAiChatSessionSnapshot(sessionID: aiSessionID, requestLock: requestLock)
+        let ownerLock = requestLock.recordingFinalSnapshot(finalSnapshot)
+        let loadedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+        let state = makeInFlightAiChatDuplicateState(
+            sourceID: sourceID,
+            sessionID: aiSessionID,
+            requestLock: ownerLock,
+            sourceIsPinned: true,
+        )
+        let store = makeInFlightAiChatDuplicateStore(
+            state: state,
+            loadedSessionIDs: loadedSessionIDs,
+            staleSnapshot: makeAiChatSessionSnapshot(sessionID: aiSessionID),
+        )
+
+        await store.send(.request(.duplicateActiveContentTab))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, sourceID)
+        let duplicateID = try XCTUnwrap(store.state.contentTabs.tabs.last?.id)
+        XCTAssertNil(store.state.tabContentStates[duplicateID]?.aiChat.sessionID)
+
+        await store.send(.contentTabs(.setCurrent(duplicateID)))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, duplicateID)
+        XCTAssertNotEqual(store.state.content.aiChat.transcriptHistory, finalSnapshot.transcriptHistory)
+        XCTAssertNotNil(store.state.backgroundAiChatStates[aiSessionID])
+        XCTAssertEqual(loadedSessionIDs.value, [])
+
+        await store.send(.backgroundAiChatSnapshotPersisted(finalSnapshot))
+
+        XCTAssertEqual(store.state.content.aiChat.sessionID, aiSessionID)
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory, finalSnapshot.transcriptHistory)
+        XCTAssertEqual(
+            store.state.tabContentStates[duplicateID]?.aiChat.transcriptHistory,
+            finalSnapshot.transcriptHistory,
+        )
+        XCTAssertEqual(
+            store.state.tabContentStates[sourceID]?.aiChat.transcriptHistory,
+            finalSnapshot.transcriptHistory,
+        )
+        XCTAssertNil(store.state.backgroundAiChatStates[aiSessionID])
+        XCTAssertEqual(loadedSessionIDs.value, [])
+        await store.finish()
+    }
+
+    /// CTM-005-content_tab_duplicate: pinned AI Chat in-flight duplicate cache는 final snapshot으로 hydrate
+    func testDuplicate_pinnedAiChatInFlight_inactiveDuplicateHydratesFromFinalSnapshot() async throws {
+        let sourceID = ContentTabID()
+        let homeID = ContentTabID()
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+        let finalSnapshot = makeFinalAiChatSessionSnapshot(sessionID: aiSessionID, requestLock: requestLock)
+        let ownerLock = requestLock.recordingFinalSnapshot(finalSnapshot)
+        let loadedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+        let state = makeInFlightAiChatDuplicateStateWithInactiveHome(
+            sourceID: sourceID,
+            homeID: homeID,
+            sessionID: aiSessionID,
+            requestLock: ownerLock,
+        )
+        let store = makeInFlightAiChatDuplicateStore(
+            state: state,
+            loadedSessionIDs: loadedSessionIDs,
+            staleSnapshot: makeAiChatSessionSnapshot(sessionID: aiSessionID),
+        )
+
+        await store.send(.request(.duplicateActiveContentTab))
+        await store.skipReceivedActions()
+
+        let duplicateID = try XCTUnwrap(store.state.contentTabs.tabs.last?.id)
+        XCTAssertNil(store.state.tabContentStates[duplicateID]?.aiChat.sessionID)
+
+        await store.send(.contentTabs(.setCurrent(homeID)))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, homeID)
+        XCTAssertNotNil(store.state.backgroundAiChatStates[aiSessionID])
+        XCTAssertNil(store.state.tabContentStates[duplicateID]?.aiChat.sessionID)
+        XCTAssertEqual(loadedSessionIDs.value, [])
+
+        await store.send(.backgroundAiChatSnapshotPersisted(finalSnapshot))
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, homeID)
+        XCTAssertEqual(store.state.tabContentStates[duplicateID]?.aiChat.sessionID, aiSessionID)
+        XCTAssertEqual(
+            store.state.tabContentStates[duplicateID]?.aiChat.transcriptHistory,
+            finalSnapshot.transcriptHistory,
+        )
+        XCTAssertEqual(
+            store.state.tabContentStates[sourceID]?.aiChat.transcriptHistory,
+            finalSnapshot.transcriptHistory,
+        )
+        XCTAssertNil(store.state.backgroundAiChatStates[aiSessionID])
+        XCTAssertEqual(loadedSessionIDs.value, [])
         await store.finish()
     }
 
@@ -10205,6 +10352,15 @@ private struct ConnectedAiProviderFixture {
     let model: AiProviderModel
 }
 
+private struct AliasedAiChatOwnerFixture {
+    let sessionID: AiChatSessionID
+    let aliasSessionID: AiChatSessionID
+    let aliasRequestID: AiChatRequestID
+    let snapshot: AiChatSessionSnapshot
+    let aliasSnapshot: AiChatSessionSnapshot
+    let backgroundContent: FileManagerContentFeature.State
+}
+
 private struct DuplicateOwnerFixture {
     let windowID: UUID
     let composerOwnerID: UUID
@@ -10213,6 +10369,29 @@ private struct DuplicateOwnerFixture {
 }
 
 private extension CTM005IndependentContentTabSessionTests {
+    func makeAliasedAiChatOwnerFixture() -> AliasedAiChatOwnerFixture {
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let aliasSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: sessionID)
+        let aliasLock = makeRequestLock(sessionID: aliasSessionID)
+        let snapshot = makeFinalAiChatSessionSnapshot(sessionID: sessionID, requestLock: requestLock)
+        let aliasSnapshot = makeFinalAiChatSessionSnapshot(sessionID: aliasSessionID, requestLock: aliasLock)
+        let ownerLock = requestLock.recordingFinalSnapshot(snapshot)
+        let aliasOwnerLock = aliasLock.recordingFinalSnapshot(aliasSnapshot)
+        var backgroundContent = FileManagerContentFeature.State()
+        backgroundContent.aiChat.sessionID = sessionID
+        backgroundContent.aiChat.executionPhase = .completed(ownerLock)
+        backgroundContent.aiChat.backgroundExecutionPhases[aliasLock.requestID] = .completed(aliasOwnerLock)
+        return AliasedAiChatOwnerFixture(
+            sessionID: sessionID,
+            aliasSessionID: aliasSessionID,
+            aliasRequestID: aliasLock.requestID,
+            snapshot: snapshot,
+            aliasSnapshot: aliasSnapshot,
+            backgroundContent: backgroundContent,
+        )
+    }
+
     func makeDuplicateOwnerFixture() -> DuplicateOwnerFixture {
         DuplicateOwnerFixture(
             windowID: UUID(),
@@ -10485,6 +10664,117 @@ private extension CTM005IndependentContentTabSessionTests {
                 thinkingCapability: .unsupported(reason: AiThinkingUnavailableReason(message: "unsupported")),
             ),
         )
+    }
+
+    func makeFinalAiChatSessionSnapshot(
+        sessionID: AiChatSessionID,
+        requestLock: AiChatRequestLock,
+    ) -> AiChatSessionSnapshot {
+        AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: requestLock.context.provider,
+            model: requestLock.selectedModelHandle,
+            selectedModelRow: requestLock.selectedModelRow,
+            selectedThinking: requestLock.context.selectedThinking,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "test"),
+                AiChatMessage(role: .assistant, content: "latest done"),
+            ],
+            lastRequestID: requestLock.requestID,
+            lastRunID: requestLock.runID,
+            lastRequestContext: requestLock.context.requestContext,
+            updatedAtMs: 1_234_567_891_000,
+        )
+    }
+
+    func makeInFlightAiChatDuplicateState(
+        sourceID: ContentTabID,
+        sessionID: AiChatSessionID,
+        requestLock: AiChatRequestLock,
+        sourceIsPinned: Bool,
+    ) -> FileManagerFeature.State {
+        let sessionIDString = sessionID.rawValue.uuidString
+        var content = FileManagerContentFeature.State()
+        content.navigation.navigationState = .aiChat(sessionIDString)
+        content.aiChat.sessionID = sessionID
+        content.aiChat.sessionStatus = .active
+        content.aiChat.executionPhase = .processing(requestLock)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: sourceID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: sessionIDString),
+                    isPinned: sourceIsPinned,
+                    title: "AI Chat",
+                    iconName: "sparkles",
+                ),
+            ],
+            activeTabID: sourceID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [sourceID: content]
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    func makeInFlightAiChatDuplicateStateWithInactiveHome(
+        sourceID: ContentTabID,
+        homeID: ContentTabID,
+        sessionID: AiChatSessionID,
+        requestLock: AiChatRequestLock,
+    ) -> FileManagerFeature.State {
+        var state = makeInFlightAiChatDuplicateState(
+            sourceID: sourceID,
+            sessionID: sessionID,
+            requestLock: requestLock,
+            sourceIsPinned: true,
+        )
+        let homeContent = FileManagerContentFeature.State.initialContent(
+            for: .homeDefault,
+            inheritingWindowContextFrom: state.content,
+        )
+        state.contentTabs.tabs.append(ContentTabItem(
+            id: homeID,
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Home",
+            iconName: "house",
+        ))
+        state.tabContentStates[homeID] = homeContent
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    func makeInFlightAiChatDuplicateStore(
+        state: FileManagerFeature.State,
+        loadedSessionIDs: LockIsolated<[AiChatSessionID]>,
+        staleSnapshot: AiChatSessionSnapshot,
+    ) -> TestStore<FileManagerFeature.State, FileManagerWindowAction> {
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.aiConnectionsFileClient.load = { .empty() }
+            $0.aiChatSessionPersistenceClient.loadSession = { sessionID in
+                loadedSessionIDs.withValue { $0.append(sessionID) }
+                return staleSnapshot
+            }
+            var client = FileManagerClient.testValue
+            client.fileExistsWithIsDirectory = { _, _ in false }
+            $0.fileManagerClient = client
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off
+        return store
     }
 
     func makeAiChatSessionSnapshot(sessionID: AiChatSessionID) -> AiChatSessionSnapshot {
