@@ -42,6 +42,7 @@ enum WindowManagerAction: CasePathable {
         case closeTab
         case togglePinTab
         case restoreLastClosedTab
+        case duplicateTab
         case newFolder
         case open
         case quickLook

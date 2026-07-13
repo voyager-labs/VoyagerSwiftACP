@@ -20,6 +20,7 @@ struct MenuCommandsState: Equatable {
     var canSaveCollection: Bool
     var isActiveContentTabPinned: Bool
     var canRestoreLastClosedTab: Bool
+    var canDuplicateActiveContentTab: Bool
 
     var closeTabTitle: String {
         "Close Tab"
@@ -57,6 +58,7 @@ struct MenuCommandsState: Equatable {
         canSaveCollection = false
         isActiveContentTabPinned = false
         canRestoreLastClosedTab = false
+        canDuplicateActiveContentTab = false
         sidebarVisible = false
         showHiddenFiles = false
         viewLayout = .list
@@ -91,6 +93,7 @@ struct MenuCommandsState: Equatable {
         canSaveCollection = projection.canSaveCollection
         isActiveContentTabPinned = projection.isActiveContentTabPinned
         canRestoreLastClosedTab = projection.canRestoreLastClosedTab
+        canDuplicateActiveContentTab = projection.canDuplicateActiveContentTab
         sidebarVisible = projection.sidebarVisible
         showHiddenFiles = projection.showHiddenFiles
         viewLayout = projection.viewLayout

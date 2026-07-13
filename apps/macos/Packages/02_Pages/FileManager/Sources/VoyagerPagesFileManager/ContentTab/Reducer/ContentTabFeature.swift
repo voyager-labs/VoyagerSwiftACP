@@ -35,6 +35,9 @@ public struct ContentTabFeature {
             case .restore:
                 return restore(state: &state)
 
+            case let .duplicate(sourceID, duplicateID):
+                return duplicate(sourceID: sourceID, duplicateID: duplicateID, state: &state)
+
             case let .pin(id):
                 return pin(id: id, state: &state)
 
@@ -194,6 +197,52 @@ extension ContentTabFeature {
         state.activeTabID = item.id
         state.recentlyClosed = nil
         return .none
+    }
+
+    private func duplicate(sourceID: ContentTabID, duplicateID: ContentTabID,
+                           state: inout ContentTabState) -> Effect<ContentTabAction>
+    {
+        guard let source = state.tabs[id: sourceID] else { return .none }
+        guard state.tabs[id: duplicateID] == nil else { return .none }
+        guard state.tabs.count < ContentTabConstants.maxTabs else { return .none }
+        guard isValidDuplicate(page: source.page, anchor: source.anchor) else { return .none }
+
+        let duplicateItem = ContentTabItem(
+            id: duplicateID,
+            page: source.page,
+            anchor: source.anchor,
+            isPinned: false,
+            title: source.title,
+            iconName: source.iconName,
+        )
+
+        if source.isPinned {
+            state.tabs.append(duplicateItem)
+        } else {
+            let sourceIndex = state.tabs.index(id: sourceID)!
+            state.tabs.insert(duplicateItem, at: sourceIndex + 1)
+            state.previousActiveTabID = state.activeTabID
+            state.activeTabID = duplicateID
+        }
+
+        return .none
+    }
+
+    private func isValidDuplicate(page: ContentTabPage, anchor: ContentTabPageAnchor) -> Bool {
+        switch (page, anchor) {
+        case (.home, .homeDefault):
+            true
+        case let (.directory, .directory(path)):
+            UUID(uuidString: path) == nil
+        case (.collection, .collectionFile):
+            true
+        case (.collection, .virtualCollection):
+            true
+        case let (.aiChat, .aiChat(sessionID)):
+            UUID(uuidString: sessionID) != nil
+        default:
+            false
+        }
     }
 
     private func pin(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {

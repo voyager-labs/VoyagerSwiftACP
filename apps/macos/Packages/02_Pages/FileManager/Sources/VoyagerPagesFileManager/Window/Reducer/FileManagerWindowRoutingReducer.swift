@@ -97,6 +97,9 @@ struct FileManagerWindowRoutingReducer {
             case .sidebar(.delegate(.openContentTab)):
                 return .send(.contentTabs(.open(.homeDefault)))
 
+            case let .sidebar(.delegate(.duplicateContentTab(sourceID))):
+                return .send(.request(.duplicateContentTab(sourceID)))
+
             case .content(.delegate(.closeWindow)):
                 return .send(.closeWindow)
 
@@ -140,12 +143,15 @@ struct FileManagerWindowRoutingReducer {
                 syncDashboardProjections(state: &state)
                 syncSidebarSelectionForActiveContentTab(state: &state)
                 return .merge(
-                    handoffCleanupEffect,
-                    activeTabHandoffEffect(
-                        shouldResyncContentNavigation,
-                        state: state,
-                        aiConnectionsFileClient: aiConnectionsFileClient,
-                        skipAiChatCancel: true,
+                    .concatenate(
+                        handoffCleanupEffect,
+                        restoreActiveAiChatSessionIfNeededEffect(state: state),
+                        activeTabHandoffEffect(
+                            shouldResyncContentNavigation,
+                            state: state,
+                            aiConnectionsFileClient: aiConnectionsFileClient,
+                            skipAiChatCancel: true,
+                        ),
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
@@ -333,6 +339,92 @@ struct FileManagerWindowRoutingReducer {
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
 
+            case let .contentTabs(.duplicate(sourceID, duplicateID)):
+                // Post-reduce branch: ContentTabFeature가 row를 생성한 후 handoff/rollback 처리
+                // tabs[id: duplicateID]가 없으면 core guard가 no-op이므로 projection만 유지
+                guard state.contentTabs.tabs[id: duplicateID] != nil else {
+                    syncDashboardProjections(state: &state)
+                    return .none
+                }
+
+                // Pending close 상태: exact duplicateID row/cache 제거 후 pending state 복원
+                if keepPendingDuplicateContentTabCloseFocused(
+                    duplicateID: duplicateID,
+                    state: &state,
+                ) {
+                    return .none
+                }
+
+                let sourceAnchor = state.contentTabs.tabs[id: sourceID]?.anchor
+                let duplicateAnchor = state.contentTabs.tabs[id: duplicateID]?.anchor
+                let sourceContentState = duplicateSourceContentState(
+                    sourceID: sourceID,
+                    duplicateID: duplicateID,
+                    state: state,
+                )
+                let sourceAiChatLifecycleSessionIDs = sourceContentState.map {
+                    aiChatLifecycleSessionIDsToPreserve($0.aiChat)
+                } ?? []
+                let duplicatedContentState = makeDuplicatedContentState(
+                    sourceContentState,
+                    anchor: duplicateAnchor ?? sourceAnchor,
+                    inheritingWindowContextFrom: state.content,
+                )
+
+                // Pinned source는 active를 유지하므로 duplicate cache만 source snapshot으로 초기화한다.
+                guard state.contentTabs.activeTabID == duplicateID else {
+                    state.tabContentStates[duplicateID] = duplicatedContentState
+                    syncDashboardProjections(state: &state)
+                    return .none
+                }
+
+                // === Active duplicate: .contentTabs(.open) handoff 패턴 적용 ===
+                let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
+                    || state.activeTabContentStateMissing
+                let outgoingAiChatLifecycleSessionIDs = aiChatLifecycleSessionIDsToPreserve(state.content.aiChat)
+                let handoffCleanupEffect: Effect<Action>
+                if shouldResyncContentNavigation {
+                    if outgoingAiChatLifecycleSessionIDs.isEmpty {
+                        handoffCleanupEffect = prepareContentForActiveTabHandoff(state: &state.content)
+                    } else {
+                        for aiChatSessionID in outgoingAiChatLifecycleSessionIDs {
+                            state.addBackgroundAiChatState(sessionID: aiChatSessionID, state: state.content)
+                        }
+                        handoffCleanupEffect = prepareContentForActiveTabHandoff(
+                            state: &state.content,
+                            skipAiChatCleanup: true,
+                        )
+                    }
+                } else {
+                    handoffCleanupEffect = .none
+                }
+                if shouldResyncContentNavigation {
+                    state.saveCurrentContentStateForPreviousActiveTab()
+                    state.saveCurrentInspectorStateForPreviousActiveTab()
+                    state.content = duplicatedContentState
+                    state.syncActiveTabContentState()
+                    state.restoreInspectorStateForActiveTab()
+                }
+                let duplicatedAiChatRestoreEffect = sourceAiChatLifecycleSessionIDs.isEmpty
+                    ? restoreActiveAiChatSessionIfNeededEffect(state: state)
+                    : Effect<Action>.none
+                syncDashboardProjections(state: &state)
+                syncSidebarSelectionForActiveContentTab(state: &state)
+                let handoffEffect = activeTabHandoffEffect(
+                    shouldResyncContentNavigation,
+                    state: state,
+                    aiConnectionsFileClient: aiConnectionsFileClient,
+                    skipAiChatCancel: true,
+                )
+                return .merge(
+                    .concatenate(
+                        handoffCleanupEffect,
+                        duplicatedAiChatRestoreEffect,
+                        handoffEffect,
+                    ),
+                    closeInspectorForActiveAiChatEffect(state: state),
+                )
+
             case .contentTabs:
                 syncDashboardProjections(state: &state)
                 return .none
@@ -506,6 +598,29 @@ private extension FileManagerWindowRoutingReducer {
         syncSidebarSelectionForActiveContentTab(state: &state)
     }
 
+    /// Pending close rollback variant: exact duplicateID row/cache만 제거하고 pending state로 복원한다.
+    /// ContentTabFeature.duplicate가 previousActiveTabID를 덮어썼으므로 pendingClose에 보관된 원본 값을 사용한다.
+    func keepPendingDuplicateContentTabCloseFocused(
+        duplicateID: ContentTabID,
+        state: inout State,
+    ) -> Bool {
+        guard let pendingClose = state.pendingContentTabClose else { return false }
+        // Exact duplicateID row/cache 제거
+        let wasActive = state.contentTabs.activeTabID == duplicateID
+        state.contentTabs.tabs.remove(id: duplicateID)
+        state.removeContentState(for: duplicateID)
+        state.removeInspectorState(for: duplicateID)
+        // Duplicate가 active였으면(unpinned source) pendingClose에 보관된 원본 ID로 복원
+        if wasActive {
+            state.contentTabs.activeTabID = pendingClose.tabID
+            state.contentTabs.previousActiveTabID = pendingClose.previousActiveTabID
+        }
+        // Pending target/Content/Inspector/projection은 변경하지 않음
+        state.syncContentTabSidebarItems()
+        syncSidebarSelectionForActiveContentTab(state: &state)
+        return true
+    }
+
     func handleCloseContentTabRequested(
         tabID: ContentTabID,
         state: inout State,
@@ -647,6 +762,76 @@ private extension FileManagerWindowRoutingReducer {
             state.tabContentStates[previousActiveTabID] = previousActiveContent
             state.tabInspectorStates[previousActiveTabID] = state.inspector.tabSnapshot()
         }
+    }
+}
+
+private func duplicateSourceContentState(
+    sourceID: ContentTabID,
+    duplicateID: ContentTabID,
+    state: FileManagerWindowState,
+) -> FileManagerContentFeature.State? {
+    if state.contentTabs.activeTabID == duplicateID {
+        if state.contentTabs.previousActiveTabID == sourceID {
+            return state.content
+        }
+        return state.tabContentStates[sourceID]
+    }
+    if state.contentTabs.activeTabID == sourceID {
+        return state.content
+    }
+    return state.tabContentStates[sourceID]
+}
+
+private func makeDuplicatedContentState(
+    _ sourceContentState: FileManagerContentFeature.State?,
+    anchor: ContentTabPageAnchor?,
+    inheritingWindowContextFrom windowContentState: FileManagerContentFeature.State,
+) -> FileManagerContentFeature.State {
+    var duplicatedContentState = FileManagerContentFeature.State.initialContent(
+        for: anchor,
+        inheritingWindowContextFrom: sourceContentState ?? windowContentState,
+    )
+    guard let sourceContentState else {
+        return duplicatedContentState
+    }
+
+    duplicatedContentState.navigation.backHistory = sourceContentState.navigation.backHistory
+    duplicatedContentState.navigation.forwardHistory = sourceContentState.navigation.forwardHistory
+    return duplicatedContentState
+}
+
+private func restoreActiveAiChatSessionIfNeededEffect(
+    state: FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    guard let activeTabID = state.contentTabs.activeTabID,
+          case let .aiChat(sessionID) = state.contentTabs.tabs[id: activeTabID]?.anchor,
+          let sessionUUID = UUID(uuidString: sessionID),
+          state.content.aiChat.sessionID == nil,
+          state.content.aiChat.restoreSessionID == nil
+    else {
+        return .none
+    }
+
+    let aiChatSessionID = AiChatSessionID(rawValue: sessionUUID)
+    guard !hasBackgroundAiChatLifecycleOwner(sessionID: aiChatSessionID, state: state) else {
+        return .none
+    }
+
+    return .send(.content(.aiChat(.setup(AiChatSetupState(
+        restoreSessionID: aiChatSessionID,
+        sessionID: nil,
+        mode: .chat,
+    )))))
+}
+
+private func hasBackgroundAiChatLifecycleOwner(
+    sessionID: AiChatSessionID,
+    state: FileManagerWindowState,
+) -> Bool {
+    state.backgroundAiChatStates.values.contains {
+        $0.aiChat.hasLifecycleOwner(sessionID: sessionID)
+    } || state.backgroundInspectorAiChatStates.values.contains {
+        $0.aiChat.hasLifecycleOwner(sessionID: sessionID)
     }
 }
 
@@ -1258,24 +1443,24 @@ private func handleBackgroundAiChatSnapshotPersisted(
     state: inout FileManagerWindowState,
 ) {
     let summary = AiChatSessionSummary(snapshot: snapshot)
-    guard var backgroundContent = state.backgroundAiChatStates[snapshot.sessionID] else { return }
+    guard let backgroundContent = state.backgroundAiChatStates[snapshot.sessionID] else { return }
     let ownerRemoval = backgroundAiChatOwnerRemoval(
         requestID: snapshot.lastRequestID,
         runID: snapshot.lastRunID,
         backgroundAiChat: backgroundContent.aiChat,
     )
+    admitFreshAiChatContentForPersistedSnapshotIfNeeded(summary: summary, state: &state)
     refreshAiChatSnapshotsFromBackgroundIfNeeded(
         summary: summary,
         snapshot: snapshot,
         backgroundAiChat: backgroundContent.aiChat,
         state: &state,
     )
-    backgroundContent.aiChat.removeBackgroundOwner(ownerRemoval)
-    if backgroundContent.aiChat.hasRemainingBackgroundLifecycleOwner {
-        state.backgroundAiChatStates[snapshot.sessionID] = backgroundContent
-    } else {
-        state.removeBackgroundAiChatState(sessionID: snapshot.sessionID)
-    }
+    removeBackgroundAiChatOwnerFromContentAliases(
+        ownerRemoval,
+        canonicalSessionID: snapshot.sessionID,
+        state: &state,
+    )
 }
 
 private func handleBackgroundInspectorAiChatSnapshotPersisted(
@@ -1283,23 +1468,61 @@ private func handleBackgroundInspectorAiChatSnapshotPersisted(
     state: inout FileManagerWindowState,
 ) {
     let summary = AiChatSessionSummary(snapshot: snapshot)
-    guard var inspectorState = state.backgroundInspectorAiChatStates[snapshot.sessionID] else { return }
+    guard let inspectorState = state.backgroundInspectorAiChatStates[snapshot.sessionID] else { return }
     let ownerRemoval = backgroundAiChatOwnerRemoval(
         requestID: snapshot.lastRequestID,
         runID: snapshot.lastRunID,
         backgroundAiChat: inspectorState.aiChat,
     )
+    admitFreshAiChatContentForPersistedSnapshotIfNeeded(summary: summary, state: &state)
     refreshAiChatSnapshotsFromBackgroundIfNeeded(
         summary: summary,
         snapshot: snapshot,
         backgroundAiChat: inspectorState.aiChat,
         state: &state,
     )
-    inspectorState.aiChat.removeBackgroundOwner(ownerRemoval)
-    if inspectorState.aiChat.hasRemainingBackgroundLifecycleOwner {
-        state.backgroundInspectorAiChatStates[snapshot.sessionID] = inspectorState.tabSnapshot()
-    } else {
-        state.removeBackgroundInspectorAiChatState(sessionID: snapshot.sessionID)
+    removeBackgroundAiChatOwnerFromInspectorAliases(
+        ownerRemoval,
+        canonicalSessionID: snapshot.sessionID,
+        state: &state,
+    )
+}
+
+private func removeBackgroundAiChatOwnerFromContentAliases(
+    _ ownerRemoval: BackgroundAiChatOwnerRemoval?,
+    canonicalSessionID: AiChatSessionID,
+    state: inout FileManagerWindowState,
+) {
+    let sessionIDs = ownerRemoval?.requestID == nil
+        ? [canonicalSessionID]
+        : Array(state.backgroundAiChatStates.keys)
+    for sessionID in sessionIDs {
+        guard var backgroundContent = state.backgroundAiChatStates[sessionID] else { continue }
+        backgroundContent.aiChat.removeBackgroundOwner(ownerRemoval)
+        if backgroundContent.aiChat.hasRemainingBackgroundLifecycleOwner {
+            state.backgroundAiChatStates[sessionID] = backgroundContent
+        } else {
+            state.removeBackgroundAiChatState(sessionID: sessionID)
+        }
+    }
+}
+
+private func removeBackgroundAiChatOwnerFromInspectorAliases(
+    _ ownerRemoval: BackgroundAiChatOwnerRemoval?,
+    canonicalSessionID: AiChatSessionID,
+    state: inout FileManagerWindowState,
+) {
+    let sessionIDs = ownerRemoval?.requestID == nil
+        ? [canonicalSessionID]
+        : Array(state.backgroundInspectorAiChatStates.keys)
+    for sessionID in sessionIDs {
+        guard var inspectorState = state.backgroundInspectorAiChatStates[sessionID] else { continue }
+        inspectorState.aiChat.removeBackgroundOwner(ownerRemoval)
+        if inspectorState.aiChat.hasRemainingBackgroundLifecycleOwner {
+            state.backgroundInspectorAiChatStates[sessionID] = inspectorState.tabSnapshot()
+        } else {
+            state.removeBackgroundInspectorAiChatState(sessionID: sessionID)
+        }
     }
 }
 
@@ -1377,7 +1600,12 @@ private func refreshAiChatFailureFromBackgroundIfNeeded(
     skipsActiveContent: Bool = false,
     skipsActiveInspector: Bool = false,
 ) {
-    guard context.sessionID != nil else { return }
+    guard let sessionID = context.sessionID else { return }
+    admitFreshAiChatContentForBackgroundTerminalStateIfNeeded(
+        sessionID: sessionID,
+        state: &state,
+        skipsActiveContent: skipsActiveContent,
+    )
 
     if !skipsActiveContent,
        state.content.aiChat.canRefreshFailureFromBackground(context: context)
@@ -1421,7 +1649,12 @@ private func refreshAiChatRecoveryFromBackgroundIfNeeded(
     skipsActiveContent: Bool = false,
     skipsActiveInspector: Bool = false,
 ) {
-    guard lock.context.sessionID != nil else { return }
+    guard let sessionID = lock.context.sessionID else { return }
+    admitFreshAiChatContentForBackgroundTerminalStateIfNeeded(
+        sessionID: sessionID,
+        state: &state,
+        skipsActiveContent: skipsActiveContent,
+    )
 
     if !skipsActiveContent,
        state.content.aiChat.canRefreshRecoveryFromBackground(lock: lock)
@@ -1455,6 +1688,57 @@ private func refreshAiChatRecoveryFromBackgroundIfNeeded(
             lock: lock,
             backgroundAiChat: backgroundAiChat,
         )
+    }
+}
+
+private func admitFreshAiChatContentForBackgroundTerminalStateIfNeeded(
+    sessionID: AiChatSessionID,
+    state: inout FileManagerWindowState,
+    skipsActiveContent: Bool,
+) {
+    let anchor = ContentTabPageAnchor.aiChat(sessionID: sessionID.rawValue.uuidString)
+
+    if !skipsActiveContent,
+       let activeTabID = state.contentTabs.activeTabID,
+       state.contentTabs.tabs[id: activeTabID]?.anchor == anchor,
+       state.content.aiChat.canAdmitBackgroundTerminalState
+    {
+        state.content.aiChat.sessionID = sessionID
+    }
+
+    for tabID in state.tabContentStates.keys {
+        guard tabID != state.contentTabs.activeTabID,
+              state.contentTabs.tabs[id: tabID]?.anchor == anchor,
+              state.tabContentStates[tabID]?.aiChat.canAdmitBackgroundTerminalState == true
+        else {
+            continue
+        }
+        state.tabContentStates[tabID]?.aiChat.sessionID = sessionID
+    }
+}
+
+private func admitFreshAiChatContentForPersistedSnapshotIfNeeded(
+    summary: AiChatSessionSummary,
+    state: inout FileManagerWindowState,
+) {
+    let anchor = ContentTabPageAnchor.aiChat(sessionID: summary.sessionID.rawValue.uuidString)
+
+    if let activeTabID = state.contentTabs.activeTabID,
+       state.contentTabs.tabs[id: activeTabID]?.anchor == anchor,
+       state.content.aiChat.canAdmitPersistedBackgroundSnapshot(summary: summary)
+    {
+        state.content.aiChat.sessionID = summary.sessionID
+    }
+
+    for tabID in state.tabContentStates.keys {
+        guard tabID != state.contentTabs.activeTabID,
+              state.contentTabs.tabs[id: tabID]?.anchor == anchor,
+              state.tabContentStates[tabID]?.aiChat
+              .canAdmitPersistedBackgroundSnapshot(summary: summary) == true
+        else {
+            continue
+        }
+        state.tabContentStates[tabID]?.aiChat.sessionID = summary.sessionID
     }
 }
 
@@ -1655,6 +1939,19 @@ private extension AiChatFeature.State {
         if case let .failed(_, failure) = matchingPhase {
             lastExecutionFailure = failure
         }
+    }
+
+    var canAdmitBackgroundTerminalState: Bool {
+        sessionID == nil
+            && restoreSessionID == nil
+            && pendingRequestStart == nil
+    }
+
+    func canAdmitPersistedBackgroundSnapshot(summary: AiChatSessionSummary) -> Bool {
+        sessionID == nil
+            && restoreSessionID == nil
+            && pendingRequestStart == nil
+            && !hasNewerSnapshotThanBackground(summary)
     }
 
     func canRefreshFromBackground(

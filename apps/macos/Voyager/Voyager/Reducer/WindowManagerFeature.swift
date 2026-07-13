@@ -119,6 +119,9 @@ struct WindowManagerFeature {
             case .file(.restoreLastClosedTab):
                 return sendCommandToFocusedWindow(state, .restoreLastClosedContentTab)
 
+            case .file(.duplicateTab):
+                return sendCommandToFocusedWindow(state, .duplicateActiveContentTab)
+
             case .file(.newFolder):
                 return sendCommandToFocusedWindow(state, .newFolder)
 

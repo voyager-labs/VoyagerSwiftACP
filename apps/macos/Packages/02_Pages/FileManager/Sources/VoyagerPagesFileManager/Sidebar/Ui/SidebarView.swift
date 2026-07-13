@@ -241,6 +241,7 @@ struct SidebarView: View {
             onSelect: {
                 store.send(.delegate(.selectContentTab(item.id)))
             },
+            onDuplicate: { store.send(.delegate(.duplicateContentTab(item.id))) },
             onPin: {
                 store.send(.delegate(.pinContentTab(item.id)))
             },
@@ -261,6 +262,7 @@ private struct ContentTabSidebarRow: View {
     let item: ContentTabProjection.ContentTabSidebarItem
     let isHovered: Bool
     let onSelect: () -> Void
+    let onDuplicate: (() -> Void)?
     let onPin: () -> Void
     let onUnpin: () -> Void
     let onClose: () -> Void
@@ -290,6 +292,8 @@ private struct ContentTabSidebarRow: View {
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
         .contextMenu {
+            Button("Duplicate") { onDuplicate?() }
+                .accessibilityIdentifier("duplicate-content-tab-\(item.id)")
             if item.isPinned {
                 Button("Unpin", action: onUnpin)
             } else {

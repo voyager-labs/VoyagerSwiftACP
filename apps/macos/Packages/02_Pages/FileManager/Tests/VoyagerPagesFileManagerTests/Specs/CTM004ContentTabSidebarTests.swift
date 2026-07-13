@@ -914,6 +914,64 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(state.sidebar.contentTabSidebarItems[0].pageType, .home)
     }
 
+    // MARK: - CTM-004-sidebar_duplicate_routing
+
+    /// CTM-004-sidebar_duplicate_routing: Sidebar clicked ID duplicateContentTab delegate가 request로 전달됨
+    /// FileManagerWindowRoutingReducer가 sidebar delegate를 .request(.duplicateContentTab(sourceID))로 변환하고,
+    /// FileManagerWindowCommandRoutingReducer.handleDuplicateContentTabRequested를 통해
+    /// .contentTabs(.duplicate) child action으로 이어져 새 tab row가 생성된다.
+    /// - 검증 내용: sidebar delegate 전송 후 content tab row에 duplicateID가 추가됨
+    /// - 사전 조건: Directory tab이 sidebar에 있는 상태
+    /// - 기대 결과: 새 tab row가 추가되고 active가 duplicate로 전환됨
+    func testSidebarDelegate_duplicateContentTab_routesToRequest() async {
+        let directoryID = ContentTabID()
+        let directoryPath = "/Users/test/Desktop"
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: directoryID,
+                page: .directory,
+                anchor: .directory(path: directoryPath),
+                isPinned: false,
+                title: "Desktop",
+                iconName: "folder",
+            )],
+            activeTabID: directoryID,
+            recentlyClosed: nil,
+        )
+        state.content.navigation.seedInitialFolderPath(directoryPath)
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            var client = FileManagerClient.testValue
+            client.fileExistsWithIsDirectory = { path, isDir in
+                if path == directoryPath {
+                    isDir?.pointee = true
+                    return true
+                }
+                return false
+            }
+            $0.fileManagerClient = client
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.duplicateContentTab(directoryID))))
+        await store.skipReceivedActions()
+
+        // Tab row가 생성되어 2개가 됨
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
+        // Duplicate가 active로 전환
+        XCTAssertNotEqual(store.state.contentTabs.activeTabID, directoryID)
+        await store.finish()
+    }
+
     private static func fixedLocationClient() -> FileManagerLocationsClient {
         FileManagerLocationsClient { _ in
             [
