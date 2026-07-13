@@ -143,12 +143,15 @@ struct FileManagerWindowRoutingReducer {
                 syncDashboardProjections(state: &state)
                 syncSidebarSelectionForActiveContentTab(state: &state)
                 return .merge(
-                    handoffCleanupEffect,
-                    activeTabHandoffEffect(
-                        shouldResyncContentNavigation,
-                        state: state,
-                        aiConnectionsFileClient: aiConnectionsFileClient,
-                        skipAiChatCancel: true,
+                    .concatenate(
+                        handoffCleanupEffect,
+                        restoreActiveAiChatSessionIfNeededEffect(state: state),
+                        activeTabHandoffEffect(
+                            shouldResyncContentNavigation,
+                            state: state,
+                            aiConnectionsFileClient: aiConnectionsFileClient,
+                            skipAiChatCancel: true,
+                        ),
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
@@ -366,7 +369,6 @@ struct FileManagerWindowRoutingReducer {
                     sourceContentState,
                     anchor: duplicateAnchor ?? sourceAnchor,
                     inheritingWindowContextFrom: state.content,
-                    sourceAiChatLifecycleSessionIDs: sourceAiChatLifecycleSessionIDs,
                 )
 
                 // Pinned source는 active를 유지하므로 duplicate cache만 source snapshot으로 초기화한다.
@@ -403,19 +405,9 @@ struct FileManagerWindowRoutingReducer {
                     state.syncActiveTabContentState()
                     state.restoreInspectorStateForActiveTab()
                 }
-                let duplicatedAiChatRestoreEffect: Effect<Action> = if sourceAiChatLifecycleSessionIDs.isEmpty,
-                                                                       case let .aiChat(sessionID) = duplicateAnchor ??
-                                                                       sourceAnchor,
-                                                                       let sessionUUID = UUID(uuidString: sessionID)
-                {
-                    .send(.content(.aiChat(.setup(AiChatSetupState(
-                        restoreSessionID: AiChatSessionID(rawValue: sessionUUID),
-                        sessionID: nil,
-                        mode: .chat,
-                    )))))
-                } else {
-                    .none
-                }
+                let duplicatedAiChatRestoreEffect = sourceAiChatLifecycleSessionIDs.isEmpty
+                    ? restoreActiveAiChatSessionIfNeededEffect(state: state)
+                    : Effect<Action>.none
                 syncDashboardProjections(state: &state)
                 syncSidebarSelectionForActiveContentTab(state: &state)
                 let handoffEffect = activeTabHandoffEffect(
@@ -794,35 +786,37 @@ private func makeDuplicatedContentState(
     _ sourceContentState: FileManagerContentFeature.State?,
     anchor: ContentTabPageAnchor?,
     inheritingWindowContextFrom windowContentState: FileManagerContentFeature.State,
-    sourceAiChatLifecycleSessionIDs: [AiChatSessionID],
 ) -> FileManagerContentFeature.State {
-    guard let sourceContentState, sourceAiChatLifecycleSessionIDs.isEmpty else {
-        return FileManagerContentFeature.State.initialContent(
-            for: anchor,
-            inheritingWindowContextFrom: sourceContentState ?? windowContentState,
-        )
+    var duplicatedContentState = FileManagerContentFeature.State.initialContent(
+        for: anchor,
+        inheritingWindowContextFrom: sourceContentState ?? windowContentState,
+    )
+    guard let sourceContentState else {
+        return duplicatedContentState
     }
 
-    var duplicatedContentState = sourceContentState
-    duplicatedContentState.navigation.pendingNavigation = nil
-    clearInFlightComposerStateOnTabSwitch(state: &duplicatedContentState.composer)
-    clearInFlightCollectionStateOnTabDuplicate(state: &duplicatedContentState.collection)
-    clearInFlightAiChatStateOnTabSwitch(state: &duplicatedContentState.aiChat)
-    duplicatedContentState.entryViewLayout.entryOperations.isLoading = false
-    duplicatedContentState.entryViewLayout.entryOperations.isReloading = false
+    duplicatedContentState.navigation.backHistory = sourceContentState.navigation.backHistory
+    duplicatedContentState.navigation.forwardHistory = sourceContentState.navigation.forwardHistory
     return duplicatedContentState
 }
 
-private func clearInFlightCollectionStateOnTabDuplicate(state: inout CollectionState) {
-    let wasOpening = state.collectionSession.phase.isOpening
-    state.pendingSave = nil
-    state.pendingSaveContext = nil
-    state.isSaving = false
-    state.collectionSession.finishOpeningTransition()
-    state.collectionSession.finishRefreshWithoutWriteBack()
-    if wasOpening {
-        state.collectionSession.document = nil
+private func restoreActiveAiChatSessionIfNeededEffect(
+    state: FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    guard let activeTabID = state.contentTabs.activeTabID,
+          case let .aiChat(sessionID) = state.contentTabs.tabs[id: activeTabID]?.anchor,
+          let sessionUUID = UUID(uuidString: sessionID),
+          state.content.aiChat.sessionID == nil,
+          state.content.aiChat.restoreSessionID == nil
+    else {
+        return .none
     }
+
+    return .send(.content(.aiChat(.setup(AiChatSetupState(
+        restoreSessionID: AiChatSessionID(rawValue: sessionUUID),
+        sessionID: nil,
+        mode: .chat,
+    )))))
 }
 
 private func navigationRouteForClosingTab(
