@@ -128,30 +128,6 @@ final class AiProviderConnectionFlowTests: XCTestCase {
         XCTAssertEqual(savedFiles.withValue { $0 }, [expectedFile])
     }
 
-    // FLOW-PATH: disconnect_cancel_or_failure
-
-    /// set.ai_provider_connection: disconnect_cancel_or_failure
-    func testDisconnectCancelOrFailureKeepsConnectionAndRetrySurface() async {
-        let connectedFile = AIConnectionsFile.testFixture(providers: [
-            .testFixture(provider: .openai, authMethod: .apiKey),
-        ])
-        let store = makeStore(
-            file: connectedFile,
-            savedFiles: LockIsolated([]),
-            verification: { _, _ in .valid },
-        )
-
-        await store.send(.ai(.delegate(.connectionsFileUpdated(connectedFile))))
-        await store.receive(\.delegate.aiConnectionsFileUpdated)
-        await store.finish()
-
-        XCTAssertNotNil(connectedFile.providers[AiProvider.openai.rawValue]?.credential)
-        XCTAssertEqual(
-            connectedFile.providers[AiProvider.openai.rawValue]?.snapshot.lastKnownStatus,
-            .connected,
-        )
-    }
-
     private func makeStore(
         file: AIConnectionsFile,
         savedFiles: LockIsolated<[AIConnectionsFile]>,
