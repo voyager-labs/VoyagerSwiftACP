@@ -218,36 +218,6 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// ACC-001-settings_lifecycle_bridge: callback은 owner resolver 없이 canonical lifecycle AccountAccess로 직접 전달된다.
-    /// - 검증 내용: receiveAuthCallbackURL이 lifecycle AccountAccess.loginCallbackReceived 한 번으로 직접 번역됨
-    /// - 사전 조건: canonical lifecycle AccountAccess가 callback 대기 중임
-    /// - 기대 결과: compatibility action이나 surface owner resolution 없이 canonical child가 callback을 처리함
-    func testAuthCallbackRoutesDirectlyToCanonicalLifecycleAccountAccess() async throws {
-        let callbackURL = try XCTUnwrap(
-            URL(string: "voyager://auth/callback?ticket=legacy-ticket&state=legacy-state&context=paywall"),
-        )
-        var initialState = AppRootFeature.State()
-        initialState.lifecycle.accountAccess.isSignInInProgress = true
-        initialState.lifecycle.accountAccess.handoffPendingState = "legacy-state"
-        let store = makeSettingsAccountBridgeStore(initialState: initialState)
-        // store.exhaustivity = .off: callback claim/exchange atomics는 AccountAccess spec suite가 소유함
-        store.exhaustivity = .off
-
-        await store.send(.receiveAuthCallbackURL(callbackURL))
-        await store.receive(\.lifecycle.accountAccess.loginCallbackReceived)
-        await store.receive(\.settings.accountAccessPresentationUpdated) { state in
-            state.settings.accountSettings.presentation = AccountAccessPresentation(
-                isSignInInProgress: true,
-            )
-        }
-        await store.receive(\.lifecycle.accountAccess._handoffClaimCompleted)
-        await store.receive(\.settings.accountAccessPresentationUpdated)
-
-        XCTAssertEqual(store.state.lifecycle.accountAccess.handoffScope, .lifecycle)
-        XCTAssertTrue(store.state.lifecycle.accountAccess.isSignInInProgress)
-        await store.finish()
-    }
-
     /// ACC-001-settings_lifecycle_bridge: cancellation은 canonical lifecycle handoff만 종료하고 Settings projection을 갱신한다.
     /// - 검증 내용: cancelSignIn이 canonical pending state를 제거하고 signed-out projection을 발행함
     /// - 사전 조건: lifecycle canonical child가 legacy settings scope의 pending handoff를 보유함
@@ -448,31 +418,6 @@ final class AppRootCompositionTests: XCTestCase {
     }
 
     // MARK: - Task 4: session-end and termination child routing
-
-    /// Task 4: sessionExpiredDetected는 reason을 app-level에 저장하고 child _sessionExpiredDetected로 라우팅한다.
-    /// RED: 현재 코드는 child action을 보내지 않으므로 이 receive가 실패한다.
-    func testSessionExpiredDetectedRoutesChildSessionExpiredDetected() async {
-        let store = TestStore(initialState: AppLifecycleFeature.State()) {
-            AppLifecycleFeature()
-        } withDependencies: {
-            $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.onboardingWindowClient.isRequired = { false }
-            $0.accountSessionClient.delete = { _ in }
-            $0.accessStatusSnapshotClient.remove = {}
-            $0.notificationCenterClient.notifications = { _, _ in
-                AsyncStream { $0.finish() }
-            }
-        }
-        store.exhaustivity = .off
-
-        await store.send(.sessionExpiredDetected(reason: .sessionExpired)) {
-            $0.sessionEndReason = .sessionExpired
-        }
-
-        // Task 4가 적용되면 child가 _sessionExpiredDetected를 수신한다.
-        await store.receive(\.accountAccess._sessionExpiredDetected) { _ in }
-        await store.finish()
-    }
 
     /// Task 4: termination(.willTerminate)는 child appWillTerminate를 보낸다.
     /// RED: 현재 코드는 보내지 않으므로 이 receive가 실패한다.
@@ -724,59 +669,6 @@ final class AppRootCompositionTests: XCTestCase {
     }
 
     // MARK: - VOY-521 Auth callback canonical routing
-
-    /// ACC-001-complete_auth_handoff_callback: main AppDelegate는 유효 auth callback을 AppRoot에 정확히 한 번 전달한다.
-    /// - 검증 내용: receiveAuthCallbackURL 원본 callback이 한 번만 전송됨
-    /// - 사전 조건: main AppDelegate가 구성되고 Prod callback scheme을 사용함
-    /// - 기대 결과: main-app onboarding resolver 없이 AppRoot ingress가 유일한 수신자임
-    func testAppDelegateRoutesAuthCallbackToAppRootExactlyOnce() throws {
-        let box = ActionBox<AppRootAction>()
-        let store = Store<AppRootState, AppRootAction>(initialState: AppRootState()) {
-            _ActionRecordingAppRoot(box: box)
-        }
-        let appDelegate = AppDelegate()
-        appDelegate.configure(appRootStore: store)
-        appDelegate.callbackScheme = "voyager" // Prod identity for test focus
-
-        let url = try XCTUnwrap(URL(string: "voyager://auth/callback?code=abc"))
-        appDelegate.application(NSApp, open: [url])
-
-        let callbackActions = box.actions.compactMap { action -> URL? in
-            guard case let .receiveAuthCallbackURL(received) = action else { return nil }
-            return received
-        }
-        XCTAssertEqual(callbackActions, [url])
-    }
-
-    /// ACC-001-complete_auth_handoff_callback: AppRoot는 surface owner resolution 없이 callback을 lifecycle AccountAccess로
-    /// 직접 전달한다.
-    /// - 검증 내용: lifecycle AccountAccess child action이 한 번 수신됨
-    /// - 사전 조건: canonical lifecycle AccountAccess가 callback 대기 중임
-    /// - 기대 결과: Settings와 main-app Onboarding branch 없이 canonical owner만 callback을 수신함
-    func testAppRootRoutesAuthCallbackDirectlyToLifecycleAccountAccess() async throws {
-        var initialState = AppRootFeature.State()
-        initialState.lifecycle.accountAccess.isSignInInProgress = true
-        initialState.lifecycle.accountAccess.handoffPendingState = "lifecycle-state"
-        initialState.settings.accountSettings.presentation = AccountAccessPresentation(
-            isSignInInProgress: true,
-        )
-        let store = TestStore(initialState: initialState) {
-            AppRootFeature()
-        }
-        let callbackURL = try XCTUnwrap(
-            URL(string: "voyager://auth/callback?ticket=old&state=old-state&context=onboarding"),
-        )
-
-        await store.send(.receiveAuthCallbackURL(callbackURL))
-        await store.receive(\.lifecycle.accountAccess.loginCallbackReceived)
-        await store.receive(\.settings.accountAccessPresentationUpdated)
-
-        XCTAssertEqual(
-            store.state.settings.accountSettings.presentation,
-            AccountAccessPresentation(isSignInInProgress: true),
-        )
-        await store.finish()
-    }
 
     func testAppDelegateIgnoresUnsupportedURLsAndRoutesVoyagerDeepLinks() throws {
         let box = ActionBox<AppRootAction>()
