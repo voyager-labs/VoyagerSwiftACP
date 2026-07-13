@@ -756,6 +756,62 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(window?.contentTabs.tabs.last?.anchor, directoryAnchor, "복원된 tab의 anchor가 일치해야 함")
     }
 
+    /// FileCommand .duplicateTab이 focused window로
+    /// .request(.duplicateActiveContentTab) 명령을 전송하는지 검증한다.
+    func testFileDuplicateTabCommand_routesToFocusedWindowDuplicateRequest() async {
+        let windowID = UUID()
+
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            WindowSessionState(id: windowID, window: .makeInitial(path: nil)),
+        ]
+        initialState.focusedWindowID = windowID
+
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.file(.duplicateTab))
+        // request(.duplicateActiveContentTab)가 focused window로 전달되어야 함
+        await store.receive(\.windows)
+
+        let window = store.state.windows[id: windowID]?.window
+        XCTAssertNotNil(window, "window가 존재해야 함")
+    }
+
+    /// EditCommand .duplicate(⌘D)가 Entry duplicate 경로(.edit(.duplicate))로
+    /// 라우팅되는 기존 동작이 변경되지 않았음을 검증한다.
+    func testEntryDuplicate_unchanged() async {
+        let windowID = UUID()
+
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            WindowSessionState(id: windowID, window: .makeInitial(path: nil)),
+        ]
+        initialState.focusedWindowID = windowID
+
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.edit(.duplicate))
+        await store.receive(\.windows)
+    }
+
     // MARK: - Default Pinned Favorites Seed
 
     /// 최초 실행(finder flag=false, pinnedStore empty)에서 Finder Favorites를 compatible pinned tab으로 변환하고

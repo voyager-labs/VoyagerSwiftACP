@@ -31,6 +31,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
             (.open, .file(.open)),
             (.quickLook, .file(.quickLook)),
             (.restoreLastClosedTab, .file(.restoreLastClosedTab)),
+            (.duplicateTab, .file(.duplicateTab)),
         ]
 
         for (command, expected) in appCases {
@@ -159,6 +160,91 @@ final class MenuCommandsFeatureTests: XCTestCase {
         XCTAssertEqual(pinnedMenuState.pinTabTitle, "Unpin Tab")
     }
 
+    // MARK: - Duplicate Tab Projection & Routing
+
+    /// canDuplicateActiveContentTab은 focused window에 active tab이 있고
+    /// pending close가 없으며 tab count가 max 미만일 때 true여야 한다.
+    func testDuplicateTabProjection_enabledWhenActiveTabExists() {
+        let focusedID = makeUUID("00000000-0000-0000-0000-000000000050")
+
+        var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        focusedWindow.pendingContentTabClose = nil
+
+        var appState = AppRootState()
+        appState.windowManager.windows = [
+            WindowSessionState(id: focusedID, window: focusedWindow),
+        ]
+        appState.windowManager.focusedWindowID = focusedID
+
+        XCTAssertTrue(MenuCommandsState(state: appState).canDuplicateActiveContentTab)
+    }
+
+    /// focused window가 없으면 canDuplicateActiveContentTab은 false여야 한다.
+    func testDuplicateTabProjection_disabledWhenNoFocusedWindow() {
+        let focusedID = makeUUID("00000000-0000-0000-0000-000000000051")
+
+        var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        focusedWindow.pendingContentTabClose = nil
+
+        var appState = AppRootState()
+        appState.windowManager.windows = [
+            WindowSessionState(id: focusedID, window: focusedWindow),
+        ]
+        // focusedWindowID를 설정하지 않음
+
+        XCTAssertFalse(MenuCommandsState(state: appState).canDuplicateActiveContentTab)
+    }
+
+    /// pendingContentTabClose가 nil이 아니면 canDuplicateActiveContentTab은 false여야 한다.
+    func testDuplicateTabProjection_disabledWhenPendingClose() {
+        let focusedID = makeUUID("00000000-0000-0000-0000-000000000052")
+
+        var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        guard let activeTabID = focusedWindow.contentTabs.activeTabID else {
+            XCTFail("Expected active content tab")
+            return
+        }
+        focusedWindow.pendingContentTabClose = PendingContentTabClose(tabID: activeTabID)
+
+        var appState = AppRootState()
+        appState.windowManager.windows = [
+            WindowSessionState(id: focusedID, window: focusedWindow),
+        ]
+        appState.windowManager.focusedWindowID = focusedID
+
+        XCTAssertFalse(MenuCommandsState(state: appState).canDuplicateActiveContentTab)
+    }
+
+    /// tab count가 maxTabs에 도달하면 canDuplicateActiveContentTab은 false여야 한다.
+    func testDuplicateTabProjection_disabledWhenMaxTabs() {
+        let focusedID = makeUUID("00000000-0000-0000-0000-000000000053")
+
+        var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        focusedWindow.pendingContentTabClose = nil
+        // maxTabs까지 탭을 채움
+        while focusedWindow.contentTabs.tabs.count < ContentTabConstants.maxTabs {
+            let newTab = ContentTabState.withHomeTab()
+            if let tab = newTab.tabs.first {
+                focusedWindow.contentTabs.tabs.append(tab)
+            }
+        }
+        XCTAssertEqual(focusedWindow.contentTabs.tabs.count, ContentTabConstants.maxTabs)
+
+        var appState = AppRootState()
+        appState.windowManager.windows = [
+            WindowSessionState(id: focusedID, window: focusedWindow),
+        ]
+        appState.windowManager.focusedWindowID = focusedID
+
+        XCTAssertFalse(MenuCommandsState(state: appState).canDuplicateActiveContentTab)
+    }
+
+    /// AppCommand .duplicateTab이 MenuCommandsFeature를 통해
+    /// .delegate(.windowManager(.file(.duplicateTab)))로 라우팅되는지 검증한다.
+    func testAppCommandDuplicateTab_routesToFileCommand() async {
+        await assertAppCommand(.duplicateTab, routesTo: .file(.duplicateTab))
+    }
+
     private func makeUUID(_ rawValue: String) -> UUID {
         guard let uuid = UUID(uuidString: rawValue) else {
             XCTFail("Invalid UUID fixture: \(rawValue)")
@@ -186,7 +272,8 @@ final class MenuCommandsFeatureTests: XCTestCase {
                  (.file(.togglePinTab), .file(.togglePinTab)),
                  (.file(.open), .file(.open)),
                  (.file(.quickLook), .file(.quickLook)),
-                 (.file(.restoreLastClosedTab), .file(.restoreLastClosedTab)):
+                 (.file(.restoreLastClosedTab), .file(.restoreLastClosedTab)),
+                 (.file(.duplicateTab), .file(.duplicateTab)):
                 return true
             default:
                 return false
