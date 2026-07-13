@@ -9990,7 +9990,7 @@ extension CTM005IndependentContentTabSessionTests {
 
         await store.send(.request(.duplicateActiveContentTab))
 
-        // Validation failed → no effects, state unchanged
+        // 검증 실패 시 effect와 state 변경 없음
         XCTAssertEqual(store.state.contentTabs.tabs.count, 1)
         XCTAssertEqual(store.state.contentTabs.activeTabID, sourceID)
         await store.finish()

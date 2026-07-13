@@ -205,7 +205,7 @@ extension ContentTabFeature {
         guard let source = state.tabs[id: sourceID] else { return .none }
         guard state.tabs[id: duplicateID] == nil else { return .none }
         guard state.tabs.count < ContentTabConstants.maxTabs else { return .none }
-        guard isValidDuplicateAnchor(source.anchor) else { return .none }
+        guard isValidDuplicate(page: source.page, anchor: source.anchor) else { return .none }
 
         let duplicateItem = ContentTabItem(
             id: duplicateID,
@@ -228,18 +228,20 @@ extension ContentTabFeature {
         return .none
     }
 
-    private func isValidDuplicateAnchor(_ anchor: ContentTabPageAnchor) -> Bool {
-        switch anchor {
-        case .homeDefault:
+    private func isValidDuplicate(page: ContentTabPage, anchor: ContentTabPageAnchor) -> Bool {
+        switch (page, anchor) {
+        case (.home, .homeDefault):
             true
-        case let .directory(path):
+        case let (.directory, .directory(path)):
             UUID(uuidString: path) == nil
-        case .collectionFile:
+        case (.collection, .collectionFile):
             true
-        case .virtualCollection:
+        case (.collection, .virtualCollection):
             true
-        case let .aiChat(sessionID):
+        case let (.aiChat, .aiChat(sessionID)):
             UUID(uuidString: sessionID) != nil
+        default:
+            false
         }
     }
 

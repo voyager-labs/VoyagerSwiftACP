@@ -379,6 +379,29 @@ final class CTM001DuplicateContentTabTests: XCTestCase {
         XCTAssertEqual(state, originalState)
     }
 
+    /// CTM-001-duplicate_noop_guards: (page, anchor) 조합 불일치 → no-op
+    /// - 검증 내용: .home page + .directory(path) anchor처럼 호환되지 않는 조합은 복제되지 않음
+    /// - 사전 조건: home page에 directory anchor가 설정된 tab
+    /// - 기대 결과: No-op, state unchanged
+    func testDuplicate_pageAnchorMismatch_noop() {
+        let sourceID = ContentTabID()
+        let duplicateID = ContentTabID()
+
+        var state = ContentTabState(
+            tabs: [ContentTabItem(
+                id: sourceID, page: .home, anchor: .directory(path: "/test"),
+                isPinned: false, title: "Home", iconName: "house",
+            )],
+            activeTabID: sourceID,
+        )
+        let originalState = state
+
+        let reducer = ContentTabFeature()
+        _ = reducer.reduce(into: &state, action: .duplicate(sourceID: sourceID, duplicateID: duplicateID))
+
+        XCTAssertEqual(state, originalState)
+    }
+
     // MARK: - CTM-001-duplicate_pinned_records_unchanged
 
     /// CTM-001-duplicate_pinned_records_unchanged: pinnedRecords, pendingPinnedRecordIDs, recentlyClosed가 duplicate
@@ -429,13 +452,18 @@ final class CTM001DuplicateContentTabTests: XCTestCase {
 @MainActor
 extension CTM001DuplicateContentTabTests {
     /// CTM-001-duplicate_pending_close_rollback: pending close 중 direct duplicate action이 exact row/cache를
-    /// 제거하고 pending state를 보존함
-    /// keepPendingDuplicateContentTabCloseFocused는 exact duplicateID만 제거하고 기존 pending target/active/Content/Inspector를
-    /// 건드리지 않는다.
-    /// - 검증 내용: duplicateID의 row가 tabs에서 제거되고, cache도 제거되며, pending state와 active tab은 유지됨
-    /// - 사전 조건: Active tab에 pendingContentTabClose가 설정됨
-    /// - 기대 결과: duplicate row가 제거되고, pending 상태 유지, activeTabID는 기존 pending target
-    func testDuplicate_pendingCloseRollback_removesExactDuplicateRowAndPreservesPending() async {
+    /// 제거하고 pending state로 복원한다
+    /// ContentTabFeature.duplicate가 unpinned source duplicate에서 previousActiveTabID를 sourceID로 덮어쓰므로,
+    /// keepPendingDuplicateContentTabCloseFocused는 pendingClose에 보관된 원본 previousActiveTabID를 사용해야 한다.
+    /// - 검증 내용:
+    ///   - duplicateID row/cache 제거
+    ///   - activeTabID가 pendingClose.tabID로 복원
+    ///   - previousActiveTabID가 pendingClose.previousActiveTabID로 복원
+    ///   - source/target row와 Content/Inspector cache는 유지
+    /// - 사전 조건: 3 tab 상태, pendingContentTabClose에 nil이 아닌 previousActiveTabID 설정
+    /// - 기대 결과: pending close 보존, 정확한 activeTabID/previousActiveTabID 복원
+    func testDuplicate_pendingCloseRollback_restoresBothIds() async {
+        let activeBeforePendingID = ContentTabID()
         let pendingTabID = ContentTabID()
         let sourceID = ContentTabID()
         let duplicateID = ContentTabID()
@@ -444,28 +472,26 @@ extension CTM001DuplicateContentTabTests {
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
             tabs: [
+                ContentTabItem(id: activeBeforePendingID, page: .home, anchor: .homeDefault, isPinned: false,
+                               title: "Home", iconName: "house"),
                 ContentTabItem(id: pendingTabID, page: .directory, anchor: .directory(path: directoryPath),
                                isPinned: false, title: "Desktop", iconName: "folder"),
                 ContentTabItem(id: sourceID, page: .home, anchor: .homeDefault, isPinned: false,
-                               title: "Home", iconName: "house"),
-                // duplicateID row가 이미 존재하는 상태 (ContentTabFeature를 거치지 않고 직접 전송)
-                ContentTabItem(id: duplicateID, page: .directory, anchor: .directory(path: directoryPath),
-                               isPinned: false, title: "Desktop", iconName: "folder"),
+                               title: "Work", iconName: "folder"),
             ],
-            activeTabID: pendingTabID,
+            activeTabID: activeBeforePendingID,
             recentlyClosed: nil,
         )
-        var content = FileManagerContentFeature.State()
-        content.navigation.seedInitialFolderPath(directoryPath)
-        state.content = content
+        var directoryContent = FileManagerContentFeature.State()
+        directoryContent.navigation.seedInitialFolderPath(directoryPath)
         state.tabContentStates = [
-            pendingTabID: content,
+            activeBeforePendingID: FileManagerContentFeature.State(),
+            pendingTabID: directoryContent,
             sourceID: FileManagerContentFeature.State(),
-            duplicateID: content,
         ]
         state.pendingContentTabClose = PendingContentTabClose(
             tabID: pendingTabID,
-            previousActiveTabID: nil,
+            previousActiveTabID: activeBeforePendingID,
         )
         state.syncContentTabSidebarItems()
 
@@ -479,23 +505,30 @@ extension CTM001DuplicateContentTabTests {
         }
         store.exhaustivity = .off
 
-        // Direct duplicate action (simulating post-reduce entry with pending close)
         await store.send(.contentTabs(.duplicate(sourceID: sourceID, duplicateID: duplicateID)))
 
-        // Pending close state is preserved
+        // Pending close state는 그대로 유지
         XCTAssertNotNil(store.state.pendingContentTabClose)
         XCTAssertEqual(store.state.pendingContentTabClose?.tabID, pendingTabID)
-        // Exact duplicateID row 제거됨
+        XCTAssertEqual(store.state.pendingContentTabClose?.previousActiveTabID, activeBeforePendingID)
+
+        // Exact duplicateID row/cache 제거
         XCTAssertNil(store.state.contentTabs.tabs[id: duplicateID])
-        // Source row는 유지됨
-        XCTAssertNotNil(store.state.contentTabs.tabs[id: sourceID])
-        // Pending target row는 유지됨
-        XCTAssertNotNil(store.state.contentTabs.tabs[id: pendingTabID])
-        // Active tab unchanged (pending target 유지)
-        XCTAssertEqual(store.state.contentTabs.activeTabID, pendingTabID)
-        // Duplicate cache 제거됨
         XCTAssertNil(store.state.tabContentStates[duplicateID])
         XCTAssertNil(store.state.tabInspectorStates[duplicateID])
+
+        // Source/target row 유지
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: sourceID])
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: pendingTabID])
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: activeBeforePendingID])
+
+        // activeTabID/previousActiveTabID가 pendingClose 원본 값으로 복원
+        XCTAssertEqual(store.state.contentTabs.activeTabID, pendingTabID)
+        XCTAssertEqual(store.state.contentTabs.previousActiveTabID, activeBeforePendingID)
+
+        // Duplicate row만 제거되었으므로 총 tab 수는 3 유지
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 3)
+        XCTAssertEqual(store.state.tabContentStates.count, 3)
         await store.finish()
     }
 

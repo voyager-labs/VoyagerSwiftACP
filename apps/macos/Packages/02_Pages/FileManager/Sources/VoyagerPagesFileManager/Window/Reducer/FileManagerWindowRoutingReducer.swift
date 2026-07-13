@@ -577,18 +577,24 @@ private extension FileManagerWindowRoutingReducer {
         syncSidebarSelectionForActiveContentTab(state: &state)
     }
 
-    /// Pending close rollback variant: exact duplicateID row/cache만 제거하고 기존 pending state를 복원한다.
-    /// active가 안 바뀌었으므로 active/Content/Inspector/projection을 건드리지 않는다.
+    /// Pending close rollback variant: exact duplicateID row/cache만 제거하고 pending state로 복원한다.
+    /// ContentTabFeature.duplicate가 previousActiveTabID를 덮어썼으므로 pendingClose에 보관된 원본 값을 사용한다.
     func keepPendingDuplicateContentTabCloseFocused(
         duplicateID: ContentTabID,
         state: inout State,
     ) -> Bool {
-        guard state.pendingContentTabClose != nil else { return false }
+        guard let pendingClose = state.pendingContentTabClose else { return false }
         // Exact duplicateID row/cache 제거
+        let wasActive = state.contentTabs.activeTabID == duplicateID
         state.contentTabs.tabs.remove(id: duplicateID)
         state.removeContentState(for: duplicateID)
         state.removeInspectorState(for: duplicateID)
-        // Pending target/active/Content/Inspector/projection은 변경하지 않음
+        // Duplicate가 active였으면(unpinned source) pendingClose에 보관된 원본 ID로 복원
+        if wasActive {
+            state.contentTabs.activeTabID = pendingClose.tabID
+            state.contentTabs.previousActiveTabID = pendingClose.previousActiveTabID
+        }
+        // Pending target/Content/Inspector/projection은 변경하지 않음
         state.syncContentTabSidebarItems()
         syncSidebarSelectionForActiveContentTab(state: &state)
         return true
