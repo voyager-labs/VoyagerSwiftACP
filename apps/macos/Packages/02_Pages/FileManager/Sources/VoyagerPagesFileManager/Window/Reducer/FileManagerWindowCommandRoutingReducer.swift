@@ -754,6 +754,13 @@ struct FileManagerWindowCommandRoutingReducer {
         for anchor: ContentTabPageAnchor,
         contentState: FileManagerContentFeature.State?,
     ) -> DuplicateFailureReason? {
+        if let contentState,
+           case let .collection(navigation) = contentState.navigation.navigationState,
+           case .temporary = navigation.kind
+        {
+            return .temporaryCollection
+        }
+
         switch anchor {
         case .homeDefault, .virtualCollection:
             return nil

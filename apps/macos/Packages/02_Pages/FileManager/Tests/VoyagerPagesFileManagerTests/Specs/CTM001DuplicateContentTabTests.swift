@@ -607,4 +607,76 @@ extension CTM001DuplicateContentTabTests {
         XCTAssertNil(store.state.pendingContentTabClose)
         await store.finish()
     }
+
+    /// CTM-001-duplicate_temporary_collection_guard: Directory anchor에서 열린 임시 Collection은 복제를 차단한다.
+    /// - 검증 내용: 경고 표시, 원본 row/active state 유지, duplicate row 미생성
+    /// - 사전 조건: active Directory tab, navigationState=.collection(.temporary), collection mode=true
+    /// - 기대 결과: tab 수 1 유지, temporary Collection state 유지, 저장 안내 경고 표시
+    func testDuplicate_temporaryCollectionInDirectoryTab_showsFeedbackAndPreservesSource() async {
+        let sourceID = ContentTabID()
+        let state = makeTemporaryCollectionDuplicateState(sourceID: sourceID)
+        let originalSource = state.contentTabs.tabs[id: sourceID]
+        let alerts = LockIsolated<[(title: String, message: String)]>([])
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerClient.fileExistsWithIsDirectory = { _, isDirectory in
+                isDirectory?.pointee = true
+                return true
+            }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                alerts.withValue { $0.append((title, message)) }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.request(.duplicateContentTab(sourceID)))
+        await store.finish()
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 1)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: sourceID], originalSource)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, sourceID)
+        if case let .collection(navigation) = store.state.content.navigation.navigationState {
+            XCTAssertEqual(navigation.kind, .temporary)
+        } else {
+            XCTFail("Temporary Collection navigation state should be preserved")
+        }
+        XCTAssertEqual(alerts.value.count, 1)
+        XCTAssertEqual(alerts.value[0].title, "Cannot Duplicate Tab")
+        XCTAssertEqual(
+            alerts.value[0].message,
+            "Cannot duplicate a temporary collection. Save the collection first.",
+        )
+    }
+}
+
+private extension CTM001DuplicateContentTabTests {
+    func makeTemporaryCollectionDuplicateState(sourceID: ContentTabID) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: sourceID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Desktop"),
+                    isPinned: false,
+                    title: "Desktop",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: sourceID,
+            recentlyClosed: nil,
+        )
+        state.content.entryViewLayout.isCollectionMode = true
+        state.content.navigation.navigationState = .collection(.init(
+            kind: .temporary,
+            context: .init(),
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .grid,
+        ))
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+        return state
+    }
 }
