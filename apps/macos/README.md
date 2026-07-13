@@ -88,7 +88,28 @@ mise run macos-launch -- --scheme Voyager-Dev --configuration Debug --no-launch
 
 ## 테스트
 
-### 테스트 실행
+### 테스트 실행 (mise 권장)
+
+```bash
+# 전체 Voyager-Dev 테스트 (광범위, human/CI용)
+mise run macos-test
+
+# 특정 PRODUCT flow 테스트 (focused)
+mise run macos-test-flow -- --flow onb.access_unlock
+
+# 카테고리별 flow 테스트
+mise run macos-test-flow -- --category onb
+
+# 매핑된 flow suite 목록 확인
+mise run macos-test-flow -- --list
+
+# 구조 무결성 검사
+mise run macos-test-flow -- --check
+```
+
+`mise run macos-test`는 광범위한 전체 테스트를 실행하고, `mise run macos-test-flow`는 canonical PRODUCT flow 문서에 매핑된 flow suite만 focused로 실행합니다.
+
+### 테스트 실행 (xcodebuild 직접)
 
 ```bash
 # 모든 테스트 실행(개발)
@@ -97,11 +118,8 @@ xcodebuild test -project Voyager.xcodeproj -scheme Voyager-Dev
 # 단위 테스트 실행
 xcodebuild test -project Voyager.xcodeproj -scheme Voyager-Dev -only-testing:VoyagerTests
 
-# UI 테스트 실행
-xcodebuild test -project Voyager.xcodeproj -scheme Voyager-Dev -only-testing:VoyagerUITests
-
-# 헬퍼 앱 테스트 실행
-xcodebuild test -project Voyager.xcodeproj -scheme VoyagerHelper-Dev
+# 특정 suite 실행
+xcodebuild test -project Voyager.xcodeproj -scheme Voyager-Dev -only-testing:VoyagerTests/AccessUnlockFlowTests
 ```
 
 ### 로그 확인
