@@ -93,6 +93,7 @@ struct AppMenuCommands: Commands {
             Button("Duplicate Tab") {
                 send(.app(.duplicateTab))
             }
+            .keyboardShortcut("d", modifiers: [.command, .shift])
             .disabled(!viewStore.canDuplicateActiveContentTab)
 
             Button("Restore Last Closed Tab") {
