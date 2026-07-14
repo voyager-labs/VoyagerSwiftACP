@@ -72,8 +72,6 @@ public struct AccountAccessState: Equatable {
     public var handoffPendingState: String?
     /// 공유 handoff state를 claim한 뒤 token exchange가 진행 중인 flow 식별자.
     public var handoffExchangeState: String?
-    /// reducer가 commit을 수락한 뒤 marker finalization을 기다리는 flow 식별자.
-    public var handoffFinalizingState: String?
     /// handoff마다 증가하여 이전 rollback completion이 새 로그인 상태를 덮지 못하게 한다.
     public var handoffGeneration: UInt64 = 0
 
@@ -150,8 +148,7 @@ public struct AccountAccessState: Equatable {
     // MARK: - ONB-002 Affordances
 
     public var canStartLogin: Bool {
-        (accountAccessAuthAxis == .signedOut || accountAccessAuthAxis == .signInFailed)
-            && handoffFinalizingState == nil
+        accountAccessAuthAxis == .signedOut || accountAccessAuthAxis == .signInFailed
     }
 
     public var canRefreshAccess: Bool {

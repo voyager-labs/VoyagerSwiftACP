@@ -30,7 +30,7 @@ extension AccountAccessFeature {
     }
 
     func handleCancelSignIn(_ state: inout State) -> Effect<Action> {
-        guard state.isSignInInProgress || state.handoffPendingState != nil else {
+        guard state.isSignInInProgress || state.handoffPendingState != nil || state.handoffExchangeState != nil else {
             return .none
         }
 
@@ -215,11 +215,10 @@ extension AccountAccessFeature {
         result: Result<Date?, AppHandoffExchangeError>,
     ) -> Effect<Action> {
         guard state.handoffGeneration == generation,
-              state.handoffExchangeState == pendingState || state.handoffFinalizingState == pendingState
+              state.handoffExchangeState == pendingState
         else { return .none }
         let scope = handoffScope(state)
         state.handoffExchangeState = nil
-        state.handoffFinalizingState = nil
         state.handoffTransaction = nil
 
         switch result {
@@ -254,7 +253,7 @@ extension AccountAccessFeature {
         _ state: inout State,
         pendingState: String,
         generation: UInt64,
-        sessionExpiresAt: Date?,
+        session: AccountSession,
     ) -> Effect<Action> {
         guard state.handoffGeneration == generation,
               state.handoffExchangeState == pendingState
@@ -262,34 +261,18 @@ extension AccountAccessFeature {
             return .none
         }
 
-        let scope = handoffScope(state)
         state.isSignInInProgress = false
-        state.handoffExchangeState = nil
-        state.handoffFinalizingState = pendingState
-        return finalizeHandoffPersistence(
-            pendingState: pendingState,
-            scope: scope,
-            generation: generation,
-            sessionExpiresAt: sessionExpiresAt,
-        )
-    }
-
-    func finalizeHandoffPersistence(
-        pendingState: String,
-        scope: AccountAccessHandoffScope,
-        generation: UInt64,
-        sessionExpiresAt: Date?,
-    ) -> Effect<Action> {
-        .run { [sessionClient] send in
+        return .run { [sessionClient] send in
+            let terminalCommit = Task {
+                try await sessionClient.commitHandoffPersistence(session)
+            }
             do {
-                try await sessionClient.finalizeHandoffPersistence()
+                try await terminalCommit.value
                 await send(._handoffExchangeCompleted(
                     state: pendingState,
                     generation: generation,
-                    result: .success(sessionExpiresAt),
+                    result: .success(session.expiresAt),
                 ))
-            } catch is CancellationError {
-                return
             } catch {
                 await send(._handoffExchangeCompleted(
                     state: pendingState,
@@ -298,7 +281,6 @@ extension AccountAccessFeature {
                 ))
             }
         }
-        .cancellable(id: CancelID.handoffFinalize(scope), cancelInFlight: true)
     }
 
     func performHandoffExchange(
@@ -316,14 +298,14 @@ extension AccountAccessFeature {
                 sessionToRollback = session
                 let persistedSession = try await sessionClient.prepareHandoffPersistence(session)
                 try Task.checkCancellation()
-                try await sessionClient.commitHandoffPersistence(session)
-                try Task.checkCancellation()
-                await send(._handoffCommitAuthorized(
-                    state: state,
-                    generation: generation,
-                    sessionExpiresAt: persistedSession.expiresAt,
-                ))
-                try Task.checkCancellation()
+                let authorizationDelivery = Task { @MainActor in
+                    await send(._handoffCommitAuthorized(
+                        state: state,
+                        generation: generation,
+                        session: persistedSession,
+                    ))
+                }
+                await authorizationDelivery.value
                 sessionToRollback = nil
             } catch is CancellationError {
                 if let sessionToRollback {

@@ -45,7 +45,7 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case loginCallbackReceived(URL)
     case _handoffCallbackTimedOut(state: String)
     case _handoffClaimCompleted(AccountAccessHandoffClaimCompletion)
-    case _handoffCommitAuthorized(state: String, generation: UInt64, sessionExpiresAt: Date?)
+    case _handoffCommitAuthorized(state: String, generation: UInt64, session: AccountSession)
     case _handoffExchangeCompleted(
         state: String,
         generation: UInt64,

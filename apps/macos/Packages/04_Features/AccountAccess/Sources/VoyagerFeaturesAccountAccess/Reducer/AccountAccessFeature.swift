@@ -43,7 +43,6 @@ public struct AccountAccessFeature {
         case handoffClaim(AccountAccessHandoffScope)
         case handoffCallbackTimeout(AccountAccessHandoffScope)
         case handoffExchange(AccountAccessHandoffScope)
-        case handoffFinalize(AccountAccessHandoffScope)
         static let appDidBecomeActiveObserver = "accountAccessAppDidBecomeActiveObserver"
         static let sessionRevalidation = "accountAccessSessionRevalidation"
         static let sessionSync = "accountAccessSessionSync"
@@ -88,12 +87,12 @@ public struct AccountAccessFeature {
             case let ._handoffClaimCompleted(completion):
                 return handleHandoffClaimCompleted(&state, completion: completion)
 
-            case let ._handoffCommitAuthorized(pendingState, generation, sessionExpiresAt):
+            case let ._handoffCommitAuthorized(pendingState, generation, session):
                 return handleHandoffCommitAuthorized(
                     &state,
                     pendingState: pendingState,
                     generation: generation,
-                    sessionExpiresAt: sessionExpiresAt,
+                    session: session,
                 )
 
             case let ._handoffExchangeCompleted(pendingState, generation, result):
@@ -590,7 +589,6 @@ extension AccountAccessFeature {
         state.handoffGeneration &+= 1
         state.handoffPendingState = nil
         state.handoffExchangeState = nil
-        state.handoffFinalizingState = nil
         state.handoffTransaction = nil
         state.ttlTimerActive = false
         state.fetchRetryCount = 0
@@ -605,7 +603,6 @@ extension AccountAccessFeature {
             .cancel(id: CancelID.appDidBecomeActiveObserver),
             .cancel(id: CancelID.signInHandoff(scope)),
             .cancel(id: CancelID.handoffCallbackTimeout(scope)),
-            .cancel(id: CancelID.handoffFinalize(scope)),
             cancelHandoffClaimAndExchange(scope: scope),
             clearStoredHandoff(expectedState: expectedState, owner: scope),
         )
