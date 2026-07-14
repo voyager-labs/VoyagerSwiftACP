@@ -56,6 +56,21 @@ actor AccountTokenFileStore {
         }
     }
 
+    func replaceIfCurrentMatches(_ file: AccountTokensFile, expected expectedFile: AccountTokensFile) throws -> Bool {
+        try withExclusiveLock {
+            guard !fileManager.fileExists(atPath: rollbackMarkerURL.path) else {
+                throw AccountTokenRollbackError.pendingRollback
+            }
+            guard let currentFile = try readUnlocked(), currentFile == expectedFile else {
+                return false
+            }
+            try Task.checkCancellation()
+            let data = try encoder.encode(file)
+            try replacePayload(with: data)
+            return true
+        }
+    }
+
     func prepareHandoffWrite(_ file: AccountTokensFile) throws -> AccountTokensFile {
         try withExclusiveLock {
             if fileManager.fileExists(atPath: rollbackMarkerURL.path) {

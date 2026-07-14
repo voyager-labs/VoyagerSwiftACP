@@ -144,6 +144,57 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         try await client.delete(.explicitSignOut)
     }
 
+    /// ACC-004-account_session_client: CAS는 요청 전 credential snapshot과 일치할 때만 교체한다.
+    func testReplaceIfCurrentMatchesRejectsDeletedOrReplacedCredentials() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let expected = AccountTokensFile(
+            updatedAtMs: 1,
+            accessToken: "expected-access",
+            accessTokenExpiresAtMs: 2,
+            accessTokenExpiresIn: 1,
+            refreshToken: "expected-refresh",
+            refreshTokenExpiresAtMs: 3,
+        )
+        let rotated = AccountTokensFile(
+            updatedAtMs: 4,
+            accessToken: "rotated-access",
+            accessTokenExpiresAtMs: 5,
+            accessTokenExpiresIn: 1,
+            refreshToken: "rotated-refresh",
+            refreshTokenExpiresAtMs: 6,
+        )
+        let replacement = AccountTokensFile(
+            updatedAtMs: 7,
+            accessToken: "replacement-access",
+            accessTokenExpiresAtMs: 8,
+            accessTokenExpiresIn: 1,
+            refreshToken: "replacement-refresh",
+            refreshTokenExpiresAtMs: 9,
+        )
+        try await store.write(expected)
+
+        let didReplace = try await store.replaceIfCurrentMatches(rotated, expected: expected)
+
+        XCTAssertTrue(didReplace)
+        let rotatedFile = try await store.read()
+        XCTAssertEqual(rotatedFile, rotated)
+
+        try await store.delete()
+        let didReplaceDeletedFile = try await store.replaceIfCurrentMatches(rotated, expected: expected)
+
+        XCTAssertFalse(didReplaceDeletedFile)
+        let deletedFile = try await store.read()
+        XCTAssertNil(deletedFile)
+
+        try await store.write(replacement)
+        let didReplaceReplacement = try await store.replaceIfCurrentMatches(rotated, expected: expected)
+
+        XCTAssertFalse(didReplaceReplacement)
+        let replacementFile = try await store.read()
+        XCTAssertEqual(replacementFile, replacement)
+    }
+
     /// ACC-004-account_session_client: 이전 handoff rollback은 새 세션을 삭제하지 않는다.
     func testDiscardDoesNotDeleteDifferentSession() async throws {
         let fixture = try TemporaryHomeFixture()
