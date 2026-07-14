@@ -379,6 +379,40 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         XCTAssertEqual(committedSession?.accessToken, session.accessToken)
     }
 
+    /// ACC-004-account_session_client: staging과 marker가 남은 commit 직후에도 digest가 일치한 canonical session은 cold start에서
+    /// 복원된다.
+    /// - 검증 내용: prepare 후 staging의 정확한 바이트를 canonical에 복사한 뒤 read()가 committed session을 반환하고 residue를 정리한다.
+    /// - 사전 조건: TemporaryHomeFixture, staging과 versioned digest marker를 포함한 handoff replace 직후 상태
+    /// - 기대 결과: read()가 committed session을 반환하고 staging/marker 파일이 제거된다.
+    func testColdStartRecoversCommittedHandoffWhenStagingAndMarkerRemain() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let client = AccountSessionClient.live(store: store)
+        let session = AccountSession(
+            accessToken: "committed-with-residue-token",
+            status: .none,
+            refreshToken: "committed-with-residue-refresh",
+            expiresAt: Date().addingTimeInterval(86400),
+        )
+        let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(
+            homeDirectoryURL: fixture.homeURL,
+        )
+        let markerURL = AccountTokenFSLocation.rollbackMarkerFileURL(
+            homeDirectoryURL: fixture.homeURL,
+        )
+
+        _ = try await client.prepareHandoffPersistence(session)
+        let stagedData = try Data(contentsOf: stagingURL)
+        try stagedData.write(to: fixture.accountTokensFileURL, options: .atomic)
+
+        let restoredSession = try await client.read()
+
+        XCTAssertEqual(restoredSession?.accessToken, session.accessToken)
+        XCTAssertEqual(restoredSession?.refreshToken, session.refreshToken)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stagingURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: markerURL.path))
+    }
+
     /// ACC-004-account_session_client: marker가 남은 commit 직후에도 digest가 일치한 canonical session은 cold start에서 복원된다.
     /// - 검증 내용: commit 뒤 marker를 명시적으로 정리하지 않아도 read()가 canonical session을 반환하고 residue를 정리한다.
     /// - 사전 조건: TemporaryHomeFixture, staging과 versioned digest marker를 포함한 handoff commit 직후 상태

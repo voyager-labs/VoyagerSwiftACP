@@ -257,8 +257,8 @@ actor AccountTokenFileStore {
         do {
             let canonicalData = try Data(contentsOf: payloadURL)
             let canonical = try decodePayloadUnlocked(canonicalData, at: payloadURL)
-            guard !fileManager.fileExists(atPath: handoffStagingURL.path) else { return nil }
             guard marker.matches(canonicalData) else { return nil }
+            try? removeHandoffStagingUnlocked()
             try? removeRollbackMarkerUnlocked()
             return canonical
         } catch AccountTokenRollbackError.invalidPayload {
