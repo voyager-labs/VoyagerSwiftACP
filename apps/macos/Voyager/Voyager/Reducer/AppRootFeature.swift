@@ -216,7 +216,7 @@ struct AppRootFeature {
 
         case .account(.signInRequested):
             guard !state.lifecycle.accountAccess.hasAccountSession else { return .none }
-            return .send(.lifecycle(.accountAccess(.loginTapped)))
+            return .send(.lifecycle(.accountAccess(.loginTapped(context: .paywall, scope: .lifecycle))))
 
         case .account(.signOutRequested):
             return .send(.lifecycle(.accountAccess(.signOut)))

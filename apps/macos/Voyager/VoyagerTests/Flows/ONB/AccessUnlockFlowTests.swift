@@ -58,7 +58,6 @@ final class AccessUnlockFlowTests: XCTestCase {
 
         var accountAccessState = AccountAccessFeature.State()
         accountAccessState.hasAccountSession = true
-        accountAccessState.handoffScope = .onboarding
         let accountAccessStore = Store(initialState: accountAccessState) {
             AccountAccessFeature()
         } withDependencies: {
@@ -138,7 +137,6 @@ final class AccessUnlockFlowTests: XCTestCase {
 
         var accountAccessState = AccountAccessFeature.State()
         accountAccessState.hasAccountSession = false
-        accountAccessState.handoffScope = .onboarding
         let accountAccessStore = Store(initialState: accountAccessState) {
             AccountAccessFeature()
         } withDependencies: {
@@ -227,7 +225,6 @@ final class AccessUnlockFlowTests: XCTestCase {
 
         var accountAccessState = AccountAccessFeature.State()
         accountAccessState.hasAccountSession = true
-        accountAccessState.handoffScope = .onboarding
         let accountAccessStore = Store(initialState: accountAccessState) {
             AccountAccessFeature()
         } withDependencies: {
@@ -318,7 +315,6 @@ final class AccessUnlockFlowTests: XCTestCase {
 
         var accountAccessState = AccountAccessFeature.State()
         accountAccessState.hasAccountSession = true
-        accountAccessState.handoffScope = .onboarding
         let accountAccessStore = Store(initialState: accountAccessState) {
             AccountAccessFeature()
         } withDependencies: {
@@ -424,7 +420,6 @@ final class AccessUnlockFlowTests: XCTestCase {
 
         var accountAccessState = AccountAccessFeature.State()
         accountAccessState.hasAccountSession = true
-        accountAccessState.handoffScope = .onboarding
         let accountAccessStore = Store(initialState: accountAccessState) {
             AccountAccessFeature()
         } withDependencies: {
@@ -508,7 +503,6 @@ final class AccessUnlockFlowTests: XCTestCase {
 
         var accountAccessState = AccountAccessFeature.State()
         accountAccessState.hasAccountSession = true
-        accountAccessState.handoffScope = .onboarding
         let accountAccessStore = Store(initialState: accountAccessState) {
             AccountAccessFeature()
         } withDependencies: {
@@ -597,7 +591,6 @@ final class AccessUnlockFlowTests: XCTestCase {
 
         var accountAccessState = AccountAccessFeature.State()
         accountAccessState.hasAccountSession = true
-        accountAccessState.handoffScope = .onboarding
         let accountAccessStore = Store(initialState: accountAccessState) {
             AccountAccessFeature()
         } withDependencies: {

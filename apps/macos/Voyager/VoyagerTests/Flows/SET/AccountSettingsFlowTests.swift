@@ -81,6 +81,11 @@ final class AccountSettingsFlowTests: XCTestCase {
         await store.send(.settings(.delegate(.account(.signInRequested))))
         await store.receive(\.lifecycle.accountAccess.loginTapped) { state in
             state.lifecycle.accountAccess.isSignInInProgress = true
+            state.lifecycle.accountAccess.handoffGeneration = 1
+            state.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
+                context: .paywall,
+                scope: .lifecycle,
+            )
         }
         await store.receive(\.settings.accountAccessPresentationUpdated) { state in
             state.settings.accountSettings.presentation = AccountAccessPresentation(
@@ -91,6 +96,7 @@ final class AccountSettingsFlowTests: XCTestCase {
             state.lifecycle.accountAccess.isSignInInProgress = false
             state.lifecycle.accountAccess.didSignInFail = true
             state.lifecycle.accountAccess.errorMessage = "Check your network connection and try again."
+            state.lifecycle.accountAccess.handoffTransaction = nil
         }
         await store.receive(\.settings.accountAccessPresentationUpdated) { state in
             state.settings.accountSettings.presentation = AccountAccessPresentation(didSignInFail: true)
@@ -105,17 +111,20 @@ final class AccountSettingsFlowTests: XCTestCase {
         var cancellationState = AppRootFeature.State()
         cancellationState.lifecycle.accountAccess.isSignInInProgress = true
         cancellationState.lifecycle.accountAccess.handoffPendingState = "cancel-state"
-        cancellationState.lifecycle.accountAccess.handoffScope = .lifecycle
+        cancellationState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
+            context: .paywall,
+            scope: .lifecycle,
+        )
         let cancellationStore = makeSignInFailureStore(initialState: cancellationState)
 
         await cancellationStore.send(.lifecycle(.accountAccess(.cancelSignIn))) { state in
             state.lifecycle.accountAccess.isSignInInProgress = false
             state.lifecycle.accountAccess.handoffPendingState = nil
-            state.lifecycle.accountAccess.handoffScope = .lifecycle
+            state.lifecycle.accountAccess.handoffTransaction = nil
         }
         await cancellationStore.receive(\.settings.accountAccessPresentationUpdated)
 
-        XCTAssertEqual(cancellationStore.state.lifecycle.accountAccess.handoffScope, .lifecycle)
+        XCTAssertNil(cancellationStore.state.lifecycle.accountAccess.handoffTransaction)
         XCTAssertEqual(cancellationStore.state.settings.accountSettings.presentation, AccountAccessPresentation())
         await cancellationStore.finish()
 
@@ -125,7 +134,10 @@ final class AccountSettingsFlowTests: XCTestCase {
         var timeoutState = AppRootFeature.State()
         timeoutState.lifecycle.accountAccess.isSignInInProgress = true
         timeoutState.lifecycle.accountAccess.handoffPendingState = "timeout-state"
-        timeoutState.lifecycle.accountAccess.handoffScope = .lifecycle
+        timeoutState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
+            context: .paywall,
+            scope: .lifecycle,
+        )
         let timeoutStore = makeSignInFailureStore(initialState: timeoutState)
         // store.exhaustivity = .off: timeout 뒤 stale callback이 terminal failure state를 되살리지 않는 경계를 검증한다.
         timeoutStore.exhaustivity = .off
@@ -135,7 +147,7 @@ final class AccountSettingsFlowTests: XCTestCase {
                 state.lifecycle.accountAccess.isSignInInProgress = false
                 state.lifecycle.accountAccess.didSignInFail = true
                 state.lifecycle.accountAccess.handoffPendingState = nil
-                state.lifecycle.accountAccess.handoffScope = .lifecycle
+                state.lifecycle.accountAccess.handoffTransaction = nil
             }
         await timeoutStore.receive(\.settings.accountAccessPresentationUpdated) { state in
             state.settings.accountSettings.presentation = AccountAccessPresentation(didSignInFail: true)
@@ -197,6 +209,11 @@ final class AccountSettingsFlowTests: XCTestCase {
         await store.receive(\.settings.delegate.account.signInRequested)
         await store.receive(\.lifecycle.accountAccess.loginTapped) { state in
             state.lifecycle.accountAccess.isSignInInProgress = true
+            state.lifecycle.accountAccess.handoffGeneration = 1
+            state.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
+                context: .paywall,
+                scope: .lifecycle,
+            )
         }
         await store.receive(\.settings.accountAccessPresentationUpdated) { state in
             state.settings.accountSettings.presentation = AccountAccessPresentation(
@@ -207,6 +224,7 @@ final class AccountSettingsFlowTests: XCTestCase {
             state.lifecycle.accountAccess.isSignInInProgress = false
             state.lifecycle.accountAccess.didSignInFail = true
             state.lifecycle.accountAccess.errorMessage = "Check your network connection and try again."
+            state.lifecycle.accountAccess.handoffTransaction = nil
         }
         await store.receive(\.settings.accountAccessPresentationUpdated) { state in
             state.settings.accountSettings.presentation = AccountAccessPresentation(didSignInFail: true)

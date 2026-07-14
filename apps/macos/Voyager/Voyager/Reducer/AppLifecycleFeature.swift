@@ -120,12 +120,6 @@ struct AppLifecycleFeature {
                 state.accessGatePhase = .signedOut
                 return .none
 
-            case .accountAccess(.cancelSignIn),
-                 .accountAccess(._handoffCallbackTimedOut),
-                 .accountAccess(._handoffExchangeCompleted):
-                state.accountAccess.handoffScope = .lifecycle
-                return .none
-
             case .accountAccess:
                 return .none
 
