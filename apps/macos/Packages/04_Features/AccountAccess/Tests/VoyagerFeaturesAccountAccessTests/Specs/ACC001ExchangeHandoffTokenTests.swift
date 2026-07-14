@@ -22,6 +22,8 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         private var didStartPersisting = false
         private var didCommit = false
         private var didDiscard = false
+        private var didStartFinalizing = false
+        private var didCancelFinalizing = false
         private var persistedSession: AccountSession?
 
         func persist(_ session: AccountSession) async throws {
@@ -55,6 +57,24 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
 
         func isCommitted() -> Bool {
             didCommit
+        }
+
+        func finalize() async throws {
+            didStartFinalizing = true
+            do {
+                try await ContinuousClock().sleep(for: .seconds(60))
+            } catch {
+                didCancelFinalizing = true
+                throw error
+            }
+        }
+
+        func isFinalizing() -> Bool {
+            didStartFinalizing
+        }
+
+        func didCancelFinalization() -> Bool {
+            didCancelFinalizing
         }
 
         func storedSession() -> AccountSession? {
@@ -143,7 +163,23 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         var state = AccountAccessFeature.State()
         state.isSignInInProgress = true
         state.handoffPendingState = pendingState
+        state.handoffTransaction = AccountAccessHandoffTransaction(context: .onboarding, scope: .onboarding)
         return state
+    }
+
+    private func claimedHandoffAction(
+        ticket: String = ACC001ExchangeHandoffTokenTests.validTicket,
+        state: String = ACC001ExchangeHandoffTokenTests.validState,
+        generation: UInt64 = 0,
+    ) -> AccountAccessAction {
+        ._handoffClaimCompleted(.init(
+            ticket: ticket,
+            state: state,
+            context: .onboarding,
+            scope: .onboarding,
+            generation: generation,
+            claimed: true,
+        ))
     }
 
     // MARK: - ACC-001-exchange_handoff_token
@@ -194,6 +230,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         }
         await store.receive(\._handoffExchangeCompleted) { state in
             state.handoffFinalizingState = nil
+            state.handoffTransaction = nil
             state.hasAccountSession = true
             state.didSignInFail = false
             state.sessionExpiresAt = persistedSessionExpiry
@@ -206,6 +243,96 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         store.exhaustivity = .off
         await store.receive(\.accessStatusResponse)
         await store.receive(\.delegate.unlocked)
+        await store.finish()
+    }
+
+    /// ACC-001-exchange_handoff_token: 이전 generation의 claim completion은 새 handoff exchange를 시작하지 않는다.
+    /// - 검증 내용: generation N completion이 N+1 transaction의 pending/exchange state를 변경하지 않고 network exchange를 호출하지 않는다.
+    /// - 사전 조건: onboarding transaction generation=2가 callback 대기 중이며 generation=1 claim completion이 늦게 도착한다.
+    /// - 기대 결과: generation=2 transaction과 pending state가 유지되고 exchange 호출 수는 0이다.
+    func testStaleClaimCompletionCannotStartNewHandoffExchange() async {
+        let exchangeCallCount = LockIsolated(0)
+        var initialState = awaitingCallbackState(pendingState: "new-handoff-state")
+        initialState.handoffGeneration = 2
+        let store = makeTestStore(
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in
+                    exchangeCallCount.withValue { $0 += 1 }
+                    return AccountSession(accessToken: "unexpected", status: .coreLicenseActive)
+                },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: initialState,
+        )
+
+        await store.send(claimedHandoffAction(
+            ticket: "stale-ticket",
+            state: "new-handoff-state",
+            generation: 1,
+        ))
+
+        XCTAssertEqual(exchangeCallCount.value, 0)
+        XCTAssertEqual(store.state.handoffGeneration, 2)
+        XCTAssertEqual(store.state.handoffPendingState, "new-handoff-state")
+        XCTAssertEqual(
+            store.state.handoffTransaction,
+            AccountAccessHandoffTransaction(context: .onboarding, scope: .onboarding),
+        )
+        await store.finish()
+    }
+
+    /// ACC-001-exchange_handoff_token: termination은 finalizing handoff를 취소하고 이전 completion을 무시한다.
+    /// - 검증 내용: appWillTerminate가 finalize effect를 취소하고 generation을 증가시킨 뒤 이전 generation completion을 no-op으로 처리한다.
+    /// - 사전 조건: generation=1 onboarding transaction이 handoff finalization 중이며 session client finalizer가 대기한다.
+    /// - 기대 결과: finalizer cancellation이 관측되고 finalizing state/transaction이 비워지며 late completion이 session을 복원하지 않는다.
+    func testAppTerminationCancelsFinalizationAndIgnoresLateCompletion() async {
+        let probe = PersistenceCancellationProbe()
+        let sessionClient = AccountSessionClient(
+            read: { nil },
+            persist: { _ in },
+            prepareHandoffPersistence: { $0 },
+            commitHandoffPersistence: { _ in },
+            finalizeHandoffPersistence: { try await probe.finalize() },
+            delete: { _ in },
+            discardPersistedSession: { _ in },
+        )
+        var initialState = awaitingCallbackState()
+        initialState.handoffGeneration = 1
+        initialState.handoffPendingState = nil
+        initialState.handoffExchangeState = Self.validState
+        let store = makeTestStore(accountSessionClient: sessionClient, initialState: initialState)
+        // store.exhaustivity = .off: termination cancellation과 stale completion no-op을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(._handoffCommitAuthorized(
+            state: Self.validState,
+            generation: 1,
+            sessionExpiresAt: referenceDate.addingTimeInterval(3600),
+        )) { state in
+            state.isSignInInProgress = false
+            state.handoffExchangeState = nil
+            state.handoffFinalizingState = Self.validState
+        }
+        let didStartFinalizing = await waitUntil { await probe.isFinalizing() }
+        XCTAssertTrue(didStartFinalizing)
+
+        await store.send(.appWillTerminate)
+        let didCancelFinalization = await waitUntil { await probe.didCancelFinalization() }
+        XCTAssertTrue(didCancelFinalization)
+        XCTAssertEqual(store.state.handoffGeneration, 2)
+        XCTAssertNil(store.state.handoffFinalizingState)
+        XCTAssertNil(store.state.handoffTransaction)
+
+        await store.send(._handoffExchangeCompleted(
+            state: Self.validState,
+            generation: 1,
+            result: .success(referenceDate.addingTimeInterval(3600)),
+        ))
+
+        XCTAssertFalse(store.state.hasAccountSession)
+        XCTAssertNil(store.state.handoffFinalizingState)
         await store.finish()
     }
 }
@@ -239,12 +366,7 @@ extension ACC001ExchangeHandoffTokenTests {
             initialState: awaitingCallbackState(),
         )
 
-        await store.send(._handoffClaimCompleted(
-            ticket: Self.validTicket,
-            state: Self.validState,
-            context: .onboarding,
-            claimed: true,
-        )) { state in
+        await store.send(claimedHandoffAction()) { state in
             state.handoffPendingState = nil
             state.handoffExchangeState = Self.validState
         }
@@ -254,6 +376,7 @@ extension ACC001ExchangeHandoffTokenTests {
         await store.send(.cancelSignIn) { state in
             state.isSignInInProgress = false
             state.handoffExchangeState = nil
+            state.handoffTransaction = nil
         }
         let didDiscard = await waitUntil { await probe.isDiscarded() }
         XCTAssertTrue(didDiscard)
@@ -294,12 +417,7 @@ extension ACC001ExchangeHandoffTokenTests {
             initialState: awaitingCallbackState(),
         )
 
-        await store.send(._handoffClaimCompleted(
-            ticket: Self.validTicket,
-            state: Self.validState,
-            context: .onboarding,
-            claimed: true,
-        )) { state in
+        await store.send(claimedHandoffAction()) { state in
             state.handoffPendingState = nil
             state.handoffExchangeState = Self.validState
         }
@@ -309,6 +427,7 @@ extension ACC001ExchangeHandoffTokenTests {
         await store.send(.cancelSignIn) { state in
             state.isSignInInProgress = false
             state.handoffExchangeState = nil
+            state.handoffTransaction = nil
         }
         let didDiscard = await waitUntil { await probe.isDiscarded() }
         XCTAssertTrue(didDiscard)
@@ -347,12 +466,7 @@ extension ACC001ExchangeHandoffTokenTests {
             initialState: awaitingCallbackState(),
         )
 
-        await store.send(._handoffClaimCompleted(
-            ticket: Self.validTicket,
-            state: Self.validState,
-            context: .onboarding,
-            claimed: true,
-        )) { state in
+        await store.send(claimedHandoffAction()) { state in
             state.handoffPendingState = nil
             state.handoffExchangeState = Self.validState
         }
@@ -362,6 +476,7 @@ extension ACC001ExchangeHandoffTokenTests {
         await store.send(.cancelSignIn) { state in
             state.isSignInInProgress = false
             state.handoffExchangeState = nil
+            state.handoffTransaction = nil
         }
         await store.receive(\._handoffPersistenceRollbackFailed) { state in
             state.didSignInFail = true
@@ -413,6 +528,7 @@ extension ACC001ExchangeHandoffTokenTests {
 
         await store.receive(\._handoffExchangeCompleted) { state in
             state.isSignInInProgress = false
+            state.handoffTransaction = nil
             state.didSignInFail = true
             state.hasAccountSession = false
         }
@@ -448,6 +564,7 @@ extension ACC001ExchangeHandoffTokenTests {
 
         await store.receive(\._handoffExchangeCompleted) { state in
             state.isSignInInProgress = false
+            state.handoffTransaction = nil
             state.didSignInFail = true
             state.hasAccountSession = false
         }

@@ -125,8 +125,10 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
         var state = AccountAccessFeature.State()
         state.isSignInInProgress = true
         state.handoffPendingState = pendingState
-        state.handoffContext = handoffContext
-        state.handoffScope = handoffScope
+        state.handoffTransaction = AccountAccessHandoffTransaction(
+            context: handoffContext,
+            scope: handoffScope,
+        )
         return state
     }
 
@@ -310,6 +312,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
         }
         await store.receive(\._handoffExchangeCompleted) { state in
             state.handoffFinalizingState = nil
+            state.handoffTransaction = nil
             state.hasAccountSession = true
             state.didSignInFail = false
             state.sessionExpiresAt = Self.persistedSessionExpiry
@@ -407,6 +410,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
         }
         await store.receive(\._handoffExchangeCompleted) { state in
             state.handoffFinalizingState = nil
+            state.handoffTransaction = nil
             state.hasAccountSession = true
             state.didSignInFail = false
             state.sessionExpiresAt = Self.persistedSessionExpiry
@@ -483,6 +487,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
         }
         await store.receive(\._handoffExchangeCompleted) { state in
             state.isSignInInProgress = false
+            state.handoffTransaction = nil
             state.didSignInFail = true
             state.handoffExchangeState = nil
         }
@@ -764,6 +769,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
         }
         await store.receive(\._handoffExchangeCompleted) { state in
             state.handoffFinalizingState = nil
+            state.handoffTransaction = nil
             state.hasAccountSession = true
             state.didSignInFail = false
             state.sessionExpiresAt = Self.persistedSessionExpiry

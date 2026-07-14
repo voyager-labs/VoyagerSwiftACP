@@ -6,16 +6,45 @@ public enum AccountSessionRestoration: Equatable, Sendable {
     case missing
 }
 
+public struct AccountAccessHandoffClaimCompletion: Equatable, Sendable {
+    public let ticket: String
+    public let state: String
+    public let context: AppHandoffContext
+    public let scope: AccountAccessHandoffScope
+    public let generation: UInt64
+    public let claimed: Bool
+
+    public init(
+        ticket: String,
+        state: String,
+        context: AppHandoffContext,
+        scope: AccountAccessHandoffScope,
+        generation: UInt64,
+        claimed: Bool,
+    ) {
+        self.ticket = ticket
+        self.state = state
+        self.context = context
+        self.scope = scope
+        self.generation = generation
+        self.claimed = claimed
+    }
+}
+
 @CasePathable
 public enum AccountAccessAction: CasePathable, Sendable {
     case onAppear
     case retryTapped
-    case loginTapped
+    case loginTapped(context: AppHandoffContext, scope: AccountAccessHandoffScope)
     case cancelSignIn
-    case signInHandoffCompleted(SignInHandoffResult)
+    case signInHandoffCompleted(
+        SignInHandoffResult,
+        transaction: AccountAccessHandoffTransaction,
+        generation: UInt64,
+    )
     case loginCallbackReceived(URL)
     case _handoffCallbackTimedOut(state: String)
-    case _handoffClaimCompleted(ticket: String, state: String, context: AppHandoffContext, claimed: Bool)
+    case _handoffClaimCompleted(AccountAccessHandoffClaimCompletion)
     case _handoffCommitAuthorized(state: String, generation: UInt64, sessionExpiresAt: Date?)
     case _handoffExchangeCompleted(
         state: String,

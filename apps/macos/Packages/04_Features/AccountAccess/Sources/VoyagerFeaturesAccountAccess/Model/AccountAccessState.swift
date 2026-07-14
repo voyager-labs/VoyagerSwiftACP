@@ -7,6 +7,16 @@ public enum AccountAccessHandoffScope: Hashable, Sendable {
     case settings
 }
 
+public struct AccountAccessHandoffTransaction: Equatable, Sendable {
+    public let context: AppHandoffContext
+    public let scope: AccountAccessHandoffScope
+
+    public init(context: AppHandoffContext, scope: AccountAccessHandoffScope) {
+        self.context = context
+        self.scope = scope
+    }
+}
+
 public enum SyncReason: Equatable, Sendable {
     case foreground
     case login
@@ -43,10 +53,8 @@ public struct AccountAccessState: Equatable {
     public var didBootstrap: Bool = false
     public var isSignInInProgress: Bool = false
     public var didSignInFail: Bool = false
-    /// 현재 sign-in handoff에 사용해야 하는 컨텍스트.
-    public var handoffContext: AppHandoffContext = .onboarding
-    /// 동일 프로세스 내 AccountAccess 인스턴스별 handoff effect 취소 범위.
-    public var handoffScope: AccountAccessHandoffScope = .onboarding
+    /// 승인된 sign-in handoff의 고정 컨텍스트와 취소 범위.
+    public var handoffTransaction: AccountAccessHandoffTransaction?
     public var fetchGeneration: Int = 0
     /// 가장 최근에 완전한 session sync가 끝난 시각. partial 결과는 갱신하지 않는다.
     public var lastCompleteSyncAt: Date?

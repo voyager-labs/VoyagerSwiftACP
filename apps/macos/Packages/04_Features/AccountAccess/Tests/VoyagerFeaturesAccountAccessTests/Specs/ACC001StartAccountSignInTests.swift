@@ -71,6 +71,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
     private func makeTestStore(
         signInHandoffClient: SignInHandoffClient = SignInHandoffClient { _ in .failure },
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
+        continuousClock: TestClock<Duration>? = nil,
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         TestStore(initialState: initialState) {
             AccountAccessFeature()
@@ -79,6 +80,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
             $0.authNetworkClient = .testValue
             $0.signInHandoffClient = signInHandoffClient
             $0.date = .constant(referenceDate)
+            if let continuousClock { $0.continuousClock = continuousClock }
         }
     }
 
@@ -136,9 +138,11 @@ final class ACC001StartAccountSignInTests: XCTestCase {
             },
         )
 
-        await store.send(.loginTapped) { state in
+        await store.send(.loginTapped(context: .onboarding, scope: .onboarding)) { state in
             state.isSignInInProgress = true
             state.didSignInFail = false
+            state.handoffTransaction = AccountAccessHandoffTransaction(context: .onboarding, scope: .onboarding)
+            state.handoffGeneration = 1
         }
 
         XCTAssertTrue(handoffCalled, "signInHandoffClient가 호출되어 브라우저 로그인 URL이 열려야 함")
@@ -153,6 +157,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         await store.send(.cancelSignIn) { state in
             state.isSignInInProgress = false
             state.handoffPendingState = nil
+            state.handoffTransaction = nil
         }
         await store.finish()
     }
@@ -176,9 +181,11 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         XCTAssertTrue(store.state.canStartLogin, "session_expired 상태에서 Login CTA 활성화")
         XCTAssertEqual(store.state.accountAccessAuthAxis, .signInFailed)
 
-        await store.send(.loginTapped) { state in
+        await store.send(.loginTapped(context: .onboarding, scope: .onboarding)) { state in
             state.isSignInInProgress = true
             state.didSignInFail = false
+            state.handoffTransaction = AccountAccessHandoffTransaction(context: .onboarding, scope: .onboarding)
+            state.handoffGeneration = 1
         }
 
         XCTAssertTrue(handoffCalled, "session_expired에서도 동일하게 handoff 시작")
@@ -188,6 +195,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
             state.isSignInInProgress = false
             state.didSignInFail = true
             state.errorMessage = "Check your network connection and try again."
+            state.handoffTransaction = nil
         }
         await store.finish()
     }
@@ -204,9 +212,11 @@ final class ACC001StartAccountSignInTests: XCTestCase {
             },
         )
 
-        await store.send(.loginTapped) { state in
+        await store.send(.loginTapped(context: .onboarding, scope: .onboarding)) { state in
             state.isSignInInProgress = true
             state.didSignInFail = false
+            state.handoffTransaction = AccountAccessHandoffTransaction(context: .onboarding, scope: .onboarding)
+            state.handoffGeneration = 1
         }
 
         // callback 수신 전: auth_state 변경 없음 (logged_out 유지)
@@ -223,6 +233,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         await store.send(.cancelSignIn) { state in
             state.isSignInInProgress = false
             state.handoffPendingState = nil
+            state.handoffTransaction = nil
         }
         await store.finish()
     }
@@ -249,7 +260,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         // 진행 중에는 canStartLogin이 false이므로 중복 요청을 무시한다.
         XCTAssertFalse(store.state.canStartLogin)
 
-        await store.send(.loginTapped)
+        await store.send(.loginTapped(context: .onboarding, scope: .onboarding))
 
         XCTAssertEqual(handoffCallCount, 0)
         XCTAssertTrue(store.state.isSignInInProgress)
@@ -316,9 +327,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         XCTAssertTrue(activeAdmission)
 
         let createdAt = referenceDate
-        var initialState = AccountAccessFeature.State()
-        initialState.handoffContext = .paywall
-        initialState.handoffScope = .settings
+        let initialState = AccountAccessFeature.State()
         let store = makeTestStore(
             signInHandoffClient: SignInHandoffClient(
                 beginHandoff: { context, owner in
@@ -336,12 +345,15 @@ final class ACC001StartAccountSignInTests: XCTestCase {
             initialState: initialState,
         )
 
-        await store.send(.loginTapped) { state in
+        await store.send(.loginTapped(context: .paywall, scope: .settings)) { state in
             state.isSignInInProgress = true
             state.didSignInFail = false
+            state.handoffTransaction = AccountAccessHandoffTransaction(context: .paywall, scope: .settings)
+            state.handoffGeneration = 1
         }
         await store.receive(\.signInHandoffCompleted) { state in
             state.isSignInInProgress = false
+            state.handoffTransaction = nil
         }
 
         XCTAssertFalse(store.state.didSignInFail)
@@ -363,13 +375,18 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         let clock = TestClock()
         var initialState = AccountAccessFeature.State()
         initialState.isSignInInProgress = true
+        initialState.handoffTransaction = AccountAccessHandoffTransaction(context: .onboarding, scope: .onboarding)
         let store = TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
             $0.continuousClock = clock
         }
 
-        await store.send(.signInHandoffCompleted(.awaitingCallback(state: "pending-state"))) { state in
+        await store.send(.signInHandoffCompleted(
+            .awaitingCallback(state: "pending-state"),
+            transaction: AccountAccessHandoffTransaction(context: .onboarding, scope: .onboarding),
+            generation: 0,
+        )) { state in
             state.handoffPendingState = "pending-state"
         }
         await clock.advance(by: AccountAccessFeature.handoffCallbackTimeout)
@@ -377,6 +394,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
             state.isSignInInProgress = false
             state.didSignInFail = true
             state.handoffPendingState = nil
+            state.handoffTransaction = nil
         }
         await store.finish()
     }
@@ -413,9 +431,11 @@ final class ACC001StartAccountSignInTests: XCTestCase {
             signInHandoffClient: cancellationAwareHandoffClient(pending: pending, gate: gate),
         )
 
-        await store.send(.loginTapped) { state in
+        await store.send(.loginTapped(context: .onboarding, scope: .onboarding)) { state in
             state.isSignInInProgress = true
             state.didSignInFail = false
+            state.handoffTransaction = AccountAccessHandoffTransaction(context: .onboarding, scope: .onboarding)
+            state.handoffGeneration = 1
         }
         await gate.waitUntilStarted()
         let mismatchedClaim = await AppHandoffStateStore.shared.claim(
@@ -428,6 +448,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         await store.send(.cancelSignIn) { state in
             state.isSignInInProgress = false
             state.didSignInFail = false
+            state.handoffTransaction = nil
         }
         await gate.waitUntilCancelled()
         let futurePending = PendingAppHandoff(
@@ -452,38 +473,47 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         await store.finish()
     }
 
-    /// ACC-001-start_account_sign_in: handoffContext와 owner scope가 설정되면 loginTapped가 beginHandoff에 함께 전달한다.
-    /// - 검증 내용: beginHandoff에 .paywall과 .settings 전달, handoffPendingState 저장
-    /// - 사전 조건: AccountAccessFeature.State의 handoffContext=.paywall, handoffScope=.settings
-    /// - 기대 결과: capturedContext == .paywall, capturedScope == .settings, handoffPendingState 저장
-    func testLoginTappedPassesConfiguredHandoffContext() async {
-        nonisolated(unsafe) var capturedContext: AppHandoffContext?
-        nonisolated(unsafe) var capturedScope: AccountAccessHandoffScope?
-        var initialState = AccountAccessFeature.State()
-        initialState.handoffContext = .paywall
-        initialState.handoffScope = .settings
+    /// ACC-001-start_account_sign_in: initiating surface가 명시한 handoff context와 scope를 transaction으로 고정한다.
+    /// - 검증 내용: beginHandoff에 .paywall/.settings가 전달되고 승인 대기 상태가 같은 transaction을 유지한다.
+    /// - 사전 조건: 기본 AccountAccess state에서 Settings surface의 login action을 전송한다.
+    /// - 기대 결과: capturedContext == .paywall, capturedScope == .settings, handoffTransaction이 .paywall/.settings다.
+    func testLoginTappedCapturesExplicitHandoffTransaction() async {
+        let capturedContext = LockIsolated<AppHandoffContext?>(nil),
+            capturedScope = LockIsolated<AccountAccessHandoffScope?>(nil)
         let store = makeTestStore(
             signInHandoffClient: SignInHandoffClient(
                 beginHandoff: { context, scope in
-                    capturedContext = context
-                    capturedScope = scope
+                    capturedContext.setValue(context)
+                    capturedScope.setValue(scope)
                     return .awaitingCallback(state: "paywall-state-123")
                 },
             ),
-            initialState: initialState,
+            continuousClock: TestClock(),
         )
 
-        await store.send(.loginTapped) { state in
+        await store.send(.loginTapped(context: .paywall, scope: .settings)) { state in
             state.isSignInInProgress = true
             state.didSignInFail = false
+            state.handoffTransaction = AccountAccessHandoffTransaction(context: .paywall, scope: .settings)
+            state.handoffGeneration = 1
         }
 
-        XCTAssertEqual(capturedContext, .paywall)
-        XCTAssertEqual(capturedScope, .settings)
+        XCTAssertEqual(capturedContext.value, .paywall)
+        XCTAssertEqual(capturedScope.value, .settings)
         await store.receive(\.signInHandoffCompleted) { state in
             state.handoffPendingState = "paywall-state-123"
         }
 
+        XCTAssertEqual(
+            store.state.handoffTransaction,
+            AccountAccessHandoffTransaction(context: .paywall, scope: .settings),
+        )
+        await store.send(.cancelSignIn) { state in
+            state.isSignInInProgress = false
+            state.handoffPendingState = nil
+            state.handoffExchangeState = nil
+            state.handoffTransaction = nil
+        }
         await store.finish()
     }
 }

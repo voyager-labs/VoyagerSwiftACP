@@ -2,6 +2,120 @@ import ComposableArchitecture
 import Foundation
 
 extension AccountAccessFeature {
+    func handleLoginTapped(
+        _ state: inout State,
+        context: AppHandoffContext,
+        scope: AccountAccessHandoffScope,
+    ) -> Effect<Action> {
+        guard state.canStartLogin else {
+            return .none
+        }
+
+        let transaction = AccountAccessHandoffTransaction(context: context, scope: scope)
+        state.isSignInInProgress = true
+        state.didSignInFail = false
+        state.handoffGeneration &+= 1
+        state.handoffTransaction = transaction
+        let generation = state.handoffGeneration
+
+        return .merge(
+            .cancel(id: CancelID.handoffCallbackTimeout(scope)),
+            cancelHandoffClaimAndExchange(scope: scope),
+            .run { [signInHandoffClient] send in
+                let result = await signInHandoffClient.beginHandoff(context, scope)
+                await send(.signInHandoffCompleted(result, transaction: transaction, generation: generation))
+            }
+            .cancellable(id: CancelID.signInHandoff(scope), cancelInFlight: true),
+        )
+    }
+
+    func handleCancelSignIn(_ state: inout State) -> Effect<Action> {
+        guard state.isSignInInProgress || state.handoffPendingState != nil else {
+            return .none
+        }
+
+        let scope = handoffScope(state)
+        let expectedState = ownedHandoffState(state)
+        state.isSignInInProgress = false
+        state.didSignInFail = false
+        state.handoffPendingState = nil
+        state.handoffExchangeState = nil
+        state.handoffTransaction = nil
+
+        return .merge(
+            .cancel(id: CancelID.signInHandoff(scope)),
+            .cancel(id: CancelID.handoffCallbackTimeout(scope)),
+            cancelHandoffClaimAndExchange(scope: scope),
+            clearStoredHandoff(expectedState: expectedState, owner: scope),
+        )
+    }
+
+    func handleSignInHandoffCompleted(
+        _ state: inout State,
+        result: SignInHandoffResult,
+        transaction: AccountAccessHandoffTransaction,
+        generation: UInt64,
+    ) -> Effect<Action> {
+        guard state.handoffGeneration == generation, state.handoffTransaction == transaction else {
+            return .none
+        }
+
+        switch result {
+        case let .success(callbackURL):
+            return .send(.loginCallbackReceived(callbackURL))
+
+        case let .awaitingCallback(handoffState):
+            guard state.isSignInInProgress, state.handoffExchangeState == nil else {
+                return .none
+            }
+            state.handoffPendingState = handoffState
+            return startHandoffCallbackTimeout(pendingState: handoffState, scope: handoffScope(state))
+
+        case .rejected:
+            let scope = transaction.scope
+            state.isSignInInProgress = false
+            state.didSignInFail = false
+            state.errorMessage = nil
+            state.handoffPendingState = nil
+            state.handoffExchangeState = nil
+            state.handoffTransaction = nil
+            return .merge(
+                .cancel(id: CancelID.handoffCallbackTimeout(scope)),
+                cancelHandoffClaimAndExchange(scope: scope),
+            )
+
+        case .failure:
+            return finishFailedSignInHandoff(
+                &state,
+                transaction: transaction,
+                errorMessage: "Check your network connection and try again.",
+            )
+
+        case .cancelled:
+            return finishFailedSignInHandoff(&state, transaction: transaction)
+        }
+    }
+
+    private func finishFailedSignInHandoff(
+        _ state: inout State,
+        transaction: AccountAccessHandoffTransaction,
+        errorMessage: String? = nil,
+    ) -> Effect<Action> {
+        let scope = transaction.scope
+        let expectedState = ownedHandoffState(state)
+        state.isSignInInProgress = false
+        state.didSignInFail = true
+        state.errorMessage = errorMessage ?? state.errorMessage
+        state.handoffPendingState = nil
+        state.handoffExchangeState = nil
+        state.handoffTransaction = nil
+        return .merge(
+            .cancel(id: CancelID.handoffCallbackTimeout(scope)),
+            cancelHandoffClaimAndExchange(scope: scope),
+            clearStoredHandoff(expectedState: expectedState, owner: scope),
+        )
+    }
+
     func cancelHandoffClaimAndExchange(scope: AccountAccessHandoffScope) -> Effect<Action> {
         .merge(
             .cancel(id: CancelID.handoffExchange(scope)),
@@ -32,16 +146,18 @@ extension AccountAccessFeature {
             return .none
         }
 
+        let scope = handoffScope(state)
         state.isSignInInProgress = false
         state.didSignInFail = true
         state.handoffPendingState = nil
         state.handoffExchangeState = nil
+        state.handoffTransaction = nil
         return .merge(
             .cancel(
-                id: CancelID.handoffCallbackTimeout(state.handoffScope),
+                id: CancelID.handoffCallbackTimeout(scope),
             ),
-            cancelHandoffClaimAndExchange(scope: state.handoffScope),
-            clearStoredHandoff(expectedState: pendingState, owner: state.handoffScope),
+            cancelHandoffClaimAndExchange(scope: scope),
+            clearStoredHandoff(expectedState: pendingState, owner: scope),
         )
     }
 
@@ -49,38 +165,45 @@ extension AccountAccessFeature {
         _ state: inout State,
         callback: AppHandoffCallback,
     ) -> Effect<Action> {
-        guard state.isSignInInProgress, callback.context == state.handoffContext else { return .none }
+        guard let transaction = state.handoffTransaction,
+              state.isSignInInProgress,
+              callback.context == transaction.context
+        else { return .none }
         guard state.handoffExchangeState == nil else { return .none }
         guard state.handoffPendingState == nil || state.handoffPendingState == callback.state else { return .none }
 
-        return claimHandoff(callback: callback, scope: state.handoffScope)
+        return claimHandoff(
+            callback: callback,
+            scope: transaction.scope,
+            generation: state.handoffGeneration,
+        )
     }
 
     func handleHandoffClaimCompleted(
         _ state: inout State,
-        ticket: String,
-        pendingState: String,
-        context: AppHandoffContext,
-        claimed: Bool,
+        completion: AccountAccessHandoffClaimCompletion,
     ) -> Effect<Action> {
-        guard state.isSignInInProgress,
+        guard let transaction = state.handoffTransaction,
+              state.handoffGeneration == completion.generation,
+              state.isSignInInProgress,
               state.handoffExchangeState == nil,
-              context == state.handoffContext,
-              state.handoffPendingState == nil || state.handoffPendingState == pendingState
+              completion.context == transaction.context,
+              completion.scope == transaction.scope,
+              state.handoffPendingState == nil || state.handoffPendingState == completion.state
         else { return .none }
 
-        guard claimed else { return .none }
+        guard completion.claimed else { return .none }
 
         state.handoffPendingState = nil
-        state.handoffExchangeState = pendingState
+        state.handoffExchangeState = completion.state
         return .merge(
-            .cancel(id: CancelID.handoffCallbackTimeout(state.handoffScope)),
+            .cancel(id: CancelID.handoffCallbackTimeout(completion.scope)),
             performHandoffExchange(
-                ticket: ticket,
-                state: pendingState,
-                context: context,
-                scope: state.handoffScope,
-                generation: state.handoffGeneration,
+                ticket: completion.ticket,
+                state: completion.state,
+                context: transaction.context,
+                scope: completion.scope,
+                generation: completion.generation,
             ),
         )
     }
@@ -94,8 +217,10 @@ extension AccountAccessFeature {
         guard state.handoffGeneration == generation,
               state.handoffExchangeState == pendingState || state.handoffFinalizingState == pendingState
         else { return .none }
+        let scope = handoffScope(state)
         state.handoffExchangeState = nil
         state.handoffFinalizingState = nil
+        state.handoffTransaction = nil
 
         switch result {
         case let .success(sessionExpiresAt):
@@ -110,7 +235,7 @@ extension AccountAccessFeature {
             invalidateSessionSync(&state)
             state.lastCompleteSyncAt = nil
             return .merge(
-                .cancel(id: CancelID.handoffCallbackTimeout(state.handoffScope)),
+                .cancel(id: CancelID.handoffCallbackTimeout(scope)),
                 .cancel(id: CancelID.sessionSync),
                 .send(.sessionSyncRequested(intent: .validate, reason: .login)),
                 scheduleRefreshDeadline(&state),
@@ -121,7 +246,7 @@ extension AccountAccessFeature {
             state.didSignInFail = true
             state.hasAccountSession = false
             state.handoffPendingState = nil
-            return .cancel(id: CancelID.handoffCallbackTimeout(state.handoffScope))
+            return .cancel(id: CancelID.handoffCallbackTimeout(scope))
         }
     }
 
@@ -137,11 +262,13 @@ extension AccountAccessFeature {
             return .none
         }
 
+        let scope = handoffScope(state)
         state.isSignInInProgress = false
         state.handoffExchangeState = nil
         state.handoffFinalizingState = pendingState
         return finalizeHandoffPersistence(
             pendingState: pendingState,
+            scope: scope,
             generation: generation,
             sessionExpiresAt: sessionExpiresAt,
         )
@@ -149,6 +276,7 @@ extension AccountAccessFeature {
 
     func finalizeHandoffPersistence(
         pendingState: String,
+        scope: AccountAccessHandoffScope,
         generation: UInt64,
         sessionExpiresAt: Date?,
     ) -> Effect<Action> {
@@ -160,6 +288,8 @@ extension AccountAccessFeature {
                     generation: generation,
                     result: .success(sessionExpiresAt),
                 ))
+            } catch is CancellationError {
+                return
             } catch {
                 await send(._handoffExchangeCompleted(
                     state: pendingState,
@@ -168,6 +298,7 @@ extension AccountAccessFeature {
                 ))
             }
         }
+        .cancellable(id: CancelID.handoffFinalize(scope), cancelInFlight: true)
     }
 
     func performHandoffExchange(
@@ -233,6 +364,7 @@ extension AccountAccessFeature {
     func claimHandoff(
         callback: AppHandoffCallback,
         scope: AccountAccessHandoffScope,
+        generation: UInt64,
     ) -> Effect<Action> {
         .run { send in
             let pending = await AppHandoffStateStore.shared.claim(
@@ -242,10 +374,14 @@ extension AccountAccessFeature {
             )
             guard !Task.isCancelled else { return }
             await send(._handoffClaimCompleted(
-                ticket: callback.ticket,
-                state: callback.state,
-                context: callback.context,
-                claimed: pending != nil,
+                AccountAccessHandoffClaimCompletion(
+                    ticket: callback.ticket,
+                    state: callback.state,
+                    context: callback.context,
+                    scope: scope,
+                    generation: generation,
+                    claimed: pending != nil,
+                ),
             ))
         }
         .cancellable(id: CancelID.handoffClaim(scope), cancelInFlight: true)
@@ -263,5 +399,9 @@ extension AccountAccessFeature {
 
     func ownedHandoffState(_ state: State) -> String? {
         state.handoffPendingState ?? state.handoffExchangeState
+    }
+
+    func handoffScope(_ state: State) -> AccountAccessHandoffScope {
+        state.handoffTransaction?.scope ?? .onboarding
     }
 }
