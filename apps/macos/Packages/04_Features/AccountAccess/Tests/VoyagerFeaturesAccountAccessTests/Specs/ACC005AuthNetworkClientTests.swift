@@ -1,6 +1,5 @@
-// swiftlint:disable force_unwrapping
-
 @preconcurrency import ComposableArchitecture
+import Foundation
 @testable import VoyagerFeaturesAccountAccess
 import XCTest
 
@@ -410,6 +409,22 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         )
     }
 
+    /// ACC-005-auth_network_client: legacy sync의 device-binding unauthorized는 credential recovery를 시작한다.
+    func testLegacyDeviceBindingUnauthorizedMapsToInvalidCredential() {
+        XCTAssertEqual(
+            AuthNetworkClient.legacySessionSyncError(for: .unauthorized),
+            .invalidCredential,
+        )
+        XCTAssertNil(AuthNetworkClient.legacySessionSyncError(for: .seatCapacityExceeded))
+    }
+
+    /// ACC-005-auth_network_client: 취소된 네트워크 작업은 재시도 가능한 네트워크 오류로 변환하지 않는다.
+    func testCancellationErrorsRemainCancellation() {
+        XCTAssertTrue(AuthNetworkClient.isCancellationError(CancellationError()))
+        XCTAssertTrue(AuthNetworkClient.isCancellationError(URLError(.cancelled)))
+        XCTAssertFalse(AuthNetworkClient.isCancellationError(URLError(.timedOut)))
+    }
+
     /// ACC-005-test_value: testValue의 모든 closure가 notConfigured를 throw한다.
     /// DependencyKey.testValue가 안전한 기본값을 제공하는지 검증한다.
     /// - 검증 내용: exchangeHandoff/fetchAccessStatus/bindDevice/refreshToken 모두 notConfigured throw
@@ -447,5 +462,3 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         }
     }
 }
-
-// swiftlint:enable force_unwrapping

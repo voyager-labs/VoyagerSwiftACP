@@ -82,7 +82,9 @@ public extension AuthNetworkClient {
                 try await bindDeviceLive(request)
             },
             refreshToken: {
-                try await refreshTokenLive()
+                let store = AccountTokenFileStore.withDefaultHome()
+                let refreshed = try await refreshTokenLive(store: store)
+                return refreshed.session
             },
             syncSessionWithRequestID: { intent, device, requestID in
                 try await syncSessionLive(intent: intent, device: device, requestID: requestID)
@@ -165,6 +167,7 @@ public extension AuthNetworkClient {
         do {
             (data, response) = try await URLSession.shared.data(for: request)
         } catch {
+            if isCancellationError(error) { throw CancellationError() }
             throw AccessError.networkFailure
         }
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -201,6 +204,7 @@ public extension AuthNetworkClient {
         do {
             (data, response) = try await URLSession.shared.data(for: request)
         } catch {
+            if isCancellationError(error) { throw CancellationError() }
             throw DeviceBindingError.networkFailure
         }
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -221,9 +225,10 @@ public extension AuthNetworkClient {
         throw mappedDeviceBindingError(statusCode: httpResponse.statusCode, code: errorCode)
     }
 
-    private static func refreshTokenLive() async throws -> AccountSession {
+    private static func refreshTokenLive(
+        store: AccountTokenFileStore,
+    ) async throws -> (session: AccountSession, source: AccountTokensFile) {
         // extracted from AccountAccessClient.swift:87-128 (excluding write-back)
-        let store = AccountTokenFileStore.withDefaultHome()
         let file = try await store.read()
         guard let file else { throw AccessError.notConfigured }
         guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL")
@@ -241,6 +246,7 @@ public extension AuthNetworkClient {
         do {
             (data, response) = try await URLSession.shared.data(for: request)
         } catch {
+            if isCancellationError(error) { throw CancellationError() }
             throw AccessError.networkFailure
         }
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -256,11 +262,14 @@ public extension AuthNetworkClient {
         guard refreshResponse.ok, let sessionPayload = refreshResponse.session else {
             throw AccessError.decodingFailure
         }
-        return AccountSession(
-            accessToken: sessionPayload.accessToken,
-            status: .none,
-            refreshToken: sessionPayload.refreshToken ?? file.refreshToken,
-            expiresAt: sessionPayload.expiresAt.map { Date(timeIntervalSince1970: $0) },
+        return (
+            session: AccountSession(
+                accessToken: sessionPayload.accessToken,
+                status: .none,
+                refreshToken: sessionPayload.refreshToken ?? file.refreshToken,
+                expiresAt: sessionPayload.expiresAt.map { Date(timeIntervalSince1970: $0) },
+            ),
+            source: file,
         )
     }
 
@@ -308,6 +317,7 @@ public extension AuthNetworkClient {
         do {
             (data, response) = try await URLSession.shared.data(for: request)
         } catch {
+            if isCancellationError(error) { throw CancellationError() }
             throw SessionSyncError.upstream(0)
         }
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -315,29 +325,51 @@ public extension AuthNetworkClient {
         }
 
         if httpResponse.statusCode == 200 {
-            let decoded: SessionSyncResponse
-            do {
-                let decoder = JSONDecoder()
-                decoder.dateDecodingStrategy = .iso8601
-                decoded = try decoder.decode(SessionSyncResponse.self, from: data)
-            } catch {
-                throw SessionSyncError.upstream(200)
-            }
-            if intent == .refresh, decoded.session.status == .rotated {
-                let rotated = try rotatedTokensFile(from: decoded.session, replacing: file)
-                do {
-                    try await store.write(rotated)
-                } catch {
-                    throw SessionSyncError.storageFailure
-                }
-            }
-            return decoded.result()
+            return try await sessionSyncResult(data: data, intent: intent, source: file, store: store)
         }
 
         guard let syncError = sessionSyncError(for: httpResponse.statusCode) else {
             return try await legacySessionSync(intent: intent, device: device, store: store)
         }
         throw syncError
+    }
+
+    private static func sessionSyncResult(
+        data: Data,
+        intent: SessionSyncIntent,
+        source: AccountTokensFile,
+        store: AccountTokenFileStore,
+    ) async throws -> SessionSyncResult {
+        let decoded: SessionSyncResponse
+        do {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            decoded = try decoder.decode(SessionSyncResponse.self, from: data)
+        } catch {
+            throw SessionSyncError.upstream(200)
+        }
+        if intent == .refresh, decoded.session.status == .rotated {
+            let rotated = try rotatedTokensFile(from: decoded.session, replacing: source)
+            try await replaceRotatedTokens(rotated, expected: source, store: store)
+        }
+        return decoded.result()
+    }
+
+    private static func replaceRotatedTokens(
+        _ tokens: AccountTokensFile,
+        expected source: AccountTokensFile,
+        store: AccountTokenFileStore,
+    ) async throws {
+        do {
+            let didReplace = try await store.replaceIfCurrentMatches(tokens, expected: source)
+            guard didReplace else { throw SessionSyncError.storageFailure }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as SessionSyncError {
+            throw error
+        } catch {
+            throw SessionSyncError.storageFailure
+        }
     }
 
     static func sessionSyncError(for statusCode: Int) -> SessionSyncError? {
@@ -357,43 +389,24 @@ public extension AuthNetworkClient {
         store: AccountTokenFileStore,
     ) async throws -> SessionSyncResult {
         if intent == .refresh {
-            let session: AccountSession
-            do {
-                session = try await refreshTokenLive()
-                guard let tokens = AccountTokenSessionMapper.sessionToTokensFile(session) else {
-                    throw SessionSyncError.storageFailure
-                }
-                try await store.write(tokens)
-            } catch let error as SessionSyncError {
-                throw error
-            } catch let error as AccessError where error == .unauthorized {
-                throw SessionSyncError.invalidCredential
-            } catch {
-                throw SessionSyncError.capabilityMiss
-            }
+            try await refreshLegacySession(store: store)
         }
 
         let access: AccessStatusResponse
         do {
             access = try await fetchAccessStatusLive()
+        } catch is CancellationError {
+            throw CancellationError()
         } catch let error as AccessError where error == .unauthorized {
             throw SessionSyncError.invalidCredential
         } catch {
             throw SessionSyncError.capabilityMiss
         }
 
-        let outcome: SessionSyncDeviceBindingOutcome
-        if access.toAccessStatus().isActive {
-            do {
-                _ = try await bindDeviceLive(device)
-                outcome = .bound
-            } catch let error as DeviceBindingError where error == .seatCapacityExceeded {
-                outcome = .deviceLimitReached
-            } catch {
-                outcome = .notAttempted
-            }
+        let outcome: SessionSyncDeviceBindingOutcome = if access.toAccessStatus().isActive {
+            try await legacyDeviceBindingOutcome(for: device)
         } else {
-            outcome = .notAttempted
+            .notAttempted
         }
         return SessionSyncResult(
             sessionStatus: intent == .refresh ? .rotated : .unchanged,
@@ -402,6 +415,43 @@ public extension AuthNetworkClient {
             deviceBindingOutcome: outcome,
             connectedDeviceAvailability: .unavailable,
         )
+    }
+
+    private static func refreshLegacySession(store: AccountTokenFileStore) async throws {
+        do {
+            let refreshed = try await refreshTokenLive(store: store)
+            guard let tokens = AccountTokenSessionMapper.sessionToTokensFile(refreshed.session) else {
+                throw SessionSyncError.storageFailure
+            }
+            let didReplace = try await store.replaceIfCurrentMatches(tokens, expected: refreshed.source)
+            guard didReplace else { throw SessionSyncError.storageFailure }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as SessionSyncError {
+            throw error
+        } catch let error as AccessError where error == .unauthorized {
+            throw SessionSyncError.invalidCredential
+        } catch {
+            throw SessionSyncError.capabilityMiss
+        }
+    }
+
+    private static func legacyDeviceBindingOutcome(
+        for device: DeviceBindingRequest,
+    ) async throws -> SessionSyncDeviceBindingOutcome {
+        do {
+            _ = try await bindDeviceLive(device)
+            return .bound
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as DeviceBindingError {
+            if let syncError = legacySessionSyncError(for: error) {
+                throw syncError
+            }
+            return error == .seatCapacityExceeded ? .deviceLimitReached : .notAttempted
+        } catch {
+            return .notAttempted
+        }
     }
 
     private static func rotatedTokensFile(
@@ -424,6 +474,21 @@ public extension AuthNetworkClient {
             refreshToken: refreshToken,
             refreshTokenExpiresAtMs: (session.refreshTokenExpiresAt ?? previous.refreshTokenExpiresAtMs / 1000) * 1000,
         )
+    }
+}
+
+extension AuthNetworkClient {
+    static func isCancellationError(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
+    }
+
+    static func legacySessionSyncError(for deviceBindingError: DeviceBindingError) -> SessionSyncError? {
+        switch deviceBindingError {
+        case .unauthorized:
+            .invalidCredential
+        default:
+            nil
+        }
     }
 }
 
