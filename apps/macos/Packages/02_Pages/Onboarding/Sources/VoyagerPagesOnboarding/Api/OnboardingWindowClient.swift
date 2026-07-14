@@ -142,9 +142,7 @@ extension OnboardingWindowClient: DependencyKey {
             progressClient: progressClient,
             openMainWindow: openMainWindow,
             makeComposition: { onboardingWindowClient in
-                var accountAccessState = AccountAccessFeature.State()
-                accountAccessState.handoffScope = .onboarding
-                let accountAccessStore = Store(initialState: accountAccessState) {
+                let accountAccessStore = Store(initialState: AccountAccessFeature.State()) {
                     AccountAccessFeature()
                 } withDependencies: {
                     if let accountSessionClient {
