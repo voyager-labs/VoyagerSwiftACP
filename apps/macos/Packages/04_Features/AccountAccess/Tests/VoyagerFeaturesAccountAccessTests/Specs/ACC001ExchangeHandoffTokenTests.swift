@@ -1,5 +1,3 @@
-// swiftlint:disable force_unwrapping
-
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
 import XCTest
@@ -20,8 +18,74 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
     private static let validTicket = "exchange-ticket-001"
     private static let validState = "handoff-state-789"
 
+    private actor PersistenceCancellationProbe {
+        private var didStartPersisting = false
+        private var didCommit = false
+        private var didDiscard = false
+        private var persistedSession: AccountSession?
+
+        func persist(_ session: AccountSession) async throws {
+            didStartPersisting = true
+            persistedSession = session
+            try await ContinuousClock().sleep(for: .seconds(60))
+        }
+
+        func discard() {
+            didDiscard = true
+            persistedSession = nil
+        }
+
+        func prepare(_ session: AccountSession) -> AccountSession {
+            persistedSession = session
+            return session
+        }
+
+        func commit() async throws {
+            didCommit = true
+            try await ContinuousClock().sleep(for: .seconds(60))
+        }
+
+        func isPersisting() -> Bool {
+            didStartPersisting
+        }
+
+        func isDiscarded() -> Bool {
+            didDiscard
+        }
+
+        func isCommitted() -> Bool {
+            didCommit
+        }
+
+        func storedSession() -> AccountSession? {
+            persistedSession
+        }
+    }
+
+    private func waitUntil(_ condition: @escaping @Sendable () async -> Bool) async -> Bool {
+        for _ in 0 ..< 1000 {
+            if await condition() {
+                return true
+            }
+            await Task.yield()
+        }
+        return false
+    }
+
     private static var validCallbackURL: URL {
-        URL(string: "voyager://auth/callback?ticket=\(validTicket)&state=\(validState)&context=onboarding")!
+        var components = URLComponents()
+        components.scheme = "voyager"
+        components.host = "auth"
+        components.path = "/callback"
+        components.queryItems = [
+            URLQueryItem(name: "ticket", value: validTicket),
+            URLQueryItem(name: "state", value: validState),
+            URLQueryItem(name: "context", value: "onboarding"),
+        ]
+        guard let url = components.url else {
+            preconditionFailure("고정된 handoff callback URL을 생성할 수 없습니다.")
+        }
+        return url
     }
 
     /// live session client + mock exchange client로 exchange → persist flow 검증용 helper.
@@ -90,13 +154,11 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
     /// - 사전 조건: awaitingCallbackState에서 유효한 callback URL 수신, exchangeAppHandoff가 session 반환
     /// - 기대 결과: hasAccountSession=true, isSignInInProgress=false, didSignInFail=false, fetchGeneration=1
     func testExchangeSuccessSetsLoggedIn() async {
-        nonisolated(unsafe) var exchangeCalled = false
         let persistedSessionExpiry = Date(timeIntervalSince1970: 1_700_003_600)
         let store = makeTestStore(
             accountSessionClient: canonicalSessionClient(expiresAt: persistedSessionExpiry),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { ticket, state, context in
-                    exchangeCalled = true
                     XCTAssertEqual(ticket, "exchange-ticket-001")
                     XCTAssertEqual(state, "handoff-state-789")
                     XCTAssertEqual(context, .onboarding)
@@ -125,8 +187,13 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
             state.handoffPendingState = nil
         }
 
-        await store.receive(\._handoffExchangeCompleted) { state in
+        await store.receive(\._handoffCommitAuthorized) { state in
             state.isSignInInProgress = false
+            state.handoffExchangeState = nil
+            state.handoffFinalizingState = Self.validState
+        }
+        await store.receive(\._handoffExchangeCompleted) { state in
+            state.handoffFinalizingState = nil
             state.hasAccountSession = true
             state.didSignInFail = false
             state.sessionExpiresAt = persistedSessionExpiry
@@ -134,8 +201,6 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
             state.fetchGeneration = 1
         }
 
-        XCTAssertTrue(exchangeCalled, "exchangeAppHandoff 호출됨")
-        XCTAssertTrue(store.state.hasAccountSession, "교환 성공 → logged_in")
         // store.exhaustivity = .off: _handoffExchangeCompleted가 다수 상태를 갱신한 이후 accessStatusResponse 처리 중 추가 상태 변경이 있을 수
         // 있으나 검증은 action 수신만 확인
         store.exhaustivity = .off
@@ -143,7 +208,186 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         await store.receive(\.delegate.unlocked)
         await store.finish()
     }
+}
 
+extension ACC001ExchangeHandoffTokenTests {
+    /// ACC-001-exchange_handoff_token: persist 도중 로그인을 취소하면 저장 세션을 rollback한다.
+    /// - 검증 내용: persist 시작 후 cancelSignIn → exchange 취소 → silent discard
+    /// - 기대 결과: 로그인 상태는 signed out으로 유지되고 저장 세션이 제거된다.
+    func testCancelDuringPersistenceDiscardsPersistedSession() async {
+        let probe = PersistenceCancellationProbe()
+        let persistedSession = AccountSession(
+            accessToken: "cancelled-access-token",
+            status: .coreLicenseActive,
+            refreshToken: "cancelled-refresh-token",
+            expiresAt: referenceDate.addingTimeInterval(3600),
+        )
+        let sessionClient = AccountSessionClient(
+            read: { persistedSession },
+            persist: { session in try await probe.persist(session) },
+            delete: { _ in },
+            discardPersistedSession: { _ in await probe.discard() },
+        )
+        let store = makeTestStore(
+            accountSessionClient: sessionClient,
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in persistedSession },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: awaitingCallbackState(),
+        )
+
+        await store.send(._handoffClaimCompleted(
+            ticket: Self.validTicket,
+            state: Self.validState,
+            context: .onboarding,
+            claimed: true,
+        )) { state in
+            state.handoffPendingState = nil
+            state.handoffExchangeState = Self.validState
+        }
+        let didStartPersisting = await waitUntil { await probe.isPersisting() }
+        XCTAssertTrue(didStartPersisting)
+
+        await store.send(.cancelSignIn) { state in
+            state.isSignInInProgress = false
+            state.handoffExchangeState = nil
+        }
+        let didDiscard = await waitUntil { await probe.isDiscarded() }
+        XCTAssertTrue(didDiscard)
+
+        XCTAssertFalse(store.state.hasAccountSession)
+        XCTAssertFalse(store.state.isSignInInProgress)
+        let storedSession = await probe.storedSession()
+        XCTAssertNil(storedSession)
+        await store.finish()
+    }
+
+    /// ACC-001-exchange_handoff_token: canonical commit 직후 취소도 reducer 수락 전이면 rollback한다.
+    func testCancelAfterCommitBeforeAuthorizationDiscardsPersistedSession() async {
+        let probe = PersistenceCancellationProbe()
+        let persistedSession = AccountSession(
+            accessToken: "commit-window-access-token",
+            status: .coreLicenseActive,
+            refreshToken: "commit-window-refresh-token",
+            expiresAt: referenceDate.addingTimeInterval(3600),
+        )
+        let sessionClient = AccountSessionClient(
+            read: { persistedSession },
+            persist: { _ in },
+            prepareHandoffPersistence: { session in await probe.prepare(session) },
+            commitHandoffPersistence: { _ in try await probe.commit() },
+            finalizeHandoffPersistence: {},
+            delete: { _ in },
+            discardPersistedSession: { _ in await probe.discard() },
+        )
+        let store = makeTestStore(
+            accountSessionClient: sessionClient,
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in persistedSession },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: awaitingCallbackState(),
+        )
+
+        await store.send(._handoffClaimCompleted(
+            ticket: Self.validTicket,
+            state: Self.validState,
+            context: .onboarding,
+            claimed: true,
+        )) { state in
+            state.handoffPendingState = nil
+            state.handoffExchangeState = Self.validState
+        }
+        let didCommit = await waitUntil { await probe.isCommitted() }
+        XCTAssertTrue(didCommit)
+
+        await store.send(.cancelSignIn) { state in
+            state.isSignInInProgress = false
+            state.handoffExchangeState = nil
+        }
+        let didDiscard = await waitUntil { await probe.isDiscarded() }
+        XCTAssertTrue(didDiscard)
+        let storedSession = await probe.storedSession()
+        XCTAssertNil(storedSession)
+        await store.finish()
+    }
+
+    /// ACC-001-exchange_handoff_token: 취소 rollback 실패는 사용자 복구 오류로 노출한다.
+    /// - 검증 내용: persist 시작 후 cancelSignIn → discard 실패 → rollback failure action
+    /// - 기대 결과: 저장 세션 정리 실패를 숨기지 않고 sign-in failure 상태로 전환한다.
+    func testCancelDuringPersistenceSurfacesRollbackFailure() async {
+        let probe = PersistenceCancellationProbe()
+        let persistedSession = AccountSession(
+            accessToken: "rollback-failure-access-token",
+            status: .coreLicenseActive,
+            refreshToken: "rollback-failure-refresh-token",
+            expiresAt: referenceDate.addingTimeInterval(3600),
+        )
+        let sessionClient = AccountSessionClient(
+            read: { persistedSession },
+            persist: { session in try await probe.persist(session) },
+            delete: { _ in },
+            discardPersistedSession: { _ in
+                throw AccountSessionPersistenceError.discardUnavailable
+            },
+        )
+        let store = makeTestStore(
+            accountSessionClient: sessionClient,
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in persistedSession },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: awaitingCallbackState(),
+        )
+
+        await store.send(._handoffClaimCompleted(
+            ticket: Self.validTicket,
+            state: Self.validState,
+            context: .onboarding,
+            claimed: true,
+        )) { state in
+            state.handoffPendingState = nil
+            state.handoffExchangeState = Self.validState
+        }
+        let didStartPersisting = await waitUntil { await probe.isPersisting() }
+        XCTAssertTrue(didStartPersisting)
+
+        await store.send(.cancelSignIn) { state in
+            state.isSignInInProgress = false
+            state.handoffExchangeState = nil
+        }
+        await store.receive(._handoffPersistenceRollbackFailed(generation: 0)) { state in
+            state.didSignInFail = true
+            state.errorMessage = "Saved sign-in data could not be cleared. Quit Voyager and try again."
+        }
+
+        XCTAssertTrue(store.state.didSignInFail)
+        XCTAssertNotNil(store.state.errorMessage)
+        await store.finish()
+    }
+
+    /// ACC-001-exchange_handoff_token: 이전 rollback 실패는 새 handoff generation을 덮지 않는다.
+    func testStaleRollbackFailureDoesNotOverwriteNewHandoff() async {
+        var initialState = awaitingCallbackState(pendingState: "new-handoff-state")
+        initialState.handoffGeneration = 2
+        let store = makeTestStore(initialState: initialState)
+
+        await store.send(._handoffPersistenceRollbackFailed(generation: 1))
+
+        XCTAssertTrue(store.state.isSignInInProgress)
+        XCTAssertFalse(store.state.didSignInFail)
+        XCTAssertEqual(store.state.handoffPendingState, "new-handoff-state")
+    }
+}
+
+extension ACC001ExchangeHandoffTokenTests {
     /// ACC-001-exchange_handoff_token: 네트워크 오류 시 didSignInFail=true로 전환된다.
     /// exchangeAppHandoff가 networkFailure를 throw할 때 인증 실패 상태로 전환되는지 검증한다.
     /// - 검증 내용: exchangeAppHandoff 실패 시 didSignInFail=true
@@ -424,5 +668,3 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         XCTAssertEqual(finalRead?.accessToken, "concurrent-access")
     }
 }
-
-// swiftlint:enable force_unwrapping

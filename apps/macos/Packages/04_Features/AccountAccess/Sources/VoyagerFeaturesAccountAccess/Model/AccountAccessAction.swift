@@ -16,7 +16,13 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case loginCallbackReceived(URL)
     case _handoffCallbackTimedOut(state: String)
     case _handoffClaimCompleted(ticket: String, state: String, context: AppHandoffContext, claimed: Bool)
-    case _handoffExchangeCompleted(state: String, result: Result<Date?, AppHandoffExchangeError>)
+    case _handoffCommitAuthorized(state: String, generation: UInt64, sessionExpiresAt: Date?)
+    case _handoffExchangeCompleted(
+        state: String,
+        generation: UInt64,
+        result: Result<Date?, AppHandoffExchangeError>,
+    )
+    case _handoffPersistenceRollbackFailed(generation: UInt64)
     case _onAppearSessionRestored(AccountSessionRestoration)
     case _loginSessionRestored(AccountSessionRestoration)
     case sessionSyncRequested(intent: SessionSyncIntent, reason: SyncReason)

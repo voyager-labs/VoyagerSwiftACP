@@ -5,8 +5,10 @@ import Foundation
 enum AccountTokenFSLocation {
     static let directoryName = ".voyager"
     static let payloadFileName = "account_tokens.json"
+    static let handoffStagingFileName = "account_tokens.handoff-staging.json"
     static let quarantinePrefix = "account_tokens.corrupted"
     static let lockFileName = "account_tokens.lock"
+    static let rollbackMarkerFileName = "account_tokens.rollback-pending"
 
     static func directoryURL(homeDirectoryURL: URL) -> URL {
         homeDirectoryURL
@@ -25,6 +27,20 @@ enum AccountTokenFSLocation {
     ) -> URL {
         directoryURL(homeDirectoryURL: homeDirectoryURL)
             .appendingPathComponent(lockFileName)
+    }
+
+    static func handoffStagingFileURL(
+        homeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser,
+    ) -> URL {
+        directoryURL(homeDirectoryURL: homeDirectoryURL)
+            .appendingPathComponent(handoffStagingFileName)
+    }
+
+    static func rollbackMarkerFileURL(
+        homeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser,
+    ) -> URL {
+        directoryURL(homeDirectoryURL: homeDirectoryURL)
+            .appendingPathComponent(rollbackMarkerFileName)
     }
 
     static func quarantineFileURL(

@@ -88,8 +88,29 @@ public struct AccountAccessFeature {
                     claimed: claimed,
                 )
 
-            case let ._handoffExchangeCompleted(pendingState, result):
-                return handleHandoffExchangeCompleted(&state, pendingState: pendingState, result: result)
+            case let ._handoffCommitAuthorized(pendingState, generation, sessionExpiresAt):
+                return handleHandoffCommitAuthorized(
+                    &state,
+                    pendingState: pendingState,
+                    generation: generation,
+                    sessionExpiresAt: sessionExpiresAt,
+                )
+
+            case let ._handoffExchangeCompleted(pendingState, generation, result):
+                return handleHandoffExchangeCompleted(
+                    &state,
+                    pendingState: pendingState,
+                    generation: generation,
+                    result: result,
+                )
+
+            case let ._handoffPersistenceRollbackFailed(generation):
+                guard state.handoffGeneration == generation else { return .none }
+                state.isSignInInProgress = false
+                state.didSignInFail = true
+                state.hasAccountSession = false
+                state.errorMessage = "Saved sign-in data could not be cleared. Quit Voyager and try again."
+                return .none
 
             case let ._onAppearSessionRestored(restoration):
                 return handleOnAppearSessionRestored(&state, restoration: restoration)
@@ -288,6 +309,7 @@ public struct AccountAccessFeature {
 
         state.isSignInInProgress = true
         state.didSignInFail = false
+        state.handoffGeneration &+= 1
         let requestedContext = state.handoffContext
         let handoffScope = state.handoffScope
 

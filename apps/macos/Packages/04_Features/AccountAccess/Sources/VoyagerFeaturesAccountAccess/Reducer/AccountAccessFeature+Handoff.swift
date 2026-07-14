@@ -80,6 +80,7 @@ extension AccountAccessFeature {
                 state: pendingState,
                 context: context,
                 scope: state.handoffScope,
+                generation: state.handoffGeneration,
             ),
         )
     }
@@ -87,10 +88,14 @@ extension AccountAccessFeature {
     func handleHandoffExchangeCompleted(
         _ state: inout State,
         pendingState: String,
+        generation: UInt64,
         result: Result<Date?, AppHandoffExchangeError>,
     ) -> Effect<Action> {
-        guard state.handoffExchangeState == pendingState else { return .none }
+        guard state.handoffGeneration == generation,
+              state.handoffExchangeState == pendingState || state.handoffFinalizingState == pendingState
+        else { return .none }
         state.handoffExchangeState = nil
+        state.handoffFinalizingState = nil
 
         switch result {
         case let .success(sessionExpiresAt):
@@ -120,35 +125,106 @@ extension AccountAccessFeature {
         }
     }
 
+    func handleHandoffCommitAuthorized(
+        _ state: inout State,
+        pendingState: String,
+        generation: UInt64,
+        sessionExpiresAt: Date?,
+    ) -> Effect<Action> {
+        guard state.handoffGeneration == generation,
+              state.handoffExchangeState == pendingState
+        else {
+            return .none
+        }
+
+        state.isSignInInProgress = false
+        state.handoffExchangeState = nil
+        state.handoffFinalizingState = pendingState
+        return finalizeHandoffPersistence(
+            pendingState: pendingState,
+            generation: generation,
+            sessionExpiresAt: sessionExpiresAt,
+        )
+    }
+
+    func finalizeHandoffPersistence(
+        pendingState: String,
+        generation: UInt64,
+        sessionExpiresAt: Date?,
+    ) -> Effect<Action> {
+        .run { [sessionClient] send in
+            do {
+                try await sessionClient.finalizeHandoffPersistence()
+                await send(._handoffExchangeCompleted(
+                    state: pendingState,
+                    generation: generation,
+                    result: .success(sessionExpiresAt),
+                ))
+            } catch {
+                await send(._handoffExchangeCompleted(
+                    state: pendingState,
+                    generation: generation,
+                    result: .failure(.networkFailure),
+                ))
+            }
+        }
+    }
+
     func performHandoffExchange(
         ticket: String,
         state: String,
         context: AppHandoffContext,
         scope: AccountAccessHandoffScope,
+        generation: UInt64,
     ) -> Effect<Action> {
         .run { [authNetwork, sessionClient] send in
+            var sessionToRollback: AccountSession?
             do {
                 let session = try await authNetwork.exchangeHandoff(ticket, state, context)
                 try Task.checkCancellation()
-                try await sessionClient.persist(session)
+                sessionToRollback = session
+                let persistedSession = try await sessionClient.prepareHandoffPersistence(session)
                 try Task.checkCancellation()
-                guard let persistedSession = try await sessionClient.read() else {
-                    throw AppHandoffExchangeError.decodingFailure
-                }
+                try await sessionClient.commitHandoffPersistence(session)
                 try Task.checkCancellation()
-                await send(._handoffExchangeCompleted(
+                await send(._handoffCommitAuthorized(
                     state: state,
-                    result: .success(persistedSession.expiresAt),
+                    generation: generation,
+                    sessionExpiresAt: persistedSession.expiresAt,
                 ))
+                try Task.checkCancellation()
+                sessionToRollback = nil
             } catch is CancellationError {
+                if let sessionToRollback {
+                    do {
+                        try await sessionClient.discardPersistedSession(sessionToRollback)
+                    } catch {
+                        // 취소된 effect의 send는 TCA가 버리므로 새 task에서 실패를 전달한다.
+                        await Task {
+                            await send(._handoffPersistenceRollbackFailed(generation: generation))
+                        }.value
+                    }
+                }
                 return
             } catch {
+                if let sessionToRollback {
+                    do {
+                        try await sessionClient.discardPersistedSession(sessionToRollback)
+                    } catch {
+                        await send(._handoffPersistenceRollbackFailed(generation: generation))
+                        return
+                    }
+                }
                 let mappedError: AppHandoffExchangeError = if let exchangeError = error as? AppHandoffExchangeError {
                     exchangeError
                 } else {
                     .networkFailure
                 }
-                await send(._handoffExchangeCompleted(state: state, result: .failure(mappedError)))
+                await send(._handoffExchangeCompleted(
+                    state: state,
+                    generation: generation,
+                    result: .failure(mappedError),
+                ))
             }
         }
         .cancellable(id: CancelID.handoffExchange(scope), cancelInFlight: true)

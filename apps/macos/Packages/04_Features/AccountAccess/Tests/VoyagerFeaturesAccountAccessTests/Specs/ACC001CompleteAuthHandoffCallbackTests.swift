@@ -270,7 +270,6 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     /// - 사전 조건: handoffPendingState="xyz789"인 awaitingCallbackState에서 동일한 state의 callback URL 수신
     /// - 기대 결과: exchangeAppHandoff가 호출되고 _handoffExchangeCompleted 수신, hasAccountSession=true
     func testValidFlowCallbackProcessedNormally() async {
-        nonisolated(unsafe) var exchangeCalled = false
         await storePendingHandoff()
         let store = makeTestStore(
             accountSessionClient: canonicalSessionClient(accessToken: "valid-flow-token"),
@@ -303,11 +302,15 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             state.handoffExchangeState = Self.validState
         }
 
-        await store.receive(\._handoffExchangeCompleted) { state in
+        await store.receive(\._handoffCommitAuthorized) { state in
             state.isSignInInProgress = false
+            state.handoffExchangeState = nil
+            state.handoffFinalizingState = Self.validState
+        }
+        await store.receive(\._handoffExchangeCompleted) { state in
+            state.handoffFinalizingState = nil
             state.hasAccountSession = true
             state.didSignInFail = false
-            state.handoffExchangeState = nil
             state.sessionExpiresAt = Self.persistedSessionExpiry
             state.ttlTimerActive = true
             state.fetchGeneration = 1
@@ -396,11 +399,15 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             state.handoffExchangeState = Self.validState
         }
 
-        await store.receive(\._handoffExchangeCompleted) { state in
+        await store.receive(\._handoffCommitAuthorized) { state in
             state.isSignInInProgress = false
+            state.handoffExchangeState = nil
+            state.handoffFinalizingState = Self.validState
+        }
+        await store.receive(\._handoffExchangeCompleted) { state in
+            state.handoffFinalizingState = nil
             state.hasAccountSession = true
             state.didSignInFail = false
-            state.handoffExchangeState = nil
             state.sessionExpiresAt = Self.persistedSessionExpiry
             state.ttlTimerActive = true
             state.fetchGeneration = 1
@@ -659,6 +666,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
 
         await store.send(.loginCallbackReceived(Self.validCallbackURL))
         await store.receive(\._handoffClaimCompleted)
+        await store.receive(\._handoffCommitAuthorized)
         await store.receive(\._handoffExchangeCompleted)
         await store.receive(\.accessStatusResponse)
         await store.receive(\.deviceBindingResponse)
@@ -698,6 +706,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
 
         await store.send(.loginCallbackReceived(Self.validCallbackURL))
         await store.receive(\._handoffClaimCompleted)
+        await store.receive(\._handoffCommitAuthorized)
         await store.receive(\._handoffExchangeCompleted)
         XCTAssertNotNil(store.state.sessionExpiresAt)
         await store.receive(\.accessStatusResponse)
@@ -719,8 +728,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             accountSessionClient: canonicalSessionClient(accessToken: "obh-token"),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in
-                    exchangeCalled = true
-                    return AccountSession(accessToken: "obh-token", status: .coreLicenseActive)
+                    AccountSession(accessToken: "obh-token", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: {
                     AccessStatusResponse(
@@ -749,8 +757,13 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.handoffExchangeState = Self.validState
         }
 
-        await store.receive(\._handoffExchangeCompleted) { state in
+        await store.receive(\._handoffCommitAuthorized) { state in
             state.isSignInInProgress = false
+            state.handoffExchangeState = nil
+            state.handoffFinalizingState = Self.validState
+        }
+        await store.receive(\._handoffExchangeCompleted) { state in
+            state.handoffFinalizingState = nil
             state.hasAccountSession = true
             state.didSignInFail = false
             state.sessionExpiresAt = Self.persistedSessionExpiry
@@ -758,7 +771,6 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.fetchGeneration = 1
         }
 
-        XCTAssertTrue(exchangeCalled, "onboardingHost target + onboardingHost callback → exchange 호출")
         store.exhaustivity = .off
         await store.receive(\.accessStatusResponse)
         await store.receive(\.delegate.unlocked)

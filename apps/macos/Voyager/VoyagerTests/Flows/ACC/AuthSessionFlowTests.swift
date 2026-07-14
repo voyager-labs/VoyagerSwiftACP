@@ -21,6 +21,7 @@ final class AuthSessionFlowTests: XCTestCase {
 
         await store.send(.lifecycle(.accountAccess(._handoffExchangeCompleted(
             state: "handoff-state",
+            generation: 0,
             result: .success(AccountAccessFlowTestSupport.validSession.expiresAt),
         ))))
         await store.receive(\.lifecycle.accountAccess.sessionSyncRequested)
@@ -109,6 +110,7 @@ final class AuthSessionFlowTests: XCTestCase {
 
         await reauthenticationStore.send(.lifecycle(.accountAccess(._handoffExchangeCompleted(
             state: "reauthentication-state",
+            generation: 0,
             result: .success(AccountAccessFlowTestSupport.validSession.expiresAt),
         ))))
         await reauthenticationStore.receive(\.lifecycle.accountAccess.sessionSyncRequested)
@@ -151,6 +153,7 @@ final class AuthSessionFlowTests: XCTestCase {
 
         await store.send(.lifecycle(.accountAccess(._handoffExchangeCompleted(
             state: "failed-state",
+            generation: 0,
             result: .failure(.networkFailure),
         ))))
 
@@ -187,6 +190,7 @@ final class AuthSessionFlowTests: XCTestCase {
         // 최신 callback은 canonical handoff claim 이후에만 만든 exchange completion으로 적용한다.
         await acceptedStore.send(.lifecycle(.accountAccess(._handoffExchangeCompleted(
             state: "latest-state",
+            generation: 0,
             result: .success(AccountAccessFlowTestSupport.validSession.expiresAt),
         ))))
         await acceptedStore.receive(\.lifecycle.accountAccess.sessionSyncRequested)
