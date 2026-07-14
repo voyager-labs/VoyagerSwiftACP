@@ -304,8 +304,8 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         }
     }
 
-    /// ACC-004-account_session_client: partial commit rollback은 새 canonical credential을 제거한다.
-    func testDiscardPartialCommitRemovesMatchingCanonicalSession() async throws {
+    /// ACC-004-account_session_client: canonical replace 뒤 cancellation은 committed credential을 rollback하지 않는다.
+    func testDiscardAfterCanonicalReplacePreservesRecoverableCommittedSession() async throws {
         let fixture = try TemporaryHomeFixture()
         let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
         let client = AccountSessionClient.live(store: store)
@@ -325,8 +325,8 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         try await client.discardPersistedSession(preparedSession)
         let restoredSession = try await client.read()
 
-        XCTAssertNil(restoredSession)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.accountTokensFileURL.path))
+        XCTAssertEqual(restoredSession?.accessToken, preparedSession.accessToken)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.accountTokensFileURL.path))
     }
 
     /// ACC-004-account_session_client: 미완료 rollback marker가 있으면 저장 세션을 복원하지 않는다.
@@ -375,13 +375,15 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: stagingURL.path))
 
         try await client.commitHandoffPersistence(session)
-        try await client.finalizeHandoffPersistence()
         let committedSession = try await client.read()
         XCTAssertEqual(committedSession?.accessToken, session.accessToken)
     }
 
-    /// ACC-004-account_session_client: commit된 handoff 준비 저장은 정상 복원된다.
-    func testCommittedHandoffSessionCanBeRestored() async throws {
+    /// ACC-004-account_session_client: marker가 남은 commit 직후에도 digest가 일치한 canonical session은 cold start에서 복원된다.
+    /// - 검증 내용: commit 뒤 marker를 명시적으로 정리하지 않아도 read()가 canonical session을 반환하고 residue를 정리한다.
+    /// - 사전 조건: TemporaryHomeFixture, staging과 versioned digest marker를 포함한 handoff commit 직후 상태
+    /// - 기대 결과: read()가 committed session을 반환하고 marker/staging 파일이 제거된다.
+    func testColdStartRecoversCommittedHandoffWithMatchingDigest() async throws {
         let fixture = try TemporaryHomeFixture()
         let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
         let client = AccountSessionClient.live(store: store)
@@ -394,11 +396,93 @@ final class ACC004AccountSessionClientTests: XCTestCase {
 
         _ = try await client.prepareHandoffPersistence(session)
         try await client.commitHandoffPersistence(session)
-        try await client.finalizeHandoffPersistence()
         let restoredSession = try await client.read()
 
         XCTAssertEqual(restoredSession?.accessToken, session.accessToken)
         XCTAssertEqual(restoredSession?.refreshToken, session.refreshToken)
+        let markerURL = AccountTokenFSLocation.rollbackMarkerFileURL(
+            homeDirectoryURL: fixture.homeURL,
+        )
+        let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(
+            homeDirectoryURL: fixture.homeURL,
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: markerURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stagingURL.path))
+    }
+
+    /// ACC-004-account_session_client: digest가 다른 canonical은 marker residue와 함께 fail-closed한다.
+    /// - 검증 내용: marker와 다른 payload를 canonical에 두면 read()가 nil이고 파일을 임의 삭제하지 않는다.
+    /// - 사전 조건: valid marker, staging 없는 상태, digest가 다른 canonical payload
+    /// - 기대 결과: nil 반환, canonical과 marker 보존
+    func testColdStartFailsClosedWhenMarkerDigestDoesNotMatchCanonical() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let client = AccountSessionClient.live(store: store)
+        _ = try await client.prepareHandoffPersistence(
+            AccountSession(accessToken: "candidate", status: .none, refreshToken: "candidate-refresh"),
+        )
+        let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: fixture.homeURL)
+        try FileManager.default.removeItem(at: stagingURL)
+        let different = AccountTokensFile(
+            updatedAtMs: 1,
+            accessToken: "different",
+            accessTokenExpiresAtMs: 9_999_999_999_999,
+            accessTokenExpiresIn: 1,
+            refreshToken: "different-refresh",
+            refreshTokenExpiresAtMs: 9_999_999_999_999,
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        try encoder.encode(different).write(to: fixture.accountTokensFileURL, options: .atomic)
+
+        let restoredSession = try await client.read()
+        XCTAssertNil(restoredSession)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.accountTokensFileURL.path))
+        XCTAssertTrue(FileManager.default
+            .fileExists(atPath: AccountTokenFSLocation.rollbackMarkerFileURL(homeDirectoryURL: fixture.homeURL).path))
+    }
+
+    /// ACC-004-account_session_client: valid marker에 canonical이 없으면 residue를 정리하고 signed-out으로 복구한다.
+    /// - 검증 내용: staging 없는 valid marker가 canonical 부재 시 제거된다.
+    /// - 사전 조건: valid marker, staging 제거, canonical 없음
+    /// - 기대 결과: nil 반환, marker 제거
+    func testColdStartClearsValidMarkerWhenCanonicalIsMissing() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let client = AccountSessionClient.live(store: store)
+        _ = try await client.prepareHandoffPersistence(
+            AccountSession(accessToken: "candidate", status: .none, refreshToken: "candidate-refresh"),
+        )
+        let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: fixture.homeURL)
+        let markerURL = AccountTokenFSLocation.rollbackMarkerFileURL(homeDirectoryURL: fixture.homeURL)
+        try FileManager.default.removeItem(at: stagingURL)
+
+        let restoredSession = try await client.read()
+        XCTAssertNil(restoredSession)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: markerURL.path))
+    }
+
+    /// ACC-004-account_session_client: valid marker와 corrupt canonical 조합은 canonical을 quarantine한다.
+    /// - 검증 내용: corrupt canonical은 무시하지 않고 quarantine 파일로 이동한다.
+    /// - 사전 조건: valid marker, staging 제거, corrupt canonical payload
+    /// - 기대 결과: nil 반환, canonical 제거, corrupted quarantine 생성
+    func testColdStartQuarantinesCorruptCanonicalWithValidMarker() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let client = AccountSessionClient.live(store: store)
+        _ = try await client.prepareHandoffPersistence(
+            AccountSession(accessToken: "candidate", status: .none, refreshToken: "candidate-refresh"),
+        )
+        let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: fixture.homeURL)
+        try FileManager.default.removeItem(at: stagingURL)
+        try Data("corrupt".utf8).write(to: fixture.accountTokensFileURL, options: .atomic)
+
+        let restoredSession = try await client.read()
+        XCTAssertNil(restoredSession)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.accountTokensFileURL.path))
+        let directoryContents = try FileManager.default
+            .contentsOfDirectory(atPath: fixture.accountTokensFileURL.deletingLastPathComponent().path)
+        XCTAssertTrue(directoryContents.contains { $0.contains(".corrupted-") })
     }
 
     /// ACC-004-account_session_client: testValue가 안전한 기본값(read=nil, persist/delete=no-op)을 제공한다.

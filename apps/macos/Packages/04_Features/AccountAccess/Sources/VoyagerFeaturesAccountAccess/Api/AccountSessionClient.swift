@@ -8,7 +8,6 @@ public struct AccountSessionClient: Sendable {
     public var persist: @Sendable (_ session: AccountSession) async throws -> Void
     public var prepareHandoffPersistence: @Sendable (_ session: AccountSession) async throws -> AccountSession
     public var commitHandoffPersistence: @Sendable (_ expectedSession: AccountSession) async throws -> Void
-    public var finalizeHandoffPersistence: @Sendable () async throws -> Void
     public var delete: @Sendable (_ reason: AccountSessionEndReason) async throws -> Void
     public var discardPersistedSession: @Sendable (_ expectedSession: AccountSession) async throws -> Void
 
@@ -31,7 +30,6 @@ public struct AccountSessionClient: Sendable {
                 return persistedSession
             },
             commitHandoffPersistence: { _ in },
-            finalizeHandoffPersistence: {},
             delete: delete,
             discardPersistedSession: { _ in
                 throw AccountSessionPersistenceError.discardUnavailable
@@ -56,7 +54,6 @@ public struct AccountSessionClient: Sendable {
                 return persistedSession
             },
             commitHandoffPersistence: { _ in },
-            finalizeHandoffPersistence: {},
             delete: delete,
             discardPersistedSession: discardPersistedSession,
         )
@@ -67,7 +64,6 @@ public struct AccountSessionClient: Sendable {
         persist: @escaping @Sendable (AccountSession) async throws -> Void,
         prepareHandoffPersistence: @escaping @Sendable (AccountSession) async throws -> AccountSession,
         commitHandoffPersistence: @escaping @Sendable (AccountSession) async throws -> Void,
-        finalizeHandoffPersistence: @escaping @Sendable () async throws -> Void,
         delete: @escaping @Sendable (_ reason: AccountSessionEndReason) async throws -> Void,
         discardPersistedSession: @escaping @Sendable (_ expectedSession: AccountSession) async throws -> Void,
     ) {
@@ -75,7 +71,6 @@ public struct AccountSessionClient: Sendable {
         self.persist = persist
         self.prepareHandoffPersistence = prepareHandoffPersistence
         self.commitHandoffPersistence = commitHandoffPersistence
-        self.finalizeHandoffPersistence = finalizeHandoffPersistence
         self.delete = delete
         self.discardPersistedSession = discardPersistedSession
     }
@@ -122,9 +117,6 @@ extension AccountSessionClient {
             },
             commitHandoffPersistence: { session in
                 try await store.commitHandoffWrite(expectedSession: session)
-            },
-            finalizeHandoffPersistence: {
-                try await store.finalizeHandoffWrite()
             },
             delete: { reason in
                 try await store.delete()
