@@ -8,7 +8,7 @@ public struct SettingsState: Equatable {
     var generalSettings = GeneralSettingsState()
     var appearanceSettings = AppearanceSettingsState()
     var aiSettings = AiSettingsState()
-    var accountSettings = AccountSettingsState()
+    public var accountSettings = AccountSettingsState()
     public var accessStatus: AccessStatus = .none
 
     /// SettingsView 호환용 shim.

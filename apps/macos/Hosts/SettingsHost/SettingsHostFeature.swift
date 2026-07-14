@@ -10,7 +10,7 @@ public struct SettingsHostState: Equatable {
     public var isAccountAccessBootstrapPending = true
 
     public init() {
-        accountAccess.handoffContext = .settings
+        accountAccess.handoffContext = .paywall
         accountAccess.handoffScope = .settings
     }
 
@@ -30,7 +30,7 @@ public struct SettingsHostState: Equatable {
         accountAccess.isSignInInProgress = presentation.isSignInInProgress
         accountAccess.didSignInFail = presentation.didSignInFail
         accountAccess.status = presentation.accessStatus
-        accountAccess.handoffContext = .settings
+        accountAccess.handoffContext = .paywall
         accountAccess.handoffScope = .settings
         return accountAccess
     }
