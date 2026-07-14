@@ -53,6 +53,15 @@ public enum SettingsHostSandbox {
         )
         dependencies.checkoutURLClient = .testValue
         dependencies.notificationCenterClient = .testValue
+        dependencies.accountSessionClient = .testValue
+        dependencies.accessStatusSnapshotClient = .testValue
+        dependencies.authNetworkClient = AuthNetworkClient(
+            exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+            fetchAccessStatus: { throw AccessError.notConfigured },
+            refreshToken: { throw AccessError.notConfigured },
+            syncSession: { _, _ in throw SessionSyncError.upstream(0) },
+        )
+        dependencies.signInHandoffClient = .testValue
     }
 
     private static func makeUserDefaultsClient(persistence: PersistenceScenario) -> UserDefaultsClient {
