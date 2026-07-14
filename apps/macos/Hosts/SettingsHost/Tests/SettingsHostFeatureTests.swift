@@ -4,15 +4,15 @@ import VoyagerFeaturesAccountAccess
 import VoyagerPagesSettings
 import XCTest
 
-@MainActor
 final class SettingsHostFeatureTests: XCTestCase {
+    @MainActor
     func testSignInDelegateRoutesOnceAndProjectsAccountAccess() async {
         let store = makeStore()
 
-        await store.send(.settings(.account(.signInTapped)))
-        await store.receive(\.settings.delegate)
+        await store.send(.settings(.delegate(.account(.signInRequested))))
         await store.receive(\.accountAccess.loginTapped) { state in
             state.accountAccess.isSignInInProgress = true
+            state.accountAccess.handoffGeneration = 1
         }
         await store.receive(\.settings.accountAccessPresentationUpdated) { state in
             state.settings.accountSettings.presentation = AccountAccessPresentation(
@@ -32,6 +32,7 @@ final class SettingsHostFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    @MainActor
     func testConfirmedSignOutDelegateRoutesOnceAndProjectsAccountAccess() async {
         var initialState = SettingsHostState()
         initialState.accountAccess.hasAccountSession = true
@@ -43,13 +44,9 @@ final class SettingsHostFeatureTests: XCTestCase {
                 accessStatus: .coreLicenseActive,
             ),
         )
-        initialState.settings.accountSettings.isShowingSignOutConfirmation = true
         let store = makeStore(initialState: initialState)
 
-        await store.send(.settings(.account(.signOutConfirmed))) { state in
-            state.settings.accountSettings.isShowingSignOutConfirmation = false
-        }
-        await store.receive(\.settings.delegate)
+        await store.send(.settings(.delegate(.account(.signOutRequested))))
         await store.receive(\.accountAccess.signOut) { state in
             state.accountAccess.revalidationGeneration = 1
             state.accountAccess.hasAccountSession = false
@@ -71,10 +68,17 @@ final class SettingsHostFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    @MainActor
     func testRetryDelegateRoutesOnceAndProjectsAccountAccess() async {
         var initialState = SettingsHostState()
         initialState.accountAccess.hasAccountSession = true
         initialState.accountAccess.status = .networkFailure
+        initialState.settings = SettingsState(
+            accountPresentation: AccountAccessPresentation(
+                hasAccountSession: true,
+                accessStatus: .networkFailure,
+            ),
+        )
         let syncCallCount = LockIsolated(0)
         let store = makeStore(
             initialState: initialState,
@@ -85,15 +89,16 @@ final class SettingsHostFeatureTests: XCTestCase {
         )
         store.exhaustivity = .off
 
-        await store.send(.settings(.account(.retryTapped)))
+        await store.send(.settings(.delegate(.account(.retryRequested))))
         await store.finish()
 
         XCTAssertEqual(syncCallCount.value, 1)
         XCTAssertFalse(store.state.accountAccess.isSubmitting)
         XCTAssertEqual(store.state.settings.accountSettings.setAuthState, .signedIn)
-        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementUnknown)
+        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementUnavailable)
     }
 
+    @MainActor
     func testLiveOnAppearBootstrapsAccountAccessOnlyOnce() async {
         let store = makeStore()
         store.exhaustivity = .off
@@ -106,6 +111,7 @@ final class SettingsHostFeatureTests: XCTestCase {
         XCTAssertTrue(store.state.accountAccess.didBootstrap)
     }
 
+    @MainActor
     private func makeStore(
         initialState: SettingsHostState = .init(),
         syncSession: @escaping @Sendable (
@@ -126,6 +132,7 @@ final class SettingsHostFeatureTests: XCTestCase {
             )
             $0.signInHandoffClient = .testValue
             $0.notificationCenterClient = .testValue
+            $0.defaultFileViewerClient = .previewValue
         }
     }
 }

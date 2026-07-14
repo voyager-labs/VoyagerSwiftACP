@@ -3,6 +3,7 @@ import VoyagerPagesSettings
 import XCTest
 
 final class SettingsHostPresetTests: XCTestCase {
+    @MainActor
     func testDefaultSandboxExposesAllAxes() {
         let scenario = SettingsHostPreset.defaultSandbox.scenario
 
@@ -13,13 +14,18 @@ final class SettingsHostPresetTests: XCTestCase {
         XCTAssertEqual(scenario.failureLatency, .none)
     }
 
+    @MainActor
     func testAccountAuthPresetsMapToDistinctAxes() {
-        XCTAssertEqual(SettingsHostPreset.signedOut.scenario.accountAuth, .signedOut)
+        XCTAssertEqual(
+            SettingsHostPreset.signedOut.scenario.accountAuth,
+            .signedOut,
+        )
         XCTAssertEqual(SettingsHostPreset.signedIn.scenario.accountAuth, .signedIn)
         XCTAssertEqual(SettingsHostPreset.authExpired.scenario.accountAuth, .authExpired)
         XCTAssertEqual(SettingsHostPreset.aiNotConfigured.scenario.aiConnection, .notConfigured)
     }
 
+    @MainActor
     func testAccountLoadedIsTrueOnlyForSignedIn() {
         for preset in SettingsHostPreset.allCases {
             XCTAssertEqual(
@@ -30,6 +36,7 @@ final class SettingsHostPresetTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testSessionLapseIsTrueOnlyForAuthExpired() {
         for preset in SettingsHostPreset.allCases {
             XCTAssertEqual(
@@ -40,6 +47,7 @@ final class SettingsHostPresetTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testSignedOutAndAuthExpiredRemainSemanticallyDistinct() {
         let signedOut = SettingsHostPreset.allCases.first { $0.scenario.accountAuth == .signedOut }
         let authExpired = SettingsHostPreset.allCases.first { $0.scenario.accountAuth == .authExpired }
@@ -55,14 +63,20 @@ final class SettingsHostPresetTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testParseFallsBackToDefaultSandboxForInvalidValue() {
-        XCTAssertEqual(SettingsHostPreset.parse("notARealPreset"), .defaultSandbox)
+        XCTAssertEqual(
+            SettingsHostPreset.parse("notARealPreset"),
+            .defaultSandbox,
+        )
     }
 
+    @MainActor
     func testParseFallsBackToDefaultSandboxForNil() {
         XCTAssertEqual(SettingsHostPreset.parse(nil), .defaultSandbox)
     }
 
+    @MainActor
     func testPresetsAreEquatableAndModelIsSendable() {
         func assertSendable(_: (some Sendable).Type) {}
 
@@ -75,6 +89,7 @@ final class SettingsHostPresetTests: XCTestCase {
 
     // MARK: - Full-Access Gate Scenario Realignment
 
+    @MainActor
     func testDefaultSandboxRepresentsFullAccessState() {
         let scenario = SettingsHostPreset.defaultSandbox.scenario
 
@@ -93,6 +108,7 @@ final class SettingsHostPresetTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testPresetListIncludesExplicitNamedFullAccessScenario() {
         XCTAssertTrue(
             SettingsHostPreset.allCases.contains(.fullAccess),
@@ -100,6 +116,7 @@ final class SettingsHostPresetTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testBlockedAndExpiredPresetsAreClassifiedAsNegativeGateScenarios() {
         let negativePresets: [SettingsHostPreset] = [
             .authExpired,
@@ -119,6 +136,7 @@ final class SettingsHostPresetTests: XCTestCase {
 
     // MARK: - Session Expiry Axis
 
+    @MainActor
     func testSignedInPresetsExposeFutureSessionExpiry() {
         let signedInPresets: [SettingsHostPreset] = [
             .defaultSandbox,
@@ -145,8 +163,12 @@ final class SettingsHostPresetTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testAuthExpiredPresetExposesPastSessionExpiry() {
-        XCTAssertEqual(SettingsHostPreset.authExpired.scenario.accountAuth, .authExpired)
+        XCTAssertEqual(
+            SettingsHostPreset.authExpired.scenario.accountAuth,
+            .authExpired,
+        )
         XCTAssertEqual(
             SettingsHostPreset.authExpired.scenario.sessionExpiresAt,
             .sessionExpiryPast,
@@ -154,14 +176,19 @@ final class SettingsHostPresetTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testSignedOutPresetExposesNilSessionExpiry() {
-        XCTAssertEqual(SettingsHostPreset.signedOut.scenario.accountAuth, .signedOut)
+        XCTAssertEqual(
+            SettingsHostPreset.signedOut.scenario.accountAuth,
+            .signedOut,
+        )
         XCTAssertNil(
             SettingsHostPreset.signedOut.scenario.sessionExpiresAt,
             "signedOut must expose nil session expiry",
         )
     }
 
+    @MainActor
     func testNonSessionAccountStatesExposeNilSessionExpiry() {
         let nonSessionPresets: [SettingsHostPreset] = [
             .signedOut,
@@ -178,6 +205,7 @@ final class SettingsHostPresetTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testSessionAxisIsSemanticallyDistinctAcrossAuthStates() {
         let signedIn = SettingsHostPreset.signedIn.scenario
         let authExpired = SettingsHostPreset.authExpired.scenario
@@ -198,6 +226,7 @@ final class SettingsHostPresetTests: XCTestCase {
 
     // MARK: - Account presentation projection
 
+    @MainActor
     func testHostPresetSignedInUsesPresentationFacts() {
         let state = SettingsState.hostPreset(for: SettingsHostPreset.signedIn.scenario)
 
@@ -208,6 +237,7 @@ final class SettingsHostPresetTests: XCTestCase {
         XCTAssertEqual(state.accountSettings.setEntitlementState, .entitlementActive)
     }
 
+    @MainActor
     func testHostPresetSignedOutUsesNoSessionFact() {
         let state = SettingsState.hostPreset(for: SettingsHostPreset.signedOut.scenario)
 
@@ -218,6 +248,7 @@ final class SettingsHostPresetTests: XCTestCase {
         XCTAssertEqual(state.accountSettings.setEntitlementState, .entitlementUnknown)
     }
 
+    @MainActor
     func testHostPresetAuthExpiredUsesInactivePresentationFacts() {
         let state = SettingsState.hostPreset(for: SettingsHostPreset.authExpired.scenario)
 
@@ -227,8 +258,13 @@ final class SettingsHostPresetTests: XCTestCase {
         XCTAssertEqual(state.accountSettings.setEntitlementState, .entitlementInactive)
     }
 
+    @MainActor
     func testHostPresetNonSessionPresetsUseEmptyPresentationFacts() {
-        let nonSessionPresets: [SettingsHostPreset] = [.accountLoading, .accountError, .errorStates]
+        let nonSessionPresets: [SettingsHostPreset] = [
+            .accountLoading,
+            .accountError,
+            .errorStates,
+        ]
 
         for preset in nonSessionPresets {
             let state = SettingsState.hostPreset(for: preset.scenario)

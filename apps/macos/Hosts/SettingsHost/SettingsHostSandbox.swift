@@ -37,6 +37,7 @@ public enum SettingsHostSandbox {
         dependencies.userDefaultsClient = userDefaultsClient
         dependencies.launchAtLoginClient = .testValue
         dependencies.directorySelectionClient = makeDirectorySelectionClient(permissions: scenario.permissions)
+        dependencies.defaultFileViewerClient = .previewValue
         dependencies.appearanceSettingsClient = makeAppearanceSettingsClient(userDefaultsClient: userDefaultsClient)
         dependencies.collectionSearchAISettingsClient = .live(userDefaultsClient: userDefaultsClient)
         dependencies.aiConnectionsFileClient = makeAIConnectionsFileClient(
