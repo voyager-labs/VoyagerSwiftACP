@@ -18,6 +18,10 @@ import XCTest
 @MainActor
 final class ACC001StartAccountSignInTests: XCTestCase {
     private let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
+    private let handoffURLBuilder = AppHandoffURLBuilder(
+        webBaseURL: "https://example.com",
+        gatewayURL: "https://gw.example.com",
+    )
 
     private actor HandoffStartCancellationGate {
         private var didStart = false
@@ -71,7 +75,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
     private func makeTestStore(
         signInHandoffClient: SignInHandoffClient = SignInHandoffClient { _ in .failure },
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
-        continuousClock: TestClock<Duration>? = nil,
+        continuousClock: TestClock<Duration> = TestClock(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         TestStore(initialState: initialState) {
             AccountAccessFeature()
@@ -80,7 +84,7 @@ final class ACC001StartAccountSignInTests: XCTestCase {
             $0.authNetworkClient = .testValue
             $0.signInHandoffClient = signInHandoffClient
             $0.date = .constant(referenceDate)
-            if let continuousClock { $0.continuousClock = continuousClock }
+            $0.continuousClock = continuousClock
         }
     }
 
@@ -123,6 +127,70 @@ final class ACC001StartAccountSignInTests: XCTestCase {
     }
 
     // MARK: - ACC-001-start_account_sign_in
+
+    /// ACC-001-start_account_sign_in: Voyager에서 시작한 로그인 URL은 Voyager 대상임을 포함한다.
+    /// 로그인 handoff URL 생성 시 Voyager 앱 대상이 명시되는지 검증한다.
+    /// - 검증 내용: app_target query 값이 voyager
+    /// - 사전 조건: onboarding context와 Voyager app target
+    /// - 기대 결과: 로그인 URL에 app_target=voyager 포함
+    func testBuildLoginURLIncludesAppTargetForVoyager() throws {
+        let url = try XCTUnwrap(handoffURLBuilder.buildLoginURL(
+            state: "abc",
+            context: .onboarding,
+            appTarget: .voyager,
+        ))
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let appTarget = try XCTUnwrap(components.queryItems?.first(where: { $0.name == "app_target" })?.value)
+        XCTAssertEqual(appTarget, "voyager")
+    }
+
+    /// ACC-001-start_account_sign_in: Onboarding Host에서 시작한 로그인 URL은 Onboarding Host 대상임을 포함한다.
+    /// 로그인 handoff URL 생성 시 Onboarding Host 앱 대상이 명시되는지 검증한다.
+    /// - 검증 내용: app_target query 값이 onboarding_host
+    /// - 사전 조건: onboarding context와 Onboarding Host app target
+    /// - 기대 결과: 로그인 URL에 app_target=onboarding_host 포함
+    func testBuildLoginURLIncludesAppTargetForOnboardingHost() throws {
+        let url = try XCTUnwrap(handoffURLBuilder.buildLoginURL(
+            state: "abc",
+            context: .onboarding,
+            appTarget: .onboardingHost,
+        ))
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let appTarget = try XCTUnwrap(components.queryItems?.first(where: { $0.name == "app_target" })?.value)
+        XCTAssertEqual(appTarget, "onboarding_host")
+    }
+
+    /// ACC-001-start_account_sign_in: 로그인 URL에 대상을 추가해도 기존 query가 보존된다.
+    /// app_target을 추가한 URL이 mode, state, context query를 모두 유지하는지 검증한다.
+    /// - 검증 내용: mode, state, context, app_target query 값
+    /// - 사전 조건: state=abc 및 onboarding context로 Voyager 대상 로그인 URL 생성
+    /// - 기대 결과: 기존 query와 app_target=voyager가 함께 포함
+    func testBuildLoginURLPreservesExistingQueries() throws {
+        let url = try XCTUnwrap(handoffURLBuilder.buildLoginURL(
+            state: "abc",
+            context: .onboarding,
+            appTarget: .voyager,
+        ))
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let queryItems = try XCTUnwrap(components.queryItems)
+
+        XCTAssertEqual(queryItems.first(where: { $0.name == "mode" })?.value, "app")
+        XCTAssertEqual(queryItems.first(where: { $0.name == "state" })?.value, "abc")
+        XCTAssertEqual(queryItems.first(where: { $0.name == "context" })?.value, "onboarding")
+        XCTAssertEqual(queryItems.first(where: { $0.name == "app_target" })?.value, "voyager")
+    }
+
+    /// ACC-001-start_account_sign_in: 앱 대상을 생략한 로그인 URL은 Voyager를 기본 대상으로 사용한다.
+    /// appTarget 기본 인자가 Voyager 대상 값을 생성하는지 검증한다.
+    /// - 검증 내용: app_target query 값이 voyager
+    /// - 사전 조건: appTarget 없이 onboarding context 로그인 URL 생성
+    /// - 기대 결과: 로그인 URL에 app_target=voyager 포함
+    func testBuildLoginURLDefaultAppTargetIsVoyager() throws {
+        let url = try XCTUnwrap(handoffURLBuilder.buildLoginURL(state: "abc", context: .onboarding))
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let appTarget = try XCTUnwrap(components.queryItems?.first(where: { $0.name == "app_target" })?.value)
+        XCTAssertEqual(appTarget, "voyager")
+    }
 
     /// ACC-001-start_account_sign_in: logged_out 상태에서 Login CTA 선택 시 브라우저 로그인 URL이 열린다.
     /// logged_out 상태에서 loginTapped가 signInHandoffClient.performHandoff를 호출하는지 검증한다.
