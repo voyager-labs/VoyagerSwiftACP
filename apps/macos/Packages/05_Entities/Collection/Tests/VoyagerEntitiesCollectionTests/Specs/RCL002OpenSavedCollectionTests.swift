@@ -259,6 +259,22 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
         XCTAssertNil(recorder.lastSave)
     }
 
+    /// RCL-002-ensure_built_in_collections: canonical filename의 대소문자 variant도 Save As로 덮어쓸 수 없다.
+    /// - 기대 결과: 확장자 보정 여부와 무관하게 두 destination 모두 저장되지 않음
+    func testBuiltInCollectionSavePanel_caseVariantCanonicalDestinationsAreReadOnly() async {
+        let applicationSupportURL = URL(fileURLWithPath: "/tmp/Application Support", isDirectory: true)
+        let canonicalRootURL = BuiltInCollectionIdentity.canonicalRootURL(
+            applicationSupportURL: applicationSupportURL,
+        )
+        await assertCaseVariantDestinationsAreReadOnly(
+            [
+                canonicalRootURL.appendingPathComponent("ALL-TAGS"),
+                canonicalRootURL.appendingPathComponent("ReCeNtS.VoYcOlL"),
+            ],
+            applicationSupportURL: applicationSupportURL,
+        )
+    }
+
     /// RCL-002-ensure_built_in_collections: built-in root의 sibling user destination에는 Save As가 가능하다.
     /// exact canonical package만 차단하고 일반 사용자 Collection 저장 계약을 보존하는 경로를 검증한다.
     /// - 검증 내용: sibling URL 확장자 보정, 한 번의 file save, read-only feedback 부재
@@ -552,6 +568,40 @@ private let builtInReadOnlyFeedback = CollectionSaveFeedback(
 )
 
 @MainActor
+private func assertCaseVariantDestinationsAreReadOnly(
+    _ selectedURLs: [URL],
+    applicationSupportURL: URL,
+) async {
+    for selectedURL in selectedURLs {
+        let payload = makeSavePayload(query: "protected case variant", snapshotItems: nil)
+        let recorder = CollectionFileSaveRecorder()
+        let store = TestStore(initialState: CollectionState()) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.fileManagerClient.urlsForDirectory = { _, _ in [applicationSupportURL] }
+            $0.collectionSavePanelClient.defaultSaveDirectory = { _ in applicationSupportURL }
+            $0.collectionSavePanelClient.presentSavePanel = { _ in selectedURL }
+            $0.collectionFileClient.save = recorder.save
+        }
+
+        await store.send(.saveRequested(payload)) {
+            $0.isSaving = true
+            $0.pendingSaveContext = payload.context
+            $0.pendingSave = makeSaveSnapshot(query: "protected case variant", snapshotItems: nil)
+        }
+        await store.receive(\.savePanelResponse) {
+            $0.isSaving = false
+            $0.pendingSave = nil
+            $0.pendingSaveContext = nil
+        }
+        await store.receive(\.delegate.saveFeedback, builtInReadOnlyFeedback)
+
+        XCTAssertEqual(recorder.invocationCount, 0)
+        XCTAssertNil(recorder.lastSave)
+    }
+}
+
+@MainActor
 private struct CollectionSaveProtectionFixture {
     let sandboxURL: URL
     let canonicalURL: URL
@@ -606,6 +656,21 @@ private struct CollectionSaveProtectionFixture {
         try FileManager.default.createDirectory(at: userPackageURL, withIntermediateDirectories: true)
         try FileManager.default.removeItem(at: canonicalURL)
         try FileManager.default.createSymbolicLink(at: canonicalURL, withDestinationURL: userPackageURL)
+
+        let canonicalRecorder = CollectionFileSaveRecorder()
+        let canonicalStore = TestStore(initialState: CollectionState()) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.fileManagerClient = fileManagerClient
+            $0.collectionFileClient.save = canonicalRecorder.save
+        }
+        await canonicalStore.send(.saveToExisting(
+            makeSavePayload(query: "protected canonical symlink", snapshotItems: nil),
+            canonicalURL,
+        ))
+        await canonicalStore.receive(\.delegate.saveFeedback, builtInReadOnlyFeedback)
+        XCTAssertEqual(canonicalRecorder.invocationCount, 0)
+
         let recorder = CollectionFileSaveRecorder()
         let store = TestStore(initialState: CollectionState()) {
             CollectionFeature()

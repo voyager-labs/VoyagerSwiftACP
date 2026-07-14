@@ -65,10 +65,13 @@ enum BuiltInCollectionManagedPathPolicy {
             return false
         }
 
-        let lexicalIdentity = BuiltInCollectionIdentity.classify(
-            packageURL: destinationURL,
+        if isCanonicalPath(
+            destinationURL,
             applicationSupportURL: applicationSupportURL,
-        )
+        ) {
+            return true
+        }
+
         do {
             let resolvedDestinationURL = try resolveFinalURL(
                 destinationURL,
@@ -78,12 +81,26 @@ enum BuiltInCollectionManagedPathPolicy {
                 applicationSupportURL,
                 fileManagerClient: fileManagerClient,
             )
-            return BuiltInCollectionIdentity.classify(
-                packageURL: resolvedDestinationURL,
+            return isCanonicalPath(
+                resolvedDestinationURL,
                 applicationSupportURL: resolvedApplicationSupportURL,
-            ) != nil
+            )
         } catch {
-            return lexicalIdentity != nil
+            return false
+        }
+    }
+
+    private static func isCanonicalPath(
+        _ packageURL: URL,
+        applicationSupportURL: URL,
+    ) -> Bool {
+        let packagePath = packageURL.standardizedFileURL.path
+        return BuiltInCollectionIdentity.allCases.contains { identity in
+            let canonicalPath = identity.canonicalPackageURL(
+                applicationSupportURL: applicationSupportURL,
+            )
+            .standardizedFileURL.path
+            return packagePath.caseInsensitiveCompare(canonicalPath) == .orderedSame
         }
     }
 
