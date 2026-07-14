@@ -466,7 +466,7 @@ struct WindowManagerFeature {
         )
 
         return .run { send in
-            let restoredState = await DefaultWindowBootstrap.run(dependencies)
+            guard let restoredState = await DefaultWindowBootstrap.run(dependencies) else { return }
             await send(.defaultWindowBootstrapCompleted(
                 requestID: requestID,
                 contentTabs: restoredState,
@@ -513,17 +513,17 @@ private enum DefaultWindowBootstrap {
         let didCompact: Bool
     }
 
-    static func run(_ dependencies: Dependencies) async -> ContentTabState {
+    static func run(_ dependencies: Dependencies) async -> ContentTabState? {
+        guard !Task.isCancelled else { return nil }
         let initialStore = (try? dependencies.pinnedRecordClient.loadStore(dependencies.defaultsClient))
             ?? ContentTabPinnedRecordStore()
-
         if !dependencies.defaultsClient.bool(SettingsKeys.defaultPinnedTabsSeedCompleted) {
             dependencies.defaultsClient.setBool(true, SettingsKeys.defaultPinnedTabsSeedCompleted)
         }
-
         seedFinderFavoritesIfNeeded(initialStore: initialStore, dependencies: dependencies)
-
+        guard !Task.isCancelled else { return nil }
         let ensureReport = await dependencies.builtInClient.ensureAll()
+        guard !Task.isCancelled else { return nil }
         dependencies.metricsClient.logMetric("built_in_pinned_seed_started", 1, nil)
         seedBuiltInCollectionIfNeeded(
             identity: .recents,
@@ -531,13 +531,14 @@ private enum DefaultWindowBootstrap {
             completionKey: SettingsKeys.recentsPinnedSeedCompleted,
             dependencies: dependencies,
         )
+        guard !Task.isCancelled else { return nil }
         seedBuiltInCollectionIfNeeded(
             identity: .allTags,
             ensureResult: ensureReport.allTags,
             completionKey: SettingsKeys.allTagsPinnedSeedCompleted,
             dependencies: dependencies,
         )
-
+        guard !Task.isCancelled else { return nil }
         let reloadedStore = (try? dependencies.pinnedRecordClient.loadStore(dependencies.defaultsClient))
             ?? ContentTabPinnedRecordStore()
         let restoreResult = restorePinnedRecords(from: reloadedStore, dependencies: dependencies)
@@ -549,7 +550,6 @@ private enum DefaultWindowBootstrap {
         dependencies: Dependencies,
     ) {
         guard !dependencies.defaultsClient.bool(SettingsKeys.finderFavoritesPinnedSeedCompleted) else { return }
-
         let applicationSupportURL = dependencies.managerClient.urlsForDirectory(
             .applicationSupportDirectory,
             .userDomainMask,
@@ -561,7 +561,6 @@ private enum DefaultWindowBootstrap {
             dependencies.defaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
             return
         }
-
         let favorites = dependencies.favoritesClient.loadFavorites(
             dependencies.loadingClient,
             dependencies.defaultsClient,
@@ -573,11 +572,11 @@ private enum DefaultWindowBootstrap {
                 dependencies.managerClient.fileExistsWithIsDirectory(path, isDirectory)
             },
         ))
-
         do {
             _ = try dependencies.pinnedRecordClient.updateStoreAndLoad(
                 dependencies.defaultsClient,
             ) { latestStore in
+                try Task.checkCancellation()
                 guard nonBuiltInRecords(
                     in: latestStore,
                     applicationSupportURL: applicationSupportURL,
@@ -591,6 +590,7 @@ private enum DefaultWindowBootstrap {
                     applicationSupportURL: applicationSupportURL,
                 )
             }
+            guard !Task.isCancelled else { return }
             dependencies.defaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
         } catch {
             // Finder 저장 실패 시 완료 플래그를 남기지 않아 다음 부트스트랩에서 재시도한다.
@@ -603,15 +603,14 @@ private enum DefaultWindowBootstrap {
         completionKey: String,
         dependencies: Dependencies,
     ) {
+        guard !Task.isCancelled else { return }
         if dependencies.defaultsClient.bool(completionKey) {
             logSeedMetric("built_in_pinned_item_suppressed", identity: identity, dependencies: dependencies)
             return
         }
-
         let descriptor: BuiltInCollectionDescriptor
         switch ensureResult {
-        case let .ready(value):
-            descriptor = value
+        case let .ready(value): descriptor = value
         case .deferred:
             logSeedMetric("built_in_pinned_item_deferred", identity: identity, dependencies: dependencies)
             return
@@ -619,7 +618,6 @@ private enum DefaultWindowBootstrap {
             logSeedMetric("built_in_pinned_item_failed", identity: identity, dependencies: dependencies)
             return
         }
-
         let policyDescriptor = BuiltInContentTabPinnedRecordSeedPolicy.VerifiedDescriptor(
             identity: descriptor.identity,
             canonicalPackageURL: descriptor.packageURL,
@@ -628,6 +626,7 @@ private enum DefaultWindowBootstrap {
             let finalStore = try dependencies.pinnedRecordClient.updateStoreAndLoad(
                 dependencies.defaultsClient,
             ) { latestStore in
+                try Task.checkCancellation()
                 let result = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
                     ensureResult: .ready(policyDescriptor),
                     completion: false,
@@ -648,6 +647,7 @@ private enum DefaultWindowBootstrap {
                 logSeedMetric("built_in_pinned_item_deferred", identity: identity, dependencies: dependencies)
                 return
             }
+            guard !Task.isCancelled else { return }
             dependencies.defaultsClient.setBool(true, completionKey)
             logSeedMetric("built_in_pinned_item_seeded", identity: identity, dependencies: dependencies)
         } catch {
@@ -679,6 +679,7 @@ private enum DefaultWindowBootstrap {
             let compactedStore = try dependencies.pinnedRecordClient.updateStoreAndLoad(
                 dependencies.defaultsClient,
             ) { latestStore in
+                try Task.checkCancellation()
                 let latestRestoreResult = restorePinnedRecords(
                     from: latestStore,
                     dependencies: dependencies,

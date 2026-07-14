@@ -11,6 +11,30 @@ import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 import XCTest
 
+private actor WindowBootstrapSuspensionGate {
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var isWaiting = false
+
+    func wait() async {
+        isWaiting = true
+        let waiters = entryWaiters
+        entryWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        await withCheckedContinuation { releaseContinuation = $0 }
+    }
+
+    func waitUntilWaiting() async {
+        guard !isWaiting else { return }
+        await withCheckedContinuation { entryWaiters.append($0) }
+    }
+
+    func open() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+}
+
 /// 윈도우 관리자 계약 — 포커스 윈도우로의 명령 팬아웃과 미사용 시 no-op를 검증.
 @MainActor
 final class WindowManagerFeatureContractTests: XCTestCase {
@@ -805,6 +829,68 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             store.state.windows[id: windowID]?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
             ["latest-pin"],
         )
+    }
+
+    /// 취소된 default window bootstrap은 ensure 완료 후 built-in seed를 영구 저장하지 않는다.
+    /// - 검증 내용: cancellation을 무시하는 ensure 반환 이후 seed store와 completion flag 미기록
+    /// - 사전 조건: ensure 대기 중 pinned store 변경으로 bootstrap 취소
+    /// - 기대 결과: built-in update 0회, 빈 persisted store, 항목별 completion false
+    func testPinnedStoreChangeCancelsBuiltInSeedWritesAfterEnsure() async {
+        let windowID = UUID()
+        let gate = WindowBootstrapSuspensionGate()
+        let applicationSupportURL = URL(fileURLWithPath: "/tmp/Application Support")
+        let recentsURL = BuiltInCollectionIdentity.recents.canonicalPackageURL(
+            applicationSupportURL: applicationSupportURL,
+        )
+        let allTagsURL = BuiltInCollectionIdentity.allTags.canonicalPackageURL(
+            applicationSupportURL: applicationSupportURL,
+        )
+        let persistedStore = LockIsolated(ContentTabPinnedRecordStore())
+        let updateCount = LockIsolated(0)
+        let flags = LockIsolated([
+            "fileManager.defaultPinnedTabsSeedCompleted": true,
+            "fileManager.finderFavoritesPinnedSeedCompleted": true,
+        ])
+
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient = ContentTabPinnedRecordClient(
+                loadStore: { _ in persistedStore.value },
+                saveStore: { value, _ in persistedStore.withValue { $0 = value } },
+                updateStoreAndLoad: { _, transform in
+                    updateCount.withValue { $0 += 1 }
+                    let updated = try transform(persistedStore.value)
+                    persistedStore.withValue { $0 = updated }
+                    return updated
+                },
+            )
+            $0.fileManagerBuiltInCollectionClient.ensureAll = {
+                await gate.wait()
+                return BuiltInCollectionEnsureReport(
+                    recents: .ready(.init(identity: .recents, packageURL: recentsURL)),
+                    allTags: .ready(.init(identity: .allTags, packageURL: allTagsURL)),
+                )
+            }
+            $0.userDefaultsClient.bool = { flags.value[$0] ?? false }
+            $0.userDefaultsClient.setBool = { value, key in flags.withValue { $0[key] = value } }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await gate.waitUntilWaiting()
+        await store.send(.pinnedContentTabsStoreChanged)
+        await gate.open()
+        await store.finish()
+
+        XCTAssertEqual(updateCount.value, 0)
+        XCTAssertTrue(persistedStore.value.records.isEmpty)
+        XCTAssertFalse(flags.value["fileManager.builtInCollection.recentsPinnedSeed.v1"] ?? false)
+        XCTAssertFalse(flags.value["fileManager.builtInCollection.allTagsPinnedSeed.v1"] ?? false)
     }
 
     /// restoreLastClosedTab 코맨드가 포커스된 윈도우의 contentTabs.recentlyClosed로 라우팅되어
