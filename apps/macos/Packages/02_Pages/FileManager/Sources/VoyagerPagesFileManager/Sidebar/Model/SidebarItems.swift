@@ -7,7 +7,13 @@ public enum SidebarItems {
         public let url: URL
         public let iconName: String
 
-        public var isComputer: Bool {
+        nonisolated public init(name: String, url: URL, iconName: String) {
+            self.name = name
+            self.url = url
+            self.iconName = iconName
+        }
+
+        nonisolated public var isComputer: Bool {
             url.scheme == "computer"
         }
     }

@@ -37,9 +37,6 @@ struct FileManagerWindowLifecycleReducer {
                         state.content.entryViewLayout.entryArrangements.groupKey,
                     ))))),
                     .send(.content(.internal(.applyNavigationState(state.content.navigation.navigationState)))),
-                    .send(.sidebar(.internal(.loadFavorites))),
-                    .send(.sidebar(.internal(.loadLocations))),
-                    .send(.sidebar(.internal(.loadTags))),
                 )
 
             case .onDisappear:

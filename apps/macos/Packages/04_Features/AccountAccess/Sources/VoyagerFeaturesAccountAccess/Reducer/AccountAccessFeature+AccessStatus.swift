@@ -367,7 +367,7 @@ extension AccountAccessFeature {
         state.isComplete = false
         state.deviceBindingFailure = nil
         state.status = .networkFailure
-        state.errorMessage = errorMessage(for: .networkFailure)
+        state.errorMessage = errorMessage(for: AccessError.networkFailure)
 
         // 계약 (entitlement_access_flow.md): 조회 실패는 error 축에서 처리.
         // failure handler가 이미 status=.networkFailure + errorMessage를 기록했으므로

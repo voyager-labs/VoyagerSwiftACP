@@ -23,6 +23,12 @@ struct ContentPageNavigationDirectReducer {
             case let .internal(.performShowTag(tagName)):
                 performShowTag(tagName, state: &state)
 
+            case let .internal(.performShowAiChat(sessionID)):
+                performShowAiChat(sessionID, state: &state)
+
+            case let .internal(.performShowAiChatSessions(sessionID)):
+                performShowAiChatSessions(sessionID, state: &state)
+
             case let .internal(.prepareCollectionFileOpen(url)):
                 performPrepareCollectionFileOpen(url, state: &state)
 
@@ -109,6 +115,52 @@ struct ContentPageNavigationDirectReducer {
         state.appendBackHistory(currentSnapshot)
         state.forwardHistory = []
         state.navigationState = .tags(tagName)
+
+        return directNavigationEffect(
+            previousNavigationState: previousNavigationState,
+            nextNavigationState: state.navigationState,
+            shouldResetComposer: true,
+        )
+    }
+
+    private func performShowAiChat(
+        _ sessionID: String,
+        state: inout State,
+    ) -> Effect<Action> {
+        if case let .aiChat(currentSessionID) = state.navigationState,
+           currentSessionID == sessionID
+        {
+            return .none
+        }
+
+        let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
+        let previousNavigationState = state.navigationState
+        state.appendBackHistory(currentSnapshot)
+        state.forwardHistory = []
+        state.navigationState = .aiChat(sessionID)
+
+        return directNavigationEffect(
+            previousNavigationState: previousNavigationState,
+            nextNavigationState: state.navigationState,
+            shouldResetComposer: true,
+        )
+    }
+
+    private func performShowAiChatSessions(
+        _ sessionID: String,
+        state: inout State,
+    ) -> Effect<Action> {
+        if case let .aiChatSessions(currentSessionID) = state.navigationState,
+           currentSessionID == sessionID
+        {
+            return .none
+        }
+
+        let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
+        let previousNavigationState = state.navigationState
+        state.appendBackHistory(currentSnapshot)
+        state.forwardHistory = []
+        state.navigationState = .aiChatSessions(sessionID)
 
         return directNavigationEffect(
             previousNavigationState: previousNavigationState,

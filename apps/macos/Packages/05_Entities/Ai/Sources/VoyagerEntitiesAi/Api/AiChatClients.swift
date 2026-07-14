@@ -8,7 +8,7 @@ public protocol AiChatExecutionClientProtocol: Sendable {
 public protocol AiChatSessionPersistenceClientProtocol: Sendable {
     func listSessions(limit: Int?, query: String?) async throws -> [AiChatSessionSummary]
     func loadSession(id: AiChatSessionID) async throws -> AiChatSessionSnapshot?
-    func saveSession(_ snapshot: AiChatSessionSnapshot) async throws
+    func saveSession(_ snapshot: AiChatSessionSnapshot) async throws -> AiChatSessionSnapshot
     func deleteSession(id: AiChatSessionID) async throws
 }
 
@@ -83,10 +83,42 @@ public actor AiChatSessionFileStore: AiChatSessionPersistenceClientProtocol {
         }
     }
 
-    public func saveSession(_ snapshot: AiChatSessionSnapshot) async throws {
+    public func saveSession(_ snapshot: AiChatSessionSnapshot) async throws -> AiChatSessionSnapshot {
         try withExclusiveLock {
-            let data = try encoder.encode(snapshot)
-            try replaceSessionFile(at: sessionFileURL(for: snapshot.sessionID), with: data)
+            let fileURL = sessionFileURL(for: snapshot.sessionID)
+            if fileManager.fileExists(atPath: fileURL.path),
+               let existingSnapshot = try loadSnapshotIfValid(at: fileURL),
+               shouldKeepExistingSnapshot(existingSnapshot, over: snapshot)
+            {
+                if let mergedSnapshot = existingSnapshot.mergingIndependentMetadata(from: snapshot) {
+                    let data = try encoder.encode(mergedSnapshot)
+                    try replaceSessionFile(at: fileURL, with: data)
+                    return mergedSnapshot
+                }
+                return existingSnapshot
+            }
+
+            let snapshotToSave: AiChatSessionSnapshot = if fileManager.fileExists(atPath: fileURL.path),
+                                                           let existingSnapshot = try loadSnapshotIfValid(at: fileURL),
+                                                           let mergedSnapshot = existingSnapshot
+                                                           .mergingIndependentMetadata(
+                                                               from: snapshot,
+                                                               allowsRequestLifecycleTranscriptPrefix: true,
+                                                           )
+            {
+                mergedSnapshot
+            } else if fileManager.fileExists(atPath: fileURL.path),
+                      let existingSnapshot = try loadSnapshotIfValid(at: fileURL),
+                      let mergedSnapshot = snapshot
+                      .mergingExistingIndependentMetadata(from: existingSnapshot)
+            {
+                mergedSnapshot
+            } else {
+                snapshot
+            }
+            let data = try encoder.encode(snapshotToSave)
+            try replaceSessionFile(at: fileURL, with: data)
+            return snapshotToSave
         }
     }
 
@@ -135,6 +167,25 @@ private extension AiChatSessionFileStore {
     func isSessionFileURL(_ fileURL: URL) -> Bool {
         guard fileURL.pathExtension == "json" else { return false }
         return UUID(uuidString: fileURL.deletingPathExtension().lastPathComponent) != nil
+    }
+
+    func shouldKeepExistingSnapshot(
+        _ existingSnapshot: AiChatSessionSnapshot,
+        over snapshot: AiChatSessionSnapshot,
+    ) -> Bool {
+        if existingSnapshot.updatedAtMs != snapshot.updatedAtMs {
+            return existingSnapshot.updatedAtMs > snapshot.updatedAtMs
+        }
+        if existingSnapshot.transcriptHistory.count != snapshot.transcriptHistory.count {
+            return existingSnapshot.transcriptHistory.count > snapshot.transcriptHistory.count
+        }
+        if existingSnapshot.lastRunID != nil, snapshot.lastRunID == nil {
+            return true
+        }
+        if existingSnapshot.lastRequestContext != nil, snapshot.lastRequestContext == nil {
+            return true
+        }
+        return false
     }
 
     func loadSnapshotIfValid(at fileURL: URL) throws -> AiChatSessionSnapshot? {
@@ -225,6 +276,100 @@ private extension AiChatSessionFileStore {
         guard flock(descriptor, LOCK_EX) == 0 else { throw POSIXLockError.lockFailed(errno) }
         defer { flock(descriptor, LOCK_UN) }
         return try operation()
+    }
+}
+
+private extension AiChatSessionSnapshot {
+    func mergingIndependentMetadata(
+        from snapshot: AiChatSessionSnapshot,
+        allowsRequestLifecycleTranscriptPrefix: Bool = false,
+    ) -> AiChatSessionSnapshot? {
+        guard snapshot.sessionID == sessionID,
+              snapshot.representsMetadataOnlyChange(
+                  from: self,
+                  allowsRequestLifecycleTranscriptPrefix: allowsRequestLifecycleTranscriptPrefix,
+              ),
+              snapshot.customTitle != customTitle
+        else {
+            return nil
+        }
+
+        return AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: status,
+            customTitle: snapshot.customTitle,
+            provider: provider,
+            model: model,
+            selectedModelRow: selectedModelRow,
+            selectedThinking: selectedThinking,
+            transcriptHistory: transcriptHistory,
+            lastRequestID: lastRequestID,
+            lastRunID: lastRunID,
+            lastRequestContext: lastRequestContext,
+            updatedAtMs: updatedAtMs,
+        )
+    }
+
+    func mergingExistingIndependentMetadata(from existingSnapshot: AiChatSessionSnapshot) -> AiChatSessionSnapshot? {
+        guard sessionID == existingSnapshot.sessionID,
+              !representsMetadataOnlyChange(from: existingSnapshot),
+              existingSnapshot.representsMetadataOnlyChange(
+                  from: self,
+                  allowsRequestLifecycleTranscriptPrefix: true,
+              ),
+              existingSnapshot.customTitle != customTitle
+        else {
+            return nil
+        }
+
+        return AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: status,
+            customTitle: existingSnapshot.customTitle,
+            provider: provider,
+            model: model,
+            selectedModelRow: selectedModelRow,
+            selectedThinking: selectedThinking,
+            transcriptHistory: transcriptHistory,
+            lastRequestID: lastRequestID,
+            lastRunID: lastRunID,
+            lastRequestContext: lastRequestContext,
+            updatedAtMs: updatedAtMs,
+        )
+    }
+
+    func representsMetadataOnlyChange(
+        from existingSnapshot: AiChatSessionSnapshot,
+        allowsRequestLifecycleTranscriptPrefix: Bool = false,
+    ) -> Bool {
+        provider == existingSnapshot.provider
+            && model == existingSnapshot.model
+            && selectedModelRow == existingSnapshot.selectedModelRow
+            && selectedThinking == existingSnapshot.selectedThinking
+            && canMergeIndependentMetadata(
+                over: existingSnapshot,
+                allowsRequestLifecycleTranscriptPrefix: allowsRequestLifecycleTranscriptPrefix,
+            )
+    }
+
+    func canMergeIndependentMetadata(
+        over existingSnapshot: AiChatSessionSnapshot,
+        allowsRequestLifecycleTranscriptPrefix: Bool,
+    ) -> Bool {
+        guard hasRequestLifecycleMetadata else {
+            return existingSnapshot.transcriptHistory.starts(with: transcriptHistory)
+        }
+        let hasMatchingRequestLifecycle = lastRequestID == existingSnapshot.lastRequestID
+            && lastRunID == existingSnapshot.lastRunID
+            && lastRequestContext == existingSnapshot.lastRequestContext
+        guard hasMatchingRequestLifecycle else { return false }
+        if transcriptHistory == existingSnapshot.transcriptHistory { return true }
+        return allowsRequestLifecycleTranscriptPrefix
+            && existingSnapshot.transcriptHistory.starts(with: transcriptHistory)
+    }
+
+    var hasRequestLifecycleMetadata: Bool {
+        lastRequestID != nil || lastRunID != nil || lastRequestContext != nil
     }
 }
 

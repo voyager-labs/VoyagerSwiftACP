@@ -9,6 +9,8 @@ struct AiChatRequestLockInput {
     var sessionID: AiChatSessionID
     var selectedModel: AiProviderModel
     var selectedRow: AiModelCatalogRow?
+    var selectedThinking: AiThinkingSelection?
+    var customTitle: String?
     var preparedRequest: AiChatPreparedRequest
 }
 
@@ -45,6 +47,8 @@ extension AiChatFeature {
             sessionID: sessionID,
             selectedModel: selectedModel,
             selectedRow: resolvedSelectedModelRow(in: state),
+            selectedThinking: state.selectedThinking,
+            customTitle: state.currentSessionCustomTitle,
             preparedRequest: preparedRequest,
         )
 
@@ -66,14 +70,35 @@ extension AiChatFeature {
         resolvedContext: AiChatResolvedRequestContext,
         state: inout State,
     ) -> Effect<Action> {
-        guard let pendingRequest = state.pendingRequestStart,
-              pendingRequest.resolutionID == resolutionID
+        let lockedRequestContext = makeLockedRequestContextSnapshot(from: resolvedContext)
+        if let currentPendingRequest = state.pendingRequestStart,
+           currentPendingRequest.resolutionID == resolutionID
+        {
+            state.pendingRequestStart = nil
+            return beginRequest(
+                currentPendingRequest,
+                lockedRequestContext: lockedRequestContext,
+                state: &state,
+            )
+        }
+
+        guard let backgroundPendingRequest = state.backgroundPendingRequestStarts
+            .removeValue(forKey: resolutionID)
         else { return .none }
 
-        state.pendingRequestStart = nil
-        return beginRequest(
-            pendingRequest,
-            lockedRequestContext: makeLockedRequestContextSnapshot(from: resolvedContext),
+        if backgroundPendingRequest.sessionID == state.sessionID,
+           canBeginForegroundRequest(state: state)
+        {
+            return beginRequest(
+                backgroundPendingRequest,
+                lockedRequestContext: lockedRequestContext,
+                state: &state,
+            )
+        }
+
+        return beginBackgroundRequest(
+            backgroundPendingRequest,
+            lockedRequestContext: lockedRequestContext,
             state: &state,
         )
     }
@@ -90,6 +115,8 @@ extension AiChatFeature {
                 sessionID: pendingRequest.sessionID,
                 selectedModel: pendingRequest.selectedModel,
                 selectedRow: pendingRequest.selectedRow,
+                selectedThinking: pendingRequest.selectedThinking,
+                customTitle: pendingRequest.customTitle,
                 preparedRequest: pendingRequest.preparedRequest,
             ),
             lockedRequestContext: lockedRequestContext,
@@ -107,6 +134,33 @@ extension AiChatFeature {
         return .merge(startSnapshotEffect, execute(request: lock.request))
     }
 
+    private func canBeginForegroundRequest(state: State) -> Bool {
+        state.pendingRequestStart == nil && !state.executionPhase.isProcessing
+    }
+
+    private func beginBackgroundRequest(
+        _ pendingRequest: AiChatPendingRequestStart,
+        lockedRequestContext: AiChatLockedRequestContextSnapshot,
+        state: inout State,
+    ) -> Effect<Action> {
+        let lock = makeRequestLock(
+            input: AiChatRequestLockInput(
+                kind: pendingRequest.kind,
+                sessionID: pendingRequest.sessionID,
+                selectedModel: pendingRequest.selectedModel,
+                selectedRow: pendingRequest.selectedRow,
+                selectedThinking: pendingRequest.selectedThinking,
+                customTitle: pendingRequest.customTitle,
+                preparedRequest: pendingRequest.preparedRequest,
+            ),
+            lockedRequestContext: lockedRequestContext,
+            state: state,
+        )
+        state.backgroundExecutionPhases[lock.requestID] = .processing(lock)
+        let startSnapshotEffect = saveBackgroundRequestStartSnapshotIfNeeded(kind: pendingRequest.kind, lock: lock)
+        return .merge(startSnapshotEffect, execute(request: lock.request))
+    }
+
     private func resolveRequestContext(
         resolutionID: UUID,
         input: AiChatContextPartResolverInput,
@@ -115,7 +169,7 @@ extension AiChatFeature {
             let resolvedContext = await aiChatContextPartResolverClient.resolve(input)
             await send(.requestContextResolved(resolutionID, resolvedContext))
         }
-        .cancellable(id: CancelID.requestContextResolution, cancelInFlight: true)
+        .cancellable(id: CancelID.requestContextResolution(resolutionID), cancelInFlight: true)
     }
 
     private func saveRequestStartSnapshotIfNeeded(
@@ -127,9 +181,10 @@ extension AiChatFeature {
         let snapshot = makeRequestStartSnapshot(state: state, lock: lock)
         return .run { [aiChatSessionPersistenceClient] send in
             do {
-                try await aiChatSessionPersistenceClient.saveSession(snapshot)
+                let persistedSnapshot = try await aiChatSessionPersistenceClient.saveSession(snapshot)
                 await send(.sessionSnapshotUpdated(
-                    AiChatSessionSummary(snapshot: snapshot),
+                    AiChatSessionSummary(snapshot: persistedSnapshot),
+                    snapshot: persistedSnapshot,
                     requestID: lock.requestID,
                     runID: lock.runID,
                 ))
@@ -139,7 +194,50 @@ extension AiChatFeature {
                 await send(.sessionSnapshotUpdateFailed(requestID: lock.requestID, runID: lock.runID))
             }
         }
-        .cancellable(id: CancelID.requestStartPersistence, cancelInFlight: true)
+        .cancellable(id: CancelID.requestStartPersistence(lock.requestID), cancelInFlight: true)
+    }
+
+    private func saveBackgroundRequestStartSnapshotIfNeeded(
+        kind: AiChatRequestKind,
+        lock: AiChatRequestLock,
+    ) -> Effect<Action> {
+        guard kind == .submit else { return .none }
+        let snapshot = makeBackgroundRequestStartSnapshot(lock: lock)
+        return .run { [aiChatSessionPersistenceClient] send in
+            do {
+                let persistedSnapshot = try await aiChatSessionPersistenceClient.saveSession(snapshot)
+                await send(.sessionSnapshotUpdated(
+                    AiChatSessionSummary(snapshot: persistedSnapshot),
+                    snapshot: persistedSnapshot,
+                    requestID: lock.requestID,
+                    runID: lock.runID,
+                ))
+            } catch {
+                await send(.sessionSnapshotUpdateFailed(requestID: lock.requestID, runID: lock.runID))
+            }
+        }
+        .cancellable(id: CancelID.requestStartPersistence(lock.requestID), cancelInFlight: true)
+    }
+
+    private func makeBackgroundRequestStartSnapshot(lock: AiChatRequestLock) -> AiChatSessionSnapshot {
+        guard let sessionID = lock.context.sessionID else {
+            preconditionFailure("Missing session ID for background request-start snapshot")
+        }
+
+        return AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: lock.customTitle,
+            provider: lock.context.provider,
+            model: lock.context.model,
+            selectedModelRow: lock.selectedModelRow,
+            selectedThinking: lock.context.selectedThinking,
+            transcriptHistory: lock.persistenceTranscriptHistory,
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: persistenceSafeRequestContext(lock.context.requestContext),
+            updatedAtMs: lock.context.submittedAtMs ?? currentTimestampMs(),
+        )
     }
 
     private func makeRequestStartSnapshot(state: State, lock: AiChatRequestLock) -> AiChatSessionSnapshot {
@@ -182,6 +280,7 @@ extension AiChatFeature {
         return AiChatPreparedRequest(
             prompt: trimmed,
             messages: truncatedHistory.messages,
+            persistenceTranscriptHistory: fullMessages,
             assistantReplacementIndex: nil,
             historyTruncation: truncatedHistory.metadata,
         )
@@ -212,6 +311,7 @@ extension AiChatFeature {
         return AiChatPreparedRequest(
             prompt: lastUserPrompt,
             messages: truncatedHistory.messages,
+            persistenceTranscriptHistory: messages,
             assistantReplacementIndex: assistantReplacementIndex,
             historyTruncation: truncatedHistory.metadata,
             requestContextOverride: requestContextOverride,
@@ -222,7 +322,7 @@ extension AiChatFeature {
     private func makeRequestLock(
         input: AiChatRequestLockInput,
         lockedRequestContext: AiChatLockedRequestContextSnapshot,
-        state: State,
+        state _: State,
     ) -> AiChatRequestLock {
         let requestID = AiChatRequestID(rawValue: uuid())
         let runID = AiChatRunID(rawValue: uuid())
@@ -236,7 +336,7 @@ extension AiChatFeature {
             model: selectedHandle,
             selectedModel: input.selectedModel,
             selectedModelRow: input.selectedRow,
-            selectedThinking: state.selectedThinking,
+            selectedThinking: input.selectedThinking,
             sessionStatus: .active,
             currentContext: lockedRequestContext.currentContext,
             requestContext: lockedRequestContext,
@@ -251,9 +351,11 @@ extension AiChatFeature {
             runID: runID,
             context: context,
             request: request,
+            persistenceTranscriptHistory: input.preparedRequest.persistenceTranscriptHistory,
             selectedModelHandle: selectedHandle,
             selectedModelRow: input.selectedRow,
             assistantReplacementIndex: input.preparedRequest.assistantReplacementIndex,
+            customTitle: input.customTitle,
             historyTruncation: input.preparedRequest.historyTruncation,
             observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: submittedAtMs),
         )
@@ -266,6 +368,7 @@ extension AiChatFeature {
         lock: AiChatRequestLock,
         state: inout State,
     ) {
+        preserveFinalPersistenceOwnerBeforeRequestStart(newLock: lock, state: &state)
         state.selectedModelHandle = selectedHandle
         state.lockedModelHandle = selectedHandle
         state.lastExecutionFailure = nil
@@ -283,6 +386,27 @@ extension AiChatFeature {
                 state.sessionList.replaceRow(processingSessionSummary(prompt: prompt, lock: lock, sessionID: sessionID))
             }
             state.transcriptAutoScrollVersion += 1
+        }
+    }
+
+    private func preserveFinalPersistenceOwnerBeforeRequestStart(
+        newLock: AiChatRequestLock,
+        state: inout State,
+    ) {
+        guard let currentLock = state.executionPhase.lock,
+              currentLock.requestID != newLock.requestID
+        else { return }
+
+        switch state.executionPhase {
+        case .completed where currentLock.finalSnapshot != nil,
+             .persistenceRecovery:
+            state.backgroundExecutionPhases[currentLock.requestID] = state.executionPhase
+        case .completed,
+             .idle,
+             .processing,
+             .failed,
+             .cancelled:
+            break
         }
     }
 
@@ -322,7 +446,7 @@ extension AiChatFeature {
                 await send(.executionEvent(event))
             }
         }
-        .cancellable(id: CancelID.request, cancelInFlight: true)
+        .cancellable(id: CancelID.request(request.context.requestID), cancelInFlight: false)
     }
 
     func applyFinal(response: AiChatResponse, lock: AiChatRequestLock, state: inout State) {
@@ -460,20 +584,83 @@ extension AiChatFeature {
         state.resolvedModelRow(for: state.selectedModelHandle)
     }
 
-    func cancelRequestLifecycle() -> Effect<Action> {
+    func moveVisibleProcessingToBackgroundIfNeeded(state: inout State, targetSessionID: AiChatSessionID?) {
+        guard let lock = state.executionPhase.lock,
+              lock.context.sessionID != targetSessionID
+        else { return }
+
+        switch state.executionPhase {
+        case .processing, .completed, .persistenceRecovery:
+            state.backgroundExecutionPhases[lock.requestID] = state.executionPhase
+            state.executionPhase = .idle
+            state.lockedModelHandle = nil
+            state.streamingAssistantDraft = nil
+        case .idle, .failed, .cancelled:
+            break
+        }
+    }
+
+    func cancelRequestLifecycle(for lock: AiChatRequestLock) -> Effect<Action> {
         .merge(
-            .cancel(id: CancelID.request),
-            .cancel(id: CancelID.requestContextResolution),
-            .cancel(id: CancelID.requestStartPersistence),
-            .cancel(id: CancelID.requestFinalPersistence),
+            .cancel(id: CancelID.request(lock.requestID)),
+            .cancel(id: CancelID.requestStartPersistence(lock.requestID)),
+            .cancel(id: CancelID.requestFinalPersistence(lock.requestID)),
+            .cancel(id: CancelID.persistenceRecovery(lock.requestID)),
         )
     }
 
-    func cancelAllInFlightWork() -> Effect<Action> {
+    func cancelRequestLifecycle(for sessionID: AiChatSessionID, state: inout State) -> Effect<Action>? {
+        var effects: [Effect<Action>] = []
+        if let pendingRequestStart = state.pendingRequestStart,
+           pendingRequestStart.sessionID == sessionID
+        {
+            state.pendingRequestStart = nil
+            effects.append(.cancel(id: CancelID.requestContextResolution(pendingRequestStart.resolutionID)))
+        }
+        let backgroundPendingRequestStarts = state.backgroundPendingRequestStarts.values
+            .filter { $0.sessionID == sessionID }
+        for pendingRequestStart in backgroundPendingRequestStarts {
+            state.backgroundPendingRequestStarts[pendingRequestStart.resolutionID] = nil
+            effects.append(.cancel(id: CancelID.requestContextResolution(pendingRequestStart.resolutionID)))
+        }
+        if let lock = state.executionPhase.lock, lock.context.sessionID == sessionID {
+            effects.append(cancelRequestLifecycle(for: lock))
+        }
+
+        let backgroundLocks = state.backgroundExecutionPhases.values.compactMap(\.lock)
+            .filter { $0.context.sessionID == sessionID }
+        for lock in backgroundLocks {
+            state.backgroundExecutionPhases[lock.requestID] = nil
+            effects.append(cancelRequestLifecycle(for: lock))
+        }
+
+        guard !effects.isEmpty else { return nil }
+        return .merge(effects)
+    }
+
+    func cancelAllRequestLifecycleWork(state: inout State) -> Effect<Action> {
+        var effects: [Effect<Action>] = []
+        if let pendingRequestStart = state.pendingRequestStart {
+            effects.append(.cancel(id: CancelID.requestContextResolution(pendingRequestStart.resolutionID)))
+        }
+        for pendingRequestStart in state.backgroundPendingRequestStarts.values {
+            effects.append(.cancel(id: CancelID.requestContextResolution(pendingRequestStart.resolutionID)))
+        }
+        if let lock = state.executionPhase.lock {
+            effects.append(cancelRequestLifecycle(for: lock))
+        }
+        for lock in state.backgroundExecutionPhases.values.compactMap(\.lock) {
+            effects.append(cancelRequestLifecycle(for: lock))
+        }
+        state.backgroundPendingRequestStarts = [:]
+        state.backgroundExecutionPhases = [:]
+        return .merge(effects)
+    }
+
+    func cancelAllInFlightWork(state: inout State) -> Effect<Action> {
         .merge(
-            cancelRequestLifecycle(),
+            cancelAllRequestLifecycleWork(state: &state),
             .cancel(id: CancelID.restore),
-            .cancel(id: CancelID.persistenceRecovery),
             .cancel(id: CancelID.modelList),
             .cancel(id: CancelID.newChat),
             .cancel(id: CancelID.sessionList),
@@ -484,9 +671,9 @@ extension AiChatFeature {
     }
 
     func handleCancelTapped(state: inout State) -> Effect<Action> {
-        if state.pendingRequestStart != nil {
+        if let pendingRequestStart = state.pendingRequestStart {
             state.pendingRequestStart = nil
-            return .cancel(id: CancelID.requestContextResolution)
+            return .cancel(id: CancelID.requestContextResolution(pendingRequestStart.resolutionID))
         }
         guard let lock = state.executionPhase.lock, state.executionPhase.isProcessing else { return .none }
         state.lockedModelHandle = nil
@@ -496,10 +683,11 @@ extension AiChatFeature {
             failure: .cancelled,
             wasCancelled: true,
         ))
-        return cancelRequestLifecycle()
+        return cancelRequestLifecycle(for: lock)
     }
 
     func handleResetTapped(state: inout State) -> Effect<Action> {
+        let cancellationEffect = cancelAllInFlightWork(state: &state)
         state.pendingRequestStart = nil
         state.emptyDraftSessionID = nil
         state.restoreSessionID = nil
@@ -511,15 +699,16 @@ extension AiChatFeature {
         state.lastExecutionFailure = nil
         state.lockedModelHandle = nil
         state.executionPhase = .idle
-        return cancelAllInFlightWork()
+        return cancellationEffect
     }
 
     func handleTeardownRequested(state: inout State) -> Effect<Action> {
+        let cancellationEffect = cancelAllInFlightWork(state: &state)
         state.pendingRequestStart = nil
         state.streamingAssistantDraft = nil
         state.lockedModelHandle = nil
         state.executionPhase = .idle
-        return cancelAllInFlightWork()
+        return cancellationEffect
     }
 }
 

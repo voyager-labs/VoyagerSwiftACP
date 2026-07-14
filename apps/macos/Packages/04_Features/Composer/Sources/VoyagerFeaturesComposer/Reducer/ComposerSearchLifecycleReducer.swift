@@ -169,7 +169,10 @@ struct ComposerSearchLifecycleReducer {
                             await send(.filtersResponse(filtersRequestID, .failure(error)))
                         }
                     }
-                    .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)
+                    .cancellable(
+                        id: ComposerFeature.CancelID.filters(ownerID: state.cancellationOwnerID),
+                        cancelInFlight: true,
+                    )
 
                     if let feedback = ComposerQueryFeedbackPolicy.feedback(for: response) {
                         return .merge(
@@ -346,10 +349,10 @@ private func handleSubmit(
             await send(.searchResponse(searchRequestID, .failure(error)))
         }
     }
-    .cancellable(id: ComposerFeature.CancelID.search, cancelInFlight: true)
+    .cancellable(id: ComposerFeature.CancelID.search(ownerID: state.cancellationOwnerID), cancelInFlight: true)
 
     return .concatenate(
-        .cancel(id: ComposerFeature.CancelID.filters),
+        .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.cancellationOwnerID)),
         searchEffect,
     )
 }
@@ -402,7 +405,7 @@ private func handleCancelSearch(
         value: 1,
         tags: ComposerCollectionFilterMetrics.legacyCancelTags(type: "search"),
     )
-    return .cancel(id: ComposerFeature.CancelID.search)
+    return .cancel(id: ComposerFeature.CancelID.search(ownerID: state.cancellationOwnerID))
 }
 
 private func handleCancelFilters(
@@ -437,7 +440,7 @@ private func handleCancelFilters(
         value: 1,
         tags: ComposerCollectionFilterMetrics.legacyCancelTags(type: "filters"),
     )
-    return .cancel(id: ComposerFeature.CancelID.filters)
+    return .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.cancellationOwnerID))
 }
 
 private func handleApplyFilters(
@@ -460,7 +463,7 @@ private func handleApplyFilters(
     )
     state.filtersStartedAt = Date()
     return .concatenate(
-        .cancel(id: ComposerFeature.CancelID.search),
+        .cancel(id: ComposerFeature.CancelID.search(ownerID: state.cancellationOwnerID)),
         applyFiltersIfNeeded(state: &state, searchClient: searchClient, requestID: filtersRequestID),
     )
 }

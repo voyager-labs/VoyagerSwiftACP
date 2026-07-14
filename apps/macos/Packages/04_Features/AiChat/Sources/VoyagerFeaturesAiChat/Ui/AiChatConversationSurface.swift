@@ -27,6 +27,7 @@ struct AiChatConversationSurface: View {
                     actionLabel: connection.fixLabel,
                     action: onOpenSettings,
                 )
+                transcriptSectionIfNeeded(isProcessing: false, canRegenerate: state.canRegenerate)
             case let .error(connection):
                 AiChatStatusBanner(
                     title: connection.title,
@@ -34,6 +35,7 @@ struct AiChatConversationSurface: View {
                     actionLabel: connection.fixLabel,
                     action: onErrorRecovery,
                 )
+                transcriptSectionIfNeeded(isProcessing: false, canRegenerate: state.canRegenerate)
             case .empty:
                 EmptyView()
             case .ready:
@@ -56,6 +58,20 @@ struct AiChatConversationSurface: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func transcriptSectionIfNeeded(isProcessing: Bool, canRegenerate: Bool) -> some View {
+        if !state.transcriptHistory.isEmpty {
+            AiChatTranscriptSection(
+                messages: state.transcriptHistory,
+                isProcessing: isProcessing,
+                canRegenerate: canRegenerate,
+                statusText: state.streamingAssistantDisplayModel == nil ? state.requestStatusText : nil,
+                streamingAssistant: state.streamingAssistantDisplayModel,
+                onRegenerate: onRegenerate,
+            )
+        }
     }
 }
 

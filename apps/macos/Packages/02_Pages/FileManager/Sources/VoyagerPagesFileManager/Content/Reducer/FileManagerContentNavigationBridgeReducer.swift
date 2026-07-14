@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
@@ -49,7 +50,6 @@ struct FileManagerContentNavigationBridgeReducer {
                 )
 
             case .delegate(.openPathInNewWindow),
-                 .delegate(.openPathInNewTab),
                  .delegate(.closeWindow):
                 return .none
 
@@ -89,6 +89,9 @@ struct FileManagerContentNavigationBridgeReducer {
 
     private func scrollPositionKey(for navigationState: ContentPageNavigationRoute) -> String {
         switch navigationState {
+        case .home:
+            "Home"
+
         case let .collection(collectionNavigation):
             switch collectionNavigation.kind {
             case .temporary:
@@ -108,6 +111,12 @@ struct FileManagerContentNavigationBridgeReducer {
 
         case .computer:
             ""
+
+        case let .aiChat(sessionID):
+            "aiChat:\(sessionID)"
+
+        case let .aiChatSessions(sessionID):
+            "aiChatSessions:\(sessionID)"
         }
     }
 
@@ -116,6 +125,14 @@ struct FileManagerContentNavigationBridgeReducer {
         state: State,
     ) -> Effect<Action> {
         switch navigationState {
+        case .home:
+            .concatenate(
+                .cancel(id: CancelID.folderWatcher),
+                .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
+                .send(.entryViewLayout(.internal(.applyClearSelection))),
+                sendEntryOperations(.loading(.itemsLoaded([]))),
+            )
+
         case let .folder(path):
             .concatenate(
                 .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
@@ -157,7 +174,38 @@ struct FileManagerContentNavigationBridgeReducer {
                 context: state.collection.collectionContext,
                 openedURL: state.collection.collectionSession.document?.url,
             )
+
+        case let .aiChat(sessionID):
+            aiChatEntryRouteEffect(aiChatRouteEffect(sessionID: sessionID))
+
+        case let .aiChatSessions(sessionID):
+            aiChatEntryRouteEffect(aiChatSessionsRouteEffect(sessionID: sessionID))
         }
+    }
+
+    private func aiChatEntryRouteEffect(_ routeEffect: Effect<Action>) -> Effect<Action> {
+        .concatenate(
+            .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
+            .send(.entryViewLayout(.internal(.applyClearSelection))),
+            sendEntryOperations(.loading(.itemsLoaded([]))),
+            routeEffect,
+        )
+    }
+
+    private func aiChatRouteEffect(sessionID: String) -> Effect<Action> {
+        let aiChatSessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
+        return .merge(
+            .cancel(id: CancelID.folderWatcher),
+            .send(.aiChat(.routeToChatSession(aiChatSessionID))),
+        )
+    }
+
+    private func aiChatSessionsRouteEffect(sessionID: String) -> Effect<Action> {
+        let aiChatSessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
+        return .merge(
+            .cancel(id: CancelID.folderWatcher),
+            .send(.aiChat(.showSessionsForChat(aiChatSessionID))),
+        )
     }
 
     private func observeFolderChangesEffect(path: String) -> Effect<Action> {

@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesCollection
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
@@ -11,17 +13,38 @@ import VoyagerWidgetsEntryViewLayout
 public enum FileManagerWindowAction: CasePathable, Sendable {
     case delegate(Delegate)
 
+    case `internal`(Internal)
     case request(WindowCommand)
     case content(FileManagerContentFeature.Action)
+    case backgroundAiChat(AiChatAction)
+    case backgroundAiChatSnapshotPersisted(AiChatSessionSnapshot)
+    case backgroundInspectorAiChat(AiChatAction)
+    case backgroundInspectorAiChatSnapshotPersisted(AiChatSessionSnapshot)
     case sidebar(FileManagerSidebarFeature.Action)
     case inspector(FileManagerInspectorFeature.Action)
     case navigation(ContentPageNavigationFeature.Action)
+    case contentTabs(ContentTabAction)
     case applyAppPreferences(AppPreferencesState)
+    case applyPinnedContentTabs(ContentTabState)
+    case applyHiddenFixedLocationIDs(Set<FileManagerFixedLocationItem.ID>)
     case aiConnectionsFileUpdated(AIConnectionsFile)
+
+    case closeContentTabRequested(ContentTabID)
+    case contentTabCloseAlertResponse(CollectionNavigationChoice)
 
     case onAppear
     case onDisappear
     case closeWindow
+
+    @CasePathable
+    public enum Internal: Sendable {
+        case fixedLocationsLoaded(
+            requestID: UUID,
+            items: [FileManagerFixedLocationItem],
+        )
+        case homeFavoritesLoaded([FileManagerHomeFavoriteItem])
+        case aiChatTabTitleUpdated(sessionID: AiChatSessionID, title: String?)
+    }
 
     @CasePathable
     public enum WindowCommand: Sendable {
@@ -52,13 +75,17 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case selectAll
         case copyAbsolutePaths
         case copyURLs
+        case openNewContentTab
+        case closeActiveContentTab
+        case toggleActiveContentTabPin
+        case restoreLastClosedContentTab
     }
 
     @CasePathable
     public enum Delegate: Sendable {
         case openPathInNewWindow(String)
-        case openPathInNewTab(String)
         case openAISettings
         case requestAttachmentPicker
+        case fixedLocationVisibilityChanged(Set<FileManagerFixedLocationItem.ID>)
     }
 }

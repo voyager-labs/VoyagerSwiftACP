@@ -394,7 +394,7 @@ public extension AuthNetworkClient {
         device: DeviceBindingRequest,
         store: AccountTokenFileStore,
     ) async throws -> SessionSyncResult {
-        let refreshedSession = if intent == .refresh {
+        let refreshedSession: AccountSession? = if intent == .refresh {
             try await refreshLegacySession(store: store)
         } else {
             nil
@@ -469,7 +469,7 @@ public extension AuthNetworkClient {
         }
     }
 
-    static func persistLegacyRefreshedSession(
+    internal static func persistLegacyRefreshedSession(
         _ refreshed: (session: AccountSession, source: AccountTokensFile),
         store: AccountTokenFileStore,
     ) async throws -> AccountSession {

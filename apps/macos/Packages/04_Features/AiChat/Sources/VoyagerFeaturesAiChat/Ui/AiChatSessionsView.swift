@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
+import VoyagerEntitiesAi
 
 struct AiChatSessionsView: View {
     @State private var hoveredRenameAction: RenameAction?
@@ -8,6 +9,7 @@ struct AiChatSessionsView: View {
     let store: StoreOf<AiChatFeature>
     let state: AiChatState
     let displayModel: AiChatSessionsDisplayModel
+    let onSessionSelected: ((AiChatSessionID) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -21,14 +23,18 @@ struct AiChatSessionsView: View {
             }
 
             if displayModel.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(displayModel.emptyTitle)
-                        .font(.system(size: 15, weight: .semibold))
-                    Text(displayModel.emptyDetail)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+                if shouldShowLoadingPlaceholder {
+                    loadingPlaceholder
+                } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(displayModel.emptyTitle)
+                            .font(.system(size: 15, weight: .semibold))
+                        Text(displayModel.emptyDetail)
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
@@ -62,6 +68,21 @@ struct AiChatSessionsView: View {
         .onAppear {
             store.send(.sessionsAppeared)
         }
+    }
+
+    private var shouldShowLoadingPlaceholder: Bool {
+        state.sessionList.isLoading || !state.sessionList.hasLoadedRows
+    }
+
+    private var loadingPlaceholder: some View {
+        VStack(alignment: .center, spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Loading sessions…")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     private var searchField: some View {
@@ -106,7 +127,11 @@ struct AiChatSessionsView: View {
     private func displayRow(_ row: AiChatSessionRowDisplayModel) -> some View {
         HStack(alignment: .center, spacing: 8) {
             Button {
-                store.send(.sessionRowTapped(row.id))
+                if let onSessionSelected {
+                    onSessionSelected(row.id)
+                } else {
+                    store.send(.sessionRowTapped(row.id))
+                }
             } label: {
                 rowText(row)
             }
@@ -262,7 +287,7 @@ private struct AiChatSessionActionsMenuButton: NSViewRepresentable {
     let onDelete: () -> Void
 
     func makeNSView(context: Context) -> NSButton {
-        let button = NSButton(frame: .zero)
+        let button = HoverTrackingMenuButton(frame: .zero)
         button.bezelStyle = .texturedRounded
         button.isBordered = false
         button.title = ""
@@ -278,12 +303,21 @@ private struct AiChatSessionActionsMenuButton: NSViewRepresentable {
         button.action = #selector(Coordinator.showMenu(_:))
         button.setButtonType(.momentaryPushIn)
         button.focusRingType = .none
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 6
+        button.onHoverChanged = { isHovered in
+            button.contentTintColor = isHovered ? .labelColor : .secondaryLabelColor
+            button.layer?.backgroundColor = isHovered
+                ? NSColor.labelColor.withAlphaComponent(0.08).cgColor
+                : NSColor.clear.cgColor
+        }
         return button
     }
 
-    func updateNSView(_: NSButton, context: Context) {
+    func updateNSView(_ button: NSButton, context: Context) {
         context.coordinator.onRename = onRename
         context.coordinator.onDelete = onDelete
+        button.needsDisplay = true
     }
 
     func makeCoordinator() -> Coordinator {
@@ -333,6 +367,36 @@ private struct AiChatSessionActionsMenuButton: NSViewRepresentable {
             }
             return item
         }
+    }
+}
+
+private final class HoverTrackingMenuButton: NSButton {
+    var onHoverChanged: ((Bool) -> Void)?
+    private var hoverTrackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil,
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        onHoverChanged?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        onHoverChanged?(false)
     }
 }
 

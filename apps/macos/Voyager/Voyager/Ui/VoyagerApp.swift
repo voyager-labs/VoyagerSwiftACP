@@ -155,8 +155,8 @@ struct VoyagerApp: App {
             requestNewWindow: { [appRootStore] path in
                 appRootStore.send(.windowManager(.file(.newWindow(path: path))))
             },
-            requestNewTab: { [appRootStore] path in
-                appRootStore.send(.windowManager(.file(.newTab(path: path))))
+            requestNewTab: { [appRootStore] _ in
+                appRootStore.send(.windowManager(.file(.newTab)))
             },
             resolveFileManagerStore: { [appRootStore] windowID in
                 let sessionStores = Array(
