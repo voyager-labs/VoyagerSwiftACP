@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
@@ -27,6 +28,48 @@ private final class PinnedRecordStoreRecorder: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return savedStores
+    }
+}
+
+private final class PinnedRecordDefaultsRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedData: Data?
+    private var writes = 0
+
+    init(store: ContentTabPinnedRecordStore) throws {
+        storedData = try JSONEncoder().encode(store)
+    }
+
+    func object() -> Any? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedData
+    }
+
+    func setObject(_ value: Any?) {
+        lock.lock()
+        defer { lock.unlock() }
+        storedData = value as? Data
+        writes += 1
+    }
+
+    func writeCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return writes
+    }
+
+    func client() -> UserDefaultsClient {
+        UserDefaultsClient(
+            bool: { _ in false },
+            setBool: { _, _ in },
+            string: { _ in nil },
+            setString: { _, _ in },
+            double: { _ in 0 },
+            setDouble: { _, _ in },
+            object: { [self] _ in object() },
+            setObject: { [self] value, _ in setObject(value) },
+        )
     }
 }
 
@@ -146,6 +189,414 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let savedStore = try client.loadStore(defaults)
         XCTAssertEqual(Set(savedStore.records.map(\.id)), Set([firstID.rawValue, secondID.rawValue]))
         XCTAssertEqual(savedStore.records.count, 2)
+    }
+
+    // VOY-570 Linear AC mapping (CTM owner):
+    // AC1/AC5 -> testBuiltInSeed_ordersRecentsExistingAndAllTags
+    // AC6 -> testBuiltInSeed_completionTrueMissingRecordIsSuppressedWithoutMutation
+    // AC9 -> testBuiltInSeed_itemDecisionsAreIndependent
+    // AC10 -> testBuiltInSeed_deduplicatesStableIDAndCanonicalURLPreservingStableMatchTimestamp
+    // Capacity retry -> testBuiltInSeed_capacityDeferredThenLaterSeedsLatestLockedStore
+
+    // MARK: - CTM-003-seed_built_in_pinned_content_tabs
+
+    /// CTM-003-seed_built_in_pinned_content_tabs: Recents와 All Tags 사이 기존 순서를 보존한다.
+    /// 최초 built-in seed가 canonical metadata와 전체 pinned ordering을 만드는지 검증한다.
+    /// - 검증 내용: Recents index 0, 기존 상대 순서, All Tags 마지막 및 canonical page/anchor/title/icon
+    /// - 사전 조건: Finder와 user record가 있고 두 built-in ensure 결과가 ready, completion은 false
+    /// - 기대 결과: [Recents, finder, user, All Tags] 순서와 stable identity가 저장됨
+    func testBuiltInSeed_ordersRecentsExistingAndAllTags() {
+        let recentsURL = URL(fileURLWithPath: "/Application Support/Voyager/Collections/BuiltIn/recents.voycoll")
+        let allTagsURL = URL(fileURLWithPath: "/Application Support/Voyager/Collections/BuiltIn/all-tags.voycoll")
+        let finderRecord = Self.pinnedRecord(
+            id: ContentTabID(rawValue: "finder"),
+            anchor: .directory(path: "/Users/test/Documents"),
+            title: "Documents",
+        )
+        let userRecord = Self.pinnedRecord(
+            id: ContentTabID(rawValue: "user"),
+            page: .collection,
+            anchor: .collectionFile(url: URL(fileURLWithPath: "/Users/test/User.voycoll")),
+            title: "User",
+        )
+        let initialStore = ContentTabPinnedRecordStore(records: [finderRecord, userRecord])
+
+        let recentsResult = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
+            ensureResult: .ready(.init(identity: .recents, canonicalPackageURL: recentsURL)),
+            completion: false,
+            store: initialStore,
+            now: Self.pinnedAt,
+        )
+        guard case let .seed(recentsStore) = recentsResult else {
+            return XCTFail("Recents는 새 record를 seed해야 함")
+        }
+        let allTagsResult = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
+            ensureResult: .ready(.init(identity: .allTags, canonicalPackageURL: allTagsURL)),
+            completion: false,
+            store: recentsStore,
+            now: Self.pinnedAt,
+        )
+        guard case let .seed(finalStore) = allTagsResult else {
+            return XCTFail("All Tags는 새 record를 seed해야 함")
+        }
+
+        XCTAssertEqual(finalStore.records.map(\.id), [
+            "built-in-collection-recents",
+            "finder",
+            "user",
+            "built-in-collection-all-tags",
+        ])
+        XCTAssertEqual(finalStore.records.first?.page, .collection)
+        XCTAssertEqual(finalStore.records.first?.anchor, .collectionFile(url: recentsURL))
+        XCTAssertEqual(finalStore.records.first?.title, "Recents")
+        XCTAssertEqual(finalStore.records.first?.iconName, "clock")
+        XCTAssertEqual(finalStore.records.last?.page, .collection)
+        XCTAssertEqual(finalStore.records.last?.anchor, .collectionFile(url: allTagsURL))
+        XCTAssertEqual(finalStore.records.last?.title, "All Tags")
+        XCTAssertEqual(finalStore.records.last?.iconName, "tag")
+        XCTAssertFalse(finalStore.records.contains {
+            if case .virtualCollection = $0.anchor { true } else { false }
+        })
+    }
+
+    /// CTM-003-seed_built_in_pinned_content_tabs: stable ID를 URL보다 우선해 중복을 canonicalize한다.
+    /// crash retry에서 ID/URL residue가 함께 남아도 하나의 stable record만 유지되는지 검증한다.
+    /// - 검증 내용: stable ID first match의 pinnedAt 보존, ID/URL 전체 duplicate 제거, nonmatching 순서 보존
+    /// - 사전 조건: canonical URL duplicate 2개와 stable ID duplicate 1개가 섞인 store
+    /// - 기대 결과: Recents 하나만 index 0에 남고 stable ID record의 pinnedAt이 유지됨
+    func testBuiltInSeed_deduplicatesStableIDAndCanonicalURLPreservingStableMatchTimestamp() {
+        let canonicalURL = URL(fileURLWithPath: "/Application Support/Voyager/Collections/BuiltIn/recents.voycoll")
+        let urlDuplicate = ContentTabPinnedRecord(
+            id: "legacy-recents",
+            page: .collection,
+            anchor: .collectionFile(url: canonicalURL),
+            title: "Old Recents",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 100),
+        )
+        let stableDuplicate = ContentTabPinnedRecord(
+            id: "built-in-collection-recents",
+            page: .directory,
+            anchor: .directory(path: "/stale"),
+            title: "Stale",
+            iconName: nil,
+            pinnedAt: Date(timeIntervalSince1970: 200),
+        )
+        let secondURLDuplicate = ContentTabPinnedRecord(
+            id: "second-recents",
+            page: .collection,
+            anchor: .collectionFile(url: canonicalURL),
+            title: nil,
+            iconName: nil,
+            pinnedAt: Date(timeIntervalSince1970: 300),
+        )
+        let firstOther = Self.pinnedRecord(
+            id: ContentTabID(rawValue: "first-other"),
+            anchor: .directory(path: "/first"),
+        )
+        let secondOther = Self.pinnedRecord(
+            id: ContentTabID(rawValue: "second-other"),
+            anchor: .directory(path: "/second"),
+        )
+        let store = ContentTabPinnedRecordStore(records: [
+            firstOther, urlDuplicate, stableDuplicate, secondOther, secondURLDuplicate,
+        ])
+
+        let result = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
+            ensureResult: .ready(.init(identity: .recents, canonicalPackageURL: canonicalURL)),
+            completion: false,
+            store: store,
+            now: Date(timeIntervalSince1970: 999),
+        )
+        guard case let .alreadyPresent(finalStore) = result else {
+            return XCTFail("기존 match는 alreadyPresent여야 함")
+        }
+
+        XCTAssertEqual(finalStore.records.map(\.id), [
+            "built-in-collection-recents", "first-other", "second-other",
+        ])
+        XCTAssertEqual(finalStore.records.first?.pinnedAt, Date(timeIntervalSince1970: 200))
+        XCTAssertEqual(finalStore.records.first?.anchor, .collectionFile(url: canonicalURL))
+    }
+
+    /// CTM-003-seed_built_in_pinned_content_tabs: completion된 누락 record를 자동 복구하지 않는다.
+    /// deliberate unpin suppression 이후 package가 ready여도 store 값이 바뀌지 않는지 검증한다.
+    /// - 검증 내용: completion=true가 ready보다 우선해 suppressed를 반환하고 입력 store 의미 유지
+    /// - 사전 조건: built-in record가 없는 store와 completion=true
+    /// - 기대 결과: suppressed이며 store가 원본과 의미적으로 동일하게 유지됨
+    func testBuiltInSeed_completionTrueMissingRecordIsSuppressedWithoutMutation() {
+        let store = ContentTabPinnedRecordStore(
+            records: [
+                Self.pinnedRecord(
+                    id: ContentTabID(rawValue: "user"),
+                    anchor: .directory(path: "/Users/test"),
+                ),
+            ],
+        )
+        let originalStore = store
+
+        let result = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
+            ensureResult: .ready(.init(
+                identity: .recents,
+                canonicalPackageURL: URL(fileURLWithPath: "/BuiltIn/recents.voycoll"),
+            )),
+            completion: true,
+            store: store,
+            now: Date(timeIntervalSince1970: 999),
+        )
+
+        XCTAssertEqual(result, .suppressed)
+        XCTAssertEqual(store, originalStore)
+        XCTAssertFalse(store.records.contains { $0.id == "built-in-collection-all-tags" })
+    }
+
+    /// CTM-003-seed_built_in_pinned_content_tabs: full capacity에서 누락 built-in을 defer한다.
+    /// 자동 seed가 기존 user/Finder record를 제거해 공간을 만들지 않는지 검증한다.
+    /// - 검증 내용: max count 이상이고 match가 없으면 deferred 반환
+    /// - 사전 조건: non-built-in record 2개, injected maxRecordCount 2
+    /// - 기대 결과: deferred이며 기존 store record가 모두 유지됨
+    func testBuiltInSeed_fullCapacityWithoutMatchDefersWithoutEviction() {
+        let records = [
+            Self.pinnedRecord(id: ContentTabID(rawValue: "one"), anchor: .directory(path: "/one")),
+            Self.pinnedRecord(id: ContentTabID(rawValue: "two"), anchor: .directory(path: "/two")),
+        ]
+        let store = ContentTabPinnedRecordStore(records: records)
+
+        let result = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
+            ensureResult: .ready(.init(
+                identity: .allTags,
+                canonicalPackageURL: URL(fileURLWithPath: "/BuiltIn/all-tags.voycoll"),
+            )),
+            completion: false,
+            store: store,
+            now: Date(timeIntervalSince1970: 999),
+            maxRecordCount: 2,
+        )
+
+        XCTAssertEqual(result, .deferred)
+        XCTAssertEqual(store.records, records)
+    }
+
+    /// CTM-003-seed_built_in_pinned_content_tabs: capacity defer는 여유가 생긴 다음 transaction에서 재시도한다.
+    /// 실제 locked pinned store의 최신 값을 사용해 deferred item이 이후 seed되는지 검증한다.
+    /// - 검증 내용: full store no-op, locked record 제거, 다음 locked transform의 canonical All Tags seed
+    /// - 사전 조건: max count 2인 persisted store에 non-built-in record 2개와 incomplete All Tags
+    /// - 기대 결과: 첫 결과는 deferred이고 이후 final store 마지막에 All Tags가 저장됨
+    func testBuiltInSeed_capacityDeferredThenLaterSeedsLatestLockedStore() throws {
+        let allTagsURL = URL(fileURLWithPath: "/BuiltIn/all-tags.voycoll")
+        let initialStore = ContentTabPinnedRecordStore(records: [
+            Self.pinnedRecord(id: ContentTabID(rawValue: "one"), anchor: .directory(path: "/one")),
+            Self.pinnedRecord(id: ContentTabID(rawValue: "two"), anchor: .directory(path: "/two")),
+        ])
+        let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: initialStore)
+        let defaults = defaultsRecorder.client()
+        let client = ContentTabPinnedRecordClient.liveValue
+        let results = LockIsolated<[BuiltInContentTabPinnedRecordSeedPolicy.Result]>([])
+        let pinnedAt = Self.pinnedAt
+
+        let deferredStore = try client.updateStoreAndLoad(defaults) { latestStore in
+            let result = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
+                ensureResult: .ready(.init(identity: .allTags, canonicalPackageURL: allTagsURL)),
+                completion: false,
+                store: latestStore,
+                now: pinnedAt,
+                maxRecordCount: 2,
+            )
+            results.withValue { $0.append(result) }
+            guard case let .seed(store) = result else { return latestStore }
+            return store
+        }
+        XCTAssertEqual(results.value, [.deferred])
+        XCTAssertEqual(deferredStore, initialStore)
+
+        _ = try client.updateStoreAndLoad(defaults) { latestStore in
+            ContentTabPinnedRecordStore(records: Array(latestStore.records.prefix(1)))
+        }
+        let seededStore = try client.updateStoreAndLoad(defaults) { latestStore in
+            let result = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
+                ensureResult: .ready(.init(identity: .allTags, canonicalPackageURL: allTagsURL)),
+                completion: false,
+                store: latestStore,
+                now: pinnedAt,
+                maxRecordCount: 2,
+            )
+            results.withValue { $0.append(result) }
+            guard case let .seed(store) = result else { return latestStore }
+            return store
+        }
+
+        guard case .seed = results.value.last else {
+            return XCTFail("capacity가 생긴 최신 store에는 All Tags가 seed되어야 함")
+        }
+        XCTAssertEqual(seededStore.records.map(\.id), ["one", "built-in-collection-all-tags"])
+        XCTAssertEqual(seededStore.records.last?.anchor, .collectionFile(url: allTagsURL))
+        XCTAssertEqual(try client.loadStore(defaults), seededStore)
+    }
+
+    /// CTM-003-seed_built_in_pinned_content_tabs: capacity가 가득 차도 기존 match는 canonicalize한다.
+    /// match 교체는 record count를 늘리지 않으므로 full store에서도 허용되는지 검증한다.
+    /// - 검증 내용: canonical URL match가 있으면 alreadyPresent와 All Tags end ordering 반환
+    /// - 사전 조건: max count 2인 store에 user record와 legacy All Tags URL record 존재
+    /// - 기대 결과: user 뒤에 stable All Tags가 있고 count는 2로 유지됨
+    func testBuiltInSeed_fullCapacityWithMatchCanonicalizesWithoutGrowth() {
+        let canonicalURL = URL(fileURLWithPath: "/BuiltIn/all-tags.voycoll")
+        let preservedPinnedAt = Date(timeIntervalSince1970: 123)
+        let userRecord = Self.pinnedRecord(
+            id: ContentTabID(rawValue: "user"),
+            anchor: .directory(path: "/user"),
+        )
+        let legacyRecord = ContentTabPinnedRecord(
+            id: "legacy-all-tags",
+            page: .collection,
+            anchor: .collectionFile(url: canonicalURL),
+            title: "Tags",
+            iconName: "number",
+            pinnedAt: preservedPinnedAt,
+        )
+
+        let result = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
+            ensureResult: .ready(.init(identity: .allTags, canonicalPackageURL: canonicalURL)),
+            completion: false,
+            store: ContentTabPinnedRecordStore(records: [legacyRecord, userRecord]),
+            now: Date(timeIntervalSince1970: 999),
+            maxRecordCount: 2,
+        )
+        guard case let .alreadyPresent(finalStore) = result else {
+            return XCTFail("URL match는 full capacity에서도 canonicalize해야 함")
+        }
+
+        XCTAssertEqual(finalStore.records.map(\.id), ["user", "built-in-collection-all-tags"])
+        XCTAssertEqual(finalStore.records.last?.pinnedAt, preservedPinnedAt)
+    }
+
+    /// CTM-003-seed_built_in_pinned_content_tabs: built-in item 결과를 독립적으로 평가한다.
+    /// 한 item의 ensure 실패가 다른 ready item의 seed 결과를 막지 않는지 검증한다.
+    /// - 검증 내용: Recents failed와 All Tags seed 결과가 서로 독립적으로 유지됨
+    /// - 사전 조건: 같은 initial store에 Recents failed, All Tags ready 입력
+    /// - 기대 결과: Recents는 failed이고 All Tags는 canonical record로 seed됨
+    func testBuiltInSeed_itemDecisionsAreIndependent() {
+        let store = ContentTabPinnedRecordStore(
+            records: [
+                Self.pinnedRecord(
+                    id: ContentTabID(rawValue: "user"),
+                    anchor: .directory(path: "/user"),
+                ),
+            ],
+        )
+        let recentsResult = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
+            ensureResult: .failed,
+            completion: false,
+            store: store,
+            now: Self.pinnedAt,
+        )
+        let allTagsResult = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
+            ensureResult: .ready(.init(
+                identity: .allTags,
+                canonicalPackageURL: URL(fileURLWithPath: "/BuiltIn/all-tags.voycoll"),
+            )),
+            completion: false,
+            store: store,
+            now: Self.pinnedAt,
+        )
+
+        XCTAssertEqual(recentsResult, .failed)
+        guard case let .seed(finalStore) = allTagsResult else {
+            return XCTFail("다른 ready item은 seed되어야 함")
+        }
+        XCTAssertEqual(finalStore.records.map(\.id), ["user", "built-in-collection-all-tags"])
+        XCTAssertEqual(
+            BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
+                ensureResult: .deferred,
+                completion: false,
+                store: finalStore,
+                now: Self.pinnedAt,
+            ),
+            .deferred,
+        )
+    }
+
+    /// CTM-003-seed_built_in_pinned_content_tabs: locked API는 최신 store를 변환해 final store를 반환한다.
+    /// concurrent mutation이 stale pre-read를 사용하지 않고 하나의 transaction으로 직렬화되는지 검증한다.
+    /// - 검증 내용: 두 updateStoreAndLoad 결과와 최종 persisted store에 mutation 누적
+    /// - 사전 조건: empty persisted store와 서로 다른 두 record의 concurrent transform
+    /// - 기대 결과: 반환 count가 1/2이고 최종 store에 두 record가 모두 존재함
+    func testPinnedRecordClient_updateStoreAndLoadTransformsLatestLockedStoreAndReturnsFinalStore() async throws {
+        let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: ContentTabPinnedRecordStore())
+        let defaults = defaultsRecorder.client()
+        let client = ContentTabPinnedRecordClient.liveValue
+        let records = [
+            Self.pinnedRecord(id: ContentTabID(rawValue: "first"), anchor: .directory(path: "/first")),
+            Self.pinnedRecord(id: ContentTabID(rawValue: "second"), anchor: .directory(path: "/second")),
+        ]
+
+        let returnedCounts = try await withThrowingTaskGroup(of: Int.self) { group in
+            for record in records {
+                group.addTask {
+                    let finalStore = try client.updateStoreAndLoad(defaults) { store in
+                        Thread.sleep(forTimeInterval: 0.01)
+                        var updatedStore = store
+                        updatedStore.records.append(record)
+                        return updatedStore
+                    }
+                    return finalStore.records.count
+                }
+            }
+            var counts: [Int] = []
+            for try await count in group {
+                counts.append(count)
+            }
+            return counts.sorted()
+        }
+
+        let finalStore = try client.loadStore(defaults)
+        XCTAssertEqual(returnedCounts, [1, 2])
+        XCTAssertEqual(Set(finalStore.records.map(\.id)), Set(["first", "second"]))
+        XCTAssertEqual(defaultsRecorder.writeCount(), 2)
+    }
+
+    /// CTM-003-seed_built_in_pinned_content_tabs: locked API는 no-op write를 생략한다.
+    /// 동일 store transform이 UserDefaults persistence를 불필요하게 호출하지 않는지 검증한다.
+    /// - 검증 내용: updateStoreAndLoad identity transform의 반환값과 setObject 호출 횟수
+    /// - 사전 조건: 기존 record가 저장된 UserDefaults recorder
+    /// - 기대 결과: 같은 final store를 반환하고 write count는 0임
+    func testPinnedRecordClient_updateStoreAndLoadSkipsNoOpWrite() throws {
+        let originalStore = ContentTabPinnedRecordStore(
+            records: [
+                Self.pinnedRecord(
+                    id: ContentTabID(rawValue: "existing"),
+                    anchor: .directory(path: "/existing"),
+                ),
+            ],
+        )
+        let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: originalStore)
+
+        let finalStore = try ContentTabPinnedRecordClient.liveValue.updateStoreAndLoad(
+            defaultsRecorder.client(),
+            { $0 },
+        )
+
+        XCTAssertEqual(finalStore, originalStore)
+        XCTAssertEqual(defaultsRecorder.writeCount(), 0)
+    }
+
+    /// CTM-003-seed_built_in_pinned_content_tabs: completion key는 built-in item별로 분리된다.
+    /// Window bootstrap이 후속 task에서 독립 flag를 읽고 쓸 수 있도록 exact key 계약을 검증한다.
+    /// - 검증 내용: Recents/All Tags SettingsKeys 문자열과 상호 distinct 여부
+    /// - 사전 조건: AppPreferences SettingsKeys static constants
+    /// - 기대 결과: 각 v1 key가 문서화된 exact 값과 일치함
+    func testBuiltInSeed_completionKeysAreIndependent() {
+        XCTAssertEqual(
+            SettingsKeys.recentsPinnedSeedCompleted,
+            "fileManager.builtInCollection.recentsPinnedSeed.v1",
+        )
+        XCTAssertEqual(
+            SettingsKeys.allTagsPinnedSeedCompleted,
+            "fileManager.builtInCollection.allTagsPinnedSeed.v1",
+        )
+        XCTAssertNotEqual(
+            SettingsKeys.recentsPinnedSeedCompleted,
+            SettingsKeys.allTagsPinnedSeedCompleted,
+        )
     }
 
     // MARK: - CTM-003-pin_content_tab_s
@@ -551,7 +1002,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
                 // Chain stores: apply transform against latest recorded store
                 let savedStore = try transform(savedStores.latestStore())
-                savedStores.record(savedStore)
+                _ = savedStores.record(savedStore)
             }
         }
 
