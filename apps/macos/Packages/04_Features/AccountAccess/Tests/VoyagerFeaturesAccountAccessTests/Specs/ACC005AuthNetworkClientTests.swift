@@ -13,6 +13,8 @@ import XCTest
 
 @MainActor
 final class ACC005AuthNetworkClientTests: XCTestCase {
+    private struct LegacySyncUnknownError: Error {}
+
     // MARK: - ACC-005-exchange_handoff
 
     /// ACC-005-exchange_handoff: exchangeHandoff 성공 시 AccountSession을 반환한다.
@@ -427,6 +429,25 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
             mappedDeviceBindingError(statusCode: 503, code: "device_binding_failed"),
             .serverFailure,
         )
+    }
+
+    /// ACC-005-auth_network_client: legacy sync는 typed failure를 recovery policy에 맞게 구분한다.
+    /// - 검증 내용: unauthorized는 invalidCredential, capability absence는 capabilityMiss, network/decoding/unknown은
+    /// upstream(0), storage는 storageFailure다.
+    /// - 사전 조건: AccessError, DeviceBindingError, SessionSyncError와 unknown error를 각각 mapping helper에 전달한다.
+    /// - 기대 결과: cancellation 외 typed failure가 capabilityMiss로 뭉개지지 않는다.
+    func testLegacySessionSyncErrorMappingPreservesFailureKinds() {
+        XCTAssertEqual(AuthNetworkClient.legacySessionSyncError(for: AccessError.unauthorized), .invalidCredential)
+        XCTAssertEqual(AuthNetworkClient.legacySessionSyncError(for: AccessError.notConfigured), .capabilityMiss)
+        XCTAssertEqual(AuthNetworkClient.legacySessionSyncError(for: DeviceBindingError.notConfigured), .capabilityMiss)
+        XCTAssertEqual(AuthNetworkClient.legacySessionSyncError(for: AccessError.networkFailure), .upstream(0))
+        XCTAssertEqual(AuthNetworkClient.legacySessionSyncError(for: AccessError.decodingFailure), .upstream(0))
+        XCTAssertEqual(
+            AuthNetworkClient.legacySessionSyncError(for: AccessError.unknownGatewayCode("legacy")),
+            .upstream(0),
+        )
+        XCTAssertEqual(AuthNetworkClient.legacySessionSyncError(for: SessionSyncError.storageFailure), .storageFailure)
+        XCTAssertEqual(AuthNetworkClient.legacySessionSyncError(for: LegacySyncUnknownError()), .upstream(0))
     }
 
     /// ACC-005-auth_network_client: legacy sync의 device-binding unauthorized는 credential recovery를 시작한다.
