@@ -270,6 +270,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     /// - 사전 조건: handoffPendingState="xyz789"인 awaitingCallbackState에서 동일한 state의 callback URL 수신
     /// - 기대 결과: exchangeAppHandoff가 호출되고 _handoffExchangeCompleted 수신, hasAccountSession=true
     func testValidFlowCallbackProcessedNormally() async {
+        nonisolated(unsafe) var exchangeCalled = false
         await storePendingHandoff()
         let store = makeTestStore(
             accountSessionClient: canonicalSessionClient(accessToken: "valid-flow-token"),
@@ -722,7 +723,6 @@ extension ACC001CompleteAuthHandoffCallbackTests {
 
     /// onboardingHost target 환경에서 voyager-onboarding-host:// callback이 정상 처리되는지 검증한다.
     func testOnboardingHostTargetAcceptsOnboardingHostCallback() async throws {
-        nonisolated(unsafe) var exchangeCalled = false
         await storePendingHandoff()
         let store = makeTestStore(
             accountSessionClient: canonicalSessionClient(accessToken: "obh-token"),

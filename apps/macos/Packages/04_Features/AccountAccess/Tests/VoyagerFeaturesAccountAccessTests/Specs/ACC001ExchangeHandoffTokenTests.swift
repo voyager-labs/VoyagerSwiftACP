@@ -363,7 +363,7 @@ extension ACC001ExchangeHandoffTokenTests {
             state.isSignInInProgress = false
             state.handoffExchangeState = nil
         }
-        await store.receive(._handoffPersistenceRollbackFailed(generation: 0)) { state in
+        await store.receive(\._handoffPersistenceRollbackFailed) { state in
             state.didSignInFail = true
             state.errorMessage = "Saved sign-in data could not be cleared. Quit Voyager and try again."
         }
