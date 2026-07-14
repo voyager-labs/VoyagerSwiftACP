@@ -167,6 +167,20 @@ class MacOSTestFlowTests(unittest.TestCase):
             ["onb.access_unlock", "onb.permission_readiness"],
         )
 
+    def test_category_rejects_unknown_regex_valid_category(self) -> None:
+        result, stdout, stderr = self.run_main(["--category", "onbb", "--dry-run"])
+
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout, "")
+        self.assertIn("Invalid flow category: onbb", stderr)
+
+    def test_category_rejects_allowed_category_without_suites(self) -> None:
+        result, stdout, stderr = self.run_main(["--category", "acc", "--dry-run"])
+
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout, "")
+        self.assertIn("No flow suites found for category: acc", stderr)
+
     def test_checker_duplicate_slug(self) -> None:
         self.add_doc("onb", "access_unlock")
         self.add_doc("acc", "access_unlock")

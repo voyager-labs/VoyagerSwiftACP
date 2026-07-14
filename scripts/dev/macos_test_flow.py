@@ -222,13 +222,16 @@ def list_mappings(tests_root: Path) -> list[str]:
 
 def category_mappings(category: str, tests_root: Path) -> list[str]:
     """Return flow IDs encoded by suites in one validated category."""
-    if not CATEGORY_RE.fullmatch(category):
+    if not CATEGORY_RE.fullmatch(category) or category not in FLOW_CATEGORIES:
         raise ValueError(f"Invalid flow category: {category}")
-    return [
+    mappings = [
         flow_id
         for flow_id in list_mappings(tests_root)
         if flow_id.startswith(f"{category}.")
     ]
+    if not mappings:
+        raise ValueError(f"No flow suites found for category: {category}")
+    return mappings
 
 
 def run_flow_mode(mapping: FlowMapping, shell_path: str, dry_run: bool) -> int:
