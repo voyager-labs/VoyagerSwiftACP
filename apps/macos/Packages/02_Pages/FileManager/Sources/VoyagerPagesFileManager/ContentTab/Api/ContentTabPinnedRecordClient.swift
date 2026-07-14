@@ -9,6 +9,10 @@ public struct ContentTabPinnedRecordClient: Sendable {
         UserDefaultsClient,
         @escaping @Sendable (ContentTabPinnedRecordStore) throws -> ContentTabPinnedRecordStore,
     ) throws -> Void
+    public var updateStoreAndLoad: @Sendable (
+        UserDefaultsClient,
+        @escaping @Sendable (ContentTabPinnedRecordStore) throws -> ContentTabPinnedRecordStore,
+    ) throws -> ContentTabPinnedRecordStore
 
     nonisolated public init(
         loadStore: @escaping @Sendable (UserDefaultsClient) throws -> ContentTabPinnedRecordStore,
@@ -17,13 +21,25 @@ public struct ContentTabPinnedRecordClient: Sendable {
             UserDefaultsClient,
             @escaping @Sendable (ContentTabPinnedRecordStore) throws -> ContentTabPinnedRecordStore,
         ) throws -> Void)? = nil,
+        updateStoreAndLoad: (@Sendable (
+            UserDefaultsClient,
+            @escaping @Sendable (ContentTabPinnedRecordStore) throws -> ContentTabPinnedRecordStore,
+        ) throws -> ContentTabPinnedRecordStore)? = nil,
     ) {
-        self.loadStore = loadStore
-        self.saveStore = saveStore
-        self.updateStore = updateStore ?? { userDefaultsClient, transform in
+        let resolvedUpdateStoreAndLoad = updateStoreAndLoad ?? { userDefaultsClient, transform in
             let store = try loadStore(userDefaultsClient)
             let updatedStore = try transform(store)
-            try saveStore(updatedStore, userDefaultsClient)
+            if updatedStore != store {
+                try saveStore(updatedStore, userDefaultsClient)
+            }
+            return updatedStore
+        }
+
+        self.loadStore = loadStore
+        self.saveStore = saveStore
+        self.updateStoreAndLoad = resolvedUpdateStoreAndLoad
+        self.updateStore = updateStore ?? { userDefaultsClient, transform in
+            _ = try resolvedUpdateStoreAndLoad(userDefaultsClient, transform)
         }
     }
 }
@@ -38,7 +54,7 @@ extension ContentTabPinnedRecordClient: DependencyKey {
                 let data = try JSONEncoder().encode(store)
                 userDefaultsClient.setObject(data, Self.storageKey)
             },
-            updateStore: { userDefaultsClient, transform in
+            updateStoreAndLoad: { userDefaultsClient, transform in
                 Self.storageLock.lock()
                 defer { Self.storageLock.unlock() }
                 try Task.checkCancellation()
@@ -46,8 +62,11 @@ extension ContentTabPinnedRecordClient: DependencyKey {
                 try Task.checkCancellation()
                 let updatedStore = try transform(store)
                 try Task.checkCancellation()
+                guard updatedStore != store else { return store }
                 let data = try JSONEncoder().encode(updatedStore)
+                try Task.checkCancellation()
                 userDefaultsClient.setObject(data, Self.storageKey)
+                return updatedStore
             },
         )
     }
