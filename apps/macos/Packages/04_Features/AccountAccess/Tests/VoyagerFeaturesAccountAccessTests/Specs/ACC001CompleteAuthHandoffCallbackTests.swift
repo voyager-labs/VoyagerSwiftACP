@@ -28,6 +28,13 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     private static let validState = "xyz789"
     private static let validContext = "onboarding"
     private static let persistedSessionExpiry = Date(timeIntervalSince1970: 1_700_003_600)
+    nonisolated private static let completeSessionSync = SessionSyncResult(
+        sessionStatus: .unchanged,
+        syncStatus: .complete,
+        accessStatus: activeAccessStatusResponse,
+        deviceBindingOutcome: .bound,
+        connectedDeviceAvailability: .available,
+    )
 
     private static var validCallbackURL: URL {
         guard let url = URL(
@@ -98,6 +105,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             $0.accountSessionClient = accountSessionClient
             $0.authNetworkClient = authNetworkClient
             $0.date = .constant(referenceDate)
+            $0.continuousClock = TestClock()
             $0.appHandoffTarget = appHandoffTarget
         }
     }
@@ -292,6 +300,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                 },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
+                syncSession: { _, _ in Self.completeSessionSync },
             ),
             initialState: awaitingCallbackState(pendingState: "xyz789"),
         )
@@ -307,25 +316,48 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
 
         await store.receive(\._handoffCommitAuthorized) { state in
             state.isSignInInProgress = false
-            state.handoffExchangeState = nil
-            state.handoffFinalizingState = Self.validState
         }
         await store.receive(\._handoffExchangeCompleted) { state in
-            state.handoffFinalizingState = nil
+            state.handoffExchangeState = nil
             state.handoffTransaction = nil
             state.hasAccountSession = true
             state.didSignInFail = false
             state.sessionExpiresAt = Self.persistedSessionExpiry
             state.ttlTimerActive = true
+            state.refreshDeadlineGeneration = 1
             state.fetchGeneration = 1
+            state.syncGeneration = 1
         }
 
         XCTAssertTrue(exchangeCalled, "유효한 흐름의 callback 정상 처리 → exchange 호출")
-        // store.exhaustivity = .off: _handoffExchangeCompleted가 다수 상태를 갱신한 이후 accessStatusResponse 처리 중 추가 상태 변경이 있을 수
-        // 있으나 검증은 action 수신만 확인
-        store.exhaustivity = .off
-        await store.receive(\.accessStatusResponse)
+        await store.receive(\.sessionSyncRequested) { state in
+            state.syncGeneration = 2
+            state.inFlightSyncReason = .login
+            state.isSubmitting = true
+        }
+        await store.receive(\._sessionSyncCompleted) { state in
+            state.inFlightSyncReason = nil
+            state.status = .coreLicenseActive
+            state.snapshot = AccessStatusSnapshot(
+                status: .coreLicenseActive,
+                fetchedAt: self.referenceDate,
+                sessionExpiresAt: Self.persistedSessionExpiry,
+                deviceBindingVerifiedAt: self.referenceDate,
+            )
+            state.isSubmitting = false
+            state.isComplete = true
+            state.lastCompleteSyncAt = self.referenceDate
+            state.refreshDeadlineGeneration = 1
+        }
         await store.receive(\.delegate.unlocked)
+        await store.send(.appWillTerminate) { state in
+            state.fetchGeneration = 2
+            state.syncGeneration = 3
+            state.revalidationGeneration = 1
+            state.handoffGeneration = 1
+            state.ttlTimerActive = false
+            state.refreshDeadlineGeneration = 2
+        }
         await store.finish()
     }
 
@@ -355,6 +387,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                 },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
+                syncSession: { _, _ in Self.completeSessionSync },
             ),
             initialState: awaitingCallbackState(handoffContext: .paywall),
         )
@@ -390,6 +423,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                 fetchAccessStatus: { activeAccessStatusResponse },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
+                syncSession: { _, _ in Self.completeSessionSync },
             ),
             initialState: awaitingCallbackState(handoffContext: .paywall),
         )
@@ -405,23 +439,48 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
 
         await store.receive(\._handoffCommitAuthorized) { state in
             state.isSignInInProgress = false
-            state.handoffExchangeState = nil
-            state.handoffFinalizingState = Self.validState
         }
         await store.receive(\._handoffExchangeCompleted) { state in
-            state.handoffFinalizingState = nil
+            state.handoffExchangeState = nil
             state.handoffTransaction = nil
             state.hasAccountSession = true
             state.didSignInFail = false
             state.sessionExpiresAt = Self.persistedSessionExpiry
             state.ttlTimerActive = true
+            state.refreshDeadlineGeneration = 1
             state.fetchGeneration = 1
+            state.syncGeneration = 1
         }
 
         XCTAssertTrue(exchangeCalled, "matching callback context should reach exchange")
-        store.exhaustivity = .off
-        await store.receive(\.accessStatusResponse)
+        await store.receive(\.sessionSyncRequested) { state in
+            state.syncGeneration = 2
+            state.inFlightSyncReason = .login
+            state.isSubmitting = true
+        }
+        await store.receive(\._sessionSyncCompleted) { state in
+            state.inFlightSyncReason = nil
+            state.status = .coreLicenseActive
+            state.snapshot = AccessStatusSnapshot(
+                status: .coreLicenseActive,
+                fetchedAt: self.referenceDate,
+                sessionExpiresAt: Self.persistedSessionExpiry,
+                deviceBindingVerifiedAt: self.referenceDate,
+            )
+            state.isSubmitting = false
+            state.isComplete = true
+            state.lastCompleteSyncAt = self.referenceDate
+            state.refreshDeadlineGeneration = 1
+        }
         await store.receive(\.delegate.unlocked)
+        await store.send(.appWillTerminate) { state in
+            state.fetchGeneration = 2
+            state.syncGeneration = 3
+            state.revalidationGeneration = 1
+            state.handoffGeneration = 1
+            state.ttlTimerActive = false
+            state.refreshDeadlineGeneration = 2
+        }
         await store.finish()
     }
 
@@ -476,6 +535,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                 fetchAccessStatus: { throw AccessError.notConfigured },
                 bindDevice: { _ in throw DeviceBindingError.notConfigured },
                 refreshToken: { throw AccessError.notConfigured },
+                syncSession: { _, _ in Self.completeSessionSync },
             ),
             initialState: awaitingCallbackState(),
         )
@@ -487,6 +547,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
         }
         await store.receive(\._handoffExchangeCompleted) { state in
             state.isSignInInProgress = false
+            state.handoffExchangeState = nil
             state.handoffTransaction = nil
             state.didSignInFail = true
             state.handoffExchangeState = nil
@@ -555,6 +616,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                 },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
+                syncSession: { _, _ in Self.completeSessionSync },
             ),
             initialState: awaitingCallbackState(),
             appHandoffTarget: .onboardingHost,
@@ -572,13 +634,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
 }
 
 extension ACC001CompleteAuthHandoffCallbackTests {
-    private func assertNoQueryCallbackPreservedSession(
-        fetchCount: Int,
-        bindCount: Int,
-        state: AccountAccessFeature.State,
-    ) {
-        XCTAssertEqual(fetchCount, 1)
-        XCTAssertEqual(bindCount, 1)
+    private func assertNoQueryCallbackPreservedSession(state: AccountAccessFeature.State) {
         XCTAssertEqual(state.sessionExpiresAt, Self.persistedSessionExpiry)
         XCTAssertEqual(state.snapshot?.sessionExpiresAt, Self.persistedSessionExpiry)
     }
@@ -591,21 +647,14 @@ extension ACC001CompleteAuthHandoffCallbackTests {
     /// 응답
     /// - 기대 결과: sessionExpiresAt과 snapshot.sessionExpiresAt이 고정 expiry와 같고 unlocked delegate가 한 번 전송된다.
     func testNoQueryCallbackPreservesRestoredSessionExpiryThroughUnlock() async throws {
-        nonisolated(unsafe) var fetchCount = 0
-        nonisolated(unsafe) var bindCount = 0
         let store = makeTestStore(
             accountSessionClient: canonicalSessionClient(accessToken: "no-query-token"),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                fetchAccessStatus: {
-                    fetchCount += 1
-                    return activeAccessStatusResponse
-                },
-                bindDevice: { _ in
-                    bindCount += 1
-                    return DeviceBindingResponse(ok: true)
-                },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in throw DeviceBindingError.notConfigured },
                 refreshToken: { throw AccessError.notConfigured },
+                syncSession: { _, _ in Self.completeSessionSync },
             ),
             initialState: awaitingCallbackState(),
         )
@@ -617,16 +666,20 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.didSignInFail = false
             state.sessionExpiresAt = Self.persistedSessionExpiry
             state.ttlTimerActive = true
+            state.refreshDeadlineGeneration = 1
             state.fetchGeneration = 1
+            state.syncGeneration = 1
+            state.handoffPendingState = nil
+            state.handoffTransaction = nil
         }
-        await store.receive(\.accessStatusResponse) { state in
-            state.status = .coreLicenseActive
+        await store.receive(\.sessionSyncRequested) { state in
+            state.syncGeneration = 2
+            state.inFlightSyncReason = .login
             state.isSubmitting = true
-            state.isComplete = false
-            state.errorMessage = nil
-            state.fetchRetryCount = 0
         }
-        await store.receive(\.deviceBindingResponse) { state in
+        await store.receive(\._sessionSyncCompleted) { state in
+            state.inFlightSyncReason = nil
+            state.status = .coreLicenseActive
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 fetchedAt: self.referenceDate,
@@ -635,13 +688,20 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             )
             state.isSubmitting = false
             state.isComplete = true
-            state.errorMessage = nil
+            state.lastCompleteSyncAt = self.referenceDate
+            state.refreshDeadlineGeneration = 1
         }
         await store.receive(\.delegate.unlocked)
 
-        assertNoQueryCallbackPreservedSession(fetchCount: fetchCount, bindCount: bindCount, state: store.state)
-        // TTL 타이머가 in-flight 상태이므로 finish 전에 exhaustivity를 끈다.
-        store.exhaustivity = .off
+        assertNoQueryCallbackPreservedSession(state: store.state)
+        await store.send(.appWillTerminate) { state in
+            state.fetchGeneration = 2
+            state.syncGeneration = 3
+            state.revalidationGeneration = 1
+            state.handoffGeneration = 1
+            state.ttlTimerActive = false
+            state.refreshDeadlineGeneration = 2
+        }
         await store.finish()
     }
 
@@ -664,20 +724,58 @@ extension ACC001CompleteAuthHandoffCallbackTests {
                 fetchAccessStatus: { activeAccessStatusResponse },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
+                syncSession: { _, _ in Self.completeSessionSync },
             ),
             initialState: awaitingCallbackState(),
         )
-        // store.exhaustivity = .off: callback 수락부터 unlock까지의 부수 상태보다 exchange 자동 시작을 검증한다.
-        store.exhaustivity = .off
-
         await store.send(.loginCallbackReceived(Self.validCallbackURL))
-        await store.receive(\._handoffClaimCompleted)
-        await store.receive(\._handoffCommitAuthorized)
-        await store.receive(\._handoffExchangeCompleted)
-        await store.receive(\.accessStatusResponse)
-        await store.receive(\.deviceBindingResponse)
+        await store.receive(\._handoffClaimCompleted) { state in
+            state.handoffPendingState = nil
+            state.handoffExchangeState = Self.validState
+        }
+        await store.receive(\._handoffCommitAuthorized) { state in
+            state.isSignInInProgress = false
+        }
+        await store.receive(\._handoffExchangeCompleted) { state in
+            state.handoffExchangeState = nil
+            state.handoffTransaction = nil
+            state.hasAccountSession = true
+            state.didSignInFail = false
+            state.sessionExpiresAt = Self.persistedSessionExpiry
+            state.ttlTimerActive = true
+            state.refreshDeadlineGeneration = 1
+            state.fetchGeneration = 1
+            state.syncGeneration = 1
+        }
+        await store.receive(\.sessionSyncRequested) { state in
+            state.syncGeneration = 2
+            state.inFlightSyncReason = .login
+            state.isSubmitting = true
+        }
+        await store.receive(\._sessionSyncCompleted) { state in
+            state.inFlightSyncReason = nil
+            state.status = .coreLicenseActive
+            state.snapshot = AccessStatusSnapshot(
+                status: .coreLicenseActive,
+                fetchedAt: self.referenceDate,
+                sessionExpiresAt: Self.persistedSessionExpiry,
+                deviceBindingVerifiedAt: self.referenceDate,
+            )
+            state.isSubmitting = false
+            state.isComplete = true
+            state.lastCompleteSyncAt = self.referenceDate
+            state.refreshDeadlineGeneration = 1
+        }
         await store.receive(\.delegate.unlocked)
         XCTAssertTrue(store.state.hasAccountSession)
+        await store.send(.appWillTerminate) { state in
+            state.fetchGeneration = 2
+            state.syncGeneration = 3
+            state.revalidationGeneration = 1
+            state.handoffGeneration = 1
+            state.ttlTimerActive = false
+            state.refreshDeadlineGeneration = 2
+        }
         await store.finish()
     }
 
@@ -690,7 +788,20 @@ extension ACC001CompleteAuthHandoffCallbackTests {
         await storePendingHandoff()
         let fixture = try TemporaryHomeFixture()
         let tokenStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
-        let accountSessionClient = AccountSessionClient.live(store: tokenStore)
+        let liveAccountSessionClient = AccountSessionClient.live(store: tokenStore)
+        nonisolated(unsafe) var persistedSessionExpiresAt: Date?
+        let accountSessionClient = AccountSessionClient(
+            read: liveAccountSessionClient.read,
+            persist: liveAccountSessionClient.persist,
+            prepareHandoffPersistence: { session in
+                let persistedSession = try await liveAccountSessionClient.prepareHandoffPersistence(session)
+                persistedSessionExpiresAt = persistedSession.expiresAt
+                return persistedSession
+            },
+            commitHandoffPersistence: liveAccountSessionClient.commitHandoffPersistence,
+            delete: liveAccountSessionClient.delete,
+            discardPersistedSession: liveAccountSessionClient.discardPersistedSession,
+        )
         let store = makeTestStore(
             accountSessionClient: accountSessionClient,
             authNetworkClient: AuthNetworkClient(
@@ -704,25 +815,63 @@ extension ACC001CompleteAuthHandoffCallbackTests {
                 fetchAccessStatus: { activeAccessStatusResponse },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
+                syncSession: { _, _ in Self.completeSessionSync },
             ),
             initialState: awaitingCallbackState(),
         )
-        // store.exhaustivity = .off: TTL timer가 장기 실행되므로 handoff-to-unlock 체인만 소비한다.
-        store.exhaustivity = .off
-
         await store.send(.loginCallbackReceived(Self.validCallbackURL))
-        await store.receive(\._handoffClaimCompleted)
-        await store.receive(\._handoffCommitAuthorized)
-        await store.receive(\._handoffExchangeCompleted)
+        await store.receive(\._handoffClaimCompleted) { state in
+            state.handoffPendingState = nil
+            state.handoffExchangeState = Self.validState
+        }
+        await store.receive(\._handoffCommitAuthorized) { state in
+            state.isSignInInProgress = false
+        }
+        await store.receive(\._handoffExchangeCompleted) { state in
+            state.handoffExchangeState = nil
+            state.handoffTransaction = nil
+            state.hasAccountSession = true
+            state.didSignInFail = false
+            state.ttlTimerActive = true
+            state.refreshDeadlineGeneration = 1
+            state.fetchGeneration = 1
+            state.syncGeneration = 1
+            XCTAssertNotNil(persistedSessionExpiresAt)
+            state.sessionExpiresAt = persistedSessionExpiresAt
+        }
         XCTAssertNotNil(store.state.sessionExpiresAt)
-        await store.receive(\.accessStatusResponse)
-        await store.receive(\.deviceBindingResponse)
+        await store.receive(\.sessionSyncRequested) { state in
+            state.syncGeneration = 2
+            state.inFlightSyncReason = .login
+            state.isSubmitting = true
+        }
+        await store.receive(\._sessionSyncCompleted) { state in
+            state.inFlightSyncReason = nil
+            state.status = .coreLicenseActive
+            state.snapshot = AccessStatusSnapshot(
+                status: .coreLicenseActive,
+                fetchedAt: self.referenceDate,
+                sessionExpiresAt: state.sessionExpiresAt,
+                deviceBindingVerifiedAt: self.referenceDate,
+            )
+            state.isSubmitting = false
+            state.isComplete = true
+            state.lastCompleteSyncAt = self.referenceDate
+            state.refreshDeadlineGeneration = 1
+        }
         await store.receive(\.delegate.unlocked)
 
         XCTAssertTrue(store.state.isComplete)
         XCTAssertNotNil(store.state.snapshot?.sessionExpiresAt)
         XCTAssertNotNil(store.state.snapshot?.deviceBindingVerifiedAt)
-        await store.skipInFlightEffects()
+        await store.send(.appWillTerminate) { state in
+            state.fetchGeneration = 2
+            state.syncGeneration = 3
+            state.revalidationGeneration = 1
+            state.handoffGeneration = 1
+            state.ttlTimerActive = false
+            state.refreshDeadlineGeneration = 2
+        }
         await store.finish()
     }
 
@@ -746,6 +895,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
                 },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
+                syncSession: { _, _ in Self.completeSessionSync },
             ),
             initialState: awaitingCallbackState(),
             appHandoffTarget: .onboardingHost,
@@ -764,22 +914,47 @@ extension ACC001CompleteAuthHandoffCallbackTests {
 
         await store.receive(\._handoffCommitAuthorized) { state in
             state.isSignInInProgress = false
-            state.handoffExchangeState = nil
-            state.handoffFinalizingState = Self.validState
         }
         await store.receive(\._handoffExchangeCompleted) { state in
-            state.handoffFinalizingState = nil
+            state.handoffExchangeState = nil
             state.handoffTransaction = nil
             state.hasAccountSession = true
             state.didSignInFail = false
             state.sessionExpiresAt = Self.persistedSessionExpiry
             state.ttlTimerActive = true
+            state.refreshDeadlineGeneration = 1
             state.fetchGeneration = 1
+            state.syncGeneration = 1
         }
 
-        store.exhaustivity = .off
-        await store.receive(\.accessStatusResponse)
+        await store.receive(\.sessionSyncRequested) { state in
+            state.syncGeneration = 2
+            state.inFlightSyncReason = .login
+            state.isSubmitting = true
+        }
+        await store.receive(\._sessionSyncCompleted) { state in
+            state.inFlightSyncReason = nil
+            state.status = .coreLicenseActive
+            state.snapshot = AccessStatusSnapshot(
+                status: .coreLicenseActive,
+                fetchedAt: self.referenceDate,
+                sessionExpiresAt: Self.persistedSessionExpiry,
+                deviceBindingVerifiedAt: self.referenceDate,
+            )
+            state.isSubmitting = false
+            state.isComplete = true
+            state.lastCompleteSyncAt = self.referenceDate
+            state.refreshDeadlineGeneration = 1
+        }
         await store.receive(\.delegate.unlocked)
+        await store.send(.appWillTerminate) { state in
+            state.fetchGeneration = 2
+            state.syncGeneration = 3
+            state.revalidationGeneration = 1
+            state.handoffGeneration = 1
+            state.ttlTimerActive = false
+            state.refreshDeadlineGeneration = 2
+        }
         await store.finish()
     }
 }
