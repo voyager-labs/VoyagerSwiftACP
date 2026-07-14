@@ -70,6 +70,8 @@ mise exec -- swiftlint --config apps/macos/.swiftlint.yml --reporter xcode apps/
 mise exec -- swiftformat --config apps/macos/.swiftformat apps/macos --verbose
 ```
 
+If SwiftFormat starts scanning build outputs or vendored SwiftPM checkouts, verify path resolution before changing formatter config. Config `--exclude` entries are relative to the `.swiftformat` file location; for absolute invocation roots, prefer an explicit CLI exclude for the concrete build directory, such as `--exclude "$SWIFT_ROOT/build"`.
+
 Prefer running formatting/lint before the final test pass so style-only churn does not hide functional failures.
 
 ## Search-based checks

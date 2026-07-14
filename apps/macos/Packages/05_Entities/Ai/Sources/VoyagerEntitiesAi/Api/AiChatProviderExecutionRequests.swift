@@ -315,6 +315,7 @@ extension AiChatProviderExecutionClient {
     }
 
     static func codexProcessEnvironment(codexHomeURL: URL) -> [String: String] {
+        // TODO(VOY-432): ProcessInfo 대신 Dotenv 사용 검토 — https://linear.app/voyager-fm/issue/VOY-432
         var environment = ProcessInfo.processInfo.environment
         let defaultPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         if let path = environment["PATH"], !path.isEmpty {

@@ -16,7 +16,8 @@
       "scheme": "Voyager-Dev",
       "configuration": "Debug",
       "launchEnv": {
-        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
+        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}",
+        "VOYAGER_SCHEME_FORCE_ONBOARDING": "0"
       }
     },
     {
@@ -208,7 +209,6 @@
       "launchEnv": {
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
       }
-    },
-
+    }
   ]
 }

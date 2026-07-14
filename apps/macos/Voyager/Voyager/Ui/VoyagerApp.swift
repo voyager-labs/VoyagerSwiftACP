@@ -5,12 +5,25 @@ import Logging
 import SwiftUI
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
 import VoyagerShared
+
+@MainActor
+private final class AppRootStoreReference {
+    var store: StoreOf<AppRootFeature>?
+
+    func accountAccessStore() -> StoreOf<AccountAccessFeature> {
+        guard let store else {
+            preconditionFailure("AppRoot store must be configured before presenting onboarding.")
+        }
+        return store.scope(state: \.lifecycle.accountAccess, action: \.lifecycle.accountAccess)
+    }
+}
 
 @main
 struct VoyagerApp: App {
@@ -21,6 +34,7 @@ struct VoyagerApp: App {
 
     @MainActor
     init() {
+        let appRootStoreReference = AppRootStoreReference()
         let fileManagerWindowClient = makeFileManagerWindowClientLive()
 
         appRootStore = Store(initialState: AppRootState()) {
@@ -28,19 +42,24 @@ struct VoyagerApp: App {
         } withDependencies: {
             $0.composerMetricClient = Self.makeComposerMetricClient()
             $0.collectionMetricClient = Self.makeCollectionMetricClient()
-            $0.onboardingWindowClient = OnboardingWindowClient.makeLive(openMainWindow: { request in
-                await MainActor.run {
-                    let resolvedPath: String = switch request {
-                    case .defaultTabPath:
-                        SettingsDefaults.defaultTabPath()
-                    case let .explicitPath(path):
-                        path
+            $0.onboardingWindowClient = OnboardingWindowClient.makeMainApp(
+                openMainWindow: { request in
+                    await MainActor.run {
+                        let resolvedPath: String = switch request {
+                        case .defaultTabPath:
+                            SettingsDefaults.defaultTabPath()
+                        case let .explicitPath(path):
+                            path
+                        }
+                        requestFileManagerNewWindow(path: resolvedPath)
                     }
-                    requestFileManagerNewWindow(path: resolvedPath)
-                }
-                await Task.yield()
-                return true
-            })
+                    await Task.yield()
+                    return true
+                },
+                resolveAccountAccessStore: {
+                    appRootStoreReference.accountAccessStore()
+                },
+            )
             $0.fileManagerWindowClient = fileManagerWindowClient
             $0.undoManagerClient = .live(resolveUndoManager: { windowID in
                 await MainActor.run {
@@ -49,6 +68,7 @@ struct VoyagerApp: App {
             })
             $0.metricsClient = Self.makeFileManagerMetricsClient()
         }
+        appRootStoreReference.store = appRootStore
 
         configureFileManagerWindowCallbacks()
         appDelegate.configure(appRootStore: appRootStore)
@@ -156,6 +176,9 @@ struct VoyagerApp: App {
                     appRootStore.send(.windowManager(.event(.windowClosed(id))))
                 },
             ),
+            resolveSessionLapseGuardStore: { [appRootStore] in
+                appRootStore.scope(state: \.lifecycle.presentedAccountAccess, action: \.lifecycle.accountAccess)
+            },
         )
     }
 

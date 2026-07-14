@@ -109,6 +109,8 @@ public enum ExternalFileRouterError: Error, Equatable, Sendable {
 
 @CasePathable
 public enum ExternalFileRouterAction: CasePathable {
+    /// 예상 URL scheme 설정 (기본값: "voyager", Dev: "voyager-dev")
+    case setExpectedScheme(String)
     /// 외부에서 경로 수신 (deep link URL, system open event, nsservices)
     case receive(URL)
     /// 외부 file:// URL 직접 수신 (system open event, NSServices).
@@ -154,9 +156,16 @@ public struct ExternalFileRouterState: Equatable {
     public var currentStatus: ExternalFileRouterStatus?
     /// 현재 처리 중인 요청 정보
     public var currentRequest: ExternalFileRouterRequest?
+    /// ExternalFileURLParser에서 수신할 URL scheme (기본값: "voyager")
+    public var expectedScheme: String
 
-    public init(currentStatus: ExternalFileRouterStatus? = nil, currentRequest: ExternalFileRouterRequest? = nil) {
+    public init(
+        currentStatus: ExternalFileRouterStatus? = nil,
+        currentRequest: ExternalFileRouterRequest? = nil,
+        expectedScheme: String = "voyager",
+    ) {
         self.currentStatus = currentStatus
         self.currentRequest = currentRequest
+        self.expectedScheme = expectedScheme
     }
 }

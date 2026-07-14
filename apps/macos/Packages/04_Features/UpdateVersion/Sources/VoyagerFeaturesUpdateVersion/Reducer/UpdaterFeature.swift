@@ -5,13 +5,13 @@ import VoyagerShared
 
 @Reducer
 public struct UpdaterFeature: Sendable {
+    public typealias State = UpdaterState
+    public typealias Action = UpdaterAction
+
     @Dependency(\.updaterClient)
     var updaterClient
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient
-
-    public typealias State = UpdaterState
-    public typealias Action = UpdaterAction
 
     public init() {}
 

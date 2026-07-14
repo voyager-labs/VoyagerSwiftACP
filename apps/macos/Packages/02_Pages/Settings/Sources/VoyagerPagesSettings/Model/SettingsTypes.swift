@@ -5,6 +5,7 @@ public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
     case general
     case appearance
     case ai
+    case account
 
     public var id: String {
         rawValue
@@ -18,6 +19,8 @@ public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
             "Appearance"
         case .ai:
             "AI"
+        case .account:
+            "Account"
         }
     }
 
@@ -29,6 +32,8 @@ public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
             "paintbrush"
         case .ai:
             "cpu"
+        case .account:
+            "person.crop.circle"
         }
     }
 }

@@ -7,7 +7,7 @@ public struct CollectionSearchAISettingsClient: Sendable {
     public var save: @Sendable (CollectionSearchAISettings) -> Void
     public var reset: @Sendable () -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         load: @escaping @Sendable () -> CollectionSearchAISettings,
         save: @escaping @Sendable (CollectionSearchAISettings) -> Void,
         reset: @escaping @Sendable () -> Void,
@@ -19,15 +19,15 @@ public struct CollectionSearchAISettingsClient: Sendable {
 }
 
 extension CollectionSearchAISettingsClient: DependencyKey {
-    public nonisolated static var liveValue: CollectionSearchAISettingsClient {
+    nonisolated public static var liveValue: CollectionSearchAISettingsClient {
         live()
     }
 
-    public nonisolated static var testValue: CollectionSearchAISettingsClient {
+    nonisolated public static var testValue: CollectionSearchAISettingsClient {
         live(userDefaultsClient: .testValue)
     }
 
-    public nonisolated static var previewValue: CollectionSearchAISettingsClient {
+    nonisolated public static var previewValue: CollectionSearchAISettingsClient {
         testValue
     }
 }

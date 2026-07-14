@@ -4,6 +4,7 @@ import Foundation
 import IdentifiedCollections
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
+import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
@@ -11,7 +12,9 @@ import VoyagerWidgetsEntryViewLayout
 
 @MainActor
 public enum FileManagerHostFixture {
-    public static func makeWindowController() -> NSWindowController {
+    public static func makeWindowController(
+        preset: FileManagerHostPreset = .default,
+    ) -> NSWindowController {
         let state = FileManagerHostFixtureStateFactory.makeState()
         let undoManager = UndoManager()
         let store = Store(initialState: state) {
@@ -24,7 +27,29 @@ public enum FileManagerHostFixture {
             windowID: UUID(),
             store: store,
             windowUndoManager: undoManager,
+            sessionLapseGuardStore: FileManagerHostFixture.makeSessionLapseGuardStore(
+                for: preset.scenario.sessionLapse,
+            ),
         )
+    }
+
+    static func makeSessionLapseGuardStore(
+        for scenario: FileManagerHostSessionLapseScenario,
+    ) -> Store<AccountAccessFeature.State?, AccountAccessAction>? {
+        switch scenario {
+        case .none:
+            return nil
+        case .active, .signInFailed:
+            var guardState: AccountAccessFeature.State? = AccountAccessFeature.State()
+            if scenario == .signInFailed {
+                guardState?.didSignInFail = true
+            }
+            return Store<AccountAccessFeature.State?, AccountAccessAction>(
+                initialState: guardState,
+            ) {
+                EmptyReducer()
+            }
+        }
     }
 }
 

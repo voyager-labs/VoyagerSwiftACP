@@ -26,6 +26,7 @@ final class TemporaryHomeFixture {
             )
         }
 
+        // TODO(VOY-432): ProcessInfo 대신 Dotenv 사용 검토 — https://linear.app/voyager-fm/issue/VOY-432
         originalHome = ProcessInfo.processInfo.environment["HOME"]
         originalProjectRoot = ProcessInfo.processInfo.environment["VOYAGER_PROJECT_ROOT"]
         setenv("HOME", tmp.path, 1)

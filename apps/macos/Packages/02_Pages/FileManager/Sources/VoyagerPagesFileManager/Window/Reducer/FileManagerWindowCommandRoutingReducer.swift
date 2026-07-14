@@ -16,14 +16,14 @@ struct HomeAiChatOpenCancelID: Hashable {
 
 @Reducer
 struct FileManagerWindowCommandRoutingReducer {
+    typealias State = FileManagerWindowState
+    typealias Action = FileManagerWindowAction
+
     nonisolated private enum CancelID: Hashable {
         case contextualAiChatOpen
         case loadFixedLocations
         case loadHomeFavorites
     }
-
-    typealias State = FileManagerWindowState
-    typealias Action = FileManagerWindowAction
 
     @Dependency(\.aiConnectionsFileClient)
     private var aiConnectionsFileClient
@@ -576,7 +576,8 @@ struct FileManagerWindowCommandRoutingReducer {
         let content = state.content
         // Entry opens the inspector with seeded context only so AiChat starts on Sessions.
         // Session creation/restoration stays inside AiChat via New Chat or explicit restoreSessionID.
-        let setup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: content)
+        var setup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: content)
+        setup.mode = .sessions
         return .run { [aiConnectionsFileClient, setup] send in
             let connectionsFile: AIConnectionsFile
             do {

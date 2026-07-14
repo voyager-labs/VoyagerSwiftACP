@@ -1,7 +1,9 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
 import Logging
 import VoyagerEntitiesAppPreferences
+import VoyagerFeaturesAccountAccess
 import VoyagerPagesOnboarding
 import VoyagerShared
 
@@ -26,20 +28,34 @@ struct AppLifecycleFeature {
     var appTerminationReplyClient
     @Dependency(\.uuid)
     var uuid
+    @Dependency(\.continuousClock)
+    var clock
+    @Dependency(\.notificationCenterClient)
+    var notificationCenterClient
 
     private enum CancelID {
         static let helperMonitor = "helperMonitor"
+        static let terminationCleanupTimeout = "terminationCleanupTimeout"
+        static let sessionExpirationObserver = "sessionExpirationObserver"
     }
 
     var body: some Reducer<State, Action> {
+        Scope(state: \.accountAccess, action: \.accountAccess) {
+            AccountAccessFeature()
+        }
+
         Reduce { state, action in
             switch action {
+            // MARK: - Launch
+
             case .launch(.willFinishLaunching):
                 let theme = appearanceSettingsClient.loadTheme()
                 appearanceSettingsClient.applyThemeSync(theme)
 
+                let notificationCenterClient = notificationCenterClient
+
                 if isRunningXCTest() {
-                    return .none
+                    return observeSessionExpirationEffect(notificationCenterClient: notificationCenterClient)
                 }
 
                 try? EnvironmentLoader.loadEnvFiles()
@@ -51,93 +67,70 @@ struct AppLifecycleFeature {
                     component: "app",
                 )
                 VoyagerSentryMetricLogger.setUserId(userId)
-
-                if state.didStartHelper {
-                    return .none
-                }
-                state.didStartHelper = true
-                let helperClient = helperAppClient
-                let stateClient = helperStateClient
-
-                return .run { _ in
-                    let currentBundleVersion = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
-
-                    async let monitor: Void = {
-                        var policy = HelperSupervisionPolicy()
-
-                        for await _ in helperClient.terminationEvents() {
-                            if await VoyagerTerminationCoordinator.shared.isTerminating() {
-                                continue
-                            }
-
-                            let decision = policy.recordRestartAttempt()
-
-                            switch decision {
-                            case .allowed:
-                                await helperClient.ensureRunning()
-
-                            case let .cooldown(activeUntil):
-                                let delay = activeUntil.timeIntervalSinceNow
-                                if delay > 0 {
-                                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                                    let isRunning = await helperClient.isRunning()
-                                    if !isRunning {
-                                        let newDecision = policy.recordRestartAttempt()
-                                        switch newDecision {
-                                        case .allowed:
-                                            await helperClient.ensureRunning()
-                                        default:
-                                            break
-                                        }
-                                    }
-                                }
-
-                            case let .graceWindow(activeUntil):
-                                let delay = activeUntil.timeIntervalSinceNow
-                                if delay > 0 {
-                                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                                    let isRunning = await helperClient.isRunning()
-                                    if !isRunning {
-                                        let newDecision = policy.recordRestartAttempt()
-                                        switch newDecision {
-                                        case .allowed:
-                                            await helperClient.ensureRunning()
-                                        default:
-                                            break
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }()
-
-                    let initialState = await helperClient.resolveAlignedState(
-                        stateClient: stateClient,
-                        mainBundleVersion: currentBundleVersion,
-                    )
-                    _ = initialState
-                    _ = await monitor
-                }
-                .cancellable(id: CancelID.helperMonitor, cancelInFlight: true)
+                return observeSessionExpirationEffect(notificationCenterClient: notificationCenterClient)
 
             case .launch(.didFinishLaunching):
                 state.didFinishLaunching = true
-                if isRunningXCTest() {
-                    return .none
-                }
                 if onboardingWindowClient.showIfNeeded() {
                     return .none
                 }
-                return .send(.delegate(.openInitialWindowIfNeeded))
+                state.accessGatePhase = .checking
+                return .send(.accountAccess(.onAppear))
 
             case let .launch(.appReopen(hasVisibleWindows: flag)):
-                if isRunningXCTest() {
-                    return .none
-                }
                 if onboardingWindowClient.showIfNeeded() {
                     return .none
                 }
-                return .send(.delegate(.reopenWindowIfNeeded(hasVisibleWindows: flag)))
+                if state.accessGatePhase == .recoveryRequired || state.accessGatePhase == .granted {
+                    return .send(.delegate(.reopenWindowIfNeeded(hasVisibleWindows: flag)))
+                }
+                return .none
+
+            // MARK: - AccountAccess delegate routing
+
+            case .accountAccess(.delegate(.unlocked)):
+                guard state.accessGatePhase != .terminating else { return .none }
+                guard state.accessGatePhase != .granted else { return .none }
+                state.accessGatePhase = .granted
+                state.sessionEndReason = nil
+                var effects: [Effect<Action>] = [.send(.delegate(.openInitialWindowIfNeeded))]
+                if !state.didStartHelper {
+                    state.didStartHelper = true
+                    effects.append(helperMonitorEffect(
+                        helperClient: helperAppClient,
+                        stateClient: helperStateClient,
+                    ))
+                }
+                return .merge(effects)
+
+            case .accountAccess(.delegate(.recoveryRequired)):
+                guard state.accessGatePhase != .terminating else { return .none }
+                // explicit sign-out은 delegate를 signedOut 라우팅으로 변환
+                if state.sessionEndReason == .explicitSignOut {
+                    state.accessGatePhase = .signedOut
+                    return .none
+                }
+                guard state.accessGatePhase != .recoveryRequired else { return .none }
+                state.accessGatePhase = .recoveryRequired
+                guard !onboardingWindowClient.isRequired() else { return .none }
+                return .send(.delegate(.openInitialWindowIfNeeded))
+
+            case .accountAccess(.delegate(.signedOut)):
+                guard state.accessGatePhase != .terminating else { return .none }
+                state.accessGatePhase = .signedOut
+                return .none
+
+            case .accountAccess:
+                return .none
+
+            // MARK: - Session expiry adapter
+
+            case let .sessionExpiredDetected(reason):
+                // Task 4: app-level reason 저장 후 child teardown 라우팅
+                state.sessionEndReason = reason
+                return .send(.accountAccess(._sessionExpiredDetected))
+
+            // MARK: - Termination
 
             case .termination(.requestTermination):
                 guard state.terminationAttemptID == nil else {
@@ -182,6 +175,8 @@ struct AppLifecycleFeature {
                     return .none
                 }
 
+                let clock = clock
+
                 return .merge(
                     .run { send in
                         await VoyagerTerminationCoordinator.shared.begin(.userQuit)
@@ -192,12 +187,13 @@ struct AppLifecycleFeature {
                         )))
                     },
                     .run { send in
-                        try? await Task.sleep(nanoseconds: 5_000_000_000)
+                        try await clock.sleep(for: .seconds(5))
                         await send(.termination(.completeTerminationAttempt(
                             attemptID: attemptID,
                             shouldTerminate: true,
                         )))
-                    },
+                    }
+                    .cancellable(id: CancelID.terminationCleanupTimeout, cancelInFlight: true),
                 )
 
             case let .termination(.completeTerminationAttempt(attemptID: attemptID, shouldTerminate: shouldTerminate)):
@@ -208,12 +204,26 @@ struct AppLifecycleFeature {
                 state.terminationAttemptID = nil
 
                 let appTerminationReplyClient = appTerminationReplyClient
-                return .run { _ in
-                    await appTerminationReplyClient.reply(shouldTerminate)
-                }
+                return .merge(
+                    .cancel(id: CancelID.terminationCleanupTimeout),
+                    .run { _ in
+                        await appTerminationReplyClient.reply(shouldTerminate)
+                    },
+                )
 
             case .termination(.willTerminate):
-                return .cancel(id: CancelID.helperMonitor)
+                state.accessGatePhase = .terminating
+                return .merge(
+                    .cancel(id: CancelID.helperMonitor),
+                    .cancel(id: CancelID.sessionExpirationObserver),
+                    .send(.accountAccess(.appWillTerminate)),
+                )
+
+            case .delegate(.openInitialWindowIfNeeded):
+                return .none
+
+            case .delegate(.startHelperIfNeeded):
+                return .none
 
             case .delegate:
                 return .none
@@ -222,8 +232,95 @@ struct AppLifecycleFeature {
     }
 }
 
+// MARK: - Helper effects
+
+private func helperMonitorEffect(
+    helperClient: HelperAppClient,
+    stateClient: HelperStateClient,
+) -> Effect<AppLifecycleAction> {
+    .run { _ in
+        let currentBundleVersion = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+
+        async let monitor: Void = {
+            var policy = HelperSupervisionPolicy()
+
+            for await _ in helperClient.terminationEvents() {
+                if await VoyagerTerminationCoordinator.shared.isTerminating() {
+                    continue
+                }
+
+                let decision = policy.recordRestartAttempt()
+
+                switch decision {
+                case .allowed:
+                    await helperClient.ensureRunning()
+
+                case let .cooldown(activeUntil):
+                    policy = await waitAndRetryIfNeeded(
+                        policy: policy,
+                        helperClient: helperClient,
+                        activeUntil: activeUntil,
+                    )
+
+                case let .graceWindow(activeUntil):
+                    policy = await waitAndRetryIfNeeded(
+                        policy: policy,
+                        helperClient: helperClient,
+                        activeUntil: activeUntil,
+                    )
+                }
+            }
+        }()
+
+        let initialState = await helperClient.resolveAlignedState(
+            stateClient: stateClient,
+            mainBundleVersion: currentBundleVersion,
+        )
+        _ = initialState
+        _ = await monitor
+    }
+    .cancellable(id: "helperMonitor", cancelInFlight: true)
+}
+
+private func waitAndRetryIfNeeded(
+    policy: HelperSupervisionPolicy,
+    helperClient: HelperAppClient,
+    activeUntil: Date,
+) async -> HelperSupervisionPolicy {
+    var policy = policy
+    let delay = activeUntil.timeIntervalSinceNow
+    if delay > 0 {
+        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        let isRunning = await helperClient.isRunning()
+        if !isRunning {
+            let newDecision = policy.recordRestartAttempt()
+            if case .allowed = newDecision {
+                await helperClient.ensureRunning()
+            }
+        }
+    }
+    return policy
+}
+
 private func isRunningXCTest() -> Bool {
     ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+}
+
+/// accountSessionDidEnd notification을 관찰한다.
+private func observeSessionExpirationEffect(
+    notificationCenterClient: NotificationCenterClient,
+) -> Effect<AppLifecycleAction> {
+    .run { send in
+        for await notification in notificationCenterClient.notifications(
+            .accountSessionDidEnd,
+            nil,
+        ) {
+            let reasonRaw = notification.userInfo?[AccountSessionClient.sessionEndReasonUserInfoKey] as? String
+            let reason = reasonRaw.flatMap(AccountSessionEndReason.init(rawValue:))
+            await send(.sessionExpiredDetected(reason: reason))
+        }
+    }
+    .cancellable(id: "sessionExpirationObserver", cancelInFlight: true)
 }
 
 actor VoyagerTerminationCoordinator {
