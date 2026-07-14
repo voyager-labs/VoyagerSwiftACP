@@ -302,14 +302,13 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
-    /// Default window의 async bootstrap은 삭제된 pinned Directory record를 제외하고 compact save한다.
+    /// Default window의 async bootstrap은 삭제된 pinned Directory record를 제외하고 locked update로 compact한다.
     /// 삭제된 대상이 placeholder tab으로 반복 복원되지 않도록 WindowManager의 파일 존재 검증과 compaction을 검증한다.
-    /// - 검증 내용: valid record만 window에 복원, compacted store 저장
+    /// - 검증 내용: valid record만 window에 복원, 최신 store 기반 locked compaction
     /// - 사전 조건: valid directory 1개 + deleted directory 1개
-    /// - 기대 결과: deleted record 제외 및 saveStore 1회 호출
+    /// - 기대 결과: deleted record 제외 및 updateStoreAndLoad 1회 호출
     func testDefaultWindowBootstrapDropsDeletedPinnedDirectoryRecordsAndCompactsStore() async {
         let newID = UUID()
-        let savedStores = LockIsolated<[ContentTabPinnedRecordStore]>([])
         let pinnedStore = ContentTabPinnedRecordStore(records: [
             ContentTabPinnedRecord(
                 id: "valid-dir",
@@ -328,16 +327,27 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 pinnedAt: Date(timeIntervalSince1970: 444),
             ),
         ])
+        let persistedStore = LockIsolated(pinnedStore)
+        let updateCount = LockIsolated(0)
+        let unlockedSaveCalled = LockIsolated(false)
 
         let store = TestStore(initialState: WindowManagerFeature.State()) {
             WindowManagerFeature()
         } withDependencies: {
             $0.uuid = .constant(newID)
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.contentTabPinnedRecordClient.loadStore = { _ in pinnedStore }
-            $0.contentTabPinnedRecordClient.saveStore = { store, _ in
-                savedStores.withValue { $0.append(store) }
-            }
+            $0.contentTabPinnedRecordClient = ContentTabPinnedRecordClient(
+                loadStore: { _ in persistedStore.value },
+                saveStore: { _, _ in unlockedSaveCalled.withValue { $0 = true } },
+                updateStoreAndLoad: { _, transform in
+                    updateCount.withValue { $0 += 1 }
+                    return try persistedStore.withValue { value in
+                        let updated = try transform(value)
+                        value = updated
+                        return updated
+                    }
+                },
+            )
             $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
                 guard path == "/Users/test/Documents" else { return false }
                 isDirectory?.pointee = ObjCBool(true)
@@ -365,7 +375,99 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             window?.contentTabs.tabs[id: window?.contentTabs.activeTabID ?? ContentTabID(rawValue: "")]?.page,
             .home,
         )
-        XCTAssertEqual(savedStores.value.last?.records.map(\.id), ["valid-dir"])
+        XCTAssertEqual(persistedStore.value.records.map(\.id), ["valid-dir"])
+        XCTAssertEqual(updateCount.value, 1)
+        XCTAssertFalse(unlockedSaveCalled.value)
+    }
+
+    /// Default window compaction은 snapshot load 이후 발생한 최신 pin을 덮어쓰지 않는다.
+    /// stale snapshot에서 복원 필요성을 감지해도 실제 write는 locked latest store를 다시 변환해야 한다.
+    /// - 검증 내용: snapshot load → concurrent pin → locked compaction interleaving
+    /// - 사전 조건: stale store에는 valid/deleted record, 최신 store에는 concurrent record 추가
+    /// - 기대 결과: deleted record만 제거되고 concurrent record는 저장·복원됨
+    func testDefaultWindowBootstrapCompactionPreservesConcurrentPinnedRecord() async {
+        let newID = UUID()
+        let staleStore = ContentTabPinnedRecordStore(records: [
+            ContentTabPinnedRecord(
+                id: "valid-dir",
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Documents"),
+                title: "Documents",
+                iconName: "folder",
+                pinnedAt: Date(timeIntervalSince1970: 443),
+            ),
+            ContentTabPinnedRecord(
+                id: "deleted-dir",
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Deleted"),
+                title: "Deleted",
+                iconName: "folder",
+                pinnedAt: Date(timeIntervalSince1970: 444),
+            ),
+        ])
+        let concurrentRecord = ContentTabPinnedRecord(
+            id: "concurrent-dir",
+            page: .directory,
+            anchor: .directory(path: "/Users/test/Concurrent"),
+            title: "Concurrent",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 445),
+        )
+        let persistedStore = LockIsolated(staleStore)
+        let updateCount = LockIsolated(0)
+        let unlockedSaveCalled = LockIsolated(false)
+
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(newID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient = ContentTabPinnedRecordClient(
+                loadStore: { _ in staleStore },
+                saveStore: { _, _ in unlockedSaveCalled.withValue { $0 = true } },
+                updateStoreAndLoad: { _, transform in
+                    updateCount.withValue { $0 += 1 }
+                    return try persistedStore.withValue { value in
+                        value = ContentTabPinnedRecordStore(
+                            schemaVersion: value.schemaVersion,
+                            records: value.records + [concurrentRecord],
+                        )
+                        let updated = try transform(value)
+                        value = updated
+                        return updated
+                    }
+                },
+            )
+            $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
+                guard path == "/Users/test/Documents" || path == "/Users/test/Concurrent" else {
+                    return false
+                }
+                isDirectory?.pointee = ObjCBool(true)
+                return true
+            }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs))) = action
+            else {
+                return false
+            }
+            return id == newID
+        }
+        await store.finish()
+
+        XCTAssertEqual(persistedStore.value.records.map(\.id), ["valid-dir", "concurrent-dir"])
+        XCTAssertEqual(
+            store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
+            ["valid-dir", "concurrent-dir"],
+        )
+        XCTAssertEqual(updateCount.value, 1)
+        XCTAssertFalse(unlockedSaveCalled.value)
     }
 
     /// Collection file이 macOS package(directory)로 보이더라도 async bootstrap에서 정상 pinned record로 복원해야 한다.

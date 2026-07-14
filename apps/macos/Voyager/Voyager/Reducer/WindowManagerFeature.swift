@@ -541,8 +541,7 @@ private enum DefaultWindowBootstrap {
         let reloadedStore = (try? dependencies.pinnedRecordClient.loadStore(dependencies.defaultsClient))
             ?? ContentTabPinnedRecordStore()
         let restoreResult = restorePinnedRecords(from: reloadedStore, dependencies: dependencies)
-        compactIfNeeded(restoreResult, store: reloadedStore, dependencies: dependencies)
-        return restoreResult.state
+        return compactIfNeeded(restoreResult, dependencies: dependencies)
     }
 
     private static func seedFinderFavoritesIfNeeded(
@@ -672,17 +671,31 @@ private enum DefaultWindowBootstrap {
 
     private static func compactIfNeeded(
         _ restoreResult: RestoreResult,
-        store: ContentTabPinnedRecordStore,
         dependencies: Dependencies,
-    ) {
-        guard restoreResult.didCompact else { return }
-        let compactedStore = ContentTabPinnedRecordStore(
-            schemaVersion: store.schemaVersion,
-            records: restoreResult.state.tabs.compactMap { tab in
-                restoreResult.state.pinnedRecords[tab.id]
-            },
-        )
-        try? dependencies.pinnedRecordClient.saveStore(compactedStore, dependencies.defaultsClient)
+    ) -> ContentTabState {
+        guard restoreResult.didCompact else { return restoreResult.state }
+
+        do {
+            let compactedStore = try dependencies.pinnedRecordClient.updateStoreAndLoad(
+                dependencies.defaultsClient,
+            ) { latestStore in
+                let latestRestoreResult = restorePinnedRecords(
+                    from: latestStore,
+                    dependencies: dependencies,
+                )
+                guard latestRestoreResult.didCompact else { return latestStore }
+
+                return ContentTabPinnedRecordStore(
+                    schemaVersion: latestStore.schemaVersion,
+                    records: latestRestoreResult.state.tabs.compactMap { tab in
+                        latestRestoreResult.state.pinnedRecords[tab.id]
+                    },
+                )
+            }
+            return restorePinnedRecords(from: compactedStore, dependencies: dependencies).state
+        } catch {
+            return restoreResult.state
+        }
     }
 
     nonisolated private static func mergingFinderRecords(
