@@ -584,6 +584,10 @@ public struct AiChatSessionSnapshot: Codable, Equatable, Sendable {
 }
 
 public struct AiChatSessionSummary: Codable, Equatable, Sendable {
+    public static func titleCandidate(from snapshot: AiChatSessionSnapshot) -> String? {
+        snapshot.sessionTitleCandidate
+    }
+
     public static func automaticTitle(from value: String, limit: Int = 32) -> String {
         let collapsed = normalizedSummaryText(value)
         let sentence = firstSentence(in: collapsed)
@@ -630,6 +634,14 @@ public struct AiChatSessionSummary: Codable, Equatable, Sendable {
     }
 
     // swiftlint:enable function_default_parameter_at_end
+
+    public func isNewer(than other: Self) -> Bool {
+        guard sessionID == other.sessionID else { return false }
+        if updatedAtMs != other.updatedAtMs {
+            return updatedAtMs > other.updatedAtMs
+        }
+        return messageCount > other.messageCount
+    }
 
     fileprivate static func normalizedSummaryText(_ value: String, limit: Int = 120) -> String {
         let collapsed = value
@@ -680,12 +692,15 @@ private extension AiChatSessionSnapshot {
     }
 
     var sessionTitle: String {
+        sessionTitleCandidate ?? "New Chat"
+    }
+
+    var sessionTitleCandidate: String? {
         customTitle.map { AiChatSessionSummary.normalizedSummaryText($0) }?.nilIfBlank
-            ?? sessionTitleCandidate
+            ?? transcriptTitleCandidate
             ?? contextTitle
             ?? selectedModelRow?.displayName
             ?? model?.rawValue
-            ?? "New Chat"
     }
 
     var sessionPreview: String? {
@@ -712,7 +727,7 @@ private extension AiChatSessionSnapshot {
             ?? currentContext?.attachments.lazy.compactMap(\.title).first(where: { $0.nilIfBlank != nil })?.nilIfBlank
     }
 
-    private var sessionTitleCandidate: String? {
+    private var transcriptTitleCandidate: String? {
         transcriptHistory
             .first(where: { $0.role == .user })?
             .content

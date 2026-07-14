@@ -30,6 +30,12 @@ struct AppMenuCommands: Commands {
             }
             .keyboardShortcut("n", modifiers: .command)
 
+            Button("New Tab") {
+                send(.app(.newTab))
+            }
+            .keyboardShortcut("t", modifiers: .command)
+            .disabled(!viewStore.hasFocusedWindow)
+
             Button("New Folder") {
                 send(.app(.newFolder))
             }
@@ -67,8 +73,28 @@ struct AppMenuCommands: Commands {
             Button("Close Window") {
                 send(.app(.closeFocusedWindow))
             }
-            .keyboardShortcut("w", modifiers: .command)
+            .keyboardShortcut("w", modifiers: [.command, .shift])
             .disabled(!viewStore.hasFocusedWindow)
+
+            if viewStore.showsCloseTabCommand {
+                Button(viewStore.closeTabTitle) {
+                    send(.app(.closeTab))
+                }
+                .keyboardShortcut("w", modifiers: .command)
+                .disabled(!viewStore.hasFocusedWindow)
+            }
+
+            Button(viewStore.pinTabTitle) {
+                send(.app(.togglePinTab))
+            }
+            .keyboardShortcut("p", modifiers: .command)
+            .disabled(!viewStore.hasFocusedWindow)
+
+            Button("Restore Last Closed Tab") {
+                send(.app(.restoreLastClosedTab))
+            }
+            .keyboardShortcut("t", modifiers: [.command, .shift])
+            .disabled(!viewStore.canRestoreLastClosedTab)
 
             Button("Close All") {
                 send(.app(.closeAllWindows))

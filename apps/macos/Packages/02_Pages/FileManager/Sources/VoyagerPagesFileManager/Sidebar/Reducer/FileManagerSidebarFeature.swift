@@ -7,7 +7,24 @@ public struct FileManagerSidebarFeature {
 
     public var body: some Reducer<State, Action> {
         FileManagerSidebarPreferenceReducer()
-        FileManagerSidebarSourceLoadingReducer()
-        FileManagerSidebarInteractionReducer()
+        FileManagerSidebarContentTabSyncReducer()
+    }
+}
+
+@Reducer
+struct FileManagerSidebarContentTabSyncReducer {
+    typealias State = FileManagerSidebarState
+    typealias Action = FileManagerSidebarAction
+
+    var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            switch action {
+            case let .internal(.syncContentTabSidebarItems(items)):
+                state.contentTabSidebarItems = items
+                return .none
+            default:
+                return .none
+            }
+        }
     }
 }

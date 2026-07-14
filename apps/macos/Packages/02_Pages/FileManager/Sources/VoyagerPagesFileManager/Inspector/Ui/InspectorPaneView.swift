@@ -80,19 +80,7 @@ struct InspectorPaneView: View {
     }
 
     private var newChatButtonLabel: some View {
-        Text("New Chat")
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 10)
-            .frame(height: 24)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.primary.opacity(0.06)),
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(Color.primary.opacity(0.10), lineWidth: 1),
-            )
+        ToolbarHoverPillButtonLabel(title: "New Chat", isEnabled: true)
     }
 
     private var chatHeaderTitle: String {

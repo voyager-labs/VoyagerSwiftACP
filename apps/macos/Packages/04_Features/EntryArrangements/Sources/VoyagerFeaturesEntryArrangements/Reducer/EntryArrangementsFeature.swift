@@ -2,10 +2,10 @@ import ComposableArchitecture
 
 @Reducer
 public struct EntryArrangementsFeature {
-    public init() {}
-
     public typealias State = EntryArrangementsState
     public typealias Action = EntryArrangementsAction
+
+    public init() {}
 
     public var body: some Reducer<State, Action> {
         CombineReducers {

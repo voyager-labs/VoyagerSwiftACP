@@ -20,20 +20,16 @@ extension AiChatFeature {
     }
 
     private func retryPersistenceRecovery(lock: AiChatRequestLock, state: State) -> Effect<Action> {
-        let snapshot = makeSessionSnapshot(
-            state: state,
-            lock: lock,
-            updatedAtMs: lock.observabilitySummary.terminalAtMs ?? currentTimestampMs(),
-        )
+        let snapshot = persistenceRecoverySnapshot(for: lock, state: state)
         return .run { [aiChatSessionPersistenceClient] send in
             do {
-                try await aiChatSessionPersistenceClient.saveSession(snapshot)
+                _ = try await aiChatSessionPersistenceClient.saveSession(snapshot)
                 await send(.persistenceRecoverySucceeded(lock))
             } catch {
                 await send(.persistenceRecoveryRetryFailed(lock, .unknown))
             }
         }
-        .cancellable(id: CancelID.persistenceRecovery, cancelInFlight: true)
+        .cancellable(id: CancelID.persistenceRecovery(lock.requestID), cancelInFlight: true)
     }
 
     func handlePersistenceFailed(lock: AiChatRequestLock, failure: AiChatExecutionFailure, state: inout State)
@@ -41,24 +37,46 @@ extension AiChatFeature {
     {
         switch state.executionPhase {
         case let .completed(currentLock):
-            guard currentLock.requestID == lock.requestID else { return .none }
+            guard currentLock.requestID == lock.requestID,
+                  currentLock.runID == lock.runID
+            else { return .none }
+            state.executionPhase = .persistenceRecovery(currentLock, failure)
+            state.lastExecutionFailure = failure
+            return .none
+
         case let .persistenceRecovery(currentLock, _):
-            guard currentLock.requestID == lock.requestID else { return .none }
+            guard currentLock.requestID == lock.requestID,
+                  currentLock.runID == lock.runID
+            else { return .none }
+            state.executionPhase = .persistenceRecovery(currentLock, failure)
+            state.lastExecutionFailure = failure
+            return .none
+
         default:
+            guard let backgroundPhase = state.backgroundExecutionPhases[lock.requestID],
+                  let backgroundLock = backgroundPhase.lock,
+                  backgroundLock.runID == lock.runID
+            else { return .none }
+            state.backgroundExecutionPhases[lock.requestID] = .persistenceRecovery(backgroundLock, failure)
             return .none
         }
-
-        state.executionPhase = .persistenceRecovery(lock, failure)
-        state.lastExecutionFailure = failure
-        return .none
     }
 
     func handlePersistenceRecoverySucceeded(lock: AiChatRequestLock, state: inout State) -> Effect<Action> {
-        guard case let .persistenceRecovery(currentLock, _) = state.executionPhase,
-              currentLock.requestID == lock.requestID
+        if case let .persistenceRecovery(currentLock, _) = state.executionPhase,
+           currentLock.requestID == lock.requestID,
+           currentLock.runID == lock.runID
+        {
+            state.executionPhase = .completed(currentLock.clearingFinalSnapshot())
+            state.lastExecutionFailure = nil
+            return .none
+        }
+
+        guard let backgroundPhase = state.backgroundExecutionPhases[lock.requestID],
+              let backgroundLock = backgroundPhase.lock,
+              backgroundLock.runID == lock.runID
         else { return .none }
-        state.executionPhase = .completed(lock)
-        state.lastExecutionFailure = nil
+        state.backgroundExecutionPhases[lock.requestID] = .completed(backgroundLock.clearingFinalSnapshot())
         return .none
     }
 
@@ -67,11 +85,28 @@ extension AiChatFeature {
         failure: AiChatExecutionFailure,
         state: inout State,
     ) -> Effect<Action> {
-        guard case let .persistenceRecovery(currentLock, _) = state.executionPhase,
-              currentLock.requestID == lock.requestID
+        if case let .persistenceRecovery(currentLock, _) = state.executionPhase,
+           currentLock.requestID == lock.requestID,
+           currentLock.runID == lock.runID
+        {
+            state.executionPhase = .persistenceRecovery(currentLock, failure)
+            state.lastExecutionFailure = failure
+            return .none
+        }
+
+        guard let backgroundPhase = state.backgroundExecutionPhases[lock.requestID],
+              let backgroundLock = backgroundPhase.lock,
+              backgroundLock.runID == lock.runID
         else { return .none }
-        state.executionPhase = .persistenceRecovery(lock, failure)
-        state.lastExecutionFailure = failure
+        state.backgroundExecutionPhases[lock.requestID] = .persistenceRecovery(backgroundLock, failure)
         return .none
+    }
+
+    private func persistenceRecoverySnapshot(for lock: AiChatRequestLock, state: State) -> AiChatSessionSnapshot {
+        lock.finalSnapshot ?? makeSessionSnapshot(
+            state: state,
+            lock: lock,
+            updatedAtMs: lock.observabilitySummary.terminalAtMs ?? currentTimestampMs(),
+        )
     }
 }

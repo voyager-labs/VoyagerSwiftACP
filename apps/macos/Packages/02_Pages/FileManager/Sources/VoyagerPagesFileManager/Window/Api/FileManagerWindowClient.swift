@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesContentPageNavigation
 
 public struct FileManagerWindowClient: Sendable {
@@ -81,6 +82,10 @@ public extension DependencyValues {
 @MainActor private var fileManagerWindowRequestNewWindow: ((String?) -> Void)?
 @MainActor private var fileManagerWindowRequestNewTab: ((String?) -> Void)?
 @MainActor private var fileManagerWindowResolveStore: ((UUID) -> StoreOf<FileManagerFeature>?)?
+@MainActor private var fileManagerWindowSessionLapseStore: (() -> Store<
+    AccountAccessFeature.State?,
+    AccountAccessAction,
+>)?
 @MainActor private var fileManagerWindowOnBecameKey: ((UUID) -> Void)?
 @MainActor private var fileManagerWindowOnResignedKey: ((UUID) -> Void)?
 @MainActor private var fileManagerWindowOnClosed: ((UUID) -> Void)?
@@ -164,10 +169,12 @@ public func configureFileManagerWindowClientLive(
     requestNewTab: @escaping (String?) -> Void,
     resolveFileManagerStore: @escaping (UUID) -> StoreOf<FileManagerFeature>?,
     windowKeyCallbacks: FileManagerWindowKeyCallbacks,
+    resolveSessionLapseGuardStore: @escaping () -> Store<AccountAccessFeature.State?, AccountAccessAction>,
 ) {
     fileManagerWindowRequestNewWindow = requestNewWindow
     fileManagerWindowRequestNewTab = requestNewTab
     fileManagerWindowResolveStore = resolveFileManagerStore
+    fileManagerWindowSessionLapseStore = resolveSessionLapseGuardStore
     fileManagerWindowOnBecameKey = windowKeyCallbacks.onBecameKey
     fileManagerWindowOnResignedKey = windowKeyCallbacks.onResignedKey
     fileManagerWindowOnClosed = windowKeyCallbacks.onClosed
@@ -297,6 +304,7 @@ private func makeManagedWindowController(
         store: fileManagerStore,
         windowUndoManager: undoManager,
         path: nil,
+        sessionLapseGuardStore: fileManagerWindowSessionLapseStore?(),
         onBecameKey: { id in
             fileManagerWindowOnBecameKey?(id)
         },

@@ -4,6 +4,7 @@ import Foundation
 import SwiftUI
 import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
@@ -18,6 +19,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
     case entryViewLayout(EntryViewLayoutFeature.Action)
     case composer(ComposerFeature.Action)
     case collection(CollectionFeature.Action)
+    case aiChat(AiChatFeature.Action)
     case externalFileSystemChanged([String])
 
     @CasePathable
@@ -29,6 +31,8 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case refreshStaleCollection
         case toggleShowHiddenFilesAndReload
         case discardCollectionChanges
+        case homeSelectionTapped(FileManagerHomeSelection)
+        case homeAppeared
     }
 
     @CasePathable
@@ -45,6 +49,12 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case resetComposer
         case resetComposerAfterDirectoryNavigation
         case setAutomaticRefreshFeedbackSuppressed(Bool)
+        case homeDirectoryPickerFinished(FileManagerHomePickerResult<String>)
+        case homeCollectionPickerFinished(FileManagerHomePickerResult<URL>)
+        case homeAiChatSessionCreated(FileManagerHomePickerResult<String>)
+        case homeDirectoryItemCountsLoaded([FileManagerHomeDirectory: Int])
+        case homeChatHistoryLoaded([FileManagerHomeChatHistoryItem])
+        case homeChatHistoryLoadFailed
     }
 
     @CasePathable
@@ -52,12 +62,14 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case collectionChangesDiscarded
         case composerCollectionSearchSucceeded
         case composerCollectionSearchFailed
-        case dropItemsToSidebarFolder(providers: [NSItemProvider], targetURL: URL)
-        case dropItemsToTag(providers: [NSItemProvider], tagName: String)
         case openPathInNewWindow(String)
-        case openPathInNewTab(String)
         case closeWindow
         case openContextualAiChat
+        case openAISettings
         case currentContextChanged(AiChatCurrentContextSnapshot)
+        case homePageAnchorSelected(ContentTabPageAnchor)
+        case homeChatHistorySessionSelected(AiChatSessionID)
+        case aiChatSessionCreated(AiChatSessionID)
+        case aiChatSessionRestored(sessionID: AiChatSessionID, title: String)
     }
 }

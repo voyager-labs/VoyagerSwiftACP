@@ -67,6 +67,7 @@ public struct ComposerState: Equatable {
     public var isCollectionMode: Bool = false
     public var pendingSearchQuery: String?
     public var includeDirectories: Bool = false
+    public var cancellationOwnerID: UUID?
 
     public var text: String = ""
     public var scopes: [String] {

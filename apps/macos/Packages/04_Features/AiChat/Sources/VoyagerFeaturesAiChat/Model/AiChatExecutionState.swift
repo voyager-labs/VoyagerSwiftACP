@@ -32,6 +32,7 @@ public struct AiChatHistoryTruncationMetadata: Equatable, Sendable {
 public struct AiChatPreparedRequest: Equatable, Sendable {
     public var prompt: String
     public var messages: [AiChatMessage]
+    public var persistenceTranscriptHistory: [AiChatMessage]
     public var assistantReplacementIndex: Int?
     public var historyTruncation: AiChatHistoryTruncationMetadata
     public var requestContextOverride: AiChatLockedRequestContextSnapshot?
@@ -40,6 +41,7 @@ public struct AiChatPreparedRequest: Equatable, Sendable {
     public init(
         prompt: String,
         messages: [AiChatMessage],
+        persistenceTranscriptHistory: [AiChatMessage]? = nil,
         assistantReplacementIndex: Int?,
         historyTruncation: AiChatHistoryTruncationMetadata,
         requestContextOverride: AiChatLockedRequestContextSnapshot? = nil,
@@ -47,6 +49,7 @@ public struct AiChatPreparedRequest: Equatable, Sendable {
     ) {
         self.prompt = prompt
         self.messages = messages
+        self.persistenceTranscriptHistory = persistenceTranscriptHistory ?? messages
         self.assistantReplacementIndex = assistantReplacementIndex
         self.historyTruncation = historyTruncation
         self.requestContextOverride = requestContextOverride
@@ -60,6 +63,8 @@ public struct AiChatPendingRequestStart: Equatable, Sendable {
     public var sessionID: AiChatSessionID
     public var selectedModel: AiProviderModel
     public var selectedRow: AiModelCatalogRow?
+    public var selectedThinking: AiThinkingSelection?
+    public var customTitle: String?
     public var preparedRequest: AiChatPreparedRequest
 
     public init(
@@ -68,6 +73,8 @@ public struct AiChatPendingRequestStart: Equatable, Sendable {
         sessionID: AiChatSessionID,
         selectedModel: AiProviderModel,
         selectedRow: AiModelCatalogRow?,
+        selectedThinking: AiThinkingSelection? = nil,
+        customTitle: String? = nil,
         preparedRequest: AiChatPreparedRequest,
     ) {
         self.resolutionID = resolutionID
@@ -75,6 +82,8 @@ public struct AiChatPendingRequestStart: Equatable, Sendable {
         self.sessionID = sessionID
         self.selectedModel = selectedModel
         self.selectedRow = selectedRow
+        self.selectedThinking = selectedThinking
+        self.customTitle = customTitle
         self.preparedRequest = preparedRequest
     }
 }
@@ -146,11 +155,29 @@ public struct AiChatRequestLock: Equatable, Sendable {
     public let runID: AiChatRunID
     public let context: AiChatRequestContextSnapshot
     public let request: AiChatRequest
+    public let persistenceTranscriptHistory: [AiChatMessage]
     public let selectedModelHandle: AiModelHandle
     public let selectedModelRow: AiModelCatalogRow?
     public let assistantReplacementIndex: Int?
+    public let customTitle: String?
+    public let finalSnapshot: AiChatSessionSnapshot?
     public let historyTruncation: AiChatHistoryTruncationMetadata
     public let observabilitySummary: AiChatRequestObservabilitySummary
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.kind == rhs.kind
+            && lhs.requestID == rhs.requestID
+            && lhs.runID == rhs.runID
+            && lhs.context == rhs.context
+            && lhs.request == rhs.request
+            && lhs.persistenceTranscriptHistory == rhs.persistenceTranscriptHistory
+            && lhs.selectedModelHandle == rhs.selectedModelHandle
+            && lhs.selectedModelRow == rhs.selectedModelRow
+            && lhs.assistantReplacementIndex == rhs.assistantReplacementIndex
+            && lhs.customTitle == rhs.customTitle
+            && lhs.historyTruncation == rhs.historyTruncation
+            && lhs.observabilitySummary == rhs.observabilitySummary
+    }
 
     public init(
         kind: AiChatRequestKind,
@@ -158,6 +185,42 @@ public struct AiChatRequestLock: Equatable, Sendable {
         runID: AiChatRunID,
         context: AiChatRequestContextSnapshot,
         request: AiChatRequest,
+        persistenceTranscriptHistory: [AiChatMessage]? = nil,
+        selectedModelHandle: AiModelHandle,
+        selectedModelRow: AiModelCatalogRow?,
+        assistantReplacementIndex: Int?,
+        customTitle: String? = nil,
+        finalSnapshot: AiChatSessionSnapshot? = nil,
+        historyTruncation: AiChatHistoryTruncationMetadata = .init(
+            includedMessageCount: 0,
+            excludedMessageCount: 0,
+            budget: 24000,
+            truncationReason: nil,
+        ),
+        observabilitySummary: AiChatRequestObservabilitySummary = .init(submittedAtMs: 0),
+    ) {
+        self.kind = kind
+        self.requestID = requestID
+        self.runID = runID
+        self.context = context
+        self.request = request
+        self.persistenceTranscriptHistory = persistenceTranscriptHistory ?? request.messages
+        self.selectedModelHandle = selectedModelHandle
+        self.selectedModelRow = selectedModelRow
+        self.assistantReplacementIndex = assistantReplacementIndex
+        self.customTitle = customTitle
+        self.finalSnapshot = finalSnapshot
+        self.historyTruncation = historyTruncation
+        self.observabilitySummary = observabilitySummary
+    }
+
+    public init(
+        kind: AiChatRequestKind,
+        requestID: AiChatRequestID,
+        runID: AiChatRunID,
+        context: AiChatRequestContextSnapshot,
+        request: AiChatRequest,
+        persistenceTranscriptHistory: [AiChatMessage]? = nil,
         selectedModelHandle: AiModelHandle,
         selectedModelRow: AiModelCatalogRow?,
         assistantReplacementIndex: Int?,
@@ -174,9 +237,12 @@ public struct AiChatRequestLock: Equatable, Sendable {
         self.runID = runID
         self.context = context
         self.request = request
+        self.persistenceTranscriptHistory = persistenceTranscriptHistory ?? request.messages
         self.selectedModelHandle = selectedModelHandle
         self.selectedModelRow = selectedModelRow
         self.assistantReplacementIndex = assistantReplacementIndex
+        customTitle = nil
+        finalSnapshot = nil
         self.historyTruncation = historyTruncation
         self.observabilitySummary = observabilitySummary
     }
@@ -188,9 +254,12 @@ public struct AiChatRequestLock: Equatable, Sendable {
             runID: runID,
             context: context,
             request: request,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
             selectedModelHandle: selectedModelHandle,
             selectedModelRow: selectedModelRow,
             assistantReplacementIndex: assistantReplacementIndex,
+            customTitle: customTitle,
+            finalSnapshot: finalSnapshot,
             historyTruncation: historyTruncation,
             observabilitySummary: observabilitySummary.recordingDelta(at: timestampMs),
         )
@@ -207,15 +276,92 @@ public struct AiChatRequestLock: Equatable, Sendable {
             runID: runID,
             context: context,
             request: request,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
             selectedModelHandle: selectedModelHandle,
             selectedModelRow: selectedModelRow,
             assistantReplacementIndex: assistantReplacementIndex,
+            customTitle: customTitle,
+            finalSnapshot: finalSnapshot,
             historyTruncation: historyTruncation,
             observabilitySummary: observabilitySummary.recordingTerminal(
                 at: timestampMs,
                 failure: failure,
                 wasCancelled: wasCancelled,
             ),
+        )
+    }
+
+    public func recordingFinalSnapshot(_ snapshot: AiChatSessionSnapshot) -> Self {
+        Self(
+            kind: kind,
+            requestID: requestID,
+            runID: runID,
+            context: context,
+            request: request,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
+            selectedModelHandle: selectedModelHandle,
+            selectedModelRow: selectedModelRow,
+            assistantReplacementIndex: assistantReplacementIndex,
+            customTitle: customTitle,
+            finalSnapshot: snapshot,
+            historyTruncation: historyTruncation,
+            observabilitySummary: observabilitySummary,
+        )
+    }
+
+    public func clearingFinalSnapshot() -> Self {
+        Self(
+            kind: kind,
+            requestID: requestID,
+            runID: runID,
+            context: context,
+            request: request,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
+            selectedModelHandle: selectedModelHandle,
+            selectedModelRow: selectedModelRow,
+            assistantReplacementIndex: assistantReplacementIndex,
+            customTitle: customTitle,
+            finalSnapshot: nil,
+            historyTruncation: historyTruncation,
+            observabilitySummary: observabilitySummary,
+        )
+    }
+
+    public func recordingCustomTitle(_ customTitle: String?) -> Self {
+        Self(
+            kind: kind,
+            requestID: requestID,
+            runID: runID,
+            context: context,
+            request: request,
+            persistenceTranscriptHistory: persistenceTranscriptHistory,
+            selectedModelHandle: selectedModelHandle,
+            selectedModelRow: selectedModelRow,
+            assistantReplacementIndex: assistantReplacementIndex,
+            customTitle: customTitle,
+            finalSnapshot: finalSnapshot.map { Self.snapshot($0, customTitle: customTitle) },
+            historyTruncation: historyTruncation,
+            observabilitySummary: observabilitySummary,
+        )
+    }
+
+    private static func snapshot(
+        _ snapshot: AiChatSessionSnapshot,
+        customTitle: String?,
+    ) -> AiChatSessionSnapshot {
+        AiChatSessionSnapshot(
+            sessionID: snapshot.sessionID,
+            status: snapshot.status,
+            customTitle: customTitle,
+            provider: snapshot.provider,
+            model: snapshot.model,
+            selectedModelRow: snapshot.selectedModelRow,
+            selectedThinking: snapshot.selectedThinking,
+            transcriptHistory: snapshot.transcriptHistory,
+            lastRequestID: snapshot.lastRequestID,
+            lastRunID: snapshot.lastRunID,
+            lastRequestContext: snapshot.lastRequestContext,
+            updatedAtMs: snapshot.updatedAtMs,
         )
     }
 }

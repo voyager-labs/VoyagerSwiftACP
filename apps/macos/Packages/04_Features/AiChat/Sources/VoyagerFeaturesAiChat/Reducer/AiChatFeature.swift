@@ -9,12 +9,12 @@ public struct AiChatFeature {
     public typealias Action = AiChatAction
 
     enum CancelID: Hashable {
-        case request
-        case requestContextResolution
-        case requestStartPersistence
-        case requestFinalPersistence
+        case request(AiChatRequestID)
+        case requestContextResolution(UUID)
+        case requestStartPersistence(AiChatRequestID)
+        case requestFinalPersistence(AiChatRequestID)
         case restore
-        case persistenceRecovery
+        case persistenceRecovery(AiChatRequestID)
         case modelList
         case sessionList
         case sessionDelete
@@ -47,6 +47,20 @@ public struct AiChatFeature {
 
     public init() {}
 
+    func matchesRequestLifecycleOwner(
+        requestID: AiChatRequestID,
+        runID: AiChatRunID,
+        state: State,
+    ) -> Bool {
+        if case let .processing(lock) = state.executionPhase,
+           lock.requestID == requestID,
+           lock.runID == runID
+        {
+            return true
+        }
+        return state.backgroundExecutionPhases[requestID]?.lock?.runID == runID
+    }
+
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -71,6 +85,54 @@ public struct AiChatFeature {
                 let snapshot = startNewUnselectedChat(state: &state)
                 preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
                 return saveNewChat(snapshot)
+
+            case .showSessionsTapped:
+                state.sessionList.cancelRenaming()
+                state.sessionList.errorMessage = nil
+                state.restoreOutcome = nil
+                state.restoreFailure = nil
+                state.mode = .sessions
+                guard let restoreSessionID = state.restoreSessionID, restoreSessionID != state.sessionID else {
+                    return .none
+                }
+                state.restoreSessionID = nil
+                return .cancel(id: CancelID.restore)
+
+            case let .showSessionsForChat(sessionID):
+                state.sessionList.cancelRenaming()
+                state.sessionList.errorMessage = nil
+                state.restoreOutcome = nil
+                state.restoreFailure = nil
+                state.mode = .sessions
+                state.sessionID = sessionID
+                state.sessionList.selectedSessionID = sessionID
+                guard let restoreSessionID = state.restoreSessionID, restoreSessionID != sessionID else {
+                    return .none
+                }
+                state.restoreSessionID = nil
+                return .cancel(id: CancelID.restore)
+
+            case .returnToChatTapped:
+                if let restoreSessionID = state.restoreSessionID,
+                   restoreSessionID != state.sessionID
+                {
+                    return .none
+                }
+                guard state.sessionID != nil else {
+                    let preservedExecutionPhase = state.executionPhase
+                    let snapshot = startNewUnselectedChat(state: &state)
+                    preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
+                    return saveNewChat(snapshot)
+                }
+                state.sessionList.cancelRenaming()
+                state.sessionList.errorMessage = nil
+                state.restoreOutcome = nil
+                state.restoreFailure = nil
+                state.mode = .chat
+                return .cancel(id: CancelID.restore)
+
+            case let .routeToChatSession(sessionID):
+                return routeToChatSession(sessionID, state: &state)
 
             case .startNewChatFromRebindTapped:
                 let preservedExecutionPhase = state.executionPhase
@@ -114,6 +176,11 @@ public struct AiChatFeature {
 
             case let .sessionRenameSucceeded(summary, customTitle):
                 state.sessionList.replaceRow(summary)
+                refreshCustomTitleInExecutionOwners(
+                    sessionID: summary.sessionID,
+                    customTitle: customTitle,
+                    state: &state,
+                )
                 if state.sessionID == summary.sessionID {
                     state.currentSessionCustomTitle = customTitle
                 }
@@ -125,15 +192,15 @@ public struct AiChatFeature {
                 state.sessionList.errorMessage = message
                 return .none
 
-            case let .sessionSnapshotUpdated(summary, requestID, runID):
-                guard case let .processing(lock) = state.executionPhase,
-                      lock.requestID == requestID,
-                      lock.runID == runID,
-                      !state.sessionList.deletedSessionIDs.contains(summary.sessionID)
+            case let .sessionSnapshotUpdated(summary, _, requestID, runID):
+                guard !state.sessionList.deletedSessionIDs.contains(summary.sessionID),
+                      matchesRequestLifecycleOwner(requestID: requestID, runID: runID, state: state)
                 else { return .none }
-                state.sessionList.replaceRow(summary)
-                state.sessionList.selectedSessionID = summary.sessionID
-                state.sessionList.unreadCompletedSessionIDs.remove(summary.sessionID)
+                guard state.sessionList.replaceRowIfNewer(summary).acceptsRow else { return .none }
+                if state.sessionID == summary.sessionID {
+                    state.sessionList.selectedSessionID = summary.sessionID
+                    state.sessionList.unreadCompletedSessionIDs.remove(summary.sessionID)
+                }
                 state.sessionList.errorMessage = nil
                 return .none
 
@@ -144,8 +211,14 @@ public struct AiChatFeature {
                 else { return .none }
                 return .none
 
-            case let .sessionSnapshotSaved(summary):
-                applySessionSnapshotSaved(summary: summary, state: &state)
+            case let .sessionSnapshotSaved(summary, snapshot, requestID, runID):
+                applySessionSnapshotSaved(
+                    summary: summary,
+                    snapshot: snapshot,
+                    requestID: requestID,
+                    runID: runID,
+                    state: &state,
+                )
                 return .none
 
             case .backToSessionsTapped:
@@ -200,6 +273,14 @@ public struct AiChatFeature {
                 apply(setup: setup, to: &state)
                 normalizeSelectionIfNeeded(&state)
                 guard let restoreSessionID = state.restoreSessionID else { return .none }
+                if restoreSessionID == state.sessionID,
+                   state.transcriptHistory.isEmpty,
+                   state.sessionStatus == .idle
+                {
+                    // 새 ContentPane 채팅은 아직 저장된 세션이 없으므로 restore를 타지 않는다.
+                    state.restoreSessionID = nil
+                    return .none
+                }
                 state.sessionStatus = .restoring
                 return restoreSession(sessionID: restoreSessionID, state: state)
 
@@ -366,6 +447,12 @@ public struct AiChatFeature {
 
             case .resetTapped:
                 return handleResetTapped(state: &state)
+
+            case let .cancelRequestLifecycle(sessionID):
+                return cancelRequestLifecycle(for: sessionID, state: &state) ?? .none
+
+            case .cancelInFlightWork:
+                return cancelAllInFlightWork(state: &state)
 
             case .teardownRequested:
                 return handleTeardownRequested(state: &state)

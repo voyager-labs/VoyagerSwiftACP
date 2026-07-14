@@ -16,16 +16,10 @@ struct FileManagerWindowPreferencesReducer {
                 state.sidebar.sidebarWidth = preferences.sidebarWidth
                 state.inspector.inspectorWidth = preferences.inspectorWidth
 
-                state.content.entryViewLayout.mode = .init(rawValue: preferences.viewLayoutMode.rawValue) ?? .list
-                state.content.entryViewLayout.listIconSize = preferences.listIconSize
-                state.content.entryViewLayout.gridIconSize = preferences.gridIconSize
-                state.content.entryViewLayout.listTextSize = preferences.listTextSize
-                state.content.entryViewLayout.gridTextSize = preferences.gridTextSize
-                state.content.entryViewLayout.showHiddenFiles = preferences.showHiddenFiles
-                state.content.entryViewLayout.entryArrangements.updateSortKey(preferences.sortKey)
-                state.content.entryViewLayout.entryArrangements.updateSortOrder(preferences.sortOrder)
-                state.content.entryViewLayout.entryArrangements.updateGroupKey(preferences.groupKey)
-                state.content.syncComposerCollectionState()
+                applyContentPreferences(preferences, to: &state.content)
+                for tabID in state.tabContentStates.keys {
+                    applyContentPreferences(preferences, to: &state.tabContentStates[tabID]!)
+                }
 
                 return .merge(
                     .send(.content(.entryViewLayout(.entryArrangements(.setSortKey(preferences.sortKey))))),
@@ -38,4 +32,20 @@ struct FileManagerWindowPreferencesReducer {
             }
         }
     }
+}
+
+private func applyContentPreferences(
+    _ preferences: AppPreferencesState,
+    to content: inout FileManagerContentFeature.State,
+) {
+    content.entryViewLayout.mode = .init(rawValue: preferences.viewLayoutMode.rawValue) ?? .list
+    content.entryViewLayout.listIconSize = preferences.listIconSize
+    content.entryViewLayout.gridIconSize = preferences.gridIconSize
+    content.entryViewLayout.listTextSize = preferences.listTextSize
+    content.entryViewLayout.gridTextSize = preferences.gridTextSize
+    content.entryViewLayout.showHiddenFiles = preferences.showHiddenFiles
+    content.entryViewLayout.entryArrangements.updateSortKey(preferences.sortKey)
+    content.entryViewLayout.entryArrangements.updateSortOrder(preferences.sortOrder)
+    content.entryViewLayout.entryArrangements.updateGroupKey(preferences.groupKey)
+    content.syncComposerCollectionState()
 }

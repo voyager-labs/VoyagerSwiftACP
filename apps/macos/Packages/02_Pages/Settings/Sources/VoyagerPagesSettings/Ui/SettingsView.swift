@@ -10,13 +10,28 @@ public struct SettingsView: View {
 
     public var body: some View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
-            TabView(selection: viewStore.binding(get: \.selectedSection, send: SettingsAction.selectSection)) {
-                ForEach(SettingsSection.allCases) { section in
-                    tabContent(for: section)
-                        .tabItem {
-                            Label(section.title, systemImage: section.iconName)
+            Group {
+                if viewStore.isContentLocked {
+                    VStack(spacing: 12) {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 36))
+                            .foregroundStyle(.secondary)
+                        Text("Settings are locked")
+                            .font(.headline)
+                        Text("Active license required.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    TabView(selection: viewStore.binding(get: \.selectedSection, send: SettingsAction.selectSection)) {
+                        ForEach(SettingsSection.allCases) { section in
+                            tabContent(for: section)
+                                .tabItem {
+                                    Label(section.title, systemImage: section.iconName)
+                                }
+                                .tag(section)
                         }
-                        .tag(section)
+                    }
                 }
             }
             .frame(width: 600, height: 400)
@@ -45,6 +60,8 @@ public struct SettingsView: View {
             AppearanceSettingsView(store: store.scope(state: \.appearanceSettings, action: \.appearance))
         case .ai:
             AiSettingsView(store: store.scope(state: \.aiSettings, action: \.ai))
+        case .account:
+            AccountSettingsView(store: store.scope(state: \.accountSettings, action: \.account))
         }
     }
 }

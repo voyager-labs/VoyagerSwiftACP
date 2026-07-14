@@ -162,6 +162,8 @@ func makeRequestLock(
     selectedHandle: AiModelHandle,
     selectedRow: AiModelCatalogRow,
     assistantReplacementIndex: Int?,
+    customTitle: String? = nil,
+    persistenceTranscriptHistory: [AiChatMessage]? = nil,
 ) -> AiChatRequestLock {
     AiChatRequestLock(
         kind: kind,
@@ -169,9 +171,11 @@ func makeRequestLock(
         runID: request.context.runID,
         context: request.context,
         request: request,
+        persistenceTranscriptHistory: persistenceTranscriptHistory,
         selectedModelHandle: selectedHandle,
         selectedModelRow: selectedRow,
         assistantReplacementIndex: assistantReplacementIndex,
+        customTitle: customTitle,
         historyTruncation: AiChatHistoryTruncationMetadata(
             includedMessageCount: request.messages.count,
             excludedMessageCount: 0,
@@ -215,11 +219,15 @@ final class AiChatSessionPersistenceSpy: @unchecked Sendable {
     }
 
     func loadSession(_ sessionID: AiChatSessionID) async throws -> AiChatSessionSnapshot? {
-        try await loadHandler(sessionID)
+        if let savedSnapshot = snapshots.last(where: { $0.sessionID == sessionID }) {
+            return savedSnapshot
+        }
+        return try await loadHandler(sessionID)
     }
 
-    func save(_ snapshot: AiChatSessionSnapshot) async {
+    func save(_ snapshot: AiChatSessionSnapshot) async -> AiChatSessionSnapshot {
         snapshots.append(snapshot)
+        return snapshot
     }
 }
 

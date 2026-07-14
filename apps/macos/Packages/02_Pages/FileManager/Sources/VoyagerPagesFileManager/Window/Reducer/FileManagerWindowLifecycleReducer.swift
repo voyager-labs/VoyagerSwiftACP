@@ -6,13 +6,13 @@ import VoyagerShared
 
 @Reducer
 struct FileManagerWindowLifecycleReducer {
+    typealias State = FileManagerWindowState
+    typealias Action = FileManagerWindowAction
+
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient
     @Dependency(\.metricsClient)
     var metricsClient
-
-    typealias State = FileManagerWindowState
-    typealias Action = FileManagerWindowAction
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -37,9 +37,6 @@ struct FileManagerWindowLifecycleReducer {
                         state.content.entryViewLayout.entryArrangements.groupKey,
                     ))))),
                     .send(.content(.internal(.applyNavigationState(state.content.navigation.navigationState)))),
-                    .send(.sidebar(.internal(.loadFavorites))),
-                    .send(.sidebar(.internal(.loadLocations))),
-                    .send(.sidebar(.internal(.loadTags))),
                 )
 
             case .onDisappear:

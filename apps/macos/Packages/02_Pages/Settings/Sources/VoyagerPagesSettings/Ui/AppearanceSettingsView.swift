@@ -9,6 +9,15 @@ struct ThemePreviewCard: View {
     let isSelected: Bool
     let onSelect: () -> Void
 
+    private enum PreviewMetrics {
+        static let width: CGFloat = 70
+        static let height: CGFloat = 42
+        static let halfWidth: CGFloat = 35
+        static let cornerRadius: CGFloat = 8
+        static let popupCornerRadius: CGFloat = 4
+        static let trafficLightSize: CGFloat = 5
+    }
+
     private var contentBackgroundColor: Color {
         switch theme {
         case .light:
@@ -20,57 +29,11 @@ struct ThemePreviewCard: View {
         }
     }
 
-    private var popupBackgroundColor: Color {
-        switch theme {
-        case .light:
-            Color.white
-        case .dark:
-            Color(white: 0.25)
-        case .system:
-            Color(white: 0.5)
-        }
-    }
-
     var body: some View {
         VStack(spacing: 8) {
-            ZStack {
-                if theme == .system {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.clear)
-                        .frame(width: 70, height: 42)
-                        .overlay(
-                            HStack(spacing: 0) {
-                                Rectangle()
-                                    .fill(Color(red: 0.4, green: 0.6, blue: 0.9))
-                                    .frame(width: 35, height: 42)
-                                Rectangle()
-                                    .fill(Color(red: 0.2, green: 0.3, blue: 0.5))
-                                    .frame(width: 35, height: 42)
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: 8)),
-                        )
-                        .overlay(
-                            HStack(spacing: 0) {
-                                buildPopupWindow(isLight: true, showAllTrafficLights: false)
-                                    .frame(width: 35, height: 42)
-                                buildPopupWindow(isLight: false, showAllTrafficLights: false)
-                                    .frame(width: 35, height: 42)
-                            },
-                        )
-                } else {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(contentBackgroundColor)
-                        .frame(width: 70, height: 42)
-                        .overlay(
-                            buildPopupWindow(isLight: theme == .light, showAllTrafficLights: true),
-                        )
-                }
-            }
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 3)
-                    .frame(width: 70, height: 42),
-            )
+            previewSurface
+                .overlay(previewPopups)
+                .overlay(previewBorder)
 
             Text(theme.displayName)
                 .font(.caption)
@@ -82,6 +45,46 @@ struct ThemePreviewCard: View {
         .onTapGesture {
             onSelect()
         }
+    }
+
+    @ViewBuilder
+    private var previewSurface: some View {
+        if theme == .system {
+            HStack(spacing: 0) {
+                Rectangle()
+                    .fill(Color(red: 0.4, green: 0.6, blue: 0.9))
+                    .frame(width: PreviewMetrics.halfWidth, height: PreviewMetrics.height)
+                Rectangle()
+                    .fill(Color(red: 0.2, green: 0.3, blue: 0.5))
+                    .frame(width: PreviewMetrics.halfWidth, height: PreviewMetrics.height)
+            }
+            .frame(width: PreviewMetrics.width, height: PreviewMetrics.height)
+            .clipShape(RoundedRectangle(cornerRadius: PreviewMetrics.cornerRadius))
+        } else {
+            RoundedRectangle(cornerRadius: PreviewMetrics.cornerRadius)
+                .fill(contentBackgroundColor)
+                .frame(width: PreviewMetrics.width, height: PreviewMetrics.height)
+        }
+    }
+
+    @ViewBuilder
+    private var previewPopups: some View {
+        if theme == .system {
+            HStack(spacing: 0) {
+                buildPopupWindow(isLight: true, showAllTrafficLights: false)
+                    .frame(width: PreviewMetrics.halfWidth, height: PreviewMetrics.height)
+                buildPopupWindow(isLight: false, showAllTrafficLights: false)
+                    .frame(width: PreviewMetrics.halfWidth, height: PreviewMetrics.height)
+            }
+        } else {
+            buildPopupWindow(isLight: theme == .light, showAllTrafficLights: true)
+        }
+    }
+
+    private var previewBorder: some View {
+        RoundedRectangle(cornerRadius: PreviewMetrics.cornerRadius)
+            .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 3)
+            .frame(width: PreviewMetrics.width, height: PreviewMetrics.height)
     }
 
     @ViewBuilder
@@ -98,33 +101,35 @@ struct ThemePreviewCard: View {
         let popupWidth: CGFloat = isAuto ? cardWidth - startX + 6 : cardWidth - startX
         let popupHeight: CGFloat = cardHeight - startY
 
-        ZStack(alignment: .topLeading) {
-            Color.clear
-                .frame(width: cardWidth, height: cardHeight)
+        popupWindowChrome(popupBg: popupBg, width: popupWidth, height: popupHeight)
+            .offset(x: startX, y: startY)
+            .frame(width: cardWidth, height: cardHeight, alignment: .topLeading)
+            .clipped()
+    }
 
-            RoundedRectangle(cornerRadius: 4)
-                .fill(popupBg)
-                .frame(width: popupWidth, height: popupHeight)
-                .overlay(
-                    HStack(spacing: 3) {
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 5, height: 5)
-                        Circle()
-                            .fill(Color.yellow)
-                            .frame(width: 5, height: 5)
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 5, height: 5)
-                    }
+    private func popupWindowChrome(popupBg: Color, width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: PreviewMetrics.popupCornerRadius)
+            .fill(popupBg)
+            .frame(width: width, height: height)
+            .overlay(alignment: .topLeading) {
+                trafficLightDots
                     .padding(.leading, 4)
-                    .padding(.top, 2),
-                    alignment: .topLeading,
-                )
-                .offset(x: startX, y: startY)
+                    .padding(.top, 2)
+            }
+    }
+
+    private var trafficLightDots: some View {
+        HStack(spacing: 3) {
+            trafficLightDot(color: .red)
+            trafficLightDot(color: .yellow)
+            trafficLightDot(color: .green)
         }
-        .frame(width: cardWidth, height: cardHeight)
-        .clipped()
+    }
+
+    private func trafficLightDot(color: Color) -> some View {
+        Circle()
+            .fill(color)
+            .frame(width: PreviewMetrics.trafficLightSize, height: PreviewMetrics.trafficLightSize)
     }
 }
 

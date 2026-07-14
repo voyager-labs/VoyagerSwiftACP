@@ -53,10 +53,11 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
 
     override func loadView() {
         let chromeProps = FileManagerContentChromePropsBuilder.makeContentChromeProps(
-            from: store.state, fileManagerClient: fileManagerClient,
+            from: store.state, contentTabState: store.state.contentTabs, fileManagerClient: fileManagerClient,
         )
         let overlayProps = FileManagerContentChromePropsBuilder.makeContentOverlayProps(
             from: store.state,
+            fileManagerClient: fileManagerClient,
         )
         currentContentChromeProps = chromeProps
         currentContentOverlayProps = overlayProps
@@ -65,6 +66,7 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
             contentRootView: makeContentRootView(
                 chromeProps: chromeProps,
                 overlayProps: overlayProps,
+                activePageAnchor: chromeProps.activePageAnchor,
             ),
         )
         components.splitView.delegate = self
@@ -130,13 +132,15 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
     }
 
     private func observeStore() {
-        Publishers.CombineLatest3(
-            store.publisher.map(\.sidebar).removeDuplicates(),
-            store.publisher.map(\.content),
-            store.publisher.map(InspectorMountViewState.init).removeDuplicates(),
+        Publishers.CombineLatest(
+            Publishers.CombineLatest3(
+                store.publisher.map(\.sidebar).removeDuplicates(),
+                store.publisher.map(\.content),
+                store.publisher.map(InspectorMountViewState.init).removeDuplicates(),
+            ),
+            store.publisher.map(\.contentTabs).removeDuplicates(),
         )
-        .receive(on: DispatchQueue.main)
-        .sink { [weak self] _, _, _ in
+        .sink { [weak self] _ in
             guard let self else { return }
             render(state: store.state)
         }
@@ -154,10 +158,11 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
 
     private func updateContentRootViewIfNeeded(state: FileManagerWindowState) {
         let chromeProps = FileManagerContentChromePropsBuilder.makeContentChromeProps(
-            from: state, fileManagerClient: fileManagerClient,
+            from: state, contentTabState: state.contentTabs, fileManagerClient: fileManagerClient,
         )
         let overlayProps = FileManagerContentChromePropsBuilder.makeContentOverlayProps(
             from: state,
+            fileManagerClient: fileManagerClient,
         )
         guard chromeProps != currentContentChromeProps || overlayProps != currentContentOverlayProps else {
             return
@@ -167,18 +172,21 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
         contentHosting?.rootView = makeContentRootView(
             chromeProps: chromeProps,
             overlayProps: overlayProps,
+            activePageAnchor: chromeProps.activePageAnchor,
         )
     }
 
     private func makeContentRootView(
         chromeProps: FileManagerContentChromeProps,
         overlayProps: FileManagerContentOverlayProps,
+        activePageAnchor: ContentTabPageAnchor = .homeDefault,
     ) -> AnyView {
         AnyView(
             FileManagerContentPaneView(
                 store: store.scope(state: \.content, action: \.content),
                 chromeProps: chromeProps,
                 overlayProps: overlayProps,
+                activePageAnchor: activePageAnchor,
                 onNavigationAction: { [weak self] action in
                     self?.store.send(.navigation(.view(action)))
                 },
@@ -186,6 +194,7 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
                     self?.store.send(.navigation(.view(.navigateToPath(path))))
                 },
             )
+            .id(chromeProps.renderIdentity)
             .environment(\.fileManagerKeyCommandFocusCoordinator, keyCommandFocusCoordinator),
         )
     }

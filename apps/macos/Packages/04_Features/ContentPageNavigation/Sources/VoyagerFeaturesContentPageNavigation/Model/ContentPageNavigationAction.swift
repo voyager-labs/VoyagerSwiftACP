@@ -36,6 +36,8 @@ public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
         case showRecents
         case showComputer
         case showTag(String)
+        case showAiChat(String)
+        case showAiChatSessions(String)
         case openCollectionFile(URL)
     }
 
@@ -45,6 +47,8 @@ public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
         case performShowRecents
         case performShowComputer
         case performShowTag(String)
+        case performShowAiChat(String)
+        case performShowAiChatSessions(String)
         case prepareCollectionFileOpen(URL)
         case rollbackBackHistoryOnce
         case appendBackHistory(ContentPageNavigationHistorySnapshot)

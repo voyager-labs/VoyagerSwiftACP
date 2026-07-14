@@ -91,6 +91,26 @@ public struct AiSettingsState: Equatable {
     }
 }
 
+/// AI Settings bootstrap 단계 상태 머신.
+///
+/// 상태 전이표:
+/// - `.idle`: bootstrap 미시작. rows는 `catalogRows()`로 즉시 채워지므로 UI는
+///   spinner 없이 placeholder rows를 표시할 수 있음.
+/// - `.loading`: bootstrap 진행 중. rows는 여전히 존재하며, file load 직후
+///   `.bootstrapCompleted` 가 initial results를 row에 반영함.
+/// - `.loaded`: initial results 반영 완료. verification pending은 row의
+///   `connectionState`(예: `.checkingStatus`)로 표현.
+/// - `.failed`: connections file load 실패. rows는 보존되고 retry로 복구.
+///
+/// 전이:
+/// ```
+/// .idle  ──onAppear──▶ .loading ──bootstrapCompleted──▶ .loaded
+///                          │                                ▲
+///                          └──bootstrapFailed──▶ .failed ──retry──▶ .loading
+///                                                       │
+///                                       bootstrapVerificationCompleted 는
+///                                       row만 갱신하고 `.loaded` 유지
+/// ```
 public enum AiSettingsBootstrapPhase: Equatable, Sendable {
     case idle
     case loading

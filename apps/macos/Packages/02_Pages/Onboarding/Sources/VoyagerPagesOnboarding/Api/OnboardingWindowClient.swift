@@ -1,27 +1,46 @@
 import AppKit
 import ComposableArchitecture
+import Foundation
+import VoyagerEntitiesAppPreferences
+import VoyagerFeaturesAccountAccess
 
 @MainActor private var onboardingWindowController: OnboardingWindowController?
+
+@MainActor
+public func routeAuthCallbackToOnboardingIfPresent(_ url: URL) -> Bool {
+    onboardingWindowController?.routeAuthCallback(url) ?? false
+}
 
 public enum OnboardingOpenMainWindowRequest: Equatable, Sendable {
     case defaultTabPath
     case explicitPath(String)
 }
 
-private actor OnboardingPresentationGate {
-    private var hasRequestedPresentation = false
+private struct OnboardingPresentationGate {
+    private let hasRequestedPresentation = LockIsolated(false)
 
     func claimPresentation() -> Bool {
-        if hasRequestedPresentation {
-            return false
+        hasRequestedPresentation.withValue { hasRequestedPresentation in
+            guard !hasRequestedPresentation else { return false }
+            hasRequestedPresentation = true
+            return true
         }
-        hasRequestedPresentation = true
-        return true
     }
 
     func reset() {
-        hasRequestedPresentation = false
+        hasRequestedPresentation.setValue(false)
     }
+}
+
+private enum OnboardingOpenMainWindowAuthorization {
+    @TaskLocal static var isAuthorized = false
+}
+
+@MainActor
+private struct OnboardingWindowComposition {
+    let onboardingStore: StoreOf<OnboardingFeature>
+    let accountAccessStore: StoreOf<AccountAccessFeature>
+    let handlesAuthCallback: Bool
 }
 
 public struct OnboardingWindowClient: Sendable {
@@ -51,39 +70,116 @@ public struct OnboardingWindowClient: Sendable {
 
 extension OnboardingWindowClient: DependencyKey {
     nonisolated public static var liveValue: OnboardingWindowClient {
-        makeLive(openMainWindow: { _ in
+        makeStandaloneHost(openMainWindow: { _ in
             fatalError("onboardingWindowClient.openMainWindow live dependency is not configured")
         })
     }
 
-    nonisolated public static func makeLive(
+    nonisolated public static func makeMainApp(
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
+        resolveAccountAccessStore: @escaping @MainActor @Sendable () -> StoreOf<AccountAccessFeature>,
+        forceOnboardingEnvironmentValue: @escaping @Sendable () -> String? = {
+            ProcessInfo.processInfo.environment["VOYAGER_SCHEME_FORCE_ONBOARDING"]
+        },
+        forceFDAEnvironmentValue: @escaping @Sendable () -> String? = {
+            ProcessInfo.processInfo.environment["VOYAGER_SCHEME_FORCE_FDA_GRANTED"]
+        },
     ) -> OnboardingWindowClient {
-        makeClient(
+        let isForceOnboardingEnabled = isForceOnboardingEnabled(
+            environmentValue: forceOnboardingEnvironmentValue(),
+            isDebugBuild: isDebugBuild,
+        )
+        let isForceFullDiskAccessGrantedEnabled = isForceFullDiskAccessGrantedEnabled(
+            environmentValue: forceFDAEnvironmentValue(),
+            isDebugBuild: isDebugBuild,
+        )
+
+        return makeClient(
             progressClient: OnboardingProgressClient.liveValue,
             openMainWindow: openMainWindow,
+            makeComposition: { onboardingWindowClient in
+                let accountAccessStore = resolveAccountAccessStore()
+                let onboardingStore = makeOnboardingStore(
+                    progressClient: OnboardingProgressClient.liveValue,
+                    onboardingWindowClient: onboardingWindowClient,
+                    permissionDebugScenario: nil,
+                    isForceFullDiskAccessGrantedEnabled: isForceFullDiskAccessGrantedEnabled,
+                )
+                return OnboardingWindowComposition(
+                    onboardingStore: onboardingStore,
+                    accountAccessStore: accountAccessStore,
+                    handlesAuthCallback: false,
+                )
+            },
+            isForceOnboardingEnabled: isForceOnboardingEnabled,
         )
     }
 
-    nonisolated static func makeClient(
+    nonisolated public static func makeStandaloneHost(
+        openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
+        accountSessionClient: AccountSessionClient? = nil,
+        authNetworkClient: AuthNetworkClient? = nil,
+        signInHandoffClient: SignInHandoffClient? = nil,
+        permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
+        forceOnboardingEnvironmentValue: @escaping @Sendable () -> String? = {
+            ProcessInfo.processInfo.environment["VOYAGER_SCHEME_FORCE_ONBOARDING"]
+        },
+        forceFDAEnvironmentValue: @escaping @Sendable () -> String? = {
+            ProcessInfo.processInfo.environment["VOYAGER_SCHEME_FORCE_FDA_GRANTED"]
+        },
+    ) -> OnboardingWindowClient {
+        let isForceOnboardingEnabled = isForceOnboardingEnabled(
+            environmentValue: forceOnboardingEnvironmentValue(),
+            isDebugBuild: isDebugBuild,
+        )
+        let isForceFullDiskAccessGrantedEnabled = isForceFullDiskAccessGrantedEnabled(
+            environmentValue: forceFDAEnvironmentValue(),
+            isDebugBuild: isDebugBuild,
+        )
+        let progressClient = OnboardingProgressClient.liveValue
+
+        return makeClient(
+            progressClient: progressClient,
+            openMainWindow: openMainWindow,
+            makeComposition: { onboardingWindowClient in
+                let accountAccessStore = Store(initialState: AccountAccessFeature.State()) {
+                    AccountAccessFeature()
+                } withDependencies: {
+                    if let accountSessionClient {
+                        $0.accountSessionClient = accountSessionClient
+                    }
+                    if let authNetworkClient {
+                        $0.authNetworkClient = authNetworkClient
+                    }
+                    if let signInHandoffClient {
+                        $0.signInHandoffClient = signInHandoffClient
+                    }
+                }
+                let onboardingStore = makeOnboardingStore(
+                    progressClient: progressClient,
+                    onboardingWindowClient: onboardingWindowClient,
+                    permissionDebugScenario: permissionDebugScenario,
+                    isForceFullDiskAccessGrantedEnabled: isForceFullDiskAccessGrantedEnabled,
+                )
+                return OnboardingWindowComposition(
+                    onboardingStore: onboardingStore,
+                    accountAccessStore: accountAccessStore,
+                    handlesAuthCallback: true,
+                )
+            },
+            isForceOnboardingEnabled: isForceOnboardingEnabled,
+        )
+    }
+
+    nonisolated private static func makeClient(
         progressClient: OnboardingProgressClient,
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
-        showWindow customShowWindow: (@Sendable () async -> Void)? = nil,
-        closeWindow customCloseWindow: (@Sendable () async -> Void)? = nil,
+        makeComposition: @escaping @MainActor @Sendable (OnboardingWindowClient) -> OnboardingWindowComposition,
+        isForceOnboardingEnabled: Bool = false,
     ) -> OnboardingWindowClient {
         let presentationGate = OnboardingPresentationGate()
-        let showWindow: @Sendable () async -> Void = customShowWindow ?? {
-            await MainActor.run {
-                if onboardingWindowController == nil {
-                    onboardingWindowController = OnboardingWindowController(openMainWindow: openMainWindow)
-                }
-
-                onboardingWindowController?.showWindow(nil)
-                onboardingWindowController?.window?.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-            }
-        }
-        let closeWindowBase: @Sendable () async -> Void = customCloseWindow ?? {
+        let forceOnboarding = LockIsolated(isForceOnboardingEnabled)
+        let closeWindowBase: @Sendable () async -> Void = {
             await MainActor.run {
                 onboardingWindowController?.dismissWithoutTerminate()
                 onboardingWindowController = nil
@@ -91,21 +187,31 @@ extension OnboardingWindowClient: DependencyKey {
         }
         let closeWindow: @Sendable () async -> Void = {
             await closeWindowBase()
-            await presentationGate.reset()
+            forceOnboarding.withValue { $0 = false }
+            presentationGate.reset()
         }
-
+        let onboardingWindowClient = makeNestedOnboardingWindowClient(
+            closeWindow: closeWindow,
+            openMainWindow: openMainWindow,
+        )
+        let showWindow = makeShowWindow(
+            onboardingWindowClient: onboardingWindowClient,
+            makeComposition: makeComposition,
+        )
         return OnboardingWindowClient(
             isRequired: {
-                isOnboardingRequired(progressClient)
+                forceOnboarding.value || isOnboardingRequired(progressClient)
             },
             showIfNeeded: {
-                let required = isOnboardingRequired(progressClient)
+                let required = forceOnboarding.value || isOnboardingRequired(progressClient)
 
-                if required {
+                if required, OnboardingOpenMainWindowAuthorization.isAuthorized {
+                    return false
+                }
+
+                if required, presentationGate.claimPresentation() {
                     Task {
-                        if await presentationGate.claimPresentation() {
-                            await showWindow()
-                        }
+                        await showWindow()
                     }
                 }
                 return required
@@ -117,6 +223,105 @@ extension OnboardingWindowClient: DependencyKey {
         )
     }
 
+    nonisolated private static func makeShowWindow(
+        onboardingWindowClient: OnboardingWindowClient,
+        makeComposition: @escaping @MainActor @Sendable (OnboardingWindowClient) -> OnboardingWindowComposition,
+    ) -> @Sendable () async -> Void {
+        {
+            await MainActor.run {
+                if onboardingWindowController == nil {
+                    let composition = makeComposition(onboardingWindowClient)
+                    onboardingWindowController = OnboardingWindowController(
+                        onboardingStore: composition.onboardingStore,
+                        accountAccessStore: composition.accountAccessStore,
+                        handlesAuthCallback: composition.handlesAuthCallback,
+                    )
+                }
+
+                onboardingWindowController?.showWindow(nil)
+                onboardingWindowController?.window?.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        }
+    }
+
+    nonisolated private static func makeNestedOnboardingWindowClient(
+        closeWindow: @escaping @Sendable () async -> Void,
+        openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
+    ) -> OnboardingWindowClient {
+        OnboardingWindowClient(
+            isRequired: { false },
+            showIfNeeded: { false },
+            showWindow: {},
+            closeWindow: closeWindow,
+            openMainWindow: { request in
+                await OnboardingOpenMainWindowAuthorization.$isAuthorized.withValue(true) {
+                    await openMainWindow(request)
+                }
+            },
+        )
+    }
+
+    @MainActor
+    private static func makeOnboardingStore(
+        progressClient: OnboardingProgressClient,
+        onboardingWindowClient: OnboardingWindowClient,
+        permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)?,
+        isForceFullDiskAccessGrantedEnabled: Bool,
+    ) -> StoreOf<OnboardingFeature> {
+        Store(initialState: OnboardingFeature.State()) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = progressClient
+            $0.onboardingWindowClient = onboardingWindowClient
+            configurePermissionDependencies(
+                &$0,
+                permissionDebugScenario: permissionDebugScenario,
+                isForceFullDiskAccessGrantedEnabled: isForceFullDiskAccessGrantedEnabled,
+            )
+        }
+    }
+
+    private static func configurePermissionDependencies(
+        _ dependencies: inout DependencyValues,
+        permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)?,
+        isForceFullDiskAccessGrantedEnabled: Bool,
+    ) {
+        let liveFullDiskAccessClient = FullDiskAccessClient.liveValue
+        let liveHelperFolderAccessClient = HelperFolderAccessClient.liveValue
+        let liveLaunchAtLoginClient = LaunchAtLoginClient.liveValue
+        if isForceFullDiskAccessGrantedEnabled || permissionDebugScenario != nil {
+            dependencies.fullDiskAccessClient = FullDiskAccessClient(status: {
+                if isForceFullDiskAccessGrantedEnabled {
+                    return .granted
+                }
+                return permissionDebugScenario?()?.fullDiskAccessStatus ?? liveFullDiskAccessClient.status()
+            })
+        }
+        if let permissionDebugScenario {
+            dependencies.helperFolderAccessClient = HelperFolderAccessClient(
+                checkAccess: {
+                    if let helperFolderAccess = permissionDebugScenario()?.helperFolderAccess {
+                        return helperFolderAccess
+                    }
+                    return await liveHelperFolderAccessClient.checkAccess()
+                },
+                requestAccess: {
+                    if let helperFolderAccess = permissionDebugScenario()?.helperFolderAccess {
+                        return helperFolderAccess
+                    }
+                    return await liveHelperFolderAccessClient.requestAccess()
+                },
+            )
+            dependencies.launchAtLoginClient = LaunchAtLoginClient(
+                isEnabled: {
+                    permissionDebugScenario()?.launchAtLoginEnabled ?? liveLaunchAtLoginClient.isEnabled()
+                },
+                setEnabled: { _ in },
+            )
+        }
+    }
+
     nonisolated private static func isOnboardingRequired(_ progressClient: OnboardingProgressClient) -> Bool {
         switch progressClient.load() {
         case let .success(snapshot):
@@ -124,6 +329,28 @@ extension OnboardingWindowClient: DependencyKey {
         case .empty, .resetRequired:
             true
         }
+    }
+
+    nonisolated static func isForceOnboardingEnabled(
+        environmentValue: String?,
+        isDebugBuild: Bool,
+    ) -> Bool {
+        isDebugBuild && environmentValue == "1"
+    }
+
+    nonisolated static func isForceFullDiskAccessGrantedEnabled(
+        environmentValue: String?,
+        isDebugBuild: Bool,
+    ) -> Bool {
+        isDebugBuild && environmentValue == "1"
+    }
+
+    nonisolated private static var isDebugBuild: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
     }
 
     nonisolated public static var testValue: OnboardingWindowClient {

@@ -16,4 +16,5 @@ metadata:
 2. Add `../verification/references/xcodebuildmcp-workflow.md` when Xcode project listing, build, or test execution is needed.
 3. Run focused tests first, then broaden only when shared reducers, package APIs, or dependencies changed.
 4. Distinguish routing-only assertions from downstream execution-chain proof.
-5. Report commands, pass/fail result, first failure summary, and rerun outcome.
+5. Do not create new test files as verification collateral. This verifier selects, runs, and analyzes existing tests; new tests require an explicit spec/user-owned authoring task routed through `spec-test-authoring`.
+6. Report commands, pass/fail result, first failure summary, and rerun outcome.

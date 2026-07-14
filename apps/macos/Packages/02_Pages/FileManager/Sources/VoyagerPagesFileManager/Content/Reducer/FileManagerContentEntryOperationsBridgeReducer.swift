@@ -23,23 +23,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
                 return effect
             }
 
-            switch action {
-            // Drop item bridging → entry operations
-            case let .delegate(.dropItemsToSidebarFolder(providers, targetURL)):
-                return sendEntryOperations(.routing(.handleDrop(
-                    providers: providers,
-                    destinationPath: targetURL.path,
-                )))
-
-            case let .delegate(.dropItemsToTag(providers, tagName)):
-                return sendEntryOperations(.routing(.handleDropToTag(
-                    providers: providers,
-                    tagName: tagName,
-                )))
-
-            default:
-                return .none
-            }
+            return .none
         }
     }
 
@@ -66,9 +50,6 @@ struct FileManagerContentEntryOperationsBridgeReducer {
 
         case let .openPathInNewWindow(path):
             return .send(.delegate(.openPathInNewWindow(path)))
-
-        case let .openPathInNewTab(path):
-            return .send(.delegate(.openPathInNewTab(path)))
 
         case let .startRename(item, text):
             let entryOperationsAction = EntryOperationsAction.edit(.startRename(item: item, text: text))

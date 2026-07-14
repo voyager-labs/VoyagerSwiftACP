@@ -4,7 +4,7 @@ import Foundation
 import IdentifiedCollections
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
-import VoyagerEntitiesTag
+import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
@@ -12,7 +12,9 @@ import VoyagerWidgetsEntryViewLayout
 
 @MainActor
 public enum FileManagerHostFixture {
-    public static func makeWindowController() -> NSWindowController {
+    public static func makeWindowController(
+        preset: FileManagerHostPreset = .default,
+    ) -> NSWindowController {
         let state = FileManagerHostFixtureStateFactory.makeState()
         let undoManager = UndoManager()
         let store = Store(initialState: state) {
@@ -25,7 +27,29 @@ public enum FileManagerHostFixture {
             windowID: UUID(),
             store: store,
             windowUndoManager: undoManager,
+            sessionLapseGuardStore: FileManagerHostFixture.makeSessionLapseGuardStore(
+                for: preset.scenario.sessionLapse,
+            ),
         )
+    }
+
+    static func makeSessionLapseGuardStore(
+        for scenario: FileManagerHostSessionLapseScenario,
+    ) -> Store<AccountAccessFeature.State?, AccountAccessAction>? {
+        switch scenario {
+        case .none:
+            return nil
+        case .active, .signInFailed:
+            var guardState: AccountAccessFeature.State? = AccountAccessFeature.State()
+            if scenario == .signInFailed {
+                guardState?.didSignInFail = true
+            }
+            return Store<AccountAccessFeature.State?, AccountAccessAction>(
+                initialState: guardState,
+            ) {
+                EmptyReducer()
+            }
+        }
     }
 }
 
@@ -35,10 +59,6 @@ private enum FileManagerHostFixtureStateFactory {
         var state = FileManagerFeature.State.makeInitial(path: FileManagerHostFixtureSampleData.path)
         state.sidebar.sidebarVisible = true
         state.sidebar.sidebarWidth = 220
-        state.sidebar.favorites = FileManagerHostFixtureSampleData.favorites
-        state.sidebar.locations = FileManagerHostFixtureSampleData.locations
-        state.sidebar.tags = FileManagerHostFixtureSampleData.finderTags
-        state.sidebar.selectedSidebarItem = "Recents"
         state.content.entryViewLayout.currentPath = FileManagerHostFixtureSampleData.path
         state.content.entryViewLayout.mode = .list
         state.content.entryViewLayout.entryOperations.items = IdentifiedArrayOf(
@@ -56,17 +76,6 @@ private enum FileManagerHostFixtureDependencies {
         dependencies.metricsClient = .previewValue
         dependencies.fileManagerWindowClient = .previewValue
         dependencies.fileManagerIconClient = .previewValue
-        dependencies.fileManagerFavoritesClient = FileManagerFavoritesClient(
-            loadFavorites: { _, _ in FileManagerHostFixtureSampleData.favorites },
-            saveFavorites: { _, _ in },
-        )
-        dependencies.fileManagerLocationsClient = FileManagerLocationsClient(
-            loadLocations: { _ in FileManagerHostFixtureSampleData.locations },
-        )
-        dependencies.finderFavoritesTagClient = FinderFavoritesTagClient(
-            favoriteTagNames: { FileManagerHostFixtureSampleData.finderTags.map(\.name) },
-            favoriteTags: { FileManagerHostFixtureSampleData.finderTags },
-        )
         dependencies.entryLoadingClient = .fileManagerHostFixture
         dependencies.fileManagerClient = .previewValue
         dependencies.notificationCenterClient = .previewValue
@@ -125,21 +134,6 @@ private extension EntryLoadingClient {
 
 private enum FileManagerHostFixtureSampleData {
     static let path = "/Fixture/FileManager"
-
-    static let favorites: [SidebarItems.FavoriteItem] = [
-        .init(name: "Desktop", url: URL(fileURLWithPath: "/Fixture/Desktop"), iconName: "menubar.dock.rectangle"),
-        .init(name: "Documents", url: URL(fileURLWithPath: "/Fixture/Documents"), iconName: "doc"),
-        .init(name: "Downloads", url: URL(fileURLWithPath: "/Fixture/Downloads"), iconName: "arrow.down.circle"),
-    ]
-
-    static let locations: [SidebarItems.LocationItem] = [
-        .init(name: "Fixture Disk", url: URL(fileURLWithPath: "/Fixture"), iconName: "internaldrive"),
-    ]
-
-    static let finderTags: [Tag] = [
-        .init(name: "Design", colorCode: 2),
-        .init(name: "Review", colorCode: 4),
-    ]
 
     static let entries: [EntryModel] = [
         makeEntry(name: "Projects", isFolder: true, size: 0, kind: "Folder"),

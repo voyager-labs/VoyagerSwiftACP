@@ -164,6 +164,8 @@ Capture a compact table before implementation starts:
 
 The table is a guardrail, not documentation polish. If a row cannot identify the surviving assertion path, do not delete that test yet.
 
+When a test stays but its assertions are weakened, use the same accounting at assertion level. Record each removed or loosened assertion, the replacement owner-level assertion that preserves the behavior, and any accepted coverage gap. Do not treat a weaker assertion as cleanup unless that mapping exists.
+
 ### Do / Don't
 
 - Do extract repeated setup after the coverage map identifies stable patterns.
@@ -197,5 +199,5 @@ If two tests look similar but test different initial states, entry paths, or ass
 | Method doc comment        | `/// <SPEC-ID>-<interaction_id>: <scenario>` + intent + 검증 내용/사전 조건/기대 결과 |
 | Product behavior location | Owning spec suite under `Specs/`                                                      |
 | Fixture/recorder location | Flat files under `Support/`, named by role/type such as `PaymentFixtures.swift`       |
-| Fixture source default       | Root `fixtures/` submodule payload under `fixtures/fixtures/**`; path-equivalence variants still derive from sandboxed real fixtures |
+| Fixture source default    | Root `fixtures/` submodule payload under `fixtures/fixtures/**`; path-equivalence variants still derive from sandboxed real fixtures |
 | Verification handoff      | `../../testing/SKILL.md` with focused class filter                                    |

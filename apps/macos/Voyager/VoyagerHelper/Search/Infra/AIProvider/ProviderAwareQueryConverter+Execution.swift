@@ -60,25 +60,22 @@ extension ProviderAwareQueryConverter {
     }
 
     func convertExplicitModel(
-        query: String,
-        existingFilters: SearchFiltersPayload,
+        context: ProviderAwareQueryConversionContext,
         selection: AIProviderQuerySelectionContext,
         modelHandle: AiModelHandle,
-        requestedThinking: AiThinkingSelection?,
-        file: AIConnectionsFile,
     ) async -> QueryConversionResult {
         do {
             let model = try await modelCatalogCache.selectedModel(
                 for: selection,
-                file: file,
+                file: context.file,
                 preferredModel: modelHandle,
             )
             return await performConversion(
-                query: query,
-                existingFilters: existingFilters,
+                query: context.query,
+                existingFilters: context.existingFilters,
                 selection: selection,
                 model: model,
-                requestedThinking: requestedThinking,
+                requestedThinking: context.requestedThinking,
             )
         } catch {
             return mapExplicitModelError(error, provider: selection.provider, model: modelHandle)

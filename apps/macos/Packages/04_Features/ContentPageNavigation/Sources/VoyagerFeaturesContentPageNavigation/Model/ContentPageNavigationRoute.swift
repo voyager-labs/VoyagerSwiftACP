@@ -3,11 +3,14 @@ import VoyagerEntitiesCollection
 import VoyagerShared
 
 public enum ContentPageNavigationRoute: Equatable, Sendable {
+    case home
     case folder(String)
     case recents
     case tags(String)
     case computer
     case collection(ContentPageCollectionNavigation)
+    case aiChat(String)
+    case aiChatSessions(String)
 
     public var isCollection: Bool {
         if case .collection = self {

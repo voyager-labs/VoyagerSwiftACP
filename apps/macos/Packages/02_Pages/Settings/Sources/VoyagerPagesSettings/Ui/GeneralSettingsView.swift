@@ -62,27 +62,7 @@ struct GeneralSettingsView: View {
                         let selected = store.selectedDirectoryOption
                         let standardOptions = DirectoryOption.standardOptions
 
-                        if standardOptions.contains(selected) {
-                            Button(
-                                action: {
-                                    store.send(.selectDirectoryOption(selected))
-                                },
-                                label: {
-                                    HStack {
-                                        Image(systemName: selected.iconName)
-                                            .frame(width: 14, height: 14)
-                                            .accessibilityHidden(true)
-                                        Text("\(selected.displayName) (default)")
-                                    }
-                                },
-                            )
-
-                            Divider()
-                        }
-
-                        if case .custom = selected,
-                           !standardOptions.contains(selected)
-                        {
+                        if selected != .other {
                             Button(
                                 action: {
                                     store.send(.selectDirectoryOption(selected))
