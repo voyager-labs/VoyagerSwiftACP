@@ -42,8 +42,6 @@ private enum SmokeMode {
         let resetMode = resetProgress
         let preset = resolvePreset()
         let scenario = preset.scenario
-        let liveDependencies = SettingsHostAuthMode.current == .live
-
         print("smokeMode=true")
         print("resetMode=\(resetMode)")
 
@@ -52,9 +50,7 @@ private enum SmokeMode {
         print("accountLoaded=\(scenario.accountLoaded)")
         print("sessionLapse=\(scenario.sessionLapse)")
         print("debugMenuWired=\(scenario.debugMenuWired)")
-        // T5 라이브 opt-in 플래그 — 기본 `.mock`(sandbox). `.live`는 명시적 env opt-in 필요.
-        // smoke는 Store/의존성 생성 이전에 exit하므로 사이드 이펙트 없이 플래그만 보고한다.
-        print("liveDependencies=\(liveDependencies)")
+        print("liveDependencies=false")
 
         let feature = SettingsFeature()
         var state = SettingsState()
@@ -121,19 +117,6 @@ private enum SmokeMode {
         } else {
             return (false, failures.joined(separator: "; "))
         }
-    }
-}
-
-// MARK: - Live/mock auth mode (host-only, opt-in live)
-
-private enum SettingsHostAuthMode: String {
-    case mock
-    case live
-
-    /// 기본은 `.mock`(sandbox 의존성). `.live`는 `SETTINGS_HOST_AUTH_MODE=live` 명시적 opt-in 필요.
-    static var current: SettingsHostAuthMode {
-        let rawValue = ProcessInfo.processInfo.environment["SETTINGS_HOST_AUTH_MODE"]?.lowercased()
-        return rawValue.flatMap(SettingsHostAuthMode.init(rawValue:)) ?? .mock
     }
 }
 
@@ -216,36 +199,21 @@ private final class SettingsHostStoreContainer: ObservableObject {
     @Published private(set) var scenarioID: String
     @Published private(set) var preset: SettingsHostPreset
 
-    let authMode: SettingsHostAuthMode
-
-    init(preset: SettingsHostPreset, authMode: SettingsHostAuthMode) {
-        self.authMode = authMode
+    init(preset: SettingsHostPreset) {
         self.preset = preset
         scenarioID = preset.id
-        store = Self.makeStore(preset: preset, authMode: authMode)
+        store = Self.makeStore(preset: preset)
     }
 
     /// 현재 preset의 시나리오를 호출 시점에 읽어 Store를 (재)생성한다.
-    /// `.mock` → T2 SettingsHostSandbox가 5축 fake 의존성 주입.
-    /// `.live` → 프로덕션 `.liveValue` 의존성 (명시적 opt-in). `date`는 양쪽 모두 real.
-    private static func makeStore(
-        preset: SettingsHostPreset,
-        authMode: SettingsHostAuthMode,
-    ) -> StoreOf<SettingsHostFeature> {
-        switch authMode {
-        case .mock:
-            // mock: preset-derived 초기 Settings 상태 주입. Host는 child internals를 직접 건드리지 않고
-            // Settings package-owned factory만 호출한다 (boundary).
-            Store(initialState: SettingsHostState(settings: .hostPreset(for: preset.scenario))) {
-                SettingsHostFeature()
-            } withDependencies: { dependencies in
-                SettingsHostSandbox.configure(&dependencies, for: preset.scenario)
-            }
-        case .live:
-            // live: 실제 user data를 덮어쓰지 않도록 safe default (.init()) 유지.
-            Store(initialState: SettingsHostState()) {
-                SettingsHostFeature()
-            }
+    /// SettingsHostSandbox가 5축 fake 의존성을 주입한다.
+    private static func makeStore(preset: SettingsHostPreset) -> StoreOf<SettingsHostFeature> {
+        // preset-derived 초기 Settings 상태 주입. Host는 child internals를 직접 건드리지 않고
+        // Settings package-owned factory만 호출한다 (boundary).
+        Store(initialState: SettingsHostState(settings: .hostPreset(for: preset.scenario))) {
+            SettingsHostFeature()
+        } withDependencies: { dependencies in
+            SettingsHostSandbox.configure(&dependencies, for: preset.scenario)
         }
     }
 
@@ -255,7 +223,7 @@ private final class SettingsHostStoreContainer: ObservableObject {
     func select(_ preset: SettingsHostPreset) {
         self.preset = preset
         scenarioID = preset.id
-        store = Self.makeStore(preset: preset, authMode: authMode)
+        store = Self.makeStore(preset: preset)
     }
 }
 
@@ -328,8 +296,7 @@ private final class SettingsHostAppDelegate: NSObject, NSApplicationDelegate {
 
     override init() {
         let preset = SmokeMode.resolvePreset()
-        let authMode = SettingsHostAuthMode.current
-        storeContainer = SettingsHostStoreContainer(preset: preset, authMode: authMode)
+        storeContainer = SettingsHostStoreContainer(preset: preset)
         super.init()
     }
 
