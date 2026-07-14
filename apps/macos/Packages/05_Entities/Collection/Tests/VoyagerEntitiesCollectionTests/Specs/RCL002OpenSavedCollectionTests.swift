@@ -6,6 +6,11 @@ import XCTest
 
 @MainActor
 final class RCL002OpenSavedCollectionTests: XCTestCase {
+    // VOY-570 Linear AC mapping (Collection save owner):
+    // AC11 -> testBuiltInCollectionDirectSave_canonicalDestinationsAreReadOnly
+    // AC11 -> testBuiltInCollectionSavePanel_canonicalDestinationIsReadOnly
+    // AC12 -> testBuiltInCollectionSaveAs_nonCanonicalDestinationSucceeds
+
     // MARK: - RCL-002-delete_collection
 
     /// RCL-002-delete_collection: collection 삭제는 file/app command layer 소유
@@ -183,6 +188,216 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
         XCTAssertEqual(saved.file.snapshot?.items, [.string("/VoyagerFixtures/Documents/report.md")])
     }
 
+    // MARK: - RCL-002-ensure_built_in_collections
+
+    /// RCL-002-ensure_built_in_collections: canonical built-in Collection에는 direct Save를 허용하지 않는다.
+    /// 최종 저장 목적지를 identity classifier로 검사해 app-managed package 덮어쓰기를 차단하는 경로를 검증한다.
+    /// - 검증 내용: Recents/All Tags feedback 전문과 file save 미호출
+    /// - 사전 조건: injected Application Support 아래 두 canonical `.voycoll` URL
+    /// - 기대 결과: 두 저장 모두 read-only feedback을 내고 저장 호출은 0회임
+    func testBuiltInCollectionDirectSave_canonicalDestinationsAreReadOnly() async {
+        let applicationSupportURL = URL(fileURLWithPath: "/tmp/Application Support", isDirectory: true)
+        let payload = makeSavePayload(query: "protected report", snapshotItems: nil)
+
+        for identity in BuiltInCollectionIdentity.allCases {
+            let recorder = CollectionFileSaveRecorder()
+            let destinationURL = identity.canonicalPackageURL(
+                applicationSupportURL: applicationSupportURL,
+            )
+            let store = TestStore(initialState: CollectionState()) {
+                CollectionFeature()
+            } withDependencies: {
+                $0.fileManagerClient.urlsForDirectory = { _, _ in [applicationSupportURL] }
+                $0.collectionFileClient.save = recorder.save
+            }
+
+            await store.send(.saveToExisting(payload, destinationURL))
+            await store.receive(\.delegate.saveFeedback, builtInReadOnlyFeedback)
+
+            XCTAssertEqual(recorder.invocationCount, 0)
+            XCTAssertNil(recorder.lastSave)
+            XCTAssertFalse(store.state.isSaving)
+            XCTAssertNil(store.state.pendingSave)
+            XCTAssertNil(store.state.pendingSaveContext)
+        }
+    }
+
+    /// RCL-002-ensure_built_in_collections: Save As panel에서 canonical built-in URL을 선택해도 저장하지 않는다.
+    /// panel 응답이 direct Save와 동일한 최종 목적지 guard를 통과하는 경로를 검증한다.
+    /// - 검증 내용: panel pending state 정리, 정확한 read-only feedback, file save 미호출
+    /// - 사전 조건: save panel이 canonical All Tags package URL을 반환함
+    /// - 기대 결과: pendingSave/isSaving이 해제되고 저장 호출은 0회임
+    func testBuiltInCollectionSavePanel_canonicalDestinationIsReadOnly() async {
+        let applicationSupportURL = URL(fileURLWithPath: "/tmp/Application Support", isDirectory: true)
+        let destinationURL = BuiltInCollectionIdentity.allTags.canonicalPackageURL(
+            applicationSupportURL: applicationSupportURL,
+        )
+        let payload = makeSavePayload(query: "protected tags", snapshotItems: nil)
+        let recorder = CollectionFileSaveRecorder()
+        let store = TestStore(initialState: CollectionState()) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.fileManagerClient.urlsForDirectory = { _, _ in [applicationSupportURL] }
+            $0.collectionSavePanelClient.defaultSaveDirectory = { _ in applicationSupportURL }
+            $0.collectionSavePanelClient.presentSavePanel = { _ in destinationURL }
+            $0.collectionFileClient.save = recorder.save
+        }
+
+        await store.send(.saveRequested(payload)) {
+            $0.isSaving = true
+            $0.pendingSaveContext = payload.context
+            $0.pendingSave = makeSaveSnapshot(query: "protected tags", snapshotItems: nil)
+        }
+        await store.receive(\.savePanelResponse) {
+            $0.isSaving = false
+            $0.pendingSave = nil
+            $0.pendingSaveContext = nil
+        }
+        await store.receive(\.delegate.saveFeedback, builtInReadOnlyFeedback)
+
+        XCTAssertEqual(recorder.invocationCount, 0)
+        XCTAssertNil(recorder.lastSave)
+    }
+
+    /// RCL-002-ensure_built_in_collections: built-in root의 sibling user destination에는 Save As가 가능하다.
+    /// exact canonical package만 차단하고 일반 사용자 Collection 저장 계약을 보존하는 경로를 검증한다.
+    /// - 검증 내용: sibling URL 확장자 보정, 한 번의 file save, read-only feedback 부재
+    /// - 사전 조건: Application Support `Voyager/Collections` 아래 noncanonical user URL 선택
+    /// - 기대 결과: 선택 URL에 `.voycoll`을 붙여 정상 저장함
+    func testBuiltInCollectionSaveAs_nonCanonicalDestinationSucceeds() async throws {
+        let applicationSupportURL = URL(fileURLWithPath: "/tmp/Application Support", isDirectory: true)
+        let selectedURL = applicationSupportURL
+            .appendingPathComponent("Voyager/Collections", isDirectory: true)
+            .appendingPathComponent("User Collection")
+        let payload = makeSavePayload(query: "editable copy", snapshotItems: nil)
+        let recorder = CollectionFileSaveRecorder()
+        let store = TestStore(initialState: CollectionState()) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.fileManagerClient.urlsForDirectory = { _, _ in [applicationSupportURL] }
+            $0.collectionSavePanelClient.defaultSaveDirectory = { _ in applicationSupportURL }
+            $0.collectionSavePanelClient.presentSavePanel = { _ in selectedURL }
+            $0.collectionFileClient.save = recorder.save
+        }
+
+        await store.send(.saveRequested(payload)) {
+            $0.isSaving = true
+            $0.pendingSaveContext = payload.context
+            $0.pendingSave = makeSaveSnapshot(query: "editable copy", snapshotItems: nil)
+        }
+        await store.receive(\.savePanelResponse)
+        await store.receive(\.saveCompleted) {
+            $0.isSaving = false
+            $0.pendingSave = nil
+            $0.pendingSaveContext = nil
+        }
+
+        XCTAssertEqual(recorder.invocationCount, 1)
+        let saved = try XCTUnwrap(recorder.lastSave)
+        XCTAssertEqual(
+            saved.url.path,
+            "/tmp/Application Support/Voyager/Collections/User Collection.voycoll",
+        )
+        XCTAssertEqual(saved.file.query, "editable copy")
+    }
+
+    /// RCL-002-ensure_built_in_collections: 기존 package symlink와 alias를 통한 canonical Save를 차단한다.
+    /// 최종 목적지가 Recents package로 resolve되는 두 filesystem 우회 경로를 검증한다.
+    /// - 검증 내용: symlink/alias resolve 후 read-only feedback과 file save 미호출
+    /// - 사전 조건: 실제 canonical Recents package를 가리키는 `.voycoll` symlink와 bookmark alias
+    /// - 기대 결과: canonical로 resolve되는 두 경로만 차단하고 link target인 일반 package 직접 저장은 허용
+    func testBuiltInCollectionDirectSave_filesystemLinksBlockOnlyManagedDestination() async throws {
+        let fixture = try CollectionSaveProtectionFixture()
+        defer { fixture.cleanup() }
+
+        try await fixture.assertCanonicalLinksAreBlocked()
+        try await fixture.assertCanonicalLinkTargetRemainsEditable()
+    }
+
+    /// RCL-002-ensure_built_in_collections: symlink parent 아래 아직 없는 canonical child Save As를 차단한다.
+    /// package가 생성되기 전에도 가장 가까운 기존 parent를 resolve해 최종 목적지를 판정한다.
+    /// - 검증 내용: 확장자 보정 전 선택 URL의 parent symlink 해석과 file save 미호출
+    /// - 사전 조건: canonical BuiltIn root를 가리키는 symlink와 존재하지 않는 `all-tags.voycoll` child
+    /// - 기대 결과: 최종 child가 canonical All Tags로 분류되어 저장되지 않음
+    func testBuiltInCollectionSaveAs_missingChildUnderSymlinkedParentIsReadOnly() async throws {
+        let sandboxURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RCL002SaveProtection-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: sandboxURL) }
+        let applicationSupportURL = sandboxURL.appendingPathComponent("Application Support", isDirectory: true)
+        let canonicalRootURL = BuiltInCollectionIdentity.canonicalRootURL(
+            applicationSupportURL: applicationSupportURL,
+        )
+        try FileManager.default.createDirectory(at: canonicalRootURL, withIntermediateDirectories: true)
+        let symlinkedRootURL = sandboxURL.appendingPathComponent("BuiltIn Link", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: symlinkedRootURL, withDestinationURL: canonicalRootURL)
+        let selectedURL = symlinkedRootURL.appendingPathComponent("all-tags")
+        var fileManagerClient = FileManagerClient.liveValue
+        fileManagerClient.urlsForDirectory = { _, _ in [applicationSupportURL] }
+        let payload = makeSavePayload(query: "protected missing child", snapshotItems: nil)
+        let recorder = CollectionFileSaveRecorder()
+        let store = TestStore(initialState: CollectionState()) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.fileManagerClient = fileManagerClient
+            $0.collectionSavePanelClient.defaultSaveDirectory = { _ in sandboxURL }
+            $0.collectionSavePanelClient.presentSavePanel = { _ in selectedURL }
+            $0.collectionFileClient.save = recorder.save
+        }
+
+        await store.send(.saveRequested(payload)) {
+            $0.isSaving = true
+            $0.pendingSaveContext = payload.context
+            $0.pendingSave = makeSaveSnapshot(query: "protected missing child", snapshotItems: nil)
+        }
+        await store.receive(\.savePanelResponse) {
+            $0.isSaving = false
+            $0.pendingSave = nil
+            $0.pendingSaveContext = nil
+        }
+        await store.receive(\.delegate.saveFeedback, builtInReadOnlyFeedback)
+
+        XCTAssertEqual(recorder.invocationCount, 0)
+    }
+
+    /// RCL-002-ensure_built_in_collections: writeback 중 canonical destination 차단은 transient state를 남기지 않는다.
+    /// refresh writeback 저장이 거부될 때 기존 failure cleanup과 동일하게 session inflight를 종료하는 경로를 검증한다.
+    /// - 검증 내용: isSaving/pendingSave 해제, writeback phase 종료, file save 미호출
+    /// - 사전 조건: hydrated snapshot session이 canonical Recents URL로 writeback 중임
+    /// - 기대 결과: session은 refreshFailed 안정 상태가 되고 저장 호출은 0회임
+    func testBuiltInCollectionBlockedSave_releasesWriteBackState() async {
+        let applicationSupportURL = URL(fileURLWithPath: "/tmp/Application Support", isDirectory: true)
+        let destinationURL = BuiltInCollectionIdentity.recents.canonicalPackageURL(
+            applicationSupportURL: applicationSupportURL,
+        )
+        let payload = makeSavePayload(query: "writeback", snapshotItems: nil)
+        var state = CollectionState()
+        state.collectionSession.phase = .opened(
+            kind: .hydratedSnapshot,
+            base: .stale,
+            inflight: .writingBackRefreshedSnapshot,
+        )
+        let recorder = CollectionFileSaveRecorder()
+        let store = TestStore(initialState: state) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.fileManagerClient.urlsForDirectory = { _, _ in [applicationSupportURL] }
+            $0.collectionFileClient.save = recorder.save
+        }
+
+        await store.send(.saveToExisting(payload, destinationURL)) {
+            $0.collectionSession.phase = .refreshFailed(kind: .hydratedSnapshot)
+        }
+        await store.receive(\.delegate.saveFeedback, builtInReadOnlyFeedback)
+
+        XCTAssertEqual(recorder.invocationCount, 0)
+        XCTAssertNil(recorder.lastSave)
+        XCTAssertFalse(store.state.isSaving)
+        XCTAssertNil(store.state.pendingSave)
+        XCTAssertNil(store.state.pendingSaveContext)
+        XCTAssertFalse(store.state.collectionSession.phase.isInflightWriteBack)
+        XCTAssertFalse(store.state.collectionSession.phase.isInflightRefresh)
+    }
+
     // MARK: - RCL-002-save_collection_filter_changes
 
     /// RCL-002-save_collection_filter_changes: 기존 collection 저장은 열린 파일 경로에 현재 filter 정의를 덮어쓴다.
@@ -327,17 +542,112 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
     }
 }
 
+private let builtInReadOnlyFeedback = CollectionSaveFeedback(
+    stage: .saveBlocked,
+    category: .futureMinorReadOnly,
+    title: "Built-In Collection Is Read-Only",
+    message: "Voyager manages this built-in Collection automatically.",
+    recoveryHint: "Choose Save As to create an editable copy.",
+    isRetryable: false,
+)
+
+@MainActor
+private struct CollectionSaveProtectionFixture {
+    let sandboxURL: URL
+    let canonicalURL: URL
+    let symlinkURL: URL
+    let aliasURL: URL
+    let fileManagerClient: FileManagerClient
+
+    init() throws {
+        sandboxURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RCL002SaveProtection-\(UUID().uuidString)", isDirectory: true)
+        let applicationSupportURL = sandboxURL.appendingPathComponent("Application Support", isDirectory: true)
+        canonicalURL = BuiltInCollectionIdentity.recents.canonicalPackageURL(
+            applicationSupportURL: applicationSupportURL,
+        )
+        try FileManager.default.createDirectory(at: canonicalURL, withIntermediateDirectories: true)
+        symlinkURL = sandboxURL.appendingPathComponent("Recents Symlink.voycoll")
+        try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: canonicalURL)
+        aliasURL = sandboxURL.appendingPathComponent("Recents Alias.voycoll")
+        let bookmarkData = try canonicalURL.bookmarkData(options: .suitableForBookmarkFile)
+        try URL.writeBookmarkData(bookmarkData, to: aliasURL)
+        var client = FileManagerClient.liveValue
+        client.urlsForDirectory = { _, _ in [applicationSupportURL] }
+        fileManagerClient = client
+    }
+
+    func cleanup() {
+        try? FileManager.default.removeItem(at: sandboxURL)
+    }
+
+    func assertCanonicalLinksAreBlocked() async throws {
+        for destinationURL in [symlinkURL, aliasURL] {
+            let recorder = CollectionFileSaveRecorder()
+            let store = TestStore(initialState: CollectionState()) {
+                CollectionFeature()
+            } withDependencies: {
+                $0.fileManagerClient = fileManagerClient
+                $0.collectionFileClient.save = recorder.save
+            }
+
+            await store.send(.saveToExisting(
+                makeSavePayload(query: "protected filesystem link", snapshotItems: nil),
+                destinationURL,
+            ))
+            await store.receive(\.delegate.saveFeedback, builtInReadOnlyFeedback)
+            XCTAssertEqual(recorder.invocationCount, 0)
+            XCTAssertFalse(store.state.isSaving)
+        }
+    }
+
+    func assertCanonicalLinkTargetRemainsEditable() async throws {
+        let userPackageURL = sandboxURL.appendingPathComponent("User Collection.voycoll", isDirectory: true)
+        try FileManager.default.createDirectory(at: userPackageURL, withIntermediateDirectories: true)
+        try FileManager.default.removeItem(at: canonicalURL)
+        try FileManager.default.createSymbolicLink(at: canonicalURL, withDestinationURL: userPackageURL)
+        let recorder = CollectionFileSaveRecorder()
+        let store = TestStore(initialState: CollectionState()) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.fileManagerClient = fileManagerClient
+            $0.collectionFileClient.save = recorder.save
+        }
+
+        await store.send(.saveToExisting(
+            makeSavePayload(query: "editable user package", snapshotItems: nil),
+            userPackageURL,
+        )) {
+            $0.isSaving = true
+        }
+        await store.receive(\.saveCompleted) {
+            $0.isSaving = false
+        }
+        XCTAssertEqual(recorder.invocationCount, 1)
+    }
+}
+
 private final class CollectionFileSaveRecorder: @unchecked Sendable {
     struct Saved: Equatable {
         let file: VoyagerCollectionFile
         let url: URL
     }
 
-    private(set) var lastSave: Saved?
+    private let saves = LockIsolated<[Saved]>([])
+
+    var invocationCount: Int {
+        saves.value.count
+    }
+
+    var lastSave: Saved? {
+        saves.value.last
+    }
 
     var save: @Sendable (VoyagerCollectionFile, URL) async throws -> Void {
         { [weak self] file, url in
-            self?.lastSave = Saved(file: file, url: url)
+            self?.saves.withValue {
+                $0.append(Saved(file: file, url: url))
+            }
         }
     }
 }
