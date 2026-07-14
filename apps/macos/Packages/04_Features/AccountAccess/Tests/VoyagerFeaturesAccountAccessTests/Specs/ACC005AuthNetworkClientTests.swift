@@ -194,6 +194,16 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         }
     }
 
+    /// ACC-005-refresh_token: malformed 200 응답은 decodingFailure로 매핑한다.
+    func testRefreshResponseDecodingFailureMapsToAccessError() {
+        do {
+            _ = try AuthNetworkClient.decodeRefreshSuccessResponse(Data("{}".utf8))
+            XCTFail("malformed refresh response는 decodingFailure를 throw해야 함")
+        } catch {
+            XCTAssertEqual(error as? AccessError, .decodingFailure)
+        }
+    }
+
     /// ACC-005-refresh_token: refreshToken이 unauthorized를 throw한다.
     /// mock refreshToken closure가 unauthorized를 throw할 때 전파되는지 검증한다.
     /// - 검증 내용: AccessError.unauthorized 전파
@@ -286,6 +296,16 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         do {
             _ = try await client.fetchAccessStatus()
             XCTFail("decodingFailure 에러가 throw되어야 함")
+        } catch {
+            XCTAssertEqual(error as? AccessError, .decodingFailure)
+        }
+    }
+
+    /// ACC-005-fetch_access_status: malformed 200 응답은 decodingFailure로 매핑한다.
+    func testAccessStatusDecodingFailureMapsToAccessError() {
+        do {
+            _ = try AuthNetworkClient.decodeAccessStatusResponse(Data("{}".utf8))
+            XCTFail("malformed access status response는 decodingFailure를 throw해야 함")
         } catch {
             XCTAssertEqual(error as? AccessError, .decodingFailure)
         }
@@ -423,6 +443,9 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         XCTAssertTrue(AuthNetworkClient.isCancellationError(CancellationError()))
         XCTAssertTrue(AuthNetworkClient.isCancellationError(URLError(.cancelled)))
         XCTAssertFalse(AuthNetworkClient.isCancellationError(URLError(.timedOut)))
+        XCTAssertNil(AuthNetworkClient.exchangeError(for: CancellationError()))
+        XCTAssertNil(AuthNetworkClient.exchangeError(for: URLError(.cancelled)))
+        XCTAssertEqual(AuthNetworkClient.exchangeError(for: URLError(.timedOut)), .networkFailure)
     }
 
     /// ACC-005-test_value: testValue의 모든 closure가 notConfigured를 throw한다.

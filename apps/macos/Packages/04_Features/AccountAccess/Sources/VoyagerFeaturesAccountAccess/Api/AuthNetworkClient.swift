@@ -129,7 +129,10 @@ public extension AuthNetworkClient {
         do {
             (data, response) = try await URLSession.shared.data(for: request)
         } catch {
-            throw AppHandoffExchangeError.networkFailure
+            guard let mappedError = exchangeError(for: error) else {
+                throw CancellationError()
+            }
+            throw mappedError
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -179,9 +182,7 @@ public extension AuthNetworkClient {
         guard httpResponse.statusCode == 200 else {
             throw AccessError.networkFailure
         }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(AccessStatusResponse.self, from: data)
+        return try decodeAccessStatusResponse(data)
     }
 
     private static func bindDeviceLive(_ bindingRequest: DeviceBindingRequest) async throws -> DeviceBindingResponse {
@@ -258,7 +259,7 @@ public extension AuthNetworkClient {
         guard httpResponse.statusCode == 200 else {
             throw AccessError.networkFailure
         }
-        let refreshResponse = try JSONDecoder().decode(RefreshSuccessResponse.self, from: data)
+        let refreshResponse = try decodeRefreshSuccessResponse(data)
         guard refreshResponse.ok, let sessionPayload = refreshResponse.session else {
             throw AccessError.decodingFailure
         }
@@ -482,12 +483,34 @@ extension AuthNetworkClient {
         error is CancellationError || (error as? URLError)?.code == .cancelled
     }
 
+    static func exchangeError(for error: Error) -> AppHandoffExchangeError? {
+        isCancellationError(error) ? nil : .networkFailure
+    }
+
     static func legacySessionSyncError(for deviceBindingError: DeviceBindingError) -> SessionSyncError? {
         switch deviceBindingError {
         case .unauthorized:
             .invalidCredential
         default:
             nil
+        }
+    }
+
+    static func decodeAccessStatusResponse(_ data: Data) throws -> AccessStatusResponse {
+        do {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode(AccessStatusResponse.self, from: data)
+        } catch {
+            throw AccessError.decodingFailure
+        }
+    }
+
+    static func decodeRefreshSuccessResponse(_ data: Data) throws -> RefreshSuccessResponse {
+        do {
+            return try JSONDecoder().decode(RefreshSuccessResponse.self, from: data)
+        } catch {
+            throw AccessError.decodingFailure
         }
     }
 }
