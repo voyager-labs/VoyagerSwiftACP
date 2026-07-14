@@ -19,6 +19,18 @@ func isToolbarRefreshButtonEnabled(_ collectionStatus: ToolbarCollectionStatusVi
     collectionStatus.isRefreshEnabled
 }
 
+func showsCollectionTitleIcon(
+    isCollectionMode: Bool,
+    isOpeningCollectionFile: Bool,
+    openedCollectionName: String?,
+    activePageAnchor: ContentTabPageAnchor,
+) -> Bool {
+    if case .collectionFile = activePageAnchor {
+        return true
+    }
+    return isCollectionMode || (isOpeningCollectionFile && openedCollectionName != nil)
+}
+
 struct ToolbarHistoryItem: Equatable {
     let iconSystemName: String
     let title: String
@@ -317,8 +329,12 @@ struct ToolbarView: View {
     }
 
     private func titleContent(viewStore: ViewStore<ViewState, FileManagerContentFeature.Action>) -> some View {
-        let isShowingCollection = viewStore
-            .isCollectionMode || (viewStore.isOpeningCollectionFile && viewStore.openedCollectionName != nil)
+        let isShowingCollection = showsCollectionTitleIcon(
+            isCollectionMode: viewStore.isCollectionMode,
+            isOpeningCollectionFile: viewStore.isOpeningCollectionFile,
+            openedCollectionName: viewStore.openedCollectionName,
+            activePageAnchor: chromeProps.activePageAnchor,
+        )
         let titleText = viewStore.openedCollectionName ?? viewStore.toolbarTitle
         let composeSuffix = "/ Compose a filter"
         let showUnsavedIndicator = viewStore.collectionStatus.showsUnsavedIndicator
