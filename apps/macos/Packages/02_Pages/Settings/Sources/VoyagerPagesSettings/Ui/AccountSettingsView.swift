@@ -4,6 +4,11 @@ import SwiftUI
 struct AccountSettingsView: View {
     let store: StoreOf<AccountSettingsFeature>
 
+    static let signInButtonTitle = "Sign In"
+    static var signInButtonAction: AccountSettingsAction {
+        .signInTapped
+    }
+
     var body: some View {
         Form {
             Section {
@@ -40,9 +45,6 @@ struct AccountSettingsView: View {
                 store.send(.signOutConfirmed)
             }
         }
-        .onAppear {
-            store.send(.access(.onAppear))
-        }
     }
 
     // MARK: - Account status
@@ -57,8 +59,8 @@ struct AccountSettingsView: View {
                 Text("Not signed in")
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Sign In") {
-                    store.send(.access(.loginTapped))
+                Button(Self.signInButtonTitle) {
+                    store.send(Self.signInButtonAction)
                 }
             }
 
@@ -91,8 +93,8 @@ struct AccountSettingsView: View {
                 Text("Sign in failed")
                     .foregroundStyle(.red)
                 Spacer()
-                Button("Retry") {
-                    store.send(.access(.loginTapped))
+                Button(Self.signInButtonTitle) {
+                    store.send(Self.signInButtonAction)
                 }
             }
         }
@@ -109,6 +111,19 @@ struct AccountSettingsView: View {
                     .accessibilityHidden(true)
                 Text("License Active")
                     .foregroundStyle(.green)
+            }
+
+        case .entitlementUnavailable:
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+                Text("License status unavailable")
+                    .foregroundStyle(.orange)
+                Spacer()
+                Button("Retry") {
+                    store.send(.retryTapped)
+                }
             }
 
         case .entitlementInactive:

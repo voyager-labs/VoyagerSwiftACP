@@ -4,6 +4,7 @@ import Foundation
 public enum SignInHandoffResult: Sendable, Equatable {
     case success(callbackURL: URL)
     case awaitingCallback(state: String)
+    case rejected
     case failure
     case cancelled
 }

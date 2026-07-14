@@ -77,6 +77,8 @@ private final class UpdaterCoordinator: NSObject, @preconcurrency SPUUpdaterDele
     var prepareForRelaunchAction: @Sendable () async -> Void = {}
     var stopHelperAppAction: @Sendable () async -> Void = {}
 
+    private let logger = Logger(label: "Voyager")
+
     override private init() {
         super.init()
     }
@@ -93,6 +95,10 @@ private final class UpdaterCoordinator: NSObject, @preconcurrency SPUUpdaterDele
 
     func checkForUpdates() {
         configureIfNeeded()
+        guard EnvironmentLoader.detectAppEnv() != .dev else {
+            logger.info("sparkle_skip_check_dev")
+            return
+        }
         controller?.checkForUpdates(nil)
     }
 
@@ -103,6 +109,10 @@ private final class UpdaterCoordinator: NSObject, @preconcurrency SPUUpdaterDele
 
     func startAtLaunch() async {
         configureIfNeeded()
+        guard EnvironmentLoader.detectAppEnv() != .dev else {
+            logger.info("sparkle_skip_start_dev")
+            return
+        }
         guard let updater = controller?.updater else { return }
 
         let notificationCenterClient = NotificationCenterClient.liveValue

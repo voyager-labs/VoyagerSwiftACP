@@ -6,13 +6,17 @@
 actor AccountTokenFileStore {
     private let fileManager = FileManager.default
     private let payloadURL: URL
+    private let handoffStagingURL: URL
     private let lockURL: URL
+    private let rollbackMarkerURL: URL
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    init(payloadURL: URL, lockURL: URL) {
+    init(payloadURL: URL, handoffStagingURL: URL, lockURL: URL, rollbackMarkerURL: URL) {
         self.payloadURL = payloadURL
+        self.handoffStagingURL = handoffStagingURL
         self.lockURL = lockURL
+        self.rollbackMarkerURL = rollbackMarkerURL
         encoder.outputFormatting = [.sortedKeys]
     }
 
@@ -21,14 +25,18 @@ actor AccountTokenFileStore {
     ) -> AccountTokenFileStore {
         AccountTokenFileStore(
             payloadURL: AccountTokenFSLocation.accountTokensFileURL(homeDirectoryURL: homeDirectoryURL),
+            handoffStagingURL: AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: homeDirectoryURL),
             lockURL: AccountTokenFSLocation.lockFileURL(homeDirectoryURL: homeDirectoryURL),
+            rollbackMarkerURL: AccountTokenFSLocation.rollbackMarkerFileURL(homeDirectoryURL: homeDirectoryURL),
         )
     }
 
     static func withCustomHome(homeURL: URL) -> AccountTokenFileStore {
         AccountTokenFileStore(
             payloadURL: AccountTokenFSLocation.accountTokensFileURL(homeDirectoryURL: homeURL),
+            handoffStagingURL: AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: homeURL),
             lockURL: AccountTokenFSLocation.lockFileURL(homeDirectoryURL: homeURL),
+            rollbackMarkerURL: AccountTokenFSLocation.rollbackMarkerFileURL(homeDirectoryURL: homeURL),
         )
     }
 
@@ -40,8 +48,69 @@ actor AccountTokenFileStore {
 
     func write(_ file: AccountTokensFile) throws {
         try withExclusiveLock {
+            guard !fileManager.fileExists(atPath: rollbackMarkerURL.path) else {
+                throw AccountTokenRollbackError.pendingRollback
+            }
             let data = try encoder.encode(file)
             try replacePayload(with: data)
+        }
+    }
+
+    func replaceIfCurrentMatches(_ file: AccountTokensFile, expected expectedFile: AccountTokensFile) throws -> Bool {
+        try withExclusiveLock {
+            guard !fileManager.fileExists(atPath: rollbackMarkerURL.path) else {
+                throw AccountTokenRollbackError.pendingRollback
+            }
+            guard let currentFile = try readUnlocked(), currentFile == expectedFile else {
+                return false
+            }
+            try Task.checkCancellation()
+            let data = try encoder.encode(file)
+            try replacePayload(with: data)
+            return true
+        }
+    }
+
+    func prepareHandoffWrite(_ file: AccountTokensFile) throws -> AccountTokensFile {
+        try withExclusiveLock {
+            if fileManager.fileExists(atPath: rollbackMarkerURL.path) {
+                try removePendingHandoffUnlocked()
+            } else {
+                try removeHandoffStagingUnlocked()
+            }
+
+            let data = try encoder.encode(file)
+            try replaceFile(at: handoffStagingURL, with: data)
+            let staged = try readPayloadUnlocked(at: handoffStagingURL)
+            try writeRollbackMarkerUnlocked()
+            return staged
+        }
+    }
+
+    func commitHandoffWrite(expectedSession: AccountSession) throws {
+        try withExclusiveLock {
+            guard fileManager.fileExists(atPath: rollbackMarkerURL.path) else {
+                throw AccountTokenRollbackError.missingRollbackMarker
+            }
+            let stored = try readPayloadUnlocked(at: handoffStagingURL)
+            guard stored.matches(expectedSession) else {
+                throw AccountTokenRollbackError.sessionMismatch
+            }
+            try Task.checkCancellation()
+            let data = try encoder.encode(stored)
+            try replacePayload(with: data)
+            try removeHandoffStagingUnlocked()
+        }
+    }
+
+    func finalizeHandoffWrite() throws {
+        try withExclusiveLock {
+            guard fileManager.fileExists(atPath: rollbackMarkerURL.path),
+                  fileManager.fileExists(atPath: payloadURL.path)
+            else {
+                throw AccountTokenRollbackError.missingRollbackMarker
+            }
+            try removeRollbackMarkerUnlocked()
         }
     }
 
@@ -50,6 +119,42 @@ actor AccountTokenFileStore {
             if fileManager.fileExists(atPath: payloadURL.path) {
                 try fileManager.removeItem(at: payloadURL)
             }
+            try removeHandoffStagingUnlocked()
+            if fileManager.fileExists(atPath: rollbackMarkerURL.path) {
+                try fileManager.removeItem(at: rollbackMarkerURL)
+            }
+        }
+    }
+
+    func discard(expectedSession: AccountSession) throws {
+        try withExclusiveLock {
+            let hasRollbackMarker = fileManager.fileExists(atPath: rollbackMarkerURL.path)
+            if fileManager.fileExists(atPath: handoffStagingURL.path) {
+                let staged = try readPayloadUnlocked(at: handoffStagingURL)
+                guard staged.matches(expectedSession) else { return }
+                try removeCanonicalIfMatching(staged)
+                try removeHandoffStagingUnlocked()
+                try removeRollbackMarkerUnlocked()
+                return
+            }
+
+            guard fileManager.fileExists(atPath: payloadURL.path) else {
+                if hasRollbackMarker {
+                    try removeRollbackMarkerUnlocked()
+                }
+                return
+            }
+            let stored = try hasRollbackMarker ? readPayloadUnlocked(at: payloadURL) : readUnlocked()
+            guard let stored, stored.matches(expectedSession) else { return }
+
+            if !hasRollbackMarker {
+                try writeRollbackMarkerUnlocked()
+            }
+            if fileManager.fileExists(atPath: payloadURL.path) {
+                try fileManager.removeItem(at: payloadURL)
+            }
+            try removeHandoffStagingUnlocked()
+            try removeRollbackMarkerUnlocked()
         }
     }
 
@@ -60,21 +165,62 @@ actor AccountTokenFileStore {
     }
 
     private func readUnlocked() throws -> AccountTokensFile? {
+        if fileManager.fileExists(atPath: rollbackMarkerURL.path) {
+            return nil
+        }
+
         guard fileManager.fileExists(atPath: payloadURL.path) else {
             return nil
         }
 
-        let data = try Data(contentsOf: payloadURL)
-        guard !data.isEmpty else {
-            try quarantineAndRemoveUnlocked()
+        do {
+            return try readPayloadUnlocked(at: payloadURL)
+        } catch AccountTokenRollbackError.invalidPayload {
             return nil
+        }
+    }
+
+    private func readPayloadUnlocked(at url: URL) throws -> AccountTokensFile {
+        let data = try Data(contentsOf: url)
+        guard !data.isEmpty else {
+            if url == payloadURL {
+                try quarantineAndRemoveUnlocked()
+            }
+            throw AccountTokenRollbackError.invalidPayload
         }
 
         do {
             return try decoder.decode(AccountTokensFile.self, from: data)
         } catch {
-            try quarantineAndRemoveUnlocked()
-            return nil
+            if url == payloadURL {
+                try quarantineAndRemoveUnlocked()
+            }
+            throw AccountTokenRollbackError.invalidPayload
+        }
+    }
+
+    private func removePendingHandoffUnlocked() throws {
+        if fileManager.fileExists(atPath: handoffStagingURL.path) {
+            let staged = try readPayloadUnlocked(at: handoffStagingURL)
+            try removeCanonicalIfMatching(staged)
+            try removeHandoffStagingUnlocked()
+        } else if fileManager.fileExists(atPath: payloadURL.path) {
+            try fileManager.removeItem(at: payloadURL)
+        }
+        try removeRollbackMarkerUnlocked()
+    }
+
+    private func removeCanonicalIfMatching(_ staged: AccountTokensFile) throws {
+        guard fileManager.fileExists(atPath: payloadURL.path) else { return }
+        let canonical = try readPayloadUnlocked(at: payloadURL)
+        if canonical.matches(staged) {
+            try fileManager.removeItem(at: payloadURL)
+        }
+    }
+
+    private func removeHandoffStagingUnlocked() throws {
+        if fileManager.fileExists(atPath: handoffStagingURL.path) {
+            try fileManager.removeItem(at: handoffStagingURL)
         }
     }
 
@@ -114,25 +260,41 @@ actor AccountTokenFileStore {
         )
     }
 
+    private func writeRollbackMarkerUnlocked() throws {
+        try ensureParentDirectoryExists()
+        try Data("rollback-pending".utf8).write(to: rollbackMarkerURL, options: .atomic)
+        try setOwnerOnlyPermissions(rollbackMarkerURL)
+    }
+
+    private func removeRollbackMarkerUnlocked() throws {
+        if fileManager.fileExists(atPath: rollbackMarkerURL.path) {
+            try fileManager.removeItem(at: rollbackMarkerURL)
+        }
+    }
+
     private func replacePayload(with data: Data) throws {
+        try replaceFile(at: payloadURL, with: data)
+    }
+
+    private func replaceFile(at destinationURL: URL, with data: Data) throws {
         try ensureParentDirectoryExists()
 
-        let tempURL = payloadURL
+        let tempURL = destinationURL
             .deletingLastPathComponent()
-            .appendingPathComponent(".\(AccountTokenFSLocation.payloadFileName).tmp-\(UUID().uuidString)")
+            .appendingPathComponent(".\(destinationURL.lastPathComponent).tmp-\(UUID().uuidString)")
 
         try data.write(to: tempURL, options: .atomic)
         try setOwnerOnlyPermissions(tempURL)
-        try ensurePayloadPlaceholderExists()
-        _ = try fileManager.replaceItemAt(payloadURL, withItemAt: tempURL)
-        try setOwnerOnlyPermissions(payloadURL)
+        try ensurePlaceholderExists(at: destinationURL)
+        _ = try fileManager.replaceItemAt(destinationURL, withItemAt: tempURL)
+        try setOwnerOnlyPermissions(destinationURL)
     }
 
-    private func ensurePayloadPlaceholderExists() throws {
-        guard !fileManager.fileExists(atPath: payloadURL.path) else { return }
+    private func ensurePlaceholderExists(at url: URL) throws {
+        guard !fileManager.fileExists(atPath: url.path) else { return }
 
         let didCreateFile = fileManager.createFile(
-            atPath: payloadURL.path,
+            atPath: url.path,
             contents: Data(),
             attributes: [.posixPermissions: NSNumber(value: 0o600)],
         )
@@ -155,4 +317,21 @@ actor AccountTokenFileStore {
 enum POSIXLockError: Error, Equatable {
     case openFailed(Int32)
     case lockFailed(Int32)
+}
+
+enum AccountTokenRollbackError: Error, Equatable {
+    case invalidPayload
+    case missingRollbackMarker
+    case pendingRollback
+    case sessionMismatch
+}
+
+private extension AccountTokensFile {
+    func matches(_ session: AccountSession) -> Bool {
+        accessToken == session.accessToken && refreshToken == session.refreshToken
+    }
+
+    func matches(_ file: AccountTokensFile) -> Bool {
+        accessToken == file.accessToken && refreshToken == file.refreshToken
+    }
 }

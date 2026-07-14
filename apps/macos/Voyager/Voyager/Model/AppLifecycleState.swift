@@ -27,9 +27,7 @@ struct AppLifecycleState: Equatable {
     }
 
     private static func makeAccountAccessState() -> AccountAccessFeature.State {
-        var state = AccountAccessFeature.State()
-        state.handoffContext = .paywall
-        return state
+        AccountAccessFeature.State()
     }
 }
 

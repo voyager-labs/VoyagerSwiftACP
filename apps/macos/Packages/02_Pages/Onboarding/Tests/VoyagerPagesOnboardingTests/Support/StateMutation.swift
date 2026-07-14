@@ -24,6 +24,16 @@ enum StateMutation {
         deviceBindingVerifiedAt: Date(timeIntervalSince1970: 0),
     )
 
+    static let activeAccessProjection = OnboardingAccessProjection(
+        hasAccountSession: true,
+        isComplete: true,
+        status: .coreLicenseActive,
+        canRefreshAccess: true,
+        isBlocked: false,
+        primaryCTA: .next,
+        snapshot: activeAccessSnapshot,
+    )
+
     static let activeAccountSessionClient = AccountSessionClient(
         read: {
             AccountSession(
@@ -41,6 +51,16 @@ enum StateMutation {
         fetchAccessStatus: { activeAccessResponse },
         bindDevice: { _ in DeviceBindingResponse(ok: true) },
         refreshToken: { throw AccessError.notConfigured },
+        syncSession: { _, _ in
+            SessionSyncResult(
+                sessionStatus: .unchanged,
+                syncStatus: .complete,
+                accessStatus: activeAccessResponse,
+                deviceBindingOutcome: .bound,
+                connectedDeviceAvailability: .available,
+                sessionExpiresAt: activeSessionExpiry,
+            )
+        },
     )
 
     static func installActiveAccessRefresh(_ dependencies: inout DependencyValues) {
@@ -54,44 +74,7 @@ enum StateMutation {
         dependencies.date = .constant(activeAccessSnapshot.fetchedAt)
     }
 
-    /// access 상태를 server-canonical active access 결과와 동일하게 설정합니다.
-    static func applyActiveAccessStatusPending(state: inout OnboardingFeature.State) {
-        state.accessUnlock.hasAccountSession = true
-        state.accessUnlock.sessionExpiresAt = activeSessionExpiry
-        state.accessUnlock.status = .coreLicenseActive
-        state.accessUnlock.snapshot = nil
-        state.accessUnlock.isComplete = false
-        state.accessUnlock.isSubmitting = true
-        state.accessUnlock.trialExpiresAt = nil
-        state.accessUnlock.errorMessage = nil
-        state.accessUnlock.fetchRetryCount = 0
-    }
-
-    /// device binding 성공 후 access 완료 상태를 적용합니다.
-    static func applyActiveAccess(state: inout OnboardingFeature.State) {
-        state.accessUnlock.hasAccountSession = true
-        state.accessUnlock.sessionExpiresAt = activeSessionExpiry
-        state.accessUnlock.status = .coreLicenseActive
-        state.accessUnlock.snapshot = activeAccessSnapshot
-        state.accessUnlock.isComplete = true
-        state.accessUnlock.isSubmitting = false
-    }
-
     static func applyPersistedCompletedAccessStep(state: inout OnboardingFeature.State) {
-        applyActiveAccess(state: &state)
-    }
-
-    static func signedInOnboardingState(currentStep: OnboardingStep = .welcome) -> OnboardingFeature.State {
-        var state = OnboardingFeature.State()
-        state.currentStep = currentStep
-        state.accessUnlock.hasAccountSession = true
-        state.accessUnlock.sessionExpiresAt = activeSessionExpiry
-        return state
-    }
-
-    /// applyStepState + accessSnapshot 복원 경로를 시뮬레이션합니다.
-    /// snapshot이 있으면 UnlockAccessFeature.onAppear에서 server-canonical refresh가 트리거됩니다.
-    static func applyRestoredBetaAccess(state: inout OnboardingFeature.State) {
-        applyPersistedCompletedAccessStep(state: &state)
+        state.access = activeAccessProjection
     }
 }

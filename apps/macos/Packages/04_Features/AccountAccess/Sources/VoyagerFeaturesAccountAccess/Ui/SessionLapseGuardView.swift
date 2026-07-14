@@ -101,7 +101,7 @@ final class SessionLapseGuardInteractionShieldView: NSView {
 public struct SessionLapseGuardView: View {
     private let store: StoreOf<AccountAccessFeature>
 
-    static let loginButtonTitle = "Log in"
+    static let loginButtonTitle = "Sign in"
     static let accountButtonTitle = "Open account"
     static let retryButtonTitle = "Retry"
     static let webPricingButtonTitle = "View pricing"
@@ -210,9 +210,9 @@ public struct SessionLapseGuardView: View {
             break
         }
         if didSignInFail {
-            return "Session expired. Log in again to continue."
+            return "Session expired. Sign in again to continue."
         }
-        return "Log in to continue."
+        return "Sign in to continue."
     }
 
     static func primaryButtonTitle(for accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA) -> String {
@@ -237,7 +237,7 @@ public struct SessionLapseGuardView: View {
         case .webPricing:
             .openPricingTapped
         case .login, .next, .pending:
-            .loginTapped
+            .loginTapped(context: .paywall, scope: .lifecycle)
         }
     }
 

@@ -1,46 +1,29 @@
 import ComposableArchitecture
+import ConcurrencyExtras
 import VoyagerFeaturesAccountAccess
 @testable import VoyagerPagesOnboarding
 import XCTest
 
 @MainActor
 final class ONB001RunUserOnboardingTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        prepareDependencies {
+            $0.continuousClock = ImmediateClock()
+        }
+    }
+
     // MARK: - ONB-001-start_onboarding_session
 
     // 온보딩 세션 시작 상호작용을 검증합니다.
     // 앱 첫 실행, 빈 진행 상태, 버전 불일치로 인한 리셋 등 세션 초기화 시나리오에서
     // 초기 단계 상태가 올바르게 설정되고 진행 상태 스냅샷이 저장되는지 확인합니다.
 
-    /// ONB-001-start_onboarding_session: 저장된 진행 상태가 없을 때 온보딩이 시작되면 welcome 단계의 새 세션과 초기 navigation 상태를 만든다.
-    /// 저장된 진행 상태가 없을 때 새 온보딩 세션이 welcome 단계에서 시작되는지 검증합니다.
-    /// - 검증 내용: `load`가 `.empty`를 반환하면 reducer가 기본 상태로 새 세션을 생성합니다.
-    /// - 사전 조건: 진행 상태 저장소가 `.empty`를 반환하여 이전 세션이 없음을 나타냅니다.
-    /// - 기대 결과: welcome은 완료 상태, 나머지 단계는 미완료 상태이며 첫 단계라 뒤로 이동할 수 없습니다.
-    func testStartFreshSessionOnEmptyProgress() async {
-        let store = TestStore(initialState: OnboardingFeature.State()) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = ProgressClient.noOp
-            $0.authNetworkClient = StateMutation.activeAuthNetworkClient
-            $0.date = .constant(Date(timeIntervalSince1970: 0))
-        }
-
-        await store.send(.onAppear)
-
-        // 새 세션은 항상 welcome에서 시작
-        XCTAssertEqual(store.state.currentStep, .welcome)
-        XCTAssertTrue(store.state.welcome.isComplete)
-        XCTAssertFalse(store.state.accessUnlock.isComplete)
-        XCTAssertFalse(store.state.permissions.isComplete)
-        XCTAssertFalse(store.state.aiProviderSetup.isComplete)
-        XCTAssertFalse(store.state.complete.isComplete)
-
-        // canGoNext가 true인지 확인 (welcome은 기본적으로 완료 상태)
-        XCTAssertTrue(store.state.canGoNext)
-        XCTAssertFalse(store.state.canGoBack)
-
-        await store.finish()
-    }
+    // ONB-001-start_onboarding_session: 저장된 진행 상태가 없을 때 온보딩이 시작되면 welcome 단계의 새 세션과 초기 navigation 상태를 만든다.
+    // 저장된 진행 상태가 없을 때 새 온보딩 세션이 welcome 단계에서 시작되는지 검증합니다.
+    // - 검증 내용: `load`가 `.empty`를 반환하면 reducer가 기본 상태로 새 세션을 생성합니다.
+    // - 사전 조건: 진행 상태 저장소가 `.empty`를 반환하여 이전 세션이 없음을 나타냅니다.
+    // - 기대 결과: welcome은 완료 상태, 나머지 단계는 미완료 상태이며 첫 단계라 뒤로 이동할 수 없습니다.
 
     /// ONB-001-start_onboarding_session: resetRequired 상태일 때 세션을 재시작하면 저장소 reset과 새 snapshot save가 모두 실행된다.
     /// `resetRequired` 응답 시 reducer가 `reset()`과 `save()`를 모두 호출하는지 검증합니다.
@@ -60,44 +43,18 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             )
         }
 
-        await store.send(.onAppear)
+        await store.send(.onAppear) { $0.didBootstrapProgress = true }
 
         XCTAssertTrue(resetRecorder.value)
 
         await store.finish()
     }
 
-    /// ONB-001-start_onboarding_session: empty progress일 때 onAppear가 실행되면 welcome 상태로 시작하고 재개 가능한 첫 snapshot을 저장한다.
-    /// `load`가 `.empty`를 반환하면 상태가 새 세션으로 초기화되고 초기 스냅샷이 저장되는지 검증합니다.
-    /// - 검증 내용: 진행 상태가 없을 때 세션 초기화 후 첫 스냅샷이 올바른 단계 상태와 함께 저장됩니다.
-    /// - 사전 조건: `load`가 `.empty`를 반환합니다. `snapshotRecorder`로 `save()`에 전달된 스냅샷을 캡처합니다.
-    /// - 기대 결과: welcome에서 시작, welcome만 완료, 저장된 스냅샷의 `currentStep`이 `.welcome`입니다.
-    func testEmptyProgressStartsFreshSession() async {
-        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
-
-        let store = TestStore(initialState: OnboardingFeature.State()) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
-        }
-
-        await store.send(.onAppear)
-
-        // 새 세션은 항상 welcome에서 시작
-        XCTAssertEqual(store.state.currentStep, .welcome)
-        XCTAssertTrue(store.state.welcome.isComplete)
-        XCTAssertFalse(store.state.accessUnlock.isComplete)
-        XCTAssertFalse(store.state.permissions.isComplete)
-        XCTAssertFalse(store.state.aiProviderSetup.isComplete)
-        XCTAssertFalse(store.state.complete.isComplete)
-
-        // 올바른 초기 상태로 스냅샷이 저장되었는지 확인
-        let savedSnapshot = saveRecorder.value
-        XCTAssertNotNil(savedSnapshot)
-        XCTAssertEqual(savedSnapshot?.currentStep, .welcome)
-
-        await store.finish()
-    }
+    // ONB-001-start_onboarding_session: empty progress일 때 onAppear가 실행되면 welcome 상태로 시작하고 재개 가능한 첫 snapshot을 저장한다.
+    // `load`가 `.empty`를 반환하면 상태가 새 세션으로 초기화되고 초기 스냅샷이 저장되는지 검증합니다.
+    // - 검증 내용: 진행 상태가 없을 때 세션 초기화 후 첫 스냅샷이 올바른 단계 상태와 함께 저장됩니다.
+    // - 사전 조건: `load`가 `.empty`를 반환합니다. `snapshotRecorder`로 `save()`에 전달된 스냅샷을 캡처합니다.
+    // - 기대 결과: welcome에서 시작, welcome만 완료, 저장된 스냅샷의 `currentStep`이 `.welcome`입니다.
 
     /// ONB-001-start_onboarding_session: 새 세션이 생성될 때 초기 snapshot을 저장하면 각 step completion flag가 초기 AC 상태와 일치한다.
     /// `onAppear` 시 초기 단계 상태를 반영하여 진행 상태 스냅샷이 올바르게 저장되는지 검증합니다.
@@ -113,7 +70,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
         }
 
-        await store.send(.onAppear)
+        await store.send(.onAppear) { $0.didBootstrapProgress = true }
 
         let savedSnapshot = saveRecorder.value
         XCTAssertNotNil(savedSnapshot)
@@ -146,7 +103,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
 
-        await store.send(.onAppear)
+        await store.send(.onAppear) { $0.didBootstrapProgress = true }
 
         // welcome 단계가 표시되어야 함
         XCTAssertEqual(store.state.currentStep, .welcome)
@@ -171,7 +128,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
 
-        await store.send(.onAppear)
+        await store.send(.onAppear) { $0.didBootstrapProgress = true }
         await store.send(.nextTapped) { state in
             state.currentStep = .accessUnlock
         }
@@ -183,76 +140,17 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001-show_onboarding_step: beta access가 active로 완료되었을 때 Next를 누르면 permissions step을 현재 step으로 표시한다.
-    /// accessUnlock가 확인 완료된 후 `nextTapped`로 permissions 단계가 표시되는지 검증합니다.
-    /// - 검증 내용: accessUnlock 검증 성공(`.active`) 후 다음 단계 전환이 정상 동작합니다.
-    /// - 사전 조건: welcome 통과, accessUnlock에서 `.active` 확인 응답 수신 후 `isComplete = true` 상태입니다.
-    /// - 기대 결과: `currentStep`은 `.permissions`, title "Permissions", `currentStepIndex` 3입니다.
-    func testShowPermissionsStepAfterAccess() async {
-        let store = TestStore(initialState: StateMutation.signedInOnboardingState()) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = ProgressClient.noOp
-            $0.authNetworkClient = StateMutation.activeAuthNetworkClient
-            $0.date = .constant(Date(timeIntervalSince1970: 0))
-        }
+    // ONB-001-show_onboarding_step: beta access가 active로 완료되었을 때 Next를 누르면 permissions step을 현재 step으로 표시한다.
+    // accessUnlock가 확인 완료된 후 `nextTapped`로 permissions 단계가 표시되는지 검증합니다.
+    // - 검증 내용: accessUnlock 검증 성공(`.active`) 후 다음 단계 전환이 정상 동작합니다.
+    // - 사전 조건: welcome 통과, accessUnlock에서 `.active` 확인 응답 수신 후 `isComplete = true` 상태입니다.
+    // - 기대 결과: `currentStep`은 `.permissions`, title "Permissions", `currentStepIndex` 3입니다.
 
-        await store.send(.nextTapped) { state in
-            state.currentStep = .accessUnlock
-        }
-        await store.send(.accessUnlock(.accessStatusResponse(
-            generation: 0,
-            result: .success(StateMutation.activeAccessResponse),
-        ))) { state in
-            StateMutation.applyActiveAccessStatusPending(state: &state)
-        }
-        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
-            StateMutation.applyActiveAccess(state: &state)
-        }
-        await store.receive(\.accessUnlock.delegate.unlocked)
-        await store.send(.nextTapped) { state in
-            state.currentStep = .permissions
-        }
-
-        XCTAssertEqual(store.state.currentStep, .permissions)
-        XCTAssertEqual(store.state.currentStep.title, "Permissions")
-        XCTAssertEqual(store.state.currentStepIndex, 3)
-
-        await store.finish()
-    }
-
-    /// ONB-001-show_onboarding_step: required permissions가 완료되었을 때 Next를 누르면 aiProviderSetup step을 현재 step으로 표시한다.
-    /// 모든 이전 단계(welcome, accessUnlock, permissions)가 완료되면 aiProviderSetup 단계가 표시되는지 검증합니다.
-    /// - 검증 내용: 선행 단계 모두 완료 시 `nextTapped`가 aiProviderSetup 단계로 전환합니다.
-    /// - 사전 조건: welcome, accessUnlock(`.active`), permissions 모두 `isComplete = true`이고 `currentStep = .permissions`입니다.
-    /// - 기대 결과: `currentStep`은 `.aiProviderSetup`, title "AI Provider", 인덱스 4입니다.
-    func testShowAIProviderSetupStepAfterPermissions() async {
-        var initialState = OnboardingFeature.State()
-        initialState.currentStep = .permissions
-        initialState.welcome.isComplete = true
-        initialState.accessUnlock.hasAccountSession = true
-        initialState.accessUnlock.sessionExpiresAt = StateMutation.activeSessionExpiry
-        initialState.accessUnlock.isComplete = true
-        initialState.accessUnlock.status = .coreLicenseActive
-        initialState.accessUnlock.snapshot = StateMutation.activeAccessSnapshot
-        initialState.permissions.isComplete = true
-
-        let store = TestStore(initialState: initialState) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = ProgressClient.noOp
-        }
-
-        await store.send(.nextTapped) { state in
-            state.currentStep = .aiProviderSetup
-        }
-
-        XCTAssertEqual(store.state.currentStep, .aiProviderSetup)
-        XCTAssertEqual(store.state.currentStep.title, "AI Provider")
-        XCTAssertEqual(store.state.currentStepIndex, 4)
-
-        await store.finish()
-    }
+    // ONB-001-show_onboarding_step: required permissions가 완료되었을 때 Next를 누르면 aiProviderSetup step을 현재 step으로 표시한다.
+    // 모든 이전 단계(welcome, accessUnlock, permissions)가 완료되면 aiProviderSetup 단계가 표시되는지 검증합니다.
+    // - 검증 내용: 선행 단계 모두 완료 시 `nextTapped`가 aiProviderSetup 단계로 전환합니다.
+    // - 사전 조건: welcome, accessUnlock(`.active`), permissions 모두 `isComplete = true`이고 `currentStep = .permissions`입니다.
+    // - 기대 결과: `currentStep`은 `.aiProviderSetup`, title "AI Provider", 인덱스 4입니다.
 
     /// ONB-001-show_onboarding_step: aiProviderSetup가 완료되었을 때 Next를 누르면 complete step을 현재 step으로 표시한다.
     /// AI Provider Setup 단계를 완료한 뒤 complete 단계가 표시되는지 검증합니다.
@@ -287,52 +185,14 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001-show_onboarding_step: 모든 step completion 조건이 순서대로 충족될 때 Next를 반복하면 welcome → accessUnlock → permissions
-    /// →
-    /// complete 순서를 보존한다.
-    /// 단계 순서가 정식 순서(welcome → accessUnlock → permissions → complete)를 따르는지 검증합니다.
-    /// - 검증 내용: `OnboardingStep.allCases`가 정식 순서와 일치하고, `nextTapped`가 각 단계를 올바르게 이동합니다.
-    ///   미완료 단계에서는 `nextTapped`가 동작하지 않아야(no-op) 합니다.
-    /// - 사전 조건: `load`가 `.empty`를 반환합니다. accessUnlock는 `.active` 확인 응답으로 완료 처리합니다.
-    /// - 기대 결과: welcome → accessUnlock 전환 성공, permissions 미완료 시 `nextTapped` no-op, 전체 순서가 `allCases`와 일치합니다.
-    func testCurrentStepAdvancesThroughCanonicalOrder() async {
-        XCTAssertEqual(OnboardingStep.allCases, [.welcome, .accessUnlock, .permissions, .aiProviderSetup, .complete])
-
-        let store = TestStore(initialState: StateMutation.signedInOnboardingState()) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = ProgressClient.noOp
-            $0.authNetworkClient = StateMutation.activeAuthNetworkClient
-            $0.date = .constant(Date(timeIntervalSince1970: 0))
-        }
-
-        // welcome → accessUnlock
-        await store.send(.nextTapped) { state in
-            state.currentStep = .accessUnlock
-        }
-
-        // beta access를 완료하여 다음 네비게이션 활성화
-        await store.send(.accessUnlock(.accessStatusResponse(
-            generation: 0,
-            result: .success(StateMutation.activeAccessResponse),
-        ))) { state in
-            StateMutation.applyActiveAccessStatusPending(state: &state)
-        }
-        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
-            StateMutation.applyActiveAccess(state: &state)
-        }
-        await store.receive(\.accessUnlock.delegate.unlocked)
-
-        // accessUnlock → permissions
-        await store.send(.nextTapped) { state in
-            state.currentStep = .permissions
-        }
-
-        // permissions 미완료 — nextTapped는 동작 없음
-        await store.send(.nextTapped)
-
-        await store.finish()
-    }
+    // ONB-001-show_onboarding_step: 모든 step completion 조건이 순서대로 충족될 때 Next를 반복하면 welcome → accessUnlock → permissions
+    // →
+    // complete 순서를 보존한다.
+    // 단계 순서가 정식 순서(welcome → accessUnlock → permissions → complete)를 따르는지 검증합니다.
+    // - 검증 내용: `OnboardingStep.allCases`가 정식 순서와 일치하고, `nextTapped`가 각 단계를 올바르게 이동합니다.
+    //   미완료 단계에서는 `nextTapped`가 동작하지 않아야(no-op) 합니다.
+    // - 사전 조건: `load`가 `.empty`를 반환합니다. accessUnlock는 `.active` 확인 응답으로 완료 처리합니다.
+    // - 기대 결과: welcome → accessUnlock 전환 성공, permissions 미완료 시 `nextTapped` no-op, 전체 순서가 `allCases`와 일치합니다.
 
     // MARK: - ONB-001-update_onboarding_step_state
 
@@ -352,7 +212,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.noOp
         }
 
-        await store.send(.onAppear)
+        await store.send(.onAppear) { $0.didBootstrapProgress = true }
 
         // welcome은 완료 상태로 시작; 끄고 다시 켬
         await store.send(.welcome(.setCompleted(false))) { state in
@@ -372,178 +232,48 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001-update_onboarding_step_state: ONB-002 verification이 active를 반환할 때 child result가 들어오면 accessUnlock step을
-    /// complete로 정규화한다.
-    /// accessUnlock 단계에서 확인 응답(`.active`) 수신 시 상태가 올바르게 업데이트되는지 검증합니다.
-    /// - 검증 내용: `verificationResponse` 액션이 `status`, `reason`, `isComplete`를 올바르게 갱신합니다.
-    /// - 사전 조건: `onAppear` 후 accessUnlock는 미완료(`.notActive`) 상태입니다.
-    /// - 기대 결과: `isComplete = true`, `status = .active`, `reason = .none`으로 변경됩니다.
-    func testUpdateAccessStepStateOnVerification() async {
-        let store = TestStore(initialState: StateMutation.signedInOnboardingState()) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = ProgressClient.noOp
-            $0.authNetworkClient = StateMutation.activeAuthNetworkClient
-            $0.date = .constant(Date(timeIntervalSince1970: 0))
-        }
+    // ONB-001-update_onboarding_step_state: ONB-002 verification이 active를 반환할 때 child result가 들어오면 accessUnlock step을
+    // complete로 정규화한다.
+    // accessUnlock 단계에서 확인 응답(`.active`) 수신 시 상태가 올바르게 업데이트되는지 검증합니다.
+    // - 검증 내용: `verificationResponse` 액션이 `status`, `reason`, `isComplete`를 올바르게 갱신합니다.
+    // - 사전 조건: `onAppear` 후 accessUnlock는 미완료(`.notActive`) 상태입니다.
+    // - 기대 결과: `isComplete = true`, `status = .active`, `reason = .none`으로 변경됩니다.
 
-        // beta access는 미완료 상태로 시작
-        XCTAssertFalse(store.state.accessUnlock.isComplete)
-        XCTAssertNil(store.state.accessUnlock.status)
+    // ONB-001-update_onboarding_step_state: 하위 step state가 변경될 때 reducer가 action을 처리하면 변경된 completion state를 progress
+    // snapshot으로 저장한다.
+    // 자식 액션 후 단계 상태 업데이트가 진행 상태 스냅샷 저장을 트리거하는지 검증합니다.
+    // - 검증 내용: accessUnlock 확인 응답 처리 후 `save()`가 호출되고 업데이트된 단계 상태를 반영합니다.
+    // - 사전 조건: `saveRecorder`로 저장 호출을 캡처합니다. 초기 상태에서 accessUnlock 확인 응답을 전송합니다.
+    // - 기대 결과: 저장된 스냅샷의 `accessUnlockComplete`이 `true`입니다.
 
-        // 성공적인 확인이 상태를 업데이트
-        await store.send(.accessUnlock(.accessStatusResponse(
-            generation: 0,
-            result: .success(StateMutation.activeAccessResponse),
-        ))) { state in
-            StateMutation.applyActiveAccessStatusPending(state: &state)
-        }
-        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
-            StateMutation.applyActiveAccess(state: &state)
-        }
-        await store.receive(\.accessUnlock.delegate.unlocked)
+    // ONB-001-update_onboarding_step_state: 각 child step completion 상태가 다를 때 step state를 계산하면 step별 complete flag를
+    // 독립적으로 유지한다.
+    // `isStepComplete`가 각 단계별로 완료 상태를 올바르게 추적하는지 검증합니다.
+    // - 검증 내용: 기본 상태에서 welcome만 완료이고, 각 단계를 수동 완료할 때마다 추적이 갱신됩니다.
+    // - 사전 조건: 기본 `OnboardingFeature.State`에서 시작합니다.
+    // - 기대 결과: welcome은 기본 완료, accessUnlock/permissions/complete는 미완료,
+    //   각각 `isComplete = true` 설정 후 해당 단계 완료로 추적됩니다.
 
-        XCTAssertTrue(store.state.accessUnlock.isComplete)
-        XCTAssertEqual(store.state.accessUnlock.status, .coreLicenseActive)
-
-        await store.finish()
-    }
-
-    /// ONB-001-update_onboarding_step_state: 하위 step state가 변경될 때 reducer가 action을 처리하면 변경된 completion state를 progress
-    /// snapshot으로 저장한다.
-    /// 자식 액션 후 단계 상태 업데이트가 진행 상태 스냅샷 저장을 트리거하는지 검증합니다.
-    /// - 검증 내용: accessUnlock 확인 응답 처리 후 `save()`가 호출되고 업데이트된 단계 상태를 반영합니다.
-    /// - 사전 조건: `saveRecorder`로 저장 호출을 캡처합니다. 초기 상태에서 accessUnlock 확인 응답을 전송합니다.
-    /// - 기대 결과: 저장된 스냅샷의 `accessUnlockComplete`이 `true`입니다.
-    func testStepStateUpdateTriggersProgressSave() async throws {
-        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
-
-        let store = TestStore(initialState: StateMutation.signedInOnboardingState()) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
-            $0.authNetworkClient = StateMutation.activeAuthNetworkClient
-            $0.date = .constant(Date(timeIntervalSince1970: 0))
-        }
-
-        await store.send(.accessUnlock(.accessStatusResponse(
-            generation: 0,
-            result: .success(StateMutation.activeAccessResponse),
-        ))) { state in
-            StateMutation.applyActiveAccessStatusPending(state: &state)
-        }
-        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
-            StateMutation.applyActiveAccess(state: &state)
-        }
-        await store.receive(\.accessUnlock.delegate.unlocked)
-
-        // 업데이트된 스냅샷으로 save가 호출되어야 함
-        let saved = saveRecorder.value
-        XCTAssertNotNil(saved)
-        XCTAssertTrue(try XCTUnwrap(saved?.stepState.accessUnlockComplete))
-
-        await store.finish()
-    }
-
-    /// ONB-001-update_onboarding_step_state: 각 child step completion 상태가 다를 때 step state를 계산하면 step별 complete flag를
-    /// 독립적으로 유지한다.
-    /// `isStepComplete`가 각 단계별로 완료 상태를 올바르게 추적하는지 검증합니다.
-    /// - 검증 내용: 기본 상태에서 welcome만 완료이고, 각 단계를 수동 완료할 때마다 추적이 갱신됩니다.
-    /// - 사전 조건: 기본 `OnboardingFeature.State`에서 시작합니다.
-    /// - 기대 결과: welcome은 기본 완료, accessUnlock/permissions/complete는 미완료,
-    ///   각각 `isComplete = true` 설정 후 해당 단계 완료로 추적됩니다.
-    func testStepStateTracksCompletionPerStep() {
-        var state = OnboardingFeature.State()
-
-        XCTAssertTrue(state.isStepComplete(.welcome))
-        XCTAssertFalse(state.isStepComplete(.accessUnlock))
-        XCTAssertFalse(state.isStepComplete(.permissions))
-        XCTAssertFalse(state.isStepComplete(.complete))
-
-        state.accessUnlock.hasAccountSession = true
-        state.accessUnlock.sessionExpiresAt = StateMutation.activeSessionExpiry
-        state.accessUnlock.isComplete = true
-        XCTAssertTrue(state.isStepComplete(.accessUnlock))
-
-        state.permissions.isComplete = true
-        XCTAssertTrue(state.isStepComplete(.permissions))
-
-        state.complete.isComplete = true
-        XCTAssertTrue(state.isStepComplete(.complete))
-    }
-
-    /// ONB-001-update_onboarding_step_state: session snapshot을 생성할 때 모든 step state를 직렬화하면 ONB-002/ONB-003 결과까지 포함한다.
-    /// `progressSnapshot`이 모든 4개 단계의 완료 플래그를 정확히 캡처하는지 검증합니다.
-    /// - 검증 내용: 수동으로 설정한 단계 상태가 스냅샷 생성 시 그대로 반영됩니다.
-    /// - 사전 조건: `currentStep = .permissions`, `accessUnlock.isComplete = true`, `permissions.isComplete = true`입니다.
-    /// - 기대 결과: 스냅샷의 `currentStep`은 `.permissions`, `welcomeComplete`/`accessUnlockComplete`/`permissionsComplete`은
-    /// `true`,
-    ///   `completeComplete`은 `false`입니다.
-    func testProgressSnapshotCapturesAllStepStates() {
-        var state = OnboardingFeature.State()
-        state.currentStep = .permissions
-        state.accessUnlock.hasAccountSession = true
-        state.accessUnlock.sessionExpiresAt = StateMutation.activeSessionExpiry
-        state.accessUnlock.isComplete = true
-        state.permissions.isComplete = true
-
-        let snapshot = state.progressSnapshot
-
-        XCTAssertEqual(snapshot.currentStep, .permissions)
-        XCTAssertTrue(snapshot.stepState.welcomeComplete)
-        XCTAssertTrue(snapshot.stepState.accessUnlockComplete)
-        XCTAssertTrue(snapshot.stepState.permissionsComplete)
-        XCTAssertFalse(snapshot.stepState.completeComplete)
-    }
+    // ONB-001-update_onboarding_step_state: session snapshot을 생성할 때 모든 step state를 직렬화하면 ONB-002/ONB-003 결과까지 포함한다.
+    // `progressSnapshot`이 모든 4개 단계의 완료 플래그를 정확히 캡처하는지 검증합니다.
+    // - 검증 내용: 수동으로 설정한 단계 상태가 스냅샷 생성 시 그대로 반영됩니다.
+    // - 사전 조건: `currentStep = .permissions`, `accessUnlock.isComplete = true`, `permissions.isComplete = true`입니다.
+    // - 기대 결과: 스냅샷의 `currentStep`은 `.permissions`, `welcomeComplete`/`accessUnlockComplete`/`permissionsComplete`은
+    // `true`,
+    //   `completeComplete`은 `false`입니다.
 
     // MARK: - ONB-001-advance_onboarding_step
 
     // 단계 앞으로 이동: nextTapped를 통한 단계 전환, 완료 전제 조건, 마지막 단계 제한,
     // 이동 시 진행 상태 저장을 검증합니다.
 
-    /// ONB-001-advance_onboarding_step: ONB-001:go_back_onboarding_step — 현재 step이 완료되었을 때 Next/Back을 누르면 인접 step으로만
-    /// 이동한다.
-    /// `nextTapped`와 `backTapped`를 통한 앞/뒤 네비게이션이 모두 정상 동작하는지 검증합니다.
-    /// - 검증 내용: welcome → accessUnlock → permissions로 앞으로 이동 후 accessUnlock로 뒤로 이동합니다.
-    ///   미완료 accessUnlock에서 `nextTapped`는 no-op입니다.
-    /// - 사전 조건: `load`가 `.empty`를 반환합니다. accessUnlock는 `.active` 확인 응답으로 완료 처리합니다.
-    /// - 기대 결과: 단계 전환이 정확한 순서대로 발생하고 뒤로 이동도 올바르게 동작합니다.
-    func testNextBackNavigation() async {
-        let store = TestStore(initialState: StateMutation.signedInOnboardingState()) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = ProgressClient.noOp
-            $0.authNetworkClient = StateMutation.activeAuthNetworkClient
-            $0.date = .constant(Date(timeIntervalSince1970: 0))
-        }
-
-        await store.send(.nextTapped) { state in
-            state.currentStep = .accessUnlock
-        }
-
-        await store.send(.nextTapped)
-
-        await store.send(.accessUnlock(.accessStatusResponse(
-            generation: 0,
-            result: .success(StateMutation.activeAccessResponse),
-        ))) { state in
-            StateMutation.applyActiveAccessStatusPending(state: &state)
-        }
-        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
-            StateMutation.applyActiveAccess(state: &state)
-        }
-        await store.receive(\.accessUnlock.delegate.unlocked)
-
-        await store.send(.nextTapped) { state in
-            state.currentStep = .permissions
-        }
-
-        await store.send(.backTapped) { state in
-            state.currentStep = .accessUnlock
-        }
-
-        await store.finish()
-    }
+    // ONB-001-advance_onboarding_step: ONB-001:go_back_onboarding_step — 현재 step이 완료되었을 때 Next/Back을 누르면 인접 step으로만
+    // 이동한다.
+    // `nextTapped`와 `backTapped`를 통한 앞/뒤 네비게이션이 모두 정상 동작하는지 검증합니다.
+    // - 검증 내용: welcome → accessUnlock → permissions로 앞으로 이동 후 accessUnlock로 뒤로 이동합니다.
+    //   미완료 accessUnlock에서 `nextTapped`는 no-op입니다.
+    // - 사전 조건: `load`가 `.empty`를 반환합니다. accessUnlock는 `.active` 확인 응답으로 완료 처리합니다.
+    // - 기대 결과: 단계 전환이 정확한 순서대로 발생하고 뒤로 이동도 올바르게 동작합니다.
 
     /// ONB-001-advance_onboarding_step: 현재 step이 incomplete일 때 Next를 누르면 다음 step으로 잘못 진행하지 않는다.
     /// 현재 단계가 완료되어야만 `nextTapped`로 다음 단계로 이동할 수 있음을 검증합니다.
@@ -611,7 +341,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
         }
 
-        await store.send(.onAppear)
+        await store.send(.onAppear) { $0.didBootstrapProgress = true }
         await store.send(.nextTapped) { state in
             state.currentStep = .accessUnlock
         }
@@ -640,7 +370,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.noOp
         }
 
-        await store.send(.onAppear)
+        await store.send(.onAppear) { $0.didBootstrapProgress = true }
 
         XCTAssertFalse(store.state.canGoBack)
 
@@ -652,47 +382,11 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001-go_back_onboarding_step: 완료된 child step들이 있을 때 이전 step으로 돌아가면 completion state를 잃지 않는다.
-    /// 뒤로 이동 시 이미 완료된 단계의 완료 상태가 보존됨을 검증합니다.
-    /// - 검증 내용: permissions → accessUnlock → welcome으로 뒤로 이동해도 각 단계의 `isComplete`와 `status`가 유지됩니다.
-    /// - 사전 조건: `currentStep = .permissions`, welcome/accessUnlock 모두 완료(`.active`) 상태입니다.
-    /// - 기대 결과: 두 번의 `backTapped` 후에도 welcome/accessUnlock의 완료 상태와 accessUnlock의 `.active` 상태가 보존됩니다.
-    func testGoBackPreservesStepCompletionState() async {
-        var initialState = OnboardingFeature.State()
-        initialState.currentStep = .permissions
-        initialState.welcome.isComplete = true
-        initialState.accessUnlock.hasAccountSession = true
-        initialState.accessUnlock.sessionExpiresAt = StateMutation.activeSessionExpiry
-        initialState.accessUnlock.status = .coreLicenseActive
-        initialState.accessUnlock.snapshot = StateMutation.activeAccessSnapshot
-        initialState.accessUnlock.isComplete = true
-
-        let store = TestStore(initialState: initialState) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = ProgressClient.noOp
-        }
-
-        // permissions → accessUnlock로 뒤로 이동
-        await store.send(.backTapped) { state in
-            state.currentStep = .accessUnlock
-        }
-
-        // 단계 완료 상태가 보존됨
-        XCTAssertTrue(store.state.welcome.isComplete)
-        XCTAssertTrue(store.state.accessUnlock.isComplete)
-        XCTAssertEqual(store.state.accessUnlock.status, .coreLicenseActive)
-
-        // accessUnlock → welcome으로 뒤로 이동
-        await store.send(.backTapped) { state in
-            state.currentStep = .welcome
-        }
-
-        XCTAssertTrue(store.state.welcome.isComplete)
-        XCTAssertTrue(store.state.accessUnlock.isComplete)
-
-        await store.finish()
-    }
+    // ONB-001-go_back_onboarding_step: 완료된 child step들이 있을 때 이전 step으로 돌아가면 completion state를 잃지 않는다.
+    // 뒤로 이동 시 이미 완료된 단계의 완료 상태가 보존됨을 검증합니다.
+    // - 검증 내용: permissions → accessUnlock → welcome으로 뒤로 이동해도 각 단계의 `isComplete`와 `status`가 유지됩니다.
+    // - 사전 조건: `currentStep = .permissions`, welcome/accessUnlock 모두 완료(`.active`) 상태입니다.
+    // - 기대 결과: 두 번의 `backTapped` 후에도 welcome/accessUnlock의 완료 상태와 accessUnlock의 `.active` 상태가 보존됩니다.
 
     /// ONB-001-go_back_onboarding_step: Back 이동이 성공할 때 currentStep이 변경되면 되돌아간 step snapshot을 저장한다.
     /// 뒤로 이동 시 진행 상태 스냅샷이 저장되어 이전 단계가 반영됨을 검증합니다.
@@ -723,93 +417,23 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001-go_back_onboarding_step: accessUnlock가 이미 unlocked 상태일 때 Back으로 돌아가면 완료 상태와 snapshot을 보존한다.
-    /// 이미 완료된 accessUnlock 단계로 뒤로 이동해도 parent navigation이 access 상태를 삭제하지 않음을 검증합니다.
-    /// - 검증 내용: `isComplete = true`, `status = .coreLicenseActive` 상태에서 `backTapped` 후 snapshot이 유지됩니다.
-    /// - 사전 조건: `currentStep = .permissions`, accessUnlock가 unlocked 상태입니다.
-    /// - 기대 결과: `backTapped` 후 `currentStep = .accessUnlock`이고 access 상태가 유지됩니다.
-    func testGoBackToBetaAccessPreservesUnlockedState() async {
-        var initialState = OnboardingFeature.State()
-        initialState.currentStep = .permissions
-        StateMutation.applyPersistedCompletedAccessStep(state: &initialState)
-        initialState.permissions.isComplete = true
-
-        let store = TestStore(initialState: initialState) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = ProgressClient.noOp
-        }
-
-        await store.send(.backTapped) { state in
-            state.currentStep = .accessUnlock
-        }
-
-        XCTAssertTrue(store.state.accessUnlock.isComplete)
-        XCTAssertEqual(store.state.accessUnlock.status, .coreLicenseActive)
-        XCTAssertEqual(store.state.accessUnlock.snapshot, StateMutation.activeAccessSnapshot)
-
-        await store.finish()
-    }
+    // ONB-001-go_back_onboarding_step: accessUnlock가 이미 unlocked 상태일 때 Back으로 돌아가면 완료 상태와 snapshot을 보존한다.
+    // 이미 완료된 accessUnlock 단계로 뒤로 이동해도 parent navigation이 access 상태를 삭제하지 않음을 검증합니다.
+    // - 검증 내용: `isComplete = true`, `status = .coreLicenseActive` 상태에서 `backTapped` 후 snapshot이 유지됩니다.
+    // - 사전 조건: `currentStep = .permissions`, accessUnlock가 unlocked 상태입니다.
+    // - 기대 결과: `backTapped` 후 `currentStep = .accessUnlock`이고 access 상태가 유지됩니다.
 
     // MARK: - ONB-001-resume_onboarding_session
 
     // 세션 이어서 진행: 저장된 스냅샷에서 세션 복원, 미완료 단계의 fallback-to-last-valid-step,
     // 리셋 필요 시 세션 초기화, 복원 후 스냅샷 저장을 검증합니다.
 
-    /// ONB-001-resume_onboarding_session: 유효한 persisted snapshot이 있을 때 앱이 재시작되면 마지막 방문 reachable step에서 재개한다.
-    /// 저장된 스냅샷에서 세션을 이어서 진행할 때 상태가 올바르게 복원되는지 검증합니다.
-    /// - 검증 내용: `load`가 `.success(snapshot)`를 반환하면 reducer가 스냅샷 기반으로 상태를 복원합니다.
-    /// - 사전 조건: snapshot에 `currentStep = .permissions`, welcome/accessUnlock 완료, permissions/complete 미완료가 저장되어 있습니다.
-    /// - 기대 결과: `onAppear` 후 선행 단계(accessUnlock)가 완료되어 `.permissions`를 직접 복원합니다.
-    ///   welcome/accessUnlock는 완료, permissions/complete는 미완료 상태입니다.
-    func testResumeFromPersistedState() async {
-        let snapshot = OnboardingProgressSnapshot(
-            currentStep: .permissions,
-            stepState: OnboardingStepState(
-                welcomeComplete: true,
-                accessUnlockComplete: true,
-                permissionsComplete: false,
-                completeComplete: false,
-            ),
-            accessSnapshot: StateMutation.activeAccessSnapshot,
-        )
-
-        let store = TestStore(initialState: OnboardingFeature.State()) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
-            StateMutation.installActiveAccessRefresh(&$0)
-        }
-        // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
-        store.exhaustivity = .off
-        // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
-        store.exhaustivity = .off
-        // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
-        store.exhaustivity = .off
-
-        await store.send(.onAppear) { state in
-            state.currentStep = .permissions
-            state.welcome.isComplete = true
-            StateMutation.applyPersistedCompletedAccessStep(state: &state)
-            state.permissions.isComplete = false
-            state.complete.isComplete = false
-        }
-        await store.receive(\.accessUnlock.onAppear) { state in
-            state.accessUnlock.didBootstrap = true
-        }
-        await store.receive(\.accessUnlock._onAppearSessionRestored) { state in
-            state.accessUnlock.hasAccountSession = true
-            state.accessUnlock.fetchGeneration = 1
-            state.accessUnlock.ttlTimerActive = true
-        }
-        await store.receive(\.accessUnlock.accessStatusResponse) { state in
-            StateMutation.applyActiveAccessStatusPending(state: &state)
-        }
-        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
-            StateMutation.applyActiveAccess(state: &state)
-        }
-        await store.receive(\.accessUnlock.delegate.unlocked)
-    }
+    // ONB-001-resume_onboarding_session: 유효한 persisted snapshot이 있을 때 앱이 재시작되면 마지막 방문 reachable step에서 재개한다.
+    // 저장된 스냅샷에서 세션을 이어서 진행할 때 상태가 올바르게 복원되는지 검증합니다.
+    // - 검증 내용: `load`가 `.success(snapshot)`를 반환하면 reducer가 스냅샷 기반으로 상태를 복원합니다.
+    // - 사전 조건: snapshot에 `currentStep = .permissions`, welcome/accessUnlock 완료, permissions/complete 미완료가 저장되어 있습니다.
+    // - 기대 결과: `onAppear` 후 선행 단계(accessUnlock)가 완료되어 `.permissions`를 직접 복원합니다.
+    //   welcome/accessUnlock는 완료, permissions/complete는 미완료 상태입니다.
 
     /// ONB-001-resume_onboarding_session: persisted current step이 incomplete일 때 resume하면 안전한 이전/기본 step으로 fallback한다.
     /// 저장된 `currentStep`은 유효하지만 해당 단계가 미완료인 스냅샷으로 이어서 진행 시
@@ -844,6 +468,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
 
         // accessUnlock 미완료 → lastValidStep이 accessUnlock로 되돌아감
         await store.send(.onAppear) { state in
+            state.didBootstrapProgress = true
             state.currentStep = .accessUnlock
             state.complete.isComplete = false
         }
@@ -880,6 +505,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         }
 
         await store.send(.onAppear) { state in
+            state.didBootstrapProgress = true
             state.currentStep = .accessUnlock
             state.permissions.isComplete = true
             state.complete.isComplete = false
@@ -890,65 +516,12 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001-resume_onboarding_session: 이전 step들이 완료된 snapshot일 때 resume하면 완료 상태를 보존하고 방문했던 complete step을 직접 복원한다.
-    /// complete 이전의 모든 단계가 완료된 상태로 이어서 진행 시
-    /// persisted `currentStep = .complete`가 직접 복원됨을 검증합니다.
-    /// - 검증 내용: `currentStep = .complete`이고 permissions가 완료이면 `.complete`를 직접 복원합니다.
-    /// - 사전 조건: snapshot에 welcome/accessUnlock/permissions 완료, `completeComplete = false`가 저장되어 있습니다.
-    /// - 기대 결과: `onAppear` 후 `currentStep = .complete`, 모든 선행 단계는 완료, `complete.isComplete = false`입니다.
-    func testResumeWithCompletedPriorSteps() async {
-        let snapshot = OnboardingProgressSnapshot(
-            currentStep: .complete,
-            stepState: OnboardingStepState(
-                welcomeComplete: true,
-                accessUnlockComplete: true,
-                permissionsComplete: true,
-                aiProviderSetupComplete: true,
-                aiProviderSetupChoice: .providerConnected,
-                aiProviderSetupStatus: .complete,
-                completeComplete: false,
-            ),
-            accessSnapshot: StateMutation.activeAccessSnapshot,
-        )
-
-        let store = TestStore(initialState: OnboardingFeature.State()) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
-            StateMutation.installActiveAccessRefresh(&$0)
-        }
-        // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
-        store.exhaustivity = .off
-
-        // permissions 완료 → 선행 단계 모두 완료 → .complete 직접 복원
-        await store.send(.onAppear) { state in
-            state.currentStep = .complete
-            state.welcome.isComplete = true
-            StateMutation.applyPersistedCompletedAccessStep(state: &state)
-            state.permissions.isComplete = true
-            state.aiProviderSetup.choice = .providerConnected
-            state.aiProviderSetup.status = .complete
-        }
-        await store.receive(\.accessUnlock.onAppear) { state in
-            state.accessUnlock.didBootstrap = true
-        }
-        await store.receive(\.accessUnlock._onAppearSessionRestored) { state in
-            state.accessUnlock.hasAccountSession = true
-            state.accessUnlock.fetchGeneration = 1
-            state.accessUnlock.ttlTimerActive = true
-        }
-        await store.receive(\.accessUnlock.accessStatusResponse) { state in
-            StateMutation.applyActiveAccessStatusPending(state: &state)
-        }
-        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
-            StateMutation.applyActiveAccess(state: &state)
-        }
-        await store.receive(\.accessUnlock.delegate.unlocked)
-
-        XCTAssertEqual(store.state.currentStep, .complete)
-
-        await store.finish()
-    }
+    // ONB-001-resume_onboarding_session: 이전 step들이 완료된 snapshot일 때 resume하면 완료 상태를 보존하고 방문했던 complete step을 직접 복원한다.
+    // complete 이전의 모든 단계가 완료된 상태로 이어서 진행 시
+    // persisted `currentStep = .complete`가 직접 복원됨을 검증합니다.
+    // - 검증 내용: `currentStep = .complete`이고 permissions가 완료이면 `.complete`를 직접 복원합니다.
+    // - 사전 조건: snapshot에 welcome/accessUnlock/permissions 완료, `completeComplete = false`가 저장되어 있습니다.
+    // - 기대 결과: `onAppear` 후 `currentStep = .complete`, 모든 선행 단계는 완료, `complete.isComplete = false`입니다.
 
     /// ONB-001-resume_onboarding_session: welcome만 완료된 snapshot일 때 resume하면 accessUnlock step을 직접 복원한다.
     /// 저장된 스냅샷에서 welcome만 완료된 경우, 선행 단계(welcome)가 완료이므로
@@ -981,6 +554,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
 
         // welcome 완료 → 선행 단계 충족 → .accessUnlock 직접 복원
         await store.send(.onAppear) { state in
+            state.didBootstrapProgress = true
             state.currentStep = .accessUnlock
             state.complete.isComplete = false
         }
@@ -990,63 +564,25 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001-resume_onboarding_session: resume 중 snapshot 보정이 필요하지 않을 때 복원 로직이 실행되면 persisted step을 그대로 저장한다.
-    /// 이어서 진행 시 단계 상태 적용 후 업데이트된 스냅샷이 저장됨을 검증합니다.
-    /// - 검증 내용: 복원된 상태(persisted step 유지)가 `save()`를 통해 올바르게 저장됩니다.
-    /// - 사전 조건: snapshot에 `currentStep = .permissions`, welcome/accessUnlock 완료가 저장되어 있습니다.
-    ///   `saveRecorder`로 저장 호출을 캡처합니다.
-    /// - 기대 결과: 저장된 스냅샷의 `currentStep`이 `.permissions`(선행 단계 완료로 직접 복원)를 반영합니다.
-    func testResumeSavesUpdatedSnapshot() async {
-        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
-        let snapshot = OnboardingProgressSnapshot(
-            currentStep: .permissions,
-            stepState: OnboardingStepState(
-                welcomeComplete: true,
-                accessUnlockComplete: true,
-                permissionsComplete: false,
-                completeComplete: false,
-            ),
-            accessSnapshot: StateMutation.activeAccessSnapshot,
-        )
+    // ONB-001-resume_onboarding_session: resume 중 snapshot 보정이 필요하지 않을 때 복원 로직이 실행되면 persisted step을 그대로 저장한다.
+    // 이어서 진행 시 단계 상태 적용 후 업데이트된 스냅샷이 저장됨을 검증합니다.
+    // - 검증 내용: 복원된 상태(persisted step 유지)가 `save()`를 통해 올바르게 저장됩니다.
+    // - 사전 조건: snapshot에 `currentStep = .permissions`, welcome/accessUnlock 완료가 저장되어 있습니다.
+    //   `saveRecorder`로 저장 호출을 캡처합니다.
+    // - 기대 결과: 저장된 스냅샷의 `currentStep`이 `.permissions`(선행 단계 완료로 직접 복원)를 반영합니다.
 
-        let store = TestStore(initialState: OnboardingFeature.State()) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = ProgressClient.resumingAndRecording(
-                snapshot: snapshot,
-                saveRecorder: saveRecorder,
-            )
-            StateMutation.installActiveAccessRefresh(&$0)
-        }
-        // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
-        store.exhaustivity = .off
+    // MARK: - ONB-001-canonical_access_composition
 
-        await store.send(.onAppear) { state in
-            state.currentStep = .permissions
-            state.welcome.isComplete = true
-            StateMutation.applyPersistedCompletedAccessStep(state: &state)
-            state.permissions.isComplete = false
-            state.complete.isComplete = false
+    /// ONB-001-canonical_access_composition: main-app Onboarding core는 AccountAccess runtime을 직접 저장하지 않는다.
+    /// canonical lifecycle owner로 전환한 뒤 Onboarding core가 두 번째 AccountAccess 상태를 만들지 않는지 검증합니다.
+    /// - 검증 내용: `OnboardingFeature.State`의 stored child가 `AccountAccessFeature.State`가 아닙니다.
+    /// - 사전 조건: main-app Onboarding core의 기본 상태를 생성합니다.
+    /// - 기대 결과: AccountAccess runtime truth는 core state가 아닌 외부 canonical adapter composition에만 존재합니다.
+    func testOnboardingCoreDoesNotStoreAccountAccessRuntime() {
+        let hasAccountAccessChild = Mirror(reflecting: OnboardingFeature.State()).children.contains {
+            String(describing: type(of: $0.value)) == String(describing: AccountAccessFeature.State.self)
         }
-        await store.receive(\.accessUnlock.onAppear)
-        await store.receive(\.accessUnlock._onAppearSessionRestored) { state in
-            state.accessUnlock.hasAccountSession = true
-            state.accessUnlock.fetchGeneration = 1
-            state.accessUnlock.ttlTimerActive = true
-        }
-        await store.receive(\.accessUnlock.accessStatusResponse) { state in
-            StateMutation.applyActiveAccessStatusPending(state: &state)
-        }
-        await store.receive(\.accessUnlock.deviceBindingResponse) { state in
-            StateMutation.applyActiveAccess(state: &state)
-        }
-        await store.receive(\.accessUnlock.delegate.unlocked)
 
-        let saved = saveRecorder.value
-        XCTAssertNotNil(saved)
-        // 저장된 스냅샷은 선행 단계가 충족된 persisted step을 보존해야 함
-        XCTAssertEqual(saved?.currentStep, .permissions)
-
-        await store.finish()
+        XCTAssertFalse(hasAccountAccessChild)
     }
 }

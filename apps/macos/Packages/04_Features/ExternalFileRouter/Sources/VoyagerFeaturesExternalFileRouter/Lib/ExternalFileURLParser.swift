@@ -67,11 +67,13 @@ public enum DeepLinkParserError: Error, Equatable, Sendable {
 public enum ExternalFileURLParser {
     /// 주어진 URL을 파싱하여 `DeepLinkParserResult`를 반환한다.
     ///
-    /// - Parameter url: 외부에서 수신한 `voyager://` Deep Link URL
+    /// - Parameters:
+    ///   - url: 외부에서 수신한 Deep Link URL
+    ///   - expectedScheme: 수신할 URL scheme (기본값 `"voyager"`)
     /// - Returns: 파싱 결과 (`.request` / `.authCallback` / `.error`)
-    public static func parse(_ url: URL) -> DeepLinkParserResult {
+    public static func parse(_ url: URL, expectedScheme: String = "voyager") -> DeepLinkParserResult {
         // scheme 검증
-        guard url.scheme?.lowercased() == "voyager" else {
+        guard url.scheme?.lowercased() == expectedScheme.lowercased() else {
             return .error(.invalidSchemeOrHost)
         }
 

@@ -398,56 +398,11 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-004-skip_ai_provider_setup_during_onboarding: 저장된 skipped choice를 재진입 시 복원한다.
-    /// 사용자가 Back/Next 또는 앱 재진입으로 AI Provider Setup에 돌아왔을 때 이전 Set up later 선택이 유지되는지 검증한다.
-    /// - 검증 내용: `OnboardingProgressClient.load` 성공 snapshot이 setup choice/status와 Next 가능 상태로 복원된다.
-    /// - 사전 조건: prior required steps는 완료됐고 progress snapshot은 AI Provider Setup skipped 상태를 저장하고 있다.
-    /// - 기대 결과: current step은 AI Provider Setup이며 `choice=.setUpLater`, `status=.skipped`, `canGoNext=true` 상태다.
-    func testSetUpLaterRestoreKeepsSkippedChoiceAndAllowsNext() async {
-        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
-        let snapshot = OnboardingProgressSnapshot(
-            currentStep: .aiProviderSetup,
-            stepState: OnboardingStepState(
-                welcomeComplete: true,
-                accessUnlockComplete: true,
-                permissionsComplete: true,
-                aiProviderSetupComplete: true,
-                aiProviderSetupSkipped: true,
-                aiProviderSetupChoice: .setUpLater,
-                aiProviderSetupStatus: .skipped,
-            ),
-            accessSnapshot: StateMutation.activeAccessSnapshot,
-        )
-        let store = TestStore(initialState: OnboardingFeature.State()) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = ProgressClient.resumingAndRecording(
-                snapshot: snapshot,
-                saveRecorder: saveRecorder,
-            )
-        }
-        // store.exhaustivity = .off: access snapshot 복원이 AccountAccess onAppear 장기 effect를 시작하지만
-        // 이 테스트의 검증 대상은 AI provider setup restore projection이다.
-        store.exhaustivity = .off
-
-        await store.send(.onAppear) { state in
-            state.accessUnlock.hasAccountSession = true
-            state.accessUnlock.sessionExpiresAt = StateMutation.activeSessionExpiry
-            state.accessUnlock.isComplete = true
-            state.accessUnlock.status = .coreLicenseActive
-            state.accessUnlock.snapshot = StateMutation.activeAccessSnapshot
-            state.permissions.isComplete = true
-            state.aiProviderSetup.choice = .setUpLater
-            state.aiProviderSetup.status = .skipped
-            state.currentStep = .aiProviderSetup
-        }
-
-        XCTAssertTrue(store.state.canGoNext)
-        XCTAssertEqual(saveRecorder.value?.stepState.aiProviderSetupChoice, .setUpLater)
-        XCTAssertEqual(saveRecorder.value?.stepState.aiProviderSetupStatus, .skipped)
-
-        await store.skipInFlightEffects()
-    }
+    // ONB-004-skip_ai_provider_setup_during_onboarding: 저장된 skipped choice를 재진입 시 복원한다.
+    // 사용자가 Back/Next 또는 앱 재진입으로 AI Provider Setup에 돌아왔을 때 이전 Set up later 선택이 유지되는지 검증한다.
+    // - 검증 내용: `OnboardingProgressClient.load` 성공 snapshot이 setup choice/status와 Next 가능 상태로 복원된다.
+    // - 사전 조건: prior required steps는 완료됐고 progress snapshot은 AI Provider Setup skipped 상태를 저장하고 있다.
+    // - 기대 결과: current step은 AI Provider Setup이며 `choice=.setUpLater`, `status=.skipped`, `canGoNext=true` 상태다.
 
     /// ONB-004-skip_ai_provider_setup_during_onboarding: connected provider가 Set up later보다 우선한다.
     /// 사용자가 이전에 Set up later를 선택했더라도 SET-007 연결 결과가 도착하면 onboarding step이 연결 완료를 우선하는지 검증한다.

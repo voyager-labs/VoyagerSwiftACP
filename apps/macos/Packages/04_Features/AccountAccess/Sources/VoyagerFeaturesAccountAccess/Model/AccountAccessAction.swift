@@ -1,17 +1,64 @@
 import ComposableArchitecture
 import Foundation
 
+public enum AccountSessionRestoration: Equatable, Sendable {
+    case available(sessionExpiresAt: Date?)
+    case missing
+}
+
+public struct AccountAccessHandoffClaimCompletion: Equatable, Sendable {
+    public let ticket: String
+    public let state: String
+    public let context: AppHandoffContext
+    public let scope: AccountAccessHandoffScope
+    public let generation: UInt64
+    public let claimed: Bool
+
+    public init(
+        ticket: String,
+        state: String,
+        context: AppHandoffContext,
+        scope: AccountAccessHandoffScope,
+        generation: UInt64,
+        claimed: Bool,
+    ) {
+        self.ticket = ticket
+        self.state = state
+        self.context = context
+        self.scope = scope
+        self.generation = generation
+        self.claimed = claimed
+    }
+}
+
 @CasePathable
 public enum AccountAccessAction: CasePathable, Sendable {
     case onAppear
     case retryTapped
-    case loginTapped
+    case loginTapped(context: AppHandoffContext, scope: AccountAccessHandoffScope)
     case cancelSignIn
-    case signInHandoffCompleted(SignInHandoffResult)
+    case signInHandoffCompleted(
+        SignInHandoffResult,
+        transaction: AccountAccessHandoffTransaction,
+        generation: UInt64,
+    )
     case loginCallbackReceived(URL)
-    case _handoffExchangeCompleted(Result<AccountSession, AppHandoffExchangeError>)
-    case _onAppearSessionRestored(AccountSession?)
-    case _loginSessionRestored(AccountSession?)
+    case _handoffCallbackTimedOut(state: String)
+    case _handoffClaimCompleted(AccountAccessHandoffClaimCompletion)
+    case _handoffCommitAuthorized(state: String, generation: UInt64, sessionExpiresAt: Date?)
+    case _handoffExchangeCompleted(
+        state: String,
+        generation: UInt64,
+        result: Result<Date?, AppHandoffExchangeError>,
+    )
+    case _handoffPersistenceRollbackFailed(generation: UInt64)
+    case _onAppearSessionRestored(AccountSessionRestoration)
+    case _loginSessionRestored(AccountSessionRestoration)
+    case sessionSyncRequested(intent: SessionSyncIntent, reason: SyncReason)
+    case _sessionSyncCompleted(
+        generation: UInt64,
+        result: Result<SessionSyncResult, SessionSyncError>,
+    )
     case accessStatusResponse(generation: Int, result: Result<AccessStatusResponse, AccessError>)
     case deviceBindingResponse(
         generation: Int,
@@ -20,17 +67,21 @@ public enum AccountAccessAction: CasePathable, Sendable {
     )
     case refreshAccessTapped
     case appDidBecomeActive
+    case revalidatePersistedSession(generation: Int)
+    case _persistedSessionRevalidated(
+        generation: Int,
+        result: PersistedSessionRevalidationResult,
+    )
     case openCheckoutTapped
     case openPricingTapped
     case openAccountTapped
     case openAccessHelpTapped
     case openBetaCodeHelpTapped
     case _webURLResult(Result<Void, AccessError>)
-    case _ttlTimerTicked
-    case _refreshTokenResult(Result<AccountSession, AccessError>)
+    case _refreshDeadlineReached(generation: UInt64)
     case _sessionExpiredDetected
     case _fetchRetryScheduled(Int)
-    case _cachedSnapshotRestored(AccessStatusSnapshot?)
+    case _cachedSnapshotRestored(generation: UInt64, snapshot: AccessStatusSnapshot?)
     case hydrateLaunchSnapshot(AccessStatusSnapshot)
     case hydrateAccessFailure(error: AccessError, sessionExpiresAt: Date?)
     case signOut
@@ -43,6 +94,12 @@ public enum AccountAccessAction: CasePathable, Sendable {
         case snapshot(AccessStatusSnapshot)
         case accessFailure(error: AccessError, sessionExpiresAt: Date?)
         case deviceBindingFailure(snapshot: AccessStatusSnapshot, error: DeviceBindingError)
+    }
+
+    public enum PersistedSessionRevalidationResult: Equatable, Sendable {
+        case valid(sessionExpiresAt: Date)
+        case missing
+        case storageUnavailable
     }
 
     @CasePathable

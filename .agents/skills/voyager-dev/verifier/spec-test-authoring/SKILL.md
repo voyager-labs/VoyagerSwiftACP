@@ -12,7 +12,7 @@ metadata:
 
 ## Core rule
 
-One spec = one owning test suite named `<SpecID><PascalCaseSpecTitle>Tests.swift`. Interaction ACs = `// MARK:` sections inside that suite. Every interaction test method has a `///` traceability doc comment with scenario, verification content, preconditions, and expected result. Infrastructure = `Support/`. No `FeatureTests` suffix. Focused filters use the suite class name, not the test target name. Hand off to `testing` skill for execution.
+One spec = one owning test suite named `<SpecID><PascalCaseSpecTitle>Tests.swift`. Interaction ACs = `// MARK:` sections inside that suite. Every interaction test method has a `///` traceability doc comment with scenario, verification content, preconditions, and expected result. Infrastructure = `Support/`. No `FeatureTests` suffix. Focused filters use the suite class name, not the test target name. Canonical flow documents own production-composition suites under `VoyagerTests/Flows/`; spec-owner suites own interaction-level AC detail. Hand off to `testing` skill for execution.
 
 ## Instructions
 
@@ -28,6 +28,7 @@ One spec = one owning test suite named `<SpecID><PascalCaseSpecTitle>Tests.swift
 10. After authoring, hand off to `../testing/SKILL.md` for focused command selection, execution, failure analysis, and reruns; the initial filter should target the suite class such as `--filter <SpecID><PascalCaseSpecTitle>Tests`, not the test target name.
 11. When an interaction doc has `status: "planned"` but the AC is not yet implemented, load `references/incomplete-interaction-protocol.md` for the XCTSkip placeholder pattern, doc status → test action mapping, and lifecycle rules. Do not write XCTSkip for `"drafted"`, `"deprecated"`, or `[DECISION NEEDED]` interactions.
 12. Never create standalone component or infrastructure test files (e.g. `AccountTokenFileStoreTests.swift`, `EnvironmentLoaderTests.swift`) as ad-hoc proof for an implementation change. `Specs/` contains ONLY spec-owner suites. If implementation behavior needs coverage but no spec AC exists, update the spec document to add the AC first, then add test methods to the owning spec-owner suite under the appropriate `// MARK:` section. If the user did not ask for test authoring, stop at existing-test/build evidence and report the proof gap. See `references/spec-test-topology.md` section "Specs/ directory contents" and "Component behavior coverage workflow".
+13. If the test request originates from a canonical flow document (e.g. `access_unlock_flow.md`), load `references/flow-test-topology.md` and create the suite under `VoyagerTests/Flows/<CATEGORY>/`, not under `Specs/`.
 
 ## Second-pass rules
 

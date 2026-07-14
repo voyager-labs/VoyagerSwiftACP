@@ -13,43 +13,29 @@ public struct AccountSettingsFeature {
     public init() {}
 
     public var body: some Reducer<State, Action> {
-        Scope(state: \.access, action: \.access) {
-            AccountAccessFeature()
-        }
-
         Reduce { state, action in
             switch action {
-            case .access(.delegate(.signedOut)):
-                state.isShowingSignOutConfirmation = false
+            case .delegate:
                 return .none
-
-            case .access(.delegate(.unlocked)):
-                return .none
-
-            case .access:
-                return .none
-
+            case .signInTapped:
+                guard !state.presentation.hasAccountSession else { return .none }
+                return .send(.delegate(.signInRequested))
             case .signOutTapped:
                 state.isShowingSignOutConfirmation = true
                 return .none
-
             case .signOutConfirmed:
                 state.isShowingSignOutConfirmation = false
-                return .send(.access(.signOut))
-
+                return .send(.delegate(.signOutRequested))
             case .signOutCancelled:
                 state.isShowingSignOutConfirmation = false
                 return .none
-
+            case .retryTapped:
+                return .send(.delegate(.retryRequested))
             case .manageAccountTapped:
-                let checkoutURLClient = checkoutURLClient
-                return .run { _ in
+                return .run { [checkoutURLClient] _ in
                     guard let url = try? checkoutURLClient.accountURL() else { return }
                     checkoutURLClient.openURL(url)
                 }
-
-            case .openAccountURLCompleted:
-                return .none
             }
         }
     }

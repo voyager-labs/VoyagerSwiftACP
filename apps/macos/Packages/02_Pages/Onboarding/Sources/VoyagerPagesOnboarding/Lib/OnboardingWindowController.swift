@@ -1,75 +1,31 @@
 import AppKit
 import ComposableArchitecture
 import QuartzCore
+import SwiftNavigation
 import SwiftUI
 import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesAccountAccess
 
 final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
-    let store: StoreOf<OnboardingFeature>
+    let onboardingStore: StoreOf<OnboardingFeature>
+    let accountAccessStore: StoreOf<AccountAccessFeature>
+    private let handlesAuthCallback: Bool
     private var shouldTerminateOnClose = true
 
-    // swiftlint:disable:next function_body_length
     init(
-        openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool = { _ in
-            false
-        },
-        accountSessionClient: AccountSessionClient? = nil,
-        authNetworkClient: AuthNetworkClient? = nil,
-        signInHandoffClient: SignInHandoffClient? = nil,
-        permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
+        onboardingStore: StoreOf<OnboardingFeature>,
+        accountAccessStore: StoreOf<AccountAccessFeature>,
+        handlesAuthCallback: Bool,
     ) {
-        store = Store(initialState: OnboardingFeature.State()) {
-            OnboardingFeature()
-        } withDependencies: {
-            let base = $0.onboardingWindowClient
-            $0.onboardingWindowClient = OnboardingWindowClient(
-                isRequired: base.isRequired,
-                showIfNeeded: base.showIfNeeded,
-                showWindow: base.showWindow,
-                closeWindow: base.closeWindow,
-                openMainWindow: openMainWindow,
-                resetStoredProgress: base.resetStoredProgress,
-            )
-            if let accountSessionClient {
-                $0.accountSessionClient = accountSessionClient
-            }
-            if let authNetworkClient {
-                $0.authNetworkClient = authNetworkClient
-            }
-            if let signInHandoffClient {
-                $0.signInHandoffClient = signInHandoffClient
-            }
-            if let permissionDebugScenario {
-                $0.fullDiskAccessClient = FullDiskAccessClient(
-                    status: {
-                        permissionDebugScenario()?.fullDiskAccessStatus ?? FullDiskAccessClient.liveValue.status()
-                    },
-                )
-                $0.helperFolderAccessClient = HelperFolderAccessClient(
-                    checkAccess: {
-                        if let helperFolderAccess = permissionDebugScenario()?.helperFolderAccess {
-                            return helperFolderAccess
-                        }
-                        return await HelperFolderAccessClient.liveValue.checkAccess()
-                    },
-                    requestAccess: {
-                        if let helperFolderAccess = permissionDebugScenario()?.helperFolderAccess {
-                            return helperFolderAccess
-                        }
-                        return await HelperFolderAccessClient.liveValue.requestAccess()
-                    },
-                )
-                $0.launchAtLoginClient = LaunchAtLoginClient(
-                    isEnabled: {
-                        permissionDebugScenario()?.launchAtLoginEnabled ?? LaunchAtLoginClient.liveValue.isEnabled()
-                    },
-                    setEnabled: { _ in },
-                )
-            }
-        }
+        self.onboardingStore = onboardingStore
+        self.accountAccessStore = accountAccessStore
+        self.handlesAuthCallback = handlesAuthCallback
 
-        let rootView = OnboardingView(store: store)
+        let accessStore: Store<OnboardingAccessProjection, OnboardingAccessIntent> = accountAccessStore.scope(
+            state: OnboardingAccessProjection.init(accountAccess:),
+            action: { (intent: OnboardingAccessIntent) in intent.accountAccessAction },
+        )
+        let rootView = OnboardingView(store: onboardingStore, accessStore: accessStore)
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(contentViewController: hostingController)
         window.styleMask = [.titled, .closable, .fullSizeContentView]
@@ -94,6 +50,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
+
+        observe { [weak self] in
+            guard let self else { return }
+            self.onboardingStore.send(.accessProjectionUpdated(
+                OnboardingAccessProjection(accountAccess: self.accountAccessStore.state),
+            ))
+        }
+        accountAccessStore.send(.onAppear)
 
         window.setFrameAutosaveName("VoyagerOnboardingWindow")
 
@@ -123,6 +87,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     func dismissWithoutTerminate() {
         shouldTerminateOnClose = false
         window?.close()
+    }
+
+    func routeAuthCallback(_ url: URL) -> Bool {
+        guard handlesAuthCallback else { return false }
+        accountAccessStore.send(.loginCallbackReceived(url))
+        return true
     }
 
     func windowShouldClose(_: NSWindow) -> Bool {

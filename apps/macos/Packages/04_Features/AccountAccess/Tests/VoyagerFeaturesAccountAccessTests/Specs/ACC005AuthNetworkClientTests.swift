@@ -1,6 +1,5 @@
-// swiftlint:disable force_unwrapping
-
 @preconcurrency import ComposableArchitecture
+import Foundation
 @testable import VoyagerFeaturesAccountAccess
 import XCTest
 
@@ -14,6 +13,8 @@ import XCTest
 
 @MainActor
 final class ACC005AuthNetworkClientTests: XCTestCase {
+    private struct LegacySyncUnknownError: Error {}
+
     // MARK: - ACC-005-exchange_handoff
 
     /// ACC-005-exchange_handoff: exchangeHandoff 성공 시 AccountSession을 반환한다.
@@ -195,6 +196,16 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         }
     }
 
+    /// ACC-005-refresh_token: malformed 200 응답은 decodingFailure로 매핑한다.
+    func testRefreshResponseDecodingFailureMapsToAccessError() {
+        do {
+            _ = try AuthNetworkClient.decodeRefreshSuccessResponse(Data("{}".utf8))
+            XCTFail("malformed refresh response는 decodingFailure를 throw해야 함")
+        } catch {
+            XCTAssertEqual(error as? AccessError, .decodingFailure)
+        }
+    }
+
     /// ACC-005-refresh_token: refreshToken이 unauthorized를 throw한다.
     /// mock refreshToken closure가 unauthorized를 throw할 때 전파되는지 검증한다.
     /// - 검증 내용: AccessError.unauthorized 전파
@@ -287,6 +298,16 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         do {
             _ = try await client.fetchAccessStatus()
             XCTFail("decodingFailure 에러가 throw되어야 함")
+        } catch {
+            XCTAssertEqual(error as? AccessError, .decodingFailure)
+        }
+    }
+
+    /// ACC-005-fetch_access_status: malformed 200 응답은 decodingFailure로 매핑한다.
+    func testAccessStatusDecodingFailureMapsToAccessError() {
+        do {
+            _ = try AuthNetworkClient.decodeAccessStatusResponse(Data("{}".utf8))
+            XCTFail("malformed access status response는 decodingFailure를 throw해야 함")
         } catch {
             XCTAssertEqual(error as? AccessError, .decodingFailure)
         }
@@ -410,6 +431,132 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         )
     }
 
+    /// ACC-005-auth_network_client: legacy sync는 typed failure를 recovery policy에 맞게 구분한다.
+    /// - 검증 내용: unauthorized는 invalidCredential, capability absence는 capabilityMiss, network/decoding/unknown은
+    /// upstream(0), storage는 storageFailure다.
+    /// - 사전 조건: AccessError, DeviceBindingError, SessionSyncError와 unknown error를 각각 mapping helper에 전달한다.
+    /// - 기대 결과: cancellation 외 typed failure가 capabilityMiss로 뭉개지지 않는다.
+    func testLegacySessionSyncErrorMappingPreservesFailureKinds() {
+        XCTAssertEqual(AuthNetworkClient.legacySessionSyncError(for: AccessError.unauthorized), .invalidCredential)
+        XCTAssertEqual(AuthNetworkClient.legacySessionSyncError(for: AccessError.notConfigured), .capabilityMiss)
+        XCTAssertEqual(AuthNetworkClient.legacySessionSyncError(for: DeviceBindingError.notConfigured), .capabilityMiss)
+        XCTAssertEqual(AuthNetworkClient.legacySessionSyncError(for: AccessError.networkFailure), .upstream(0))
+        XCTAssertEqual(AuthNetworkClient.legacySessionSyncError(for: AccessError.decodingFailure), .upstream(0))
+        XCTAssertEqual(
+            AuthNetworkClient.legacySessionSyncError(for: AccessError.unknownGatewayCode("legacy")),
+            .upstream(0),
+        )
+        XCTAssertEqual(AuthNetworkClient.legacySessionSyncError(for: SessionSyncError.storageFailure), .storageFailure)
+        XCTAssertEqual(AuthNetworkClient.legacySessionSyncError(for: LegacySyncUnknownError()), .upstream(0))
+    }
+
+    /// ACC-005-auth_network_client: legacy refresh 결과는 CAS로 저장한 session expiry를 전달한다.
+    /// - 검증 내용: refresh intent의 legacy result가 rotated status와 refreshed session expiry를 함께 보존한다.
+    /// - 사전 조건: expiry가 없는 refresh 응답과 현재 source token file.
+    /// - 기대 결과: SessionSyncResult.sessionExpiresAt이 CAS에 실제 저장된 fallback expiry와 일치한다.
+    func testLegacyRefreshResultIncludesPersistedSessionExpiry() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let source = AccountTokensFile(
+            updatedAtMs: 1,
+            accessToken: "source-access-token",
+            accessTokenExpiresAtMs: 1_700_000_000_000,
+            accessTokenExpiresIn: 900_000,
+            refreshToken: "source-refresh-token",
+            refreshTokenExpiresAtMs: 1_702_592_000_000,
+        )
+        try await store.write(source)
+        let refreshedSession = AccountSession(
+            accessToken: "rotated-access-token",
+            status: .coreLicenseActive,
+            refreshToken: "rotated-refresh-token",
+            expiresAt: nil,
+        )
+        let persistedSession = try await AuthNetworkClient.persistLegacyRefreshedSession(
+            (session: refreshedSession, source: source),
+            store: store,
+        )
+        let storedValue = try await store.read()
+        let storedTokens = try XCTUnwrap(storedValue)
+        let storedSession = try XCTUnwrap(AccountTokenSessionMapper.tokensFileToSession(storedTokens))
+
+        let result = AuthNetworkClient.legacySessionSyncResult(
+            intent: .refresh,
+            access: AccessStatusResponse(hasAccess: true, status: "active"),
+            outcome: .bound,
+            refreshedSession: persistedSession,
+        )
+
+        XCTAssertEqual(result.sessionStatus, .rotated)
+        XCTAssertNotNil(result.sessionExpiresAt)
+        XCTAssertEqual(result.sessionExpiresAt, persistedSession.expiresAt)
+        XCTAssertEqual(result.sessionExpiresAt, storedSession.expiresAt)
+    }
+
+    /// ACC-005-auth_network_client: legacy refresh CAS 불일치는 expiry 결과를 만들지 않는다.
+    /// - 검증 내용: source token이 교체된 뒤의 refresh commit을 storage failure로 거부한다.
+    /// - 사전 조건: refresh가 읽은 source와 현재 저장된 token file이 다르다.
+    /// - 기대 결과: storageFailure를 throw하고 현재 token file을 유지한다.
+    func testLegacyRefreshCasMismatchRejectsExpiryResult() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let source = AccountTokensFile(
+            updatedAtMs: 1,
+            accessToken: "source-access-token",
+            accessTokenExpiresAtMs: 1_700_000_000_000,
+            accessTokenExpiresIn: 900_000,
+            refreshToken: "source-refresh-token",
+            refreshTokenExpiresAtMs: 1_702_592_000_000,
+        )
+        let current = AccountTokensFile(
+            updatedAtMs: 2,
+            accessToken: "newer-access-token",
+            accessTokenExpiresAtMs: 1_700_000_000_000,
+            accessTokenExpiresIn: 900_000,
+            refreshToken: "source-refresh-token",
+            refreshTokenExpiresAtMs: 1_702_592_000_000,
+        )
+        try await store.write(current)
+        let refreshedSession = AccountSession(
+            accessToken: "rotated-access-token",
+            status: .coreLicenseActive,
+            refreshToken: "rotated-refresh-token",
+            expiresAt: nil,
+        )
+
+        do {
+            _ = try await AuthNetworkClient.persistLegacyRefreshedSession(
+                (session: refreshedSession, source: source),
+                store: store,
+            )
+            XCTFail("CAS mismatch는 storageFailure를 throw해야 함")
+        } catch {
+            XCTAssertEqual(error as? SessionSyncError, .storageFailure)
+        }
+
+        let storedTokens = try await store.read()
+        XCTAssertEqual(storedTokens, current)
+    }
+
+    /// ACC-005-auth_network_client: legacy sync의 device-binding unauthorized는 credential recovery를 시작한다.
+    func testLegacyDeviceBindingUnauthorizedMapsToInvalidCredential() {
+        XCTAssertEqual(
+            AuthNetworkClient.legacySessionSyncError(for: .unauthorized),
+            .invalidCredential,
+        )
+        XCTAssertNil(AuthNetworkClient.legacySessionSyncError(for: .seatCapacityExceeded))
+    }
+
+    /// ACC-005-auth_network_client: 취소된 네트워크 작업은 재시도 가능한 네트워크 오류로 변환하지 않는다.
+    func testCancellationErrorsRemainCancellation() {
+        XCTAssertTrue(AuthNetworkClient.isCancellationError(CancellationError()))
+        XCTAssertTrue(AuthNetworkClient.isCancellationError(URLError(.cancelled)))
+        XCTAssertFalse(AuthNetworkClient.isCancellationError(URLError(.timedOut)))
+        XCTAssertNil(AuthNetworkClient.exchangeError(for: CancellationError()))
+        XCTAssertNil(AuthNetworkClient.exchangeError(for: URLError(.cancelled)))
+        XCTAssertEqual(AuthNetworkClient.exchangeError(for: URLError(.timedOut)), .networkFailure)
+    }
+
     /// ACC-005-test_value: testValue의 모든 closure가 notConfigured를 throw한다.
     /// DependencyKey.testValue가 안전한 기본값을 제공하는지 검증한다.
     /// - 검증 내용: exchangeHandoff/fetchAccessStatus/bindDevice/refreshToken 모두 notConfigured throw
@@ -447,5 +594,3 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         }
     }
 }
-
-// swiftlint:enable force_unwrapping

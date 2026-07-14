@@ -1,6 +1,45 @@
 import ComposableArchitecture
 import Foundation
 
+public enum AccountAccessHandoffScope: Hashable, Sendable {
+    case onboarding
+    case lifecycle
+    case settings
+}
+
+public struct AccountAccessHandoffTransaction: Equatable, Sendable {
+    public let context: AppHandoffContext
+    public let scope: AccountAccessHandoffScope
+
+    public init(context: AppHandoffContext, scope: AccountAccessHandoffScope) {
+        self.context = context
+        self.scope = scope
+    }
+}
+
+public enum SyncReason: Equatable, Sendable {
+    case foreground
+    case login
+    case manual
+    case retry
+    case refreshDeadline
+
+    var priority: Int {
+        switch self {
+        case .refreshDeadline:
+            3
+        case .login, .manual, .retry:
+            2
+        case .foreground:
+            1
+        }
+    }
+
+    var bypassesFreshness: Bool {
+        self != .foreground
+    }
+}
+
 @ObservableState
 public struct AccountAccessState: Equatable {
     public var status: AccessStatus?
@@ -14,23 +53,39 @@ public struct AccountAccessState: Equatable {
     public var didBootstrap: Bool = false
     public var isSignInInProgress: Bool = false
     public var didSignInFail: Bool = false
-    /// 현재 sign-in handoff에 사용해야 하는 컨텍스트.
-    public var handoffContext: AppHandoffContext = .onboarding
+    /// 승인된 sign-in handoff의 고정 컨텍스트와 취소 범위.
+    public var handoffTransaction: AccountAccessHandoffTransaction?
     public var fetchGeneration: Int = 0
+    /// 가장 최근에 완전한 session sync가 끝난 시각. partial 결과는 갱신하지 않는다.
+    public var lastCompleteSyncAt: Date?
+    /// session sync completion이 현재 session intent에 속하는지 검증하는 식별자.
+    public var syncGeneration: UInt64 = 0
+    /// 현재 실행 중인 session sync의 우선순위 판단 근거.
+    public var inFlightSyncReason: SyncReason?
+    /// foreground/TTL persisted session 재검증의 최신 요청 식별자.
+    public var revalidationGeneration: Int = 0
     /// fetchAccessStatus 재시도 횟수 (최대 3). 성공 시 0으로 리셋.
     public var fetchRetryCount: Int = 0
     /// device binding transient 실패 누적 횟수. 임계값 이후 support/account 경로로 escalates.
     public var deviceBindingRetryCount: Int = 0
     /// 현재 대기 중인 handoff state. awaitingCallback에서 설정, callback 처리 후 초기화.
     public var handoffPendingState: String?
+    /// 공유 handoff state를 claim한 뒤 token exchange가 진행 중인 flow 식별자.
+    public var handoffExchangeState: String?
+    /// reducer가 commit을 수락한 뒤 marker finalization을 기다리는 flow 식별자.
+    public var handoffFinalizingState: String?
+    /// handoff마다 증가하여 이전 rollback completion이 새 로그인 상태를 덮지 못하게 한다.
+    public var handoffGeneration: UInt64 = 0
 
-    // MARK: - TTL Timer
+    // MARK: - Refresh Deadline
 
-    /// TTL 갱신 타이머 활성화 여부.
+    /// Refresh deadline scheduler 활성화 여부.
     public var ttlTimerActive: Bool = false
-    /// TTL 갱신 연속 실패 횟수 (최대 임계값 초과 시 타이머 중단).
+    /// Refresh deadline을 무효화하는 세대 식별자.
+    public var refreshDeadlineGeneration: UInt64 = 0
+    /// 호환성을 위해 유지하는 refresh 실패 수.
     public var consecutiveRefreshFailures: Int = 0
-    /// 현재 세션의 access token 만료 시각. TTL 타이머가 이 값을 기준으로 갱신 시점을 계산.
+    /// 현재 세션의 access token 만료 시각. Refresh deadline이 이 값을 기준으로 계산된다.
     public var sessionExpiresAt: Date?
 
     /// 세션 만료 여부. true이면 중복 _sessionExpiredDetected를 무시한다 (dedup guard).
@@ -95,7 +150,8 @@ public struct AccountAccessState: Equatable {
     // MARK: - ONB-002 Affordances
 
     public var canStartLogin: Bool {
-        accountAccessAuthAxis == .signedOut || accountAccessAuthAxis == .signInFailed
+        (accountAccessAuthAxis == .signedOut || accountAccessAuthAxis == .signInFailed)
+            && handoffFinalizingState == nil
     }
 
     public var canRefreshAccess: Bool {
@@ -154,6 +210,7 @@ public struct AccountAccessState: Equatable {
         isSignInInProgress = false
         didSignInFail = false
         handoffPendingState = nil
+        handoffExchangeState = nil
         errorMessage = nil
         deviceBindingFailure = nil
         deviceBindingRetryCount = 0
@@ -162,6 +219,9 @@ public struct AccountAccessState: Equatable {
         isSessionExpired = false
         didBootstrap = true
         fetchGeneration += 1
+        lastCompleteSyncAt = snapshot.fetchedAt
+        syncGeneration += 1
+        inFlightSyncReason = nil
     }
 
     private func primaryCTA(for deviceBindingFailure: DeviceBindingFailure) -> AccessUnlockPrimaryCTA {
@@ -182,6 +242,7 @@ public struct AccountAccessState: Equatable {
         isSignInInProgress = false
         didSignInFail = false
         handoffPendingState = nil
+        handoffExchangeState = nil
         errorMessage = Self.errorMessage(for: error)
         deviceBindingFailure = nil
         deviceBindingRetryCount = 0
@@ -191,6 +252,9 @@ public struct AccountAccessState: Equatable {
         isComplete = false
         didBootstrap = true
         fetchGeneration += 1
+        lastCompleteSyncAt = nil
+        syncGeneration += 1
+        inFlightSyncReason = nil
     }
 
     private static func errorMessage(for error: AccessError) -> String {
@@ -202,7 +266,7 @@ public struct AccountAccessState: Equatable {
         case .decodingFailure:
             "Failed to process the response."
         case .unauthorized:
-            "Session expired. Log in again to continue."
+            "Session expired. Sign in again to continue."
         case .unknownGatewayCode:
             "An unexpected error occurred."
         }

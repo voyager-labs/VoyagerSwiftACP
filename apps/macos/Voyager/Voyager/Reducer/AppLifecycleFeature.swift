@@ -88,7 +88,7 @@ struct AppLifecycleFeature {
 
             // MARK: - AccountAccess delegate routing
 
-            case let .accountAccess(.delegate(.unlocked)):
+            case .accountAccess(.delegate(.unlocked)):
                 guard state.accessGatePhase != .terminating else { return .none }
                 guard state.accessGatePhase != .granted else { return .none }
                 state.accessGatePhase = .granted
@@ -226,9 +226,6 @@ struct AppLifecycleFeature {
                 return .none
 
             case .delegate:
-                return .none
-
-            default:
                 return .none
             }
         }

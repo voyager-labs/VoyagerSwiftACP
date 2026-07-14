@@ -3,7 +3,7 @@ import SwiftUI
 import VoyagerFeaturesAccountAccess
 
 struct UnlockAccessStepView: View {
-    let store: StoreOf<AccountAccessFeature>
+    let store: Store<OnboardingAccessProjection, OnboardingAccessIntent>
 
     var body: some View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
@@ -38,27 +38,16 @@ struct UnlockAccessStepView: View {
                 actionCTAs(viewStore: viewStore)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .onAppear {
-                viewStore.send(.onAppear)
-            }
         })
     }
 
     // MARK: - Auth status banner
 
     @ViewBuilder
-    private func authStatusBanner(viewStore: ViewStoreOf<AccountAccessFeature>) -> some View {
-        switch viewStore.accountAccessAuthAxis {
-        case .signedOut:
-            HStack(spacing: 8) {
-                Image(systemName: "person.crop.circle.badge.xmark")
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                Text("Sign in to activate your license.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-            }
-        case .signInInProgress:
+    private func authStatusBanner(
+        viewStore: ViewStore<OnboardingAccessProjection, OnboardingAccessIntent>,
+    ) -> some View {
+        if viewStore.isSignInInProgress {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
@@ -66,7 +55,7 @@ struct UnlockAccessStepView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
-        case .signInFailed:
+        } else if viewStore.didSignInFail {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
@@ -75,7 +64,7 @@ struct UnlockAccessStepView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(.red)
             }
-        case .signedIn:
+        } else if viewStore.hasAccountSession {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
@@ -84,16 +73,27 @@ struct UnlockAccessStepView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(.green)
             }
+        } else {
+            HStack(spacing: 8) {
+                Image(systemName: "person.crop.circle.badge.xmark")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text("Sign in to activate your license.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
     // MARK: - Action CTAs
 
     @ViewBuilder
-    private func actionCTAs(viewStore: ViewStoreOf<AccountAccessFeature>) -> some View {
+    private func actionCTAs(
+        viewStore: ViewStore<OnboardingAccessProjection, OnboardingAccessIntent>,
+    ) -> some View {
         if viewStore.canStartLogin {
             Button {
-                viewStore.send(.loginTapped)
+                viewStore.send(.login)
             } label: {
                 Label("Sign In", systemImage: "person.crop.circle.badge.plus")
                     .frame(maxWidth: .infinity)
@@ -103,12 +103,10 @@ struct UnlockAccessStepView: View {
             .disabled(viewStore.isSignInInProgress)
         }
 
-        if viewStore.accountAccessAuthAxis == .signedIn,
-           let failure = viewStore.deviceBindingFailure
-        {
-            deviceBindingFailureCTAs(viewStore: viewStore, failure: failure)
-        } else if viewStore.accountAccessAuthAxis == .signedIn,
-                  viewStore.accountAccessStepState == .blocked,
+        if viewStore.hasAccountSession, viewStore.hasDeviceBindingFailure {
+            deviceBindingFailureCTAs(viewStore: viewStore)
+        } else if viewStore.hasAccountSession,
+                  viewStore.isBlocked,
                   let status = viewStore.status
         {
             blockedStatusCTAs(viewStore: viewStore, status: status)
@@ -116,7 +114,7 @@ struct UnlockAccessStepView: View {
 
         if viewStore.canRefreshAccess, !viewStore.isComplete {
             Button {
-                viewStore.send(.refreshAccessTapped)
+                viewStore.send(.refresh)
             } label: {
                 Label("Refresh Access", systemImage: "arrow.clockwise")
             }
@@ -127,14 +125,13 @@ struct UnlockAccessStepView: View {
     }
 
     private func deviceBindingFailureCTAs(
-        viewStore: ViewStoreOf<AccountAccessFeature>,
-        failure _: DeviceBindingFailure,
+        viewStore: ViewStore<OnboardingAccessProjection, OnboardingAccessIntent>,
     ) -> some View {
         VStack(spacing: 10) {
-            switch viewStore.accessUnlockPrimaryCTA {
+            switch viewStore.primaryCTA {
             case .account:
                 Button {
-                    viewStore.send(.openAccountTapped)
+                    viewStore.send(.openAccount)
                 } label: {
                     Label("Open Account", systemImage: "person.crop.circle")
                         .frame(maxWidth: .infinity)
@@ -143,7 +140,7 @@ struct UnlockAccessStepView: View {
                 .controlSize(.large)
 
                 Button {
-                    viewStore.send(.openAccessHelpTapped)
+                    viewStore.send(.openAccessHelp)
                 } label: {
                     Label("Contact Support", systemImage: "questionmark.circle")
                         .frame(maxWidth: .infinity)
@@ -153,7 +150,7 @@ struct UnlockAccessStepView: View {
 
             case .retry:
                 Button {
-                    viewStore.send(.retryTapped)
+                    viewStore.send(.retry)
                 } label: {
                     Label("Retry Device Binding", systemImage: "arrow.clockwise")
                         .frame(maxWidth: .infinity)
@@ -171,14 +168,14 @@ struct UnlockAccessStepView: View {
     // MARK: - 차단 상태별 CTA 버튼
 
     private func blockedStatusCTAs(
-        viewStore: ViewStoreOf<AccountAccessFeature>,
+        viewStore: ViewStore<OnboardingAccessProjection, OnboardingAccessIntent>,
         status: AccessStatus,
     ) -> some View {
         VStack(spacing: 10) {
             switch status {
             case .none, .trialExpired, .revoked, .refunded:
                 Button {
-                    viewStore.send(.openPricingTapped)
+                    viewStore.send(.openPricing)
                 } label: {
                     Label("View Plans & Pricing", systemImage: "creditcard")
                         .frame(maxWidth: .infinity)

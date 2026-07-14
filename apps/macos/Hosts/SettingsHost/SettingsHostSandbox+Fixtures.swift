@@ -1,6 +1,5 @@
 import Foundation
 import VoyagerEntitiesAi
-import VoyagerFeaturesAccountAccess
 
 extension SettingsHostSandbox {
     static func makeAIConnectionsFileClient(
@@ -91,7 +90,7 @@ extension SettingsHostSandbox {
         )
     }
 
-    private static func sandboxConnectionsFile() -> AIConnectionsFile {
+    nonisolated private static func sandboxConnectionsFile() -> AIConnectionsFile {
         AIConnectionsFile(
             updatedAtMs: 1_700_000_000_000,
             lastUsedProviderId: .openai,
@@ -107,7 +106,7 @@ extension SettingsHostSandbox {
         )
     }
 
-    private static func sandboxModels(for provider: AiProvider) -> [AiProviderModel] {
+    nonisolated private static func sandboxModels(for provider: AiProvider) -> [AiProviderModel] {
         switch provider {
         case .openai:
             [
@@ -145,60 +144,7 @@ extension SettingsHostSandbox {
         }
     }
 
-    static func sandboxSession(for accountAuth: AccountAuthScenario) -> AccountSession {
-        switch accountAuth {
-        case .signedIn:
-            AccountSession(
-                accessToken: "sandbox-signed-in-token",
-                status: .coreLicenseActive,
-                refreshToken: "sandbox-refresh-token",
-                expiresAt: Date(timeIntervalSince1970: 1_800_000_000),
-            )
-        case .authExpired:
-            AccountSession(
-                accessToken: "sandbox-expired-token",
-                status: .none,
-                refreshToken: "sandbox-refresh-token",
-                expiresAt: Date(timeIntervalSince1970: -1),
-            )
-        case .signedOut, .loading, .error:
-            AccountSession(
-                accessToken: "sandbox-empty-token",
-                status: .none,
-                refreshToken: nil,
-                expiresAt: nil,
-            )
-        }
-    }
-
-    static func sandboxAccessStatusResponse(for accountAuth: AccountAuthScenario) -> AccessStatusResponse {
-        switch accountAuth {
-        case .signedIn:
-            AccessStatusResponse(
-                hasAccess: true,
-                status: "active",
-                reason: "active_entitlement",
-                productKey: "core",
-                currentPeriodEnd: Date(timeIntervalSince1970: 1_800_000_000),
-                source: "polar",
-            )
-        case .authExpired:
-            AccessStatusResponse(
-                hasAccess: false,
-                status: "expired",
-                reason: "sandbox session lapse",
-                productKey: "trial",
-                currentPeriodEnd: Date(timeIntervalSince1970: -1),
-            )
-        case .signedOut, .loading, .error:
-            AccessStatusResponse(
-                hasAccess: false,
-                status: "none",
-            )
-        }
-    }
-
-    static func maybeDelay(_ failureLatency: FailureLatencyScenario) async {
+    nonisolated static func maybeDelay(_ failureLatency: FailureLatencyScenario) async {
         guard failureLatency == .latency else { return }
         try? await Task.sleep(nanoseconds: 1_000_000)
     }

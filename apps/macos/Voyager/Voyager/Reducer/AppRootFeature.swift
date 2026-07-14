@@ -97,24 +97,13 @@ struct AppRootFeature {
         case .lifecycle(.termination(.willTerminate)):
             .cancel(id: CancelID.appDidBecomeActiveObserver)
 
-        case let .lifecycle(.sessionExpiredDetected(reason)):
-            if reason == .explicitSignOut {
-                .send(.settings(.accessStatusLoaded(.none)))
-            } else {
-                .merge(
-                    .send(.settings(.accessStatusLoaded(.none))),
-                    .send(.settings(.account(.access(._sessionExpiredDetected)))),
-                )
-            }
-
-        case let .lifecycle(.accountAccess(.delegate(.unlocked(snapshot)))):
-            .send(.settings(.appLifecycleAccessSnapshotReady(snapshot)))
-
-        case .lifecycle(.accountAccess(.delegate(.recoveryRequired))):
+        case .lifecycle(.sessionExpiredDetected):
             .none
 
-        case .lifecycle(.accountAccess(.delegate(.signedOut))):
-            .send(.settings(.accessStatusLoaded(.none)))
+        case .lifecycle(.accountAccess):
+            .send(.settings(.accountAccessPresentationUpdated(
+                makeAccountAccessPresentation(state.lifecycle.accountAccess),
+            )))
 
         case .appDidBecomeActive:
             .none
@@ -200,8 +189,8 @@ struct AppRootFeature {
                 }
             return .merge(selectAI, openSettings)
 
-        case let .settings(.delegate(.aiConnectionsFileUpdated(file))):
-            return .send(.windowManager(.lifecycle(.aiConnectionsFileUpdated(file))))
+        case let .settings(.delegate(delegateAction)):
+            return reduceSettingsDelegate(into: &state, delegateAction)
 
         case .settings(.general(.checkForUpdates)):
             return .send(.updater(.checkForUpdates))
@@ -214,6 +203,26 @@ struct AppRootFeature {
 
         default:
             return .none
+        }
+    }
+
+    private func reduceSettingsDelegate(
+        into state: inout State,
+        _ delegateAction: SettingsAction.Delegate,
+    ) -> Effect<Action> {
+        switch delegateAction {
+        case let .aiConnectionsFileUpdated(file):
+            return .send(.windowManager(.lifecycle(.aiConnectionsFileUpdated(file))))
+
+        case .account(.signInRequested):
+            guard !state.lifecycle.accountAccess.hasAccountSession else { return .none }
+            return .send(.lifecycle(.accountAccess(.loginTapped(context: .paywall, scope: .lifecycle))))
+
+        case .account(.signOutRequested):
+            return .send(.lifecycle(.accountAccess(.signOut)))
+
+        case .account(.retryRequested):
+            return .send(.lifecycle(.accountAccess(.retryTapped)))
         }
     }
 
@@ -282,11 +291,8 @@ struct AppRootFeature {
         action: Action,
     ) -> Effect<Action> {
         switch action {
-        case .receiveAuthCallbackURL:
-            showExternalFileOpenError(
-                title: "Voyager 로그인 복귀를 완료할 수 없습니다",
-                message: "인증 callback을 계정 인증 흐름으로 전달하는 경로가 아직 연결되어 있지 않습니다. 다시 로그인해 주세요.",
-            )
+        case let .receiveAuthCallbackURL(url):
+            .send(.lifecycle(.accountAccess(.loginCallbackReceived(url))))
 
         default:
             .none
@@ -390,6 +396,17 @@ struct AppRootFeature {
         .run { [collectionAlertClient] _ in
             await collectionAlertClient.showCollectionOpenErrorAlert(title, message)
         }
+    }
+
+    private func makeAccountAccessPresentation(
+        _ accountAccess: AccountAccessFeature.State,
+    ) -> AccountAccessPresentation {
+        AccountAccessPresentation(
+            hasAccountSession: accountAccess.hasAccountSession,
+            isSignInInProgress: accountAccess.isSignInInProgress,
+            didSignInFail: accountAccess.didSignInFail,
+            accessStatus: accountAccess.status,
+        )
     }
 
     private func openSettingsSceneEffect() -> Effect<Action> {

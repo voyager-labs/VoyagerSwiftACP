@@ -1024,6 +1024,85 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
 
     // MARK: - SET-007-disconnect_ai_provider
 
+    /// SET-007-disconnect_ai_provider: disconnect cancel preserves connected row and credential-facing state.
+    /// 연결 해제 확인을 취소하면 어떤 boundary effect도 실행하지 않고 현재 연결을 유지하는지 검증합니다.
+    /// - 검증 내용: disconnect confirmation 표시와 cancel 후 connected/idle 상태 및 입력 credential 상태 보존
+    /// - 사전 조건: OpenAI row가 connected이며 이전 credential 입력값을 유지한다.
+    /// - 기대 결과: confirmation만 닫히고 connected row는 다시 Disconnect action을 제공한다.
+    func testDisconnectCancelPreservesConnectedRowAndCredentialFacingState() async {
+        let store = TestStore(
+            initialState: AiConnectionRowState(
+                provider: .openai,
+                connectionState: .connected,
+                enteredKey: "sk-preserved",
+            ),
+        ) {
+            AiConnectionRowReducer()
+        }
+
+        await store.send(.disconnectButtonTapped) { state in
+            state.isShowingDisconnectConfirmation = true
+        }
+        await store.send(.disconnectCancel) { state in
+            state.isShowingDisconnectConfirmation = false
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.connectionState, .connected)
+        XCTAssertEqual(store.state.flowState, .idle)
+        XCTAssertEqual(store.state.enteredKey, "sk-preserved")
+        XCTAssertEqual(store.state.primaryAction, .disconnect)
+    }
+
+    /// SET-007-disconnect_ai_provider: failed disconnect restores the connected recovery state.
+    /// 연결 해제 boundary가 실패 결과를 반환해도 row가 실제로 끊긴 상태로 표시되지 않는지 검증합니다.
+    /// - 검증 내용: disconnect confirm, deterministic failed response, connected recovery, Disconnect action
+    /// - 사전 조건: OpenAI row가 connected이고 disconnect client가 connected/networkUnavailable 결과를 반환한다.
+    /// - 기대 결과: response 후 connected/idle 상태와 credential-facing 입력값을 보존하고 다시 disconnect할 수 있다.
+    func testDisconnectFailureRestoresConnectedRowAndRecoveryAction() async {
+        let preservedFile = AIConnectionsFile.singleProvider(.openai, state: .connected)
+        let result = AiProviderConnectionResult(
+            provider: .openai,
+            state: .connected,
+            reason: .networkUnavailable,
+            updatedFile: preservedFile,
+        )
+        let store = TestStore(
+            initialState: AiConnectionRowState(
+                provider: .openai,
+                connectionState: .connected,
+                enteredKey: "sk-preserved",
+            ),
+        ) {
+            AiConnectionRowReducer()
+        } withDependencies: {
+            $0.aiProviderConnectionClient.disconnect = { provider in
+                XCTAssertEqual(provider, .openai)
+                return result
+            }
+        }
+
+        await store.send(.disconnectButtonTapped) { state in
+            state.isShowingDisconnectConfirmation = true
+        }
+        await store.send(.disconnectConfirm) { state in
+            state.isShowingDisconnectConfirmation = false
+            state.flowState = .disconnecting
+            state.connectionState = .disconnecting
+        }
+        await store.receive(\.disconnectResponse) { state in
+            state.flowState = .idle
+            state.connectionState = .connected
+            state.statusReason = .none
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.connectionState, .connected)
+        XCTAssertEqual(store.state.flowState, .idle)
+        XCTAssertEqual(store.state.enteredKey, "sk-preserved")
+        XCTAssertEqual(store.state.primaryAction, .disconnect)
+    }
+
     /// SET-007-disconnect_ai_provider: disconnect Button non Connected State is Ignored
     /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.
     /// - 검증 내용: API key/OAuth/device auth 흐름의 진행, 성공, 실패, 취소 상태 전이를 확인합니다.
