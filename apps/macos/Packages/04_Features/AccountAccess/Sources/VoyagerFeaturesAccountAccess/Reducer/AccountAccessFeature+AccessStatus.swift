@@ -10,15 +10,10 @@ extension AccountAccessFeature {
         generation: UInt64,
     ) -> Effect<Action> {
         let retryDelays = intent == .refresh ? [Duration.seconds(5)] : Self.sessionSyncRetryDelays
-        return .run { [authNetwork, continuousClock, deviceIdentityClient, retryDelays] send in
+        return .run { [authNetwork, continuousClock, deviceIdentityClient, retryDelays, snapshotClient] send in
             let device: DeviceBindingRequest
             do {
-                device = try DeviceBindingRequest(
-                    deviceId: deviceIdentityClient.deviceId(),
-                    deviceName: Host.current().localizedName,
-                    appVersion: AppVersionInfo.shortVersion,
-                    osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
-                )
+                device = try Self.sessionSyncDevice(deviceIdentityClient)
             } catch {
                 await send(._sessionSyncCompleted(generation: generation, result: .failure(.upstream(0))))
                 return
@@ -36,15 +31,20 @@ extension AccountAccessFeature {
                     await send(._sessionSyncCompleted(generation: generation, result: .success(result)))
                     return
                 } catch let error as SessionSyncError {
-                    guard case .upstream = error, retryIndex < retryDelays.count else {
+                    guard case .upstream = error else {
                         await send(._sessionSyncCompleted(generation: generation, result: .failure(error)))
                         return
                     }
-                } catch {
                     guard retryIndex < retryDelays.count else {
-                        await send(._sessionSyncCompleted(generation: generation, result: .failure(.upstream(0))))
+                        guard let action = await Self.cachedSnapshotRestoreAction(snapshotClient, generation)
+                        else { return }
+                        await send(action)
                         return
                     }
+                } catch {
+                    guard !AuthNetworkClient.isCancellationError(error) else { return }
+                    await send(._sessionSyncCompleted(generation: generation, result: .failure(.upstream(0))))
+                    return
                 }
 
                 do {
@@ -56,6 +56,24 @@ extension AccountAccessFeature {
             }
         }
         .cancellable(id: CancelID.sessionSync, cancelInFlight: true)
+    }
+
+    private static func sessionSyncDevice(_ deviceIdentityClient: DeviceIdentityClient) throws -> DeviceBindingRequest {
+        try DeviceBindingRequest(
+            deviceId: deviceIdentityClient.deviceId(),
+            deviceName: Host.current().localizedName,
+            appVersion: AppVersionInfo.shortVersion,
+            osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+        )
+    }
+
+    private static func cachedSnapshotRestoreAction(
+        _ snapshotClient: AccessStatusSnapshotClient,
+        _ generation: UInt64,
+    ) async -> Action? {
+        let snapshot = await snapshotClient.load()
+        guard !Task.isCancelled else { return nil }
+        return ._cachedSnapshotRestored(generation: generation, snapshot: snapshot)
     }
 
     func invalidateSessionSync(_ state: inout State) {
@@ -335,7 +353,22 @@ extension AccountAccessFeature {
     /// 네트워크 장애 시 이 기간을 초과한 snapshot은 만료되지 않았더라도 신뢰하지 않는다 (entitlement bypass 방지).
     private static let cachedSnapshotMaxAge: TimeInterval = 7 * 24 * 60 * 60 // 7일
 
-    func handleCachedSnapshotRestored(_ state: inout State, snapshot: AccessStatusSnapshot?) -> Effect<Action> {
+    func handleCachedSnapshotRestored(
+        _ state: inout State,
+        generation: UInt64,
+        snapshot: AccessStatusSnapshot?,
+    ) -> Effect<Action> {
+        guard generation == state.syncGeneration else {
+            return .none
+        }
+
+        state.inFlightSyncReason = nil
+        state.isSubmitting = false
+        state.isComplete = false
+        state.deviceBindingFailure = nil
+        state.status = .networkFailure
+        state.errorMessage = errorMessage(for: .networkFailure)
+
         // 계약 (entitlement_access_flow.md): 조회 실패는 error 축에서 처리.
         // failure handler가 이미 status=.networkFailure + errorMessage를 기록했으므로
         // 캐시가 없거나 만료된 snapshot은 거부하고 state를 그대로 둔다.
@@ -347,7 +380,9 @@ extension AccountAccessFeature {
         }
 
         let now = date.now
+        let isSessionExpired = snapshot.sessionExpiresAt.map { now >= $0 } ?? true
         let isStale = snapshot.isExpired(now: now)
+            || isSessionExpired
             || now.timeIntervalSince(snapshot.fetchedAt) > Self.cachedSnapshotMaxAge
         if isStale {
             return .send(.delegate(.recoveryRequired(.snapshot(snapshot))))

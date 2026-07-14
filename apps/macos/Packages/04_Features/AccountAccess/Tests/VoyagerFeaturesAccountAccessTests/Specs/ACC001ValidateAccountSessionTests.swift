@@ -447,6 +447,197 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         await store.finish()
     }
 
+    /// ACC-001-validate_account_session: validate retry 소진 후 fresh verified cache로 복구한다.
+    /// - 검증 내용: 같은 request ID로 네 번 시도한 뒤 snapshot을 한 번 로드하고 unlock한다.
+    /// - 사전 조건: upstream failure가 반복되고 미만료 session과 binding proof를 가진 fresh snapshot이 존재한다.
+    /// - 기대 결과: network recovery state를 거쳐 cached snapshot으로 isComplete=true와 unlocked delegate를 전달한다.
+    func testValidateRetryExhaustionRestoresFreshVerifiedCache() async {
+        nonisolated(unsafe) var attempts = 0
+        nonisolated(unsafe) var loadedSnapshots = 0
+        let clock = TestClock()
+        let cachedSnapshot = AccessStatusSnapshot.fetchResult(
+            status: .coreLicenseActive,
+            currentPeriodEnd: nil,
+            sessionExpiresAt: newExpiryDate,
+            fetchedAt: referenceDate,
+            deviceBindingVerifiedAt: referenceDate,
+        )
+        let store = TestStore(initialState: sessionNearExpiryState()) {
+            AccountAccessFeature()
+        } withDependencies: {
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.networkFailure },
+                bindDevice: { _ in throw DeviceBindingError.networkFailure },
+                refreshToken: { throw AccessError.networkFailure },
+                syncSessionWithRequestID: { _, _, _ in
+                    attempts += 1
+                    throw SessionSyncError.upstream(503)
+                },
+            )
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                load: {
+                    loadedSnapshots += 1
+                    return cachedSnapshot
+                },
+                save: { _ in },
+                remove: {},
+            )
+            $0.continuousClock = clock
+            $0.date = .constant(referenceDate)
+        }
+        // store.exhaustivity = .off: retry 내부 호출 횟수와 최종 cache recovery 상태를 집중 검증
+        store.exhaustivity = .off
+
+        await store.send(.sessionSyncRequested(intent: .validate, reason: .manual))
+        for _ in 0 ..< 10 where attempts < 1 {
+            await Task.yield()
+        }
+        await clock.advance(by: .seconds(1))
+        await clock.advance(by: .seconds(2))
+        await clock.advance(by: .seconds(4))
+        await store.receive(\._cachedSnapshotRestored)
+        await store.receive(\.delegate.unlocked)
+
+        XCTAssertEqual(attempts, 4)
+        XCTAssertEqual(loadedSnapshots, 1)
+        XCTAssertTrue(store.state.isComplete)
+        XCTAssertFalse(store.state.isSubmitting)
+        await store.finish()
+    }
+
+    /// ACC-001-validate_account_session: unknown sync 오류는 cache unlock fallback을 사용하지 않는다.
+    /// - 검증 내용: typed upstream이 아닌 오류가 retry나 snapshot load 없이 failure completion으로 종료된다.
+    /// - 사전 조건: unknown error를 throw하는 sync client와 snapshot dependency.
+    /// - 기대 결과: network recovery를 전달하지만 snapshot load와 unlocked delegate는 발생하지 않는다.
+    func testUnknownSyncFailureDoesNotRestoreCachedSnapshot() async {
+        nonisolated(unsafe) var attempts = 0
+        nonisolated(unsafe) var loadedSnapshots = 0
+        let store = TestStore(initialState: sessionNearExpiryState()) {
+            AccountAccessFeature()
+        } withDependencies: {
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.networkFailure },
+                refreshToken: { throw AccessError.networkFailure },
+                syncSessionWithRequestID: { _, _, _ in
+                    attempts += 1
+                    throw UnknownSessionSyncError.failure
+                },
+            )
+            $0.accessStatusSnapshotClient.load = {
+                loadedSnapshots += 1
+                return nil
+            }
+            $0.continuousClock = TestClock()
+            $0.date = .constant(referenceDate)
+        }
+        // store.exhaustivity = .off: unknown failure의 cache 미사용과 recovery route만 검증
+        store.exhaustivity = .off
+
+        await store.send(.sessionSyncRequested(intent: .validate, reason: .manual))
+        await store.receive(\._sessionSyncCompleted)
+        await store.receive(\.delegate.recoveryRequired)
+
+        XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(loadedSnapshots, 0)
+        XCTAssertFalse(store.state.isComplete)
+        await store.finish()
+    }
+
+    /// ACC-001-validate_account_session: 취소된 sync는 cache unlock fallback을 사용하지 않는다.
+    /// - 검증 내용: cancellation이 retry, snapshot load, completion action 없이 effect를 종료한다.
+    /// - 사전 조건: CancellationError를 throw하는 sync client와 snapshot dependency.
+    /// - 기대 결과: snapshot load와 unlock 없이 in-flight effect가 종료된다.
+    func testCancelledSyncDoesNotRestoreCachedSnapshot() async {
+        nonisolated(unsafe) var attempts = 0
+        nonisolated(unsafe) var loadedSnapshots = 0
+        let store = TestStore(initialState: sessionNearExpiryState()) {
+            AccountAccessFeature()
+        } withDependencies: {
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.networkFailure },
+                refreshToken: { throw AccessError.networkFailure },
+                syncSessionWithRequestID: { _, _, _ in
+                    attempts += 1
+                    throw CancellationError()
+                },
+            )
+            $0.accessStatusSnapshotClient.load = {
+                loadedSnapshots += 1
+                return nil
+            }
+            $0.continuousClock = TestClock()
+            $0.date = .constant(referenceDate)
+        }
+        // store.exhaustivity = .off: cancellation의 cache 미사용과 effect 종료만 검증
+        store.exhaustivity = .off
+
+        await store.send(.sessionSyncRequested(intent: .validate, reason: .manual))
+        await store.finish()
+
+        XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(loadedSnapshots, 0)
+        XCTAssertNil(store.state.snapshot)
+    }
+
+    /// ACC-001-validate_account_session: 만료된 session cache는 retry fallback에서 unlock하지 않는다.
+    /// - 검증 내용: entitlement와 binding proof가 fresh여도 sessionExpiresAt이 과거면 snapshot recovery로 제한한다.
+    /// - 사전 조건: 현재 generation의 active cache와 만료된 session expiry.
+    /// - 기대 결과: isComplete=false를 유지하고 unlocked 대신 recoveryRequired를 전달한다.
+    func testExpiredSessionCacheDoesNotUnlockAfterSyncFailure() async {
+        let expiredSnapshot = AccessStatusSnapshot.fetchResult(
+            status: .coreLicenseActive,
+            currentPeriodEnd: nil,
+            sessionExpiresAt: referenceDate.addingTimeInterval(-1),
+            fetchedAt: referenceDate,
+            deviceBindingVerifiedAt: referenceDate,
+        )
+        var state = sessionNearExpiryState()
+        state.syncGeneration = 1
+        state.inFlightSyncReason = .manual
+        state.isSubmitting = true
+        let store = makeTestStore(initialState: state)
+        // store.exhaustivity = .off: 만료 cache의 unlock 차단과 recovery route만 검증
+        store.exhaustivity = .off
+
+        await store.send(._cachedSnapshotRestored(generation: 1, snapshot: expiredSnapshot))
+        await store.receive(\.delegate.recoveryRequired)
+
+        XCTAssertFalse(store.state.isComplete)
+        XCTAssertEqual(store.state.status, .networkFailure)
+        XCTAssertNil(store.state.snapshot)
+        await store.finish()
+    }
+
+    /// ACC-001-validate_account_session: superseded cache completion은 현재 sync state를 변경하지 않는다.
+    /// - 검증 내용: 이전 generation의 snapshot completion을 reducer guard가 무시한다.
+    /// - 사전 조건: generation 2 sync가 진행 중일 때 generation 1 cache completion이 도착한다.
+    /// - 기대 결과: in-flight reason, submitting state, status, snapshot이 모두 유지된다.
+    func testSupersededCachedSnapshotRestoreIsIgnored() async {
+        let cachedSnapshot = AccessStatusSnapshot.fetchResult(
+            status: .coreLicenseActive,
+            currentPeriodEnd: nil,
+            sessionExpiresAt: newExpiryDate,
+            fetchedAt: referenceDate,
+            deviceBindingVerifiedAt: referenceDate,
+        )
+        var state = sessionNearExpiryState()
+        state.syncGeneration = 2
+        state.inFlightSyncReason = .manual
+        state.isSubmitting = true
+        let store = makeTestStore(initialState: state)
+
+        await store.send(._cachedSnapshotRestored(generation: 1, snapshot: cachedSnapshot))
+
+        XCTAssertEqual(store.state.syncGeneration, 2)
+        XCTAssertEqual(store.state.inFlightSyncReason, .manual)
+        XCTAssertTrue(store.state.isSubmitting)
+        XCTAssertNil(store.state.status)
+        XCTAssertNil(store.state.snapshot)
+    }
+
     /// ACC-001-validate_account_session: transient upstream 실패는 반복돼도 세션을 만료시키지 않는다.
     /// - 검증 내용: 429와 503을 포함한 upstream failure completion이 session-expired action을 만들지 않는다.
     /// - 사전 조건: 세 번째 transient failure를 나타내는 로그인 세션.
@@ -844,6 +1035,10 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
 
 private enum StorageReadError: Error {
     case unavailable
+}
+
+private enum UnknownSessionSyncError: Error {
+    case failure
 }
 
 private extension ACC001ValidateAccountSessionTests {
