@@ -115,7 +115,10 @@ extension AccountSessionClient {
                     throw AccountSessionPersistenceError.missingRefreshToken
                 }
                 let preparedFile = try await store.prepareHandoffWrite(tokensFile)
-                return AccountTokenSessionMapper.tokensFileToSession(preparedFile)
+                guard let preparedSession = AccountTokenSessionMapper.tokensFileToSession(preparedFile) else {
+                    throw AccountSessionPersistenceError.verificationFailed
+                }
+                return preparedSession
             },
             commitHandoffPersistence: { session in
                 try await store.commitHandoffWrite(expectedSession: session)

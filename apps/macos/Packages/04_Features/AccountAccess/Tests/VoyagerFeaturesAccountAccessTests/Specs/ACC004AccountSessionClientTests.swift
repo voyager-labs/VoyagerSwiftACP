@@ -284,6 +284,26 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         XCTAssertEqual(restoredSession?.refreshToken, canonicalSession.refreshToken)
     }
 
+    /// ACC-004-account_session_client: 변환할 수 없는 prepared credential은 검증 실패로 표면화한다.
+    func testPrepareRejectsSessionWithEmptyAccessToken() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let client = AccountSessionClient.live(store: store)
+        let invalidSession = AccountSession(
+            accessToken: "",
+            status: .none,
+            refreshToken: "refresh-token",
+            expiresAt: Date().addingTimeInterval(86400),
+        )
+
+        do {
+            _ = try await client.prepareHandoffPersistence(invalidSession)
+            XCTFail("Expected prepared session verification to fail")
+        } catch let error as AccountSessionPersistenceError {
+            XCTAssertEqual(error, .verificationFailed)
+        }
+    }
+
     /// ACC-004-account_session_client: partial commit rollback은 새 canonical credential을 제거한다.
     func testDiscardPartialCommitRemovesMatchingCanonicalSession() async throws {
         let fixture = try TemporaryHomeFixture()
