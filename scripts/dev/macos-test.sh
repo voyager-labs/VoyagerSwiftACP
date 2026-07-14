@@ -27,6 +27,8 @@ if [[ "${1:-}" == "--dry-run" ]]; then
     exit 0
 fi
 
+mkdir -p "$REPO_ROOT/build/dev/reports"
+
 NSUnbufferedIO=YES xcodebuild test \
     -project "$REPO_ROOT/apps/macos/Voyager/Voyager.xcodeproj" \
     -scheme Voyager-Dev \
