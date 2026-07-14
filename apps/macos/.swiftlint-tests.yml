@@ -179,9 +179,6 @@ modifier_order:
     - owned # borrowing/consuming 등 ownership modifier입니다.
 
 # 린터 실행 옵션
-    - [type_method, ib_action, ib_segue_action, other_method, subscript] # SwiftFormat Functions 그룹과 맞춥니다.
-
-# 린터 실행 옵션
 analyzer_rules:
   - capture_variable # var를 closure capture list에 넣어 값 캡처처럼 보이는 혼동을 analyze 단계에서 잡습니다.
   - explicit_self # instance member 접근에 self.를 명시해 캡처/참조를 분명히 합니다.
