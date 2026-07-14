@@ -237,7 +237,7 @@ public struct SessionLapseGuardView: View {
         case .webPricing:
             .openPricingTapped
         case .login, .next, .pending:
-            .loginTapped
+            .loginTapped(context: .paywall, scope: .lifecycle)
         }
     }
 

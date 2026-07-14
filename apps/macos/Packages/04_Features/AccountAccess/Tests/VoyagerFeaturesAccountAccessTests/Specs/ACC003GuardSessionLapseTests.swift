@@ -103,7 +103,9 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
     }
 
     func testPrimaryButtonActionMatchesAccessRecoveryCTA() {
-        if case .loginTapped = SessionLapseGuardView.primaryButtonAction(for: .login) {} else {
+        if case .loginTapped(context: .paywall, scope: .lifecycle) = SessionLapseGuardView
+            .primaryButtonAction(for: .login) {} else
+        {
             XCTFail("login CTA는 loginTapped를 전송해야 함")
         }
         if case .retryTapped = SessionLapseGuardView.primaryButtonAction(for: .retry) {} else {
