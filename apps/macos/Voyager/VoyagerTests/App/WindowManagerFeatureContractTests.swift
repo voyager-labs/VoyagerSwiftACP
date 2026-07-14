@@ -1,5 +1,7 @@
 import ComposableArchitecture
+import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
@@ -70,10 +72,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             id: firstID,
             action: .window(.delegate(.fixedLocationVisibilityChanged(hiddenIDs))),
         )))
-        await store.receive(.windows(.element(
-            id: secondID,
-            action: .window(.applyHiddenFixedLocationIDs(hiddenIDs)),
-        ))) { state in
+        await store.receive(
+            \.windows[id: secondID].window.applyHiddenFixedLocationIDs,
+            hiddenIDs,
+        ) { state in
             state.windows[id: secondID]?.window.sidebar.setFixedLocationItems(
                 [location],
                 hiddenIDs: hiddenIDs,
@@ -279,7 +281,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.send(.file(.openCollectionFile(collectionURL)))
         XCTAssertEqual(store.state.windows.count, 1)
-        XCTAssertTrue(store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned).isEmpty == true)
+        XCTAssertFalse(
+            store.state.windows.first?.window.contentTabs.tabs.contains(where: \.isPinned) ?? true,
+        )
 
         await store.receive(\.defaultWindowBootstrapCompleted)
         await store.receive { action in
@@ -291,7 +295,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         await store.finish()
 
-        XCTAssertEqual(loadCount.value, 1)
+        XCTAssertEqual(loadCount.value, 2)
         XCTAssertEqual(
             store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
             ["dir-1"],
@@ -766,6 +770,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     func testDefaultBootstrapSeedsPinnedTabsFromFinderFavoritesOnFirstLaunch() async {
         let newID = UUID()
         let savedStores = LockIsolated<[ContentTabPinnedRecordStore]>([])
+        let persistedStore = LockIsolated(ContentTabPinnedRecordStore())
         let legacySeedFlag = LockIsolated(false)
         let finderSeedFlag = LockIsolated(false)
         let applicationsURL = URL(fileURLWithPath: "/Applications")
@@ -777,9 +782,18 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .constant(newID)
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
+            $0.contentTabPinnedRecordClient.loadStore = { _ in persistedStore.value }
             $0.contentTabPinnedRecordClient.saveStore = { store, _ in
+                persistedStore.withValue { $0 = store }
                 savedStores.withValue { $0.append(store) }
+            }
+            $0.contentTabPinnedRecordClient.updateStoreAndLoad = { _, transform in
+                try persistedStore.withValue { currentStore in
+                    let updatedStore = try transform(currentStore)
+                    currentStore = updatedStore
+                    savedStores.withValue { $0.append(updatedStore) }
+                    return updatedStore
+                }
             }
             $0.fileManagerFavoritesClient.loadFavorites = { _, _ in favorites }
             $0.fileManagerClient.fileExistsWithIsDirectory = Self.fileExistsForFavoriteURLs([
@@ -835,6 +849,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     func testFinderFavoritesSeedRunsWhenLegacyDefaultSeedFlagAlreadyTrue() async {
         let newID = UUID()
         let savedStores = LockIsolated<[ContentTabPinnedRecordStore]>([])
+        let persistedStore = LockIsolated(ContentTabPinnedRecordStore())
         let legacySeedFlag = LockIsolated(true)
         let finderSeedFlag = LockIsolated(false)
         let applicationsURL = URL(fileURLWithPath: "/Applications")
@@ -846,9 +861,18 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .constant(newID)
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
+            $0.contentTabPinnedRecordClient.loadStore = { _ in persistedStore.value }
             $0.contentTabPinnedRecordClient.saveStore = { store, _ in
+                persistedStore.withValue { $0 = store }
                 savedStores.withValue { $0.append(store) }
+            }
+            $0.contentTabPinnedRecordClient.updateStoreAndLoad = { _, transform in
+                try persistedStore.withValue { currentStore in
+                    let updatedStore = try transform(currentStore)
+                    currentStore = updatedStore
+                    savedStores.withValue { $0.append(updatedStore) }
+                    return updatedStore
+                }
             }
             $0.fileManagerFavoritesClient.loadFavorites = { _, _ in favorites }
             $0.fileManagerClient.fileExistsWithIsDirectory = Self.fileExistsForFavoriteURLs([
@@ -1003,7 +1027,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.uuid = .constant(newID)
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
-            $0.contentTabPinnedRecordClient.saveStore = { _, _ in
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+            $0.contentTabPinnedRecordClient.updateStoreAndLoad = { _, _ in
                 throw SeedSaveFailure()
             }
             $0.fileManagerFavoritesClient.loadFavorites = { _, _ in favorites }
@@ -1116,6 +1141,669 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertFalse(saveStoreCalled.value, "seed 완료 상태에서는 saveStore가 호출되지 않아야 함")
     }
 
+    // VOY-570 Linear AC mapping (FMW cross-owner):
+    // AC1 -> testDefaultBootstrapRunsFinderEnsureBuiltInSeedsReloadAndRestoreInOrder
+    // AC4 -> testAllTagsDeferredThenLaterReadySeedsAndRestores
+    // AC6 -> testBuiltInCompletionSuppressesReseedAfterUnpinWhileEnsureStillRuns
+    // AC9 -> testBuiltInSeedFailureIsIsolatedPerItemAndWindowStillCompletes
+    // AC10 -> testFinderSeedRetriesAfterWriteFailureWhenOnlyBuiltInResidueExists
+
+    /// 기본 부트스트랩은 Finder → ensure → Recents → All Tags → reload → restore 순서를 보장한다.
+    /// - 검증 내용: dependency 호출 순서와 최종 persisted/restored record 순서
+    /// - 사전 조건: 빈 store, Finder favorite 1개, 두 built-in descriptor ready
+    /// - 기대 결과: Recents → Finder → All Tags 순서로 저장·복원되고 세 완료 플래그가 true
+    func testDefaultBootstrapRunsFinderEnsureBuiltInSeedsReloadAndRestoreInOrder() async {
+        let windowID = UUID()
+        let applicationSupportURL = URL(fileURLWithPath: "/tmp/Application Support")
+        let finderURL = URL(fileURLWithPath: "/Users/test/Projects")
+        let recentsURL = BuiltInCollectionIdentity.recents.canonicalPackageURL(
+            applicationSupportURL: applicationSupportURL,
+        )
+        let allTagsURL = BuiltInCollectionIdentity.allTags.canonicalPackageURL(
+            applicationSupportURL: applicationSupportURL,
+        )
+        let events = LockIsolated<[String]>([])
+        let loadCount = LockIsolated(0)
+        let updateCount = LockIsolated(0)
+        let persistedStore = LockIsolated(ContentTabPinnedRecordStore())
+        let flags = LockIsolated<[String: Bool]>([:])
+        let metrics = LockIsolated<[BuiltInSeedLifecycleMetric]>([])
+
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient = ContentTabPinnedRecordClient(
+                loadStore: { _ in
+                    let count = loadCount.withValue { value in
+                        value += 1
+                        return value
+                    }
+                    events.withValue { $0.append("load-\(count)") }
+                    return persistedStore.value
+                },
+                saveStore: { value, _ in persistedStore.withValue { $0 = value } },
+                updateStoreAndLoad: { _, transform in
+                    let count = updateCount.withValue { value in
+                        value += 1
+                        return value
+                    }
+                    events.withValue { $0.append("update-\(count)") }
+                    let updated = try transform(persistedStore.value)
+                    persistedStore.withValue { $0 = updated }
+                    return updated
+                },
+            )
+            $0.fileManagerFavoritesClient.loadFavorites = { _, _ in
+                events.withValue { $0.append("finder") }
+                return [SidebarItems.FavoriteItem(name: "Projects", url: finderURL, iconName: "folder")]
+            }
+            $0.fileManagerBuiltInCollectionClient.ensureAll = {
+                events.withValue { $0.append("ensure") }
+                return BuiltInCollectionEnsureReport(
+                    recents: .ready(.init(identity: .recents, packageURL: recentsURL)),
+                    allTags: .ready(.init(identity: .allTags, packageURL: allTagsURL)),
+                )
+            }
+            $0.fileManagerClient.urlsForDirectory = { directory, _ in
+                directory == .applicationSupportDirectory ? [applicationSupportURL] : []
+            }
+            $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
+                if path == finderURL.path {
+                    isDirectory?.pointee = ObjCBool(true)
+                    return true
+                }
+                if path == recentsURL.path || path == allTagsURL.path {
+                    events.withValue { $0.append("restore") }
+                    return true
+                }
+                return false
+            }
+            $0.userDefaultsClient.bool = { flags.value[$0] ?? false }
+            $0.userDefaultsClient.setBool = { value, key in
+                flags.withValue { $0[key] = value }
+                if value {
+                    let event: String? = switch key {
+                    case "fileManager.defaultPinnedTabsSeedCompleted": "legacy"
+                    case "fileManager.finderFavoritesPinnedSeedCompleted": "finder-complete"
+                    case "fileManager.builtInCollection.recentsPinnedSeed.v1": "recents-complete"
+                    case "fileManager.builtInCollection.allTagsPinnedSeed.v1": "all-tags-complete"
+                    default: nil
+                    }
+                    if let event { events.withValue { $0.append(event) } }
+                }
+            }
+            $0.metricsClient = Self.metricsClient(recording: metrics)
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: window child handoff보다 bootstrap의 durable 호출 순서와 최종 상태를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive(\.windows)
+        await store.finish()
+
+        XCTAssertEqual(
+            Array(events.value.prefix(11)),
+            [
+                "load-1", "legacy", "finder", "update-1", "finder-complete", "ensure",
+                "update-2", "recents-complete", "update-3", "all-tags-complete", "load-2",
+            ],
+        )
+        let firstRestoreIndex = try? XCTUnwrap(events.value.firstIndex(of: "restore"))
+        let reloadIndex = try? XCTUnwrap(events.value.firstIndex(of: "load-2"))
+        XCTAssertNotNil(firstRestoreIndex)
+        XCTAssertNotNil(reloadIndex)
+        if let firstRestoreIndex, let reloadIndex {
+            XCTAssertLessThan(reloadIndex, firstRestoreIndex)
+        }
+        XCTAssertEqual(
+            persistedStore.value.records.map(\.id),
+            ["built-in-collection-recents", "favorite-file----Users-test-Projects", "built-in-collection-all-tags"],
+        )
+        XCTAssertEqual(
+            store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
+            persistedStore.value.records.map(\.id),
+        )
+        XCTAssertTrue(flags.value["fileManager.finderFavoritesPinnedSeedCompleted"] ?? false)
+        XCTAssertTrue(flags.value["fileManager.builtInCollection.recentsPinnedSeed.v1"] ?? false)
+        XCTAssertTrue(flags.value["fileManager.builtInCollection.allTagsPinnedSeed.v1"] ?? false)
+        XCTAssertEqual(metrics.value, [
+            .init(name: "built_in_pinned_seed_started", tags: nil),
+            .init(
+                name: "built_in_pinned_item_seeded",
+                tags: ["identity": "recents", "outcome": "seeded"],
+            ),
+            .init(
+                name: "built_in_pinned_item_seeded",
+                tags: ["identity": "all_tags", "outcome": "seeded"],
+            ),
+        ])
+    }
+
+    /// Finder 저장 실패 뒤 built-in residue만 남아도 다음 부트스트랩이 Finder를 재시도한다.
+    /// - 검증 내용: 첫 Finder transaction 실패, built-in 성공, 두 번째 Finder retry와 residue ordering
+    /// - 사전 조건: 첫 update만 throw, ensure는 두 항목 ready, duplicate Finder favorite 입력
+    /// - 기대 결과: Finder flag는 첫 실행 후 false, 두 번째 실행 후 true이며 Finder ID는 하나만 존재
+    func testFinderSeedRetriesAfterWriteFailureWhenOnlyBuiltInResidueExists() async {
+        struct FinderWriteFailure: Error {}
+
+        let windowID = UUID()
+        let applicationSupportURL = URL(fileURLWithPath: "/tmp/Application Support")
+        let finderURL = URL(fileURLWithPath: "/Users/test/Projects")
+        let recentsURL = BuiltInCollectionIdentity.recents.canonicalPackageURL(
+            applicationSupportURL: applicationSupportURL,
+        )
+        let allTagsURL = BuiltInCollectionIdentity.allTags.canonicalPackageURL(
+            applicationSupportURL: applicationSupportURL,
+        )
+        let persistedStore = LockIsolated(ContentTabPinnedRecordStore())
+        let flags = LockIsolated<[String: Bool]>([:])
+        let updateCount = LockIsolated(0)
+        let finderLoadCount = LockIsolated(0)
+
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient = ContentTabPinnedRecordClient(
+                loadStore: { _ in persistedStore.value },
+                saveStore: { value, _ in persistedStore.withValue { $0 = value } },
+                updateStoreAndLoad: { _, transform in
+                    let count = updateCount.withValue { value in
+                        value += 1
+                        return value
+                    }
+                    if count == 1 { throw FinderWriteFailure() }
+                    let updated = try transform(persistedStore.value)
+                    persistedStore.withValue { $0 = updated }
+                    return updated
+                },
+            )
+            $0.fileManagerFavoritesClient.loadFavorites = { _, _ in
+                finderLoadCount.withValue { $0 += 1 }
+                let favorite = SidebarItems.FavoriteItem(name: "Projects", url: finderURL, iconName: "folder")
+                return [favorite, favorite]
+            }
+            $0.fileManagerBuiltInCollectionClient.ensureAll = {
+                BuiltInCollectionEnsureReport(
+                    recents: .ready(.init(identity: .recents, packageURL: recentsURL)),
+                    allTags: .ready(.init(identity: .allTags, packageURL: allTagsURL)),
+                )
+            }
+            $0.fileManagerClient.urlsForDirectory = { directory, _ in
+                directory == .applicationSupportDirectory ? [applicationSupportURL] : []
+            }
+            $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
+                if path == finderURL.path { isDirectory?.pointee = ObjCBool(true) }
+                return path == finderURL.path || path == recentsURL.path || path == allTagsURL.path
+            }
+            $0.userDefaultsClient.bool = { flags.value[$0] ?? false }
+            $0.userDefaultsClient.setBool = { value, key in flags.withValue { $0[key] = value } }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: 연속 두 bootstrap의 persistence 결과와 retry 계약만 추적한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive(\.windows)
+        XCTAssertFalse(flags.value["fileManager.finderFavoritesPinnedSeedCompleted"] ?? false)
+        XCTAssertEqual(
+            persistedStore.value.records.map(\.id),
+            ["built-in-collection-recents", "built-in-collection-all-tags"],
+        )
+        flags.withValue {
+            $0["fileManager.builtInCollection.recentsPinnedSeed.v1"] = false
+            $0["fileManager.builtInCollection.allTagsPinnedSeed.v1"] = false
+        }
+
+        await store.send(.event(.windowClosed(windowID)))
+        await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive(\.windows)
+        await store.finish()
+
+        XCTAssertTrue(flags.value["fileManager.finderFavoritesPinnedSeedCompleted"] ?? false)
+        XCTAssertTrue(flags.value["fileManager.builtInCollection.recentsPinnedSeed.v1"] ?? false)
+        XCTAssertTrue(flags.value["fileManager.builtInCollection.allTagsPinnedSeed.v1"] ?? false)
+        XCTAssertEqual(finderLoadCount.value, 2)
+        XCTAssertEqual(
+            persistedStore.value.records.map(\.id),
+            ["built-in-collection-recents", "favorite-file----Users-test-Projects", "built-in-collection-all-tags"],
+        )
+    }
+
+    /// built-in seed는 항목별 persistence와 completion을 독립적으로 처리한다.
+    /// - 검증 내용: Recents 성공 후 All Tags write 실패 시 completion과 restore 결과 분리
+    /// - 사전 조건: Finder 완료, 두 descriptor ready, 두 번째 update throw
+    /// - 기대 결과: Recents만 완료·복원되고 default window는 정상 완료
+    func testBuiltInSeedFailureIsIsolatedPerItemAndWindowStillCompletes() async {
+        struct AllTagsWriteFailure: Error {}
+
+        let windowID = UUID()
+        let recentsURL = URL(fileURLWithPath: "/tmp/recents.voycoll")
+        let allTagsURL = URL(fileURLWithPath: "/tmp/all-tags.voycoll")
+        let persistedStore = LockIsolated(ContentTabPinnedRecordStore())
+        let flags = LockIsolated(["fileManager.finderFavoritesPinnedSeedCompleted": true])
+        let updateCount = LockIsolated(0)
+        let metrics = LockIsolated<[BuiltInSeedLifecycleMetric]>([])
+
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient = ContentTabPinnedRecordClient(
+                loadStore: { _ in persistedStore.value },
+                saveStore: { value, _ in persistedStore.withValue { $0 = value } },
+                updateStoreAndLoad: { _, transform in
+                    let count = updateCount.withValue { value in
+                        value += 1
+                        return value
+                    }
+                    if count == 2 { throw AllTagsWriteFailure() }
+                    let updated = try transform(persistedStore.value)
+                    persistedStore.withValue { $0 = updated }
+                    return updated
+                },
+            )
+            $0.fileManagerBuiltInCollectionClient.ensureAll = {
+                .init(
+                    recents: .ready(.init(identity: .recents, packageURL: recentsURL)),
+                    allTags: .ready(.init(identity: .allTags, packageURL: allTagsURL)),
+                )
+            }
+            $0.fileManagerClient.fileExistsWithIsDirectory = { path, _ in path == recentsURL.path }
+            $0.userDefaultsClient.bool = { flags.value[$0] ?? false }
+            $0.userDefaultsClient.setBool = { value, key in flags.withValue { $0[key] = value } }
+            $0.metricsClient = Self.metricsClient(recording: metrics)
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: 항목별 persistence 결과와 downstream window 적용만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive(\.windows)
+        await store.finish()
+
+        XCTAssertTrue(flags.value["fileManager.builtInCollection.recentsPinnedSeed.v1"] ?? false)
+        XCTAssertFalse(flags.value["fileManager.builtInCollection.allTagsPinnedSeed.v1"] ?? false)
+        XCTAssertEqual(persistedStore.value.records.map(\.id), ["built-in-collection-recents"])
+        XCTAssertEqual(
+            store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
+            ["built-in-collection-recents"],
+        )
+        XCTAssertEqual(metrics.value, [
+            .init(name: "built_in_pinned_seed_started", tags: nil),
+            .init(
+                name: "built_in_pinned_item_seeded",
+                tags: ["identity": "recents", "outcome": "seeded"],
+            ),
+            .init(
+                name: "built_in_pinned_item_failed",
+                tags: ["identity": "all_tags", "outcome": "failed"],
+            ),
+        ])
+    }
+
+    /// completion=true인 built-in은 record가 없어도 reseed하지 않지만 package ensure는 계속 실행한다.
+    /// - 검증 내용: ensure 호출과 seed transaction suppression
+    /// - 사전 조건: 두 built-in completion=true, 빈 store
+    /// - 기대 결과: ensure 1회, update 0회, Home fallback
+    func testBuiltInCompletionSuppressesReseedAfterUnpinWhileEnsureStillRuns() async {
+        let windowID = UUID()
+        let ensureCount = LockIsolated(0)
+        let updateCount = LockIsolated(0)
+        let metrics = LockIsolated<[BuiltInSeedLifecycleMetric]>([])
+        let flags = LockIsolated([
+            "fileManager.finderFavoritesPinnedSeedCompleted": true,
+            "fileManager.builtInCollection.recentsPinnedSeed.v1": true,
+            "fileManager.builtInCollection.allTagsPinnedSeed.v1": true,
+        ])
+
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient = ContentTabPinnedRecordClient(
+                loadStore: { _ in ContentTabPinnedRecordStore() },
+                saveStore: { _, _ in },
+                updateStoreAndLoad: { _, transform in
+                    updateCount.withValue { $0 += 1 }
+                    return try transform(ContentTabPinnedRecordStore())
+                },
+            )
+            $0.fileManagerBuiltInCollectionClient.ensureAll = {
+                ensureCount.withValue { $0 += 1 }
+                return .init(recents: .failed, allTags: .failed)
+            }
+            $0.userDefaultsClient.bool = { flags.value[$0] ?? false }
+            $0.userDefaultsClient.setBool = { value, key in flags.withValue { $0[key] = value } }
+            $0.metricsClient = Self.metricsClient(recording: metrics)
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: package ensure 수행과 seed suppression의 경계만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive(\.windows)
+        await store.finish()
+
+        XCTAssertEqual(ensureCount.value, 1)
+        XCTAssertEqual(updateCount.value, 0)
+        XCTAssertFalse(
+            store.state.windows.first?.window.contentTabs.tabs.contains(where: \.isPinned) ?? true,
+        )
+        XCTAssertEqual(metrics.value, [
+            .init(name: "built_in_pinned_seed_started", tags: nil),
+            .init(
+                name: "built_in_pinned_item_suppressed",
+                tags: ["identity": "recents", "outcome": "suppressed"],
+            ),
+            .init(
+                name: "built_in_pinned_item_suppressed",
+                tags: ["identity": "all_tags", "outcome": "suppressed"],
+            ),
+        ])
+    }
+
+    /// Finder tags가 없어 defer된 All Tags는 다음 bootstrap의 ready 결과에서 seed된다.
+    /// - 검증 내용: item completion 독립성, locked store 재시도, final WindowManager downstream restore
+    /// - 사전 조건: 첫 ensure는 Recents ready/All Tags deferred, 두 번째 ensure는 두 item ready
+    /// - 기대 결과: 첫 window에는 Recents만, 다음 window에는 Recents와 All Tags가 실제 pinned state로 복원됨
+    func testAllTagsDeferredThenLaterReadySeedsAndRestores() async {
+        let windowID = UUID()
+        let recentsURL = URL(fileURLWithPath: "/tmp/recents.voycoll")
+        let allTagsURL = URL(fileURLWithPath: "/tmp/all-tags.voycoll")
+        let persistedStore = LockIsolated(ContentTabPinnedRecordStore())
+        let flags = LockIsolated(["fileManager.finderFavoritesPinnedSeedCompleted": true])
+        let ensureCount = LockIsolated(0)
+        let metrics = LockIsolated<[BuiltInSeedLifecycleMetric]>([])
+
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient = ContentTabPinnedRecordClient(
+                loadStore: { _ in persistedStore.value },
+                saveStore: { value, _ in persistedStore.withValue { $0 = value } },
+                updateStoreAndLoad: { _, transform in
+                    let updated = try transform(persistedStore.value)
+                    persistedStore.withValue { $0 = updated }
+                    return updated
+                },
+            )
+            $0.fileManagerBuiltInCollectionClient.ensureAll = {
+                let invocation = ensureCount.withValue { value in
+                    value += 1
+                    return value
+                }
+                return .init(
+                    recents: .ready(.init(identity: .recents, packageURL: recentsURL)),
+                    allTags: invocation == 1
+                        ? .deferred
+                        : .ready(.init(identity: .allTags, packageURL: allTagsURL)),
+                )
+            }
+            $0.fileManagerClient.fileExistsWithIsDirectory = { path, _ in
+                path == recentsURL.path || path == allTagsURL.path
+            }
+            $0.userDefaultsClient.bool = { flags.value[$0] ?? false }
+            $0.userDefaultsClient.setBool = { value, key in flags.withValue { $0[key] = value } }
+            $0.metricsClient = Self.metricsClient(recording: metrics)
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: 두 bootstrap의 durable store와 downstream 복원 결과를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive(\.windows)
+        XCTAssertEqual(persistedStore.value.records.map(\.id), ["built-in-collection-recents"])
+        XCTAssertFalse(flags.value["fileManager.builtInCollection.allTagsPinnedSeed.v1"] ?? false)
+        XCTAssertEqual(
+            store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
+            ["built-in-collection-recents"],
+        )
+
+        await store.send(.event(.windowClosed(windowID)))
+        await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive(\.windows)
+        await store.finish()
+
+        XCTAssertEqual(persistedStore.value.records.map(\.id), [
+            "built-in-collection-recents", "built-in-collection-all-tags",
+        ])
+        XCTAssertTrue(flags.value["fileManager.builtInCollection.allTagsPinnedSeed.v1"] ?? false)
+        XCTAssertEqual(
+            store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
+            persistedStore.value.records.map(\.id),
+        )
+        XCTAssertEqual(metrics.value, [
+            .init(name: "built_in_pinned_seed_started", tags: nil),
+            .init(
+                name: "built_in_pinned_item_seeded",
+                tags: ["identity": "recents", "outcome": "seeded"],
+            ),
+            .init(
+                name: "built_in_pinned_item_deferred",
+                tags: ["identity": "all_tags", "outcome": "deferred"],
+            ),
+            .init(name: "built_in_pinned_seed_started", tags: nil),
+            .init(
+                name: "built_in_pinned_item_suppressed",
+                tags: ["identity": "recents", "outcome": "suppressed"],
+            ),
+            .init(
+                name: "built_in_pinned_item_seeded",
+                tags: ["identity": "all_tags", "outcome": "seeded"],
+            ),
+        ])
+        for metric in metrics.value {
+            guard let tags = metric.tags else { continue }
+            XCTAssertEqual(Set(tags.keys), Set(["identity", "outcome"]))
+            XCTAssertFalse(tags.values.contains(where: { value in
+                value.contains("/") || value.contains("?") || value.contains("Work")
+            }))
+        }
+    }
+
+    /// persisted record 저장 뒤 completion 기록이 중단되면 다음 bootstrap이 중복 없이 완료를 복구한다.
+    /// - 검증 내용: 첫 record write 성공, completion 누락, 두 번째 locked transform과 completion recovery
+    /// - 사전 조건: Finder seed 완료, Recents ready, 첫 Recents completion write만 유실
+    /// - 기대 결과: persisted/restored Recents record는 한 개이고 두 번째 실행 후 completion=true
+    func testBuiltInSeedMissingCompletionAfterPersistRetriesWithoutDuplicateAndRecovers() async {
+        let windowID = UUID()
+        let recentsURL = URL(fileURLWithPath: "/tmp/recents.voycoll")
+        let persistedStore = LockIsolated(ContentTabPinnedRecordStore())
+        let flags = LockIsolated([SettingsKeys.finderFavoritesPinnedSeedCompleted: true])
+        let recentsCompletionAttempts = LockIsolated(0)
+        let updateCount = LockIsolated(0)
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient = ContentTabPinnedRecordClient(
+                loadStore: { _ in persistedStore.value },
+                saveStore: { value, _ in persistedStore.withValue { $0 = value } },
+                updateStoreAndLoad: { _, transform in
+                    updateCount.withValue { $0 += 1 }
+                    let updated = try transform(persistedStore.value)
+                    persistedStore.withValue { $0 = updated }
+                    return updated
+                },
+            )
+            $0.fileManagerBuiltInCollectionClient.ensureAll = {
+                .init(
+                    recents: .ready(.init(identity: .recents, packageURL: recentsURL)),
+                    allTags: .deferred,
+                )
+            }
+            $0.fileManagerClient.fileExistsWithIsDirectory = { path, _ in path == recentsURL.path }
+            $0.userDefaultsClient.bool = { flags.value[$0] ?? false }
+            $0.userDefaultsClient.setBool = { value, key in
+                if value, key == SettingsKeys.recentsPinnedSeedCompleted {
+                    let attempt = recentsCompletionAttempts.withValue { count in
+                        count += 1
+                        return count
+                    }
+                    if attempt == 1 { return }
+                }
+                flags.withValue { $0[key] = value }
+            }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: 두 bootstrap 사이 durable interruption과 최종 복원 상태만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive(\.windows)
+        XCTAssertEqual(persistedStore.value.records.map(\.id), ["built-in-collection-recents"])
+        XCTAssertFalse(flags.value[SettingsKeys.recentsPinnedSeedCompleted] ?? false)
+
+        await store.send(.event(.windowClosed(windowID)))
+        await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive(\.windows)
+        await store.finish()
+
+        XCTAssertEqual(updateCount.value, 2)
+        XCTAssertEqual(recentsCompletionAttempts.value, 2)
+        XCTAssertTrue(flags.value[SettingsKeys.recentsPinnedSeedCompleted] ?? false)
+        XCTAssertEqual(persistedStore.value.records.map(\.id), ["built-in-collection-recents"])
+        XCTAssertEqual(
+            store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
+            ["built-in-collection-recents"],
+        )
+    }
+
+    /// 실제 built-in package ensure 결과가 locked pinned store를 거쳐 WindowManager state로 복원된다.
+    /// - 검증 내용: live package file 출력, live updateStoreAndLoad persistence, pinned ContentTab restore
+    /// - 사전 조건: 하나의 temp Application Support와 동일한 persistent UserDefaults fixture, Finder tag `Work`
+    /// - 기대 결과: canonical package 두 개와 Recents/All Tags pinned Collection tab이 동일 URL로 복원됨
+    func testLiveBuiltInEnsureFeedsLockedPinnedStoreAndRestoresWindowState() async throws {
+        let windowID = UUID()
+        let applicationSupportURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WindowManagerBuiltInBootstrap-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: applicationSupportURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: applicationSupportURL) }
+        let defaultsClient = UserDefaultsClient.testValue
+        defaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
+        var fileManagerClient = FileManagerClient.liveValue
+        fileManagerClient.urlsForDirectory = { directory, domain in
+            guard directory == .applicationSupportDirectory, domain == .userDomainMask else { return [] }
+            return [applicationSupportURL]
+        }
+        let pinnedRecordClient = ContentTabPinnedRecordClient.liveValue
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerBuiltInCollectionClient = .liveValue
+            $0.collectionFileClient = .liveValue
+            $0.contentTabPinnedRecordClient = pinnedRecordClient
+            $0.fileManagerClient = fileManagerClient
+            $0.finderFavoritesTagClient.favoriteTagNames = { ["Work"] }
+            $0.registryClient = WindowManagerBuiltInCollectionTestRegistry.client
+            $0.userDefaultsClient = defaultsClient
+            $0.fileManagerFavoritesClient.loadFavorites = { _, _ in [] }
+            $0.metricsClient = MetricsClient(
+                logMetric: { _, _, _ in },
+                logDAUNavigation: { _ in },
+                logDAUEntryAction: { _, _ in },
+            )
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: real file/persistence integration의 최종 pinned state만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive(\.windows)
+        await store.finish()
+
+        let recentsURL = BuiltInCollectionIdentity.recents.canonicalPackageURL(
+            applicationSupportURL: applicationSupportURL,
+        )
+        let allTagsURL = BuiltInCollectionIdentity.allTags.canonicalPackageURL(
+            applicationSupportURL: applicationSupportURL,
+        )
+        let recentsFile = try await CollectionFileClient.liveValue.load(recentsURL).file
+        let allTagsFile = try await CollectionFileClient.liveValue.load(allTagsURL).file
+        let persistedStore = try pinnedRecordClient.loadStore(defaultsClient)
+        let pinnedTabs = store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned) ?? []
+
+        XCTAssertEqual(recentsFile.id, BuiltInCollectionIdentity.recents.rawValue)
+        XCTAssertEqual(allTagsFile.id, BuiltInCollectionIdentity.allTags.rawValue)
+        XCTAssertEqual(persistedStore.records.map(\.id), [
+            "built-in-collection-recents", "built-in-collection-all-tags",
+        ])
+        XCTAssertEqual(persistedStore.records.map(\.anchor), [
+            .collectionFile(url: recentsURL), .collectionFile(url: allTagsURL),
+        ])
+        XCTAssertEqual(pinnedTabs.map(\.id.rawValue), persistedStore.records.map(\.id))
+        XCTAssertEqual(pinnedTabs.map(\.page), [.collection, .collection])
+        XCTAssertEqual(pinnedTabs.map(\.anchor), persistedStore.records.map(\.anchor))
+    }
+
+    /// load·Finder update·built-in ensure·reload이 모두 실패해도 default window는 Home으로 완료된다.
+    /// - 검증 내용: bootstrap failure isolation과 completion action downstream 적용
+    /// - 사전 조건: load/update throw, ensure failed
+    /// - 기대 결과: failed action 대신 completed Home state가 window에 적용
+    func testDefaultBootstrapAllFailuresStillCompletesWithHomeFallback() async {
+        struct BootstrapFailure: Error {}
+
+        let windowID = UUID()
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient = ContentTabPinnedRecordClient(
+                loadStore: { _ in throw BootstrapFailure() },
+                saveStore: { _, _ in throw BootstrapFailure() },
+                updateStoreAndLoad: { _, _ in throw BootstrapFailure() },
+            )
+            $0.fileManagerFavoritesClient.loadFavorites = { _, _ in [] }
+            $0.fileManagerBuiltInCollectionClient.ensureAll = { .init(recents: .failed, allTags: .failed) }
+            $0.userDefaultsClient.bool = { _ in false }
+            $0.userDefaultsClient.setBool = { _, _ in }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: 모든 dependency 실패 뒤 completion downstream state만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive(\.windows)
+        await store.finish()
+
+        let tabs = store.state.windows.first?.window.contentTabs.tabs
+        XCTAssertEqual(tabs?.count, 1)
+        XCTAssertEqual(tabs?.first?.page, .home)
+        XCTAssertFalse(tabs?.contains(where: \.isPinned) ?? true)
+    }
+
     private static func assertFinderFavoritesSeeded(
         in state: WindowManagerFeature.State,
         savedRecords: [ContentTabPinnedRecord],
@@ -1153,6 +1841,19 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
+    nonisolated private static func metricsClient(
+        recording metrics: LockIsolated<[BuiltInSeedLifecycleMetric]>,
+    ) -> MetricsClient {
+        MetricsClient(
+            logMetric: { name, value, tags in
+                XCTAssertEqual(value, 1)
+                metrics.withValue { $0.append(.init(name: name, tags: tags)) }
+            },
+            logDAUNavigation: { _ in },
+            logDAUEntryAction: { _, _ in },
+        )
+    }
+
     nonisolated private static func favoriteItems(
         applicationsURL: URL,
         projectsURL: URL,
@@ -1172,4 +1873,36 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             return true
         }
     }
+}
+
+private enum WindowManagerBuiltInCollectionTestRegistry {
+    static let client = RegistryClient(
+        allProperties: { [] },
+        labelForKey: { $0 },
+        propertyTypeString: { key in
+            switch key {
+            case "tag_names": "categorical"
+            case "last_used_date": "date"
+            case "content_type_tree": "string"
+            default: "unknown"
+            }
+        },
+        propertyUnitSpec: { _ in nil },
+        operatorCodes: { _ in ["any", "gt", "neq"] },
+        operatorDefinition: { OperatorDefinition(uiLabel: $0, uiValueKind: nil) },
+        operatorValueUIKind: { code, typeKey in
+            switch (code, typeKey) {
+            case ("any", "categorical"): "listText"
+            case ("gt", "date"): "singleDate"
+            case ("neq", "string"): "singleText"
+            default: "singleText"
+            }
+        },
+        resolvePropertyKey: { .canonical($0) },
+    )
+}
+
+private struct BuiltInSeedLifecycleMetric: Equatable {
+    let name: String
+    let tags: [String: String]?
 }

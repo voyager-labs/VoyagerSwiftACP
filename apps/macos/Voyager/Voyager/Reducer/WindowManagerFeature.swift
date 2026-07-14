@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAppPreferences
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesContentPageNavigation
@@ -42,6 +43,8 @@ struct WindowManagerFeature {
     @Dependency(\.attachmentPickerClient)
     private var attachmentPickerClient
 
+    @Dependency(\.fileManagerBuiltInCollectionClient)
+    private var fileManagerBuiltInCollectionClient
     @Dependency(\.contentTabPinnedRecordClient)
     private var contentTabPinnedRecordClient
     @Dependency(\.fileManagerClient)
@@ -52,6 +55,8 @@ struct WindowManagerFeature {
     private var entryLoadingClient
     @Dependency(\.userDefaultsClient)
     private var userDefaultsClient
+    @Dependency(\.metricsClient)
+    private var metricsClient
 
     @Dependency(\.date)
     private var date
@@ -448,91 +453,24 @@ struct WindowManagerFeature {
     /// Concurrent default and Collection windows share one in-flight load.
     /// Completion applies pinned tabs only to windows that requested this bootstrap.
     private func runDefaultWindowBootstrapEffect(requestID: UUID) -> Effect<Action> {
-        let pinnedRecordClient = contentTabPinnedRecordClient
-        let favoritesClient = fileManagerFavoritesClient
-        let managerClient = fileManagerClient
-        let loadingClient = entryLoadingClient
-        let defaultsClient = userDefaultsClient
         let now = date
+        let dependencies = DefaultWindowBootstrap.Dependencies(
+            builtInClient: fileManagerBuiltInCollectionClient,
+            pinnedRecordClient: contentTabPinnedRecordClient,
+            favoritesClient: fileManagerFavoritesClient,
+            managerClient: fileManagerClient,
+            loadingClient: entryLoadingClient,
+            defaultsClient: userDefaultsClient,
+            metricsClient: metricsClient,
+            now: { now() },
+        )
 
         return .run { send in
-            do {
-                var store = try pinnedRecordClient.loadStore(defaultsClient)
-
-                // 1. Legacy seed flag
-                if !defaultsClient.bool(SettingsKeys.defaultPinnedTabsSeedCompleted) {
-                    defaultsClient.setBool(true, SettingsKeys.defaultPinnedTabsSeedCompleted)
-                }
-
-                // 2. Finder Favorites seed (if needed)
-                if !defaultsClient.bool(SettingsKeys.finderFavoritesPinnedSeedCompleted) {
-                    if store.records.isEmpty {
-                        let favorites = favoritesClient.loadFavorites(
-                            loadingClient,
-                            defaultsClient,
-                        )
-                        let favoriteRecords = FileManagerFavoritesPinnedRecordMapper.pinnedRecords(
-                            from: favorites,
-                            pinnedAt: now(),
-                            fileExistsWithIsDirectory: { path, isDirectory in
-                                managerClient.fileExistsWithIsDirectory(path, isDirectory)
-                            },
-                        )
-                        if !favoriteRecords.isEmpty {
-                            let seededStore = ContentTabPinnedRecordStore(
-                                schemaVersion: store.schemaVersion,
-                                records: favoriteRecords,
-                            )
-                            do {
-                                try pinnedRecordClient.saveStore(seededStore, defaultsClient)
-                                store = seededStore
-                                defaultsClient.setBool(
-                                    true,
-                                    SettingsKeys.finderFavoritesPinnedSeedCompleted,
-                                )
-                            } catch {
-                                // Save failure: flag stays false for retry
-                            }
-                        } else {
-                            defaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
-                        }
-                    } else {
-                        defaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
-                    }
-                }
-
-                // 3. Restore pinned records with filesystem validation
-                let restoreResult = ContentTabState.restoringPinnedRecords(
-                    from: store,
-                    isRestorableAnchor: { anchor in
-                        switch anchor {
-                        case let .directory(path):
-                            var isDirectory = ObjCBool(false)
-                            return managerClient.fileExistsWithIsDirectory(path, &isDirectory)
-                                && isDirectory.boolValue
-                        case let .collectionFile(url):
-                            return managerClient.fileExistsWithIsDirectory(url.path, nil)
-                        case .homeDefault, .virtualCollection, .aiChat:
-                            return true
-                        }
-                    },
-                )
-
-                // 4. Compact if needed
-                if restoreResult.didCompact {
-                    let compactedStore = ContentTabPinnedRecordStore(
-                        schemaVersion: store.schemaVersion,
-                        records: restoreResult.state.tabs.compactMap { tab in
-                            restoreResult.state.pinnedRecords[tab.id]
-                        },
-                    )
-                    try? pinnedRecordClient.saveStore(compactedStore, defaultsClient)
-                }
-
-                await send(.defaultWindowBootstrapCompleted(requestID: requestID, contentTabs: restoreResult.state))
-            } catch {
-                await send(.defaultWindowBootstrapFailed(requestID: requestID))
-            }
+            let restoredState = await DefaultWindowBootstrap.run(dependencies)
+            await send(.defaultWindowBootstrapCompleted(
+                requestID: requestID,
+                contentTabs: restoredState,
+            ))
         }
     }
 
@@ -555,6 +493,258 @@ struct WindowManagerFeature {
             selectEntryID: selectEntryID,
         )
         return .init(id: id, window: windowState)
+    }
+}
+
+private enum DefaultWindowBootstrap {
+    struct Dependencies {
+        let builtInClient: FileManagerBuiltInCollectionClient
+        let pinnedRecordClient: ContentTabPinnedRecordClient
+        let favoritesClient: FileManagerFavoritesClient
+        let managerClient: FileManagerClient
+        let loadingClient: EntryLoadingClient
+        let defaultsClient: UserDefaultsClient
+        let metricsClient: MetricsClient
+        let now: @Sendable () -> Date
+    }
+
+    struct RestoreResult {
+        let state: ContentTabState
+        let didCompact: Bool
+    }
+
+    static func run(_ dependencies: Dependencies) async -> ContentTabState {
+        let initialStore = (try? dependencies.pinnedRecordClient.loadStore(dependencies.defaultsClient))
+            ?? ContentTabPinnedRecordStore()
+
+        if !dependencies.defaultsClient.bool(SettingsKeys.defaultPinnedTabsSeedCompleted) {
+            dependencies.defaultsClient.setBool(true, SettingsKeys.defaultPinnedTabsSeedCompleted)
+        }
+
+        seedFinderFavoritesIfNeeded(initialStore: initialStore, dependencies: dependencies)
+
+        let ensureReport = await dependencies.builtInClient.ensureAll()
+        dependencies.metricsClient.logMetric("built_in_pinned_seed_started", 1, nil)
+        seedBuiltInCollectionIfNeeded(
+            identity: .recents,
+            ensureResult: ensureReport.recents,
+            completionKey: SettingsKeys.recentsPinnedSeedCompleted,
+            dependencies: dependencies,
+        )
+        seedBuiltInCollectionIfNeeded(
+            identity: .allTags,
+            ensureResult: ensureReport.allTags,
+            completionKey: SettingsKeys.allTagsPinnedSeedCompleted,
+            dependencies: dependencies,
+        )
+
+        let reloadedStore = (try? dependencies.pinnedRecordClient.loadStore(dependencies.defaultsClient))
+            ?? ContentTabPinnedRecordStore()
+        let restoreResult = restorePinnedRecords(from: reloadedStore, dependencies: dependencies)
+        compactIfNeeded(restoreResult, store: reloadedStore, dependencies: dependencies)
+        return restoreResult.state
+    }
+
+    private static func seedFinderFavoritesIfNeeded(
+        initialStore: ContentTabPinnedRecordStore,
+        dependencies: Dependencies,
+    ) {
+        guard !dependencies.defaultsClient.bool(SettingsKeys.finderFavoritesPinnedSeedCompleted) else { return }
+
+        let applicationSupportURL = dependencies.managerClient.urlsForDirectory(
+            .applicationSupportDirectory,
+            .userDomainMask,
+        ).first
+        guard nonBuiltInRecords(
+            in: initialStore,
+            applicationSupportURL: applicationSupportURL,
+        ).isEmpty else {
+            dependencies.defaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
+            return
+        }
+
+        let favorites = dependencies.favoritesClient.loadFavorites(
+            dependencies.loadingClient,
+            dependencies.defaultsClient,
+        )
+        let mappedRecords = uniqueRecordsByID(FileManagerFavoritesPinnedRecordMapper.pinnedRecords(
+            from: favorites,
+            pinnedAt: dependencies.now(),
+            fileExistsWithIsDirectory: { path, isDirectory in
+                dependencies.managerClient.fileExistsWithIsDirectory(path, isDirectory)
+            },
+        ))
+
+        do {
+            _ = try dependencies.pinnedRecordClient.updateStoreAndLoad(
+                dependencies.defaultsClient,
+            ) { latestStore in
+                guard nonBuiltInRecords(
+                    in: latestStore,
+                    applicationSupportURL: applicationSupportURL,
+                ).isEmpty else {
+                    return latestStore
+                }
+
+                return mergingFinderRecords(
+                    mappedRecords,
+                    into: latestStore,
+                    applicationSupportURL: applicationSupportURL,
+                )
+            }
+            dependencies.defaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
+        } catch {
+            // Finder 저장 실패 시 완료 플래그를 남기지 않아 다음 부트스트랩에서 재시도한다.
+        }
+    }
+
+    private static func seedBuiltInCollectionIfNeeded(
+        identity: BuiltInCollectionIdentity,
+        ensureResult: BuiltInCollectionEnsureItemResult,
+        completionKey: String,
+        dependencies: Dependencies,
+    ) {
+        if dependencies.defaultsClient.bool(completionKey) {
+            logSeedMetric("built_in_pinned_item_suppressed", identity: identity, dependencies: dependencies)
+            return
+        }
+
+        let descriptor: BuiltInCollectionDescriptor
+        switch ensureResult {
+        case let .ready(value):
+            descriptor = value
+        case .deferred:
+            logSeedMetric("built_in_pinned_item_deferred", identity: identity, dependencies: dependencies)
+            return
+        case .failed:
+            logSeedMetric("built_in_pinned_item_failed", identity: identity, dependencies: dependencies)
+            return
+        }
+
+        let policyDescriptor = BuiltInContentTabPinnedRecordSeedPolicy.VerifiedDescriptor(
+            identity: descriptor.identity,
+            canonicalPackageURL: descriptor.packageURL,
+        )
+        do {
+            let finalStore = try dependencies.pinnedRecordClient.updateStoreAndLoad(
+                dependencies.defaultsClient,
+            ) { latestStore in
+                let result = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
+                    ensureResult: .ready(policyDescriptor),
+                    completion: false,
+                    store: latestStore,
+                    now: dependencies.now(),
+                )
+                return switch result {
+                case let .seed(store), let .alreadyPresent(store):
+                    store
+                case .suppressed, .deferred, .failed:
+                    latestStore
+                }
+            }
+            guard BuiltInContentTabPinnedRecordSeedPolicy.containsCanonicalRecord(
+                in: finalStore,
+                descriptor: policyDescriptor,
+            ) else {
+                logSeedMetric("built_in_pinned_item_deferred", identity: identity, dependencies: dependencies)
+                return
+            }
+            dependencies.defaultsClient.setBool(true, completionKey)
+            logSeedMetric("built_in_pinned_item_seeded", identity: identity, dependencies: dependencies)
+        } catch {
+            logSeedMetric("built_in_pinned_item_failed", identity: identity, dependencies: dependencies)
+            // 항목별 저장 실패는 완료 플래그를 남기지 않아 독립적으로 재시도한다.
+        }
+    }
+
+    private static func logSeedMetric(
+        _ name: String,
+        identity: BuiltInCollectionIdentity,
+        dependencies: Dependencies,
+    ) {
+        let outcome = name.replacingOccurrences(of: "built_in_pinned_item_", with: "")
+        dependencies.metricsClient.logMetric(
+            name,
+            1,
+            ["identity": identity.rawValue, "outcome": outcome],
+        )
+    }
+
+    private static func compactIfNeeded(
+        _ restoreResult: RestoreResult,
+        store: ContentTabPinnedRecordStore,
+        dependencies: Dependencies,
+    ) {
+        guard restoreResult.didCompact else { return }
+        let compactedStore = ContentTabPinnedRecordStore(
+            schemaVersion: store.schemaVersion,
+            records: restoreResult.state.tabs.compactMap { tab in
+                restoreResult.state.pinnedRecords[tab.id]
+            },
+        )
+        try? dependencies.pinnedRecordClient.saveStore(compactedStore, dependencies.defaultsClient)
+    }
+
+    nonisolated private static func mergingFinderRecords(
+        _ records: [ContentTabPinnedRecord],
+        into store: ContentTabPinnedRecordStore,
+        applicationSupportURL: URL?,
+    ) -> ContentTabPinnedRecordStore {
+        let recentsResidue = BuiltInContentTabPinnedRecordSeedPolicy.records(
+            classifiedAs: .recents,
+            in: store,
+            applicationSupportURL: applicationSupportURL,
+        )
+        let allTagsResidue = BuiltInContentTabPinnedRecordSeedPolicy.records(
+            classifiedAs: .allTags,
+            in: store,
+            applicationSupportURL: applicationSupportURL,
+        )
+        return ContentTabPinnedRecordStore(
+            schemaVersion: store.schemaVersion,
+            records: recentsResidue + records + allTagsResidue,
+        )
+    }
+
+    nonisolated private static func nonBuiltInRecords(
+        in store: ContentTabPinnedRecordStore,
+        applicationSupportURL: URL?,
+    ) -> [ContentTabPinnedRecord] {
+        store.records.filter {
+            BuiltInContentTabPinnedRecordSeedPolicy.classify(
+                $0,
+                applicationSupportURL: applicationSupportURL,
+            ) == nil
+        }
+    }
+
+    private static func uniqueRecordsByID(
+        _ records: [ContentTabPinnedRecord],
+    ) -> [ContentTabPinnedRecord] {
+        var seenIDs = Set<String>()
+        return records.filter { seenIDs.insert($0.id).inserted }
+    }
+
+    private static func restorePinnedRecords(
+        from store: ContentTabPinnedRecordStore,
+        dependencies: Dependencies,
+    ) -> RestoreResult {
+        let result = ContentTabState.restoringPinnedRecords(
+            from: store,
+            isRestorableAnchor: { anchor in
+                switch anchor {
+                case let .directory(path):
+                    var isDirectory = ObjCBool(false)
+                    return dependencies.managerClient.fileExistsWithIsDirectory(path, &isDirectory)
+                        && isDirectory.boolValue
+                case let .collectionFile(url):
+                    return dependencies.managerClient.fileExistsWithIsDirectory(url.path, nil)
+                case .homeDefault, .virtualCollection, .aiChat:
+                    return true
+                }
+            },
+        )
+        return RestoreResult(state: result.state, didCompact: result.didCompact)
     }
 }
 
