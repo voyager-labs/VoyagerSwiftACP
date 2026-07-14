@@ -394,8 +394,10 @@ public extension AuthNetworkClient {
         device: DeviceBindingRequest,
         store: AccountTokenFileStore,
     ) async throws -> SessionSyncResult {
-        if intent == .refresh {
+        let refreshedSession = if intent == .refresh {
             try await refreshLegacySession(store: store)
+        } else {
+            nil
         }
 
         let access: AccessStatusResponse
@@ -412,19 +414,34 @@ public extension AuthNetworkClient {
         } else {
             .notAttempted
         }
-        return SessionSyncResult(
+        return legacySessionSyncResult(
+            intent: intent,
+            access: access,
+            outcome: outcome,
+            refreshedSession: refreshedSession,
+        )
+    }
+
+    static func legacySessionSyncResult(
+        intent: SessionSyncIntent,
+        access: AccessStatusResponse,
+        outcome: SessionSyncDeviceBindingOutcome,
+        refreshedSession: AccountSession?,
+    ) -> SessionSyncResult {
+        SessionSyncResult(
             sessionStatus: intent == .refresh ? .rotated : .unchanged,
             syncStatus: .complete,
             accessStatus: access,
             deviceBindingOutcome: outcome,
             connectedDeviceAvailability: .unavailable,
+            sessionExpiresAt: refreshedSession?.expiresAt,
         )
     }
 
-    private static func refreshLegacySession(store: AccountTokenFileStore) async throws {
+    private static func refreshLegacySession(store: AccountTokenFileStore) async throws -> AccountSession {
         let source = try await legacyRefreshSource(store: store)
         let refreshed = try await legacyRefreshedSession(source: source)
-        try await persistLegacyRefreshedSession(refreshed, store: store)
+        return try await persistLegacyRefreshedSession(refreshed, store: store)
     }
 
     private static func legacyRefreshSource(store: AccountTokenFileStore) async throws -> AccountTokensFile {
@@ -452,11 +469,13 @@ public extension AuthNetworkClient {
         }
     }
 
-    private static func persistLegacyRefreshedSession(
+    static func persistLegacyRefreshedSession(
         _ refreshed: (session: AccountSession, source: AccountTokensFile),
         store: AccountTokenFileStore,
-    ) async throws {
-        guard let tokens = AccountTokenSessionMapper.sessionToTokensFile(refreshed.session) else {
+    ) async throws -> AccountSession {
+        guard let tokens = AccountTokenSessionMapper.sessionToTokensFile(refreshed.session),
+              let persistedSession = AccountTokenSessionMapper.tokensFileToSession(tokens)
+        else {
             throw SessionSyncError.storageFailure
         }
 
@@ -470,6 +489,7 @@ public extension AuthNetworkClient {
         } catch {
             throw SessionSyncError.storageFailure
         }
+        return persistedSession
     }
 
     private static func legacyDeviceBindingOutcome(
