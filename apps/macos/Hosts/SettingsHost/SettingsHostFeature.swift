@@ -9,10 +9,7 @@ public struct SettingsHostState: Equatable {
     public var accountAccess: AccountAccessFeature.State = .init()
     public var isAccountAccessBootstrapPending = true
 
-    public init() {
-        accountAccess.handoffContext = .paywall
-        accountAccess.handoffScope = .settings
-    }
+    public init() {}
 
     /// preset-derived Settings 초기 상태 주입용. Host는 child internals를 직접 건드리지 않고
     /// `SettingsState.hostPreset(for:)` 팩토리에서 만들어진 인스턴스만 받는다.
@@ -30,8 +27,6 @@ public struct SettingsHostState: Equatable {
         accountAccess.isSignInInProgress = presentation.isSignInInProgress
         accountAccess.didSignInFail = presentation.didSignInFail
         accountAccess.status = presentation.accessStatus
-        accountAccess.handoffContext = .paywall
-        accountAccess.handoffScope = .settings
         return accountAccess
     }
 }
@@ -60,7 +55,7 @@ public struct SettingsHostFeature {
             switch action {
             case .settings(.delegate(.account(.signInRequested))):
                 guard !state.accountAccess.hasAccountSession else { return .none }
-                return .send(.accountAccess(.loginTapped))
+                return .send(.accountAccess(.loginTapped(context: .paywall, scope: .settings)))
 
             case .settings(.delegate(.account(.signOutRequested))):
                 return .send(.accountAccess(.signOut))

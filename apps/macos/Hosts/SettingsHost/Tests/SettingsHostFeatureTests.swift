@@ -13,6 +13,10 @@ final class SettingsHostFeatureTests: XCTestCase {
         await store.receive(\.accountAccess.loginTapped) { state in
             state.accountAccess.isSignInInProgress = true
             state.accountAccess.handoffGeneration = 1
+            state.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
+                context: .paywall,
+                scope: .settings,
+            )
         }
         await store.receive(\.settings.accountAccessPresentationUpdated) { state in
             state.settings.accountSettings.presentation = AccountAccessPresentation(
@@ -23,6 +27,7 @@ final class SettingsHostFeatureTests: XCTestCase {
             state.accountAccess.isSignInInProgress = false
             state.accountAccess.didSignInFail = true
             state.accountAccess.errorMessage = "Check your network connection and try again."
+            state.accountAccess.handoffTransaction = nil
         }
         await store.receive(\.settings.accountAccessPresentationUpdated) { state in
             state.settings.accountSettings.presentation = AccountAccessPresentation(didSignInFail: true)
