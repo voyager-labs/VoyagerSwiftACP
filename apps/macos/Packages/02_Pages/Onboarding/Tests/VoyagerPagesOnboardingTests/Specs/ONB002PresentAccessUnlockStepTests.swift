@@ -190,9 +190,11 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         let originalSnapshot = store.state.snapshot
         let originalIsComplete = store.state.isComplete
 
-        await store.send(.loginTapped) { state in
+        await store.send(.loginTapped(context: .onboarding, scope: .onboarding)) { state in
             state.isSignInInProgress = true
             state.didSignInFail = false
+            state.handoffTransaction = AccountAccessHandoffTransaction(context: .onboarding, scope: .onboarding)
+            state.handoffGeneration = 1
         }
 
         XCTAssertEqual(store.state.status, originalStatus)
@@ -203,6 +205,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             state.isSignInInProgress = false
             state.didSignInFail = true
             state.errorMessage = "Check your network connection and try again."
+            state.handoffTransaction = nil
         }
 
         await store.finish()
@@ -333,7 +336,10 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// - 기대 결과: UI contract에 internal callback/result action을 노출하지 않습니다.
     func testUnlockUIContractMapsOnlySupportedCanonicalIntents() {
         let mappings: [(OnboardingAccessIntent, (AccountAccessAction) -> Bool)] = [
-            (.login, { if case .loginTapped = $0 { true } else { false } }),
+            (
+                .login,
+                { if case .loginTapped(context: .onboarding, scope: .onboarding) = $0 { true } else { false } },
+            ),
             (.refresh, { if case .refreshAccessTapped = $0 { true } else { false } }),
             (.retry, { if case .retryTapped = $0 { true } else { false } }),
             (.cancelSignIn, { if case .cancelSignIn = $0 { true } else { false } }),

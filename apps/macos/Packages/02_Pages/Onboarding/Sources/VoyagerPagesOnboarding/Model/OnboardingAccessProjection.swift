@@ -115,7 +115,7 @@ enum OnboardingAccessIntent: Equatable {
     var accountAccessAction: AccountAccessAction {
         switch self {
         case .login:
-            .loginTapped
+            .loginTapped(context: .onboarding, scope: .onboarding)
         case .refresh:
             .refreshAccessTapped
         case .retry:
