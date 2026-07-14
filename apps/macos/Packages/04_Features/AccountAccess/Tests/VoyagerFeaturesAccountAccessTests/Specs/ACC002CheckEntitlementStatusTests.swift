@@ -1,5 +1,3 @@
-// swiftlint:disable force_unwrapping
-
 import Clocks
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
@@ -185,10 +183,11 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     /// - 검증 내용: `.openPricingTapped` → `._webURLResult(.failure(.notConfigured))`, status=nil, errorMessage 설정.
     /// - 사전 조건: 세션 있음, entitlement none 상태에서 Web Pricing CTA 실행.
     /// - 기대 결과: accountAccessStepState=.error, isComplete=false.
-    func testOpenPricingMissingURLConfigProjectsErrorWithoutCrash() async {
+    func testOpenPricingMissingURLConfigProjectsErrorWithoutCrash() async throws {
         var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = AccessStatus.none
+        let accountURL = try XCTUnwrap(URL(string: "http://test.test/account"))
 
         let store = makeTestStore(
             checkoutURLClient: CheckoutURLClient(
@@ -196,7 +195,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                 checkoutURL: { throw AccessError.notConfigured },
                 pricingURL: { throw AccessError.notConfigured },
                 supportURL: { throw AccessError.notConfigured },
-                accountURL: { URL(string: "http://test.test/account")! },
+                accountURL: { accountURL },
             ),
             initialState: state,
         )
@@ -1496,5 +1495,3 @@ extension ACC002CheckEntitlementStatusTests {
         await store.finish()
     }
 }
-
-// swiftlint:enable force_unwrapping
