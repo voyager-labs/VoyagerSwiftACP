@@ -32,7 +32,7 @@ final class OnboardingSessionFlowTests: XCTestCase {
         // store.exhaustivity = .off: 각 child의 내부 bootstrap action이 아니라 aggregate 저장과 경계 순서를 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.onAppear)
+        await store.send(.onAppear) { $0.didBootstrapProgress = true }
         await store.send(.nextTapped) { $0.currentStep = .accessUnlock }
         await store
             .send(.accessProjectionUpdated(Self.activeAccessProjection)) { $0.access = Self.activeAccessProjection }
@@ -86,6 +86,7 @@ final class OnboardingSessionFlowTests: XCTestCase {
         )
 
         await store.send(.onAppear) { state in
+            state.didBootstrapProgress = true
             state.currentStep = .aiProviderSetup
             state.permissions.isComplete = true
         }
@@ -99,6 +100,42 @@ final class OnboardingSessionFlowTests: XCTestCase {
         XCTAssertEqual(store.state.currentStep, .accessUnlock)
         XCTAssertEqual(saves.value.last?.currentStep, .accessUnlock)
         XCTAssertFalse(saves.value.last?.stepState.accessUnlockComplete ?? true)
+    }
+
+    /// ONB onboarding_session: bootstrap 전에 받은 projection은 저장 progress를 덮어쓰지 않고 복원 뒤 최신 값으로 재조정한다.
+    /// - 검증 내용: onAppear 전 projection update가 save를 발생시키지 않고, saved step과 최신 blocked projection이 accessUnlock으로
+    /// reconcile된다.
+    /// - 사전 조건: 저장 progress는 permissions까지 완료이고 window observer가 bootstrap 전에 blocked projection을 전달한다.
+    /// - 기대 결과: load 전 save는 없고 bootstrap 뒤 저장된 snapshot은 accessUnlock 및 incomplete access를 기록한다.
+    func testProjectionBeforeProgressBootstrapDefersSaveAndReconcilesLatestAccess() async {
+        let saves = LockIsolated<[OnboardingProgressSnapshot]>([])
+        let savedSnapshot = OnboardingProgressSnapshot(
+            currentStep: .aiProviderSetup,
+            stepState: OnboardingStepState(
+                welcomeComplete: true,
+                accessUnlockComplete: true,
+                permissionsComplete: true,
+                completeComplete: false,
+            ),
+        )
+        let store = makeStore(
+            progressClient: Self.progressClient(load: .success(savedSnapshot), saves: saves),
+        )
+
+        await store
+            .send(.accessProjectionUpdated(Self.blockedAccessProjection)) { $0.access = Self.blockedAccessProjection }
+        XCTAssertTrue(saves.value.isEmpty)
+
+        await store.send(.onAppear) { state in
+            state.didBootstrapProgress = true
+            state.currentStep = .accessUnlock
+            state.permissions.isComplete = true
+        }
+        await store.finish()
+
+        XCTAssertEqual(saves.value.count, 1)
+        XCTAssertEqual(saves.value.first?.currentStep, .accessUnlock)
+        XCTAssertFalse(saves.value.first?.stepState.accessUnlockComplete ?? true)
     }
 
     // FLOW-PATH: access_unlock_recovery

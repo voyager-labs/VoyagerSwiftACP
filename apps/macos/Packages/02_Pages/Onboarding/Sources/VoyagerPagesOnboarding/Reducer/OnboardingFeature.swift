@@ -73,17 +73,22 @@ struct OnboardingFeature {
         state: inout State,
         progressClient: OnboardingProgressClient,
     ) -> Effect<Action> {
+        guard !state.didBootstrapProgress else { return .none }
+        state.didBootstrapProgress = true
+
         switch progressClient.load() {
         case .empty:
             let access = state.access
             state = State()
             state.access = access
+            state.didBootstrapProgress = true
             return Self.saveEffect(state.progressSnapshot, progressClient: progressClient)
 
         case .resetRequired:
             let access = state.access
             state = State()
             state.access = access
+            state.didBootstrapProgress = true
             let snapshot = state.progressSnapshot
             return .run { _ in
                 progressClient.reset()
@@ -164,6 +169,7 @@ struct OnboardingFeature {
         {
             state.currentStep = .accessUnlock
         }
+        guard state.didBootstrapProgress else { return .none }
         return Self.saveEffect(state.progressSnapshot, progressClient: progressClient)
     }
 

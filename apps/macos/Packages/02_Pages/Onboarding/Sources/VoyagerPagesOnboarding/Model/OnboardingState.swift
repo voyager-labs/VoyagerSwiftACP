@@ -3,6 +3,7 @@ import ComposableArchitecture
 @ObservableState
 struct OnboardingState: Equatable {
     var currentStep: OnboardingStep = .welcome
+    var didBootstrapProgress = false
 
     var welcome: WelcomeFeature.State = .init()
     var access: OnboardingAccessProjection = .init()

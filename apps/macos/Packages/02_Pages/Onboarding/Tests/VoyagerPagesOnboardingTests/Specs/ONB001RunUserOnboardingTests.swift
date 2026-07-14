@@ -43,7 +43,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             )
         }
 
-        await store.send(.onAppear)
+        await store.send(.onAppear) { $0.didBootstrapProgress = true }
 
         XCTAssertTrue(resetRecorder.value)
 
@@ -70,7 +70,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
         }
 
-        await store.send(.onAppear)
+        await store.send(.onAppear) { $0.didBootstrapProgress = true }
 
         let savedSnapshot = saveRecorder.value
         XCTAssertNotNil(savedSnapshot)
@@ -103,7 +103,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
 
-        await store.send(.onAppear)
+        await store.send(.onAppear) { $0.didBootstrapProgress = true }
 
         // welcome 단계가 표시되어야 함
         XCTAssertEqual(store.state.currentStep, .welcome)
@@ -128,7 +128,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
 
-        await store.send(.onAppear)
+        await store.send(.onAppear) { $0.didBootstrapProgress = true }
         await store.send(.nextTapped) { state in
             state.currentStep = .accessUnlock
         }
@@ -212,7 +212,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.noOp
         }
 
-        await store.send(.onAppear)
+        await store.send(.onAppear) { $0.didBootstrapProgress = true }
 
         // welcome은 완료 상태로 시작; 끄고 다시 켬
         await store.send(.welcome(.setCompleted(false))) { state in
@@ -341,7 +341,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
         }
 
-        await store.send(.onAppear)
+        await store.send(.onAppear) { $0.didBootstrapProgress = true }
         await store.send(.nextTapped) { state in
             state.currentStep = .accessUnlock
         }
@@ -370,7 +370,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.noOp
         }
 
-        await store.send(.onAppear)
+        await store.send(.onAppear) { $0.didBootstrapProgress = true }
 
         XCTAssertFalse(store.state.canGoBack)
 
@@ -468,6 +468,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
 
         // accessUnlock 미완료 → lastValidStep이 accessUnlock로 되돌아감
         await store.send(.onAppear) { state in
+            state.didBootstrapProgress = true
             state.currentStep = .accessUnlock
             state.complete.isComplete = false
         }
@@ -504,6 +505,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         }
 
         await store.send(.onAppear) { state in
+            state.didBootstrapProgress = true
             state.currentStep = .accessUnlock
             state.permissions.isComplete = true
             state.complete.isComplete = false
@@ -552,6 +554,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
 
         // welcome 완료 → 선행 단계 충족 → .accessUnlock 직접 복원
         await store.send(.onAppear) { state in
+            state.didBootstrapProgress = true
             state.currentStep = .accessUnlock
             state.complete.isComplete = false
         }

@@ -40,6 +40,7 @@ extension ONB001RunUserOnboardingTests {
         }
 
         await store.send(.onAppear) { state in
+            state.didBootstrapProgress = true
             state.welcome.isComplete = true
             state.currentStep = .accessUnlock
         }
@@ -78,6 +79,7 @@ extension ONB001RunUserOnboardingTests {
         }
 
         await store.send(.onAppear) { state in
+            state.didBootstrapProgress = true
             state.welcome.isComplete = true
             state.currentStep = .permissions
         }
@@ -110,6 +112,7 @@ extension ONB001RunUserOnboardingTests {
         }
 
         await store.send(.onAppear) { state in
+            state.didBootstrapProgress = true
             state.welcome.isComplete = true
             state.currentStep = .accessUnlock
         }
@@ -285,6 +288,7 @@ extension ONB001RunUserOnboardingTests {
 
         // complete ✗ → permissions ✗ → accessUnlock: prior chain (welcome) complete → .accessUnlock
         await store.send(.onAppear) { state in
+            state.didBootstrapProgress = true
             state.currentStep = .accessUnlock
         }
 
