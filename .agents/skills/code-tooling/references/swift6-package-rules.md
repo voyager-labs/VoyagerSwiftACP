@@ -164,13 +164,13 @@ This differs from `nonisolated(unsafe)` which is for stored properties. `@unchec
 After creating, editing, or adding files to a package:
 
 ```
-1. swift build --package-path <path>     → package compiles
-2. swift test --package-path <path>      → package tests pass (if tests exist)
-3. Build consumer target (XcodeBuildMCP) → consumer links and imports the package
-4. Test consumer target (XcodeBuildMCP)  → consumer tests pass
+1. xcrun swift build --package-path <path> → package compiles
+2. xcrun swift test --package-path <path>  → package tests pass (if tests exist)
+3. Build consumer with the matrix-selected route → consumer links and imports the package
+4. Test consumer with the matrix-selected route  → consumer tests pass
 ```
 
-Each step must pass before moving to the next. For detailed integration-layer verification (consumer build/test, stale import detection, public surface checks), see `package-integration.md`.
+Use `mise run macos-build` and `mise run macos-test` for a macOS consumer, or the supported XcodeBuildMCP route for a simulator consumer. Each step must pass before moving to the next. For detailed integration-layer verification (consumer build/test, stale import detection, public surface checks), see `package-integration.md`.
 
 ## Decision flowchart
 
