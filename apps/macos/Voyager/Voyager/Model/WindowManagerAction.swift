@@ -20,6 +20,12 @@ enum WindowManagerAction: CasePathable {
     case pinnedContentTabsStoreChanged
     case defaultWindowBootstrapCompleted(requestID: UUID, contentTabs: ContentTabState)
     case defaultWindowBootstrapFailed(requestID: UUID)
+    case windowOpenCompleted(
+        id: WindowManagerState.WindowID,
+        shouldBootstrapDefaultWindow: Bool,
+        isRegistered: Bool,
+    )
+    case pendingWindowCloseFinalized(id: WindowManagerState.WindowID)
     case windowInvalidationFinished(id: WindowManagerState.WindowID, result: UndoManagerInvalidationResult)
     case windows(IdentifiedActionOf<WindowSessionFeature>)
 

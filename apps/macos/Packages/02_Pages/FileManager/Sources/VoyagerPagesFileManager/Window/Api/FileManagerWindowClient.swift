@@ -8,6 +8,7 @@ public struct FileManagerWindowClient: Sendable {
     public var openTab: @Sendable (_ id: UUID) async -> Void
     public var close: @Sendable (_ id: UUID) async -> Void
     public var closeAll: @Sendable () async -> Void
+    public var registeredWindowIDs: @Sendable () async -> Set<UUID>
     public var finalizeClose: @Sendable (_ id: UUID) async -> Void
     public var focusPath: @Sendable (_ path: String) async -> Void
 
@@ -16,6 +17,7 @@ public struct FileManagerWindowClient: Sendable {
         openTab: @escaping @Sendable (_ id: UUID) async -> Void,
         close: @escaping @Sendable (_ id: UUID) async -> Void,
         closeAll: @escaping @Sendable () async -> Void,
+        registeredWindowIDs: @escaping @Sendable () async -> Set<UUID> = { [] },
         finalizeClose: @escaping @Sendable (_ id: UUID) async -> Void = { _ in },
         focusPath: @escaping @Sendable (_ path: String) async -> Void,
     ) {
@@ -23,6 +25,7 @@ public struct FileManagerWindowClient: Sendable {
         self.openTab = openTab
         self.close = close
         self.closeAll = closeAll
+        self.registeredWindowIDs = registeredWindowIDs
         self.finalizeClose = finalizeClose
         self.focusPath = focusPath
     }
@@ -123,7 +126,9 @@ public func resolveFileManagerUndoManager(windowID: UUID?) -> UndoManager? {
 public func makeFileManagerWindowClientLive() -> FileManagerWindowClient {
     .init(
         open: { id in
+            guard !Task.isCancelled else { return }
             await MainActor.run {
+                guard !Task.isCancelled else { return }
                 fileManagerWindowOpen(windowID: id)
             }
         },
@@ -140,6 +145,11 @@ public func makeFileManagerWindowClientLive() -> FileManagerWindowClient {
         closeAll: {
             await MainActor.run {
                 fileManagerWindowCloseAll()
+            }
+        },
+        registeredWindowIDs: {
+            await MainActor.run {
+                Set(fileManagerWindowControllersByID.keys)
             }
         },
         finalizeClose: { id in

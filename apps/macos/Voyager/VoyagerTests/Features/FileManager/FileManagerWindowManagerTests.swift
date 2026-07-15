@@ -67,6 +67,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         let openedIDs = LockIsolated<[UUID]>([])
 
         let store = makeStore(uuid: newID) {
+            $0.fileManagerWindowClient.registeredWindowIDs = { [newID] }
             $0.fileManagerWindowClient.open = { id in
                 openedIDs.withValue { $0.append(id) }
             }
@@ -108,6 +109,84 @@ final class FileManagerWindowManagerTests: XCTestCase {
 
         XCTAssertEqual(openedIDs.value.count, 1, "fileManagerWindowClient.open은 정확히 한 번 호출되어야 한다")
         XCTAssertEqual(openedIDs.value.first, newID, "open에 전달된 ID는 생성된 윈도우 ID와 일치해야 한다")
+    }
+
+    /// FMW-001-open_new_file_manager_window: client open이 controller를 등록하지 않으면 pending session을 종료한다.
+    /// open 반환만으로 성공 처리하지 않고 registry snapshot으로 controller 생성을 확인해야 한다.
+    /// - 검증 내용: 미등록 completion 후 window/pending/closing/bootstrap identity 제거 및 후속 close no-op
+    /// - 사전 조건: client.open은 반환하지만 registeredWindowIDs는 빈 set을 반환함
+    /// - 기대 결과: bootstrap 미시작, session 완전 제거, 후속 single/Close All에서 상태가 남지 않음
+    func testOpenWithoutRegisteredController_finalizesPendingSessionWithoutBootstrap() async {
+        let windowID = UUID()
+        let openedIDs = LockIsolated<[UUID]>([])
+        let bootstrapLoadCount = LockIsolated(0)
+        let closeAllCallCount = LockIsolated(0)
+        let store = makeStore(uuid: windowID) {
+            $0.fileManagerWindowClient.open = { id in
+                openedIDs.withValue { $0.append(id) }
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [] }
+            $0.contentTabPinnedRecordClient.loadStore = { _ in
+                bootstrapLoadCount.withValue { $0 += 1 }
+                return ContentTabPinnedRecordStore()
+            }
+            $0.fileManagerWindowClient.closeAll = {
+                closeAllCallCount.withValue { $0 += 1 }
+            }
+        }
+        // store.exhaustivity = .off: 준비 child action은 기존 open 테스트가 검증하며 이 테스트는 registry failure만 추적한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil))) {
+            $0.windows.append(.init(id: windowID, window: .makeInitial(path: nil)))
+            $0.focusedWindowID = windowID
+            $0.pendingWindowOpenIDs.insert(windowID)
+        }
+        await store.receive(\.windowOpenCompleted) {
+            $0.windows.remove(id: windowID)
+            $0.pendingWindowOpenIDs.remove(windowID)
+            $0.focusedWindowID = nil
+        }
+        XCTAssertEqual(openedIDs.value, [windowID])
+        XCTAssertEqual(bootstrapLoadCount.value, 0)
+        XCTAssertTrue(store.state.windows.isEmpty)
+        XCTAssertTrue(store.state.pendingWindowOpenIDs.isEmpty)
+        XCTAssertTrue(store.state.closingWindowIDs.isEmpty)
+        XCTAssertTrue(store.state.defaultWindowBootstrapWindowIDs.isEmpty)
+        XCTAssertNil(store.state.defaultWindowBootstrapRequestID)
+
+        await store.send(.window(.closeFocusedWindow))
+        await store.send(.window(.closeAllWindows))
+        XCTAssertTrue(store.state.windows.isEmpty)
+        XCTAssertEqual(closeAllCallCount.value, 0)
+        await store.finish()
+    }
+
+    /// FMW-001-open_new_file_manager_window: pending session reopen은 중복 native open을 시작하지 않는다.
+    /// pending session의 기존 cancellable open effect가 유일한 controller 생성 소유자여야 한다.
+    /// - 검증 내용: reopenWindowIfNeeded가 client.open을 추가 호출하지 않고 pending/focus 상태를 보존함
+    /// - 사전 조건: focused window session이 pendingWindowOpenIDs에 포함됨
+    /// - 기대 결과: open 호출 0회, pending identity 및 focusedWindowID 유지
+    func testReopenWindowIfNeeded_doesNotDuplicatePendingOpen() async {
+        let windowID = UUID()
+        let openedIDs = LockIsolated<[UUID]>([])
+        var initialState = makeState(
+            focusedID: windowID,
+            windows: [(windowID, Spec.tempPath)],
+        )
+        initialState.pendingWindowOpenIDs.insert(windowID)
+        let store = makeStore(initialState: initialState) {
+            $0.fileManagerWindowClient.open = { id in
+                openedIDs.withValue { $0.append(id) }
+            }
+        }
+
+        await store.send(.lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: false)))
+        await store.finish()
+
+        XCTAssertEqual(openedIDs.value, [])
+        XCTAssertEqual(store.state.pendingWindowOpenIDs, [windowID])
+        XCTAssertEqual(store.state.focusedWindowID, windowID)
     }
 
     // MARK: - FMW-001-close_file_manager_window
@@ -205,6 +284,119 @@ final class FileManagerWindowManagerTests: XCTestCase {
 
         XCTAssertEqual(store.state.focusedWindowID, focusedID)
         XCTAssertEqual(closedIDs.value, [backgroundID])
+        await store.finish()
+    }
+
+    /// FMW-001-close_file_manager_window: open 중인 focused 윈도우 닫기는 pending 세션을 즉시 종료한다.
+    /// controller가 없는 pending open은 native windowClosed를 기다리지 않고 reducer가 정리해야 한다.
+    /// - 검증 내용: open 취소, controller disposition 확인, pending/window/bootstrap target 제거, effect 종료
+    /// - 사전 조건: session append 후 fileManagerWindowClient.open이 controlled gate에서 중단됨
+    /// - 기대 결과: gate 해제 후 ghost open 없이 상태가 비고 store.finish가 완료됨
+    func testCloseFocusedWindow_cancelsAndFinalizesPendingOpen() async {
+        let windowID = UUID()
+        let openGate = WindowOpenGate()
+        let openedIDs = LockIsolated<[UUID]>([])
+        let closedIDs = LockIsolated<[UUID]>([])
+        let bootstrapLoadCount = LockIsolated(0)
+        let store = makeStore(uuid: windowID) {
+            $0.fileManagerWindowClient.open = { id in
+                await openGate.suspend()
+                guard !Task.isCancelled else { return }
+                openedIDs.withValue { $0.append(id) }
+            }
+            $0.fileManagerWindowClient.close = { id in
+                closedIDs.withValue { $0.append(id) }
+            }
+            $0.contentTabPinnedRecordClient.loadStore = { _ in
+                bootstrapLoadCount.withValue { $0 += 1 }
+                return ContentTabPinnedRecordStore()
+            }
+        }
+        // store.exhaustivity = .off: window 준비 child action은 기존 open 테스트가 검증하며 이 테스트는 취소 race만 추적한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil))) {
+            $0.windows.append(.init(id: windowID, window: .makeInitial(path: nil)))
+            $0.focusedWindowID = windowID
+            $0.pendingWindowOpenIDs.insert(windowID)
+        }
+        await openGate.waitUntilSuspended()
+
+        await store.send(.window(.closeFocusedWindow)) {
+            $0.closingWindowIDs.insert(windowID)
+            $0.focusedWindowID = nil
+        }
+        await store.receive(\.pendingWindowCloseFinalized) {
+            $0.windows.remove(id: windowID)
+            $0.pendingWindowOpenIDs.remove(windowID)
+            $0.closingWindowIDs.remove(windowID)
+        }
+
+        await openGate.resume()
+        await store.finish()
+
+        XCTAssertEqual(openedIDs.value, [])
+        XCTAssertEqual(closedIDs.value, [windowID], "client.close가 controller 등록 여부를 원자적으로 판정해야 한다")
+        XCTAssertEqual(bootstrapLoadCount.value, 0)
+        XCTAssertTrue(store.state.windows.isEmpty)
+        XCTAssertTrue(store.state.pendingWindowOpenIDs.isEmpty)
+        XCTAssertTrue(store.state.defaultWindowBootstrapWindowIDs.isEmpty)
+        XCTAssertNil(store.state.defaultWindowBootstrapRequestID)
+    }
+
+    /// FMW-001-close_file_manager_window: controller 등록 후 open completion 전 close는 native 종료 순서를 유지한다.
+    /// pending identity만으로 controller-less를 가정하지 않고 client disposition을 따라야 한다.
+    /// - 검증 내용: stale completion이 pending을 소비하지 않고 windowClosed 후 invalidate→finalize→state 제거
+    /// - 사전 조건: pending state에 대응하는 controller ID가 live registry에 이미 등록됨
+    /// - 기대 결과: pending state가 windowClosed까지 유지되고 기존 two-phase invalidation 순서로 제거됨
+    func testCloseFocusedWindow_registeredDuringPendingOpenWaitsForWindowClosed() async {
+        let windowID = UUID()
+        let calls = LockIsolated<[String]>([])
+        var initialState = makeState(
+            focusedID: windowID,
+            windows: [(windowID, Spec.tempPath)],
+        )
+        initialState.pendingWindowOpenIDs.insert(windowID)
+        let store = makeStore(initialState: initialState) {
+            $0.fileManagerWindowClient.close = { receivedID in
+                XCTAssertEqual(receivedID, windowID)
+                calls.withValue { $0.append("close") }
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
+            $0.undoManagerClient.invalidateWindow = { receivedID in
+                XCTAssertEqual(receivedID, windowID)
+                calls.withValue { $0.append("invalidate") }
+                return .init(succeeded: true, availability: .init())
+            }
+            $0.fileManagerWindowClient.finalizeClose = { receivedID in
+                XCTAssertEqual(receivedID, windowID)
+                calls.withValue { $0.append("finalize") }
+            }
+        }
+
+        await store.send(.window(.closeFocusedWindow)) {
+            $0.closingWindowIDs.insert(windowID)
+            $0.focusedWindowID = nil
+        }
+        await store.send(.windowOpenCompleted(
+            id: windowID,
+            shouldBootstrapDefaultWindow: true,
+            isRegistered: true,
+        ))
+        XCTAssertEqual(store.state.pendingWindowOpenIDs, [windowID])
+        XCTAssertNotNil(store.state.windows[id: windowID])
+
+        await store.send(.event(.windowClosed(windowID))) {
+            $0.invalidatingWindowIDs.insert(windowID)
+        }
+        await store.receive(\.windowInvalidationFinished) {
+            $0.windows.remove(id: windowID)
+            $0.pendingWindowOpenIDs.remove(windowID)
+            $0.closingWindowIDs.remove(windowID)
+            $0.invalidatingWindowIDs.remove(windowID)
+        }
+
+        XCTAssertEqual(calls.value, ["close", "invalidate", "finalize"])
         await store.finish()
     }
 
@@ -344,6 +536,63 @@ final class FileManagerWindowManagerTests: XCTestCase {
 
         XCTAssertEqual(store.state.windows.ids, [firstID, secondID])
         XCTAssertEqual(closeAllCallCount.value, 1, "fileManagerWindowClient.closeAll은 정확히 한 번 호출되어야 한다")
+    }
+
+    /// FMW-001-quit_voyager: Close All은 중단된 pending open을 취소하고 즉시 종료한다.
+    /// native controller가 없는 세션도 windowClosed 없이 완료되어 늦은 open과 bootstrap 적용을 막아야 한다.
+    /// - 검증 내용: pending finalize, closeAll 1회, bootstrap target 제거, store.finish 완료
+    /// - 사전 조건: session append 후 fileManagerWindowClient.open이 controlled gate에서 중단됨
+    /// - 기대 결과: gate 해제 후 ghost open/state/bootstrap target이 남지 않음
+    func testCloseAll_cancelsAndFinalizesSuspendedPendingOpen() async {
+        let windowID = UUID()
+        let openGate = WindowOpenGate()
+        let openedIDs = LockIsolated<[UUID]>([])
+        let closeAllCallCount = LockIsolated(0)
+        let bootstrapLoadCount = LockIsolated(0)
+        let store = makeStore(uuid: windowID) {
+            $0.fileManagerWindowClient.open = { id in
+                await openGate.suspend()
+                guard !Task.isCancelled else { return }
+                openedIDs.withValue { $0.append(id) }
+            }
+            $0.fileManagerWindowClient.closeAll = {
+                closeAllCallCount.withValue { $0 += 1 }
+            }
+            $0.contentTabPinnedRecordClient.loadStore = { _ in
+                bootstrapLoadCount.withValue { $0 += 1 }
+                return ContentTabPinnedRecordStore()
+            }
+        }
+        // store.exhaustivity = .off: window 준비 child action은 기존 open 테스트가 검증하며 이 테스트는 취소 race만 추적한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil))) {
+            $0.windows.append(.init(id: windowID, window: .makeInitial(path: nil)))
+            $0.focusedWindowID = windowID
+            $0.pendingWindowOpenIDs.insert(windowID)
+        }
+        await openGate.waitUntilSuspended()
+
+        await store.send(.window(.closeAllWindows)) {
+            $0.closingWindowIDs.insert(windowID)
+            $0.focusedWindowID = nil
+        }
+        await store.receive(\.pendingWindowCloseFinalized) {
+            $0.windows.remove(id: windowID)
+            $0.pendingWindowOpenIDs.remove(windowID)
+            $0.closingWindowIDs.remove(windowID)
+        }
+
+        await openGate.resume()
+        await store.finish()
+
+        XCTAssertEqual(openedIDs.value, [])
+        XCTAssertEqual(closeAllCallCount.value, 1, "pending window만 있어도 closeAll은 정확히 한 번 호출되어야 한다")
+        XCTAssertEqual(bootstrapLoadCount.value, 0)
+        XCTAssertTrue(store.state.windows.isEmpty)
+        XCTAssertTrue(store.state.pendingWindowOpenIDs.isEmpty)
+        XCTAssertTrue(store.state.defaultWindowBootstrapWindowIDs.isEmpty)
+        XCTAssertNil(store.state.defaultWindowBootstrapRequestID)
     }
 
     /// CTM-001-open_new_content_tab: focused FileManager window로 새 Content Tab command 라우팅.
@@ -496,6 +745,29 @@ enum WindowManagerTestSupport {
         })
         state.focusedWindowID = focusedID
         return state
+    }
+}
+
+private actor WindowOpenGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func suspend() async {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            waiters.forEach { $0.resume() }
+            waiters.removeAll()
+        }
+    }
+
+    func waitUntilSuspended() async {
+        guard continuation == nil else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
     }
 }
 
