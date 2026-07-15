@@ -7,6 +7,7 @@ import re
 import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 @dataclass(frozen=True)
@@ -285,7 +286,7 @@ def validate_markdown_references(root: Path, path: Path, text: str) -> list[Diag
         targets = [str(target) for target in MARKDOWN_LINK.findall(line)]
         targets += [str(target) for target in SKILL_PATH_LITERAL.findall(line)]
         for target in targets:
-            if "<" in target or ">" in target:
+            if "<" in target or ">" in target or urlsplit(target).scheme:
                 continue
             resolved = (
                 root / target if target.startswith(".agents/") else path.parent / target

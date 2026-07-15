@@ -239,7 +239,10 @@ class AgentValidationTests(unittest.TestCase):
             self.write(
                 root,
                 ".agents/skills/fixture/SKILL.md",
-                "[missing link](missing.md)\n`../missing-reference.md`\n[host](/etc/passwd)\n",
+                (
+                    "[missing link](missing.md)\n`../missing-reference.md`\n"
+                    "[host](/etc/passwd)\n[external](https://example.com/docs)\n"
+                ),
             )
             self.write(
                 root,
