@@ -129,7 +129,13 @@ final class FileManagerWindowManagerTests: XCTestCase {
         ))
 
         await store.send(.event(.windowClosed(firstID))) {
+            $0.closingWindowIDs.insert(firstID)
+            $0.invalidatingWindowIDs.insert(firstID)
+        }
+        await store.receive(\.windowInvalidationFinished) {
             $0.windows.remove(id: firstID)
+            $0.closingWindowIDs.remove(firstID)
+            $0.invalidatingWindowIDs.remove(firstID)
             $0.focusedWindowID = secondID
         }
     }
@@ -164,10 +170,42 @@ final class FileManagerWindowManagerTests: XCTestCase {
             }
         }
 
-        await store.send(.window(.closeFocusedWindow))
+        await store.send(.window(.closeFocusedWindow)) {
+            $0.closingWindowIDs.insert(focusedID)
+            $0.focusedWindowID = nil
+        }
 
         XCTAssertEqual(closedIDs.value.count, 1, "fileManagerWindowClient.close는 정확히 한 번 호출되어야 한다")
         XCTAssertEqual(closedIDs.value.first, focusedID, "close에 전달된 ID는 focusedWindowID와 일치해야 한다")
+    }
+
+    /// FMW-001-close_file_manager_window: child close delegate는 발생시킨 owning window를 닫는다.
+    /// - 검증 내용: background window의 delegate가 focused window로 재해석되지 않고 정확한 ID로 client.close를 호출한다.
+    /// - 사전 조건: focused window와 background window가 모두 열려 있음
+    /// - 기대 결과: background ID만 closing에 추가되고 focused ID와 focus는 유지됨
+    func testWindowCloseDelegate_closesOwningWindowInsteadOfFocusedWindow() async {
+        let focusedID = UUID()
+        let backgroundID = UUID()
+        let closedIDs = LockIsolated<[UUID]>([])
+        let store = makeStore(initialState: makeState(
+            focusedID: focusedID,
+            windows: [(focusedID, Spec.focusedPath), (backgroundID, Spec.backgroundPath)],
+        )) {
+            $0.fileManagerWindowClient.close = { id in
+                closedIDs.withValue { $0.append(id) }
+            }
+        }
+
+        await store.send(.windows(.element(
+            id: backgroundID,
+            action: .window(.delegate(.closeWindow)),
+        ))) {
+            $0.closingWindowIDs.insert(backgroundID)
+        }
+
+        XCTAssertEqual(store.state.focusedWindowID, focusedID)
+        XCTAssertEqual(closedIDs.value, [backgroundID])
+        await store.finish()
     }
 
     /// FMW-001-close_file_manager_window: unfocused 윈도우 닫기 시 focused 유지
@@ -185,8 +223,95 @@ final class FileManagerWindowManagerTests: XCTestCase {
         ))
 
         await store.send(.event(.windowClosed(otherID))) {
-            $0.windows.remove(id: otherID)
+            $0.closingWindowIDs.insert(otherID)
+            $0.invalidatingWindowIDs.insert(otherID)
         }
+        await store.receive(\.windowInvalidationFinished) {
+            $0.windows.remove(id: otherID)
+            $0.closingWindowIDs.remove(otherID)
+            $0.invalidatingWindowIDs.remove(otherID)
+        }
+    }
+
+    /// FMW-001-close_file_manager_window: invalidateWindow 성공 전 registry finalize와 Window state 제거를 지연한다.
+    /// - 검증 내용: delayed invalidation 동안 state identity를 보존하고 성공 후 finalizeClose 다음 state removal 순서를 지킨다.
+    /// - 사전 조건: 단일 window와 controllable invalidation gate
+    /// - 기대 결과: completion 전 state 보존, 호출 순서 invalidate→finalize, completion 후 state 제거
+    func testWindowClose_preservesStateAndFinalizesRegistryAfterInvalidation() async {
+        let windowID = UUID()
+        let gate = WindowInvalidationGate()
+        let calls = LockIsolated<[String]>([])
+        let store = makeStore(initialState: makeState(
+            focusedID: windowID,
+            windows: [(windowID, Spec.tempPath)],
+        )) {
+            $0.undoManagerClient.invalidateWindow = { receivedID in
+                XCTAssertEqual(receivedID, windowID)
+                calls.withValue { $0.append("invalidate") }
+                await gate.suspend()
+                return .init(succeeded: true, availability: .init())
+            }
+            $0.fileManagerWindowClient.finalizeClose = { receivedID in
+                XCTAssertEqual(receivedID, windowID)
+                calls.withValue { $0.append("finalize") }
+            }
+        }
+
+        await store.send(.event(.windowClosed(windowID))) {
+            $0.closingWindowIDs.insert(windowID)
+            $0.invalidatingWindowIDs.insert(windowID)
+        }
+        await gate.waitUntilSuspended()
+        XCTAssertNotNil(store.state.windows[id: windowID])
+        XCTAssertEqual(calls.value, ["invalidate"])
+
+        await gate.resume()
+        await store.receive(\.windowInvalidationFinished) {
+            $0.windows.remove(id: windowID)
+            $0.closingWindowIDs.remove(windowID)
+            $0.invalidatingWindowIDs.remove(windowID)
+            $0.focusedWindowID = nil
+        }
+        XCTAssertEqual(calls.value, ["invalidate", "finalize"])
+        await store.finish()
+    }
+
+    /// FMW-001-close_file_manager_window: invalidateWindow 실패는 registry와 Window state를 보존한다.
+    /// - 검증 내용: 실패 result에서 finalizeClose를 호출하지 않고 closing identity를 focus 후보에서 제외한다.
+    /// - 사전 조건: 두 window 중 focused window의 invalidation resolver 실패
+    /// - 기대 결과: 두 state 유지, closing window 미포커스, finalize 0회
+    func testWindowClose_invalidationFailurePreservesRegistryStateAndExcludesFocus() async {
+        let closingID = UUID()
+        let otherID = UUID()
+        let finalizeCalls = LockIsolated<[UUID]>([])
+        let store = makeStore(initialState: makeState(
+            focusedID: closingID,
+            windows: [(closingID, Spec.focusedPath), (otherID, Spec.backgroundPath)],
+        )) {
+            $0.undoManagerClient.invalidateWindow = { _ in
+                .init(succeeded: false, availability: .init())
+            }
+            $0.fileManagerWindowClient.close = { _ in }
+            $0.fileManagerWindowClient.finalizeClose = { id in
+                finalizeCalls.withValue { $0.append(id) }
+            }
+        }
+
+        await store.send(.window(.closeFocusedWindow)) {
+            $0.closingWindowIDs.insert(closingID)
+            $0.focusedWindowID = otherID
+        }
+        await store.send(.event(.windowClosed(closingID))) {
+            $0.invalidatingWindowIDs.insert(closingID)
+        }
+        await store.receive(\.windowInvalidationFinished)
+        await store.send(.event(.windowBecameKey(closingID)))
+
+        XCTAssertNotNil(store.state.windows[id: closingID])
+        XCTAssertNotNil(store.state.windows[id: otherID])
+        XCTAssertEqual(store.state.focusedWindowID, otherID)
+        XCTAssertEqual(finalizeCalls.value, [])
+        await store.finish()
     }
 
     // MARK: - FMW-001-quit_voyager
@@ -213,10 +338,11 @@ final class FileManagerWindowManagerTests: XCTestCase {
         }
 
         await store.send(.window(.closeAllWindows)) {
-            $0.windows.removeAll()
+            $0.closingWindowIDs = [firstID, secondID]
             $0.focusedWindowID = nil
         }
 
+        XCTAssertEqual(store.state.windows.ids, [firstID, secondID])
         XCTAssertEqual(closeAllCallCount.value, 1, "fileManagerWindowClient.closeAll은 정확히 한 번 호출되어야 한다")
     }
 
@@ -370,5 +496,28 @@ enum WindowManagerTestSupport {
         })
         state.focusedWindowID = focusedID
         return state
+    }
+}
+
+private actor WindowInvalidationGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func suspend() async {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            waiters.forEach { $0.resume() }
+            waiters.removeAll()
+        }
+    }
+
+    func waitUntilSuspended() async {
+        guard continuation == nil else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
     }
 }

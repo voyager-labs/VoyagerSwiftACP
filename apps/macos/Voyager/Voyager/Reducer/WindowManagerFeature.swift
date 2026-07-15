@@ -71,12 +71,11 @@ struct WindowManagerFeature {
             case let .lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: flag)):
                 guard !flag else { return .none }
 
-                if state.windows.isEmpty {
+                let reopenWindowID = state.focusedWindowID
+                    .flatMap { state.closingWindowIDs.contains($0) ? nil : $0 }
+                    ?? state.windows.first(where: { !state.closingWindowIDs.contains($0.id) })?.id
+                guard let reopenWindowID else {
                     return .send(.file(.newWindow(path: nil)))
-                }
-
-                guard let reopenWindowID = state.focusedWindowID ?? state.windows.first?.id else {
-                    return .none
                 }
 
                 state.focusedWindowID = reopenWindowID
@@ -203,6 +202,7 @@ struct WindowManagerFeature {
                 return sendCommandToFocusedWindow(state, .copyURLs)
 
             case let .event(.windowBecameKey(id)):
+                guard !state.closingWindowIDs.contains(id) else { return .none }
                 state.focusedWindowID = id
                 return .none
 
@@ -213,27 +213,58 @@ struct WindowManagerFeature {
                 return .none
 
             case let .event(.windowClosed(id)):
+                guard state.windows[id: id] != nil else {
+                    return .run { [fileManagerWindowClient] _ in
+                        await fileManagerWindowClient.finalizeClose(id)
+                    }
+                }
+                guard !state.invalidatingWindowIDs.contains(id) else { return .none }
+                state.closingWindowIDs.insert(id)
+                state.invalidatingWindowIDs.insert(id)
+                return .run { [undoManagerClient, fileManagerWindowClient] send in
+                    let result = await undoManagerClient.invalidateWindow(id)
+                    if result.succeeded {
+                        await fileManagerWindowClient.finalizeClose(id)
+                    }
+                    await send(.windowInvalidationFinished(id: id, result: result))
+                }
+
+            case let .windowInvalidationFinished(id, result):
+                guard state.closingWindowIDs.contains(id) else { return .none }
+                guard result.succeeded else { return .none }
                 let wasFocused = state.focusedWindowID == id
                 state.windows.remove(id: id)
+                state.closingWindowIDs.remove(id)
+                state.invalidatingWindowIDs.remove(id)
                 state.defaultWindowBootstrapWindowIDs.remove(id)
                 if wasFocused {
-                    state.focusedWindowID = state.windows.first?.id
-                }
-                let invalidateUndoManagerEffect: Effect<Action> = .run { _ in
-                    await undoManagerClient.invalidateWindow(id)
+                    state.focusedWindowID = state.windows.first(where: {
+                        !state.closingWindowIDs.contains($0.id)
+                    })?.id
                 }
                 guard state.defaultWindowBootstrapWindowIDs.isEmpty,
                       state.defaultWindowBootstrapRequestID != nil
-                else { return invalidateUndoManagerEffect }
+                else { return .none }
                 state.defaultWindowBootstrapRequestID = nil
-                return .merge(
-                    .cancel(id: CancelID.defaultWindowBootstrap),
-                    invalidateUndoManagerEffect,
-                )
+                return .cancel(id: CancelID.defaultWindowBootstrap)
 
             case let .event(.focusWindow(path)):
                 return .run { _ in
                     await fileManagerWindowClient.focusPath(path)
+                }
+
+            case let .windows(.element(id: id, action: .window(.delegate(.closeWindow)))):
+                guard state.windows[id: id] != nil,
+                      !state.closingWindowIDs.contains(id)
+                else { return .none }
+                state.closingWindowIDs.insert(id)
+                if state.focusedWindowID == id {
+                    state.focusedWindowID = state.windows.first(where: {
+                        $0.id != id && !state.closingWindowIDs.contains($0.id)
+                    })?.id
+                }
+                return .run { [fileManagerWindowClient] _ in
+                    await fileManagerWindowClient.close(id)
                 }
 
             case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewWindow(path))))):
@@ -321,22 +352,26 @@ struct WindowManagerFeature {
             return sendCommandToFocusedWindow(state, .openNewContentTab)
 
         case .window(.closeFocusedWindow):
-            guard let id = state.focusedWindowID else { return .none }
+            guard let id = state.focusedWindowID,
+                  state.windows[id: id] != nil,
+                  !state.closingWindowIDs.contains(id)
+            else { return .none }
+            state.closingWindowIDs.insert(id)
+            state.focusedWindowID = state.windows.first(where: {
+                $0.id != id && !state.closingWindowIDs.contains($0.id)
+            })?.id
             return .run { [id] _ in
                 await fileManagerWindowClient.close(id)
             }
 
         case .window(.closeAllWindows):
-            state.windows.removeAll()
+            let openWindowIDs = state.windows.ids.filter { !state.closingWindowIDs.contains($0) }
+            guard !openWindowIDs.isEmpty else { return .none }
+            state.closingWindowIDs.formUnion(openWindowIDs)
             state.focusedWindowID = nil
-            state.defaultWindowBootstrapRequestID = nil
-            state.defaultWindowBootstrapWindowIDs.removeAll()
-            return .merge(
-                .cancel(id: CancelID.defaultWindowBootstrap),
-                .run { _ in
-                    await fileManagerWindowClient.closeAll()
-                },
-            )
+            return .run { _ in
+                await fileManagerWindowClient.closeAll()
+            }
 
         default:
             return .none
@@ -418,7 +453,9 @@ struct WindowManagerFeature {
         _ state: State,
         _ command: FileManagerWindowAction.WindowCommand,
     ) -> Effect<Action> {
-        guard let id = state.focusedWindowID else { return .none }
+        guard let id = state.focusedWindowID,
+              !state.closingWindowIDs.contains(id)
+        else { return .none }
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }
 

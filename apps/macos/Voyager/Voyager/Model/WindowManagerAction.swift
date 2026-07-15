@@ -3,6 +3,7 @@ import Foundation
 import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
 import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesEntryOperations
 import VoyagerPagesFileManager
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
@@ -19,6 +20,7 @@ enum WindowManagerAction: CasePathable {
     case pinnedContentTabsStoreChanged
     case defaultWindowBootstrapCompleted(requestID: UUID, contentTabs: ContentTabState)
     case defaultWindowBootstrapFailed(requestID: UUID)
+    case windowInvalidationFinished(id: WindowManagerState.WindowID, result: UndoManagerInvalidationResult)
     case windows(IdentifiedActionOf<WindowSessionFeature>)
 
     @CasePathable
