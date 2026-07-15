@@ -56,8 +56,11 @@ enum AccountAccessFlowTestSupport {
                 refreshToken: { exchangeSession },
                 syncSession: { _, _ in syncResult },
             )
-            $0.accessStatusSnapshotClient.save = { _ in }
-            $0.accessStatusSnapshotClient.remove = {}
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                load: { nil },
+                save: { _ in },
+                remove: {},
+            )
             $0.helperAppClient.start = {}
             $0.helperAppClient.stop = {}
             $0.helperAppClient.terminationEvents = { AsyncStream { $0.finish() } }
