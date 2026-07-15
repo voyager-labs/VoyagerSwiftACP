@@ -40,7 +40,7 @@ struct AppMenuCommands: Commands {
                 send(.app(.newFolder))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
-            .disabled(!viewStore.hasFocusedWindow)
+            .disabled(!viewStore.canPerformEntryCommands)
 
             Button("Open") {
                 send(.app(.open))
