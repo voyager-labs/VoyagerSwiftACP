@@ -205,7 +205,10 @@ final class EntitlementAccessFlowTests: XCTestCase {
         await store.send(.lifecycle(.accountAccess(._handoffExchangeCompleted(
             state: "login-state",
             generation: 0,
-            result: .success(AccountAccessFlowTestSupport.validSession.expiresAt),
+            result: .success(AccountAccessHandoffCompletion(
+                expiresAt: AccountAccessFlowTestSupport.validSession.expiresAt,
+                sessionBindingID: AccountAccessFlowTestSupport.validSession.sessionBindingID,
+            )),
         ))))
         await store.receive(\.lifecycle.accountAccess.sessionSyncRequested)
 

@@ -22,7 +22,10 @@ final class AuthSessionFlowTests: XCTestCase {
         await store.send(.lifecycle(.accountAccess(._handoffExchangeCompleted(
             state: "handoff-state",
             generation: 0,
-            result: .success(AccountAccessFlowTestSupport.validSession.expiresAt),
+            result: .success(AccountAccessHandoffCompletion(
+                expiresAt: AccountAccessFlowTestSupport.validSession.expiresAt,
+                sessionBindingID: AccountAccessFlowTestSupport.validSession.sessionBindingID,
+            )),
         ))))
         await store.receive(\.lifecycle.accountAccess.sessionSyncRequested)
 
@@ -111,7 +114,10 @@ final class AuthSessionFlowTests: XCTestCase {
         await reauthenticationStore.send(.lifecycle(.accountAccess(._handoffExchangeCompleted(
             state: "reauthentication-state",
             generation: 0,
-            result: .success(AccountAccessFlowTestSupport.validSession.expiresAt),
+            result: .success(AccountAccessHandoffCompletion(
+                expiresAt: AccountAccessFlowTestSupport.validSession.expiresAt,
+                sessionBindingID: AccountAccessFlowTestSupport.validSession.sessionBindingID,
+            )),
         ))))
         await reauthenticationStore.receive(\.lifecycle.accountAccess.sessionSyncRequested)
 
@@ -191,7 +197,10 @@ final class AuthSessionFlowTests: XCTestCase {
         await acceptedStore.send(.lifecycle(.accountAccess(._handoffExchangeCompleted(
             state: "latest-state",
             generation: 0,
-            result: .success(AccountAccessFlowTestSupport.validSession.expiresAt),
+            result: .success(AccountAccessHandoffCompletion(
+                expiresAt: AccountAccessFlowTestSupport.validSession.expiresAt,
+                sessionBindingID: AccountAccessFlowTestSupport.validSession.sessionBindingID,
+            )),
         ))))
         await acceptedStore.receive(\.lifecycle.accountAccess.sessionSyncRequested)
 

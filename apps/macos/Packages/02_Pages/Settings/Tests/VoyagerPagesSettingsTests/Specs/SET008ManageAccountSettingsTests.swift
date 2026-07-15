@@ -74,6 +74,39 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
         XCTAssertEqual(store.state.accountSettings.setEntitlementState, .entitlementUnavailable)
     }
 
+    /// SET-008-show_account_status: Settings는 모든 canonical access status의 의미와 account recovery 가용성을 보존한다.
+    /// - 검증 내용: nil, network failure, none, expired, revoked, refunded, active의 개별 상태와 Manage Account 가용성
+    /// - 사전 조건: current account session이 있고 각 canonical access status가 설정됨
+    /// - 기대 결과: unknown/unavailable은 잠금 유지, authoritative status는 상태별로 구분되고 Manage Account를 허용함
+    func testEntitlementProjectionPreservesSemanticStatusesAndRecoveryAvailability() {
+        struct EntitlementCase {
+            let status: AccessStatus?
+            let expectedState: SetEntitlementState
+            let isManageAccountAvailable: Bool
+        }
+
+        let cases: [EntitlementCase] = [
+            .init(status: nil, expectedState: .entitlementUnknown, isManageAccountAvailable: false),
+            .init(status: .networkFailure, expectedState: .entitlementUnavailable, isManageAccountAvailable: false),
+            .init(status: AccessStatus.none, expectedState: .entitlementNone, isManageAccountAvailable: true),
+            .init(status: .trialExpired, expectedState: .entitlementExpired, isManageAccountAvailable: true),
+            .init(status: .revoked, expectedState: .entitlementRevoked, isManageAccountAvailable: true),
+            .init(status: .refunded, expectedState: .entitlementRefunded, isManageAccountAvailable: true),
+            .init(status: .coreLicenseActive, expectedState: .entitlementActive, isManageAccountAvailable: true),
+        ]
+
+        for testCase in cases {
+            var state = AccountSettingsState()
+            state.presentation = AccountAccessPresentation(
+                hasAccountSession: true,
+                accessStatus: testCase.status,
+            )
+
+            XCTAssertEqual(state.setEntitlementState, testCase.expectedState)
+            XCTAssertEqual(state.isManageAccountAvailable, testCase.isManageAccountAvailable)
+        }
+    }
+
     // MARK: - SET-008-start_account_sign_in
 
     /// SET-008-start_account_sign_in: signed-out Sign In은 상위 canonical owner로 한 번 전달된다.

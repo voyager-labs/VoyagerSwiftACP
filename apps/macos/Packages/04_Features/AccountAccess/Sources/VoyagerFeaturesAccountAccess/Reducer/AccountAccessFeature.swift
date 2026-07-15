@@ -49,7 +49,7 @@ public struct AccountAccessFeature {
         static let refreshDeadline = "accountAccessRefreshDeadline"
     }
 
-    static let handoffCallbackTimeout: Duration = .seconds(300)
+    static let handoffCallbackTimeout: Duration = .seconds(120)
     static let sessionSyncFreshness: TimeInterval = 5 * 60
     static let sessionSyncRetryDelays: [Duration] = [.seconds(1), .seconds(2), .seconds(4)]
 
@@ -62,7 +62,7 @@ public struct AccountAccessFeature {
                 return handleOnAppear(&state)
 
             case .retryTapped:
-                return .send(.sessionSyncRequested(intent: .validate, reason: .retry))
+                return revalidateCurrentPersistedSession(&state, reason: .retry)
 
             case let .loginTapped(context: context, scope: scope):
                 return handleLoginTapped(&state, context: context, scope: scope)
@@ -120,8 +120,11 @@ public struct AccountAccessFeature {
             case let .sessionSyncRequested(intent, reason):
                 return requestSessionSync(&state, intent: intent, reason: reason)
 
-            case let ._sessionSyncCompleted(generation, result):
-                return handleSessionSyncCompleted(&state, generation: generation, result: result)
+            case let ._sessionSyncActivationCompleted(completion):
+                return handleSessionSyncActivationCompleted(&state, completion: completion)
+
+            case let ._sessionSyncCompleted(generation, binding, result):
+                return handleSessionSyncCompleted(&state, generation: generation, binding: binding, result: result)
 
             case .accessStatusResponse:
                 return .none
@@ -146,13 +149,14 @@ public struct AccountAccessFeature {
                     ),
                 )
 
-            case let .revalidatePersistedSession(generation: generation):
-                return revalidatePersistedSession(state: state, generation: generation)
+            case let .revalidatePersistedSession(generation: generation, reason: reason):
+                return revalidatePersistedSession(state: state, generation: generation, reason: reason)
 
-            case let ._persistedSessionRevalidated(generation: generation, result: result):
+            case let ._persistedSessionRevalidated(generation: generation, reason: reason, result: result):
                 return handlePersistedSessionRevalidated(
                     &state,
                     generation: generation,
+                    reason: reason,
                     result: result,
                 )
 
@@ -180,11 +184,18 @@ public struct AccountAccessFeature {
             case ._sessionExpiredDetected:
                 return handleSessionExpiredDetected(&state)
 
-            case let ._cachedSnapshotRestored(generation: generation, snapshot: snapshot):
+            case let ._cachedSnapshotRestored(
+                generation: generation,
+                binding: binding,
+                snapshot: snapshot,
+                validUntil: validUntil,
+            ):
                 return handleCachedSnapshotRestored(
                     &state,
                     generation: generation,
+                    binding: binding,
                     snapshot: snapshot,
+                    validUntil: validUntil,
                 )
 
             case let .hydrateLaunchSnapshot(snapshot):
@@ -213,11 +224,9 @@ public struct AccountAccessFeature {
         guard !state.didBootstrap else { return .none }
         state.didBootstrap = true
         return .merge(
-            .run { [sessionClient] send in
-                let restoration: AccountSessionRestoration = if let session = try? await sessionClient.read(),
-                                                                let expiresAt = session.expiresAt
-                {
-                    .available(sessionExpiresAt: expiresAt)
+            .run { [date, sessionClient] send in
+                let restoration: AccountSessionRestoration = if let session = try? await sessionClient.read(date.now) {
+                    .available(session: session)
                 } else {
                     .missing
                 }
@@ -233,19 +242,10 @@ public struct AccountAccessFeature {
     ) -> Effect<Action> {
         let scope = handoffScope(state)
         let expectedState = ownedHandoffState(state)
-        let sessionExpiresAt: Date?
-        switch restoration {
-        case let .available(expiresAt):
-            state.hasAccountSession = true
-            sessionExpiresAt = expiresAt
-        case .missing:
-            state.hasAccountSession = false
-            sessionExpiresAt = nil
-        }
         state.handoffPendingState = nil
         state.handoffExchangeState = nil
-
-        guard state.hasAccountSession else {
+        guard case let .available(session) = restoration else {
+            state.hasAccountSession = false
             clearStaleActiveAccessFacts(&state)
             resetSessionRetryBudget(&state)
             state.fetchGeneration += 1
@@ -253,6 +253,7 @@ public struct AccountAccessFeature {
             state.lastCompleteSyncAt = nil
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
+            state.sessionBindingID = nil
             return .merge(
                 .cancel(id: CancelID.sessionSync),
                 cancelRefreshDeadline(&state),
@@ -263,40 +264,29 @@ public struct AccountAccessFeature {
             )
         }
 
-        state.sessionExpiresAt = sessionExpiresAt
-        state.isSessionExpired = false
-        resetSessionRetryBudget(&state)
-        state.fetchGeneration += 1
-        invalidateSessionSync(&state)
-
-        state.ttlTimerActive = true
-        let refreshDeadlineEffect = scheduleRefreshDeadline(&state)
+        state.hasAccountSession = true
 
         return .merge(
             .cancel(id: CancelID.handoffCallbackTimeout(scope)),
             cancelHandoffClaimAndExchange(scope: scope),
             clearStoredHandoff(expectedState: expectedState, owner: scope),
             .cancel(id: CancelID.sessionSync),
-            .send(.sessionSyncRequested(intent: .validate, reason: .foreground)),
-            refreshDeadlineEffect,
+            routeRecoveredSession(&state, session: session, reason: .foreground),
         )
     }
 
     private func handlePersistedSessionRevalidated(
         _ state: inout State,
         generation: Int,
+        reason: SyncReason,
         result: Action.PersistedSessionRevalidationResult,
     ) -> Effect<Action> {
         guard state.hasAccountSession, !state.isSessionExpired, generation == state.revalidationGeneration else {
             return .none
         }
         switch result {
-        case let .valid(sessionExpiresAt):
-            state.sessionExpiresAt = sessionExpiresAt
-            return .merge(
-                scheduleRefreshDeadline(&state),
-                .send(.sessionSyncRequested(intent: .validate, reason: .foreground)),
-            )
+        case let .valid(session):
+            return routeRecoveredSession(&state, session: session, reason: reason)
 
         case .missing:
             return .send(._sessionExpiredDetected)
@@ -315,11 +305,9 @@ public struct AccountAccessFeature {
             return .none
         }
 
-        return .run { [sessionClient] send in
-            let restoration: AccountSessionRestoration = if let session = try? await sessionClient.read(),
-                                                            let expiresAt = session.expiresAt
-            {
-                .available(sessionExpiresAt: expiresAt)
+        return .run { [date, sessionClient] send in
+            let restoration: AccountSessionRestoration = if let session = try? await sessionClient.read(date.now) {
+                .available(session: session)
             } else {
                 .missing
             }
@@ -343,7 +331,7 @@ public struct AccountAccessFeature {
         state.handoffExchangeState = nil
         state.handoffTransaction = nil
 
-        guard case let .available(sessionExpiresAt) = restoration else {
+        guard case let .available(session) = restoration else {
             return .merge(
                 .cancel(id: CancelID.handoffCallbackTimeout(scope)),
                 cancelHandoffClaimAndExchange(scope: scope),
@@ -355,7 +343,8 @@ public struct AccountAccessFeature {
         state.didSignInFail = false
         state.hasAccountSession = true
         state.isSessionExpired = false
-        state.sessionExpiresAt = sessionExpiresAt
+        state.sessionExpiresAt = session.expiresAt
+        state.sessionBindingID = session.sessionBindingID
         state.ttlTimerActive = true
         resetSessionRetryBudget(&state)
         state.fetchGeneration += 1
@@ -383,17 +372,16 @@ extension AccountAccessFeature {
     private func revalidatePersistedSession(
         state: State,
         generation: Int,
+        reason: SyncReason,
     ) -> Effect<Action> {
         guard state.hasAccountSession, !state.isSessionExpired, generation == state.revalidationGeneration else {
             return .none
         }
-        return .run { [sessionClient] send in
+        return .run { [date, sessionClient] send in
             let result: Action.PersistedSessionRevalidationResult
             do {
-                if let session = try await sessionClient.read(),
-                   let expiresAt = session.expiresAt
-                {
-                    result = .valid(sessionExpiresAt: expiresAt)
+                if let session = try await sessionClient.read(date.now) {
+                    result = .valid(session: session)
                 } else {
                     result = .missing
                 }
@@ -403,11 +391,65 @@ extension AccountAccessFeature {
             await send(
                 ._persistedSessionRevalidated(
                     generation: generation,
+                    reason: reason,
                     result: result,
                 ),
             )
         }
         .cancellable(id: CancelID.sessionRevalidation, cancelInFlight: true)
+    }
+
+    func revalidateCurrentPersistedSession(
+        _ state: inout State,
+        reason: SyncReason,
+    ) -> Effect<Action> {
+        guard state.hasAccountSession, !state.isSessionExpired else {
+            return .none
+        }
+        state.revalidationGeneration += 1
+        return .send(.revalidatePersistedSession(
+            generation: state.revalidationGeneration,
+            reason: reason,
+        ))
+    }
+
+    private func routeRecoveredSession(
+        _ state: inout State,
+        session: AccountSession,
+        reason: SyncReason,
+    ) -> Effect<Action> {
+        let bindingChanged = state.sessionBindingID.map { $0 != session.sessionBindingID } ?? false
+        state.hasAccountSession = true
+        state.isSessionExpired = false
+        state.sessionExpiresAt = session.expiresAt
+        state.sessionBindingID = session.sessionBindingID
+        state.ttlTimerActive = session.expiresAt != nil
+        resetSessionRetryBudget(&state)
+
+        if bindingChanged {
+            clearStaleActiveAccessFacts(&state)
+            state.fetchGeneration += 1
+            invalidateSessionSync(&state)
+            state.lastCompleteSyncAt = nil
+        }
+
+        guard let intent = sessionSyncIntent(for: session) else {
+            return .send(._sessionExpiredDetected)
+        }
+
+        let refreshDeadline = intent == .validate ? scheduleRefreshDeadline(&state) : .none
+        return .merge(
+            refreshDeadline,
+            .send(.sessionSyncRequested(intent: intent, reason: reason)),
+        )
+    }
+
+    private func sessionSyncIntent(for session: AccountSession) -> SessionSyncIntent? {
+        guard let expiresAt = session.expiresAt else { return nil }
+        if expiresAt > date.now {
+            return .validate
+        }
+        return session.refreshToken?.isEmpty == false ? .refresh : nil
     }
 
     /// launch snapshot은 이미 완료된 sync 결과이므로 bootstrap에서 원격 재조회를 시작하지 않는다.
@@ -492,13 +534,19 @@ extension AccountAccessFeature {
         else {
             return .none
         }
-        return .send(.sessionSyncRequested(intent: .refresh, reason: .refreshDeadline))
+        state.revalidationGeneration += 1
+        return .send(.revalidatePersistedSession(
+            generation: state.revalidationGeneration,
+            reason: .refreshDeadline,
+        ))
     }
 
     /// 사용자 로그아웃 처리.
     private func handleSignOut(_ state: inout State) -> Effect<Action> {
         let scope = handoffScope(state)
         let expectedState = ownedHandoffState(state)
+        let sessionBindingID = state.sessionBindingID
+        let snapshotGeneration = Int(state.syncGeneration)
         guard state.hasAccountSession else {
             guard state.isSignInInProgress || state.handoffPendingState != nil else {
                 return .none
@@ -522,6 +570,7 @@ extension AccountAccessFeature {
         clearStaleActiveAccessFacts(&state)
         state.ttlTimerActive = false
         state.sessionExpiresAt = nil
+        state.sessionBindingID = nil
         state.fetchGeneration += 1
         invalidateSessionSync(&state)
         state.lastCompleteSyncAt = nil
@@ -529,7 +578,7 @@ extension AccountAccessFeature {
         return .merge(
             .run { [sessionClient, snapshotClient] send in
                 try? await sessionClient.delete(.explicitSignOut)
-                await snapshotClient.remove()
+                await snapshotClient.remove(sessionBindingID, Self.gatewayEnvironment, snapshotGeneration)
                 await send(.delegate(.signedOut))
             },
             cancelRefreshDeadline(&state),
@@ -546,6 +595,8 @@ extension AccountAccessFeature {
         guard !state.isSessionExpired else { return .none }
 
         let expectedState = ownedHandoffState(state)
+        let sessionBindingID = state.sessionBindingID
+        let snapshotGeneration = Int(state.syncGeneration)
         state.revalidationGeneration += 1
         state.hasAccountSession = false
         state.didSignInFail = true
@@ -559,6 +610,7 @@ extension AccountAccessFeature {
         state.lastCompleteSyncAt = nil
         state.ttlTimerActive = false
         state.sessionExpiresAt = nil
+        state.sessionBindingID = nil
         state.consecutiveRefreshFailures = 0
         state.handoffPendingState = nil
         state.handoffExchangeState = nil
@@ -566,7 +618,7 @@ extension AccountAccessFeature {
         return .merge(
             .run { [sessionClient, snapshotClient] _ in
                 try? await sessionClient.delete(.sessionExpired)
-                await snapshotClient.remove()
+                await snapshotClient.remove(sessionBindingID, Self.gatewayEnvironment, snapshotGeneration)
             },
             .cancel(id: CancelID.sessionSync),
             cancelRefreshDeadline(&state),
