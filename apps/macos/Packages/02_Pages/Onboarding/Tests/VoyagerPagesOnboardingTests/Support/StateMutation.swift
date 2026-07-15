@@ -39,8 +39,8 @@ enum StateMutation {
         status: .coreLicenseActive,
         expiresAt: activeSessionExpiry,
     )
-             }, persist: { _ in },
-    delete: { _ in },)
+    }, persist: { _ in },
+    delete: { _ in })
 
     static let activeAuthNetworkClient = AuthNetworkClient(
         exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },

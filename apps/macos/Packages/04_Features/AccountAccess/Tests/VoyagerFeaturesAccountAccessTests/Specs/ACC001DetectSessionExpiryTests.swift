@@ -31,8 +31,11 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         let persistedSession = Self.session(expiresAt: initialState.sessionExpiresAt ?? referenceDate)
-        let sessionClient = accountSessionClient ?? AccountSessionClient(read: { _ in persistedSession }, persist: { _ in },
-        delete: { _ in },)
+        let sessionClient = accountSessionClient ?? AccountSessionClient(
+            read: { _ in persistedSession },
+            persist: { _ in },
+            delete: { _ in },
+        )
         return TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
@@ -73,7 +76,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
     func testRuntimePersistedSessionLossInvalidatesInMemorySessionOnce() async {
         let store = makeTestStore(
             accountSessionClient: AccountSessionClient(read: { _ in nil }, persist: { _ in },
-            delete: { _ in },),
+                                                       delete: { _ in }),
             initialState: signedInState(),
         )
         store.exhaustivity = .off

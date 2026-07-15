@@ -183,7 +183,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
             expiresAt: expiresAt,
         )
         return AccountSessionClient(read: { _ in session }, persist: { _ in },
-        delete: { _ in },)
+                                    delete: { _ in })
     }
 
     /// handoffPendingState가 설정된 signInInProgress 상태 (callback 대기 중)
@@ -295,10 +295,10 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
             expiresAt: referenceDate.addingTimeInterval(3600),
         )
         let sessionClient = AccountSessionClient(read: { _ in persistedSession }, persist: { _ in },
-        prepareHandoffPersistence: { session in await probe.prepare(session) },
-        commitHandoffPersistence: { _ in try await probe.commit() },
-        delete: { _ in },
-        discardPersistedSession: { _ in await probe.discard() },)
+                                                 prepareHandoffPersistence: { session in await probe.prepare(session) },
+                                                 commitHandoffPersistence: { _ in try await probe.commit() },
+                                                 delete: { _ in },
+                                                 discardPersistedSession: { _ in await probe.discard() })
         let store = makeTestStore(
             accountSessionClient: sessionClient,
             authNetworkClient: AuthNetworkClient(
@@ -359,9 +359,12 @@ extension ACC001ExchangeHandoffTokenTests {
             refreshToken: "cancelled-refresh-token",
             expiresAt: referenceDate.addingTimeInterval(3600),
         )
-        let sessionClient = AccountSessionClient(read: { _ in persistedSession }, persist: { session in try await probe.persist(session) },
-        delete: { _ in },
-        discardPersistedSession: { _ in await probe.discard() },)
+        let sessionClient = AccountSessionClient(
+            read: { _ in persistedSession },
+            persist: { session in try await probe.persist(session) },
+            delete: { _ in },
+            discardPersistedSession: { _ in await probe.discard() },
+        )
         let store = makeTestStore(
             accountSessionClient: sessionClient,
             authNetworkClient: AuthNetworkClient(
@@ -409,10 +412,12 @@ extension ACC001ExchangeHandoffTokenTests {
             expiresAt: referenceDate.addingTimeInterval(3600),
         )
         let sessionClient = AccountSessionClient(read: { _ in persistedSession }, persist: { _ in },
-        prepareHandoffPersistence: { session in await probe.prepareAndWait(session) },
-        commitHandoffPersistence: { _ in },
-        delete: { _ in },
-        discardPersistedSession: { _ in await probe.discard() },)
+                                                 prepareHandoffPersistence: { session in
+                                                     await probe.prepareAndWait(session)
+                                                 },
+                                                 commitHandoffPersistence: { _ in },
+                                                 delete: { _ in },
+                                                 discardPersistedSession: { _ in await probe.discard() })
         let store = makeTestStore(
             accountSessionClient: sessionClient,
             authNetworkClient: AuthNetworkClient(
@@ -454,10 +459,10 @@ extension ACC001ExchangeHandoffTokenTests {
             expiresAt: referenceDate.addingTimeInterval(3600),
         )
         let sessionClient = AccountSessionClient(read: { _ in persistedSession }, persist: { _ in },
-        prepareHandoffPersistence: { session in await probe.prepare(session) },
-        commitHandoffPersistence: { _ in try await probe.commit() },
-        delete: { _ in },
-        discardPersistedSession: { _ in await probe.discard() },)
+                                                 prepareHandoffPersistence: { session in await probe.prepare(session) },
+                                                 commitHandoffPersistence: { _ in try await probe.commit() },
+                                                 delete: { _ in },
+                                                 discardPersistedSession: { _ in await probe.discard() })
         let store = makeTestStore(
             accountSessionClient: sessionClient,
             authNetworkClient: AuthNetworkClient(
@@ -502,11 +507,14 @@ extension ACC001ExchangeHandoffTokenTests {
             refreshToken: "rollback-failure-refresh-token",
             expiresAt: referenceDate.addingTimeInterval(3600),
         )
-        let sessionClient = AccountSessionClient(read: { _ in persistedSession }, persist: { session in try await probe.persist(session) },
-        delete: { _ in },
-        discardPersistedSession: { _ in
-            throw AccountSessionPersistenceError.discardUnavailable
-        },)
+        let sessionClient = AccountSessionClient(
+            read: { _ in persistedSession },
+            persist: { session in try await probe.persist(session) },
+            delete: { _ in },
+            discardPersistedSession: { _ in
+                throw AccountSessionPersistenceError.discardUnavailable
+            },
+        )
         let store = makeTestStore(
             accountSessionClient: sessionClient,
             authNetworkClient: AuthNetworkClient(

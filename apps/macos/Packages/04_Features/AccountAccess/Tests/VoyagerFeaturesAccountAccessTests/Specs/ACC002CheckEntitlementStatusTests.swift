@@ -101,9 +101,12 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     func testOnAppearSessionRestoredTriggersFetch() async {
         nonisolated(unsafe) var fetchCalled = false
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(read: { _ in AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
-                             }, persist: { _ in },
-            delete: { _ in },),
+            accountSessionClient: AccountSessionClient(
+                read: { _ in AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
+                },
+                persist: { _ in },
+                delete: { _ in },
+            ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
@@ -135,9 +138,9 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         nonisolated(unsafe) var fetchCount = 0
         let store = makeTestStore(
             accountSessionClient: AccountSessionClient(read: { _ in sessionReadCount += 1
-            return AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
-                             }, persist: { _ in },
-            delete: { _ in },),
+                return AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
+            }, persist: { _ in },
+            delete: { _ in }),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
@@ -749,8 +752,8 @@ extension ACC002CheckEntitlementStatusTests {
                 status: .coreLicenseActive,
                 expiresAt: sessionExpiry,
             )
-                             }, persist: { _ in },
-            delete: { _ in },),
+            }, persist: { _ in },
+            delete: { _ in }),
             snapshotClient: AccessStatusSnapshotClient(
                 load: { cachedSnapshot },
                 save: { _ in },
@@ -918,8 +921,8 @@ extension ACC002CheckEntitlementStatusTests {
                 status: .coreLicenseActive,
                 expiresAt: sessionExpiry,
             )
-                             }, persist: { _ in },
-            delete: { _ in },),
+            }, persist: { _ in },
+            delete: { _ in }),
             snapshotClient: AccessStatusSnapshotClient(
                 load: { cachedSnapshot },
                 save: { _ in },
@@ -1175,8 +1178,8 @@ extension ACC002CheckEntitlementStatusTests {
                 status: .coreLicenseActive,
                 expiresAt: sessionExpiry,
             )
-                             }, persist: { _ in },
-            delete: { _ in },),
+            }, persist: { _ in },
+            delete: { _ in }),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
@@ -1253,8 +1256,8 @@ extension ACC002CheckEntitlementStatusTests {
                 status: .coreLicenseActive,
                 expiresAt: sessionExpiry,
             )
-                             }, persist: { _ in },
-            delete: { _ in },),
+            }, persist: { _ in },
+            delete: { _ in }),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
@@ -1329,8 +1332,8 @@ extension ACC002CheckEntitlementStatusTests {
                 status: .coreLicenseActive,
                 expiresAt: currentExpiry,
             )
-                             }, persist: { _ in },
-            delete: { _ in },),
+            }, persist: { _ in },
+            delete: { _ in }),
             snapshotClient: AccessStatusSnapshotClient(
                 load: { cachedSnapshot },
                 save: { savedSnapshots.append($0) },
