@@ -283,7 +283,7 @@ class AgentValidationTests(unittest.TestCase):
             self.write(
                 root,
                 ".agents/skills/fixture/SKILL.md",
-                "See `missing-sibling.md`.\n",
+                "Load `references/missing.md`.\n",
             )
             result, payload = self.run_cli(VALIDATE, root, "--all")
 
@@ -432,6 +432,14 @@ class AgentValidationTests(unittest.TestCase):
             self.assertEqual(payload["diagnostics"], [])
             self.write(
                 root,
+                ".sisyphus/plans/valid.md",
+                PLAN.replace("- [ ] 1. Fixture task", "  - [ ] 1. Fixture task"),
+            )
+            result, payload = self.run_cli(VERIFY, root, "--all")
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(payload["diagnostics"], [])
+            self.write(
+                root,
                 ".sisyphus/plans/invalid.md",
                 PLAN.replace(
                     "  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.\n",
@@ -445,7 +453,7 @@ class AgentValidationTests(unittest.TestCase):
                 root,
                 ".sisyphus/plans/invalid.md",
                 PLAN.replace(
-                    "- [ ] 1. Fixture task", "- [ ] Implement feature"
+                    "- [ ] 1. Fixture task", "  - [ ] Implement feature"
                 ).replace(
                     "  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.\n",
                     "",

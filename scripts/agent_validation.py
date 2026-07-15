@@ -34,10 +34,10 @@ PLAN_TODO_FIELDS = ["What to do", "Must NOT do", "Acceptance", "QA", "Commit"]
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^]]*]\(([^)#]+)(?:#[^)]+)?\)")
 SKILL_PATH_LITERAL = re.compile(r"`((?:\.agents/|\.\.?/)[^`\s*]+\.md)`")
 BARE_REFERENCE_LITERAL = re.compile(
-    r"(?:see|refer to|load|read)\s+`([^`/\s*]+\.md)`", re.IGNORECASE
+    r"(?:see|refer to|load|read)\s+`([^`\s*]+\.md)`", re.IGNORECASE
 )
-CHECKBOX_TODO = re.compile(r"^- \[[ xX]] .+")
-TODO = re.compile(r"^- \[[ xX]] \d+\. .+")
+CHECKBOX_TODO = re.compile(r"^\s{0,3}- \[[ xX]] .+")
+TODO = re.compile(r"^\s{0,3}- \[[ xX]] \d+\. .+")
 
 
 def diagnostic(
