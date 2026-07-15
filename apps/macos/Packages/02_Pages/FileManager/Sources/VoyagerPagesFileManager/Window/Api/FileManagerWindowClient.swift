@@ -82,10 +82,7 @@ public extension DependencyValues {
 @MainActor private var fileManagerWindowRequestNewWindow: ((String?) -> Void)?
 @MainActor private var fileManagerWindowRequestNewTab: ((String?) -> Void)?
 @MainActor private var fileManagerWindowResolveStore: ((UUID) -> StoreOf<FileManagerFeature>?)?
-@MainActor private var fileManagerWindowSessionLapseStore: (() -> Store<
-    AccountAccessFeature.State?,
-    AccountAccessAction,
->)?
+@MainActor private var fileManagerSessionLapseProvider: FileManagerSessionLapseGuardProvider?
 @MainActor private var fileManagerWindowOnBecameKey: ((UUID) -> Void)?
 @MainActor private var fileManagerWindowOnResignedKey: ((UUID) -> Void)?
 @MainActor private var fileManagerWindowOnClosed: ((UUID) -> Void)?
@@ -147,6 +144,19 @@ public func makeFileManagerWindowClientLive() -> FileManagerWindowClient {
     )
 }
 
+public struct FileManagerSessionLapseGuardProvider: Sendable {
+    public let resolveStore: @MainActor @Sendable () -> Store<AccountAccessFeature.State?, AccountAccessAction>
+    public let resolveState: @MainActor @Sendable () -> AccountAccessFeature.State?
+
+    public init(
+        resolveStore: @escaping @MainActor @Sendable () -> Store<AccountAccessFeature.State?, AccountAccessAction>,
+        resolveState: @escaping @MainActor @Sendable () -> AccountAccessFeature.State?,
+    ) {
+        self.resolveStore = resolveStore
+        self.resolveState = resolveState
+    }
+}
+
 public struct FileManagerWindowKeyCallbacks {
     public let onBecameKey: @MainActor (UUID) -> Void
     public let onResignedKey: @MainActor (UUID) -> Void
@@ -169,12 +179,12 @@ public func configureFileManagerWindowClientLive(
     requestNewTab: @escaping (String?) -> Void,
     resolveFileManagerStore: @escaping (UUID) -> StoreOf<FileManagerFeature>?,
     windowKeyCallbacks: FileManagerWindowKeyCallbacks,
-    resolveSessionLapseGuardStore: @escaping () -> Store<AccountAccessFeature.State?, AccountAccessAction>,
+    sessionLapseGuardProvider: FileManagerSessionLapseGuardProvider,
 ) {
     fileManagerWindowRequestNewWindow = requestNewWindow
     fileManagerWindowRequestNewTab = requestNewTab
     fileManagerWindowResolveStore = resolveFileManagerStore
-    fileManagerWindowSessionLapseStore = resolveSessionLapseGuardStore
+    fileManagerSessionLapseProvider = sessionLapseGuardProvider
     fileManagerWindowOnBecameKey = windowKeyCallbacks.onBecameKey
     fileManagerWindowOnResignedKey = windowKeyCallbacks.onResignedKey
     fileManagerWindowOnClosed = windowKeyCallbacks.onClosed
@@ -304,7 +314,8 @@ private func makeManagedWindowController(
         store: fileManagerStore,
         windowUndoManager: undoManager,
         path: nil,
-        sessionLapseGuardStore: fileManagerWindowSessionLapseStore?(),
+        sessionLapseGuardStore: fileManagerSessionLapseProvider?.resolveStore(),
+        sessionLapseGuardState: fileManagerSessionLapseProvider?.resolveState,
         onBecameKey: { id in
             fileManagerWindowOnBecameKey?(id)
         },

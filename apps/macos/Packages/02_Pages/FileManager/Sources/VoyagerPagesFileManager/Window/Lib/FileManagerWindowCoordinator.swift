@@ -8,10 +8,23 @@ import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
+    @MainActor
+    private struct SessionLapseGuardContext {
+        let store: Store<AccountAccessFeature.State?, AccountAccessAction>
+        let resolveState: @MainActor () -> AccountAccessFeature.State?
+
+        init(
+            store: Store<AccountAccessFeature.State?, AccountAccessAction>,
+            resolveState: (@MainActor () -> AccountAccessFeature.State?)?,
+        ) {
+            self.store = store
+            self.resolveState = resolveState ?? { store.withState(\.self) }
+        }
+    }
+
     public let windowID: UUID
     public let windowUndoManager: UndoManager
     public let store: StoreOf<FileManagerFeature>
-    private let sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>?
     private let onBecameKey: (@MainActor (UUID) -> Void)?
     private let onResignedKey: (@MainActor (UUID) -> Void)?
     private let onWillClose: (@MainActor (UUID) -> Void)?
@@ -24,6 +37,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         windowUndoManager: UndoManager,
         path: String? = nil,
         sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>? = nil,
+        sessionLapseGuardState: (@MainActor () -> AccountAccessFeature.State?)? = nil,
         onBecameKey: (@MainActor (UUID) -> Void)? = nil,
         onResignedKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
@@ -33,7 +47,6 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         self.windowID = windowID
         self.store = store
         self.windowUndoManager = windowUndoManager
-        self.sessionLapseGuardStore = sessionLapseGuardStore
         self.onBecameKey = onBecameKey
         self.onResignedKey = onResignedKey
         self.onWillClose = onWillClose
@@ -42,7 +55,9 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         let window = Self.makeWindow(
             store: store,
             path: path,
-            sessionLapseGuardStore: sessionLapseGuardStore,
+            sessionLapseGuard: sessionLapseGuardStore.map {
+                SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
+            },
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
         )
@@ -57,6 +72,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         path: String? = nil,
         duplicateState: FileManagerFeature.State? = nil,
         sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>? = nil,
+        sessionLapseGuardState: (@MainActor () -> AccountAccessFeature.State?)? = nil,
         onBecameKey: (@MainActor (UUID) -> Void)? = nil,
         onResignedKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
@@ -81,7 +97,6 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         self.windowID = windowID
         self.store = store
         windowUndoManager = undoManager
-        self.sessionLapseGuardStore = sessionLapseGuardStore
         self.onBecameKey = onBecameKey
         self.onResignedKey = onResignedKey
         self.onWillClose = onWillClose
@@ -90,7 +105,9 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         let window = Self.makeWindow(
             store: store,
             path: path,
-            sessionLapseGuardStore: sessionLapseGuardStore,
+            sessionLapseGuard: sessionLapseGuardStore.map {
+                SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
+            },
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
         )
@@ -138,7 +155,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
     private static func makeWindow(
         store: StoreOf<FileManagerFeature>,
         path: String?,
-        sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>?,
+        sessionLapseGuard: SessionLapseGuardContext?,
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)?,
         initialWindowSizeProvider: (() -> NSSize?)?,
     ) -> NSWindow {
@@ -148,7 +165,8 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
             FileManagerWindowSplitCoordinator(
                 store: store,
                 isDark: FileManagerWindowChrome.currentIsDark,
-                sessionLapseGuardStore: sessionLapseGuardStore,
+                sessionLapseGuardStore: sessionLapseGuard?.store,
+                sessionLapseGuardState: sessionLapseGuard?.resolveState,
             )
         }
 
