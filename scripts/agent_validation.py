@@ -102,9 +102,19 @@ def git_paths(root: Path, mode: str, base_ref: str | None) -> set[str]:
         return paths
 
     paths: set[str] = set()
+    deleted_paths: set[Path] = set()
     for line in completed.stdout.splitlines():
         if len(line) >= 4:
-            paths.add(line[3:].split(" -> ")[-1])
+            path_string = line[3:].split(" -> ")[-1]
+            paths.add(path_string)
+            if (
+                "D" in line[:2]
+                and path_string.startswith(".agents/")
+                and path_string.endswith(".md")
+            ):
+                deleted_paths.add((root / path_string).resolve())
+    if deleted_paths:
+        paths.update(markdown_referrers(root, deleted_paths))
     untracked = subprocess.run(
         ["git", "ls-files", "--others", "--exclude-standard"],
         cwd=root,

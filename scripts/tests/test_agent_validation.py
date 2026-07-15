@@ -304,6 +304,24 @@ class AgentValidationTests(unittest.TestCase):
 
         self.assert_exact_diagnostic(result, payload, "HARNESS_DEAD_REFERENCE")
 
+    def test_working_tree_deleted_target_checks_unchanged_referrer(self) -> None:
+        temp = self.make_repo()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        self.write(
+            root,
+            ".agents/skills/fixture/SKILL.md",
+            "[guide](references/guide.md)\n",
+        )
+        self.write(root, ".agents/skills/fixture/references/guide.md", "# Guide\n")
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "fixture"], cwd=root, check=True)
+        (root / ".agents/skills/fixture/references/guide.md").unlink()
+
+        result, payload = self.run_cli(VALIDATE, root, "--working-tree")
+
+        self.assert_exact_diagnostic(result, payload, "HARNESS_DEAD_REFERENCE")
+
     def test_nested_rule_directories_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
