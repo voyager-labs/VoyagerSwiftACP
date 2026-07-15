@@ -11,15 +11,26 @@ import VoyagerShared
 import XCTest
 
 private actor DirectoryLoadSuspensionGate {
-    private var continuation: CheckedContinuation<[EntryModel], Never>?
+    enum Completion {
+        case entries([EntryModel])
+        case failure
+    }
+
+    private var continuation: CheckedContinuation<Completion, Never>?
     private var entryWaiters: [CheckedContinuation<Void, Never>] = []
 
-    func wait() async -> [EntryModel] {
-        await withCheckedContinuation { continuation in
+    func wait() async throws -> [EntryModel] {
+        let completion = await withCheckedContinuation { continuation in
             self.continuation = continuation
             let waiters = entryWaiters
             entryWaiters.removeAll()
             waiters.forEach { $0.resume() }
+        }
+        switch completion {
+        case let .entries(entries):
+            return entries
+        case .failure:
+            throw Failure.expected
         }
     }
 
@@ -28,10 +39,25 @@ private actor DirectoryLoadSuspensionGate {
         await withCheckedContinuation { entryWaiters.append($0) }
     }
 
-    func resume(with entries: [EntryModel]) {
-        continuation?.resume(returning: entries)
+    func resume(with completion: Completion) {
+        continuation?.resume(returning: completion)
         continuation = nil
     }
+
+    private enum Failure: Error {
+        case expected
+    }
+}
+
+private struct DirectoryLoadFailureRetryFixture {
+    let homeID: ContentTabID
+    let directoryID: ContentTabID
+    let directoryPath: String
+    let staleEntry: EntryModel
+    let gate: DirectoryLoadSuspensionGate
+    let loadPaths: LockIsolated<[String]>
+    let eventContinuation: LockIsolated<AsyncStream<[FileChangeGatewayEvent]>.Continuation?>
+    let store: TestStore<FileManagerFeature.State, FileManagerWindowAction>
 }
 
 @MainActor
@@ -96,6 +122,15 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         eventContinuation.value?.finish()
         await store.finish()
+    }
+
+    /// CTM-005-independent_content_tab_session (VOY-578): watcher reload 실패 후 빈 성공만 snapshot을 완료함
+    /// 유효 snapshot의 same-path watcher reload가 실패한 뒤 retry로 빈 Directory를 성공 복원하는 lifecycle을 검증한다.
+    /// - 검증 내용: load 시작 시 marker 무효화, 실패 시 빈 presentation 유지, 빈 성공 후 watcher-only 복원
+    /// - 사전 조건: 기존 entry가 있는 완료 snapshot과 continuation 기반 실패/빈 성공 loader가 있음
+    /// - 기대 결과: 실패 snapshot은 재진입 때 reload하고, 성공한 빈 snapshot은 이후 load 없이 watcher만 재시작함
+    func testWatcherReloadFailureRetriesBeforeSuccessfulEmptyWatcherOnlyRestore() async {
+        await verifyWatcherReloadFailureRetriesBeforeSuccessfulEmptyWatcherOnlyRestore()
     }
 
     /// CTM-005-independent_content_tab_session (VOY-578): 저장 snapshot이 없으면 기존 Directory load 경로를 유지함
@@ -200,7 +235,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: { dependencies in
             dependencies.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            dependencies.entryLoadingClient.loadItems = { _, _ in await gate.wait() }
+            dependencies.entryLoadingClient.loadItems = { _, _ in try await gate.wait() }
             dependencies.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in continuation.finish() }
             }
@@ -214,7 +249,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await gate.waitUntilWaiting()
         await store.send(.contentTabs(.setCurrent(secondID)))
         await store.receive(\.content.internal.restartFolderWatcher, secondPath)
-        await gate.resume(with: [staleEntry])
+        await gate.resume(with: .entries([staleEntry]))
         await store.finish()
 
         XCTAssertEqual(store.state.content.navigation.currentPath, secondPath)
@@ -264,7 +299,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertEqual(savedInFlightSnapshot.navigation.currentPath, secondPath)
         XCTAssertEqual(savedInFlightSnapshot.entryViewLayout.entries.map(\.fullPath), [firstEntry.fullPath])
         XCTAssertNil(savedInFlightSnapshot.completedDirectorySnapshotPath)
-        await gate.resume(with: [lateEntry])
+        await gate.resume(with: .entries([lateEntry]))
         await store.finish()
         XCTAssertEqual(
             store.state.tabContentStates[directoryID]?.entryViewLayout.entries.map(\.fullPath),
@@ -10008,6 +10043,103 @@ extension CTM005IndependentContentTabSessionTests {
 // MARK: - Helpers
 
 private extension CTM005IndependentContentTabSessionTests {
+    func verifyWatcherReloadFailureRetriesBeforeSuccessfulEmptyWatcherOnlyRestore() async {
+        let fixture = makeWatcherReloadFailureRetryFixture()
+        let store = fixture.store
+
+        await store.send(.contentTabs(.setCurrent(fixture.directoryID)))
+        await store.receive(\.content.internal.restartFolderWatcher, fixture.directoryPath)
+        XCTAssertEqual(store.state.content.entryViewLayout.entries, [fixture.staleEntry])
+
+        let changedPath = "\(fixture.directoryPath)/Changed.txt"
+        fixture.eventContinuation.value?.yield([
+            FileChangeGatewayEvent(
+                path: changedPath,
+                flags: UInt32(kFSEventStreamEventFlagItemCreated),
+            ),
+        ])
+        await store.receive(\.content.externalFileSystemChanged, [changedPath])
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
+        await fixture.gate.waitUntilWaiting()
+        XCTAssertNil(store.state.content.completedDirectorySnapshotPath)
+
+        await fixture.gate.resume(with: .failure)
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoadFailed)
+        await store.skipReceivedActions()
+        XCTAssertTrue(store.state.content.entryViewLayout.entries.isEmpty)
+        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.items.isEmpty)
+        XCTAssertNil(store.state.content.completedDirectorySnapshotPath)
+
+        await store.send(.contentTabs(.setCurrent(fixture.homeID)))
+        await store.skipReceivedActions()
+        await store.send(.contentTabs(.setCurrent(fixture.directoryID)))
+        await store.receive(\.content.internal.applyNavigationState, .folder(fixture.directoryPath))
+        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
+        await fixture.gate.waitUntilWaiting()
+        await fixture.gate.resume(with: .entries([]))
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.skipReceivedActions()
+        assertSuccessfulEmptyDirectorySnapshot(fixture, store: store)
+
+        await store.send(.contentTabs(.setCurrent(fixture.homeID)))
+        await store.skipReceivedActions()
+        await store.send(.contentTabs(.setCurrent(fixture.directoryID)))
+        await store.receive(\.content.internal.restartFolderWatcher, fixture.directoryPath)
+        assertSuccessfulEmptyDirectorySnapshot(fixture, store: store)
+
+        fixture.eventContinuation.value?.finish()
+        await store.finish()
+    }
+
+    func makeWatcherReloadFailureRetryFixture() -> DirectoryLoadFailureRetryFixture {
+        let homeID = ContentTabID()
+        let directoryID = ContentTabID()
+        let directoryPath = "/Users/test/Desktop"
+        let staleEntry = EntryModel.temporaryFolder(id: "\(directoryPath)/Stale", name: "Stale")
+        let gate = DirectoryLoadSuspensionGate()
+        let loadPaths = LockIsolated<[String]>([])
+        let eventContinuation = LockIsolated<AsyncStream<[FileChangeGatewayEvent]>.Continuation?>(nil)
+        var state = makeDirectoryHandoffState(
+            homeID: homeID,
+            tabs: [.init(id: directoryID, anchorPath: directoryPath, savedPath: directoryPath)],
+        )
+        state.tabContentStates[directoryID]?.entryViewLayout.entries = [staleEntry]
+        state.tabContentStates[directoryID]?.entryViewLayout.entryOperations.items = [staleEntry]
+
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { url, _ in
+                loadPaths.withValue { $0.append(url.path) }
+                return try await gate.wait()
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in eventContinuation.setValue(continuation) }
+            }
+        }
+        // store.exhaustivity = .off: tab handoff 부수 action보다 VOY-578 failure/snapshot lifecycle에 집중함
+        store.exhaustivity = .off
+        return DirectoryLoadFailureRetryFixture(
+            homeID: homeID,
+            directoryID: directoryID,
+            directoryPath: directoryPath,
+            staleEntry: staleEntry,
+            gate: gate,
+            loadPaths: loadPaths,
+            eventContinuation: eventContinuation,
+            store: store,
+        )
+    }
+
+    func assertSuccessfulEmptyDirectorySnapshot(
+        _ fixture: DirectoryLoadFailureRetryFixture,
+        store: TestStore<FileManagerFeature.State, FileManagerWindowAction>,
+    ) {
+        XCTAssertEqual(fixture.loadPaths.value, [fixture.directoryPath, fixture.directoryPath])
+        XCTAssertTrue(store.state.content.entryViewLayout.entries.isEmpty)
+        XCTAssertEqual(store.state.content.completedDirectorySnapshotPath, fixture.directoryPath)
+    }
+
     func makeDirtyCollectionContent() -> FileManagerContentFeature.State {
         var content = FileManagerContentFeature.State()
         content.entryViewLayout.isCollectionMode = true
@@ -10089,7 +10221,7 @@ private extension CTM005IndependentContentTabSessionTests {
                     paths.append(url.path)
                     return paths.count
                 }
-                return requestIndex == 1 ? await gate.wait() : []
+                return requestIndex == 1 ? try await gate.wait() : []
             }
             dependencies.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in continuation.finish() }

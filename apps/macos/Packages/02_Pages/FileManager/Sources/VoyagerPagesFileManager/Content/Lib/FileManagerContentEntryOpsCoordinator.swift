@@ -10,6 +10,9 @@ enum FileManagerContentEntryOpsCoordinator {
         state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
         switch action {
+        case let .loading(.loadItems(path, _)):
+            invalidateCompletedDirectorySnapshotIfMatching(path: path, state: &state)
+
         case let .loading(.itemsLoaded(entries)):
             handleItemsLoaded(entries: entries, state: &state)
 
@@ -137,6 +140,19 @@ enum FileManagerContentEntryOpsCoordinator {
             return .none
         }
         return .send(.entryViewLayout(.internal(.removeCollectionPaths(paths))))
+    }
+
+    private static func invalidateCompletedDirectorySnapshotIfMatching(
+        path: String,
+        state: inout FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        guard case let .folder(currentPath) = state.navigation.navigationState,
+              normalizedPath(currentPath) == normalizedPath(path)
+        else {
+            return .none
+        }
+        state.completedDirectorySnapshotPath = nil
+        return .none
     }
 
     /// itemsLoaded 후 pendingSelectEntryID가 있으면 해당 엔트리를 선택 focus
