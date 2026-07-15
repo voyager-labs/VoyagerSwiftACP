@@ -34,6 +34,9 @@ struct FileManagerContentNavigationBridgeReducer {
                 state.entryViewLayout.savedScrollOffset = state.navigation.scrollPositions[scrollPositionKey]
                 return applyNavigationStateEffect(navigationState, state: state)
 
+            case let .internal(.restartFolderWatcher(path)):
+                return observeFolderChangesEffect(path: path)
+
             case .view(.selectAllEntries):
                 return .send(.entryViewLayout(.internal(.applySelectAll(
                     orderedItemIds: state.entryViewLayout.entries.map(\.id),

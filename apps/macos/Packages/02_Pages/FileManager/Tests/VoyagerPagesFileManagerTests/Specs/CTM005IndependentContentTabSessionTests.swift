@@ -10,74 +10,258 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 import XCTest
 
+private actor DirectoryLoadSuspensionGate {
+    private var continuation: CheckedContinuation<[EntryModel], Never>?
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async -> [EntryModel] {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            let waiters = entryWaiters
+            entryWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+        }
+    }
+
+    func waitUntilWaiting() async {
+        guard continuation == nil else { return }
+        await withCheckedContinuation { entryWaiters.append($0) }
+    }
+
+    func resume(with entries: [EntryModel]) {
+        continuation?.resume(returning: entries)
+        continuation = nil
+    }
+}
+
 @MainActor
 final class CTM005IndependentContentTabSessionTests: XCTestCase {
     // MARK: - CTM-005-independent_content_tab_session
 
+    /// CTM-005-independent_content_tab_session (VOY-578): 유효한 빈 Directory snapshot은 reload 없이 즉시 복원함
+    /// 저장 entries가 비어 있어도 anchor와 folder route가 같은 위치면 snapshot을 유효하게 취급하는 회귀를 검증한다.
+    /// - 검증 내용: tab 전환 직후 loadItems 0회, watcher 등록, 이후 filesystem event에 의한 reload
+    /// - 사전 조건: target tabContentStates에 빈 entries와 동일한 Directory anchor/folder route가 저장됨
+    /// - 기대 결과: 복원 시 watcher만 시작하고, 후속 filesystem event에서만 directory load를 실행함
     func testSwitchingTabsRestoresContentSessionAndRestartsFolderWatcher() async {
         let homeID = ContentTabID()
         let directoryID = ContentTabID()
-        let homePath = "/Users/test/HomeSession"
         let directoryPath = "/Users/test/Desktop"
-        let changedPath = "\(directoryPath)/Changed.txt"
-        var homeContent = FileManagerContentFeature.State()
-        homeContent.navigation.seedInitialFolderPath(homePath)
-        var directoryContent = FileManagerContentFeature.State()
-        directoryContent.navigation.seedInitialFolderPath(directoryPath)
-        var state = FileManagerFeature.State()
-        state.contentTabs = ContentTabState(
-            tabs: [
-                ContentTabItem(
-                    id: homeID,
-                    page: .home,
-                    anchor: .homeDefault,
-                    isPinned: false,
-                    title: "Home",
-                    iconName: "house",
-                ),
-                ContentTabItem(
-                    id: directoryID,
-                    page: .directory,
-                    anchor: .directory(path: directoryPath),
-                    isPinned: false,
-                    title: "Desktop",
-                    iconName: "folder",
-                ),
-            ],
-            activeTabID: homeID,
-            recentlyClosed: nil,
+        let loadPaths = LockIsolated<[String]>([])
+        let watchedRoots = LockIsolated<[[String]]>([])
+        let eventContinuation = LockIsolated<AsyncStream<[FileChangeGatewayEvent]>.Continuation?>(nil)
+        let state = makeDirectoryHandoffState(
+            homeID: homeID,
+            tabs: [.init(id: directoryID, anchorPath: directoryPath, savedPath: directoryPath)],
         )
-        state.content = homeContent
-        state.tabContentStates = [homeID: homeContent, directoryID: directoryContent]
-        state.syncContentTabSidebarItems()
+        XCTAssertEqual(state.tabContentStates[directoryID]?.entryViewLayout.entries.isEmpty, true)
 
-        let store = TestStore(initialState: state) {
-            FileManagerFeature()
-        } withDependencies: {
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { url, _ in
+                loadPaths.withValue { $0.append(url.path) }
+                return []
+            }
             $0.fileChangeGatewayClient.updateInterests = { interests in
-                XCTAssertEqual(interests.map(\.roots), [[directoryPath]])
-                XCTAssertEqual(interests.map(\.purpose), [.visibleFolderReload])
+                watchedRoots.withValue { $0.append(contentsOf: interests.map(\.roots)) }
             }
             $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
-                    continuation.yield([
-                        FileChangeGatewayEvent(
-                            path: changedPath,
-                            flags: UInt32(kFSEventStreamEventFlagItemCreated),
-                        ),
-                    ])
-                    continuation.finish()
+                    eventContinuation.setValue(continuation)
                 }
             }
         }
+        // store.exhaustivity = .off: window handoff의 sidebar/cleanup action보다 VOY-578 watcher-only 계약에 집중함
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.setCurrent(directoryID)))
+        await store.receive(\.content.internal.restartFolderWatcher, directoryPath)
 
         XCTAssertEqual(store.state.content.navigation.currentPath, directoryPath)
-        XCTAssertEqual(store.state.tabContentStates[homeID]?.navigation.currentPath, homePath)
+        XCTAssertTrue(store.state.content.entryViewLayout.entries.isEmpty)
+        XCTAssertTrue(loadPaths.value.isEmpty)
+        XCTAssertEqual(watchedRoots.value, [[directoryPath]])
+
+        let changedPath = "\(directoryPath)/Changed.txt"
+        eventContinuation.value?.yield([
+            FileChangeGatewayEvent(
+                path: changedPath,
+                flags: UInt32(kFSEventStreamEventFlagItemCreated),
+            ),
+        ])
         await store.receive(\.content.externalFileSystemChanged, [changedPath])
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        XCTAssertEqual(loadPaths.value, [directoryPath])
+
+        eventContinuation.value?.finish()
+        await store.finish()
+    }
+
+    /// CTM-005-independent_content_tab_session (VOY-578): 저장 snapshot이 없으면 기존 Directory load 경로를 유지함
+    /// 새로 복원할 content state가 없는 Directory tab은 watcher-only 최적화 대상이 아님을 검증한다.
+    /// - 검증 내용: target tabContentStates 누락 시 applyNavigationState와 loadItems 실행
+    /// - 사전 조건: target anchor는 Directory지만 target tab ID의 저장 content state가 없음
+    /// - 기대 결과: target Directory 경로를 한 번 load하고 watcher를 시작함
+    func testSwitchingToDirectoryWithoutSnapshotFallsBackToLoad() async {
+        let homeID = ContentTabID()
+        let directoryID = ContentTabID()
+        let directoryPath = "/Users/test/MissingSnapshot"
+        let loadPaths = LockIsolated<[String]>([])
+        let state = makeDirectoryHandoffState(
+            homeID: homeID,
+            tabs: [.init(id: directoryID, anchorPath: directoryPath, savedPath: nil)],
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { url, _ in
+                loadPaths.withValue { $0.append(url.path) }
+                return []
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        // store.exhaustivity = .off: full resync의 child action 전체보다 VOY-578 fallback load 호출을 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(directoryID)))
+        await store.receive(\.content.internal.applyNavigationState, .folder(directoryPath))
+        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+
+        XCTAssertEqual(loadPaths.value, [directoryPath])
+        await store.finish()
+    }
+
+    /// CTM-005-independent_content_tab_session (VOY-578): anchor와 저장 route가 다르면 기존 Directory load 경로를 유지함
+    /// 다른 폴더의 저장 snapshot을 target Directory에 재사용하지 않고 anchor 기준으로 다시 동기화하는 회귀를 검증한다.
+    /// - 검증 내용: Directory anchor/folder route 표준화 경로 불일치 시 loadItems 실행
+    /// - 사전 조건: target tabContentStates는 존재하지만 saved folder path가 target anchor와 다름
+    /// - 기대 결과: 저장 entries 최적화를 사용하지 않고 target anchor 경로를 한 번 load함
+    func testSwitchingToDirectoryWithMismatchedSnapshotFallsBackToLoad() async {
+        let homeID = ContentTabID()
+        let directoryID = ContentTabID()
+        let directoryPath = "/Users/test/Target"
+        let loadPaths = LockIsolated<[String]>([])
+        let state = makeDirectoryHandoffState(
+            homeID: homeID,
+            tabs: [.init(id: directoryID, anchorPath: directoryPath, savedPath: "/Users/test/Stale")],
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { url, _ in
+                loadPaths.withValue { $0.append(url.path) }
+                return []
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        // store.exhaustivity = .off: full resync의 child action 전체보다 VOY-578 mismatch fallback 호출을 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(directoryID)))
+        await store.receive(\.content.internal.applyNavigationState, .folder(directoryPath))
+        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+
+        XCTAssertEqual(loadPaths.value, [directoryPath])
+        await store.finish()
+    }
+
+    /// CTM-005-independent_content_tab_session (VOY-578): 취소된 이전 Directory load 응답은 복원 snapshot을 덮어쓰지 않음
+    /// 탭 A의 취소를 무시하는 지연 loader가 완료돼도 탭 B의 저장 entries가 유지되는 회귀를 검증한다.
+    /// - 검증 내용: A load 보류 후 B snapshot 전환, A 응답 재개 뒤 B entries 유지
+    /// - 사전 조건: A의 loader가 checked continuation에서 대기하고 B에는 유효한 Directory snapshot이 저장됨
+    /// - 기대 결과: 취소된 A load가 itemsLoaded를 보내지 않고 B snapshot entries가 보존됨
+    func testCancelledDirectoryLoadResponseDoesNotOverwriteRestoredSnapshot() async throws {
+        let homeID = ContentTabID()
+        let firstID = ContentTabID()
+        let secondID = ContentTabID()
+        let firstPath = "/Users/test/First"
+        let secondPath = "/Users/test/Second"
+        let staleEntry = EntryModel.temporaryFolder(id: "\(firstPath)/Stale", name: "Stale")
+        let preservedEntry = EntryModel.temporaryFolder(id: "\(secondPath)/Preserved", name: "Preserved")
+        let gate = DirectoryLoadSuspensionGate()
+        var state = makeDirectoryHandoffState(
+            homeID: homeID,
+            tabs: [
+                .init(id: firstID, anchorPath: firstPath, savedPath: firstPath),
+                .init(id: secondID, anchorPath: secondPath, savedPath: secondPath),
+            ],
+        )
+        state.contentTabs.activeTabID = firstID
+        state.content = try XCTUnwrap(state.tabContentStates[firstID])
+        state.tabContentStates[secondID]?.entryViewLayout.entries = [preservedEntry]
+        state.tabContentStates[secondID]?.entryViewLayout.entryOperations.items = [preservedEntry]
+
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { _, _ in await gate.wait() }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        // store.exhaustivity = .off: handoff 부수 action보다 취소된 loader의 stale 응답 차단 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .loadItems(path: firstPath, showHidden: false),
+        )))))
+        await gate.waitUntilWaiting()
+        await store.send(.contentTabs(.setCurrent(secondID)))
+        await store.receive(\.content.internal.restartFolderWatcher, secondPath)
+        await gate.resume(with: [staleEntry])
+        await store.finish()
+
+        XCTAssertEqual(store.state.content.navigation.currentPath, secondPath)
+        XCTAssertEqual(store.state.content.entryViewLayout.entries, [preservedEntry])
+        XCTAssertEqual(Array(store.state.content.entryViewLayout.entryOperations.items), [preservedEntry])
+    }
+
+    /// CTM-005-independent_content_tab_session (VOY-578): 빠른 snapshot handoff는 이전 watcher를 취소하고 최신 경로를 감시함
+    /// 연속 tab 전환에서 watcher cancelInFlight 계약과 마지막 target snapshot 보존을 결정적으로 검증한다.
+    /// - 검증 내용: 첫 watcher 시작 후 두 번째 watcher 시작 전에 이전 interest 제거, 최종 watcher event 전달
+    /// - 사전 조건: 서로 다른 두 Directory tab에 유효한 빈 snapshot이 저장되고 첫 watcher가 장기 실행 중
+    /// - 기대 결과: start A, stop A, start B 순서이며 active content와 전달 event가 B 경로를 가리킴
+    func testRapidValidSnapshotHandoffSupersedesPreviousFolderWatcher() async {
+        let homeID = ContentTabID()
+        let firstID = ContentTabID()
+        let secondID = ContentTabID()
+        let firstPath = "/Users/test/First"
+        let secondPath = "/Users/test/Second"
+        let watcherEvents = LockIsolated<[String]>([])
+        let removedInterestIDs = LockIsolated<Set<String>>([])
+        let state = makeDirectoryHandoffState(
+            homeID: homeID,
+            tabs: [
+                .init(id: firstID, anchorPath: firstPath, savedPath: firstPath),
+                .init(id: secondID, anchorPath: secondPath, savedPath: secondPath),
+            ],
+        )
+        let store = makeSupersedingWatcherStore(
+            state: state,
+            watcherEvents: watcherEvents,
+            removedInterestIDs: removedInterestIDs,
+        )
+        // store.exhaustivity = .off: 연속 handoff의 부수 reload action보다 watcher 취소 순서와 최신 snapshot을 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(firstID)))
+        await store.receive(\.content.internal.restartFolderWatcher, firstPath)
+        await store.receive(\.content.externalFileSystemChanged, ["\(firstPath)/Changed.txt"])
+        await store.send(.contentTabs(.setCurrent(secondID)))
+        await store.receive(\.content.internal.restartFolderWatcher, secondPath)
+        await store.receive(\.content.externalFileSystemChanged, ["\(secondPath)/Changed.txt"])
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, secondID)
+        XCTAssertEqual(store.state.content.navigation.currentPath, secondPath)
+        XCTAssertEqual(Array(watcherEvents.value.prefix(3)), ["start:\(firstPath)", "stop", "start:\(secondPath)"])
+        await store.send(.content(.internal(.stopObservingSystemNotifications)))
+        XCTAssertEqual(watcherEvents.value, ["start:\(firstPath)", "stop", "start:\(secondPath)", "stop"])
         await store.finish()
     }
 
@@ -492,57 +676,86 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-005-independent_content_tab_session (VOY-578): active Directory tab 닫기 시 fallback snapshot을 reload 없이 복원함
+    /// 활성 탭 닫기 handoff도 일반 탭 전환과 동일한 watcher-only snapshot 계약을 따르는지 검증한다.
+    /// - 검증 내용: loadItems 0회, fallback watcher 재등록, entries와 layout 보존
+    /// - 사전 조건: 서로 다른 두 Directory 탭과 fallback의 유효한 저장 snapshot
+    /// - 기대 결과: fallback 탭이 활성화되고 저장 content를 유지한 채 watcher만 다시 시작함
     func testActiveCloseRestoresFallbackTabSession() async {
-        let homeID = ContentTabID()
-        let directoryID = ContentTabID()
-        let homePath = "/Users/test/HomeSession"
-        let directoryPath = "/Users/test/Desktop"
-        var homeContent = FileManagerContentFeature.State()
-        homeContent.navigation.seedInitialFolderPath(homePath)
-        var directoryContent = FileManagerContentFeature.State()
-        directoryContent.navigation.seedInitialFolderPath(directoryPath)
+        let fallbackID = ContentTabID()
+        let activeID = ContentTabID()
+        let fallbackPath = "/Users/test/Fallback"
+        let activePath = "/Users/test/Active"
+        let preservedEntry = EntryModel.temporaryFolder(
+            id: "\(fallbackPath)/Preserved",
+            name: "Preserved",
+        )
+        let loadPaths = LockIsolated<[String]>([])
+        let watchedRoots = LockIsolated<[[String]]>([])
+        var fallbackContent = FileManagerContentFeature.State()
+        fallbackContent.navigation.seedInitialFolderPath(fallbackPath)
+        fallbackContent.entryViewLayout.mode = .grid
+        fallbackContent.entryViewLayout.entries = [preservedEntry]
+        fallbackContent.entryViewLayout.entryOperations.items = [preservedEntry]
+        var activeContent = FileManagerContentFeature.State()
+        activeContent.navigation.seedInitialFolderPath(activePath)
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
             tabs: [
                 ContentTabItem(
-                    id: homeID,
-                    page: .home,
-                    anchor: .homeDefault,
+                    id: fallbackID,
+                    page: .directory,
+                    anchor: .directory(path: fallbackPath),
                     isPinned: false,
-                    title: "Home",
-                    iconName: "house",
+                    title: "Fallback",
+                    iconName: "folder",
                 ),
                 ContentTabItem(
-                    id: directoryID,
+                    id: activeID,
                     page: .directory,
-                    anchor: .directory(path: directoryPath),
+                    anchor: .directory(path: activePath),
                     isPinned: false,
-                    title: "Desktop",
+                    title: "Active",
                     iconName: "folder",
                 ),
             ],
-            activeTabID: directoryID,
-            previousActiveTabID: homeID,
+            activeTabID: activeID,
+            previousActiveTabID: fallbackID,
             recentlyClosed: nil,
         )
-        state.content = directoryContent
-        state.tabContentStates = [homeID: homeContent, directoryID: directoryContent]
+        state.content = activeContent
+        state.tabContentStates = [fallbackID: fallbackContent, activeID: activeContent]
         state.syncContentTabSidebarItems()
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { url, _ in
+                loadPaths.withValue { $0.append(url.path) }
+                return []
+            }
+            $0.fileChangeGatewayClient.updateInterests = { interests in
+                watchedRoots.withValue { $0.append(contentsOf: interests.map(\.roots)) }
+            }
+            $0.fileChangeGatewayClient.observeEvents = { AsyncStream { _ in } }
         }
-        // KCF: FileManagerFeature의 routing reducer가 non-exhaustive side effect를 수행함
+        // store.exhaustivity = .off: close handoff의 sidebar/cleanup action보다 VOY-578 watcher-only 계약에 집중함
         store.exhaustivity = .off
 
-        await store.send(.contentTabs(.close(directoryID)))
+        await store.send(.contentTabs(.close(activeID)))
+        await store.receive(\.content.internal.restartFolderWatcher, fallbackPath)
 
-        XCTAssertEqual(store.state.contentTabs.activeTabID, homeID)
-        XCTAssertEqual(store.state.content.navigation.currentPath, homePath)
-        XCTAssertNil(store.state.tabContentStates[directoryID])
-        XCTAssertEqual(store.state.tabContentStates[homeID]?.navigation.currentPath, homePath)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, fallbackID)
+        XCTAssertEqual(store.state.content.navigation.currentPath, fallbackPath)
+        XCTAssertEqual(store.state.content.entryViewLayout.mode, .grid)
+        XCTAssertEqual(store.state.content.entryViewLayout.entries, [preservedEntry])
+        XCTAssertEqual(Array(store.state.content.entryViewLayout.entryOperations.items), [preservedEntry])
+        XCTAssertTrue(loadPaths.value.isEmpty)
+        XCTAssertEqual(watchedRoots.value, [[fallbackPath]])
+        XCTAssertNil(store.state.tabContentStates[activeID])
+        XCTAssertEqual(store.state.tabContentStates[fallbackID]?.navigation.currentPath, fallbackPath)
+        XCTAssertEqual(store.state.tabContentStates[fallbackID]?.entryViewLayout.mode, .grid)
         await store.finish()
     }
 
@@ -9709,6 +9922,85 @@ private extension CTM005IndependentContentTabSessionTests {
             ),
             savedContext: nil,
         )
+    }
+
+    struct DirectoryHandoffFixture {
+        let id: ContentTabID
+        let anchorPath: String
+        let savedPath: String?
+    }
+
+    func makeDirectoryHandoffState(
+        homeID: ContentTabID,
+        tabs fixtures: [DirectoryHandoffFixture],
+    ) -> FileManagerFeature.State {
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.navigationState = .home
+        var tabs: IdentifiedArrayOf<ContentTabItem> = [
+            ContentTabItem(
+                id: homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            ),
+        ]
+        var snapshots = [homeID: homeContent]
+        for fixture in fixtures {
+            tabs.append(ContentTabItem(
+                id: fixture.id,
+                page: .directory,
+                anchor: .directory(path: fixture.anchorPath),
+                isPinned: false,
+                title: URL(fileURLWithPath: fixture.anchorPath).lastPathComponent,
+                iconName: "folder",
+            ))
+            if let savedPath = fixture.savedPath {
+                var content = FileManagerContentFeature.State()
+                content.navigation.seedInitialFolderPath(savedPath)
+                snapshots[fixture.id] = content
+            }
+        }
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(tabs: tabs, activeTabID: homeID, recentlyClosed: nil)
+        state.content = homeContent
+        state.tabContentStates = snapshots
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    func makeSupersedingWatcherStore(
+        state: FileManagerFeature.State,
+        watcherEvents: LockIsolated<[String]>,
+        removedInterestIDs: LockIsolated<Set<String>>,
+    ) -> TestStore<FileManagerFeature.State, FileManagerWindowAction> {
+        TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileChangeGatewayClient.updateInterests = { interests in
+                guard let root = interests.first?.roots.first else { return }
+                watcherEvents.withValue { $0.append("start:\(root)") }
+            }
+            $0.fileChangeGatewayClient.removeInterests = { ids in
+                let removedNewInterest = removedInterestIDs.withValue { removedIDs in
+                    ids.map { removedIDs.insert($0).inserted }.contains(true)
+                }
+                if removedNewInterest {
+                    watcherEvents.withValue { $0.append("stop") }
+                }
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                let root = watcherEvents.value.last?.replacingOccurrences(of: "start:", with: "") ?? ""
+                return AsyncStream { continuation in
+                    continuation.yield([
+                        FileChangeGatewayEvent(
+                            path: "\(root)/Changed.txt",
+                            flags: UInt32(kFSEventStreamEventFlagItemCreated),
+                        ),
+                    ])
+                }
+            }
+        }
     }
 
     func makeRequestLock(

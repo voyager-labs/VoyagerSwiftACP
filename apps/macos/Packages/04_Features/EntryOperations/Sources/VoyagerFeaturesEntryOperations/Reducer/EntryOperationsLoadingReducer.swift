@@ -34,8 +34,12 @@ public struct EntryOperationsLoadingReducer {
                     let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
                     do {
                         let items = try await entryLoadingClient.loadItems(url, showHidden)
+                        try Task.checkCancellation()
                         await send(.loading(.itemsLoaded(items)))
+                    } catch is CancellationError {
+                        return
                     } catch {
+                        guard !Task.isCancelled else { return }
                         await send(.loading(.itemsLoaded([])))
                     }
                 }
