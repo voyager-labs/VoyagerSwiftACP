@@ -336,7 +336,7 @@ public extension AuthNetworkClient {
         throw syncError
     }
 
-    private static func sessionSyncResult(
+    internal static func sessionSyncResult(
         data: Data,
         intent: SessionSyncIntent,
         source: AccountTokensFile,
@@ -525,6 +525,7 @@ public extension AuthNetworkClient {
             accessTokenExpiresIn: session.expiresIn ?? max(0, expiresAtMs - now),
             refreshToken: refreshToken,
             refreshTokenExpiresAtMs: (session.refreshTokenExpiresAt ?? previous.refreshTokenExpiresAtMs / 1000) * 1000,
+            sessionBindingID: previous.sessionBindingID,
         )
     }
 }
