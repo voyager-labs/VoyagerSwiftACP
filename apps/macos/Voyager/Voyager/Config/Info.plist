@@ -50,7 +50,7 @@
 			<string>com.voyager.deeplink</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>voyager</string>
+				<string>$(VOYAGER_CALLBACK_SCHEME)</string>
 			</array>
 		</dict>
 	</array>
@@ -101,13 +101,11 @@
 			</dict>
 		</dict>
 	</array>
-	<key>SUEnableAutomaticChecks</key>
-	<true/>
 	<key>SUScheduledCheckInterval</key>
 	<integer>21600</integer>
 	<key>SUFeedURL</key>
     <string>https://downloads.voyager.fm/releases/appcast.xml</string>
-    <key>SUPublicEDKey</key>
+	<key>SUPublicEDKey</key>
     <string>NomZB47jirICFt7N3J9K+ONptIwZig9UdpEnAiC1JJI=</string>
 </dict>
 </plist>

@@ -12,6 +12,7 @@ schemaVersion: 2
 - Use `voyager-dev` as the default companion workflow even for medium-sized refactors in app, package, host, helper, or test targets.
 - Let `voyager-dev` classify the task shape internally and load the relevant playbooks before editing.
 - Follow `voyager-dev` references when the change touches `State`, `Action`, reducer decomposition, external observation ownership, reuse discovery, or other Voyager-local architecture rules.
+- When Settings hydration ownership moves into AppRoot/AppLifecycle, preserve or explicitly re-evaluate standalone host hydration paths such as `SettingsState.hostPreset(for:)`. SettingsHost does not run the full app lifecycle bootstrap, so host-only prehydration may need a parallel update or an explicit measurement-scope exclusion.
 
 ## Default Actions
 

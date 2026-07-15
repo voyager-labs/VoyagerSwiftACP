@@ -28,6 +28,9 @@ struct FileManagerContentSyncReducer {
 
                 case .recents, .tags, .computer:
                     return FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state)
+
+                case .home, .aiChat, .aiChatSessions:
+                    return .none
                 }
 
             default:

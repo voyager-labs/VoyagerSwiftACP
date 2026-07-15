@@ -1138,7 +1138,7 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
             $0.uuid = .incrementing
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in },
             )
         }
@@ -1288,7 +1288,7 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
             $0.uuid = .incrementing
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in },
             )
             $0.aiProviderModelListClient = AiProviderModelListClient(loadModels: { _, _ in models })
@@ -1551,7 +1551,7 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
             $0.uuid = .incrementing
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
-                saveSession: { _ in },
+                saveSession: { snapshot in snapshot },
                 deleteSession: { _ in },
             )
         }

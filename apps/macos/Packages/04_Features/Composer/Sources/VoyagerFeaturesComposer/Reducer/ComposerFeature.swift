@@ -34,8 +34,8 @@ public struct ComposerFeature {
     var registryClient
 
     nonisolated public enum CancelID: Hashable, Sendable {
-        case search
-        case filters
+        case search(ownerID: UUID?)
+        case filters(ownerID: UUID?)
         case scopeEditorSearch
         case feedbackDismiss
     }
@@ -215,7 +215,7 @@ private func handleSetPresented(
         }
 
         var effects: [Effect<ComposerFeature.Action>] = [
-            .cancel(id: ComposerFeature.CancelID.search),
+            .cancel(id: ComposerFeature.CancelID.search(ownerID: state.cancellationOwnerID)),
             .cancel(id: ComposerFeature.CancelID.feedbackDismiss),
         ]
         if shouldPreserveFilterLifecycle {
@@ -226,7 +226,7 @@ private func handleSetPresented(
             state.resetScopeEditorInteractionState(clearQuery: true)
         }
         if !shouldKeepFiltersAlive {
-            effects.append(.cancel(id: ComposerFeature.CancelID.filters))
+            effects.append(.cancel(id: ComposerFeature.CancelID.filters(ownerID: state.cancellationOwnerID)))
         }
 
         return .merge(effects)
@@ -369,7 +369,7 @@ func applyFiltersIfNeeded(
         state.activeFiltersRequestID = nil
         state.activeFiltersMetricSource = nil
         state.pendingSearchQuery = nil
-        return .cancel(id: ComposerFeature.CancelID.filters)
+        return .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.cancellationOwnerID))
     }
     state.markScopeChangeFeedbackPending(.filters(requestID))
     return .run { send in
@@ -383,7 +383,7 @@ func applyFiltersIfNeeded(
             await send(.filtersResponse(requestID, .failure(error)))
         }
     }
-    .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)
+    .cancellable(id: ComposerFeature.CancelID.filters(ownerID: state.cancellationOwnerID), cancelInFlight: true)
 }
 
 func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFiltersPayload {

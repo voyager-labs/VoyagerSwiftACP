@@ -21,6 +21,7 @@ Voyager-dev owns test selection, execution, failure analysis, fix, and rerun loo
     - First pass: fastest relevant unit/spec tests.
     - Second pass: package/module integration tests when behavior crosses boundaries.
     - Third pass: full suite only when shared reducers, package APIs, or broad dependencies changed.
+    - Do not create tests just to make verification evidence. If no existing focused test covers the change, report the proof gap instead of inventing a new suite.
 3. **Analyze failures**
     - Summarize the first failure log.
     - Classify as environment, test expectation, or product logic.
@@ -34,6 +35,22 @@ Voyager-dev owns test selection, execution, failure analysis, fix, and rerun loo
     - Record commands, pass/fail result, key failure summary, and any fix/next action.
 
 ## Test selection rules
+
+### Test creation gate
+
+This skill verifies with existing tests. It must not author new test files, helper files, or suites as a side effect of implementation verification.
+
+New or modified tests are allowed only when one of these is true:
+
+- The user explicitly asked for test authoring.
+- A feature/spec AC already owns the behavior and `spec-test-authoring` is loaded for that owning suite.
+- A failing existing test needs a minimal expectation update that preserves its original intent.
+
+If coverage is missing, prefer one of these outcomes instead of creating an ad-hoc test:
+
+1. Run the nearest existing focused test and state the remaining proof gap.
+2. Use compile/lint/build evidence when the change is mechanical or wiring-only.
+3. Route a separate explicit test-authoring task through `spec-test-authoring` with the owning spec/AC path.
 
 ### Split-target spec suites
 
@@ -50,16 +67,51 @@ xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodepro
 
 If the spec ID is the same in both targets, a grep for the spec ID should find tests in both locations. Report pass/fail per target; do not merge results.
 
+### Flow suite selection
+
+Canonical flow-document suites under `VoyagerTests/Flows/<CATEGORY>/` are selected by flow ID, not by directory path.
+
+**Human/CI commands** (via mise):
+
+```bash
+# Run one flow
+mise run macos-test-flow -- --flow onb.access_unlock
+
+# Run all flows in a category
+mise run macos-test-flow -- --category onb
+
+# List all mapped flow suites
+mise run macos-test-flow -- --list
+
+# Check structural integrity of mapped suites
+mise run macos-test-flow -- --check
+```
+
+**Agent verification rule**: Agents MUST use XcodeBuildMCP for Swift test execution, NOT the mise/shell commands above. Use the Python runner only to resolve selectors and check structure:
+
+```bash
+# Resolve the selector for an agent XcodeBuildMCP run
+python3 scripts/dev/macos_test_flow.py --flow onb.access_unlock --dry-run
+# Output: scripts/dev/macos-test.sh -only-testing:VoyagerTests/AccessUnlockFlowTests
+# Agent uses: -only-testing:VoyagerTests/AccessUnlockFlowTests in XcodeBuildMCP test_sim or equivalent
+```
+
+**v1 migration scope**: The checker reports unmigrated canonical flow documents without failing. Existing mapped suites are strict: structural mismatches (orphan suite, class/file mismatch, missing FLOW-ID marker) cause checker exit 1. Do not treat unmigrated docs as covered or blocked in v1.
+
+See `../spec-test-authoring/references/flow-test-topology.md` for the complete mapping contract.
+
+**Rollout status (v1)**: Pilot first: `AccessUnlockFlowTests` is the initial mapped suite. New and modified flows opt in next. Strict all-flow coverage is deferred to a separate approved task. No manifest, dependency graph, or CI workflow is required or planned for v1.
+
 ### Task-shape rules
 
 - `scaffold`
-    - Add at least one focused reducer test when new behavior is introduced.
+    - Prefer an existing focused reducer/spec test. Add one only through `spec-test-authoring` when the new behavior has an owning spec/AC or the user requested tests.
 - `decompose`
-    - Preserve existing tests and add focused tests for the new parent/child routing boundary.
+    - Preserve existing tests. Add boundary tests only through `spec-test-authoring` when the owning suite/AC is identified.
 - `observation-refactor`
-    - Add focused tests for start/stop lifecycle, routed semantic action, and cancellation behavior.
+    - Verify existing lifecycle tests first. Add lifecycle coverage only through `spec-test-authoring` when the owning interaction is explicit.
 - `reuse-guard`
-    - Prefer regression tests around the reused abstraction if behavior moved or widened.
+    - Prefer existing regression tests around the reused abstraction. Do not create infrastructure/helper tests solely for reuse proof.
 - For critical routed flows, keep at least one test that exercises the real downstream chain instead of proving routing only.
 - If a test intercepts a routed action and returns `.none`, treat that as routing coverage only and add a separate full-chain test when downstream execution is the real risk.
 - When behavior changes across lifecycle or callback boundaries, cover the meaningful success, failure, cancel, reload, and teardown variants rather than a single happy path.
@@ -75,6 +127,25 @@ If the spec ID is the same in both targets, a grep for the spec ID should find t
 ## TCA TestStore patterns
 
 - Use `TestStore(initialState:) { Reducer() } withDependencies: { ... }` for deterministic mock injection. Test both state mutations (in `send` closure) and received effects (`store.receive`). Use `.off` exhaustivity for complex reducer flows with computed properties.
+- `skipInFlightEffects()`는 effect 처리 중 새로 생성된 downstream effect를 **재귀적으로 처리하지 않는다**. 다단계 effect chain에서는 각 downstream effect를 명시적으로 `receive`해야 한다.
+
+### skipInFlightEffects 한계 및 대응
+
+`skipInFlightEffects()`는 현재 대기 중인 effect만 처리한다. effect 실행 중 새로 생성된 effect는 자동으로 처리되지 않는다.
+
+```swift
+// 다단계 chain: unlock delegate → openInitialWindowIfNeeded → externalFileRouter.receive
+// BAD: skipInFlightEffects로는 externalFileRouter.receive를 잡을 수 없음
+await store.send(.lifecycle(.accountAccess(.delegate(.unlocked(snapshot)))))
+store.skipInFlightEffects()  // ← openInitialWindowIfNeeded까지만 처리
+
+// GOOD: 각 downstream effect를 명시적으로 receive
+await store.send(.lifecycle(.accountAccess(.delegate(.unlocked(snapshot)))))
+await store.receive(\.lifecycle.delegate.openInitialWindowIfNeeded)
+await store.receive(\.externalFileRouter.receive)  // ← 명시적 receive
+```
+
+> **출처:** PR #329 Task 5. `kw-20260712-tca-teststore-skipinflighteffects`
 
 ## Dependency testing rules
 
@@ -103,6 +174,20 @@ If the spec ID is the same in both targets, a grep for the spec ID should find t
 ## Helper Extraction for Test Maintenance
 
 When test files grow large with repeated dependency setup, extract helpers to reduce duplication and improve readability.
+
+### SwiftLint file_length / type_body_length 위반 대응
+
+spec 테스트 파일이 SwiftLint `file_length`(기본 400줄) 또는 `type_body_length`(기본 300줄) 위반 시, suppression comment 없이 3가지로 대응한다. repo 정책상 per-edit suppression(`swiftlint:disable` 등)은 금지이다.
+
+| 우선순위     | 방식                            | 설명                                                                                                                                       |
+| ------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **A (권장)** | Support/ 폴더로 helper 추출     | `setUp`, fixture builder, mutation helper를 `Tests/.../Support/` 파일로 추출하여 class body 축소. 기존 `StateMutation.swift` 패턴과 일관됨 |
+| **B (차선)** | 별개 테스트 클래스로 spec 분할  | `ONB001RestorationTests: XCTestCase` 처럼 별개 클래스로 분할. spec ID는 유지하되 테스트 클래스를 나눔                                      |
+| **C (정책)** | `.swiftlint.yml` threshold 상향 | `file_length: 1200` 등 limit 자체 상향. project-wide policy change이므로 user 명시적 승인 필요                                             |
+
+extension 파일 분할(`+Subtopic.swift`)도 동작하지만, 같은 타입을 여러 파일에 분산시켜 가독성이 떨어질 수 있다. Support 추출을 우선 시도할 것.
+
+> **출처:** PR #329 Task 8. `kw-20260712-swiftlint-file-length-type-body-length-spec`
 
 ### When to extract
 

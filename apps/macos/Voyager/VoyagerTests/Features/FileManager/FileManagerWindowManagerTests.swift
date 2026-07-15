@@ -49,6 +49,26 @@ final class FileManagerWindowManagerTests: XCTestCase {
         )
     }
 
+    /// openInitialWindowIfNeeded는 기존 FileManager window가 있으면 중복 생성하지 않는다.
+    func test_openInitialWindowIfNeeded_doesNotDuplicateExistingFileManagerWindow() async {
+        let existingID = UUID()
+        let openCallCount = LockIsolated(0)
+
+        let store = makeStore(initialState: makeState(
+            focusedID: existingID,
+            windows: [(existingID, Spec.firstPath)],
+        )) {
+            $0.fileManagerWindowClient.open = { _ in
+                openCallCount.withValue { $0 += 1 }
+            }
+        }
+
+        await store.send(.lifecycle(.openInitialWindowIfNeeded))
+        await store.send(.lifecycle(.openInitialWindowIfNeeded))
+
+        XCTAssertEqual(openCallCount.value, 0, "기존 window가 있으면 openInitialWindowIfNeeded는 open client를 다시 호출하지 않아야 한다")
+    }
+
     // MARK: - FMW-001-open_new_file_manager_window
 
     /// FMW-001-open_new_file_manager_window: 새 윈도우 생성 및 활성 윈도우 추적
@@ -220,6 +240,39 @@ final class FileManagerWindowManagerTests: XCTestCase {
         XCTAssertEqual(closeAllCallCount.value, 1, "fileManagerWindowClient.closeAll은 정확히 한 번 호출되어야 한다")
     }
 
+    /// CTM-001-open_new_content_tab: focused FileManager window로 새 Content Tab command 라우팅.
+    /// File menu의 New Content Tab 입력은 native NSWindow tab이 아니라 focused FMW의 openNewContentTab request로 전달되어야 한다.
+    func test_newTabCommand_routesToFocusedFileManagerWindow() async {
+        let focusedID = UUID()
+        let otherID = UUID()
+
+        let store = makeStore(initialState: makeState(
+            focusedID: focusedID,
+            windows: [(focusedID, Spec.focusedPath), (otherID, Spec.backgroundPath)],
+        ))
+        store.exhaustivity = .off
+
+        await store.send(.file(.newTab))
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.request(.openNewContentTab)))) = action else {
+                return false
+            }
+            return id == focusedID
+        }
+    }
+
+    /// CTM-001-open_new_content_tab: focused window가 없으면 새 Content Tab 입력은 no-op.
+    func test_newTabCommand_noOpWhenNoFocusedWindow() async {
+        let otherID = UUID()
+
+        let store = makeStore(initialState: makeState(
+            focusedID: nil,
+            windows: [(otherID, Spec.backgroundPath)],
+        ))
+
+        await store.send(.file(.newTab))
+    }
+
     // MARK: - FMW-001-request_undo
 
     /// FMW-001-request_undo: focused 윈도우로 명령 라우팅
@@ -321,6 +374,7 @@ enum WindowManagerTestSupport {
             if let uuid {
                 $0.uuid = .constant(uuid)
             }
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
             $0.onboardingWindowClient.showIfNeeded = { onboardingRequired }
             configureDependencies?(&$0)
         }

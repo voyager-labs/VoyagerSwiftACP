@@ -79,8 +79,68 @@ git diff --check            # Check for whitespace errors before commit
 
 ## Protected local files
 
-- `opencode.json` is user-managed — edit, refactor, and restructure freely; commit changes to instructions/plugins/lsp/mcp/formatter without asking. **Never commit `permission` changes** without explicit user request.
-- `.env.prod` is copied into the Release app bundle. Never include secrets in `.env.prod`.
+- Treat `opencode.json` as a user-managed local file.
+- Never automatically reset, revert, or discard changes in `opencode.json`.
+- Never include `opencode.json` in commits unless the user explicitly asks for it.
+- `docs/canonical/` 내부 파일(콘텐츠)은 사용자가 요청하면 자유롭게 읽고 편집할 수 있다.
+- 단, **submodule pointer**(부모 레포에서 `docs/canonical`이 가리키는 커밋 참조)는 사용자가 명시적으로 inspect/update/reset/restore를 요청하지 않는 한 절대 변경하지 않는다.
+- 관련 없는 작업 중 `git status`에 submodule pointer dirty가 보여도 추적하거나 정리하지 않는다.
+
+## Plan quality conventions
+
+Plans under `.sisyphus/plans/` must follow the quality contract in `.agents/rules/11-plan-quality-contract.md`. Every implementation plan includes TDD evidence policy, test ownership convention, and commit workflow references. Agents that write or review plans must load and apply this rule.
+
+## Destructive operation safety
+
+Agents must never run destructive git or filesystem operations (`git checkout -- .`, `git clean`, `git reset --hard`, `rm -rf`, etc.) without first asking the user for explicit confirmation, even when tool permissions allow it. See `.agents/rules/12-destructive-operation-confirmation.md`.
+
+## Commit attribution
+
+- Agents must **never** add `Co-authored-by: Sisyphus`, `Co-authored-by: Sisyphus <...>`, `Ultraworked with Sisyphus`, or any similar AI/Sisyphus co-author trailer to commit messages.
+- This applies to commit subjects, bodies, and footers alike.
+- The only exception is when the user explicitly requests such a trailer.
+
+## Lint suppression policy
+
+Agents must never silence lint/type warnings with inline suppression comments or pragma directives as a per-edit workaround. This applies to every language and toolchain in the repo.
+
+- Forbidden as workarounds: `swiftlint:disable`, `swiftlint:disable:this`, `swiftlint:disable:next`, file-level `swiftlint:disable` blocks, `# type: ignore`, `# noqa`, `# pylint: disable=`, `@SuppressWarnings`, and equivalents.
+- Required response to a lint warning: fix the underlying code (restructure, extract helper, use safer API, shorten line). The warning is the signal.
+- Escalate when the fix is out of scope: report rule name, file, line, and reason to the user. Never suppress silently.
+- Project-wide configuration changes in `.swiftlint.yml`, `pyproject.toml`, `ruff.toml`, etc. are policy decisions, not per-edit workarounds. They require explicit user approval with rationale before applying — never bundle them into an unrelated fix.
+
+## Validation
+
+Run the commands that match your change scope. Swift 파일 진단은 `lsp_diagnostics` 대신 **XcodeBuildMCP**를 사용한다 — 상세 라우팅은 `.agents/skills/code-tooling/references/xcodebuild-mcp.md` 참조.
+
+### Backend (Python/FastAPI)
+
+```bash
+cd apps/backend
+uv run pytest          # tests
+uv run pyright         # type check
+uv run ruff check      # linter
+```
+
+### macOS (Voyager)
+
+```bash
+mise run macos-build   # Dev build
+mise run macos-test    # Dev tests
+```
+
+Swift lint/format:
+
+```bash
+mise exec -- swiftlint --config apps/macos/.swiftlint.yml apps/macos
+mise exec -- swiftformat --config apps/macos/.swiftformat apps/macos --verbose
+```
+
+### General
+
+```bash
+git diff --check       # whitespace/conflict markers
+```
 
 ## PR review rules
 

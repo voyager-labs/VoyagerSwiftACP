@@ -164,6 +164,7 @@ func assertInFlightNewChatSaveCancelled(by trigger: NewChatCancellationTrigger) 
                 } onCancel: {
                     saveCancelled.setValue(true)
                 }
+                return snapshot
             },
             deleteSession: { _ in },
         )
@@ -292,7 +293,10 @@ func makeDeleteProcessingSessionStore(
         )
         $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
             loadSession: { _ in nil },
-            saveSession: { snapshot in harness.savedSnapshots.withValue { $0.append(snapshot) } },
+            saveSession: { snapshot in
+                harness.savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            },
             deleteSession: { id in harness.deletedIDs.withValue { $0.append(id) } },
         )
         $0.aiConnectionsFileClient = AIConnectionsFileClient(
@@ -710,7 +714,7 @@ func makeCBW005LoadOnlyPersistence(_ persistence: AiChatSessionPersistenceSpy) -
     AiChatSessionPersistenceClient(
         listSessions: { _, _ in [] },
         loadSession: { id in try await persistence.loadSession(id) },
-        saveSession: { _ in },
+        saveSession: { snapshot in snapshot },
         deleteSession: { _ in },
     )
 }
@@ -718,7 +722,7 @@ func makeCBW005LoadOnlyPersistence(_ persistence: AiChatSessionPersistenceSpy) -
 func makeCBW005MissingPersistence() -> AiChatSessionPersistenceClient {
     AiChatSessionPersistenceClient(
         loadSession: { _ in nil },
-        saveSession: { _ in },
+        saveSession: { snapshot in snapshot },
         deleteSession: { _ in },
     )
 }

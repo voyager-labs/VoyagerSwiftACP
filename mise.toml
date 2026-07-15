@@ -93,10 +93,12 @@ scripts/dev/macos-launch.sh "$@"
 # macOS 개발 앱 테스트 (worktree 내부 DerivedData 사용, xcbeautify 필터링)
 [tasks.macos-test]
 description = "macOS 개발 앱 테스트 (xcbeautify 필터링)"
-run = """
-set -o pipefail
-NSUnbufferedIO=YES xcodebuild test -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug -derivedDataPath build/dev/DerivedData -clonedSourcePackagesDirPath build/dev/SourcePackages -skipPackagePluginValidation -skipMacroValidation COMPILER_INDEX_STORE_ENABLE=NO CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/dev/xcodebuild-test.log | mise exec -- xcbeautify --quiet --is-ci --report junit --report-path build/dev/reports
-"""
+run = "scripts/dev/macos-test.sh \"$@\""
+
+# macOS 개발 앱 flow 테스트 (focused PRODUCT flow 실행)
+[tasks.macos-test-flow]
+description = "macOS PRODUCT flow 테스트 (focused 실행)"
+run = "python3 scripts/dev/macos_test_flow.py \"$@\""
 
 # Xcode 툴체인의 Swift 버전 확인
 [tasks.swift-version]

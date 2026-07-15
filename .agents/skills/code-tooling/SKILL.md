@@ -124,6 +124,7 @@ This matrix owns executor selection and applies to interactive agents, while rep
 Before the first available XcodeBuildMCP build, run, or test operation in a session, call `XcodeBuildMCP_session_show_defaults()`. Use an MCP operation only when both the operation and its required scope are exposed; do not call raw `xcodebuild` from an agent as a substitute for this matrix.
 
 Load `references/xcodebuild-mcp.md` for session setup and the supported simulator operations. Load `references/package-integration.md` for local SwiftPM product, target, dependency, and consumer wiring verification. Load `references/swift6-package-rules.md` when creating packages, adding or moving types into packages, editing `Package.swift`, or fixing Sendable errors.
+Load `references/voyager-verification.md` for focused Voyager verification, SwiftFormat path resolution, and callback/async proof requirements.
 
 ### 5. Periphery for dead code scans
 

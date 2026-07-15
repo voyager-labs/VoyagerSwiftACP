@@ -24,4 +24,5 @@ Use this map from `../SKILL.md` to route work into role entry points. The parent
 - Load multiple role entry points when work crosses boundaries, but keep one orchestrator decision record.
 - When a Voyager package change also reorganizes package internals, load `../../../fsd-package-segmentation/SKILL.md`; when it changes products, targets, dependencies, or consumers, load `../../../code-tooling/references/package-integration.md` before final verification.
 - When creating packages or adding/moving types into packages, also load `../../../code-tooling/references/swift6-package-rules.md` to enforce Swift 6 strict concurrency rules.
+- For custom URL schemes, OAuth callbacks, app handoff, or dev/prod/host coexistence, load `../../reviewer/review/references/architecture-gate-spec.md`; verify bundle identifiers, `CFBundleURLTypes`, callback parser allowlists, Web `app_target` contracts, and LaunchServices collision risk.
 - Do not move shared references into role folders unless all call sites are updated in the same change.

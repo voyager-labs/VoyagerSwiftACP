@@ -1,7 +1,9 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesCollection
 import VoyagerFeaturesEntryArrangements
+import VoyagerPagesFileManager
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
@@ -14,6 +16,9 @@ enum WindowManagerAction: CasePathable {
     case view(ViewCommand)
     case edit(EditCommand)
     case event(WindowEvent)
+    case pinnedContentTabsStoreChanged
+    case defaultWindowBootstrapCompleted(requestID: UUID, contentTabs: ContentTabState)
+    case defaultWindowBootstrapFailed(requestID: UUID)
     case windows(IdentifiedActionOf<WindowSessionFeature>)
 
     @CasePathable
@@ -33,7 +38,10 @@ enum WindowManagerAction: CasePathable {
     enum FileCommand: CasePathable {
         case newWindow(path: String? = nil, selectEntryID: String? = nil)
         case openCollectionFile(URL)
-        case newTab(path: String? = nil)
+        case newTab
+        case closeTab
+        case togglePinTab
+        case restoreLastClosedTab
         case newFolder
         case open
         case quickLook

@@ -24,6 +24,10 @@ struct AiSettingsView: View {
     var body: some View {
         Form {
             Section {
+                // bootstrap 단계와 무관하게 rows는 항상 렌더링.
+                // `.idle` / `.loading` 에서도 catalogRows가 즉시 표시되어
+                // first paint가 spinner-only로 대체되지 않는다.
+                // `.failed`인 경우 retry 안내를 rows 위에 supplemental로 표시.
                 if store.bootstrapPhase == .failed {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Failed to load AI connections.")
@@ -31,10 +35,10 @@ struct AiSettingsView: View {
                             store.send(.retryBootstrapTapped)
                         }
                     }
-                } else {
-                    ForEach(store.scope(state: \.rows, action: \.row)) { rowStore in
-                        AiConnectionRowView(store: rowStore)
-                    }
+                }
+
+                ForEach(store.scope(state: \.rows, action: \.row)) { rowStore in
+                    AiConnectionRowView(store: rowStore)
                 }
             } header: {
                 Text("AI Connections")
@@ -124,6 +128,9 @@ struct AiSettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Color(NSColor.controlBackgroundColor))
+        .onAppear {
+            store.send(.onAppear)
+        }
     }
 
     private static func thinkingTitle(for selection: AiThinkingSelection) -> String {

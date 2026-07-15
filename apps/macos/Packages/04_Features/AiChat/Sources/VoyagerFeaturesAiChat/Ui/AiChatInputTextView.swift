@@ -116,7 +116,7 @@ struct AiChatInputTextView: NSViewRepresentable {
 
     private static let textFont = NSFont.systemFont(ofSize: 13)
     static let textHorizontalInset: CGFloat = 0
-    static let textVerticalInset: CGFloat = 2
+    static let textVerticalInset: CGFloat = 5
 
     private static let trailingReservedWidth: CGFloat = 14
 

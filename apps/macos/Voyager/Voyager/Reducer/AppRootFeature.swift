@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesFileManager
@@ -84,33 +85,59 @@ struct AppRootFeature {
     ) -> Effect<Action> {
         switch action {
         case .lifecycle(.launch(.willFinishLaunching)):
-            return startLaunchObservers()
+            .merge(
+                startLaunchObservers(),
+                .send(.settings(.bootstrapLocalPreferences)),
+                .send(.settings(.ai(.onAppear))),
+            )
 
         case let .lifecycle(.delegate(delegateAction)):
-            switch delegateAction {
-            case .openInitialWindowIfNeeded:
-                if hasPendingExternalRoutes(state) {
-                    state.isExternalURLFlushDelegateScheduled = false
-                    guard !onboardingWindowClient.isRequired() else { return .none }
-                    return flushPendingExternalRoutes(state: &state)
-                }
-                if state.isExternalURLRouteInFlightWithoutWindow {
-                    state.isExternalURLFlushDelegateScheduled = false
-                    return .none
-                }
-                return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
-
-            case let .reopenWindowIfNeeded(hasVisibleWindows):
-                return .send(.windowManager(.lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: hasVisibleWindows))))
-            }
+            reduceLifecycleDelegate(into: &state, delegateAction)
 
         case .lifecycle(.termination(.willTerminate)):
-            return .cancel(id: CancelID.appDidBecomeActiveObserver)
+            .cancel(id: CancelID.appDidBecomeActiveObserver)
+
+        case .lifecycle(.sessionExpiredDetected):
+            .none
+
+        case .lifecycle(.accountAccess):
+            .send(.settings(.accountAccessPresentationUpdated(
+                makeAccountAccessPresentation(state.lifecycle.accountAccess),
+            )))
 
         case .appDidBecomeActive:
-            return .none
+            .none
 
         default:
+            .none
+        }
+    }
+
+    private func reduceLifecycleDelegate(
+        into state: inout State,
+        _ delegateAction: AppLifecycleAction.Delegate,
+    ) -> Effect<Action> {
+        switch delegateAction {
+        case .openInitialWindowIfNeeded:
+            if hasPendingExternalRoutes(state) {
+                state.isExternalURLFlushDelegateScheduled = false
+                guard !onboardingWindowClient.isRequired() else { return .none }
+                guard canFlushPendingExternalRoutes(state) else {
+                    guard state.lifecycle.accessGatePhase == .recoveryRequired else { return .none }
+                    return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
+                }
+                return flushPendingExternalRoutes(state: &state)
+            }
+            if state.isExternalURLRouteInFlightWithoutWindow {
+                state.isExternalURLFlushDelegateScheduled = false
+                return .none
+            }
+            return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
+
+        case let .reopenWindowIfNeeded(hasVisibleWindows):
+            return .send(.windowManager(.lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: hasVisibleWindows))))
+
+        case .startHelperIfNeeded:
             return .none
         }
     }
@@ -149,17 +176,21 @@ struct AppRootFeature {
             return .send(.openAISettings)
 
         case .openAISettings:
-            return .concatenate(
-                .send(.settings(.selectSection(.ai))),
-                .run { _ in
+            // 활성 상태일 때만 AI tab 딥링크 선택. native Settings scene은 항상 오픈.
+            let selectAI: Effect<Action> = state.settings.accessStatus.isActive
+                ? .send(.settings(.selectSection(.ai)))
+                : .none
+            let openSettings: Effect<Action> = isRunningXCTest()
+                ? .none
+                : .run { _ in
                     await MainActor.run {
                         openNativeSettingsScene()
                     }
-                },
-            )
+                }
+            return .merge(selectAI, openSettings)
 
-        case let .settings(.delegate(.aiConnectionsFileUpdated(file))):
-            return .send(.windowManager(.lifecycle(.aiConnectionsFileUpdated(file))))
+        case let .settings(.delegate(delegateAction)):
+            return reduceSettingsDelegate(into: &state, delegateAction)
 
         case .settings(.general(.checkForUpdates)):
             return .send(.updater(.checkForUpdates))
@@ -172,6 +203,26 @@ struct AppRootFeature {
 
         default:
             return .none
+        }
+    }
+
+    private func reduceSettingsDelegate(
+        into state: inout State,
+        _ delegateAction: SettingsAction.Delegate,
+    ) -> Effect<Action> {
+        switch delegateAction {
+        case let .aiConnectionsFileUpdated(file):
+            return .send(.windowManager(.lifecycle(.aiConnectionsFileUpdated(file))))
+
+        case .account(.signInRequested):
+            guard !state.lifecycle.accountAccess.hasAccountSession else { return .none }
+            return .send(.lifecycle(.accountAccess(.loginTapped(context: .paywall, scope: .lifecycle))))
+
+        case .account(.signOutRequested):
+            return .send(.lifecycle(.accountAccess(.signOut)))
+
+        case .account(.retryRequested):
+            return .send(.lifecycle(.accountAccess(.retryTapped)))
         }
     }
 
@@ -240,11 +291,8 @@ struct AppRootFeature {
         action: Action,
     ) -> Effect<Action> {
         switch action {
-        case .receiveAuthCallbackURL:
-            showExternalFileOpenError(
-                title: "Voyager 로그인 복귀를 완료할 수 없습니다",
-                message: "인증 callback을 계정 인증 흐름으로 전달하는 경로가 아직 연결되어 있지 않습니다. 다시 로그인해 주세요.",
-            )
+        case let .receiveAuthCallbackURL(url):
+            .send(.lifecycle(.accountAccess(.loginCallbackReceived(url))))
 
         default:
             .none
@@ -316,6 +364,10 @@ struct AppRootFeature {
         !state.pendingExternalURLs.isEmpty || !state.pendingExternalFileRoutes.isEmpty
     }
 
+    private func canFlushPendingExternalRoutes(_ state: State) -> Bool {
+        state.lifecycle.isExternalRouteFlushAllowed
+    }
+
     private func flushPendingExternalRoutes(state: inout State) -> Effect<Action> {
         .concatenate(
             flushPendingExternalURL(state: &state),
@@ -336,13 +388,35 @@ struct AppRootFeature {
         if hasWindowsAfterAction {
             state.isExternalURLRouteInFlightWithoutWindow = false
         }
-        return didOpenFirstWindow ? flushPendingExternalRoutes(state: &state) : .none
+        guard didOpenFirstWindow, canFlushPendingExternalRoutes(state) else { return .none }
+        return flushPendingExternalRoutes(state: &state)
     }
 
     private func showExternalFileOpenError(title: String, message: String) -> Effect<Action> {
         .run { [collectionAlertClient] _ in
             await collectionAlertClient.showCollectionOpenErrorAlert(title, message)
         }
+    }
+
+    private func makeAccountAccessPresentation(
+        _ accountAccess: AccountAccessFeature.State,
+    ) -> AccountAccessPresentation {
+        AccountAccessPresentation(
+            hasAccountSession: accountAccess.hasAccountSession,
+            isSignInInProgress: accountAccess.isSignInInProgress,
+            didSignInFail: accountAccess.didSignInFail,
+            accessStatus: accountAccess.status,
+        )
+    }
+
+    private func openSettingsSceneEffect() -> Effect<Action> {
+        isRunningXCTest()
+            ? .none
+            : .run { _ in
+                await MainActor.run {
+                    openNativeSettingsScene()
+                }
+            }
     }
 }
 
@@ -413,4 +487,8 @@ private func isSettingsMenuItem(_ item: NSMenuItem) -> Bool {
         || normalizedTitle == "preferences"
         || item.action == Selector(("showSettingsWindow:"))
         || item.action == Selector(("showPreferencesWindow:"))
+}
+
+private func isRunningXCTest() -> Bool {
+    ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 }

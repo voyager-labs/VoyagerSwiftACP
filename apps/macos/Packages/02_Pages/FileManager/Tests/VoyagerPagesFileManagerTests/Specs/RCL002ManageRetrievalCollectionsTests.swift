@@ -234,6 +234,75 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         XCTAssertTrue(directoryExclusion.isActive)
     }
 
+    /// RCL-002-save_current_filter_as_new_collection: built-in Recents가 virtual Recents 정의를 재사용
+    /// built-in Recents 저장 정의와 기존 virtual route가 동일한 condition SSOT를 사용하는지 검증.
+    /// - 검증 내용: built-in Recents context와 virtual Recents context의 전체 값 및 exact condition literal
+    /// - 사전 조건: 동일한 registryClient로 built-in/virtual Recents context 생성
+    /// - 기대 결과: 두 context가 같고 조건은 두 개이며 recents literal은 `$time.today(-1000000)`임
+    func testBuiltInRecentsContextMatchesVirtualRecentsDefinition() throws {
+        let registryClient = makeRegistryClient()
+        let virtualContext = try XCTUnwrap(
+            FileManagerVirtualCollectionContextFactory.collectionContext(
+                for: .recents,
+                registryClient: registryClient,
+            ),
+        )
+        let builtInContext = FileManagerVirtualCollectionContextFactory.recentsCollectionContext(
+            registryClient: registryClient,
+        )
+
+        XCTAssertEqual(builtInContext, virtualContext)
+        XCTAssertEqual(builtInContext.query, "")
+        XCTAssertEqual(builtInContext.scopes, [])
+        XCTAssertEqual(builtInContext.excludedScopes, [])
+        XCTAssertTrue(builtInContext.includeSubfolders)
+        XCTAssertFalse(builtInContext.includeDirectories)
+        XCTAssertEqual(builtInContext.conditions.count, 2)
+        XCTAssertEqual(
+            builtInContext.conditions.first { $0.propertyKey == "last_used_date" }?.values,
+            ["$time.today(-1000000)"],
+        )
+    }
+
+    /// RCL-002-save_current_filter_as_new_collection: built-in All Tags가 정규화된 names를 단일 조건으로 생성
+    /// Finder tag names의 순서와 중복에 관계없이 저장 가능한 deterministic All Tags context를 만드는지 검증.
+    /// - 검증 내용: trim, empty 제거, exact dedupe, literal sort 이후 단일 tag_names any condition 생성
+    /// - 사전 조건: tag names가 [" Work ", "", "Personal", "Work", " work "]임
+    /// - 기대 결과: values가 ["Personal", "Work", "work"]이고 includeDirectories가 true임
+    func testBuiltInAllTagsContextNormalizesNamesIntoSingleAnyCondition() throws {
+        let context = FileManagerVirtualCollectionContextFactory.allTagsCollectionContext(
+            tagNames: [" Work ", "", "Personal", "Work", " work "],
+            registryClient: makeRegistryClient(),
+        )
+
+        XCTAssertEqual(context.query, "")
+        XCTAssertEqual(context.scopes, [])
+        XCTAssertEqual(context.excludedScopes, [])
+        XCTAssertTrue(context.includeSubfolders)
+        XCTAssertTrue(context.includeDirectories)
+        XCTAssertEqual(context.conditions.count, 1)
+
+        let condition = try XCTUnwrap(context.conditions.first)
+        XCTAssertEqual(condition.propertyKey, "tag_names")
+        XCTAssertEqual(condition.operatorCode, "any")
+        XCTAssertNotEqual(condition.operatorCode, "contains")
+        XCTAssertEqual(condition.values, ["Personal", "Work", "work"])
+    }
+
+    /// RCL-002-save_current_filter_as_new_collection: tag normalization이 공백과 정확 중복만 제거
+    /// locale folding 없이 대소문자 변형을 별도 값으로 보존하는 pure normalization contract를 검증.
+    /// - 검증 내용: whitespace-only 제거, exact duplicate 제거, case variant 보존, literal lexical sort
+    /// - 사전 조건: 공백-only, Work exact duplicate, work case variant가 섞인 names 입력
+    /// - 기대 결과: ["Work", "work"] 순서로 정규화됨
+    func testTagNameNormalizationRemovesWhitespaceAndExactDuplicatesOnly() {
+        XCTAssertEqual(
+            FileManagerVirtualCollectionContextFactory.normalizeTagNames([
+                " ", "\t\n", "Work", "Work", " work ", "work",
+            ]),
+            ["Work", "work"],
+        )
+    }
+
     /// RCL-002-save_current_filter_as_new_collection: Recents virtual route seed 조건 인식
     /// Recents route에서 자동 생성한 조건 묶음을 Voyager 기본 virtual route seed로 인식하는지 검증.
     /// - 검증 내용: recents collection context의 conditions를 isVirtualRouteSeedConditionSet으로 판정

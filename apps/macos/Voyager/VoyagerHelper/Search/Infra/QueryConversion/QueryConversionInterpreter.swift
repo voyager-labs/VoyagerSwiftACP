@@ -75,19 +75,8 @@ struct QueryConversionInterpreter {
         }
 
         let output = try decodeQueryConversionOutput(from: content)
-
-        let outputError = output.error?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if output.outcome == .error || outputError?.isEmpty == false {
-            let error = outputError?.isEmpty == false
-                ? outputError ?? "Could not generate valid filters."
-                : "Could not generate valid filters."
-            logger.error("[QueryConversionInterpreter] \(error)")
-            return QueryConversionResult(
-                conditions: [],
-                scopes: nil,
-                error: error,
-                outcome: .conversionFailure,
-            )
+        if let failure = outputFailureResult(from: output) {
+            return failure
         }
 
         let visibleExistingConditions = existingFilters.conditions.filter {
@@ -99,32 +88,29 @@ struct QueryConversionInterpreter {
         let cleanedExistingScopes = cleanScopes(existingFilters.scopes)
         let cleanedOutputScopes = cleanScopes(output.scopes ?? existingFilters.scopes)
 
-        if outputConditions.isEmpty == false, normalizedConditions.isEmpty {
-            let error = "Generated filters could not be validated."
-            logger.error("[QueryConversionInterpreter] \(error)")
-            return QueryConversionResult(
-                conditions: [],
-                scopes: nil,
-                error: error,
-                outcome: .conversionFailure,
-            )
+        if let failure = invalidGeneratedConditionsResult(
+            outputConditions: outputConditions,
+            normalizedConditions: normalizedConditions,
+        ) {
+            return failure
         }
 
-        let inferredOutcome: QueryConversionResultOutcome = if normalizedConditions.isEmpty {
-            cleanedOutputScopes == cleanedExistingScopes ? .fallbackReuse : .generatedChangeSet
-        } else if normalizedConditions == fallbackConditions, cleanedOutputScopes == cleanedExistingScopes {
-            .unchangedResult
-        } else {
-            .generatedChangeSet
-        }
+        let inferredOutcome = inferOutcome(
+            normalizedConditions: normalizedConditions,
+            fallbackConditions: fallbackConditions,
+            cleanedOutputScopes: cleanedOutputScopes,
+            cleanedExistingScopes: cleanedExistingScopes,
+        )
         let outcome = resolveOutcome(
             outputOutcome: output.outcome,
             inferredOutcome: inferredOutcome,
             hasNormalizedConditions: normalizedConditions.isEmpty == false,
         )
-        let finalConditions = outcome == .fallbackReuse
-            ? fallbackConditions
-            : (normalizedConditions.isEmpty ? fallbackConditions : normalizedConditions)
+        let finalConditions = resolvedConditions(
+            outcome: outcome,
+            normalizedConditions: normalizedConditions,
+            fallbackConditions: fallbackConditions,
+        )
 
         return QueryConversionResult(
             conditions: finalConditions,
@@ -134,13 +120,61 @@ struct QueryConversionInterpreter {
         )
     }
 
-    private func failureResult(error: any Error) -> QueryConversionResult {
-        QueryConversionResult(
+    private func outputFailureResult(from output: QueryConversionOutput) -> QueryConversionResult? {
+        let outputError = output.error?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard output.outcome == .error || outputError?.isEmpty == false else {
+            return nil
+        }
+        let error = outputError?.isEmpty == false
+            ? outputError ?? "Could not generate valid filters."
+            : "Could not generate valid filters."
+        return conversionFailureResult(error: error)
+    }
+
+    private func invalidGeneratedConditionsResult(
+        outputConditions: [SearchConditionPayload],
+        normalizedConditions: [SearchConditionPayload],
+    ) -> QueryConversionResult? {
+        guard outputConditions.isEmpty == false, normalizedConditions.isEmpty else {
+            return nil
+        }
+        return conversionFailureResult(error: "Generated filters could not be validated.")
+    }
+
+    private func conversionFailureResult(error: String) -> QueryConversionResult {
+        logger.error("[QueryConversionInterpreter] \(error)")
+        return QueryConversionResult(
             conditions: [],
             scopes: nil,
-            error: String(describing: error),
+            error: error,
             outcome: .conversionFailure,
         )
+    }
+
+    private func inferOutcome(
+        normalizedConditions: [SearchConditionPayload],
+        fallbackConditions: [SearchConditionPayload],
+        cleanedOutputScopes: [String],
+        cleanedExistingScopes: [String],
+    ) -> QueryConversionResultOutcome {
+        if normalizedConditions.isEmpty {
+            return cleanedOutputScopes == cleanedExistingScopes ? .fallbackReuse : .generatedChangeSet
+        }
+        if normalizedConditions == fallbackConditions, cleanedOutputScopes == cleanedExistingScopes {
+            return .unchangedResult
+        }
+        return .generatedChangeSet
+    }
+
+    private func resolvedConditions(
+        outcome: QueryConversionResultOutcome,
+        normalizedConditions: [SearchConditionPayload],
+        fallbackConditions: [SearchConditionPayload],
+    ) -> [SearchConditionPayload] {
+        if outcome == .fallbackReuse {
+            return fallbackConditions
+        }
+        return normalizedConditions.isEmpty ? fallbackConditions : normalizedConditions
     }
 
     private func requireConditionRegistry() throws -> PropertyConditionRegistry {

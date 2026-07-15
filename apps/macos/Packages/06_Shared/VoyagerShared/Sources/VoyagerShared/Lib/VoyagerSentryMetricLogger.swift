@@ -60,18 +60,7 @@ public enum VoyagerSentryMetricLogger {
         tags: [String: String]? = nil,
         level: MetricLogLevel = .info,
     ) {
-        var attributes: [String: Any] = [
-            "metric.name": name,
-            "metric.value": value,
-        ]
-        if let userId = userIdStore.get() {
-            attributes["metric.user_id"] = userId
-        }
-        if let tags {
-            for (key, tagValue) in tags {
-                attributes["metric.tag.\(key)"] = tagValue
-            }
-        }
+        let attributes = metricAttributes(name, value: value, tags: tags)
         switch level {
         case .trace:
             SentrySDK.logger.trace("metric", attributes: attributes)
@@ -106,6 +95,31 @@ public enum VoyagerSentryMetricLogger {
                 "entry.kind": entryKind.rawValue,
             ],
         )
+    }
+
+    nonisolated static func metricAttributes(
+        _ name: String,
+        value: Double,
+        tags: [String: String]? = nil,
+    ) -> [String: Any] {
+        var attributes: [String: Any] = [
+            "metric.name": name,
+            "metric.value": value,
+        ]
+        if shouldIncludeUserId(for: name), let userId = userIdStore.get() {
+            attributes["metric.user_id"] = userId
+        }
+        if let tags {
+            for (key, tagValue) in tags {
+                attributes["metric.tag.\(key)"] = tagValue
+            }
+        }
+        return attributes
+    }
+
+    nonisolated private static func shouldIncludeUserId(for metricName: String) -> Bool {
+        !metricName.hasPrefix("built_in_collection_")
+            && !metricName.hasPrefix("built_in_pinned_")
     }
 
     nonisolated private static func captureDAUEvent(

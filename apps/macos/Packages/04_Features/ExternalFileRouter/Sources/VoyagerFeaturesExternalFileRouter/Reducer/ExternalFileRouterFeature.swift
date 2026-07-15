@@ -30,6 +30,10 @@ public struct ExternalFileRouterFeature {
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case let .setExpectedScheme(scheme):
+                state.expectedScheme = scheme
+                return .none
+
             case let .receive(url):
                 return handleReceive(url: url, state: &state)
 
@@ -63,7 +67,7 @@ private extension ExternalFileRouterFeature {
     /// 3. 파싱 오류 → urlValidationError로 전환
     /// 4. 정상 요청 → pathReceived 상태로 전환 + path 정규화/존재 확인 effect 발행
     func handleReceive(url: URL, state: inout State) -> Effect<Action> {
-        let result = ExternalFileURLParser.parse(url)
+        let result = ExternalFileURLParser.parse(url, expectedScheme: state.expectedScheme)
 
         switch result {
         case .openAppFallback:

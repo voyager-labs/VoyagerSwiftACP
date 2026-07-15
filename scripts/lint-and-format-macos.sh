@@ -10,13 +10,16 @@ SWIFT_ROOT="$1"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MACOS_ROOT="$REPO_ROOT/apps/macos"
 
+# .swiftformat의 `--exclude build`는 절대 경로 타겟에서 무시되므로 절대 경로로 제외.
+BUILD_EXCLUDE="$SWIFT_ROOT/build"
+
 echo "================================"
 echo "🔧 SwiftFormat: using mise-managed installation..."
 echo "================================"
 
 if mise exec -- swiftformat --version >/dev/null 2>&1; then
     echo "✓ Running SwiftFormat via mise"
-    mise exec -- swiftformat --config "$MACOS_ROOT/.swiftformat" "$SWIFT_ROOT" --verbose || true
+    mise exec -- swiftformat --config "$MACOS_ROOT/.swiftformat" "$SWIFT_ROOT" --exclude "$BUILD_EXCLUDE" --verbose || true
     echo "✓ SwiftFormat completed"
 else
     echo "⚠️ SwiftFormat not found via mise"
@@ -41,7 +44,7 @@ if mise exec -- swiftlint version >/dev/null 2>&1; then
         else
             source_files+=("$file")
         fi
-    done < <(find "$SWIFT_ROOT" -name '*.swift' -print0)
+    done < <(find "$SWIFT_ROOT" -name '*.swift' -not -path '*/build/*' -print0)
 
     if [[ ${#source_files[@]} -gt 0 ]]; then
         if ! mise exec -- swiftlint --config "$MACOS_ROOT/.swiftlint.yml" --reporter xcode --no-cache "${source_files[@]}"; then

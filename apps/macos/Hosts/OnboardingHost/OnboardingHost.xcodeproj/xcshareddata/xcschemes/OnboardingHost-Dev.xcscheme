@@ -53,12 +53,27 @@
          </BuildableReference>
       </BuildableProductRunnable>
       <EnvironmentVariables>
-         <EnvironmentVariable
-            key = "VOYAGER_ONBOARDING_MOCK_BETA"
-            value = "1"
-            isEnabled = "YES">
-         </EnvironmentVariable>
-      </EnvironmentVariables>
+          <EnvironmentVariable
+             key = "VOYAGER_ONBOARDING_MOCK_BETA"
+             value = "1"
+             isEnabled = "YES">
+          </EnvironmentVariable>
+          <EnvironmentVariable
+             key = "ONBOARDING_HOST_AUTH_MODE"
+             value = "live"
+             isEnabled = "YES">
+          </EnvironmentVariable>
+          <EnvironmentVariable
+             key = "PUBLIC_WEB_BASE_URL"
+             value = "http://localhost:3000"
+             isEnabled = "YES">
+          </EnvironmentVariable>
+          <EnvironmentVariable
+             key = "PUBLIC_GATEWAY_URL"
+             value = "http://localhost:8787"
+             isEnabled = "YES">
+          </EnvironmentVariable>
+       </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

@@ -935,4 +935,456 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
 
         await store.finish()
     }
+
+    // MARK: - SET-007-bootstrap_phase
+
+    /// `.idle` 초기 상태에서 rows는 `catalogRows()`로 즉시 채워진다.
+    /// UI가 spinner 없이 placeholder rows를 표시할 수 있음을 보장.
+    func testIdleState_hasNonEmptyRows_allNotVerified() {
+        let state = AiSettingsState()
+
+        XCTAssertEqual(state.bootstrapPhase, .idle)
+        XCTAssertEqual(state.rows.count, 3)
+        XCTAssertEqual(state.rows.map(\.provider), [.chatgptCodex, .openai, .anthropic])
+        XCTAssertTrue(state.rows.allSatisfy { $0.connectionState == .notVerified })
+    }
+
+    /// `.loading` 상태를 직접 주입해도 rows는 유지된다.
+    /// onAppear 직후, `.bootstrapCompleted` 수신 전 first paint가 rows를 표시할 수 있음을 보장.
+    func testLoadingState_withExplicitPhase_preservesRows() {
+        let rows = AiSettingsState.catalogRows()
+        let state = AiSettingsState(
+            didBootstrap: true,
+            bootstrapPhase: .loading,
+            rows: rows,
+        )
+
+        XCTAssertEqual(state.bootstrapPhase, .loading)
+        XCTAssertEqual(state.rows.count, 3)
+        XCTAssertTrue(state.rows.allSatisfy { $0.connectionState == .notVerified })
+    }
+
+    /// onAppear 직후 `.loading` phase에서 rows가 유지되는지 TestStore로 단언.
+    /// `.bootstrapCompleted`가 도착하기 전 first paint 시점의 상태 검증.
+    func testOnAppear_setsLoadingPhase_rowsRemainNonEmpty() async {
+        let store = TestStore(initialState: AiSettingsState()) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = { AIConnectionsFile.empty() }
+        }
+
+        await store.send(.onAppear) { state in
+            state.didBootstrap = true
+            state.bootstrapPhase = .loading
+        }
+
+        XCTAssertEqual(store.state.bootstrapPhase, .loading)
+        XCTAssertEqual(store.state.rows.count, 3)
+
+        await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+        }
+        await store.finish()
+    }
+
+    /// `bootstrapCompleted`가 notVerified/checkingStatus/connected 혼합 initial results를
+    /// 정확히 row에 반영하고 phase를 `.loaded`로 전환하는지 검증.
+    /// verification pending은 row의 `connectionState`(`.checkingStatus`)로 표현됨.
+    func testBootstrapCompleted_appliesMixedInitialResults_setsLoadedPhase() async {
+        let mixedResults = [
+            AIProviderBootstrapResult(
+                provider: .chatgptCodex,
+                connectionState: .connected,
+                statusReason: .none,
+            ),
+            AIProviderBootstrapResult(
+                provider: .openai,
+                connectionState: .checkingStatus,
+                statusReason: .none,
+            ),
+            AIProviderBootstrapResult(
+                provider: .anthropic,
+                connectionState: .notVerified,
+                statusReason: .missingCredential,
+            ),
+        ]
+        let store = TestStore(
+            initialState: AiSettingsState(
+                didBootstrap: true,
+                bootstrapPhase: .loading,
+            ),
+        ) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = { AIConnectionsFile.empty() }
+            $0.aiProviderVerificationClient.verify = { _, _ in .valid }
+        }
+
+        await store.send(.bootstrapCompleted(mixedResults)) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .chatgptCodex]?.connectionState = .connected
+            state.rows[id: .chatgptCodex]?.statusReason = .none
+            state.rows[id: .openai]?.connectionState = .checkingStatus
+            state.rows[id: .openai]?.statusReason = .none
+            state.rows[id: .anthropic]?.connectionState = .notVerified
+            state.rows[id: .anthropic]?.statusReason = .missingCredential
+        }
+
+        XCTAssertEqual(store.state.bootstrapPhase, .loaded)
+        XCTAssertEqual(store.state.rows[id: .chatgptCodex]?.connectionState, .connected)
+        XCTAssertEqual(store.state.rows[id: .openai]?.connectionState, .checkingStatus)
+        XCTAssertEqual(store.state.rows[id: .anthropic]?.connectionState, .notVerified)
+        XCTAssertEqual(store.state.rows[id: .anthropic]?.statusReason, .missingCredential)
+    }
+
+    /// `bootstrapVerificationCompleted`는 `.loaded` phase를 유지하면서 row만 갱신.
+    /// verification 결과가 첫 paint phase를 다시 `.loading`으로 되돌리지 않음을 보장.
+    func testBootstrapVerificationCompleted_keepsLoadedPhase_updatesRows() async {
+        let verificationResults = [
+            AIProviderBootstrapResult(
+                provider: .openai,
+                connectionState: .connected,
+                statusReason: .none,
+            ),
+        ]
+        let store = TestStore(
+            initialState: AiSettingsState(
+                didBootstrap: true,
+                bootstrapPhase: .loaded,
+                rows: [
+                    AiConnectionRowState(
+                        provider: .openai,
+                        connectionState: .checkingStatus,
+                    ),
+                    AiConnectionRowState(provider: .anthropic),
+                    AiConnectionRowState(provider: .chatgptCodex),
+                ],
+            ),
+        ) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = { AIConnectionsFile.empty() }
+        }
+
+        await store.send(.bootstrapVerificationCompleted(verificationResults)) { state in
+            state.rows[id: .openai]?.connectionState = .connected
+            state.rows[id: .openai]?.statusReason = .none
+        }
+
+        XCTAssertEqual(store.state.bootstrapPhase, .loaded)
+        XCTAssertEqual(store.state.rows[id: .openai]?.connectionState, .connected)
+    }
+
+    /// bootstrap file load 실패 시 `.failed` phase로 전환되지만 rows는 보존됨.
+    func testBootstrapFailed_setsFailedPhase_preservesRows() async {
+        let store = TestStore(initialState: AiSettingsState()) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = {
+                throw NSError(domain: "test", code: -1)
+            }
+        }
+
+        await store.send(.onAppear) { state in
+            state.didBootstrap = true
+            state.bootstrapPhase = .loading
+        }
+        await store.receive(\.bootstrapFailed) { state in
+            state.bootstrapPhase = .failed
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.bootstrapPhase, .failed)
+        XCTAssertEqual(store.state.rows.count, 3)
+        XCTAssertTrue(store.state.rows.allSatisfy { $0.connectionState == .notVerified })
+    }
+
+    // MARK: - SET-007-bootstrap_end_to_end
+
+    /// End-to-end: onAppear → file load → `.bootstrapCompleted`(initial) →
+    /// `.bootstrapVerificationCompleted` → 최종 `.loaded`. 3 provider 각각 다른
+    /// verification 결과(connected/expired/connected)가 row에 정확히 반영되는지 검증.
+    /// - 검증 내용: full pipeline, rows 3개 보존, 최종 connectionState, phase `.loaded`
+    /// - 사전 조건: 3 provider 모두 credential 보유, snapshot이 verification 결과와 동일
+    /// - 기대 결과: chatgpt=connected, openai=connectionFailed/expired, anthropic=connected
+    func testOnAppear_fullBootstrapPipeline_appliesInitialAndVerificationResults_setsLoadedPhase() async {
+        let file = Self.threeProviderFileMatchingOutcomes()
+        let store = TestStore(initialState: AiSettingsState()) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = { file }
+            $0.aiProviderVerificationClient.verify = { provider, _ in
+                switch provider {
+                case .chatgptCodex: .valid
+                case .openai: .invalid(.expired)
+                case .anthropic: .valid
+                }
+            }
+        }
+
+        XCTAssertEqual(store.state.bootstrapPhase, .idle)
+        XCTAssertEqual(store.state.rows.count, 3)
+        XCTAssertTrue(store.state.rows.allSatisfy { $0.connectionState == .notVerified })
+
+        await store.send(.onAppear) { state in
+            state.didBootstrap = true
+            state.bootstrapPhase = .loading
+        }
+        XCTAssertEqual(store.state.rows.count, 3)
+
+        await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
+            state.rows[id: .chatgptCodex]?.statusReason = .none
+            state.rows[id: .openai]?.connectionState = .checkingStatus
+            state.rows[id: .openai]?.statusReason = .none
+            state.rows[id: .anthropic]?.connectionState = .checkingStatus
+            state.rows[id: .anthropic]?.statusReason = .none
+        }
+        XCTAssertEqual(store.state.rows.count, 3)
+
+        await store.receive(\.bootstrapVerificationCompleted) { state in
+            state.rows[id: .chatgptCodex]?.connectionState = .connected
+            state.rows[id: .chatgptCodex]?.statusReason = .none
+            state.rows[id: .openai]?.connectionState = .connectionFailed
+            state.rows[id: .openai]?.statusReason = .expired
+            state.rows[id: .anthropic]?.connectionState = .connected
+            state.rows[id: .anthropic]?.statusReason = .none
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.bootstrapPhase, .loaded)
+        XCTAssertEqual(store.state.rows.count, 3)
+        XCTAssertEqual(store.state.rows[id: .chatgptCodex]?.connectionState, .connected)
+        XCTAssertEqual(store.state.rows[id: .openai]?.connectionState, .connectionFailed)
+        XCTAssertEqual(store.state.rows[id: .openai]?.statusReason, .expired)
+        XCTAssertEqual(store.state.rows[id: .anthropic]?.connectionState, .connected)
+    }
+
+    /// Launch-like no-credential 상태: 모든 provider record에 credential이 없을 때
+    /// bootstrap은 `.loaded`로 종료되며 rows는 처음부터 끝까지 3개 notVerified 상태로 유지.
+    /// verification 단계가 생략되고도 spinner-only 상태로 떨어지지 않음을 보장.
+    /// - 검증 내용: no-credential initial, verification 미실행, terminal `.loaded`, rows 보존
+    /// - 사전 조건: 3 provider record 모두 credential=nil
+    /// - 기대 결과: 모든 row notVerified/missingCredential, primaryAction=.connect, phase=.loaded
+    func testNoCredentialLaunchState_keepsThreeRowsNotVerified_throughEntireBootstrap() async {
+        let file = Self.threeProviderFileAllMissingCredentials()
+        let store = TestStore(initialState: AiSettingsState()) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = { file }
+            $0.aiProviderVerificationClient.verify = { provider, _ in
+                XCTFail("Verification should not run when credential is nil: \(provider)")
+                return .valid
+            }
+        }
+
+        XCTAssertEqual(store.state.bootstrapPhase, .idle)
+        XCTAssertEqual(store.state.rows.count, 3)
+
+        await store.send(.onAppear) { state in
+            state.didBootstrap = true
+            state.bootstrapPhase = .loading
+        }
+        XCTAssertEqual(store.state.rows.count, 3)
+
+        await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .chatgptCodex]?.connectionState = .notVerified
+            state.rows[id: .chatgptCodex]?.statusReason = .missingCredential
+            state.rows[id: .openai]?.connectionState = .notVerified
+            state.rows[id: .openai]?.statusReason = .missingCredential
+            state.rows[id: .anthropic]?.connectionState = .notVerified
+            state.rows[id: .anthropic]?.statusReason = .missingCredential
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.bootstrapPhase, .loaded)
+        XCTAssertEqual(store.state.rows.count, 3)
+        XCTAssertTrue(store.state.rows.allSatisfy { $0.connectionState == .notVerified })
+        XCTAssertTrue(store.state.rows.allSatisfy { $0.statusReason == .missingCredential })
+        XCTAssertTrue(store.state.rows.allSatisfy { $0.primaryAction == .connect })
+    }
+
+    /// File load 실패 → `.failed` phase + rows 3개 보존 → retry 시도 → bootstrap 재실행 성공.
+    /// 실패 상태에서 rows가 사라지지 않고 명시적 retry로 전체 파이프라인이 회복되는지 검증.
+    /// - 검증 내용: load throw, `.failed` 전이, rows 보존, retry → `.loading` → `.loaded` 회복
+    /// - 사전 조건: 첫 load는 throw, 두 번째 load는 3 provider connected file 반환
+    /// - 기대 결과: retry 후 모든 row 최종 connected, phase=`.loaded`
+    func testFileLoadFailure_setsFailedPhase_preservesRows_retryRecoversAllThreeProviders() async {
+        let loadCounter = LoadCounter()
+        let recoveryFile = Self.threeProviderFileMatchingOutcomes(
+            openaiStatus: .connected,
+            openaiErrorCode: .none,
+        )
+        let store = TestStore(initialState: AiSettingsState()) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = {
+                let count = await loadCounter.increment()
+                if count == 1 { throw NSError(domain: "e2e", code: -1) }
+                return recoveryFile
+            }
+            $0.aiProviderVerificationClient.verify = { _, _ in .valid }
+        }
+
+        XCTAssertEqual(store.state.rows.count, 3)
+
+        await store.send(.onAppear) { state in
+            state.didBootstrap = true
+            state.bootstrapPhase = .loading
+        }
+        await store.receive(\.bootstrapFailed) { state in
+            state.bootstrapPhase = .failed
+        }
+
+        XCTAssertEqual(store.state.bootstrapPhase, .failed)
+        XCTAssertEqual(store.state.rows.count, 3)
+        XCTAssertTrue(store.state.rows.allSatisfy { $0.connectionState == .notVerified })
+
+        await store.send(.retryBootstrapTapped) { state in
+            state.bootstrapPhase = .loading
+        }
+
+        await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
+            state.rows[id: .chatgptCodex]?.statusReason = .none
+            state.rows[id: .openai]?.connectionState = .checkingStatus
+            state.rows[id: .openai]?.statusReason = .none
+            state.rows[id: .anthropic]?.connectionState = .checkingStatus
+            state.rows[id: .anthropic]?.statusReason = .none
+        }
+        await store.receive(\.bootstrapVerificationCompleted) { state in
+            state.rows[id: .chatgptCodex]?.connectionState = .connected
+            state.rows[id: .chatgptCodex]?.statusReason = .none
+            state.rows[id: .openai]?.connectionState = .connected
+            state.rows[id: .openai]?.statusReason = .none
+            state.rows[id: .anthropic]?.connectionState = .connected
+            state.rows[id: .anthropic]?.statusReason = .none
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.bootstrapPhase, .loaded)
+        XCTAssertTrue(store.state.rows.allSatisfy { $0.connectionState == .connected })
+    }
+
+    /// 단일 provider verification 결과가 networkError(timeout-style)여도 다른 provider
+    /// row가 정상적으로 갱신됨을 보장. Task 4 병렬화의 회귀 방지 증거.
+    /// - 검증 내용: networkError 결과가 형제 provider 갱신을 차단하지 않음, rows 보존
+    /// - 사전 조건: 3 provider credential 보유, openai verification이 networkError 반환
+    /// - 기대 결과: chatgpt/anthropic=connected, openai=connectionFailed/networkUnavailable
+    func testOneProviderNetworkErrorResult_doesNotBlockOtherProviderRows() async {
+        let file = Self.threeProviderFileMatchingOutcomes(
+            openaiStatus: .connectionFailed,
+            openaiErrorCode: .networkUnavailable,
+        )
+        let store = TestStore(initialState: AiSettingsState()) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = { file }
+            $0.aiProviderVerificationClient.verify = { provider, _ in
+                switch provider {
+                case .chatgptCodex: .valid
+                case .openai: .networkError
+                case .anthropic: .valid
+                }
+            }
+        }
+
+        await store.send(.onAppear) { state in
+            state.didBootstrap = true
+            state.bootstrapPhase = .loading
+        }
+        await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
+            state.rows[id: .chatgptCodex]?.statusReason = .none
+            state.rows[id: .openai]?.connectionState = .checkingStatus
+            state.rows[id: .openai]?.statusReason = .none
+            state.rows[id: .anthropic]?.connectionState = .checkingStatus
+            state.rows[id: .anthropic]?.statusReason = .none
+        }
+        await store.receive(\.bootstrapVerificationCompleted) { state in
+            state.rows[id: .chatgptCodex]?.connectionState = .connected
+            state.rows[id: .chatgptCodex]?.statusReason = .none
+            state.rows[id: .openai]?.connectionState = .connectionFailed
+            state.rows[id: .openai]?.statusReason = .networkUnavailable
+            state.rows[id: .anthropic]?.connectionState = .connected
+            state.rows[id: .anthropic]?.statusReason = .none
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.rows[id: .chatgptCodex]?.connectionState, .connected)
+        XCTAssertEqual(store.state.rows[id: .openai]?.connectionState, .connectionFailed)
+        XCTAssertEqual(store.state.rows[id: .openai]?.statusReason, .networkUnavailable)
+        XCTAssertEqual(store.state.rows[id: .anthropic]?.connectionState, .connected)
+    }
+}
+
+// MARK: - Bootstrap fixtures
+
+private extension SET007SettingsAIConnectionsTests {
+    /// 3 provider가 모두 credential을 가지며 snapshot이 verification 결과와 일치하는 파일.
+    /// 기본: chatgpt/anthropic=`.connected`, openai=`.connectionFailed/.expired`.
+    /// snapshot이 결과와 동일하므로 persist 단계가 생략되어
+    /// `.delegate(.connectionsFileUpdated)` 수신 예측이 불필요하다.
+    static func threeProviderFileMatchingOutcomes(
+        openaiStatus: ProviderConnectionState = .connectionFailed,
+        openaiErrorCode: ProviderStatusReason = .expired,
+    ) -> AIConnectionsFile {
+        AIConnectionsFile(
+            updatedAtMs: 1_760_000_000_000,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .oauth,
+                    credential: .oauth(OAuthCredentialFile.testFixture()),
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                ),
+                AiProvider.openai.rawValue: ProviderRecordFile(
+                    providerId: .openai,
+                    authMethod: .apiKey,
+                    credential: .apiKey(APIKeyCredentialFile.testFixture()),
+                    snapshot: ProviderSnapshotFile(
+                        lastKnownStatus: openaiStatus,
+                        lastErrorCode: openaiErrorCode,
+                    ),
+                ),
+                AiProvider.anthropic.rawValue: ProviderRecordFile(
+                    providerId: .anthropic,
+                    authMethod: .apiKey,
+                    credential: .apiKey(APIKeyCredentialFile.testFixture()),
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                ),
+            ],
+        )
+    }
+
+    /// 3 provider record가 모두 credential=nil인 파일. launch-like no-credential 상태.
+    static func threeProviderFileAllMissingCredentials() -> AIConnectionsFile {
+        AIConnectionsFile(
+            updatedAtMs: 1_760_000_000_000,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .oauth,
+                    credential: nil,
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                ),
+                AiProvider.openai.rawValue: ProviderRecordFile(
+                    providerId: .openai,
+                    authMethod: .apiKey,
+                    credential: nil,
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                ),
+                AiProvider.anthropic.rawValue: ProviderRecordFile(
+                    providerId: .anthropic,
+                    authMethod: .apiKey,
+                    credential: nil,
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                ),
+            ],
+        )
+    }
 }

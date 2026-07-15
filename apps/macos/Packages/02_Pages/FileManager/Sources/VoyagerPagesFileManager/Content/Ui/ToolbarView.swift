@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
@@ -16,6 +17,18 @@ func showsToolbarRefreshButton(
 
 func isToolbarRefreshButtonEnabled(_ collectionStatus: ToolbarCollectionStatusViewState) -> Bool {
     collectionStatus.isRefreshEnabled
+}
+
+func showsCollectionTitleIcon(
+    isCollectionMode: Bool,
+    isOpeningCollectionFile: Bool,
+    openedCollectionName: String?,
+    activePageAnchor: ContentTabPageAnchor,
+) -> Bool {
+    if case .collectionFile = activePageAnchor {
+        return true
+    }
+    return isCollectionMode || (isOpeningCollectionFile && openedCollectionName != nil)
 }
 
 struct ToolbarHistoryItem: Equatable {
@@ -77,6 +90,8 @@ struct ToolbarView: View {
 
     private func currentNavigationTitle(for navigationState: ContentPageNavigationRoute) -> String {
         switch navigationState {
+        case .home:
+            "Home"
         case let .folder(path):
             displayName(for: path)
         case .recents:
@@ -85,6 +100,10 @@ struct ToolbarView: View {
             tagName
         case .computer:
             chromeProps.computerName.isEmpty ? "Computer" : chromeProps.computerName
+        case .aiChat:
+            "Ask Voyager"
+        case .aiChatSessions:
+            "Sessions"
         case let .collection(collectionNavigation):
             switch collectionNavigation.kind {
             case .temporary:
@@ -114,8 +133,11 @@ struct ToolbarView: View {
     private func historyItem(
         for snapshot: ContentPageNavigationHistorySnapshot,
         homePath: String,
+        sessionList: AiChatSessionListState,
     ) -> ToolbarHistoryItem {
         switch snapshot.navigationState {
+        case .home:
+            return ToolbarHistoryItem(iconSystemName: "house", title: "Home")
         case let .folder(path):
             return ToolbarHistoryItem(
                 iconSystemName: iconSystemName(forDirectoryPath: path, homePath: homePath),
@@ -130,6 +152,13 @@ struct ToolbarView: View {
                 iconSystemName: "internaldrive",
                 title: chromeProps.computerName.isEmpty ? "Computer" : chromeProps.computerName,
             )
+        case let .aiChat(sessionID):
+            return ToolbarHistoryItem(
+                iconSystemName: "bubble.left.and.text.bubble.right",
+                title: aiChatHistoryTitle(for: sessionID, sessionList: sessionList),
+            )
+        case .aiChatSessions:
+            return ToolbarHistoryItem(iconSystemName: "clock.arrow.circlepath", title: "Sessions")
         case let .collection(navigation):
             let title: String = switch navigation.kind {
             case .temporary:
@@ -141,6 +170,23 @@ struct ToolbarView: View {
         }
     }
 
+    private func aiChatHistoryTitle(
+        for sessionID: String,
+        sessionList: AiChatSessionListState,
+    ) -> String {
+        guard let sessionUUID = UUID(uuidString: sessionID),
+              let summary = sessionList.allRows.first(where: { $0.sessionID.rawValue == sessionUUID })
+        else {
+            return "Ask Voyager"
+        }
+
+        return normalizedAiChatTitle(summary.title)
+    }
+
+    private func normalizedAiChatTitle(_ title: String) -> String {
+        title == "New Chat" ? "Ask Voyager" : title
+    }
+
     var body: some View {
         WithViewStore(
             store,
@@ -148,10 +194,10 @@ struct ToolbarView: View {
                 let homePath = NSHomeDirectory()
                 return ViewState(
                     backHistoryItems: state.navigation.backHistory.map { snapshot in
-                        historyItem(for: snapshot, homePath: homePath)
+                        historyItem(for: snapshot, homePath: homePath, sessionList: state.aiChat.sessionList)
                     },
                     forwardHistoryItems: state.navigation.forwardHistory.map { snapshot in
-                        historyItem(for: snapshot, homePath: homePath)
+                        historyItem(for: snapshot, homePath: homePath, sessionList: state.aiChat.sessionList)
                     },
                     canGoBack: state.navigation.canGoBack,
                     canGoForward: state.navigation.canGoForward,
@@ -283,8 +329,12 @@ struct ToolbarView: View {
     }
 
     private func titleContent(viewStore: ViewStore<ViewState, FileManagerContentFeature.Action>) -> some View {
-        let isShowingCollection = viewStore
-            .isCollectionMode || (viewStore.isOpeningCollectionFile && viewStore.openedCollectionName != nil)
+        let isShowingCollection = showsCollectionTitleIcon(
+            isCollectionMode: viewStore.isCollectionMode,
+            isOpeningCollectionFile: viewStore.isOpeningCollectionFile,
+            openedCollectionName: viewStore.openedCollectionName,
+            activePageAnchor: chromeProps.activePageAnchor,
+        )
         let titleText = viewStore.openedCollectionName ?? viewStore.toolbarTitle
         let composeSuffix = "/ Compose a filter"
         let showUnsavedIndicator = viewStore.collectionStatus.showsUnsavedIndicator

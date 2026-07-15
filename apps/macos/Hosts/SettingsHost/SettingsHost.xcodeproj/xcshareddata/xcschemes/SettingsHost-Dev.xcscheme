@@ -30,6 +30,16 @@
       shouldUseLaunchSchemeArgsEnv = "YES"
       shouldAutocreateTestPlan = "YES">
       <Testables>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "B20000000000000000000050"
+               BuildableName = "SettingsHostTests.xctest"
+               BlueprintName = "SettingsHostTests"
+               ReferencedContainer = "container:SettingsHost.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

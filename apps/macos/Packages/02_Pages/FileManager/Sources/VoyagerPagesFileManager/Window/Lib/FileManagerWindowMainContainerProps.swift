@@ -7,6 +7,7 @@ import VoyagerShared
 
 func makeContentChromeProps(
     from state: FileManagerWindowState,
+    contentTabState: ContentTabState,
     fileManagerClient: FileManagerClient,
 ) -> FileManagerContentChromeProps {
     let computerName = fileManagerClient.displayName("/")
@@ -16,6 +17,7 @@ func makeContentChromeProps(
         trashPath: trashPath,
     )
     let specialDirectoryIconNames = makeSpecialDirectoryIconNames(fileManagerClient: fileManagerClient)
+    let activePageAnchor = ContentTabProjection.activePageAnchor(from: contentTabState) ?? .homeDefault
 
     return FileManagerContentChromeProps(
         computerName: computerName,
@@ -29,19 +31,18 @@ func makeContentChromeProps(
         specialDirectoryIconNames: specialDirectoryIconNames,
         isContextualAiChatPresented: state.inspector.inspectorVisible
             && state.inspector.activeMode == .chat,
+        activeTabID: contentTabState.activeTabID,
+        activePageAnchor: activePageAnchor,
     )
 }
 
-func makeContentOverlayProps(from state: FileManagerWindowState) -> FileManagerContentOverlayProps {
+func makeContentOverlayProps(
+    from state: FileManagerWindowState,
+    fileManagerClient: FileManagerClient,
+) -> FileManagerContentOverlayProps {
     FileManagerContentOverlayProps(
         isComposerPresented: state.content.composer.isPresented,
-        favorites: state.sidebar.favorites.map { favorite in
-            ScopeFavoriteItem(
-                name: favorite.name,
-                url: favorite.url,
-                iconName: favorite.iconName,
-            )
-        },
+        favorites: makeScopeFavorites(fileManagerClient: fileManagerClient),
         historyPaths: state.content.navigation.backHistory.compactMap { entry in
             if case let .folder(path) = entry.navigationState {
                 return path
@@ -54,6 +55,31 @@ func makeContentOverlayProps(from state: FileManagerWindowState) -> FileManagerC
         canSaveCollection: state.content.canSaveCollection,
         isTemporaryCollection: !state.content.openedCollectionURLExists,
     )
+}
+
+func makeScopeFavorites(fileManagerClient: FileManagerClient) -> [ScopeFavoriteItem] {
+    let favoriteMappings: [(
+        name: String,
+        directory: FileManager.SearchPathDirectory,
+        domain: FileManager.SearchPathDomainMask,
+        iconName: String,
+    )] = [
+        ("Applications", .applicationDirectory, .localDomainMask, "folder.badge.gearshape"),
+        ("Desktop", .desktopDirectory, .userDomainMask, "menubar.dock.rectangle"),
+        ("Documents", .documentDirectory, .userDomainMask, "doc"),
+        ("Downloads", .downloadsDirectory, .userDomainMask, "arrow.down.circle"),
+    ]
+
+    return favoriteMappings.compactMap { mapping in
+        guard let url = fileManagerClient.urlsForDirectory(mapping.directory, mapping.domain).first else {
+            return nil
+        }
+        return ScopeFavoriteItem(
+            name: mapping.name,
+            url: url,
+            iconName: mapping.iconName,
+        )
+    }
 }
 
 func makeSpecialDirectoryIconNames(fileManagerClient: FileManagerClient) -> [String: String] {
@@ -91,7 +117,7 @@ func makePathDisplayNames(
             paths.insert(path)
         case .computer:
             paths.insert("/")
-        case .recents, .tags, .collection:
+        case .home, .recents, .tags, .collection, .aiChat, .aiChatSessions:
             break
         }
     }

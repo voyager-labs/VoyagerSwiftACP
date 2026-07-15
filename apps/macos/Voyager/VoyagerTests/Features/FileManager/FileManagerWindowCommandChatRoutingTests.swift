@@ -13,7 +13,6 @@ import XCTest
 final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
     func testCommandLTogglesContextualAiChat() async {
         let fixture = makeFocusedWindowFixture(
-            sessionUUID: makeUUID("00000000-0000-0000-0000-000000000020"),
             focusedUUID: makeUUID("00000000-0000-0000-0000-000000000021"),
         )
 
@@ -45,7 +44,6 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
         let store = TestStore(initialState: fixture.initialState) {
             WindowManagerFeature()
         } withDependencies: {
-            $0.uuid = .constant(fixture.sessionUUID)
             $0.aiConnectionsFileClient.load = { fixture.connectionsFile }
         }
         store.exhaustivity = .off
@@ -77,7 +75,10 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
         await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.closeChat) {
             $0.windows[id: fixture.focusedUUID]?.window.inspector.inspectorVisible = false
         }
-        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.aiChat.teardownRequested)
+        XCTAssertEqual(
+            store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.sessionID,
+            fixture.expectedSetup.sessionID,
+        )
     }
 
     private func assertWindowManagerRequest(
@@ -230,13 +231,11 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
     private struct FocusedWindowFixture {
         let initialState: WindowManagerFeature.State
         let focusedUUID: UUID
-        let sessionUUID: UUID
         let connectionsFile: AIConnectionsFile
         let expectedSetup: AiChatSetupState
     }
 
     private func makeFocusedWindowFixture(
-        sessionUUID: UUID,
         focusedUUID: UUID,
     ) -> FocusedWindowFixture {
         let selectedEntry = makeEntry(name: "Draft.md", fullPath: "/Users/test/Documents/Draft.md")
@@ -250,14 +249,10 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
 
         guard var focusedWindow = initialState.windows[id: focusedUUID]?.window else {
             XCTFail("Missing focused window fixture")
-            let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
-                content: windowState.content,
-                sessionID: AiChatSessionID(rawValue: sessionUUID),
-            )
+            let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: windowState.content)
             return FocusedWindowFixture(
                 initialState: initialState,
                 focusedUUID: focusedUUID,
-                sessionUUID: sessionUUID,
                 connectionsFile: .empty(),
                 expectedSetup: expectedSetup,
             )
@@ -268,15 +263,11 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
 
         let connectionsFile = AIConnectionsFile.empty()
 
-        let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
-            content: focusedWindow.content,
-            sessionID: AiChatSessionID(rawValue: sessionUUID),
-        )
+        let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: focusedWindow.content)
 
         return FocusedWindowFixture(
             initialState: initialState,
             focusedUUID: focusedUUID,
-            sessionUUID: sessionUUID,
             connectionsFile: connectionsFile,
             expectedSetup: expectedSetup,
         )

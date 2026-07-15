@@ -9,9 +9,9 @@ Turn product specs and acceptance criteria into Swift/TCA test topology. The cor
 - Creating tests from a feature spec, acceptance criteria, or interaction list.
 - Reorganizing tests so product behavior is owned by one spec AC suite instead of scattered policy/contract/lifecycle files.
 - Deciding whether a fixture, recorder, dependency double, or helper belongs in `Support/`.
-- Authoring TCA `TestStore` tests before handing off to the `testing` verifier for execution.
+- Authoring TCA `TestStore` tests before selecting verification through `testing-playbook.md`.
 
-Do not use this workflow only to select or run existing tests; use `../../testing/SKILL.md` for that.
+Do not use this workflow only to select or run existing tests; use `testing-playbook.md` for that.
 
 ## Workflow
 
@@ -164,6 +164,8 @@ Capture a compact table before implementation starts:
 
 The table is a guardrail, not documentation polish. If a row cannot identify the surviving assertion path, do not delete that test yet.
 
+When a test stays but its assertions are weakened, use the same accounting at assertion level. Record each removed or loosened assertion, the replacement owner-level assertion that preserves the behavior, and any accepted coverage gap. Do not treat a weaker assertion as cleanup unless that mapping exists.
+
 ### Do / Don't
 
 - Do extract repeated setup after the coverage map identifies stable patterns.
@@ -198,4 +200,4 @@ If two tests look similar but test different initial states, entry paths, or ass
 | Product behavior location | Owning spec suite under `Specs/`                                                                                                     |
 | Fixture/recorder location | Flat files under `Support/`, named by role/type such as `PaymentFixtures.swift`                                                      |
 | Fixture source default    | Root `fixtures/` submodule payload under `fixtures/fixtures/**`; path-equivalence variants still derive from sandboxed real fixtures |
-| Verification handoff      | `../../testing/SKILL.md` with focused class filter                                                                                   |
+| Verification handoff      | `testing-playbook.md` with focused class filter                                                                                      |
