@@ -29,8 +29,14 @@ public struct ContentTabFeature {
             case let .setCurrent(id):
                 return setCurrent(id: id, state: &state)
 
+            case .requestClose:
+                return .none
+
             case let .close(id):
-                return close(id: id, state: &state)
+                return commitClose(id: id, state: &state)
+
+            case let .commitClose(id):
+                return commitClose(id: id, state: &state)
 
             case .restore:
                 return restore(state: &state)
@@ -98,7 +104,7 @@ extension ContentTabFeature {
         return .none
     }
 
-    private func close(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {
+    private func commitClose(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {
         guard let tab = state.tabs[id: id] else {
             state.previousActiveTabID = nil
             return .none

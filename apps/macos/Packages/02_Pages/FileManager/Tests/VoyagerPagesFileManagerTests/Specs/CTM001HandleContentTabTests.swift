@@ -322,7 +322,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         )
         let reducer = ContentTabFeature()
 
-        _ = reducer.reduce(into: &state, action: .close(directoryID))
+        _ = reducer.reduce(into: &state, action: .commitClose(directoryID))
 
         XCTAssertEqual(state.tabs.count, 1)
         XCTAssertEqual(state.tabs[0].id, homeID)
@@ -348,7 +348,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             recentlyClosed: nil,
         )
 
-        _ = reducer.reduce(into: &lastTabState, action: .close(lastID))
+        _ = reducer.reduce(into: &lastTabState, action: .commitClose(lastID))
 
         // 마지막 tab은 제거되지 않고 Home tab으로 reset됨
         XCTAssertEqual(lastTabState.tabs.count, 1)
@@ -383,7 +383,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         )
         let reducer = ContentTabFeature()
 
-        _ = reducer.reduce(into: &state, action: .close(pinnedID))
+        _ = reducer.reduce(into: &state, action: .unpin(pinnedID))
 
         XCTAssertNil(state.recentlyClosed)
         XCTAssertEqual(state.tabs.count, 1)
@@ -413,7 +413,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.close(aiChatTabID))
+        await store.send(.commitClose(aiChatTabID))
 
         XCTAssertEqual(store.state.recentlyClosed?.anchor, .aiChat(sessionID: sessionID))
         XCTAssertNotNil(store.state.activeTabID)
@@ -575,8 +575,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         )
         let reducer = ContentTabFeature()
 
-        _ = reducer.reduce(into: &state, action: .close(tabA))
-        _ = reducer.reduce(into: &state, action: .close(tabB))
+        _ = reducer.reduce(into: &state, action: .commitClose(tabA))
+        _ = reducer.reduce(into: &state, action: .commitClose(tabB))
         _ = reducer.reduce(into: &state, action: .restore)
 
         XCTAssertEqual(state.tabs.count, 2)
@@ -866,7 +866,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         )
         let reducer = ContentTabFeature()
 
-        _ = reducer.reduce(into: &state, action: .close(tabA))
+        _ = reducer.reduce(into: &state, action: .commitClose(tabA))
 
         XCTAssertEqual(state.tabs.count, 2)
         XCTAssertEqual(state.activeTabID, tabC)
@@ -907,7 +907,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         )
         let reducer = ContentTabFeature()
 
-        _ = reducer.reduce(into: &state, action: .close(tabA))
+        _ = reducer.reduce(into: &state, action: .commitClose(tabA))
 
         XCTAssertEqual(state.tabs.count, 2)
         XCTAssertEqual(state.activeTabID, tabB)
@@ -948,7 +948,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         )
         let reducer = ContentTabFeature()
 
-        _ = reducer.reduce(into: &state, action: .close(tabC))
+        _ = reducer.reduce(into: &state, action: .commitClose(tabC))
 
         XCTAssertEqual(state.tabs.count, 2)
         XCTAssertEqual(state.activeTabID, tabB)
@@ -980,7 +980,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         )
         let reducer = ContentTabFeature()
 
-        _ = reducer.reduce(into: &state, action: .close(tabB))
+        _ = reducer.reduce(into: &state, action: .commitClose(tabB))
 
         XCTAssertEqual(state.tabs.count, 1)
         XCTAssertEqual(state.activeTabID, tabA)
@@ -1016,8 +1016,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         )
         let reducer = ContentTabFeature()
 
-        _ = reducer.reduce(into: &state, action: .close(tabB))
-        _ = reducer.reduce(into: &state, action: .close(tabC))
+        _ = reducer.reduce(into: &state, action: .commitClose(tabB))
+        _ = reducer.reduce(into: &state, action: .commitClose(tabC))
 
         XCTAssertEqual(state.recentlyClosed?.anchor, anchorC)
         XCTAssertEqual(state.recentlyClosed?.page, .directory)

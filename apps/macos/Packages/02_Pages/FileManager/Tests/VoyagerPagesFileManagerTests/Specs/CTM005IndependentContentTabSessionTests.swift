@@ -755,7 +755,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
     /// CTM-005-independent_content_tab_session: 마지막 content tab close 시 window close 요청을 발생시킴
     /// 단일 active tab을 닫으면 tab reducer는 Home reset을 유지하고, window routing은 실제 window close를 요청한다.
-    /// - 검증 내용: close 후 `.closeWindow` action 수신
+    /// - 검증 내용: close 후 `.delegate(.closeWindow)` action 수신
     /// - 사전 조건: 단일 Directory tab이 active 상태
     /// - 기대 결과: window close effect가 발생함
     func testLastTabCloseRequestsWindowClose() async {
@@ -784,7 +784,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.close(directoryID)))
-        await store.receive(\.closeWindow)
+        await store.receive(\.delegate.closeWindow)
         await store.finish()
     }
 
