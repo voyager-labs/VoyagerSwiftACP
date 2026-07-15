@@ -25,6 +25,7 @@ V2_HEADINGS = [
     "Verification",
 ]
 PLAN_SECTIONS = ["TL;DR", "Context", "Work Objectives", "TODOs"]
+PLAN_QUALITY_SECTIONS = ["TDD Evidence", "Test Ownership", "Commit Strategy"]
 PLAN_TODO_FIELDS = ["What to do", "Must NOT do", "Acceptance", "QA", "Commit"]
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^]]*]\(([^)#]+)(?:#[^)]+)?\)")
 SKILL_PATH_LITERAL = re.compile(r"`((?:\.agents/|\.\.?/)[^`\s*]+(?:\.md|SKILL\.md))`")
@@ -366,6 +367,75 @@ def verify_plans(root: Path, paths: set[str]) -> list[Diagnostic]:
                         f"plan requires ## {section}",
                     )
                 )
+        for section in PLAN_QUALITY_SECTIONS:
+            if section not in headings:
+                diagnostics.append(
+                    diagnostic(
+                        path,
+                        root,
+                        1,
+                        "PLAN_MISSING_QUALITY_SECTION",
+                        f"plan requires ## {section}",
+                    )
+                )
+        text = "\n".join(lines)
+        no_source_changes = bool(
+            re.search(
+                r"source changes:\s*no|no executable behavior changes",
+                text,
+                re.IGNORECASE,
+            )
+        )
+        tdd_evidence = plan_section_text(lines, headings, "TDD Evidence")
+        if (
+            tdd_evidence is not None
+            and not no_source_changes
+            and not (
+                re.search(r"\bRED\b", tdd_evidence, re.IGNORECASE)
+                and re.search(r"\bGREEN\b", tdd_evidence, re.IGNORECASE)
+            )
+        ):
+            diagnostics.append(
+                diagnostic(
+                    path,
+                    root,
+                    headings["TDD Evidence"],
+                    "PLAN_TDD_EVIDENCE",
+                    "TDD Evidence requires RED and GREEN evidence or an explicit no-source-change rationale",
+                )
+            )
+        test_ownership = plan_section_text(lines, headings, "Test Ownership")
+        if test_ownership is not None and not re.search(
+            r"\bowner(?:ship)?\b|no product behavior assertions",
+            test_ownership,
+            re.IGNORECASE,
+        ):
+            diagnostics.append(
+                diagnostic(
+                    path,
+                    root,
+                    headings["Test Ownership"],
+                    "PLAN_TEST_OWNERSHIP",
+                    "Test Ownership must name the canonical test owner",
+                )
+            )
+        commit_strategy = plan_section_text(lines, headings, "Commit Strategy")
+        if commit_strategy is not None and not (
+            "commit-message" in commit_strategy
+            or (
+                "alternative:" in commit_strategy.lower()
+                and "justification:" in commit_strategy.lower()
+            )
+        ):
+            diagnostics.append(
+                diagnostic(
+                    path,
+                    root,
+                    headings["Commit Strategy"],
+                    "PLAN_COMMIT_STRATEGY",
+                    "Commit Strategy must reference commit-message or justify an alternative",
+                )
+            )
         for index, line in enumerate(lines):
             if not TODO.match(line):
                 continue
@@ -389,7 +459,57 @@ def verify_plans(root: Path, paths: set[str]) -> list[Diagnostic]:
                             f"TODO is missing **{field}**",
                         )
                     )
+            acceptance = plan_field_text(block, "Acceptance")
+            if acceptance is not None and "evidence" not in acceptance.lower():
+                diagnostics.append(
+                    diagnostic(
+                        path,
+                        root,
+                        index + 1,
+                        "PLAN_ACCEPTANCE_EVIDENCE",
+                        "TODO Acceptance must name required evidence",
+                    )
+                )
+            qa = plan_field_text(block, "QA")
+            if (
+                qa is not None
+                and not no_source_changes
+                and not (
+                    re.search(r"\bRED\b", qa, re.IGNORECASE)
+                    and re.search(r"\bGREEN\b", qa, re.IGNORECASE)
+                )
+            ):
+                diagnostics.append(
+                    diagnostic(
+                        path,
+                        root,
+                        index + 1,
+                        "PLAN_TODO_TDD_EVIDENCE",
+                        "TODO QA must name RED and GREEN evidence",
+                    )
+                )
     return diagnostics
+
+
+def plan_section_text(
+    lines: list[str], headings: dict[str, int], section: str
+) -> str | None:
+    start = headings.get(section)
+    if start is None:
+        return None
+    end = min(
+        (line for line in headings.values() if line > start), default=len(lines) + 1
+    )
+    return "\n".join(lines[start : end - 1]).strip()
+
+
+def plan_field_text(block: str, field: str) -> str | None:
+    match = re.search(
+        rf"^\s*- \*\*{re.escape(field)}\*\*:\s*(.*?)(?=^\s*- \*\*|\Z)",
+        block,
+        re.MULTILINE | re.DOTALL,
+    )
+    return match.group(1).strip() if match else None
 
 
 def json_result(name: str, diagnostics: list[Diagnostic], mode: str) -> str:

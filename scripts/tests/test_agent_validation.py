@@ -56,13 +56,26 @@ Context.
 
 Objective.
 
+## TDD Evidence
+
+- RED evidence: failing fixture command.
+- GREEN evidence: passing fixture command.
+
+## Test Ownership
+
+- This fixture plan is the canonical test owner.
+
+## Commit Strategy
+
+- Use the `commit-message` skill.
+
 ## TODOs
 
 - [ ] 1. Fixture task
   - **What to do**: Do it.
   - **Must NOT do**: Do anything else.
-  - **Acceptance**: It is done.
-  - **QA**: Test it.
+  - **Acceptance**: It is done. Evidence: validator output.
+  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.
   - **Commit**: NO.
 """
 
@@ -346,7 +359,10 @@ class AgentValidationTests(unittest.TestCase):
             self.write(
                 root,
                 ".sisyphus/plans/invalid.md",
-                PLAN.replace("  - **QA**: Test it.\n", ""),
+                PLAN.replace(
+                    "  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.\n",
+                    "",
+                ),
             )
             result, payload = self.run_cli(VERIFY, root, "--all")
             self.assert_exact_diagnostic(result, payload, "PLAN_TODO_CONTRACT")
@@ -425,7 +441,29 @@ class AgentValidationTests(unittest.TestCase):
         plan_cases = {
             "PLAN_MISSING_TITLE": PLAN.replace("# Fixture Plan", "Fixture Plan"),
             "PLAN_MISSING_SECTION": PLAN.replace("## Context", "## Background"),
-            "PLAN_TODO_CONTRACT": PLAN.replace("  - **QA**: Test it.\n", ""),
+            "PLAN_TODO_CONTRACT": PLAN.replace(
+                "  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.\n",
+                "",
+            ),
+            "PLAN_MISSING_QUALITY_SECTION": PLAN.replace(
+                "## Test Ownership", "## Test Assignment"
+            ),
+            "PLAN_TDD_EVIDENCE": PLAN.replace(
+                "- RED evidence: failing fixture command.",
+                "- Initial evidence: failing fixture command.",
+            ),
+            "PLAN_TEST_OWNERSHIP": PLAN.replace(
+                "is the canonical test owner", "uses validator assertions"
+            ),
+            "PLAN_COMMIT_STRATEGY": PLAN.replace(
+                "`commit-message` skill", "normal Git workflow"
+            ),
+            "PLAN_ACCEPTANCE_EVIDENCE": PLAN.replace(
+                " Evidence: validator output.", ""
+            ),
+            "PLAN_TODO_TDD_EVIDENCE": PLAN.replace(
+                "RED evidence fails before implementation; ", ""
+            ),
         }
         for code, content in plan_cases.items():
             with self.subTest(code=code), tempfile.TemporaryDirectory() as temp:
@@ -434,6 +472,20 @@ class AgentValidationTests(unittest.TestCase):
                 result, payload = self.run_cli(VERIFY, root, "--all")
                 self.assert_exact_diagnostic(result, payload, code)
                 seen_codes.add(code)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            no_source_plan = PLAN.replace(
+                "- RED evidence: failing fixture command.\n- GREEN evidence: passing fixture command.",
+                "- Source changes: no. No executable behavior changes; RED/GREEN evidence omitted.",
+            ).replace(
+                "RED evidence fails before implementation; GREEN evidence passes after implementation.",
+                "No executable behavior changes.",
+            )
+            self.write(root, ".sisyphus/plans/fixture.md", no_source_plan)
+            result, payload = self.run_cli(VERIFY, root, "--all")
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(payload["diagnostics"], [])
 
         self.assertEqual(seen_codes, self.emitted_diagnostic_codes())
 
@@ -489,7 +541,14 @@ class AgentValidationTests(unittest.TestCase):
             capture_output=True,
             check=True,
         ).stdout.strip()
-        self.write(root, relative, PLAN.replace("  - **QA**: Test it.\n", ""))
+        self.write(
+            root,
+            relative,
+            PLAN.replace(
+                "  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.\n",
+                "",
+            ),
+        )
         result, payload = self.run_cli(VERIFY, root, "--working-tree")
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(payload["mode"], "working-tree")
