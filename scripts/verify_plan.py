@@ -7,7 +7,12 @@ import argparse
 import sys
 from pathlib import Path
 
-from scripts.agent_validation import git_paths, json_result, verify_plans
+from scripts.agent_validation import (
+    git_paths,
+    json_result,
+    validation_root,
+    verify_plans,
+)
 
 
 def main() -> int:
@@ -33,9 +38,10 @@ def main() -> int:
         paths = (
             set(args.paths) if args.paths else git_paths(args.root, mode, args.base_ref)
         )
+        with validation_root(args.root, mode) as content_root:
+            diagnostics = verify_plans(content_root, paths)
     except RuntimeError as error:
         parser.error(str(error))
-    diagnostics = verify_plans(args.root, paths)
     print(json_result("verify-plan", diagnostics, mode))
     print(
         f"verify-plan: {len(diagnostics)} diagnostic(s) in {mode} scope",

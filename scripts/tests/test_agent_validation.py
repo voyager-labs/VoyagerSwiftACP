@@ -627,6 +627,38 @@ class AgentValidationTests(unittest.TestCase):
             base_result, base_payload, "HARNESS_SCHEMA_VERSION"
         )
 
+    def test_staged_validation_reads_index_blobs(self) -> None:
+        temp = self.make_repo()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        relative = ".agents/rules/00-fixture.md"
+        self.write(root, relative, RULE)
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "fixture"], cwd=root, check=True)
+        self.write(root, relative, RULE.replace("schemaVersion: 2\n", ""))
+        subprocess.run(["git", "add", relative], cwd=root, check=True)
+        self.write(root, relative, RULE)
+
+        result, payload = self.run_cli(VALIDATE, root, "--staged")
+
+        self.assert_exact_diagnostic(result, payload, "HARNESS_SCHEMA_VERSION")
+
+    def test_staged_plan_validation_reads_index_blobs(self) -> None:
+        temp = self.make_repo()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        relative = ".sisyphus/plans/fixture.md"
+        self.write(root, relative, PLAN)
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "fixture"], cwd=root, check=True)
+        self.write(root, relative, PLAN.replace("# Fixture Plan", "Fixture Plan"))
+        subprocess.run(["git", "add", relative], cwd=root, check=True)
+        self.write(root, relative, PLAN)
+
+        result, payload = self.run_cli(VERIFY, root, "--staged")
+
+        self.assert_exact_diagnostic(result, payload, "PLAN_MISSING_TITLE")
+
     def test_plan_scope_modes_use_changed_files_only(self) -> None:
         temp = self.make_repo()
         self.addCleanup(temp.cleanup)

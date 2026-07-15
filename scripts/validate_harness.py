@@ -7,7 +7,12 @@ import argparse
 import sys
 from pathlib import Path
 
-from scripts.agent_validation import git_paths, json_result, validate_harness
+from scripts.agent_validation import (
+    git_paths,
+    json_result,
+    validate_harness,
+    validation_root,
+)
 
 
 def main() -> int:
@@ -33,9 +38,10 @@ def main() -> int:
         paths = (
             set(args.paths) if args.paths else git_paths(args.root, mode, args.base_ref)
         )
+        with validation_root(args.root, mode) as content_root:
+            diagnostics = validate_harness(content_root, paths, mode)
     except RuntimeError as error:
         parser.error(str(error))
-    diagnostics = validate_harness(args.root, paths, mode)
     print(json_result("validate-harness", diagnostics, mode))
     print(
         f"validate-harness: {len(diagnostics)} diagnostic(s) in {mode} scope",
