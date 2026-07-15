@@ -517,14 +517,15 @@ extension AccountAccessFeature {
             snapshot.sessionBindingID == binding,
             snapshot.gatewayBinding == Self.gatewayEnvironment.binding,
             snapshot.status.isActive,
-            snapshot.deviceBindingVerifiedAt != nil,
+            let deviceBindingVerifiedAt = snapshot.deviceBindingVerifiedAt,
             let deviceID = snapshot.deviceID,
             !deviceID.isEmpty,
             let currentDeviceID = try? deviceIdentityClient.deviceId(),
             currentDeviceID == deviceID,
             now.timeIntervalSinceReferenceDate.isFinite,
             snapshot.fetchedAt.timeIntervalSinceReferenceDate.isFinite,
-            snapshot.deviceBindingVerifiedAt?.timeIntervalSinceReferenceDate.isFinite == true
+            deviceBindingVerifiedAt.timeIntervalSinceReferenceDate.isFinite,
+            deviceBindingVerifiedAt <= now
         else {
             return false
         }

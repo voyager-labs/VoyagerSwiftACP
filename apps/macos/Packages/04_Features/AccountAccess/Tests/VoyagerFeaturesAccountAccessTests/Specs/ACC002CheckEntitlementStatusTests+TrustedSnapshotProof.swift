@@ -93,16 +93,16 @@ extension ACC002CheckEntitlementStatusTests {
     }
 
     /// ACC-002-trusted-snapshot-fallback: 미래 검증 시각은 fallback unlock에 사용할 수 없다.
-    /// - 검증 내용: fetchedAt이 현재보다 미래인 active snapshot은 recoveryRequired만 전송한다.
+    /// - 검증 내용: device binding verification timestamp가 현재보다 미래인 active snapshot은 recoveryRequired만 전송한다.
     /// - 사전 조건: 현재 세션과 device binding proof는 있으나 verification timestamp가 미래다.
     /// - 기대 결과: isComplete=false이며 unlock delegate가 발생하지 않는다.
     func testTrustedSnapshotWithFutureVerificationTimeIsRejected() async {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let snapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
-            fetchedAt: now.addingTimeInterval(1),
+            fetchedAt: now,
             sessionExpiresAt: now.addingTimeInterval(3600),
-            deviceBindingVerifiedAt: now,
+            deviceBindingVerifiedAt: now.addingTimeInterval(1),
         )
         var state = AccountAccessFeature.State()
         state.hasAccountSession = true
