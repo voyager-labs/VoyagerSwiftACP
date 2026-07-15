@@ -331,6 +331,7 @@ private func makeManagedWindowController(
             fileManagerWindowOnResignedKey?(id)
         },
         onWillClose: { id in
+            fileManagerWindowClosingIDs.insert(id)
             fileManagerWindowOnClosed?(id)
         },
         initialWindowSizeProvider: {
