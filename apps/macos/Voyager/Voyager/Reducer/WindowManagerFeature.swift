@@ -41,6 +41,8 @@ struct WindowManagerFeature {
     private var fileManagerWindowClient
     @Dependency(\.attachmentPickerClient)
     private var attachmentPickerClient
+    @Dependency(\.undoManagerClient)
+    private var undoManagerClient
 
     @Dependency(\.contentTabPinnedRecordClient)
     private var contentTabPinnedRecordClient
@@ -217,11 +219,17 @@ struct WindowManagerFeature {
                 if wasFocused {
                     state.focusedWindowID = state.windows.first?.id
                 }
+                let invalidateUndoManagerEffect: Effect<Action> = .run { _ in
+                    await undoManagerClient.invalidateWindow(id)
+                }
                 guard state.defaultWindowBootstrapWindowIDs.isEmpty,
                       state.defaultWindowBootstrapRequestID != nil
-                else { return .none }
+                else { return invalidateUndoManagerEffect }
                 state.defaultWindowBootstrapRequestID = nil
-                return .cancel(id: CancelID.defaultWindowBootstrap)
+                return .merge(
+                    .cancel(id: CancelID.defaultWindowBootstrap),
+                    invalidateUndoManagerEffect,
+                )
 
             case let .event(.focusWindow(path)):
                 return .run { _ in
