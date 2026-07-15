@@ -10358,16 +10358,6 @@ private extension CTM005IndependentContentTabSessionTests {
         let id: ContentTabID
         let anchorPath: String
         let savedPath: String?
-
-        init(
-            id: ContentTabID,
-            anchorPath: String,
-            savedPath: String?,
-        ) {
-            self.id = id
-            self.anchorPath = anchorPath
-            self.savedPath = savedPath
-        }
     }
 
     func makeInFlightDirectoryLifecycleStore(
