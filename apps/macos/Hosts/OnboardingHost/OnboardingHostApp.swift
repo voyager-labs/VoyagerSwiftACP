@@ -205,11 +205,8 @@ enum OnboardingHostMockAuthAssembly {
         let connectedDeviceAvailability = mode.mockConnectedDeviceAvailability
 
         return OnboardingHostAuthClients(
-            accountSessionClient: AccountSessionClient(
-                read: { sessionHolder.session },
-                persist: { session in sessionHolder.setSession(session) },
-                delete: { _ in sessionHolder.setSession(nil) },
-            ),
+            accountSessionClient: AccountSessionClient(read: { _ in sessionHolder.session }, persist: { session in sessionHolder.setSession(session) },
+            delete: { _ in sessionHolder.setSession(nil) },),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { throw AccessError.notConfigured },

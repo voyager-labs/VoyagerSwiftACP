@@ -34,17 +34,13 @@ enum StateMutation {
         snapshot: activeAccessSnapshot,
     )
 
-    static let activeAccountSessionClient = AccountSessionClient(
-        read: {
-            AccountSession(
-                accessToken: "test-token",
-                status: .coreLicenseActive,
-                expiresAt: activeSessionExpiry,
-            )
-        },
-        persist: { _ in },
-        delete: { _ in },
+    static let activeAccountSessionClient = AccountSessionClient(read: { _ in AccountSession(
+        accessToken: "test-token",
+        status: .coreLicenseActive,
+        expiresAt: activeSessionExpiry,
     )
+             }, persist: { _ in },
+    delete: { _ in },)
 
     static let activeAuthNetworkClient = AuthNetworkClient(
         exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },

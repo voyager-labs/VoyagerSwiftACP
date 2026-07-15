@@ -126,7 +126,7 @@ struct AccountSettingsView: View {
                 }
             }
 
-        case .entitlementInactive:
+        case .entitlementNone, .entitlementExpired, .entitlementRevoked, .entitlementRefunded:
             HStack(spacing: 8) {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.red)

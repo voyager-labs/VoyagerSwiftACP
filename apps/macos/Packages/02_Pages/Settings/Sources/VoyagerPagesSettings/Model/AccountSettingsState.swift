@@ -12,7 +12,10 @@ public enum SetEntitlementState: Equatable, Sendable {
     case entitlementUnknown
     case entitlementUnavailable
     case entitlementActive
-    case entitlementInactive
+    case entitlementNone
+    case entitlementExpired
+    case entitlementRevoked
+    case entitlementRefunded
 }
 
 /// Canonical AccountAccess runtime에서 Settings가 표시하는 사실만 복사한 값 projection.
@@ -57,11 +60,29 @@ public struct AccountSettingsState: Equatable {
 
     public var setEntitlementState: SetEntitlementState {
         guard let status = presentation.accessStatus else { return .entitlementUnknown }
-        if status == .networkFailure { return .entitlementUnavailable }
-        return status.isActive ? .entitlementActive : .entitlementInactive
+        switch status {
+        case .coreLicenseActive, .trialActive, .internalTestActive:
+            return .entitlementActive
+        case .none:
+            return .entitlementNone
+        case .trialExpired:
+            return .entitlementExpired
+        case .revoked:
+            return .entitlementRevoked
+        case .refunded:
+            return .entitlementRefunded
+        case .networkFailure:
+            return .entitlementUnavailable
+        }
     }
 
     public var isManageAccountAvailable: Bool {
-        setEntitlementState == .entitlementActive
+        guard presentation.hasAccountSession else { return false }
+        switch setEntitlementState {
+        case .entitlementActive, .entitlementNone, .entitlementExpired, .entitlementRevoked, .entitlementRefunded:
+            return true
+        case .entitlementUnknown, .entitlementUnavailable:
+            return false
+        }
     }
 }

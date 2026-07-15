@@ -197,11 +197,8 @@ extension ONB001RunUserOnboardingTests {
                 snapshot: snapshot,
                 saveRecorder: saveRecorder,
             )
-            $0.accountSessionClient = AccountSessionClient(
-                read: { AccountSession(accessToken: "test-token", status: .coreLicenseActive) },
-                persist: { _ in },
-                delete: { _ in },
-            )
+            $0.accountSessionClient = AccountSessionClient(read: { _ in AccountSession(accessToken: "test-token", status: .coreLicenseActive) }, persist: { _ in },
+            delete: { _ in },)
             $0.authNetworkClient = AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { revokedResponse },

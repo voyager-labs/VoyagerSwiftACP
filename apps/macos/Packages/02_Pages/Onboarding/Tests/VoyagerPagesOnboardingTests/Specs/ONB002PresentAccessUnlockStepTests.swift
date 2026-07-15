@@ -318,6 +318,38 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         XCTAssertEqual(state.accessUnlockPrimaryCTA, .next)
     }
 
+    /// ONB-002-show_access_status: Onboarding은 canonical access status의 semantic projection을 CTA와 독립적으로 보존한다.
+    /// - 검증 내용: nil, network failure, none, expired, revoked, refunded, active의 개별 semantic 상태와 기존 primary CTA
+    /// - 사전 조건: current account session이 있고 각 canonical access status가 설정됨
+    /// - 기대 결과: semantic 상태는 구분되고 기존 CTA family는 변경되지 않음
+    func testAccessProjectionPreservesSemanticStatusesWithoutChangingPrimaryCTA() {
+        struct EntitlementCase {
+            let status: AccessStatus?
+            let expectedEntitlementState: OnboardingAccessProjection.EntitlementState
+            let expectedCTA: OnboardingAccessProjection.PrimaryCTA
+        }
+
+        let cases: [EntitlementCase] = [
+            .init(status: nil, expectedEntitlementState: .unknown, expectedCTA: .pending),
+            .init(status: .networkFailure, expectedEntitlementState: .unavailable, expectedCTA: .retry),
+            .init(status: AccessStatus.none, expectedEntitlementState: .none, expectedCTA: .webPricing),
+            .init(status: .trialExpired, expectedEntitlementState: .expired, expectedCTA: .webPricing),
+            .init(status: .revoked, expectedEntitlementState: .revoked, expectedCTA: .webPricing),
+            .init(status: .refunded, expectedEntitlementState: .refunded, expectedCTA: .webPricing),
+            .init(status: .coreLicenseActive, expectedEntitlementState: .active, expectedCTA: .pending),
+        ]
+
+        for testCase in cases {
+            var accountAccess = AccountAccessFeature.State()
+            accountAccess.hasAccountSession = true
+            accountAccess.status = testCase.status
+            let projection = OnboardingAccessProjection(accountAccess: accountAccess)
+
+            XCTAssertEqual(projection.entitlementState, testCase.expectedEntitlementState)
+            XCTAssertEqual(projection.primaryCTA, testCase.expectedCTA)
+        }
+    }
+
     // MARK: - ONB-002-mock_sign_in_handoff
 
     // ONB-002-mock_sign_in_handoff: Login CTA가 mock handoff 진행 중에 isSignInInProgress와 pending 상태를 표시한다.

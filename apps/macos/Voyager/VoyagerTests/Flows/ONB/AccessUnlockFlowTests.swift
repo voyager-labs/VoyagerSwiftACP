@@ -40,11 +40,8 @@ final class AccessUnlockFlowTests: XCTestCase {
             deviceBindingOutcome: .bound,
             connectedDeviceAvailability: .available,
         )
-        let accountSessionClient = AccountSessionClient(
-            read: { session },
-            persist: { _ in },
-            delete: { _ in },
-        )
+        let accountSessionClient = AccountSessionClient(read: { _ in session }, persist: { _ in },
+                                                        delete: { _ in })
         let sessionSynced = expectation(description: "AccountAccess session sync completes")
         let authNetworkClient = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw SessionSyncError.capabilityMiss },
@@ -120,11 +117,8 @@ final class AccessUnlockFlowTests: XCTestCase {
     /// - 사전 조건: hasAccountSession = false, auth_state = logged_out
     /// - 기대 결과: Next 비활성화, Login route 노출, entitlement fetch 미실행
     func testSignInRequiredKeepsAccessBlockedAndExposesLoginRoute() throws {
-        let accountSessionClient = AccountSessionClient(
-            read: { nil },
-            persist: { _ in },
-            delete: { _ in },
-        )
+        let accountSessionClient = AccountSessionClient(read: { _ in nil }, persist: { _ in },
+                                                        delete: { _ in })
         let authNetworkClient = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw SessionSyncError.capabilityMiss },
             fetchAccessStatus: { throw SessionSyncError.capabilityMiss },
@@ -211,9 +205,7 @@ final class AccessUnlockFlowTests: XCTestCase {
             connectedDeviceAvailability: .available,
         )
         let sessionSynced = expectation(description: "AccountAccess session sync completes")
-        let accountSessionClient = AccountSessionClient(
-            read: { session }, persist: { _ in }, delete: { _ in },
-        )
+        let accountSessionClient = AccountSessionClient(read: { _ in session }, persist: { _ in }, delete: { _ in })
         let authNetworkClient = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw SessionSyncError.capabilityMiss },
             fetchAccessStatus: { syncResult.accessStatus },
@@ -301,9 +293,7 @@ final class AccessUnlockFlowTests: XCTestCase {
             connectedDeviceAvailability: .available,
         )
         let sessionSynced = expectation(description: "AccountAccess session sync completes")
-        let accountSessionClient = AccountSessionClient(
-            read: { session }, persist: { _ in }, delete: { _ in },
-        )
+        let accountSessionClient = AccountSessionClient(read: { _ in session }, persist: { _ in }, delete: { _ in })
         let authNetworkClient = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw SessionSyncError.capabilityMiss },
             fetchAccessStatus: { syncResult.accessStatus },
@@ -400,9 +390,7 @@ final class AccessUnlockFlowTests: XCTestCase {
         let initialSessionSynced = expectation(description: "Initial blocked session sync completes")
         let refreshedSessionSynced = expectation(description: "Refreshed active session sync completes")
         let syncResults = SessionSyncResults([blockedResult, activeResult])
-        let accountSessionClient = AccountSessionClient(
-            read: { session }, persist: { _ in }, delete: { _ in },
-        )
+        let accountSessionClient = AccountSessionClient(read: { _ in session }, persist: { _ in }, delete: { _ in })
         let authNetworkClient = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw SessionSyncError.capabilityMiss },
             fetchAccessStatus: { blockedResult.accessStatus },
@@ -488,9 +476,7 @@ final class AccessUnlockFlowTests: XCTestCase {
         )
         let sessionSyncAttempts = expectation(description: "Session sync exhausts network retries")
         sessionSyncAttempts.expectedFulfillmentCount = 4
-        let accountSessionClient = AccountSessionClient(
-            read: { session }, persist: { _ in }, delete: { _ in },
-        )
+        let accountSessionClient = AccountSessionClient(read: { _ in session }, persist: { _ in }, delete: { _ in })
         let authNetworkClient = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw SessionSyncError.capabilityMiss },
             fetchAccessStatus: { throw SessionSyncError.upstream(0) },
@@ -577,9 +563,7 @@ final class AccessUnlockFlowTests: XCTestCase {
             connectedDeviceAvailability: .available,
         )
         let sessionSynced = expectation(description: "AccountAccess session sync completes")
-        let accountSessionClient = AccountSessionClient(
-            read: { session }, persist: { _ in }, delete: { _ in },
-        )
+        let accountSessionClient = AccountSessionClient(read: { _ in session }, persist: { _ in }, delete: { _ in })
         let authNetworkClient = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw SessionSyncError.capabilityMiss },
             fetchAccessStatus: { syncResult.accessStatus },
