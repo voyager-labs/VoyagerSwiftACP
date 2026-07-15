@@ -2,7 +2,7 @@ import ComposableArchitecture
 import Foundation
 
 public enum AccountSessionRestoration: Equatable, Sendable {
-    case available(sessionExpiresAt: Date?)
+    case available(session: AccountSession)
     case missing
 }
 
@@ -57,6 +57,7 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case sessionSyncRequested(intent: SessionSyncIntent, reason: SyncReason)
     case _sessionSyncCompleted(
         generation: UInt64,
+        binding: UUID? = nil,
         result: Result<SessionSyncResult, SessionSyncError>,
     )
     case accessStatusResponse(generation: Int, result: Result<AccessStatusResponse, AccessError>)
@@ -67,9 +68,10 @@ public enum AccountAccessAction: CasePathable, Sendable {
     )
     case refreshAccessTapped
     case appDidBecomeActive
-    case revalidatePersistedSession(generation: Int)
+    case revalidatePersistedSession(generation: Int, reason: SyncReason = .foreground)
     case _persistedSessionRevalidated(
         generation: Int,
+        reason: SyncReason = .foreground,
         result: PersistedSessionRevalidationResult,
     )
     case openCheckoutTapped
@@ -97,7 +99,7 @@ public enum AccountAccessAction: CasePathable, Sendable {
     }
 
     public enum PersistedSessionRevalidationResult: Equatable, Sendable {
-        case valid(sessionExpiresAt: Date)
+        case valid(session: AccountSession)
         case missing
         case storageUnavailable
     }

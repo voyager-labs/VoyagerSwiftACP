@@ -4,7 +4,7 @@ import Foundation
 // MARK: - Client Struct
 
 public struct AccountSessionClient: Sendable {
-    public var read: @Sendable () async throws -> AccountSession?
+    public var read: @Sendable (_ now: Date) async throws -> AccountSession?
     public var persist: @Sendable (_ session: AccountSession) async throws -> Void
     public var prepareHandoffPersistence: @Sendable (_ session: AccountSession) async throws -> AccountSession
     public var commitHandoffPersistence: @Sendable (_ expectedSession: AccountSession) async throws -> Void
@@ -15,7 +15,7 @@ public struct AccountSessionClient: Sendable {
     public static let sessionEndReasonUserInfoKey = "accountSessionEndReason"
 
     nonisolated public init(
-        read: @escaping @Sendable () async throws -> AccountSession?,
+        read: @escaping @Sendable (Date) async throws -> AccountSession?,
         persist: @escaping @Sendable (AccountSession) async throws -> Void,
         delete: @escaping @Sendable (_ reason: AccountSessionEndReason) async throws -> Void,
     ) {
@@ -24,7 +24,7 @@ public struct AccountSessionClient: Sendable {
             persist: persist,
             prepareHandoffPersistence: { session in
                 try await persist(session)
-                guard let persistedSession = try await read() else {
+                guard let persistedSession = try await read(Date()) else {
                     throw AccountSessionPersistenceError.verificationFailed
                 }
                 return persistedSession
@@ -38,7 +38,7 @@ public struct AccountSessionClient: Sendable {
     }
 
     nonisolated public init(
-        read: @escaping @Sendable () async throws -> AccountSession?,
+        read: @escaping @Sendable (Date) async throws -> AccountSession?,
         persist: @escaping @Sendable (AccountSession) async throws -> Void,
         delete: @escaping @Sendable (_ reason: AccountSessionEndReason) async throws -> Void,
         discardPersistedSession: @escaping @Sendable (_ expectedSession: AccountSession) async throws -> Void,
@@ -48,7 +48,7 @@ public struct AccountSessionClient: Sendable {
             persist: persist,
             prepareHandoffPersistence: { session in
                 try await persist(session)
-                guard let persistedSession = try await read() else {
+                guard let persistedSession = try await read(Date()) else {
                     throw AccountSessionPersistenceError.verificationFailed
                 }
                 return persistedSession
@@ -60,7 +60,7 @@ public struct AccountSessionClient: Sendable {
     }
 
     nonisolated public init(
-        read: @escaping @Sendable () async throws -> AccountSession?,
+        read: @escaping @Sendable (Date) async throws -> AccountSession?,
         persist: @escaping @Sendable (AccountSession) async throws -> Void,
         prepareHandoffPersistence: @escaping @Sendable (AccountSession) async throws -> AccountSession,
         commitHandoffPersistence: @escaping @Sendable (AccountSession) async throws -> Void,
@@ -90,23 +90,28 @@ extension AccountSessionClient {
             try await store.discard(expectedSession: session)
         }
         return AccountSessionClient(
-            read: {
+            read: { now in
                 let file = try await store.read()
                 guard let file else { return nil }
                 let expiresAt = Date(
                     timeIntervalSince1970: TimeInterval(file.accessTokenExpiresAtMs) / 1000,
                 )
-                if expiresAt <= Date() { return nil }
-                return AccountTokenSessionMapper.tokensFileToSession(file)
+                guard var session = AccountTokenSessionMapper.tokensFileToSession(file) else { return nil }
+                if expiresAt > now { return session }
+                guard !file.refreshToken.isEmpty,
+                      file.refreshTokenExpiresAtMs > Int64(now.timeIntervalSince1970 * 1000)
+                else { return nil }
+                session.status = .none
+                return session
             },
             persist: { session in
-                guard let tokensFile = AccountTokenSessionMapper.sessionToTokensFile(session) else {
+                guard let tokensFile = AccountTokenSessionMapper.sessionToTokensFile(session, now: Date()) else {
                     throw AccountSessionPersistenceError.missingRefreshToken
                 }
                 try await store.write(tokensFile)
             },
             prepareHandoffPersistence: { session in
-                guard let tokensFile = AccountTokenSessionMapper.sessionToTokensFile(session) else {
+                guard let tokensFile = AccountTokenSessionMapper.sessionToTokensFile(session, now: Date()) else {
                     throw AccountSessionPersistenceError.missingRefreshToken
                 }
                 let preparedFile = try await store.prepareHandoffWrite(tokensFile)
@@ -142,7 +147,7 @@ extension AccountSessionClient: DependencyKey {
 
     nonisolated public static var testValue: AccountSessionClient {
         AccountSessionClient(
-            read: { nil },
+            read: { _ in nil },
             persist: { _ in },
             delete: { _ in },
         )

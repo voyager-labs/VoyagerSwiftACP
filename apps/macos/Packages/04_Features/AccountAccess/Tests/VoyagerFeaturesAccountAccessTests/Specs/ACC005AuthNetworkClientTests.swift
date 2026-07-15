@@ -556,6 +556,42 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         XCTAssertNil(AuthNetworkClient.exchangeError(for: URLError(.cancelled)))
         XCTAssertEqual(AuthNetworkClient.exchangeError(for: URLError(.timedOut)), .networkFailure)
     }
+}
+
+extension ACC005AuthNetworkClientTests {
+    func testGatewayEnvironmentCanonicalizesEquivalentGatewayURLs() {
+        let cases: [(raw: String, binding: String)] = [
+            (" HTTPS://Gateway.Example.com:443/a//b/../c/ ", "https://gateway.example.com/a/c"),
+            ("http://GATEWAY.example.com:80/", "http://gateway.example.com/"),
+            ("https://gateway.example.com:8443/a/", "https://gateway.example.com:8443/a"),
+            ("https://gateway.example.com/a/./b", "https://gateway.example.com/a/b"),
+        ]
+
+        for testCase in cases {
+            let environment = GatewayEnvironment(rawValue: testCase.raw)
+
+            XCTAssertEqual(environment.binding, testCase.binding)
+            XCTAssertEqual(environment.baseURL?.absoluteString, testCase.binding)
+        }
+    }
+
+    func testGatewayEnvironmentRejectsUnsafeOrInvalidURLs() {
+        let invalidURLs = [
+            "gateway.example.com",
+            "ftp://gateway.example.com",
+            "https:///missing-host",
+            "https://user@gateway.example.com",
+            "https://gateway.example.com/path?query=value",
+            "https://gateway.example.com/path#fragment",
+        ]
+
+        for rawURL in invalidURLs {
+            let environment = GatewayEnvironment(rawValue: rawURL)
+
+            XCTAssertNil(environment.baseURL)
+            XCTAssertEqual(environment.binding, "")
+        }
+    }
 
     /// ACC-005-test_value: testValue의 모든 closure가 notConfigured를 throw한다.
     /// DependencyKey.testValue가 안전한 기본값을 제공하는지 검증한다.

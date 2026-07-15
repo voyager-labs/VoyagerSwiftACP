@@ -116,12 +116,10 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             status: .none,
             refreshToken: "persisted-refresh-token",
             expiresAt: Self.persistedSessionExpiry,
+            sessionBindingID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
         )
-        return AccountSessionClient(
-            read: { session },
-            persist: { _ in },
-            delete: { _ in },
-        )
+        return AccountSessionClient(read: { _ in session }, persist: { _ in },
+                                    delete: { _ in })
     }
 
     /// handoffPendingState가 설정된 signInInProgress 상태 (callback 대기 중)
@@ -341,6 +339,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 fetchedAt: self.referenceDate,
+                deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
             )
@@ -464,6 +463,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 fetchedAt: self.referenceDate,
+                deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
             )
@@ -595,11 +595,8 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     func testOnboardingHostTargetRejectsVoyagerCallback() async {
         nonisolated(unsafe) var exchangeCalled = false
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: AccountSessionClient(read: { _ in nil }, persist: { _ in },
+                                                       delete: { _ in }),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in
                     exchangeCalled = true
@@ -665,6 +662,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.hasAccountSession = true
             state.didSignInFail = false
             state.sessionExpiresAt = Self.persistedSessionExpiry
+            state.sessionBindingID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
             state.ttlTimerActive = true
             state.refreshDeadlineGeneration = 1
             state.fetchGeneration = 1
@@ -683,6 +681,8 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 fetchedAt: self.referenceDate,
+                sessionBindingID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+                deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
             )
@@ -758,6 +758,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 fetchedAt: self.referenceDate,
+                deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
             )
@@ -851,6 +852,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 fetchedAt: self.referenceDate,
+                deviceID: "test-device-id",
                 sessionExpiresAt: state.sessionExpiresAt,
                 deviceBindingVerifiedAt: self.referenceDate,
             )
@@ -938,6 +940,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 fetchedAt: self.referenceDate,
+                deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
             )

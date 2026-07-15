@@ -114,7 +114,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         state.lastCompleteSyncAt = referenceDate.addingTimeInterval(-301)
         let store = makeTestStore(
             accountSessionClient: AccountSessionClient(
-                read: { Self.session(expiresAt: persistedExpiry) },
+                read: { _ in Self.session(expiresAt: persistedExpiry) },
                 persist: { _ in },
                 delete: { _ in },
             ),
@@ -168,14 +168,10 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         state.hydrateLaunchSnapshotState(freshSnapshot)
 
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: {
-                    sessionReadCount += 1
-                    return Self.session(expiresAt: sessionExpiresAt)
-                },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: AccountSessionClient(read: { _ in sessionReadCount += 1
+                return Self.session(expiresAt: sessionExpiresAt)
+            }, persist: { _ in },
+            delete: { _ in }),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
@@ -218,7 +214,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         initialState.sessionExpiresAt = sessionExpiresAt
         let store = makeTestStore(
             accountSessionClient: AccountSessionClient(
-                read: { Self.session(expiresAt: sessionExpiresAt) },
+                read: { _ in Self.session(expiresAt: sessionExpiresAt) },
                 persist: { _ in },
                 delete: { _ in },
             ),
@@ -258,8 +254,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
                 deviceBindingOutcome: .notAttempted,
                 connectedDeviceAvailability: .available,
             ))
-            await store.receive(\._sessionSyncCompleted)
-            await store.receive(\.delegate.recoveryRequired)
+            await Task.yield()
             await store.finish()
         }
     }
@@ -304,6 +299,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
     func testRefreshDeadlineFiresAtExpiryMinusRefreshBuffer() async {
         let clock = TestClock()
         let expiresAt = referenceDate.addingTimeInterval(3600)
+        let expiredExpiry = referenceDate.addingTimeInterval(-1)
         let snapshot = AccessStatusSnapshot.fetchResult(
             status: .coreLicenseActive,
             currentPeriodEnd: nil,
@@ -316,14 +312,28 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         } withDependencies: {
             $0.continuousClock = clock
             $0.date = .constant(referenceDate)
+            $0.accountSessionClient = AccountSessionClient(
+                read: { _ in AccountSession(
+                    accessToken: "expired-access-token",
+                    status: .none,
+                    refreshToken: "refresh-token",
+                    expiresAt: expiredExpiry,
+                )
+                },
+                persist: { _ in },
+                delete: { _ in },
+            )
         }
         // store.exhaustivity = .off: snapshot hydration의 전체 presentation state보다 deadline action 시점을 검증
         store.exhaustivity = .off
 
         await store.send(.hydrateLaunchSnapshot(snapshot))
+        await Task.yield()
         await clock.advance(by: .seconds(3239))
         await clock.advance(by: .seconds(1))
         await store.receive(\._refreshDeadlineReached)
+        await store.receive(\.revalidatePersistedSession)
+        await store.receive(\._persistedSessionRevalidated)
         await store.receive(\.sessionSyncRequested)
         await store.send(.signOut)
         await store.receive(\.delegate.signedOut)
@@ -337,6 +347,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
     func testSignOutCancelsPendingRefreshDeadline() async {
         let clock = TestClock()
         let expiresAt = referenceDate.addingTimeInterval(3600)
+        let expiredExpiry = referenceDate.addingTimeInterval(-1)
         let snapshot = AccessStatusSnapshot.fetchResult(
             status: .coreLicenseActive,
             currentPeriodEnd: nil,
@@ -349,6 +360,17 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         } withDependencies: {
             $0.continuousClock = clock
             $0.date = .constant(referenceDate)
+            $0.accountSessionClient = AccountSessionClient(
+                read: { _ in AccountSession(
+                    accessToken: "expired-access-token",
+                    status: .none,
+                    refreshToken: "refresh-token",
+                    expiresAt: expiredExpiry,
+                )
+                },
+                persist: { _ in },
+                delete: { _ in },
+            )
         }
         // store.exhaustivity = .off: hydrate와 sign-out의 전체 presentation state보다 deadline cancellation을 검증
         store.exhaustivity = .off
@@ -369,6 +391,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
     /// - 기대 결과: 이전 expiry가 아니라 rotated expiry의 refresh deadline이 사용된다.
     func testRotatedSessionReschedulesRefreshDeadline() async {
         let clock = TestClock()
+        let expiredExpiry = referenceDate.addingTimeInterval(-1)
         var state = sessionNearExpiryState()
         state.syncGeneration = 1
         state.inFlightSyncReason = .refreshDeadline
@@ -377,6 +400,17 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         } withDependencies: {
             $0.continuousClock = clock
             $0.date = .constant(referenceDate)
+            $0.accountSessionClient = AccountSessionClient(
+                read: { _ in AccountSession(
+                    accessToken: "expired-access-token",
+                    status: .none,
+                    refreshToken: "refresh-token",
+                    expiresAt: expiredExpiry,
+                )
+                },
+                persist: { _ in },
+                delete: { _ in },
+            )
         }
         // store.exhaustivity = .off: rotated completion의 recovery projection보다 새 expiry 기준 deadline 재예약을 검증
         store.exhaustivity = .off
@@ -393,9 +427,12 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
             )),
         ))
         await store.receive(\.delegate.recoveryRequired)
+        await Task.yield()
         await clock.advance(by: .seconds(3239))
         await clock.advance(by: .seconds(1))
         await store.receive(\._refreshDeadlineReached)
+        await store.receive(\.revalidatePersistedSession)
+        await store.receive(\._persistedSessionRevalidated)
         await store.receive(\.sessionSyncRequested)
         await store.send(.signOut)
         await store.receive(\.delegate.signedOut)
@@ -455,16 +492,41 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         nonisolated(unsafe) var attempts = 0
         nonisolated(unsafe) var loadedSnapshots = 0
         let clock = TestClock()
+        let binding = UUID()
+        let sessionExpiry = newExpiryDate
         let cachedSnapshot = AccessStatusSnapshot.fetchResult(
             status: .coreLicenseActive,
             currentPeriodEnd: nil,
-            sessionExpiresAt: newExpiryDate,
+            sessionExpiresAt: sessionExpiry,
             fetchedAt: referenceDate,
+            sessionBindingID: binding,
+            gatewayBinding: GatewayEnvironment(rawValue: "").binding,
+            deviceID: "test-device-id",
             deviceBindingVerifiedAt: referenceDate,
         )
-        let store = TestStore(initialState: sessionNearExpiryState()) {
+        let cachedEnvelope = AccessStatusSnapshotEnvelope(
+            sessionBindingID: binding,
+            gatewayBinding: GatewayEnvironment(rawValue: "").binding,
+            mutationGeneration: 1,
+            snapshot: cachedSnapshot,
+        )
+        var state = sessionNearExpiryState()
+        state.sessionBindingID = binding
+        let store = TestStore(initialState: state) {
             AccountAccessFeature()
         } withDependencies: {
+            $0.accountSessionClient = AccountSessionClient(
+                read: { _ in AccountSession(
+                    accessToken: "test-access-token",
+                    status: .coreLicenseActive,
+                    refreshToken: "test-refresh-token",
+                    expiresAt: sessionExpiry,
+                    sessionBindingID: binding,
+                )
+                },
+                persist: { _ in },
+                delete: { _ in },
+            )
             $0.authNetworkClient = AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { throw AccessError.networkFailure },
@@ -476,12 +538,12 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
                 },
             )
             $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
-                load: {
+                load: { _, _ in
                     loadedSnapshots += 1
-                    return cachedSnapshot
+                    return cachedEnvelope
                 },
-                save: { _ in },
-                remove: {},
+                save: { _, _, _, _ in },
+                remove: { _, _, _ in },
             )
             $0.continuousClock = clock
             $0.date = .constant(referenceDate)
@@ -506,6 +568,95 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         await store.finish()
     }
 
+    /// ACC-001-validate_account_session: retry exhaustion fallback은 persisted refresh credential이 없으면 unlock하지 않는다.
+    /// - 검증 내용: complete envelope와 active device proof가 있어도 canonical session read에 refresh credential이 없으면 recovery로
+    /// 끝난다.
+    /// - 사전 조건: upstream failure가 반복되고 current binding의 trusted snapshot은 존재하지만 persisted session은 refresh 불가능하다.
+    /// - 기대 결과: snapshot load는 한 번 수행되나 unlocked delegate 없이 network recovery를 전달한다.
+    func testValidateRetryExhaustionRejectsSnapshotWithoutRefreshCredential() async {
+        nonisolated(unsafe) var attempts = 0
+        nonisolated(unsafe) var loadedSnapshots = 0
+        let clock = TestClock()
+        let binding = UUID()
+        let sessionExpiry = nearExpiryDate
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: referenceDate,
+            sessionBindingID: binding,
+            gatewayBinding: GatewayEnvironment(rawValue: "").binding,
+            deviceID: "test-device-id",
+            deviceBindingVerifiedAt: referenceDate,
+        )
+        let envelope = AccessStatusSnapshotEnvelope(
+            sessionBindingID: binding,
+            gatewayBinding: GatewayEnvironment(rawValue: "").binding,
+            mutationGeneration: 1,
+            snapshot: snapshot,
+        )
+        var state = sessionNearExpiryState()
+        state.sessionBindingID = binding
+        let store = TestStore(initialState: state) {
+            AccountAccessFeature()
+        } withDependencies: {
+            $0.accountSessionClient = AccountSessionClient(
+                read: { _ in AccountSession(
+                    accessToken: "test-access-token",
+                    status: .coreLicenseActive,
+                    expiresAt: sessionExpiry,
+                    sessionBindingID: binding,
+                )
+                },
+                persist: { _ in },
+                delete: { _ in },
+            )
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.networkFailure },
+                bindDevice: { _ in throw DeviceBindingError.networkFailure },
+                refreshToken: { throw AccessError.networkFailure },
+                syncSessionWithRequestID: { _, _, _ in
+                    attempts += 1
+                    throw SessionSyncError.upstream(503)
+                },
+            )
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                load: { _, _ in
+                    loadedSnapshots += 1
+                    return envelope
+                },
+                save: { _, _, _, _ in },
+                remove: { _, _, _ in },
+            )
+            $0.continuousClock = clock
+            $0.date = .constant(referenceDate)
+        }
+
+        await store.send(.sessionSyncRequested(intent: .validate, reason: .manual)) { state in
+            state.syncGeneration = 1
+            state.inFlightSyncReason = .manual
+            state.isSubmitting = true
+        }
+        for _ in 0 ..< 10 where attempts < 1 {
+            await Task.yield()
+        }
+        await clock.advance(by: .seconds(1))
+        await clock.advance(by: .seconds(2))
+        await clock.advance(by: .seconds(4))
+        await store.receive(\._cachedSnapshotRestored) { state in
+            state.inFlightSyncReason = nil
+            state.isSubmitting = false
+            state.status = .networkFailure
+            state.errorMessage = "Network error. Please check your connection and try again."
+        }
+        await store.receive(\.delegate.recoveryRequired)
+
+        XCTAssertEqual(attempts, 4)
+        XCTAssertEqual(loadedSnapshots, 1)
+        XCTAssertFalse(store.state.isComplete)
+        XCTAssertNil(store.state.snapshot)
+        await store.finish()
+    }
+
     /// ACC-001-validate_account_session: unknown sync 오류는 cache unlock fallback을 사용하지 않는다.
     /// - 검증 내용: typed upstream이 아닌 오류가 retry나 snapshot load 없이 failure completion으로 종료된다.
     /// - 사전 조건: unknown error를 throw하는 sync client와 snapshot dependency.
@@ -525,7 +676,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
                     throw UnknownSessionSyncError.failure
                 },
             )
-            $0.accessStatusSnapshotClient.load = {
+            $0.accessStatusSnapshotClient.load = { _, _ in
                 loadedSnapshots += 1
                 return nil
             }
@@ -564,7 +715,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
                     throw CancellationError()
                 },
             )
-            $0.accessStatusSnapshotClient.load = {
+            $0.accessStatusSnapshotClient.load = { _, _ in
                 loadedSnapshots += 1
                 return nil
             }
@@ -980,7 +1131,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         await store.send(
             ._persistedSessionRevalidated(
                 generation: 1,
-                result: .valid(sessionExpiresAt: newExpiryDate),
+                result: .valid(session: Self.session(expiresAt: newExpiryDate)),
             ),
         )
 
@@ -1021,7 +1172,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         await store.send(
             ._persistedSessionRevalidated(
                 generation: 1,
-                result: .valid(sessionExpiresAt: newExpiryDate),
+                result: .valid(session: Self.session(expiresAt: newExpiryDate)),
             ),
         )
 
@@ -1077,7 +1228,7 @@ private extension ACC001ValidateAccountSessionTests {
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         let persistedSession = Self.session(expiresAt: initialState.sessionExpiresAt ?? newExpiryDate)
         let sessionClient = accountSessionClient ?? AccountSessionClient(
-            read: { persistedSession },
+            read: { _ in persistedSession },
             persist: { _ in },
             delete: { _ in },
         )
@@ -1110,11 +1261,8 @@ extension ACC001ValidateAccountSessionTests {
     func testForegroundValidationWithMissingPersistedSessionExpiresWithoutFetch() async {
         nonisolated(unsafe) var fetchCalled = false
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: AccountSessionClient(read: { _ in nil }, persist: { _ in },
+                                                       delete: { _ in }),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
@@ -1147,7 +1295,7 @@ extension ACC001ValidateAccountSessionTests {
         initialState.sessionExpiresAt = referenceDate.addingTimeInterval(3600)
         let store = makeTestStore(
             accountSessionClient: AccountSessionClient(
-                read: { throw StorageReadError.unavailable },
+                read: { _ in throw StorageReadError.unavailable },
                 persist: { _ in },
                 delete: { _ in },
             ),

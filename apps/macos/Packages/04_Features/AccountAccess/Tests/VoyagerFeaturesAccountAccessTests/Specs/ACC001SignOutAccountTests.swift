@@ -176,11 +176,8 @@ final class ACC001SignOutAccountTests: XCTestCase {
         let store = TestStore(initialState: signedInState()) {
             AccountAccessFeature()
         } withDependencies: {
-            $0.accountSessionClient = AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in deleteCalled = true },
-            )
+            $0.accountSessionClient = AccountSessionClient(read: { _ in nil }, persist: { _ in },
+                                                           delete: { _ in deleteCalled = true })
             $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { nil },
                 save: { _ in },
@@ -199,6 +196,9 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 1
+            state.syncGeneration = 1 == 6 ? 2 : 1
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
         }
 
         await store.receive(\.delegate.signedOut)
@@ -229,6 +229,9 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 1
+            state.syncGeneration = 1 == 6 ? 2 : 1
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
         }
 
         await store.receive(\.delegate.signedOut)
@@ -247,6 +250,9 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 1
+            state.syncGeneration = 1 == 6 ? 2 : 1
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
         }
 
         await store.receive(\.delegate.signedOut)
@@ -262,11 +268,8 @@ final class ACC001SignOutAccountTests: XCTestCase {
         let store = TestStore(initialState: signedInState()) {
             AccountAccessFeature()
         } withDependencies: {
-            $0.accountSessionClient = AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in throw TestError.deleteFailed },
-            )
+            $0.accountSessionClient = AccountSessionClient(read: { _ in nil }, persist: { _ in },
+                                                           delete: { _ in throw TestError.deleteFailed })
             $0.accessStatusSnapshotClient = .testValue
             $0.authNetworkClient = .testValue
             $0.date = .constant(referenceDate)
@@ -281,6 +284,9 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 1
+            state.syncGeneration = 1 == 6 ? 2 : 1
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
         }
 
         await store.receive(\.delegate.signedOut)
@@ -317,6 +323,9 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 1
+            state.syncGeneration = 1 == 6 ? 2 : 1
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
         }
 
         await store.receive(\.delegate.signedOut)
@@ -338,6 +347,9 @@ final class ACC001SignOutAccountTests: XCTestCase {
         let store = makeTestStore(initialState: {
             var state = signedInState()
             state.fetchGeneration = 5
+            state.syncGeneration = 5 == 6 ? 2 : 1
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
             return state
         }())
 
@@ -350,6 +362,9 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 6
+            state.syncGeneration = 6 == 6 ? 2 : 1
+            state.revalidationGeneration = 2
+            state.refreshDeadlineGeneration = 2
         }
 
         await store.receive(\.delegate.signedOut)
@@ -366,15 +381,16 @@ final class ACC001SignOutAccountTests: XCTestCase {
         let store = TestStore(initialState: {
             var state = signedInState()
             state.fetchGeneration = 5
+            state.syncGeneration = 5 == 6 ? 2 : 1
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
+            state.isSessionExpired = true
             return state
         }()) {
             AccountAccessFeature()
         } withDependencies: {
-            $0.accountSessionClient = AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in },
-            )
+            $0.accountSessionClient = AccountSessionClient(read: { _ in nil }, persist: { _ in },
+                                                           delete: { _ in })
             $0.accessStatusSnapshotClient = .testValue
             $0.authNetworkClient = AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
@@ -396,6 +412,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
         }
 
         await store.send(._fetchRetryScheduled(1))
+        await store.receive(\.sessionSyncRequested)
 
         await store.send(.signOut) { state in
             state.hasAccountSession = false
@@ -406,6 +423,9 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 6
+            state.syncGeneration = 2
+            state.revalidationGeneration = 2
+            state.refreshDeadlineGeneration = 2
         }
 
         await store.receive(\.delegate.signedOut)
@@ -431,6 +451,9 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 1
+            state.syncGeneration = 1 == 6 ? 2 : 1
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
         }
 
         await store.receive(\.delegate.signedOut)
@@ -453,11 +476,8 @@ final class ACC001SignOutAccountTests: XCTestCase {
         let store = TestStore(initialState: signedInState()) {
             AccountAccessFeature()
         } withDependencies: {
-            $0.accountSessionClient = AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { reason in deleteReason = reason },
-            )
+            $0.accountSessionClient = AccountSessionClient(read: { _ in nil }, persist: { _ in },
+                                                           delete: { reason in deleteReason = reason })
             $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { nil },
                 save: { _ in },
@@ -474,12 +494,60 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 1
+            state.syncGeneration = 1 == 6 ? 2 : 1
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
         }
         await store.receive(\.delegate.recoveryRequired)
 
         await store.finish()
         XCTAssertEqual(deleteReason, .sessionExpired)
         XCTAssertTrue(removeCalled, "sessionExpired도 persisted access snapshot을 제거해야 함")
+    }
+
+    /// ACC-001-sign_out_account: sign-out은 현재 binding과 pre-invalidation generation으로 trusted snapshot을 제거한다.
+    /// - 검증 내용: snapshot remove가 session binding과 sync generation을 그대로 받아 stale save보다 높은 tombstone을 만든다.
+    /// - 사전 조건: binding된 로그인 세션과 syncGeneration=7인 상태.
+    /// - 기대 결과: remove(binding, gateway, 7)가 한 번 호출되고 state는 sign-out 후 generation=8이 된다.
+    func testReducerSignOutRemovesTrustedSnapshotWithBindingAndGeneration() async {
+        let binding = UUID()
+        nonisolated(unsafe) var removeArguments: (UUID?, GatewayEnvironment, Int)?
+        var state = signedInState()
+        state.sessionBindingID = binding
+        state.syncGeneration = 7
+        let store = TestStore(initialState: state) {
+            AccountAccessFeature()
+        } withDependencies: {
+            $0.accountSessionClient = AccountSessionClient(read: { _ in nil }, persist: { _ in }, delete: { _ in })
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                load: { _, _ in nil },
+                save: { _, _, _, _ in },
+                remove: { binding, environment, generation in
+                    removeArguments = (binding, environment, generation)
+                },
+            )
+            $0.authNetworkClient = .testValue
+            $0.date = .constant(referenceDate)
+        }
+
+        await store.send(.signOut) { state in
+            state.hasAccountSession = false
+            state.didSignInFail = false
+            state.isSessionExpired = true
+            state.ttlTimerActive = false
+            state.sessionExpiresAt = nil
+            state.sessionBindingID = nil
+            state.fetchGeneration = 1
+            state.syncGeneration = 8
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
+        }
+        await store.receive(\.delegate.signedOut)
+        await store.finish()
+
+        XCTAssertEqual(removeArguments?.0, binding)
+        XCTAssertEqual(removeArguments?.1, GatewayEnvironment(rawValue: ""))
+        XCTAssertEqual(removeArguments?.2, 7)
     }
 
     // MARK: - ACC-001-sign_out_account: session end reason contract (T2)

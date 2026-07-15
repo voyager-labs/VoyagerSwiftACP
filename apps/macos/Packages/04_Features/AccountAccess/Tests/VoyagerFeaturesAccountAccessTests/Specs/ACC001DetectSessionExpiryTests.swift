@@ -31,11 +31,8 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         let persistedSession = Self.session(expiresAt: initialState.sessionExpiresAt ?? referenceDate)
-        let sessionClient = accountSessionClient ?? AccountSessionClient(
-            read: { persistedSession },
-            persist: { _ in },
-            delete: { _ in },
-        )
+        let sessionClient = accountSessionClient ?? AccountSessionClient(read: { _ in persistedSession }, persist: { _ in },
+        delete: { _ in },)
         return TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
@@ -75,11 +72,8 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
     /// - 기대 결과: in-memory session과 TTL이 무효화되며 만료 전환은 한 번만 수행된다.
     func testRuntimePersistedSessionLossInvalidatesInMemorySessionOnce() async {
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: AccountSessionClient(read: { _ in nil }, persist: { _ in },
+            delete: { _ in },),
             initialState: signedInState(),
         )
         store.exhaustivity = .off

@@ -435,11 +435,11 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         await store.finish()
     }
 
-    /// ACC-001-start_account_sign_in: callback 대기가 ticket TTL을 초과하면 sign-in 실패로 종료한다.
-    /// - 검증 내용: pending state와 progress 상태 제거
+    /// ACC-001-start_account_sign_in: callback 대기는 120초 경계에서만 sign-in 실패로 종료한다.
+    /// - 검증 내용: 119초에는 pending state를 보존하고 120초에 한 번만 pending state와 progress 상태 제거
     /// - 사전 조건: callback 대기 중 handoff와 TestClock
-    /// - 기대 결과: AccountAccessFeature.handoffCallbackTimeout(5분) 후 didSignInFail=true
-    func testAwaitingCallbackTimeoutResetsSignInState() async {
+    /// - 기대 결과: 120초 후 didSignInFail=true
+    func testAwaitingCallbackTimeoutResetsSignInStateAt120Seconds() async {
         let clock = TestClock()
         var initialState = AccountAccessFeature.State()
         initialState.isSignInInProgress = true
@@ -457,7 +457,13 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         )) { state in
             state.handoffPendingState = "pending-state"
         }
-        await clock.advance(by: AccountAccessFeature.handoffCallbackTimeout)
+        await clock.advance(by: .seconds(119))
+        XCTAssertTrue(store.state.isSignInInProgress)
+        XCTAssertFalse(store.state.didSignInFail)
+        XCTAssertEqual(store.state.handoffPendingState, "pending-state")
+        XCTAssertNotNil(store.state.handoffTransaction)
+
+        await clock.advance(by: .seconds(1))
         await store.receive(\._handoffCallbackTimedOut) { state in
             state.isSignInInProgress = false
             state.didSignInFail = true

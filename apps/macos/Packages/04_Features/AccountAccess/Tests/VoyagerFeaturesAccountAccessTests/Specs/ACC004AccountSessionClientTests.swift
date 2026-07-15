@@ -22,7 +22,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
         let client = AccountSessionClient.live(store: store)
 
-        let session = try await client.read()
+        let session = try await client.read(Date())
 
         XCTAssertNil(session)
     }
@@ -48,7 +48,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         )
         try await store.write(tokensFile)
 
-        let session = try await client.read()
+        let session = try await client.read(Date())
 
         XCTAssertNotNil(session)
         XCTAssertEqual(session?.accessToken, "valid-token")
@@ -76,9 +76,199 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         )
         try await store.write(tokensFile)
 
-        let session = try await client.read()
+        let session = try await client.read(Date())
 
         XCTAssertNil(session)
+    }
+
+    /// ACC-004-account_session_client: 레거시 credential을 읽으면 binding을 포함한 canonical 파일로 마이그레이션한다.
+    func testReadMigratesLegacyCredentialWithSessionBinding() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let client = AccountSessionClient.live(store: store)
+        let legacy = LegacyTokensFile(
+            updatedAtMs: 1,
+            accessToken: "legacy-access",
+            accessTokenExpiresAtMs: 2_000_000_000_000,
+            accessTokenExpiresIn: 86_400_000,
+            refreshToken: "legacy-refresh",
+            refreshTokenExpiresAtMs: 2_100_000_000_000,
+        )
+        try JSONEncoder().encode(legacy).write(to: fixture.accountTokensFileURL, options: .atomic)
+
+        let migratedSessionResult = try await client.read(Date(timeIntervalSince1970: 1000))
+        let migratedFile = try await store.read()
+        let migratedSession = try XCTUnwrap(migratedSessionResult)
+        let migrated = try XCTUnwrap(migratedFile)
+
+        XCTAssertEqual(migrated.schemaVersion, AccountTokensFile.currentSchemaVersion)
+        XCTAssertEqual(migrated.sessionBindingID, migratedSession.sessionBindingID)
+        XCTAssertEqual(migrated.updatedAtMs, legacy.updatedAtMs)
+        XCTAssertEqual(migrated.accessTokenExpiresAtMs, legacy.accessTokenExpiresAtMs)
+        XCTAssertEqual(migrated.accessTokenExpiresIn, legacy.accessTokenExpiresIn)
+        XCTAssertEqual(migrated.refreshTokenExpiresAtMs, legacy.refreshTokenExpiresAtMs)
+        let reread = try await client.read(Date(timeIntervalSince1970: 1000))
+        XCTAssertEqual(
+            reread?.sessionBindingID,
+            migratedSession.sessionBindingID,
+        )
+    }
+
+    /// ACC-004-account_session_client: access 만료 뒤에도 유효한 refresh credential은 복구 가능한 session으로 반환한다.
+    func testReadReturnsExpiredRecoverableSessionUsingInjectedDate() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let client = AccountSessionClient.live(store: store)
+        let binding = UUID()
+        try await store.write(AccountTokensFile(
+            updatedAtMs: 1,
+            accessToken: "expired-access",
+            accessTokenExpiresAtMs: 1000,
+            accessTokenExpiresIn: 0,
+            refreshToken: "recoverable-refresh",
+            refreshTokenExpiresAtMs: 3000,
+            sessionBindingID: binding,
+        ))
+
+        let session = try await client.read(Date(timeIntervalSince1970: 2))
+
+        XCTAssertEqual(session?.sessionBindingID, binding)
+        XCTAssertEqual(session?.status, AccessStatus.none)
+    }
+
+    /// ACC-004-account_session_client: refresh credential이 없거나 만료되면 access 만료 session을 복원하지 않는다.
+    func testReadReturnsNilForExpiredSessionWithoutRecoverableRefreshCredential() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let client = AccountSessionClient.live(store: store)
+        try await store.write(AccountTokensFile(
+            updatedAtMs: 1,
+            accessToken: "expired-access",
+            accessTokenExpiresAtMs: 1000,
+            accessTokenExpiresIn: 0,
+            refreshToken: "",
+            refreshTokenExpiresAtMs: 3000,
+        ))
+
+        let session = try await client.read(Date(timeIntervalSince1970: 2))
+        XCTAssertNil(session)
+    }
+
+    /// ACC-004-account_session_client: read는 wall clock이 아닌 전달된 now로 만료를 분류한다.
+    func testReadClassifiesExpiryUsingInjectedDate() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let client = AccountSessionClient.live(store: store)
+        try await store.write(AccountTokensFile(
+            updatedAtMs: 1,
+            accessToken: "date-controlled-access",
+            accessTokenExpiresAtMs: 2000,
+            accessTokenExpiresIn: 1000,
+            refreshToken: "",
+            refreshTokenExpiresAtMs: 0,
+        ))
+
+        let validSession = try await client.read(Date(timeIntervalSince1970: 1))
+        let expiredSession = try await client.read(Date(timeIntervalSince1970: 2))
+        XCTAssertNotNil(validSession)
+        XCTAssertNil(expiredSession)
+    }
+
+    /// ACC-004-account_session_client: refresh rotation은 동일한 binding을 보존한다.
+    func testRefreshRotationPreservesSessionBinding() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let binding = UUID()
+        let source = AccountTokensFile(
+            updatedAtMs: 1,
+            accessToken: "source-access",
+            accessTokenExpiresAtMs: 2000,
+            accessTokenExpiresIn: 1000,
+            refreshToken: "source-refresh",
+            refreshTokenExpiresAtMs: 3000,
+            sessionBindingID: binding,
+        )
+        try await store.write(source)
+        let refreshed = AccountSession(
+            accessToken: "rotated-access",
+            status: .none,
+            refreshToken: "rotated-refresh",
+            expiresAt: Date(timeIntervalSince1970: 2),
+            sessionBindingID: binding,
+        )
+        let rotated = try XCTUnwrap(AccountTokenSessionMapper.sessionToTokensFile(
+            refreshed,
+            now: Date(timeIntervalSince1970: 1),
+        ))
+
+        let didReplace = try await store.replaceIfCurrentMatches(rotated, expected: source)
+        let storedBinding = try await store.read()?.sessionBindingID
+        XCTAssertTrue(didReplace)
+        XCTAssertEqual(storedBinding, binding)
+    }
+
+    /// ACC-004-account_session_client: committed replacement와 동일 token payload를 가진 stale completion은 binding 불일치로 거부된다.
+    func testBindingAwareCASRejectsReplacementWithSameCredentials() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let credentials = (access: "same-access", refresh: "same-refresh")
+        let stale = AccountTokensFile(
+            updatedAtMs: 1,
+            accessToken: credentials.access,
+            accessTokenExpiresAtMs: 2000,
+            accessTokenExpiresIn: 1000,
+            refreshToken: credentials.refresh,
+            refreshTokenExpiresAtMs: 3000,
+            sessionBindingID: UUID(),
+        )
+        let replacement = AccountTokensFile(
+            updatedAtMs: 1,
+            accessToken: credentials.access,
+            accessTokenExpiresAtMs: 2000,
+            accessTokenExpiresIn: 1000,
+            refreshToken: credentials.refresh,
+            refreshTokenExpiresAtMs: 3000,
+            sessionBindingID: UUID(),
+        )
+        let rotation = AccountTokensFile(
+            updatedAtMs: 2,
+            accessToken: "rotated-access",
+            accessTokenExpiresAtMs: 4000,
+            accessTokenExpiresIn: 2000,
+            refreshToken: "rotated-refresh",
+            refreshTokenExpiresAtMs: 5000,
+            sessionBindingID: stale.sessionBindingID,
+        )
+        try await store.write(replacement)
+
+        let didReplace = try await store.replaceIfCurrentMatches(rotation, expected: stale)
+        let storedBinding = try await store.read()?.sessionBindingID
+        XCTAssertFalse(didReplace)
+        XCTAssertEqual(storedBinding, replacement.sessionBindingID)
+    }
+
+    /// ACC-004-account_session_client: 같은 계정의 새 committed session은 이전 binding을 재사용하지 않는다.
+    func testCommittedReplacementGeneratesDifferentSessionBinding() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let client = AccountSessionClient.live(store: store)
+        let initial = AccountSession(
+            accessToken: "same-account-access",
+            status: .none,
+            refreshToken: "same-account-refresh",
+        )
+        let replacement = AccountSession(
+            accessToken: "same-account-access",
+            status: .none,
+            refreshToken: "same-account-refresh",
+        )
+
+        try await client.persist(initial)
+        try await client.persist(replacement)
+        let stored = try await store.read()
+
+        XCTAssertNotEqual(initial.sessionBindingID, replacement.sessionBindingID)
+        XCTAssertEqual(stored?.sessionBindingID, replacement.sessionBindingID)
     }
 
     /// ACC-004-account_session_client: persist()가 session을 파일에 쓴다.
@@ -103,6 +293,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         XCTAssertNotNil(file)
         XCTAssertEqual(file?.accessToken, "new-token")
         XCTAssertEqual(file?.refreshToken, "new-refresh")
+        XCTAssertEqual(file?.sessionBindingID, session.sessionBindingID)
     }
 
     /// ACC-004-account_session_client: delete()가 token 파일을 삭제한다.
@@ -129,6 +320,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
 
         file = try await store.read()
         XCTAssertNil(file)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.accountTokensFileURL.path))
     }
 
     /// ACC-004-account_session_client: 파일이 없어도 delete()가 성공한다.
@@ -214,7 +406,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
 
         try await client.discardPersistedSession(previousSession)
 
-        let restoredSession = try await client.read()
+        let restoredSession = try await client.read(Date())
         XCTAssertEqual(restoredSession?.accessToken, currentSession.accessToken)
         XCTAssertEqual(restoredSession?.refreshToken, currentSession.refreshToken)
     }
@@ -240,7 +432,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         _ = try await client.prepareHandoffPersistence(preparedSession)
 
         try await client.discardPersistedSession(preparedSession)
-        let restoredSession = try await client.read()
+        let restoredSession = try await client.read(Date())
 
         XCTAssertEqual(restoredSession?.accessToken, canonicalSession.accessToken)
         XCTAssertEqual(restoredSession?.refreshToken, canonicalSession.refreshToken)
@@ -278,7 +470,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
 
         _ = try await client.prepareHandoffPersistence(replacementSession)
         try await client.discardPersistedSession(replacementSession)
-        let restoredSession = try await client.read()
+        let restoredSession = try await client.read(Date())
 
         XCTAssertEqual(restoredSession?.accessToken, canonicalSession.accessToken)
         XCTAssertEqual(restoredSession?.refreshToken, canonicalSession.refreshToken)
@@ -323,7 +515,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         try stagedData.write(to: fixture.accountTokensFileURL, options: .atomic)
 
         try await client.discardPersistedSession(preparedSession)
-        let restoredSession = try await client.read()
+        let restoredSession = try await client.read(Date())
 
         XCTAssertEqual(restoredSession?.accessToken, preparedSession.accessToken)
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.accountTokensFileURL.path))
@@ -345,7 +537,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         )
         try Data("rollback-pending".utf8).write(to: markerURL, options: .atomic)
 
-        let restoredSession = try await client.read()
+        let restoredSession = try await client.read(Date())
 
         XCTAssertNil(restoredSession)
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.accountTokensFileURL.path))
@@ -365,7 +557,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         )
 
         _ = try await client.prepareHandoffPersistence(session)
-        let restoredSession = try await client.read()
+        let restoredSession = try await client.read(Date())
 
         XCTAssertNil(restoredSession)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.accountTokensFileURL.path))
@@ -375,7 +567,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: stagingURL.path))
 
         try await client.commitHandoffPersistence(session)
-        let committedSession = try await client.read()
+        let committedSession = try await client.read(Date())
         XCTAssertEqual(committedSession?.accessToken, session.accessToken)
     }
 
@@ -405,7 +597,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         let stagedData = try Data(contentsOf: stagingURL)
         try stagedData.write(to: fixture.accountTokensFileURL, options: .atomic)
 
-        let restoredSession = try await client.read()
+        let restoredSession = try await client.read(Date())
 
         XCTAssertEqual(restoredSession?.accessToken, session.accessToken)
         XCTAssertEqual(restoredSession?.refreshToken, session.refreshToken)
@@ -430,7 +622,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
 
         _ = try await client.prepareHandoffPersistence(session)
         try await client.commitHandoffPersistence(session)
-        let restoredSession = try await client.read()
+        let restoredSession = try await client.read(Date())
 
         XCTAssertEqual(restoredSession?.accessToken, session.accessToken)
         XCTAssertEqual(restoredSession?.refreshToken, session.refreshToken)
@@ -469,7 +661,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         encoder.outputFormatting = [.sortedKeys]
         try encoder.encode(different).write(to: fixture.accountTokensFileURL, options: .atomic)
 
-        let restoredSession = try await client.read()
+        let restoredSession = try await client.read(Date())
         XCTAssertNil(restoredSession)
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.accountTokensFileURL.path))
         XCTAssertTrue(FileManager.default
@@ -491,7 +683,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         let markerURL = AccountTokenFSLocation.rollbackMarkerFileURL(homeDirectoryURL: fixture.homeURL)
         try FileManager.default.removeItem(at: stagingURL)
 
-        let restoredSession = try await client.read()
+        let restoredSession = try await client.read(Date())
         XCTAssertNil(restoredSession)
         XCTAssertFalse(FileManager.default.fileExists(atPath: markerURL.path))
     }
@@ -511,7 +703,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         try FileManager.default.removeItem(at: stagingURL)
         try Data("corrupt".utf8).write(to: fixture.accountTokensFileURL, options: .atomic)
 
-        let restoredSession = try await client.read()
+        let restoredSession = try await client.read(Date())
         XCTAssertNil(restoredSession)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.accountTokensFileURL.path))
         let directoryContents = try FileManager.default
@@ -527,7 +719,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     func testTestValueIsSafeDefault() async throws {
         let client = AccountSessionClient.testValue
 
-        let session = try await client.read()
+        let session = try await client.read(Date())
         XCTAssertNil(session)
 
         let anySession = AccountSession(accessToken: "any-token", status: .none)
@@ -535,4 +727,14 @@ final class ACC004AccountSessionClientTests: XCTestCase {
 
         try await client.delete(.explicitSignOut)
     }
+}
+
+private struct LegacyTokensFile: Encodable {
+    let schemaVersion = 1
+    let updatedAtMs: Int64
+    let accessToken: String
+    let accessTokenExpiresAtMs: Int64
+    let accessTokenExpiresIn: Int64
+    let refreshToken: String
+    let refreshTokenExpiresAtMs: Int64
 }

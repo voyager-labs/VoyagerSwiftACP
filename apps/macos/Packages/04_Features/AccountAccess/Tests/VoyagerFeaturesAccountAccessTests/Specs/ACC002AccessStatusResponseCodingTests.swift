@@ -1,4 +1,5 @@
 @testable import VoyagerFeaturesAccountAccess
+import VoyagerShared
 import XCTest
 
 /// ACC-002: AccessStatusResponse backend wire-format 디코딩 및 toAccessStatus() 매핑 검증.
@@ -253,5 +254,93 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
         XCTAssertEqual(snapshot.status, .coreLicenseActive)
         XCTAssertEqual(snapshot.currentPeriodEnd, expiresAt)
         XCTAssertEqual(snapshot.fetchedAt, fetchedAt)
+    }
+
+    func testSnapshotStorePreservesSameBindingAndClearsReplacement() async {
+        let client = AccessStatusSnapshotClient(store: AccessStatusSnapshotStore(userDefaults: .testValue))
+        let bindingA = UUID()
+        let bindingB = UUID()
+        let gatewayEnvironment = GatewayEnvironment(rawValue: "https://gateway.example.com")
+        let snapshot = AccessStatusSnapshot(status: .coreLicenseActive)
+
+        _ = await client.load(bindingA, gatewayEnvironment)
+        await client.save(snapshot, bindingA, gatewayEnvironment, 3)
+
+        let restored = await client.load(bindingA, gatewayEnvironment)
+        XCTAssertEqual(restored?.snapshot, snapshot)
+        XCTAssertEqual(restored?.sessionBindingID, bindingA)
+
+        let replacement = await client.load(bindingB, gatewayEnvironment)
+        XCTAssertNil(replacement?.snapshot)
+        XCTAssertEqual(replacement?.sessionBindingID, bindingB)
+        XCTAssertGreaterThan(replacement?.mutationGeneration ?? 0, 3)
+    }
+
+    func testSnapshotStoreRejectsStaleSaveAndLateSaveAfterSignOut() async {
+        let client = AccessStatusSnapshotClient(store: AccessStatusSnapshotStore(userDefaults: .testValue))
+        let binding = UUID()
+        let gatewayEnvironment = GatewayEnvironment(rawValue: "https://gateway.example.com")
+        let snapshot = AccessStatusSnapshot(status: .coreLicenseActive)
+
+        _ = await client.load(binding, gatewayEnvironment)
+        await client.save(snapshot, binding, gatewayEnvironment, 4)
+        await client.remove(binding, gatewayEnvironment, 4)
+        await client.save(snapshot, binding, gatewayEnvironment, 4)
+        await client.remove(nil, GatewayEnvironment(rawValue: ""), 5)
+        await client.save(snapshot, binding, gatewayEnvironment, 6)
+
+        let restored = await client.load(nil, GatewayEnvironment(rawValue: ""))
+        XCTAssertNil(restored?.snapshot)
+        XCTAssertNil(restored?.sessionBindingID)
+        XCTAssertGreaterThan(restored?.mutationGeneration ?? 0, 5)
+    }
+
+    func testSnapshotStoreLoadsLegacyPayloadUntilCurrentSaveRewritesIt() async throws {
+        let legacySnapshot = AccessStatusSnapshot(status: .trialActive)
+        let legacyData = try JSONEncoder().encode(legacySnapshot)
+        let storage = SnapshotStorage(initialData: legacyData)
+        let client = AccessStatusSnapshotClient(store: AccessStatusSnapshotStore(userDefaults: storage.client))
+        let binding = UUID()
+        let gatewayEnvironment = GatewayEnvironment(rawValue: "https://gateway.example.com")
+
+        let legacy = await client.load(binding, gatewayEnvironment)
+        XCTAssertEqual(legacy?.snapshot, legacySnapshot)
+        XCTAssertTrue(legacy?.isLegacy ?? false)
+
+        await client.save(legacySnapshot, binding, gatewayEnvironment, 1)
+
+        let rewritten = await client.load(binding, gatewayEnvironment)
+        XCTAssertFalse(rewritten?.isLegacy ?? true)
+        XCTAssertEqual(rewritten?.schemaVersion, AccessStatusSnapshotEnvelope.currentSchemaVersion)
+    }
+
+    private final class SnapshotStorage: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: Any?
+
+        init(initialData: Data? = nil) {
+            value = initialData
+        }
+
+        var client: UserDefaultsClient {
+            UserDefaultsClient(
+                bool: { _ in false },
+                setBool: { _, _ in },
+                string: { _ in nil },
+                setString: { _, _ in },
+                double: { _ in 0 },
+                setDouble: { _, _ in },
+                object: { [self] _ in
+                    lock.lock()
+                    defer { lock.unlock() }
+                    return value
+                },
+                setObject: { [self] value, _ in
+                    lock.lock()
+                    defer { lock.unlock() }
+                    self.value = value
+                },
+            )
+        }
     }
 }

@@ -34,11 +34,8 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
         let persistedSession = Self.session(
             expiresAt: initialState.sessionExpiresAt ?? referenceDate.addingTimeInterval(3600),
         )
-        let sessionClient = accountSessionClient ?? AccountSessionClient(
-            read: { persistedSession },
-            persist: { _ in },
-            delete: { _ in },
-        )
+        let sessionClient = accountSessionClient ?? AccountSessionClient(read: { _ in persistedSession }, persist: { _ in },
+        delete: { _ in },)
         return TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
