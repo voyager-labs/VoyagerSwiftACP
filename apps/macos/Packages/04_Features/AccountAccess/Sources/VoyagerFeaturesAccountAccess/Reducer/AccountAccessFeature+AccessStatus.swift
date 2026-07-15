@@ -309,7 +309,7 @@ extension AccountAccessFeature {
             state.deviceBindingRetryCount = 0
             state.isComplete = false
             state.errorMessage = errorMessageForStatus(accessStatus)
-            return .merge(
+            return .concatenate(
                 removeTrustedSnapshot(
                     binding: state.sessionBindingID,
                     generation: Int(state.syncGeneration),
@@ -344,7 +344,13 @@ extension AccountAccessFeature {
             )
 
         case .deviceLimitReached:
-            return handleDeviceBindingFailure(&state, snapshot: snapshot, error: .seatCapacityExceeded)
+            return .concatenate(
+                removeTrustedSnapshot(
+                    binding: state.sessionBindingID,
+                    generation: Int(state.syncGeneration),
+                ),
+                handleDeviceBindingFailure(&state, snapshot: snapshot, error: .seatCapacityExceeded),
+            )
 
         case .notAttempted:
             return handleDeviceBindingFailure(&state, snapshot: snapshot, error: .serverFailure)
@@ -439,7 +445,6 @@ extension AccountAccessFeature {
             guard !Task.isCancelled else { return }
             await snapshotClient.remove(binding, Self.gatewayEnvironment, generation)
         }
-        .cancellable(id: CancelID.sessionSync, cancelInFlight: true)
     }
 
     private func saveVerifiedSnapshot(
