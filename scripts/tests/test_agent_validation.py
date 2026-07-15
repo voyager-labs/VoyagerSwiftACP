@@ -277,6 +277,18 @@ class AgentValidationTests(unittest.TestCase):
 
         self.assert_exact_diagnostic(result, payload, "HARNESS_DEAD_REFERENCE")
 
+    def test_bare_sibling_markdown_literal_is_checked(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(
+                root,
+                ".agents/skills/fixture/SKILL.md",
+                "See `missing-sibling.md`.\n",
+            )
+            result, payload = self.run_cli(VALIDATE, root, "--all")
+
+        self.assert_exact_diagnostic(result, payload, "HARNESS_DEAD_REFERENCE")
+
     def test_deleted_agent_reference_target_checks_unchanged_referrer(self) -> None:
         temp = self.make_repo()
         self.addCleanup(temp.cleanup)

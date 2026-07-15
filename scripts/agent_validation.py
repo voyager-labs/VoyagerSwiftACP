@@ -29,7 +29,10 @@ PLAN_SECTIONS = ["TL;DR", "Context", "Work Objectives", "TODOs"]
 PLAN_QUALITY_SECTIONS = ["TDD Evidence", "Test Ownership", "Commit Strategy"]
 PLAN_TODO_FIELDS = ["What to do", "Must NOT do", "Acceptance", "QA", "Commit"]
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^]]*]\(([^)#]+)(?:#[^)]+)?\)")
-SKILL_PATH_LITERAL = re.compile(r"`((?:\.agents/|\.\.?/)[^`\s*]+(?:\.md|SKILL\.md))`")
+SKILL_PATH_LITERAL = re.compile(r"`((?:\.agents/|\.\.?/)[^`\s*]+\.md)`")
+BARE_REFERENCE_LITERAL = re.compile(
+    r"(?:see|refer to|load|read)\s+`([^`/\s*]+\.md)`", re.IGNORECASE
+)
 CHECKBOX_TODO = re.compile(r"^- \[[ xX]] .+")
 TODO = re.compile(r"^- \[[ xX]] \d+\. .+")
 
@@ -310,6 +313,7 @@ def validate_markdown_references(root: Path, path: Path, text: str) -> list[Diag
     for line_number, line in enumerate(text.splitlines(), 1):
         targets = [str(target) for target in MARKDOWN_LINK.findall(line)]
         targets += [str(target) for target in SKILL_PATH_LITERAL.findall(line)]
+        targets += [str(target) for target in BARE_REFERENCE_LITERAL.findall(line)]
         for target in targets:
             if "<" in target or ">" in target or urlsplit(target).scheme:
                 continue
@@ -342,6 +346,9 @@ def markdown_referrers(root: Path, deleted_paths: set[Path]) -> set[str]:
             for line in path.read_text(encoding="utf-8").splitlines():
                 targets = [str(target) for target in MARKDOWN_LINK.findall(line)]
                 targets += [str(target) for target in SKILL_PATH_LITERAL.findall(line)]
+                targets += [
+                    str(target) for target in BARE_REFERENCE_LITERAL.findall(line)
+                ]
                 resolved_targets = {
                     (
                         root / target
