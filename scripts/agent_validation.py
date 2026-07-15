@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -41,6 +44,28 @@ def diagnostic(
     path: Path, root: Path, line: int, code: str, message: str
 ) -> Diagnostic:
     return Diagnostic(path.relative_to(root).as_posix(), line, code, message)
+
+
+@contextmanager
+def validation_root(root: Path, mode: str) -> Iterator[Path]:
+    if mode != "staged":
+        yield root
+        return
+    with tempfile.TemporaryDirectory() as temp:
+        snapshot = Path(temp)
+        completed = subprocess.run(
+            ["git", "checkout-index", "--all", f"--prefix={snapshot.as_posix()}/"],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                completed.stderr.strip()
+                or "could not export staged validation snapshot"
+            )
+        yield snapshot
 
 
 def git_paths(root: Path, mode: str, base_ref: str | None) -> set[str]:
