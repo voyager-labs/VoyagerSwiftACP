@@ -236,7 +236,10 @@ class AgentValidationTests(unittest.TestCase):
             self.write(
                 root,
                 ".agents/rules/00-fixture.md",
-                f"{RULE}\n`.agents/skills/missing/SKILL.md`\n",
+                (
+                    f"{RULE}\n`.agents/skills/missing/SKILL.md`\n"
+                    "`.agents/skills/common/internal/fixture/SKILL.md`\n"
+                ),
             )
             result, payload = self.run_cli(VALIDATE, root, "--all")
 

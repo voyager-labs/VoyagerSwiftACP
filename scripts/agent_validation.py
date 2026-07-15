@@ -254,6 +254,8 @@ def validate_markdown_references(root: Path, path: Path, text: str) -> list[Diag
             resolved = (
                 root / target if target.startswith(".agents/") else path.parent / target
             ).resolve()
+            if resolved.is_relative_to((root / ".agents/skills/common").resolve()):
+                continue
             if not resolved.is_relative_to(root.resolve()) or not resolved.exists():
                 diagnostics.append(
                     diagnostic(
