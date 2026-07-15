@@ -195,6 +195,8 @@ def validate_harness(root: Path, paths: set[str], mode: str) -> list[Diagnostic]
     diagnostics: list[Diagnostic] = []
     for path_string in sorted(paths):
         path = root / path_string
+        if not path.is_file():
+            continue
         if mode in {"staged", "base-ref"} and path_string.startswith(
             (".sisyphus/", ".omx/")
         ):
@@ -208,8 +210,6 @@ def validate_harness(root: Path, paths: set[str], mode: str) -> list[Diagnostic]
             )
             continue
         if path_string.startswith((".sisyphus/", ".omx/")):
-            continue
-        if not path.is_file():
             continue
         if (
             path_string.startswith(".agents/rules/")

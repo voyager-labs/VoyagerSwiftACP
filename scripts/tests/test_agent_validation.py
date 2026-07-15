@@ -233,6 +233,35 @@ class AgentValidationTests(unittest.TestCase):
             base_result, base_payload, "HARNESS_STAGED_ARTIFACT"
         )
 
+    def test_artifact_deletions_are_allowed_in_tracked_scopes(self) -> None:
+        temp = self.make_repo()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        artifact = root / ".sisyphus/evidence/task.json"
+        self.write(root, artifact.relative_to(root).as_posix(), "{}")
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "artifact"], cwd=root, check=True)
+        base_ref = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        artifact.unlink()
+        subprocess.run(["git", "add", "-u"], cwd=root, check=True)
+
+        staged_result, staged_payload = self.run_cli(VALIDATE, root, "--staged")
+        self.assertEqual(staged_result.returncode, 0)
+        self.assertEqual(staged_payload["diagnostics"], [])
+
+        subprocess.run(
+            ["git", "commit", "-qm", "remove artifact"], cwd=root, check=True
+        )
+        base_result, base_payload = self.run_cli(VALIDATE, root, "--base-ref", base_ref)
+        self.assertEqual(base_result.returncode, 0)
+        self.assertEqual(base_payload["diagnostics"], [])
+
     def test_local_skill_links_and_path_literals_are_checked(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
