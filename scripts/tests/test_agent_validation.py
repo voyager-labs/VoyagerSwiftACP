@@ -322,6 +322,31 @@ class AgentValidationTests(unittest.TestCase):
 
         self.assert_exact_diagnostic(result, payload, "HARNESS_DEAD_REFERENCE")
 
+    def test_renamed_target_checks_unchanged_referrer(self) -> None:
+        for mode in ("--working-tree", "--staged"):
+            with self.subTest(mode=mode):
+                temp = self.make_repo()
+                self.addCleanup(temp.cleanup)
+                root = Path(temp.name)
+                self.write(
+                    root,
+                    ".agents/skills/fixture/SKILL.md",
+                    "[guide](references/guide.md)\n",
+                )
+                guide = root / ".agents/skills/fixture/references/guide.md"
+                self.write(root, guide.relative_to(root).as_posix(), "# Guide\n")
+                subprocess.run(["git", "add", "."], cwd=root, check=True)
+                subprocess.run(
+                    ["git", "commit", "-qm", "fixture"], cwd=root, check=True
+                )
+                guide.rename(guide.with_name("guide2.md"))
+                if mode == "--staged":
+                    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+
+                result, payload = self.run_cli(VALIDATE, root, mode)
+
+                self.assert_exact_diagnostic(result, payload, "HARNESS_DEAD_REFERENCE")
+
     def test_nested_rule_directories_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -51,7 +51,14 @@ def git_paths(root: Path, mode: str, base_ref: str | None) -> set[str]:
         }
     if mode == "staged":
         command = ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMRD"]
-        deleted_command = ["git", "diff", "--cached", "--name-only", "--diff-filter=D"]
+        removed_command = [
+            "git",
+            "diff",
+            "--cached",
+            "--name-status",
+            "--diff-filter=DR",
+            "-M",
+        ]
     elif mode == "base-ref":
         command = [
             "git",
@@ -60,16 +67,17 @@ def git_paths(root: Path, mode: str, base_ref: str | None) -> set[str]:
             "--diff-filter=ACMRD",
             f"{base_ref}...HEAD",
         ]
-        deleted_command = [
+        removed_command = [
             "git",
             "diff",
-            "--name-only",
-            "--diff-filter=D",
+            "--name-status",
+            "--diff-filter=DR",
+            "-M",
             f"{base_ref}...HEAD",
         ]
     else:
         command = ["git", "status", "--porcelain"]
-        deleted_command = None
+        removed_command = None
 
     completed = subprocess.run(
         command, cwd=root, text=True, capture_output=True, check=False
@@ -80,23 +88,26 @@ def git_paths(root: Path, mode: str, base_ref: str | None) -> set[str]:
         )
     if mode != "working-tree":
         paths = {line for line in completed.stdout.splitlines() if line}
-        if deleted_command is not None:
-            deleted = subprocess.run(
-                deleted_command,
+        if removed_command is not None:
+            removed = subprocess.run(
+                removed_command,
                 cwd=root,
                 text=True,
                 capture_output=True,
                 check=False,
             )
-            if deleted.returncode != 0:
+            if removed.returncode != 0:
                 raise RuntimeError(
-                    deleted.stderr.strip() or "could not determine deleted paths"
+                    removed.stderr.strip() or "could not determine removed paths"
                 )
-            deleted_paths = {
-                (root / line).resolve()
-                for line in deleted.stdout.splitlines()
-                if line.startswith(".agents/") and line.endswith(".md")
-            }
+            deleted_paths: set[Path] = set()
+            for line in removed.stdout.splitlines():
+                fields = line.split("\t")
+                if len(fields) < 2:
+                    continue
+                target = fields[1] if fields[0].startswith(("D", "R")) else ""
+                if target.startswith(".agents/") and target.endswith(".md"):
+                    deleted_paths.add((root / target).resolve())
             if deleted_paths:
                 paths.update(markdown_referrers(root, deleted_paths))
         return paths
@@ -113,6 +124,10 @@ def git_paths(root: Path, mode: str, base_ref: str | None) -> set[str]:
                 and path_string.endswith(".md")
             ):
                 deleted_paths.add((root / path_string).resolve())
+            if "R" in line[:2] and " -> " in line[3:]:
+                old_path = line[3:].split(" -> ", 1)[0]
+                if old_path.startswith(".agents/") and old_path.endswith(".md"):
+                    deleted_paths.add((root / old_path).resolve())
     if deleted_paths:
         paths.update(markdown_referrers(root, deleted_paths))
     untracked = subprocess.run(
