@@ -147,6 +147,114 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         await store.finish()
     }
 
+    /// ACC-001-validate_account_session: 다른 binding의 persisted session은 새 sync 전에 이전 access 사실을 제거한다.
+    /// - 검증 내용: binding 변경이 active status, verified snapshot, trial, device failure, submission, completion, error를 즉시
+    /// 비우고 새 binding sync를 시작한다.
+    /// - 사전 조건: 이전 binding의 complete access 사실과 다른 binding 및 만료 시각을 가진 persisted session.
+    /// - 기대 결과: 새 session fields와 invalidated generations가 반영된 뒤 `.validate` foreground sync activation이 대기한다.
+    func testForegroundRevalidationWithChangedBindingClearsStaleAccessFactsBeforeSync() async {
+        let activationGate = ActivationGate()
+        let oldBinding = UUID()
+        let newBinding = UUID()
+        let oldExpiry = referenceDate.addingTimeInterval(3600)
+        let newExpiry = referenceDate.addingTimeInterval(7200)
+        let staleSnapshot = AccessStatusSnapshot.fetchResult(
+            status: .coreLicenseActive,
+            currentPeriodEnd: referenceDate.addingTimeInterval(1800),
+            sessionExpiresAt: oldExpiry,
+            fetchedAt: referenceDate,
+            sessionBindingID: oldBinding,
+            gatewayBinding: GatewayEnvironment(rawValue: "").binding,
+            deviceID: "test-device-id",
+            deviceBindingVerifiedAt: referenceDate,
+        )
+        var initialState = sessionNearExpiryState()
+        initialState.status = .coreLicenseActive
+        initialState.snapshot = staleSnapshot
+        initialState.trialExpiresAt = staleSnapshot.currentPeriodEnd
+        initialState.deviceBindingFailure = .retryable
+        initialState.deviceBindingRetryCount = 2
+        initialState.isSubmitting = true
+        initialState.isComplete = true
+        initialState.errorMessage = "previous binding failed"
+        initialState.sessionExpiresAt = oldExpiry
+        initialState.sessionBindingID = oldBinding
+        initialState.fetchGeneration = 7
+        initialState.syncGeneration = 4
+        initialState.lastCompleteSyncAt = referenceDate
+        initialState.fetchRetryCount = 2
+        let store = TestStore(initialState: initialState) {
+            AccountAccessFeature()
+        } withDependencies: {
+            $0.accountSessionClient = AccountSessionClient(
+                read: { _ in AccountSession(
+                    accessToken: "new-access-token",
+                    status: .coreLicenseActive,
+                    refreshToken: "refresh-token",
+                    expiresAt: newExpiry,
+                    sessionBindingID: newBinding,
+                )
+                },
+                persist: { _ in },
+                delete: { _ in },
+            )
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                activate: { _, _ in await activationGate.wait() },
+                load: { _, _ in nil },
+                save: { _, _, _, _ in },
+                remove: { _, _, _ in },
+            )
+            $0.continuousClock = TestClock()
+            $0.date = .constant(referenceDate)
+        }
+
+        await store.send(.appDidBecomeActive) { state in
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
+        }
+        await store.receive(\.revalidatePersistedSession)
+        await store.receive(\._persistedSessionRevalidated) { state in
+            state.status = nil
+            state.snapshot = nil
+            state.trialExpiresAt = nil
+            state.deviceBindingFailure = nil
+            state.deviceBindingRetryCount = 0
+            state.isSubmitting = false
+            state.isComplete = false
+            state.errorMessage = nil
+            state.sessionExpiresAt = newExpiry
+            state.sessionBindingID = newBinding
+            state.fetchGeneration = 8
+            state.syncGeneration = 5
+            state.lastCompleteSyncAt = nil
+            state.fetchRetryCount = 0
+            state.refreshDeadlineGeneration = 2
+        }
+        await store.receive(sessionSyncRequestedCasePath(intent: .validate, reason: .foreground)) { state in
+            state.syncGeneration = 6
+            state.inFlightSyncReason = .foreground
+            state.isSubmitting = true
+        }
+        for _ in 0 ..< 10 where await !(activationGate.isWaiting()) {
+            await Task.yield()
+        }
+        let isActivationWaiting = await activationGate.isWaiting()
+        XCTAssertTrue(isActivationWaiting)
+
+        await store.send(.appWillTerminate) { state in
+            state.fetchGeneration = 9
+            state.syncGeneration = 7
+            state.inFlightSyncReason = nil
+            state.revalidationGeneration = 2
+            state.isSubmitting = false
+            state.ttlTimerActive = false
+            state.handoffGeneration = 1
+            state.refreshDeadlineGeneration = 3
+        }
+        await activationGate.resume(with: 1)
+        await store.finish()
+    }
+
     // MARK: - ACC-001-foreground_session_freshness
 
     /// ACC-001-foreground_session_freshness: complete snapshot 직후 foreground는 persisted session만 재검증한다.

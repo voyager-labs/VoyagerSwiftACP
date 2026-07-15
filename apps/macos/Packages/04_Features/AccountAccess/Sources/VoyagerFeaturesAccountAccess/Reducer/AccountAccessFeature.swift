@@ -420,6 +420,7 @@ extension AccountAccessFeature {
         resetSessionRetryBudget(&state)
 
         if bindingChanged {
+            clearStaleActiveAccessFacts(&state)
             state.fetchGeneration += 1
             invalidateSessionSync(&state)
             state.lastCompleteSyncAt = nil
