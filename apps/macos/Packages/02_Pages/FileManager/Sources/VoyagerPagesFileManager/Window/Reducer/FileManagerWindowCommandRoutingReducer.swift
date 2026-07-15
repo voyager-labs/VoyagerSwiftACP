@@ -8,6 +8,7 @@ import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 struct HomeAiChatOpenCancelID: Hashable {
@@ -20,6 +21,7 @@ struct FileManagerWindowCommandRoutingReducer {
         case contextualAiChatOpen
         case loadFixedLocations
         case loadHomeFavorites
+        case undoManagerEvents
     }
 
     typealias State = FileManagerWindowState
@@ -43,6 +45,8 @@ struct FileManagerWindowCommandRoutingReducer {
     private var userDefaultsClient
     @Dependency(\.uuid)
     private var uuid
+    @Dependency(\.undoManagerClient)
+    private var undoManagerClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -88,11 +92,39 @@ struct FileManagerWindowCommandRoutingReducer {
                 .cancellable(id: CancelID.loadHomeFavorites, cancelInFlight: true)
                 return .merge(fixedLocationsEffect, homeFavoritesEffect)
 
+            case let .content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID))))):
+                return .send(.internal(.undoManagerWindowIDChanged(windowID)))
+
+            case let .internal(.undoManagerWindowIDChanged(windowID)):
+                state.windowID = windowID
+                state.undoRedoPhase = .idle
+                return .merge(
+                    .send(.internal(.sidebarEntryDrop(.lifecycle(.windowIDChanged(windowID))))),
+                    undoManagerAvailabilityEffect(windowID: windowID),
+                    undoManagerEventsEffect(windowID: windowID),
+                )
+
+            case let .internal(.undoManagerInvocationFinished(requestID, direction, result)):
+                guard case let .invoking(currentRequestID, currentDirection) = state.undoRedoPhase,
+                      currentRequestID == requestID,
+                      currentDirection == direction
+                else { return .none }
+                state.undoManagerAvailability = result.availability
+                state.undoRedoPhase = result.didInvoke
+                    ? .replaying(requestID: requestID, direction: direction)
+                    : .idle
+                return .none
+
+            case let .internal(.undoManagerAvailabilityChanged(availability)):
+                state.undoManagerAvailability = availability
+                return .none
+
             case .onDisappear:
                 state.fixedLocationsLoadPhase = .idle
                 return .merge(
                     .cancel(id: CancelID.loadFixedLocations),
                     .cancel(id: CancelID.loadHomeFavorites),
+                    .cancel(id: CancelID.undoManagerEvents),
                 )
 
             case let .internal(.homeFavoritesLoaded(items)):
@@ -140,6 +172,17 @@ struct FileManagerWindowCommandRoutingReducer {
                     .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
                     .send(.navigation(.view(.navigateToPath(location.path)))),
                 )
+
+            case let .sidebar(.delegate(.entryDropRequested(request))):
+                guard let destinationPath = sidebarEntryDropDestinationPath(
+                    for: request.target,
+                    state: state,
+                ) else { return .none }
+                return .send(.internal(.sidebarEntryDrop(.routing(.handleDrop(
+                    providers: request.providers,
+                    destinationPath: destinationPath,
+                    isOptionDrag: request.isOptionDrag,
+                )))))
 
             case let .sidebar(.view(.setFixedLocationVisibility(id, isVisible))):
                 state.sidebar.setFixedLocationVisibility(id: id, isVisible: isVisible)
@@ -196,6 +239,32 @@ struct FileManagerWindowCommandRoutingReducer {
             default:
                 return .none
             }
+        }
+    }
+
+    private func sidebarEntryDropDestinationPath(
+        for target: FileManagerSidebarEntryDropTarget,
+        state: State,
+    ) -> String? {
+        switch target {
+        case let .fixedLocation(id):
+            return state.sidebar.fixedLocationItems.first(where: { $0.id == id })?.path
+
+        case let .contentTab(id):
+            guard let tab = state.contentTabs.tabs[id: id], tab.page == .directory else { return nil }
+
+            if id == state.contentTabs.activeTabID {
+                guard case let .folder(path) = state.content.navigation.navigationState else { return nil }
+                return path
+            }
+
+            if let contentState = state.tabContentStates[id] {
+                guard case let .folder(path) = contentState.navigation.navigationState else { return nil }
+                return path
+            }
+
+            guard case let .directory(path) = tab.anchor else { return nil }
+            return path
         }
     }
 
@@ -370,7 +439,7 @@ struct FileManagerWindowCommandRoutingReducer {
 
         case .requestUndo,
              .requestRedo:
-            return handleUndoRedoRequest(command)
+            return handleUndoRedoRequest(command, state: &state)
         }
     }
 
@@ -634,17 +703,52 @@ struct FileManagerWindowCommandRoutingReducer {
         }
     }
 
-    private func handleUndoRedoRequest(_ command: Action.WindowCommand) -> Effect<Action> {
+    private func handleUndoRedoRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
+        guard state.undoRedoPhase == .idle else { return .none }
+        let direction: EntryActionDirection
         switch command {
         case .requestUndo:
-            .send(.content(.entryViewLayout(.entryOperations(.undoRedo(.requestUndo)))))
-
+            guard state.undoManagerAvailability.canUndo else { return .none }
+            direction = .undo
         case .requestRedo:
-            .send(.content(.entryViewLayout(.entryOperations(.undoRedo(.requestRedo)))))
-
+            guard state.undoManagerAvailability.canRedo else { return .none }
+            direction = .redo
         default:
-            .none
+            return .none
         }
+
+        let requestID = uuid()
+        let windowID = state.windowID
+        state.undoRedoPhase = .invoking(requestID: requestID, direction: direction)
+        return .run { send in
+            let result = switch direction {
+            case .undo:
+                await undoManagerClient.undo(windowID)
+            case .redo:
+                await undoManagerClient.redo(windowID)
+            }
+            await send(.internal(.undoManagerInvocationFinished(
+                requestID: requestID,
+                direction: direction,
+                result: result,
+            )))
+        }
+    }
+
+    private func undoManagerAvailabilityEffect(windowID: UUID?) -> Effect<Action> {
+        .run { send in
+            let availability = await undoManagerClient.availability(windowID)
+            await send(.internal(.undoManagerAvailabilityChanged(availability)))
+        }
+    }
+
+    private func undoManagerEventsEffect(windowID: UUID) -> Effect<Action> {
+        .run { send in
+            for await event in undoManagerClient.events(windowID) {
+                await send(.internal(.undoManagerEventReceived(event)))
+            }
+        }
+        .cancellable(id: CancelID.undoManagerEvents, cancelInFlight: true)
     }
 
     // MARK: - Restore Last Closed Content Tab

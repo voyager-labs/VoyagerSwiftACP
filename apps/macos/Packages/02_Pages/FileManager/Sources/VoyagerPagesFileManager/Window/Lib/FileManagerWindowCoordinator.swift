@@ -44,6 +44,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
 
         super.init(window: window)
         window.delegate = self
+        store.send(.internal(.undoManagerWindowIDChanged(windowID)))
         FileManagerWindowChrome.bindTitle(to: window, store: store, cancellables: &cancellables)
     }
 
@@ -66,10 +67,13 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
             registryClient: registryClient,
         )
 
+        store.send(.internal(.undoManagerWindowIDChanged(windowID)))
         if duplicateState != nil {
             store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.resetForDuplicate(windowID: windowID))))))
+            store.send(.internal(.sidebarEntryDrop(.lifecycle(.resetForDuplicate(windowID: windowID)))))
         } else {
             store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID))))))
+            store.send(.internal(.sidebarEntryDrop(.lifecycle(.windowIDChanged(windowID)))))
         }
 
         self.windowID = windowID

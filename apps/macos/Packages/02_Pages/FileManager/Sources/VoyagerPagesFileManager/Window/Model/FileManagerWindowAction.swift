@@ -6,6 +6,7 @@ import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
@@ -44,6 +45,16 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         )
         case homeFavoritesLoaded([FileManagerHomeFavoriteItem])
         case aiChatTabTitleUpdated(sessionID: AiChatSessionID, title: String?)
+        case routeContent(tabID: ContentTabID, action: FileManagerContentAction)
+        case sidebarEntryDrop(EntryOperationsAction)
+        case undoManagerWindowIDChanged(UUID)
+        case undoManagerEventReceived(UndoManagerEvent)
+        case undoManagerAvailabilityChanged(UndoManagerAvailability)
+        case undoManagerInvocationFinished(
+            requestID: UUID,
+            direction: EntryActionDirection,
+            result: UndoManagerInvocationResult,
+        )
     }
 
     @CasePathable

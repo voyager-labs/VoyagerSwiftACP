@@ -22,6 +22,8 @@ struct FileManagerWindowRoutingReducer {
     var entryLoadingClient
     @Dependency(\.aiConnectionsFileClient)
     var aiConnectionsFileClient
+    @Dependency(\.undoManagerClient)
+    var undoManagerClient
 
     typealias State = FileManagerWindowState
     typealias Action = FileManagerWindowAction
@@ -142,6 +144,7 @@ struct FileManagerWindowRoutingReducer {
                 }
                 syncDashboardProjections(state: &state)
                 syncSidebarSelectionForActiveContentTab(state: &state)
+                consumePendingDirectoryReloadForActiveTab(state: &state)
                 return .merge(
                     .concatenate(
                         handoffCleanupEffect,
@@ -214,6 +217,14 @@ struct FileManagerWindowRoutingReducer {
                 let shouldResetLastTabContent = state.contentTabs.previousActiveTabID == tabID
                     && state.contentTabs.activeTabID == tabID
                 let shouldResyncContentNavigation = shouldRestorePreviousActiveTab || shouldResetLastTabContent
+                let removedUndoOwnerID = isRemovedTab
+                    ? entryOperationsOwnerIDForClosingTab(
+                        tabID: tabID,
+                        usesActiveContent: shouldResyncContentNavigation,
+                        state: state,
+                    )
+                    : nil
+                state.pendingDirectoryReloadTabIDs.remove(tabID)
                 let aiChatLifecycleSessionIDs = aiChatLifecycleSessionIDsToPreserve(state.content.aiChat)
                 let isAiChatLifecyclePreservingTabClose = shouldResyncContentNavigation
                     && !aiChatLifecycleSessionIDs.isEmpty
@@ -270,7 +281,14 @@ struct FileManagerWindowRoutingReducer {
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
-                return shouldCloseWindow ? .merge(handoffEffect, .send(.closeWindow)) : handoffEffect
+                let ownerInvalidationEffect = invalidateUndoOwnerEffect(
+                    removedUndoOwnerID,
+                    windowID: state.windowID,
+                    undoManagerClient: undoManagerClient,
+                )
+                return shouldCloseWindow
+                    ? .merge(handoffEffect, ownerInvalidationEffect, .send(.closeWindow))
+                    : .merge(handoffEffect, ownerInvalidationEffect)
 
             case .contentTabs(.restore):
                 if keepPendingContentTabCloseFocused(state: &state) {
@@ -324,6 +342,7 @@ struct FileManagerWindowRoutingReducer {
                 let activeTabIDBeforeSync = state.contentTabs.activeTabID
                 let activeAnchorBeforeSync = activeTabIDBeforeSync.flatMap { state.contentTabs.tabs[id: $0]?.anchor }
                 state.applyPinnedContentTabs(contentTabs)
+                cleanPendingDirectoryReloadTabIDs(state: &state)
                 syncDashboardProjections(state: &state)
                 let activeAnchorAfterSync = state.contentTabs.activeTabID
                     .flatMap { state.contentTabs.tabs[id: $0]?.anchor }
@@ -426,8 +445,57 @@ struct FileManagerWindowRoutingReducer {
                 )
 
             case .contentTabs:
+                cleanPendingDirectoryReloadTabIDs(state: &state)
                 syncDashboardProjections(state: &state)
                 return .none
+
+            case let .content(.entryViewLayout(.entryOperations(.outcome(.entriesMutated(impact))))):
+                return handleEntriesMutated(impact, state: &state)
+
+            case let .content(
+                .entryViewLayout(.entryOperations(.outcome(.undoManagerAvailabilityChanged(availability)))),
+            ):
+                state.undoManagerAvailability = availability
+                return .none
+
+            case let .content(
+                .entryViewLayout(.entryOperations(.outcome(.entryActionReplayFinished(direction, terminal)))),
+            ):
+                return handleEntryActionReplayTerminal(
+                    direction: direction,
+                    terminal: terminal,
+                    undoManagerClient: undoManagerClient,
+                    state: &state,
+                )
+
+            case let .internal(.sidebarEntryDrop(.outcome(.entriesMutated(impact)))):
+                return handleEntriesMutated(impact, state: &state)
+
+            case let .internal(.sidebarEntryDrop(.outcome(.undoManagerAvailabilityChanged(availability)))):
+                state.undoManagerAvailability = availability
+                return .none
+
+            case let .internal(.sidebarEntryDrop(.outcome(.entryActionReplayFinished(direction, terminal)))):
+                return .merge(
+                    handleEntryActionReplayTerminal(
+                        direction: direction,
+                        terminal: terminal,
+                        undoManagerClient: undoManagerClient,
+                        state: &state,
+                    ),
+                    handleSidebarEntryActionReplayTerminal(terminal, state: &state),
+                )
+
+            case let .internal(.undoManagerEventReceived(event)):
+                return routeUndoManagerEvent(event, state: &state)
+
+            case let .internal(.routeContent(tabID, contentAction)):
+                return routeContentAction(
+                    contentAction,
+                    tabID: tabID,
+                    undoManagerClient: undoManagerClient,
+                    state: &state,
+                )
 
             case let .closeContentTabRequested(tabID):
                 return handleCloseContentTabRequested(tabID: tabID, state: &state)
@@ -563,6 +631,248 @@ struct FileManagerWindowRoutingReducer {
 }
 
 // MARK: - Close Content Tab Request
+
+private func routeContentAction(
+    _ action: FileManagerContentAction,
+    tabID: ContentTabID,
+    undoManagerClient: UndoManagerClient,
+    state: inout FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    let windowEffect: Effect<FileManagerWindowAction>
+    switch action {
+    case let .entryViewLayout(.entryOperations(.outcome(.entriesMutated(impact)))):
+        windowEffect = handleEntriesMutated(impact, state: &state)
+    case let .entryViewLayout(.entryOperations(.outcome(.undoManagerAvailabilityChanged(availability)))):
+        state.undoManagerAvailability = availability
+        windowEffect = .none
+    case let .entryViewLayout(.entryOperations(.outcome(.entryActionReplayFinished(direction, terminal)))):
+        windowEffect = handleEntryActionReplayTerminal(
+            direction: direction,
+            terminal: terminal,
+            undoManagerClient: undoManagerClient,
+            state: &state,
+        )
+    default:
+        windowEffect = .none
+    }
+    guard state.contentTabs.tabs[id: tabID] != nil else { return windowEffect }
+
+    let effect: Effect<FileManagerContentAction>
+    if tabID == state.contentTabs.activeTabID {
+        effect = FileManagerContentFeature().reduce(into: &state.content, action: action)
+        state.syncActiveTabContentState()
+    } else {
+        guard var content = state.tabContentStates[tabID] else { return .none }
+        effect = FileManagerContentFeature().reduce(into: &content, action: action)
+        state.tabContentStates[tabID] = content
+    }
+
+    let routedEffect = effect.map { FileManagerWindowAction.internal(.routeContent(tabID: tabID, action: $0)) }
+    return .merge(routedEffect, windowEffect)
+}
+
+private func entryOperationsOwnerIDForClosingTab(
+    tabID: ContentTabID,
+    usesActiveContent: Bool,
+    state: FileManagerWindowState,
+) -> UUID? {
+    if usesActiveContent {
+        return state.content.entryViewLayout.entryOperations.undoOwnerID
+    }
+    return state.tabContentStates[tabID]?.entryViewLayout.entryOperations.undoOwnerID
+}
+
+private func invalidateUndoOwnerEffect(
+    _ ownerID: UUID?,
+    windowID: UUID?,
+    undoManagerClient: UndoManagerClient,
+) -> Effect<FileManagerWindowAction> {
+    guard let ownerID, let windowID else { return .none }
+    return .run { _ in
+        await undoManagerClient.invalidateOwner(windowID, ownerID)
+    }
+}
+
+private func routeUndoManagerEvent(
+    _ event: UndoManagerEvent,
+    state: inout FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    let requestID: UUID
+    let expectedDirection: EntryActionDirection
+    switch state.undoRedoPhase {
+    case let .invoking(currentRequestID, direction), let .replaying(currentRequestID, direction):
+        requestID = currentRequestID
+        expectedDirection = direction
+    case .idle, .desynchronized:
+        state.undoRedoPhase = .desynchronized
+        return .none
+    }
+
+    guard expectedDirection == event.direction else {
+        state.undoRedoPhase = .desynchronized
+        return .none
+    }
+
+    let replayAction: EntryOperationsAction = switch event.direction {
+    case .undo:
+        .undoRedo(.undoEntryAction(event.record))
+    case .redo:
+        .undoRedo(.redoEntryAction(event.record))
+    }
+    state.undoRedoPhase = .replaying(requestID: requestID, direction: event.direction)
+
+    if state.sidebarEntryDropOperations.undoOwnerID == event.ownerID {
+        return .send(.internal(.sidebarEntryDrop(replayAction)))
+    }
+    if state.content.entryViewLayout.entryOperations.undoOwnerID == event.ownerID {
+        return .send(.content(.entryViewLayout(.entryOperations(replayAction))))
+    }
+
+    let activeTabID = state.contentTabs.activeTabID
+    let matchingTabIDs: [ContentTabID] = state.tabContentStates.compactMap { element in
+        let (tabID, contentState) = element
+        guard tabID != activeTabID,
+              contentState.entryViewLayout.entryOperations.undoOwnerID == event.ownerID
+        else { return nil }
+        return tabID
+    }
+    guard matchingTabIDs.count == 1, let tabID = matchingTabIDs.first else {
+        state.undoRedoPhase = .desynchronized
+        return .none
+    }
+    return .send(.internal(.routeContent(
+        tabID: tabID,
+        action: .entryViewLayout(.entryOperations(replayAction)),
+    )))
+}
+
+func handleEntriesMutated(
+    _ impact: EntryOperationsMutationImpact,
+    state: inout FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    handleAffectedDirectoryRefresh(
+        paths: impact.sourceParentPaths + [impact.destinationPath],
+        state: &state,
+    )
+}
+
+private func handleEntryActionReplayTerminal(
+    direction: EntryActionDirection,
+    terminal: EntryActionReplayTerminal,
+    undoManagerClient: UndoManagerClient,
+    state: inout FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    switch state.undoRedoPhase {
+    case let .invoking(_, expectedDirection), let .replaying(_, expectedDirection):
+        guard expectedDirection == direction else {
+            state.undoRedoPhase = .desynchronized
+            return .none
+        }
+    case .idle:
+        break
+    case .desynchronized:
+        return .none
+    }
+    switch terminal {
+    case .success,
+         .failure(reason: .operationFailed, appliedTargets: _):
+        state.undoRedoPhase = .idle
+        let windowID = state.windowID
+        return .run { send in
+            let availability = await undoManagerClient.availability(windowID)
+            await send(.internal(.undoManagerAvailabilityChanged(availability)))
+        }
+
+    case .failure(reason: .ownerRecordMismatch, appliedTargets: _),
+         .failure(reason: .ownerBusy, appliedTargets: _):
+        state.undoRedoPhase = .desynchronized
+        return .none
+    }
+}
+
+func handleSidebarEntryActionReplayTerminal(
+    _ terminal: EntryActionReplayTerminal,
+    state: inout FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    let targets: [EntryActionRecord.Target]
+    switch terminal {
+    case let .success(record):
+        targets = record.targets
+    case let .failure(reason: .operationFailed, appliedTargets: appliedTargets):
+        targets = appliedTargets
+    case .failure(reason: .ownerRecordMismatch, appliedTargets: _),
+         .failure(reason: .ownerBusy, appliedTargets: _):
+        return .none
+    }
+
+    var parentPaths: [String] = []
+    for path in targets.flatMap({ [$0.beforePath, $0.afterPath] }).compactMap(\.self) {
+        let parentPath = URL(fileURLWithPath: path).deletingLastPathComponent().path
+        guard !parentPaths.contains(where: { EntryDropPathPolicy.areEquivalent($0, parentPath) }) else { continue }
+        parentPaths.append(parentPath)
+    }
+    return handleAffectedDirectoryRefresh(paths: parentPaths, state: &state)
+}
+
+private func handleAffectedDirectoryRefresh(
+    paths affectedPaths: [String],
+    state: inout FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    var activeDirectoryTabID: ContentTabID?
+
+    for tab in state.contentTabs.tabs where tab.page == .directory {
+        guard let currentPath = currentDirectoryPath(for: tab, state: state),
+              affectedPaths.contains(where: { EntryDropPathPolicy.areEquivalent($0, currentPath) })
+        else { continue }
+
+        if tab.id == state.contentTabs.activeTabID {
+            activeDirectoryTabID = tab.id
+        } else {
+            state.pendingDirectoryReloadTabIDs.insert(tab.id)
+        }
+    }
+
+    guard let activeDirectoryTabID else { return .none }
+    return .send(.internal(.routeContent(
+        tabID: activeDirectoryTabID,
+        action: .internal(.reloadDirectoryListing),
+    )))
+}
+
+private func currentDirectoryPath(
+    for tab: ContentTabItem,
+    state: FileManagerWindowState,
+) -> String? {
+    if tab.id == state.contentTabs.activeTabID {
+        guard case let .folder(path) = state.content.navigation.navigationState else { return nil }
+        return path
+    }
+    if let content = state.tabContentStates[tab.id] {
+        guard case let .folder(path) = content.navigation.navigationState else { return nil }
+        return path
+    }
+    guard case let .directory(path) = tab.anchor else { return nil }
+    return path
+}
+
+private func consumePendingDirectoryReloadForActiveTab(state: inout FileManagerWindowState) {
+    guard let activeTabID = state.contentTabs.activeTabID,
+          state.pendingDirectoryReloadTabIDs.contains(activeTabID),
+          state.contentTabs.tabs[id: activeTabID]?.page == .directory,
+          case .folder = state.content.navigation.navigationState
+    else {
+        cleanPendingDirectoryReloadTabIDs(state: &state)
+        return
+    }
+    state.pendingDirectoryReloadTabIDs.remove(activeTabID)
+}
+
+private func cleanPendingDirectoryReloadTabIDs(state: inout FileManagerWindowState) {
+    let directoryTabIDs = Set(state.contentTabs.tabs.compactMap { tab in
+        tab.page == .directory ? tab.id : nil
+    })
+    state.pendingDirectoryReloadTabIDs.formIntersection(directoryTabIDs)
+}
 
 private extension FileManagerWindowRoutingReducer {
     func keepPendingContentTabCloseFocusedAfterOpen(state: inout State) -> Bool {

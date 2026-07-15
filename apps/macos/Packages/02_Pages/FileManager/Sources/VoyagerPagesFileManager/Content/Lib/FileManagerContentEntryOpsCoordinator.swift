@@ -25,6 +25,9 @@ enum FileManagerContentEntryOpsCoordinator {
         case .lifecycle(.operationFinished):
             reloadEntryItemsEffect(state: state)
 
+        case .lifecycle(.dropOperationFinished):
+            .none
+
         case .lifecycle(.emptyTrashCompleted):
             .send(.delegate(.closeWindow))
 

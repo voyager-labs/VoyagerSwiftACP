@@ -8,6 +8,13 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
+public enum FileManagerUndoRedoPhase: Equatable, Sendable {
+    case idle
+    case invoking(requestID: UUID, direction: EntryActionDirection)
+    case replaying(requestID: UUID, direction: EntryActionDirection)
+    case desynchronized
+}
+
 enum FileManagerFixedLocationsLoadPhase: Equatable {
     case idle
     case loading(UUID)
@@ -26,6 +33,11 @@ public struct FileManagerWindowState: Equatable {
     public var contentTabs: ContentTabState
     public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
     public var pendingContentTabClose: PendingContentTabClose?
+    public var pendingDirectoryReloadTabIDs: Set<ContentTabID>
+    public var windowID: UUID?
+    public var undoManagerAvailability: UndoManagerAvailability
+    public var undoRedoPhase: FileManagerUndoRedoPhase
+    public var sidebarEntryDropOperations: EntryOperationsState
     var fixedLocationsLoadPhase: FileManagerFixedLocationsLoadPhase = .idle
     var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
 
@@ -40,6 +52,11 @@ public struct FileManagerWindowState: Equatable {
         backgroundInspectorAiChatStates = [:]
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
+        pendingDirectoryReloadTabIDs = []
+        windowID = nil
+        undoManagerAvailability = .init()
+        undoRedoPhase = .idle
+        sidebarEntryDropOperations = .init()
         if let activeTabID = contentTabs.activeTabID {
             tabContentStates[activeTabID] = content
         }

@@ -29,6 +29,9 @@ public struct FileManagerContentFeature {
             case let .entryViewLayout(.entryOperations(.lifecycle(.resetForDuplicate(windowID)))):
                 state.composer.cancellationOwnerID = windowID
                 return .none
+            case .internal(.reloadDirectoryListing):
+                guard case .folder = state.navigation.navigationState else { return .none }
+                return FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state)
             default:
                 return .none
             }

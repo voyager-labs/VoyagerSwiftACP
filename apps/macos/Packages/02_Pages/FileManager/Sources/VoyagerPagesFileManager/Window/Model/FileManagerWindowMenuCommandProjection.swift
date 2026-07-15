@@ -48,8 +48,8 @@ public extension FileManagerWindowState {
             groupKey: content.entryViewLayout.entryArrangements.groupKey,
             sortKey: content.entryViewLayout.entryArrangements.sortKey,
             sortOrder: content.entryViewLayout.entryArrangements.sortOrder,
-            canUndo: content.entryViewLayout.entryOperations.canUndoEntryAction,
-            canRedo: content.entryViewLayout.entryOperations.canRedoEntryAction,
+            canUndo: undoRedoPhase == .idle && undoManagerAvailability.canUndo,
+            canRedo: undoRedoPhase == .idle && undoManagerAvailability.canRedo,
             selectedItemCount: selectedIds.count,
             isComposerPresented: content.composer.isPresented,
             isContextualAiChatPresented: inspector.inspectorVisible

@@ -161,32 +161,175 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
     // MARK: - FMW-001-request_undo
 
-    /// FMW-001-request_undo: undo 명령 라우팅
-    /// requestUndo 요청이 entryOperations undoRedo 리듀서로 전달되는지 검증.
-    /// - 검증 내용: request(.requestUndo) 전송 시 content.entryViewLayout.entryOperations.undoRedo.requestUndo 수신
-    /// - 사전 조건: 기본 상태의 FileManagerWindow
-    /// - 기대 결과: undoRedo.requestUndo 액션 수신
-    func test_undoRedoRequest_undo_forwardsToEntryOperations() async {
+    /// FMW-001-request_undo: root availability가 없으면 undo 명령은 no-op
+    /// - 검증 내용: requestUndo가 child local stack을 선택하거나 action을 전달하지 않음
+    /// - 사전 조건: 기본 root availability canUndo=false
+    /// - 기대 결과: shared UndoManager 호출 및 child action 없이 종료
+    func test_undoRedoRequest_undoUnavailable_isNoOp() async {
         let store = makeStore()
 
         await store.send(.request(.requestUndo))
-        await store.receive(\.content.entryViewLayout.entryOperations.undoRedo.requestUndo)
         await store.finish()
     }
 
     // MARK: - FMW-001-request_redo
 
-    /// FMW-001-request_redo: redo 명령 라우팅
-    /// requestRedo 요청이 entryOperations undoRedo 리듀서로 전달되는지 검증.
-    /// - 검증 내용: request(.requestRedo) 전송 시 content.entryViewLayout.entryOperations.undoRedo.requestRedo 수신
-    /// - 사전 조건: 기본 상태의 FileManagerWindow
-    /// - 기대 결과: undoRedo.requestRedo 액션 수신
-    func test_undoRedoRequest_redo_forwardsToEntryOperations() async {
+    /// FMW-001-request_redo: root availability가 없으면 redo 명령은 no-op
+    /// - 검증 내용: requestRedo가 child local stack을 선택하거나 action을 전달하지 않음
+    /// - 사전 조건: 기본 root availability canRedo=false
+    /// - 기대 결과: shared UndoManager 호출 및 child action 없이 종료
+    func test_undoRedoRequest_redoUnavailable_isNoOp() async {
         let store = makeStore()
 
         await store.send(.request(.requestRedo))
-        await store.receive(\.content.entryViewLayout.entryOperations.undoRedo.requestRedo)
         await store.finish()
+    }
+
+    /// FMW-001-request_undo: terminal이 invocation result보다 먼저 도착해도 late result는 무시됨
+    /// - 검증 내용: invoking 중 content terminal success가 gate를 idle로 닫고 뒤늦은 동일 request result가 상태를 덮지 않음
+    /// - 사전 조건: undo client가 invocation result 반환 직전에 controllable gate에서 대기함
+    /// - 기대 결과: terminal 직후 idle, availability 재조회 반영, late result 수신 후에도 idle 유지
+    func testUndoReplay_fastTerminalBeforeInvocationResult_ignoresLateResult() async throws {
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000572"))
+        let gate = FileManagerUndoInvocationGate()
+        let calls = LockIsolated(0)
+        let terminalAvailability = UndoManagerAvailability(canUndo: false, canRedo: true)
+        let client = UndoManagerClient(
+            registerUndo: { _, _, _ in },
+            undo: { _ in
+                calls.withValue { $0 += 1 }
+                await gate.suspend()
+                return .init(didInvoke: true, availability: terminalAvailability)
+            },
+            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            availability: { _ in terminalAvailability },
+        )
+        var state = FileManagerWindowState()
+        state.undoManagerAvailability = .init(canUndo: true, canRedo: false)
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/source/old", afterPath: "/source/new")],
+        )
+        let store = TestStore(initialState: state) {
+            CombineReducers {
+                FileManagerWindowCommandRoutingReducer()
+                FileManagerWindowRoutingReducer()
+            }
+        } withDependencies: {
+            $0.undoManagerClient = client
+            $0.uuid = .constant(requestID)
+        }
+
+        await store.send(.request(.requestUndo)) {
+            $0.undoRedoPhase = .invoking(requestID: requestID, direction: .undo)
+        }
+        await gate.waitUntilSuspended()
+        XCTAssertFalse(store.state.menuCommandProjection.canUndo)
+        XCTAssertFalse(store.state.menuCommandProjection.canRedo)
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.outcome(
+            .entryActionReplayFinished(direction: .undo, terminal: .success(record)),
+        ))))) {
+            $0.undoRedoPhase = .idle
+        }
+        await store.receive(\.internal.undoManagerAvailabilityChanged) {
+            $0.undoManagerAvailability = terminalAvailability
+        }
+        await gate.resume()
+        await store.receive(\.internal.undoManagerInvocationFinished)
+
+        XCTAssertEqual(calls.value, 1)
+        XCTAssertEqual(store.state.undoRedoPhase, .idle)
+        XCTAssertEqual(store.state.undoManagerAvailability, terminalAvailability)
+        await store.finish()
+    }
+
+    /// FMW-001-request_undo: owner mismatch와 busy terminal은 Window를 desynchronized로 잠금
+    /// - 검증 내용: 두 ownership failure 모두 menu command와 후속 shared-manager invocation을 차단함
+    /// - 사전 조건: replaying phase이며 root availability는 undo/redo 모두 true
+    /// - 기대 결과: desynchronized 유지, canUndo/canRedo false, 후속 request에도 client call 0회
+    func testUndoReplay_ownerMismatchAndBusy_desynchronizeAndBlockFurtherCommands() async {
+        for reason in [EntryActionReplayFailureReason.ownerRecordMismatch, .ownerBusy] {
+            let requestID = UUID()
+            let calls = LockIsolated(0)
+            let client = UndoManagerClient(
+                registerUndo: { _, _, _ in },
+                undo: { _ in
+                    calls.withValue { $0 += 1 }
+                    return .init(didInvoke: true, availability: .init())
+                },
+                redo: { _ in
+                    calls.withValue { $0 += 1 }
+                    return .init(didInvoke: true, availability: .init())
+                },
+                availability: { _ in .init(canUndo: true, canRedo: true) },
+            )
+            var state = FileManagerWindowState()
+            state.undoManagerAvailability = .init(canUndo: true, canRedo: true)
+            state.undoRedoPhase = .replaying(requestID: requestID, direction: .undo)
+            let store = TestStore(initialState: state) {
+                CombineReducers {
+                    FileManagerWindowCommandRoutingReducer()
+                    FileManagerWindowRoutingReducer()
+                }
+            } withDependencies: {
+                $0.undoManagerClient = client
+            }
+
+            await store.send(.content(.entryViewLayout(.entryOperations(.outcome(
+                .entryActionReplayFinished(
+                    direction: .undo,
+                    terminal: .failure(reason: reason, appliedTargets: []),
+                ),
+            ))))) {
+                $0.undoRedoPhase = .desynchronized
+            }
+            XCTAssertFalse(store.state.menuCommandProjection.canUndo)
+            XCTAssertFalse(store.state.menuCommandProjection.canRedo)
+
+            await store.send(.request(.requestUndo))
+            await store.send(.request(.requestRedo))
+            XCTAssertEqual(calls.value, 0)
+            XCTAssertEqual(store.state.undoRedoPhase, .desynchronized)
+            await store.finish()
+        }
+    }
+
+    /// FMW-001-request_undo: missing owner와 direction mismatch event는 desynchronized로 잠금
+    func testUndoManagerEvent_missingOwnerAndDirectionMismatch_desynchronize() async {
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/source/old", afterPath: "/source/new")],
+        )
+
+        var missingOwnerState = FileManagerWindowState()
+        missingOwnerState.undoRedoPhase = .invoking(requestID: UUID(), direction: .undo)
+        let missingOwnerStore = TestStore(initialState: missingOwnerState) {
+            FileManagerWindowRoutingReducer()
+        }
+        await missingOwnerStore.send(.internal(.undoManagerEventReceived(.init(
+            ownerID: UUID(),
+            record: record,
+            direction: .undo,
+        )))) {
+            $0.undoRedoPhase = .desynchronized
+        }
+        await missingOwnerStore.finish()
+
+        var directionMismatchState = FileManagerWindowState()
+        directionMismatchState.undoRedoPhase = .invoking(requestID: UUID(), direction: .undo)
+        let activeOwnerID = directionMismatchState.content.entryViewLayout.entryOperations.undoOwnerID
+        let directionMismatchStore = TestStore(initialState: directionMismatchState) {
+            FileManagerWindowRoutingReducer()
+        }
+        await directionMismatchStore.send(.internal(.undoManagerEventReceived(.init(
+            ownerID: activeOwnerID,
+            record: record,
+            direction: .redo,
+        )))) {
+            $0.undoRedoPhase = .desynchronized
+        }
+        await directionMismatchStore.finish()
     }
 
     // MARK: - FMW-001-toggle_composer
@@ -345,5 +488,30 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         XCTAssertEqual(window.frame.width, 1240, accuracy: 0.5)
         XCTAssertEqual(window.frame.height, 760, accuracy: 0.5)
+    }
+}
+
+private actor FileManagerUndoInvocationGate {
+    private var suspension: CheckedContinuation<Void, Never>?
+    private var suspensionWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func suspend() async {
+        await withCheckedContinuation { continuation in
+            suspension = continuation
+            suspensionWaiters.forEach { $0.resume() }
+            suspensionWaiters.removeAll()
+        }
+    }
+
+    func waitUntilSuspended() async {
+        guard suspension == nil else { return }
+        await withCheckedContinuation { continuation in
+            suspensionWaiters.append(continuation)
+        }
+    }
+
+    func resume() {
+        suspension?.resume()
+        suspension = nil
     }
 }

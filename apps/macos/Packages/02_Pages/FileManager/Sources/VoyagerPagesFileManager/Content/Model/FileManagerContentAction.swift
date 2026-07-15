@@ -49,6 +49,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case resetComposer
         case resetComposerAfterDirectoryNavigation
         case setAutomaticRefreshFeedbackSuppressed(Bool)
+        case reloadDirectoryListing
         case homeDirectoryPickerFinished(FileManagerHomePickerResult<String>)
         case homeCollectionPickerFinished(FileManagerHomePickerResult<URL>)
         case homeAiChatSessionCreated(FileManagerHomePickerResult<String>)
