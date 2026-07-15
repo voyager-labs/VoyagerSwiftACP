@@ -804,8 +804,14 @@ private func validRestoredDirectorySnapshotPath(state: FileManagerWindowState) -
           let savedContent = state.tabContentStates[activeTabID],
           case let .directory(anchorPath) = state.contentTabs.tabs[id: activeTabID]?.anchor,
           case let .folder(savedPath) = savedContent.navigation.navigationState,
-          URL(fileURLWithPath: anchorPath).standardizedFileURL.path
-          == URL(fileURLWithPath: savedPath).standardizedFileURL.path
+          let completedPath = savedContent.completedDirectorySnapshotPath
+    else { return nil }
+
+    let standardizedAnchorPath = URL(fileURLWithPath: anchorPath).standardizedFileURL.path
+    let standardizedSavedPath = URL(fileURLWithPath: savedPath).standardizedFileURL.path
+    let standardizedCompletedPath = URL(fileURLWithPath: completedPath).standardizedFileURL.path
+    guard standardizedAnchorPath == standardizedSavedPath,
+          standardizedSavedPath == standardizedCompletedPath
     else { return nil }
     return savedPath
 }

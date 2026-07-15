@@ -198,10 +198,10 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         state.tabContentStates[secondID]?.entryViewLayout.entries = [preservedEntry]
         state.tabContentStates[secondID]?.entryViewLayout.entryOperations.items = [preservedEntry]
 
-        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
-            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.entryLoadingClient.loadItems = { _, _ in await gate.wait() }
-            $0.fileChangeGatewayClient.observeEvents = {
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: { dependencies in
+            dependencies.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            dependencies.entryLoadingClient.loadItems = { _, _ in await gate.wait() }
+            dependencies.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in continuation.finish() }
             }
         }
@@ -220,6 +220,126 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertEqual(store.state.content.navigation.currentPath, secondPath)
         XCTAssertEqual(store.state.content.entryViewLayout.entries, [preservedEntry])
         XCTAssertEqual(Array(store.state.content.entryViewLayout.entryOperations.items), [preservedEntry])
+    }
+
+    /// CTM-005-independent_content_tab_session (VOY-578): 완료 경로가 다른 Directory snapshot은 reload함
+    /// A에서 완료된 entries를 유지한 채 B route/anchor만 적용한 미완료 snapshot을 복원하지 않는지 검증한다.
+    /// - 검증 내용: anchor/route는 B지만 completed path가 A인 snapshot에서 B load 실행
+    /// - 사전 조건: target content에 A entries와 A completed path, B folder route가 함께 저장됨
+    /// - 기대 결과: watcher-only 복원을 사용하지 않고 B를 reload해 stale A entries를 교체함
+    /// CTM-005-independent_content_tab_session (VOY-578): 진행 중 Directory snapshot은 완료 후에만 watcher-only 복원함
+    /// A 완료 상태에서 같은 탭을 B로 이동하다 취소한 실제 lifecycle이 미완료 snapshot을 복원하지 않는지 검증한다.
+    /// - 검증 내용: B load 보류·tab 이탈·취소 응답 재개·B 빈 reload 완료·재전환 watcher-only 순서
+    /// - 사전 조건: A entries와 completed marker가 있고 B 첫 load는 checked continuation에서 대기함
+    /// - 기대 결과: 저장된 미완료 B는 reload하고, 완료된 빈 B는 이후 load 없이 watcher만 재시작함
+    func testInFlightDirectorySnapshotReloadsBeforeWatcherOnlyRoundTrip() async throws {
+        let homeID = ContentTabID()
+        let directoryID = ContentTabID()
+        let firstPath = "/Users/test/First"
+        let secondPath = "/Users/test/Second"
+        let firstEntry = EntryModel.temporaryFolder(id: "\(firstPath)/First", name: "First")
+        let lateEntry = EntryModel.temporaryFolder(id: "\(secondPath)/Late", name: "Late")
+        let gate = DirectoryLoadSuspensionGate()
+        let loadPaths = LockIsolated<[String]>([])
+        let store = try makeInFlightDirectoryLifecycleStore(
+            homeID: homeID,
+            directoryID: directoryID,
+            firstPath: firstPath,
+            gate: gate,
+            loadPaths: loadPaths,
+        )
+        // store.exhaustivity = .off: 실제 navigation/tab handoff의 부수 action보다 VOY-578 snapshot lifecycle에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.navigation(.view(.navigateToPath(secondPath))))
+        await store.receive(\.content.internal.applyNavigationState, .folder(secondPath))
+        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
+        await gate.waitUntilWaiting()
+        XCTAssertEqual(store.state.contentTabs.tabs[id: directoryID]?.anchor, .directory(path: secondPath))
+        XCTAssertNil(store.state.content.completedDirectorySnapshotPath)
+
+        await store.send(.contentTabs(.setCurrent(homeID)))
+        let savedInFlightSnapshot = try XCTUnwrap(store.state.tabContentStates[directoryID])
+        XCTAssertEqual(savedInFlightSnapshot.navigation.currentPath, secondPath)
+        XCTAssertEqual(savedInFlightSnapshot.entryViewLayout.entries.map(\.fullPath), [firstEntry.fullPath])
+        XCTAssertNil(savedInFlightSnapshot.completedDirectorySnapshotPath)
+        await gate.resume(with: [lateEntry])
+        await store.finish()
+        XCTAssertEqual(
+            store.state.tabContentStates[directoryID]?.entryViewLayout.entries.map(\.fullPath),
+            [firstEntry.fullPath],
+        )
+
+        await store.send(.contentTabs(.setCurrent(directoryID)))
+        await store.receive(\.content.internal.applyNavigationState, .folder(secondPath))
+        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        XCTAssertEqual(loadPaths.value, [secondPath, secondPath])
+        XCTAssertTrue(store.state.content.entryViewLayout.entries.isEmpty)
+        XCTAssertEqual(store.state.content.completedDirectorySnapshotPath, secondPath)
+
+        await store.send(.contentTabs(.setCurrent(homeID)))
+        await store.skipReceivedActions()
+        await store.send(.contentTabs(.setCurrent(directoryID)))
+        await store.receive(\.content.internal.restartFolderWatcher, secondPath)
+        XCTAssertEqual(loadPaths.value, [secondPath, secondPath])
+        XCTAssertTrue(store.state.content.entryViewLayout.entries.isEmpty)
+        XCTAssertEqual(store.state.content.completedDirectorySnapshotPath, secondPath)
+        await store.finish()
+    }
+
+    /// CTM-005-independent_content_tab_session (VOY-578): 완료 경로가 다른 Directory snapshot은 reload함
+    /// A에서 완료된 entries를 유지한 채 B route/anchor만 적용한 미완료 snapshot을 복원하지 않는지 검증한다.
+    /// - 검증 내용: anchor/route는 B지만 completed path가 A인 snapshot에서 B load 실행
+    /// - 사전 조건: target content에 A entries와 A completed path, B folder route가 함께 저장됨
+    /// - 기대 결과: watcher-only 복원을 사용하지 않고 B를 reload해 stale A entries를 교체함
+    func testIncompleteDirectorySnapshotFallsBackToLoad() async {
+        let homeID = ContentTabID()
+        let directoryID = ContentTabID()
+        let previousPath = "/Users/test/Previous"
+        let directoryPath = "/Users/test/Target"
+        let staleEntry = EntryModel.temporaryFolder(id: "\(previousPath)/Stale", name: "Stale")
+        let loadedEntry = EntryModel.temporaryFolder(id: "\(directoryPath)/Loaded", name: "Loaded")
+        let loadPaths = LockIsolated<[String]>([])
+        var state = makeDirectoryHandoffState(
+            homeID: homeID,
+            tabs: [
+                .init(
+                    id: directoryID,
+                    anchorPath: directoryPath,
+                    savedPath: directoryPath,
+                    completedPath: previousPath,
+                ),
+            ],
+        )
+        state.tabContentStates[directoryID]?.entryViewLayout.entries = [staleEntry]
+        state.tabContentStates[directoryID]?.entryViewLayout.entryOperations.items = [staleEntry]
+
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: { dependencies in
+            dependencies.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            dependencies.entryLoadingClient.loadItems = { url, _ in
+                loadPaths.withValue { paths in paths.append(url.path) }
+                return [loadedEntry]
+            }
+            dependencies.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        // store.exhaustivity = .off: handoff 부수 action보다 VOY-578 incomplete snapshot reload 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(directoryID)))
+        await store.receive(\.content.internal.applyNavigationState, .folder(directoryPath))
+        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.finish()
+
+        XCTAssertEqual(loadPaths.value, [directoryPath])
+        XCTAssertEqual(store.state.content.entryViewLayout.entries, [loadedEntry])
+        XCTAssertEqual(store.state.content.completedDirectorySnapshotPath, directoryPath)
     }
 
     /// CTM-005-independent_content_tab_session (VOY-578): 빠른 snapshot handoff는 이전 watcher를 취소하고 최신 경로를 감시함
@@ -694,6 +814,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         let watchedRoots = LockIsolated<[[String]]>([])
         var fallbackContent = FileManagerContentFeature.State()
         fallbackContent.navigation.seedInitialFolderPath(fallbackPath)
+        fallbackContent.completedDirectorySnapshotPath = fallbackPath
         fallbackContent.entryViewLayout.mode = .grid
         fallbackContent.entryViewLayout.entries = [preservedEntry]
         fallbackContent.entryViewLayout.entryOperations.items = [preservedEntry]
@@ -9928,6 +10049,52 @@ private extension CTM005IndependentContentTabSessionTests {
         let id: ContentTabID
         let anchorPath: String
         let savedPath: String?
+        let completedPath: String?
+
+        init(
+            id: ContentTabID,
+            anchorPath: String,
+            savedPath: String?,
+            completedPath: String? = nil,
+        ) {
+            self.id = id
+            self.anchorPath = anchorPath
+            self.savedPath = savedPath
+            self.completedPath = completedPath ?? savedPath
+        }
+    }
+
+    func makeInFlightDirectoryLifecycleStore(
+        homeID: ContentTabID,
+        directoryID: ContentTabID,
+        firstPath: String,
+        gate: DirectoryLoadSuspensionGate,
+        loadPaths: LockIsolated<[String]>,
+    ) throws -> TestStore<FileManagerFeature.State, FileManagerWindowAction> {
+        let firstEntry = EntryModel.temporaryFolder(id: "\(firstPath)/First", name: "First")
+        var state = makeDirectoryHandoffState(
+            homeID: homeID,
+            tabs: [.init(id: directoryID, anchorPath: firstPath, savedPath: firstPath)],
+        )
+        state.contentTabs.activeTabID = directoryID
+        state.content = try XCTUnwrap(state.tabContentStates[directoryID])
+        state.content.entryViewLayout.entries = [firstEntry]
+        state.content.entryViewLayout.entryOperations.items = [firstEntry]
+        state.tabContentStates[directoryID] = state.content
+
+        return TestStore(initialState: state) { FileManagerFeature() } withDependencies: { dependencies in
+            dependencies.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            dependencies.entryLoadingClient.loadItems = { url, _ in
+                let requestIndex = loadPaths.withValue { paths in
+                    paths.append(url.path)
+                    return paths.count
+                }
+                return requestIndex == 1 ? await gate.wait() : []
+            }
+            dependencies.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
     }
 
     func makeDirectoryHandoffState(
@@ -9959,6 +10126,7 @@ private extension CTM005IndependentContentTabSessionTests {
             if let savedPath = fixture.savedPath {
                 var content = FileManagerContentFeature.State()
                 content.navigation.seedInitialFolderPath(savedPath)
+                content.completedDirectorySnapshotPath = fixture.completedPath
                 snapshots[fixture.id] = content
             }
         }
