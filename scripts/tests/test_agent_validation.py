@@ -383,6 +383,30 @@ class AgentValidationTests(unittest.TestCase):
             result, payload = self.run_cli(VERIFY, root, "--all")
             self.assert_exact_diagnostic(result, payload, "PLAN_TODO_CONTRACT")
 
+            self.write(
+                root,
+                ".sisyphus/plans/invalid.md",
+                PLAN.replace(
+                    "- [ ] 1. Fixture task", "- [ ] Implement feature"
+                ).replace(
+                    "  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.\n",
+                    "",
+                ),
+            )
+            result, payload = self.run_cli(VERIFY, root, "--all")
+            self.assert_exact_diagnostic(result, payload, "PLAN_TODO_NUMBERING")
+
+            self.write(
+                root,
+                ".sisyphus/plans/invalid.md",
+                PLAN.replace(
+                    "  - **Acceptance**: It is done. Evidence: validator output.",
+                    "  Acceptance prose mentions **Acceptance** and evidence.",
+                ),
+            )
+            result, payload = self.run_cli(VERIFY, root, "--all")
+            self.assert_exact_diagnostic(result, payload, "PLAN_TODO_CONTRACT")
+
     def test_every_emitted_diagnostic_has_an_exact_fixture(self) -> None:
         harness_cases = {
             "HARNESS_MISSING_FRONTMATTER": (
@@ -460,6 +484,9 @@ class AgentValidationTests(unittest.TestCase):
             "PLAN_TODO_CONTRACT": PLAN.replace(
                 "  - **QA**: RED evidence fails before implementation; GREEN evidence passes after implementation.\n",
                 "",
+            ),
+            "PLAN_TODO_NUMBERING": PLAN.replace(
+                "- [ ] 1. Fixture task", "- [ ] Implement feature"
             ),
             "PLAN_MISSING_QUALITY_SECTION": PLAN.replace(
                 "## Test Ownership", "## Test Assignment"

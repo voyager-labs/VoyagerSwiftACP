@@ -29,6 +29,7 @@ PLAN_QUALITY_SECTIONS = ["TDD Evidence", "Test Ownership", "Commit Strategy"]
 PLAN_TODO_FIELDS = ["What to do", "Must NOT do", "Acceptance", "QA", "Commit"]
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^]]*]\(([^)#]+)(?:#[^)]+)?\)")
 SKILL_PATH_LITERAL = re.compile(r"`((?:\.agents/|\.\.?/)[^`\s*]+(?:\.md|SKILL\.md))`")
+CHECKBOX_TODO = re.compile(r"^- \[[ xX]] .+")
 TODO = re.compile(r"^- \[[ xX]] \d+\. .+")
 
 
@@ -436,20 +437,40 @@ def verify_plans(root: Path, paths: set[str]) -> list[Diagnostic]:
                     "Commit Strategy must reference commit-message or justify an alternative",
                 )
             )
-        for index, line in enumerate(lines):
-            if not TODO.match(line):
+        todo_start = headings.get("TODOs")
+        if todo_start is None:
+            continue
+        todo_end = min(
+            (line for line in headings.values() if line > todo_start),
+            default=len(lines) + 1,
+        )
+        todo_indexes = [
+            index
+            for index in range(todo_start, todo_end - 1)
+            if CHECKBOX_TODO.match(lines[index])
+        ]
+        for index in todo_indexes:
+            if not TODO.match(lines[index]):
+                diagnostics.append(
+                    diagnostic(
+                        path,
+                        root,
+                        index + 1,
+                        "PLAN_TODO_NUMBERING",
+                        "TODO checkbox must start with a numeric task identifier",
+                    )
+                )
                 continue
             next_todo = next(
-                (
-                    offset
-                    for offset in range(index + 1, len(lines))
-                    if TODO.match(lines[offset])
-                ),
-                len(lines),
+                (offset for offset in todo_indexes if offset > index),
+                todo_end - 1,
             )
             block = "\n".join(lines[index + 1 : next_todo])
-            for field in PLAN_TODO_FIELDS:
-                if f"**{field}**" not in block:
+            fields = {
+                field: plan_field_text(block, field) for field in PLAN_TODO_FIELDS
+            }
+            for field, value in fields.items():
+                if value is None:
                     diagnostics.append(
                         diagnostic(
                             path,
@@ -459,7 +480,7 @@ def verify_plans(root: Path, paths: set[str]) -> list[Diagnostic]:
                             f"TODO is missing **{field}**",
                         )
                     )
-            acceptance = plan_field_text(block, "Acceptance")
+            acceptance = fields["Acceptance"]
             if acceptance is not None and "evidence" not in acceptance.lower():
                 diagnostics.append(
                     diagnostic(
@@ -470,7 +491,7 @@ def verify_plans(root: Path, paths: set[str]) -> list[Diagnostic]:
                         "TODO Acceptance must name required evidence",
                     )
                 )
-            qa = plan_field_text(block, "QA")
+            qa = fields["QA"]
             todo_has_no_source_changes = bool(
                 qa
                 and re.search(
