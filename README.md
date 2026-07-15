@@ -232,11 +232,10 @@ mise install cupertino
 - 진입점: `docs/index.md`
 - Active engineering 문서: `docs/canonical/ENGINEERING/index.md`
 - Canonical product/docs SSOT: `docs/canonical/README.md`
-- Legacy app 문서: `docs/legacy/index.md`
-- Legacy architecture quick refs (이관 대기):
-    - `docs/legacy/architecture/coding-standards.md`
-    - `docs/legacy/architecture/tech-stack.md`
-    - `docs/legacy/architecture/source-tree.md`
+- Engineering quick refs:
+    - `docs/canonical/ENGINEERING/common/coding-standards.md`
+    - `docs/canonical/ENGINEERING/common/tech-stack.md`
+    - `docs/canonical/ENGINEERING/app/topology/source-tree.md`
 
 ## Back to Docs
 

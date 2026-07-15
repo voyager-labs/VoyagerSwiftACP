@@ -10,9 +10,9 @@ Use this file as the architecture navigation page for `voyager-dev`, not as the 
 ## Reference map
 
 - Layer choice, segment placement, dependency direction
-    - Read `../../reviewer/boundary/references/layer-and-segment-rules.md`
+- Read `../../reviewer/review/references/layer-and-segment-rules.md`
 - Slice boundary, peer-slice imports, package-friendly public surfaces
-    - Read `../../reviewer/boundary/references/public-boundary-spec.md`
+- Read `../../reviewer/review/references/public-boundary-spec.md`
 - Package extraction posture, extraction checks, current extracted targets
     - Read `../../planner/scaffold/references/package-extraction-posture.md`
 - TCA ownership, dependency clients, effect and cancellation rules

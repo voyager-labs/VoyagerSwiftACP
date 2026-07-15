@@ -52,5 +52,5 @@ curl -X POST http://localhost:8000/api/collection \
 
 **상세 가이드**
 
-- 개발 환경: `docs/legacy/development.md`
-- 검색 API/흐름: `docs/legacy/integration/search-contract.md`
+- 개발 환경: `docs/canonical/ENGINEERING/common/development.md`
+- 검색 API/흐름: `docs/canonical/ENGINEERING/api/implementation/lib/search_contract.md`

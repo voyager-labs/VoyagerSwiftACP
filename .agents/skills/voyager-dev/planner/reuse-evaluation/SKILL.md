@@ -13,7 +13,7 @@ metadata:
 ## Instructions
 
 1. Discover existing symbols before proposing new abstractions.
-2. Load `references/reuse-discovery-spec.md` and architecture-gate references from `../../reviewer/architecture-gate/references/`.
+2. Load `references/reuse-discovery-spec.md` and architecture-gate references from `../../reviewer/review/references/`.
 3. Add `references/shell-freeze-and-shared-promotion.md` when promotion or compatibility shells are involved.
 4. Emit a ranked candidate table, gate result, final choice (`reuse` | `adapt` | `new`), rejected candidates, and implementation delta.
 5. Do not implement code until the reuse decision is explicit.

@@ -1,6 +1,6 @@
 # XcodeBuildMCP — Build, Test, Diagnostics
 
-XcodeBuildMCP provides structured access to Xcode builds, tests, and simulator management via MCP. All build/test operations MUST go through XcodeBuildMCP — never call `xcodebuild` directly.
+XcodeBuildMCP provides structured access to Xcode builds, tests, and simulator management via MCP. It is preferred only when its exposed operation supports the required simulator scope. The executor matrix in `../SKILL.md` selects SwiftPM, repository `mise`, or an explicit stop for other scopes; do not call raw `xcodebuild` as an agent substitute.
 
 ## When to Use
 
@@ -19,26 +19,26 @@ Always check defaults before the first build in a session:
 # Check current defaults
 XcodeBuildMCP_session_show_defaults()
 
-# Set defaults (required if not configured)
+# Set defaults for an actual simulator-capable scheme
 XcodeBuildMCP_session_set_defaults(
-  workspacePath: "apps/macos/Voyager/Voyager.xcworkspace",
-  scheme: "Voyager-Dev",
-  simulatorName: "Mac"
+  projectPath: "<simulator-project>.xcodeproj",
+  scheme: "<simulator-capable-scheme>",
+  simulatorName: "iPhone"
 )
 
 # Set defaults with full parameters
 XcodeBuildMCP_session_set_defaults(
-  workspacePath: "apps/macos/Voyager/Voyager.xcworkspace",
-  scheme: "Voyager-Dev",
-  simulatorName: "Mac",
+  projectPath: "<simulator-project>.xcodeproj",
+  scheme: "<simulator-capable-scheme>",
+  simulatorName: "iPhone",
   configuration: "Debug",
   derivedDataPath: ".build",
-  bundleId: "com.voyager.app"
+  bundleId: "<simulator-app-bundle-id>"
 )
 
 # Named profiles for multi-configuration workflows
 XcodeBuildMCP_session_set_defaults(
-  scheme: "Voyager-Prod",
+  scheme: "<simulator-capable-release-scheme>",
   configuration: "Release",
   profile: "release",
   createIfNotExists: true,
@@ -221,4 +221,4 @@ XcodeBuildMCP_get_file_coverage(xcresultPath: "path/to.xcresult", file: "Reducer
 - Use **CodeGraph** to understand what to change before building
 - Use **ast-grep** for pattern-based rewrites, then build to verify
 - Use **Periphery** to find unused code (separate from build)
-- Pipe build output through **xcbeautify** for cleaner output: `mise exec -- xcbeautify`
+- Repository `mise` tasks already format their own macOS Xcode output; use them only when the capability matrix selects a macOS scheme outcome.
