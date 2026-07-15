@@ -805,38 +805,70 @@ extension ACC001ValidateAccountSessionTests {
         await store.finish()
     }
 
-    /// ACC-001-validate_account_session: manual sync는 fresh complete 결과를 우회한다.
-    /// refreshToken 성공 시 rotated 토큰과 새 만료 시각으로 상태가 업데이트되는지 검증한다.
-    /// - 검증 내용: refreshToken 성공 후 accessToken/refreshToken이 rotated되고 sessionExpiresAt이 갱신된다.
-    /// - 사전 조건: 세션이 존재하고 TTL timer가 활성화된 near-expiry 상태.
-    /// - 기대 결과: sessionExpiresAt이 새로운 시각으로 갱신되고 hasAccountSession이 true로 유지된다.
-    func testManualSyncBypassesFreshness() async {
-        nonisolated(unsafe) var receivedIntent: SessionSyncIntent?
+    /// ACC-001-validate_account_session: Refresh Access는 만료된 persisted session을 refresh sync로 재검증한다.
+    /// - 검증 내용: manual action이 persisted read 뒤 `.refresh` intent와 `.manual` reason을 요청한다.
+    /// - 사전 조건: recoverable in-memory session과 만료된 access expiry, 비어 있지 않은 refresh token.
+    /// - 기대 결과: 로그인 상태를 유지한 채 refresh sync activation 전까지 정확한 action chain만 발생한다.
+    func testRefreshAccessRevalidatesExpiredPersistedSessionWithRefreshIntent() async {
+        let activationGate = ActivationGate()
+        let expiredAt = referenceDate.addingTimeInterval(-1)
+        let binding = UUID()
         var state = sessionNearExpiryState()
-        state.lastCompleteSyncAt = referenceDate.addingTimeInterval(-60)
         state.sessionExpiresAt = referenceDate.addingTimeInterval(3600)
-        let store = makeTestStore(
-            authNetworkClient: AuthNetworkClient(
-                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                fetchAccessStatus: { throw AccessError.notConfigured },
-                bindDevice: { _ in throw DeviceBindingError.notConfigured },
-                refreshToken: { throw AccessError.notConfigured },
-                syncSession: { intent, _ in
-                    receivedIntent = intent
-                    return Self.inactiveCompleteSyncResult
+        state.sessionBindingID = binding
+        let store = TestStore(initialState: state) {
+            AccountAccessFeature()
+        } withDependencies: {
+            $0.accountSessionClient = AccountSessionClient(
+                read: { _ in AccountSession(
+                    accessToken: "expired-access-token",
+                    status: .coreLicenseActive,
+                    refreshToken: "refresh-token",
+                    expiresAt: expiredAt,
+                    sessionBindingID: binding,
+                )
                 },
-            ),
-            initialState: state,
-        )
-        // store.exhaustivity = .off: manual completion의 recovery projection보다 freshness 우회와 intent 선택을 검증
-        store.exhaustivity = .off
+                persist: { _ in },
+                delete: { _ in },
+            )
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                activate: { _, _ in await activationGate.wait() },
+                load: { _, _ in nil },
+                save: { _, _, _, _ in },
+                remove: { _, _, _ in },
+            )
+            $0.date = .constant(referenceDate)
+        }
 
-        await store.send(.refreshAccessTapped)
-        await store.receive(\.sessionSyncRequested)
-        await store.receive(\._sessionSyncCompleted)
-        await store.receive(\.delegate.recoveryRequired)
+        await store.send(.refreshAccessTapped) { state in
+            state.revalidationGeneration = 1
+        }
+        await store.receive(\.revalidatePersistedSession)
+        await store.receive(\._persistedSessionRevalidated) { state in
+            state.sessionExpiresAt = expiredAt
+        }
+        await store.receive(sessionSyncRequestedCasePath(intent: .refresh, reason: .manual)) { state in
+            state.syncGeneration = 1
+            state.inFlightSyncReason = .manual
+            state.isSubmitting = true
+        }
+        for _ in 0 ..< 10 where await !(activationGate.isWaiting()) {
+            await Task.yield()
+        }
+        let isActivationWaiting = await activationGate.isWaiting()
+        XCTAssertTrue(isActivationWaiting)
 
-        XCTAssertEqual(receivedIntent, .validate)
+        await store.send(.appWillTerminate) { state in
+            state.fetchGeneration = 1
+            state.syncGeneration = 2
+            state.inFlightSyncReason = nil
+            state.revalidationGeneration = 2
+            state.isSubmitting = false
+            state.ttlTimerActive = false
+            state.handoffGeneration = 1
+            state.refreshDeadlineGeneration = 1
+        }
+        await activationGate.resume(with: 1)
         await store.finish()
     }
 
@@ -896,38 +928,70 @@ extension ACC001ValidateAccountSessionTests {
         await store.finish()
     }
 
-    /// ACC-001-validate_account_session: retry sync는 fresh complete 결과를 우회한다.
-    /// refreshToken이 .unauthorized를 반환하면 3회 재시도 없이 즉시 세션 만료 처리되는지 검증한다.
-    /// - 검증 내용: .unauthorized → _sessionExpiredDetected 수신, consecutiveRefreshFailures==0 유지
-    /// - 사전 조건: 로그인된 세션 상태, near-expiry
-    /// - 기대 결과: _sessionExpiredDetected 수신, isSessionExpired=true, consecutiveRefreshFailures=0
-    func testRetrySyncBypassesFreshness() async {
-        nonisolated(unsafe) var receivedIntent: SessionSyncIntent?
+    /// ACC-001-validate_account_session: Retry는 만료된 persisted session을 refresh sync로 재검증한다.
+    /// - 검증 내용: retry action이 persisted read 뒤 `.refresh` intent와 `.retry` reason을 요청한다.
+    /// - 사전 조건: recoverable in-memory session과 만료된 access expiry, 비어 있지 않은 refresh token.
+    /// - 기대 결과: 로그인 상태를 유지한 채 refresh sync activation 전까지 정확한 action chain만 발생한다.
+    func testRetryRevalidatesExpiredPersistedSessionWithRefreshIntent() async {
+        let activationGate = ActivationGate()
+        let expiredAt = referenceDate.addingTimeInterval(-1)
+        let binding = UUID()
         var state = sessionNearExpiryState()
-        state.lastCompleteSyncAt = referenceDate.addingTimeInterval(-60)
         state.sessionExpiresAt = referenceDate.addingTimeInterval(3600)
-        let store = makeTestStore(
-            authNetworkClient: AuthNetworkClient(
-                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                fetchAccessStatus: { throw AccessError.notConfigured },
-                bindDevice: { _ in throw DeviceBindingError.notConfigured },
-                refreshToken: { throw AccessError.notConfigured },
-                syncSession: { intent, _ in
-                    receivedIntent = intent
-                    return Self.inactiveCompleteSyncResult
+        state.sessionBindingID = binding
+        let store = TestStore(initialState: state) {
+            AccountAccessFeature()
+        } withDependencies: {
+            $0.accountSessionClient = AccountSessionClient(
+                read: { _ in AccountSession(
+                    accessToken: "expired-access-token",
+                    status: .coreLicenseActive,
+                    refreshToken: "refresh-token",
+                    expiresAt: expiredAt,
+                    sessionBindingID: binding,
+                )
                 },
-            ),
-            initialState: state,
-        )
-        // store.exhaustivity = .off: retry 완료의 recovery projection보다 freshness 우회와 intent 선택을 검증
-        store.exhaustivity = .off
+                persist: { _ in },
+                delete: { _ in },
+            )
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                activate: { _, _ in await activationGate.wait() },
+                load: { _, _ in nil },
+                save: { _, _, _, _ in },
+                remove: { _, _, _ in },
+            )
+            $0.date = .constant(referenceDate)
+        }
 
-        await store.send(.retryTapped)
-        await store.receive(\.sessionSyncRequested)
-        await store.receive(\._sessionSyncCompleted)
-        await store.receive(\.delegate.recoveryRequired)
+        await store.send(.retryTapped) { state in
+            state.revalidationGeneration = 1
+        }
+        await store.receive(\.revalidatePersistedSession)
+        await store.receive(\._persistedSessionRevalidated) { state in
+            state.sessionExpiresAt = expiredAt
+        }
+        await store.receive(sessionSyncRequestedCasePath(intent: .refresh, reason: .retry)) { state in
+            state.syncGeneration = 1
+            state.inFlightSyncReason = .retry
+            state.isSubmitting = true
+        }
+        for _ in 0 ..< 10 where await !(activationGate.isWaiting()) {
+            await Task.yield()
+        }
+        let isActivationWaiting = await activationGate.isWaiting()
+        XCTAssertTrue(isActivationWaiting)
 
-        XCTAssertEqual(receivedIntent, .validate)
+        await store.send(.appWillTerminate) { state in
+            state.fetchGeneration = 1
+            state.syncGeneration = 2
+            state.inFlightSyncReason = nil
+            state.revalidationGeneration = 2
+            state.isSubmitting = false
+            state.ttlTimerActive = false
+            state.handoffGeneration = 1
+            state.refreshDeadlineGeneration = 1
+        }
+        await activationGate.resume(with: 1)
         await store.finish()
     }
 
@@ -1179,11 +1243,35 @@ extension ACC001ValidateAccountSessionTests {
     }
 }
 
+private func sessionSyncRequestedCasePath(
+    intent expectedIntent: SessionSyncIntent,
+    reason expectedReason: SyncReason,
+) -> AnyCasePath<AccountAccessAction, Void> {
+    AnyCasePath(
+        embed: { _ in .sessionSyncRequested(intent: expectedIntent, reason: expectedReason) },
+        extract: { action in
+            guard case let .sessionSyncRequested(intent, reason) = action,
+                  intent == expectedIntent,
+                  reason == expectedReason
+            else {
+                return nil
+            }
+            return ()
+        },
+    )
+}
+
 private actor ActivationGate {
     private var continuation: CheckedContinuation<Int, Never>?
 
     func wait() async -> Int {
-        await withCheckedContinuation { continuation = $0 }
+        await withCheckedContinuation {
+            continuation = $0
+        }
+    }
+
+    func isWaiting() -> Bool {
+        continuation != nil
     }
 
     func resume(with generation: Int) {

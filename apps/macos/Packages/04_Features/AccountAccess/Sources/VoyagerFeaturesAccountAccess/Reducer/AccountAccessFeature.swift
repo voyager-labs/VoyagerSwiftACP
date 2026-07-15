@@ -62,7 +62,7 @@ public struct AccountAccessFeature {
                 return handleOnAppear(&state)
 
             case .retryTapped:
-                return .send(.sessionSyncRequested(intent: .validate, reason: .retry))
+                return revalidateCurrentPersistedSession(&state, reason: .retry)
 
             case let .loginTapped(context: context, scope: scope):
                 return handleLoginTapped(&state, context: context, scope: scope)
@@ -390,6 +390,20 @@ extension AccountAccessFeature {
             )
         }
         .cancellable(id: CancelID.sessionRevalidation, cancelInFlight: true)
+    }
+
+    func revalidateCurrentPersistedSession(
+        _ state: inout State,
+        reason: SyncReason,
+    ) -> Effect<Action> {
+        guard state.hasAccountSession, !state.isSessionExpired else {
+            return .none
+        }
+        state.revalidationGeneration += 1
+        return .send(.revalidatePersistedSession(
+            generation: state.revalidationGeneration,
+            reason: reason,
+        ))
     }
 
     private func routeRecoveredSession(

@@ -141,7 +141,7 @@ extension AccountAccessFeature {
         guard state.hasAccountSession, !state.isSignInInProgress, state.deviceBindingFailure == nil else {
             return .none
         }
-        return .send(.sessionSyncRequested(intent: .validate, reason: .manual))
+        return revalidateCurrentPersistedSession(&state, reason: .manual)
     }
 
     func requestSessionSync(
