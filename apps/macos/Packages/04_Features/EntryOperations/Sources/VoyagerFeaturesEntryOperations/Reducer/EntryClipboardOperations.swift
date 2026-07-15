@@ -400,7 +400,7 @@ private enum EntryClipboardOperationsSupport {
                     sourceURL: sourceURL,
                     destinationURL: destinationURL,
                     context: .init(
-                        finishPath: destinationURL.deletingLastPathComponent().path,
+                        finishPath: sourceURL.path,
                         operationKind: context.operationKind,
                         repeatsPathsMutation: false,
                     ),

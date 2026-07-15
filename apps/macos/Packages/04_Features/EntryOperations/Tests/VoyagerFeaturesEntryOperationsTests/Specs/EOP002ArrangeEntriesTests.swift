@@ -704,6 +704,55 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    /// EOP-002-move_entries: 이름 충돌에서 Replace한 드롭은 source busy를 해제하고 undo할 수 있다.
+    /// 사용자가 기존 destination을 Replace해 이동한 직후 생성된 undo record가 ownerBusy에 막히지 않는지 검증한다.
+    /// - 검증 내용: `.routing(.dropItems)` Replace-success가 source lifecycle을 종료하고 생성한 record의 undo replay를 수행한다.
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`의 temp copy와 동일 이름 destination, Replace 응답을 사용한다.
+    /// - 기대 결과: source item state의 busy가 해제되고 undo가 destination을 source로 되돌리며 redo record를 남긴다.
+    func testDropExecution_nameConflict_userReplaces_clearsSourceBusyAndAllowsUndo() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let recorder = FileOpsRecorder()
+        let destinationFolder = sandbox.root.appendingPathComponent("ConflictTarget")
+        try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
+
+        let sourcePath = sandbox.fileURL.path
+        let destinationPath = destinationFolder.appendingPathComponent(sandbox.fileURL.lastPathComponent).path
+        try FileManager.default.copyItem(at: sandbox.fileURL, to: URL(fileURLWithPath: destinationPath))
+
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init()) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
+            $0.entryOperationsAlertClient.showReplaceAlert = { _, _ in .replace }
+        }
+
+        // store.exhaustivity = .off: Replace와 undo의 내부 lifecycle보다 busy 해제와 replay 결과를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.dropItems(
+            sourcePaths: [sourcePath],
+            destinationPath: destinationFolder.path,
+            isOptionDrag: false,
+        )))
+        await store.receive(\.lifecycle.entryActionCompleted)
+
+        XCTAssertFalse(store.state.itemStates[sourcePath]?.isBusy ?? true)
+        XCTAssertEqual(store.state.undoRecords.count, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sourcePath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destinationPath))
+
+        let record = try XCTUnwrap(store.state.undoRecords.last)
+        await store.send(.undoRedo(.undoEntryAction(record)))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sourcePath))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destinationPath))
+        XCTAssertTrue(store.state.undoRecords.isEmpty)
+        XCTAssertEqual(store.state.redoRecords.count, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
     // MARK: - EOP-002-cut_entries
 
     /// EOP-002-cut_entries: clipboard가 copy 상태에서 appDidBecomeActive 시 cut-clear를 수행하지 않는다
