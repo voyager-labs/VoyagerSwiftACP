@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import ComposableArchitecture
+import SwiftNavigation
 import SwiftUI
 import VoyagerFeaturesAccountAccess
 
@@ -13,8 +14,10 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     let store: StoreOf<FileManagerFeature>
     let keyCommandFocusCoordinator = FileManagerKeyCommandFocusCoordinator()
     let sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>?
+    let sessionLapseGuardState: (@MainActor () -> AccountAccessFeature.State?)?
 
     private var cancellables: Set<AnyCancellable> = []
+    private var observationTokens: Set<ObserveToken> = []
     private var hasStarted = false
     private var hasTornDown = false
     private var isApplyingSidebarLayout = false
@@ -36,9 +39,11 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         store: StoreOf<FileManagerFeature>,
         isDark: Bool,
         sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>? = nil,
+        sessionLapseGuardState: (@MainActor () -> AccountAccessFeature.State?)? = nil,
     ) {
         self.store = store
         self.sessionLapseGuardStore = sessionLapseGuardStore
+        self.sessionLapseGuardState = sessionLapseGuardState
         sidebarSync = FileManagerSidebarSync(storeSidebarWidth: store.sidebar.sidebarWidth)
         currentIsDark = isDark
         super.init(nibName: nil, bundle: nil)
@@ -104,17 +109,13 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         addChild(overlayController)
 
         let overlayView = overlayController.view
-        overlayView.isHidden = Self.isSessionLapseGuardHidden(
-            sessionLapseGuardStore.withState(\.self),
-        )
-        sessionLapseGuardStore.publisher
-            .map(Self.isSessionLapseGuardHidden)
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak overlayView] isHidden in
-                overlayView?.isHidden = isHidden
-            }
-            .store(in: &cancellables)
+        let resolveGuardState = sessionLapseGuardState ?? {
+            sessionLapseGuardStore.withState(\.self)
+        }
+        SwiftNavigation.observe { [weak overlayView] in
+            overlayView?.isHidden = Self.isSessionLapseGuardHidden(resolveGuardState())
+        }
+        .store(in: &observationTokens)
 
         view.addSubview(overlayView)
         NSLayoutConstraint.activate([
@@ -178,6 +179,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         guard !hasTornDown else { return }
         hasTornDown = true
         cancellables.removeAll()
+        observationTokens.removeAll()
         isTrackingUserSidebarDividerResize = false
 
         windowSplitView?.delegate = nil
