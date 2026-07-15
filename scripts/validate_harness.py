@@ -35,10 +35,12 @@ def main() -> int:
         else "working-tree"
     )
     try:
-        paths = (
-            set(args.paths) if args.paths else git_paths(args.root, mode, args.base_ref)
-        )
         with validation_root(args.root, mode) as content_root:
+            paths = (
+                set(args.paths)
+                if args.paths
+                else git_paths(args.root, mode, args.base_ref, content_root)
+            )
             diagnostics = validate_harness(content_root, paths, mode)
     except RuntimeError as error:
         parser.error(str(error))

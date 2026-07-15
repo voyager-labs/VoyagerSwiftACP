@@ -659,6 +659,24 @@ class AgentValidationTests(unittest.TestCase):
 
         self.assert_exact_diagnostic(result, payload, "PLAN_MISSING_TITLE")
 
+    def test_staged_referrer_discovery_reads_index_snapshot(self) -> None:
+        temp = self.make_repo()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        skill = ".agents/skills/fixture/SKILL.md"
+        guide = ".agents/skills/fixture/references/guide.md"
+        self.write(root, skill, "[guide](references/guide.md)\n")
+        self.write(root, guide, "# Guide\n")
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "fixture"], cwd=root, check=True)
+        (root / guide).unlink()
+        subprocess.run(["git", "add", "-u", guide], cwd=root, check=True)
+        self.write(root, skill, "Reference removed from working tree only.\n")
+
+        result, payload = self.run_cli(VALIDATE, root, "--staged")
+
+        self.assert_exact_diagnostic(result, payload, "HARNESS_DEAD_REFERENCE")
+
     def test_plan_scope_modes_use_changed_files_only(self) -> None:
         temp = self.make_repo()
         self.addCleanup(temp.cleanup)
