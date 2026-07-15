@@ -113,7 +113,6 @@ struct FileManagerWindowRoutingReducer {
                 }
                 let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
                     || state.activeTabContentStateMissing
-                let restoredDirectorySnapshotPath = validRestoredDirectorySnapshotPath(state: state)
                 let handoffCleanupEffect: Effect<Action>
                 if shouldResyncContentNavigation {
                     let aiChatLifecycleSessionIDs = aiChatLifecycleSessionIDsToPreserve(state.content.aiChat)
@@ -146,7 +145,6 @@ struct FileManagerWindowRoutingReducer {
                         shouldResyncContentNavigation,
                         state: state,
                         aiConnectionsFileClient: aiConnectionsFileClient,
-                        restoredDirectorySnapshotPath: restoredDirectorySnapshotPath,
                         skipAiChatCancel: true,
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
@@ -232,9 +230,6 @@ struct FileManagerWindowRoutingReducer {
                 } else {
                     handoffCleanupEffect = .none
                 }
-                let restoredDirectorySnapshotPath = shouldRestorePreviousActiveTab
-                    ? validRestoredDirectorySnapshotPath(state: state)
-                    : nil
                 if isRemovedTab {
                     state.addBackgroundAiChatState(for: tabID)
                     state.addBackgroundInspectorAiChatState(for: tabID)
@@ -265,7 +260,6 @@ struct FileManagerWindowRoutingReducer {
                         shouldResyncContentNavigation,
                         state: state,
                         aiConnectionsFileClient: aiConnectionsFileClient,
-                        restoredDirectorySnapshotPath: restoredDirectorySnapshotPath,
                         skipAiChatCancel: true,
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
@@ -728,15 +722,12 @@ private func activeTabHandoffEffect(
     _ shouldResyncContentNavigation: Bool,
     state: FileManagerWindowState,
     aiConnectionsFileClient: AIConnectionsFileClient,
-    restoredDirectorySnapshotPath: String? = nil,
     skipAiChatCancel: Bool = false,
 ) -> Effect<FileManagerWindowAction> {
     guard shouldResyncContentNavigation else {
         return .none
     }
-    let navigationEffect = restoredDirectorySnapshotPath.map {
-        Effect<FileManagerWindowAction>.send(.content(.internal(.restartFolderWatcher(path: $0))))
-    } ?? resyncContentNavigationEffect(state: state)
+    let navigationEffect = resyncContentNavigationEffect(state: state)
     return .concatenate(
         cancelInFlightContentEffectsOnTabSwitch(state: state, skipAiChatCancel: skipAiChatCancel),
         .merge(
@@ -797,23 +788,6 @@ private func restartAiChatProviderLoadOnTabRestoreEffect(
         await send(.content(.aiChat(.providerConnectionsUpdated(connectionsFile))))
     }
     .cancellable(id: HomeAiChatOpenCancelID(tabID: activeTabID), cancelInFlight: true)
-}
-
-private func validRestoredDirectorySnapshotPath(state: FileManagerWindowState) -> String? {
-    guard let activeTabID = state.contentTabs.activeTabID,
-          let savedContent = state.tabContentStates[activeTabID],
-          case let .directory(anchorPath) = state.contentTabs.tabs[id: activeTabID]?.anchor,
-          case let .folder(savedPath) = savedContent.navigation.navigationState,
-          let completedPath = savedContent.completedDirectorySnapshotPath
-    else { return nil }
-
-    let standardizedAnchorPath = URL(fileURLWithPath: anchorPath).standardizedFileURL.path
-    let standardizedSavedPath = URL(fileURLWithPath: savedPath).standardizedFileURL.path
-    let standardizedCompletedPath = URL(fileURLWithPath: completedPath).standardizedFileURL.path
-    guard standardizedAnchorPath == standardizedSavedPath,
-          standardizedSavedPath == standardizedCompletedPath
-    else { return nil }
-    return savedPath
 }
 
 private func resyncContentNavigationEffect(state: FileManagerWindowState) -> Effect<FileManagerWindowAction> {
