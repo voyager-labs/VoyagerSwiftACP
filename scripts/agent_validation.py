@@ -68,7 +68,10 @@ def validation_root(root: Path, mode: str) -> Iterator[Path]:
         yield snapshot
 
 
-def git_paths(root: Path, mode: str, base_ref: str | None) -> set[str]:
+def git_paths(
+    root: Path, mode: str, base_ref: str | None, reference_root: Path | None = None
+) -> set[str]:
+    reference_root = reference_root or root
     if mode == "all":
         return {
             path.relative_to(root).as_posix()
@@ -135,9 +138,9 @@ def git_paths(root: Path, mode: str, base_ref: str | None) -> set[str]:
                     continue
                 target = fields[1] if fields[0].startswith(("D", "R")) else ""
                 if target.startswith(".agents/") and target.endswith(".md"):
-                    deleted_paths.add((root / target).resolve())
+                    deleted_paths.add((reference_root / target).resolve())
             if deleted_paths:
-                paths.update(markdown_referrers(root, deleted_paths))
+                paths.update(markdown_referrers(reference_root, deleted_paths))
         return paths
 
     paths: set[str] = set()
