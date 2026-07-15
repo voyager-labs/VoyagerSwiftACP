@@ -6,6 +6,51 @@ import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
+enum ContentPagePresentationPolicy: Equatable {
+    case entries
+    case ordinaryDirectoryLoadingOverlay
+    case collectionReplacementLoading
+
+    var replacesEntriesWithLoading: Bool {
+        self == .collectionReplacementLoading
+    }
+
+    var showsInputBlocker: Bool {
+        self == .ordinaryDirectoryLoadingOverlay
+    }
+
+    var allowsEntryInteraction: Bool {
+        self != .ordinaryDirectoryLoadingOverlay
+    }
+
+    var hidesEntriesFromAccessibility: Bool {
+        self == .ordinaryDirectoryLoadingOverlay
+    }
+
+    var requiresKeyCommandFocus: Bool {
+        self == .ordinaryDirectoryLoadingOverlay
+    }
+
+    var allowsKeyboardCommandDispatch: Bool {
+        self != .ordinaryDirectoryLoadingOverlay
+    }
+
+    static func resolve(
+        isCollectionSearching: Bool,
+        isCollectionContentLoading: Bool,
+        isEntryLoading: Bool,
+        isCollectionMode: Bool,
+    ) -> Self {
+        if isCollectionSearching || isCollectionContentLoading {
+            return .collectionReplacementLoading
+        }
+        if isEntryLoading, !isCollectionMode {
+            return .ordinaryDirectoryLoadingOverlay
+        }
+        return .entries
+    }
+}
+
 struct ContentPageView: View {
     let store: StoreOf<FileManagerContentFeature>
 
@@ -22,15 +67,29 @@ struct ContentPageView: View {
         )
     }
 
+    private var presentationPolicy: ContentPagePresentationPolicy {
+        .resolve(
+            isCollectionSearching: store.composer.isCollectionSearching,
+            isCollectionContentLoading: store.entryViewLayout.isCollectionContentLoading,
+            isEntryLoading: store.entryViewLayout.entryOperations.isLoading,
+            isCollectionMode: store.isCollectionMode,
+        )
+    }
+
     private var mainContent: some View {
         ZStack {
             entryView
+                .allowsHitTesting(presentationPolicy.allowsEntryInteraction)
+                .accessibilityHidden(presentationPolicy.hidesEntriesFromAccessibility)
             keyCommandOverlay
+            if presentationPolicy.showsInputBlocker {
+                inputBlocker
+            }
         }
     }
 
     @ViewBuilder private var entryView: some View {
-        if store.composer.isCollectionSearching || store.entryViewLayout.isCollectionContentLoading {
+        if presentationPolicy.replacesEntriesWithLoading {
             loadingView
         } else {
             let entryViewLayoutStore = store.scope(state: \.entryViewLayout, action: \.entryViewLayout)
@@ -70,6 +129,13 @@ struct ContentPageView: View {
             }
     }
 
+    private var inputBlocker: some View {
+        Color.clear
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .allowsHitTesting(true)
+    }
+
     private var loadingView: some View {
         GeometryReader { _ in
             ZStack {
@@ -86,6 +152,10 @@ struct ContentPageView: View {
 
     var body: some View {
         mainContent
+            .onChange(of: presentationPolicy) { policy in
+                guard policy.requiresKeyCommandFocus else { return }
+                restoreKeyCommandFocus()
+            }
             .onChange(of: store.entryViewLayout.selectedIds) { _ in
                 guard store.entryViewLayout.entryOperations.renamingItemId == nil else { return }
                 restoreKeyCommandFocus()
@@ -104,6 +174,8 @@ struct ContentPageView: View {
     }
 
     private func handleKeyboardEvent(_ event: NSEvent) {
+        guard presentationPolicy.allowsKeyboardCommandDispatch else { return }
+
         let command = KeyCommand(
             keyCode: event.keyCode,
             modifiers: KeyModifiers(event.modifierFlags),

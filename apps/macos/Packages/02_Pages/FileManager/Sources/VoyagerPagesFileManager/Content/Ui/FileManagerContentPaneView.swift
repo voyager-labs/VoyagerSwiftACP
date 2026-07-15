@@ -16,7 +16,6 @@ struct FileManagerContentPaneView: View {
     var body: some View {
         ZStack(alignment: .top) {
             contentBody
-                .id(chromeProps.renderIdentity)
                 .transaction { transaction in
                     transaction.animation = nil
                 }
@@ -108,6 +107,13 @@ struct FileManagerContentChromeProps: Equatable {
     let activePageAnchor: ContentTabPageAnchor
 
     var renderIdentity: String {
+        Self.renderIdentity(activeTabID: activeTabID, activePageAnchor: activePageAnchor)
+    }
+
+    static func renderIdentity(
+        activeTabID: ContentTabID?,
+        activePageAnchor: ContentTabPageAnchor,
+    ) -> String {
         let tabIdentity = activeTabID?.rawValue ?? "no-active-tab"
         return "\(tabIdentity)::\(activePageAnchor.renderIdentity)"
     }
@@ -122,7 +128,7 @@ struct FileManagerContentOverlayProps: Equatable {
     let isTemporaryCollection: Bool
 }
 
-private extension ContentTabPageAnchor {
+extension ContentTabPageAnchor {
     /// AI Chat 페이지 앵커 여부 (연관값 무관)
     var isAiChat: Bool {
         if case .aiChat = self { true } else { false }
@@ -132,14 +138,12 @@ private extension ContentTabPageAnchor {
         switch self {
         case .homeDefault:
             "home"
-        case let .directory(path):
-            "directory:\(path)"
-        case let .collectionFile(url):
-            "collectionFile:\(url.absoluteString)"
-        case let .virtualCollection(id):
-            "virtualCollection:\(id)"
-        case let .aiChat(sessionID):
-            "aiChat:\(sessionID)"
+        case .directory:
+            "directory"
+        case .collectionFile, .virtualCollection:
+            "collection"
+        case .aiChat:
+            "aiChat"
         }
     }
 }

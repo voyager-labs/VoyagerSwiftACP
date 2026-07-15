@@ -727,12 +727,15 @@ private func activeTabHandoffEffect(
     guard shouldResyncContentNavigation else {
         return .none
     }
-    return .merge(
+    let navigationEffect = resyncContentNavigationEffect(state: state)
+    return .concatenate(
         cancelInFlightContentEffectsOnTabSwitch(state: state, skipAiChatCancel: skipAiChatCancel),
-        resyncContentNavigationEffect(state: state),
-        restartAiChatProviderLoadOnTabRestoreEffect(
-            state: state,
-            aiConnectionsFileClient: aiConnectionsFileClient,
+        .merge(
+            navigationEffect,
+            restartAiChatProviderLoadOnTabRestoreEffect(
+                state: state,
+                aiConnectionsFileClient: aiConnectionsFileClient,
+            ),
         ),
     )
 }
