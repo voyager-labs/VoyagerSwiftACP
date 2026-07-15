@@ -738,6 +738,128 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertFalse(afterContentRegistration.canRedo)
     }
 
+    // AC: EOP-003-undo_entry_action — owner invalidation은 이미 등록된 action을 제거함
+    /// EOP-003-undo_entry_action: owner 무효화가 기존 undo action을 제거하고 identity를 폐기함
+    func testUndoManager_registerThenInvalidateOwnerRemovesUndo() async {
+        let undoManager = UndoManager()
+        let client = UndoManagerClient.live(undoManager: undoManager)
+        let windowID = UUID()
+        let ownerID = UUID()
+
+        await client.registerUndo(windowID, ownerID, makeUndoManagerRecord(pathStem: "registered-owner"))
+        XCTAssertTrue(undoManager.canUndo)
+
+        let result = await client.invalidateOwner(windowID, ownerID)
+
+        XCTAssertEqual(result, .init(succeeded: true, availability: .init()))
+        XCTAssertFalse(undoManager.canUndo)
+    }
+
+    // AC: EOP-003-undo_entry_action — owner invalidation이 resolver 대기 중인 late registration보다 먼저 선형화됨
+    /// EOP-003-undo_entry_action: register resolve가 늦게 끝나도 이미 무효화된 owner에는 action을 등록하지 않음
+    func testUndoManager_ownerInvalidationRejectsRegistrationAfterBlockedResolverResumes() async {
+        let undoManager = UndoManager()
+        let windowID = UUID()
+        let ownerID = UUID()
+        let resolverCallCount = LockIsolated(0)
+        let (registrationStarted, registrationStartedContinuation) = AsyncStream<Bool>.makeStream()
+        let (registrationResolution, registrationResolutionContinuation) = AsyncStream<UndoManager>.makeStream()
+        let client = UndoManagerClient.live { _ in
+            let call = resolverCallCount.withValue { count in
+                count += 1
+                return count
+            }
+            guard call == 1 else {
+                return undoManager
+            }
+            registrationStartedContinuation.yield(true)
+            registrationStartedContinuation.finish()
+            for await resolvedUndoManager in registrationResolution {
+                return resolvedUndoManager
+            }
+            return nil
+        }
+        var registrationStartedIterator = registrationStarted.makeAsyncIterator()
+        let registrationTask = Task {
+            await client.registerUndo(windowID, ownerID, makeUndoManagerRecord(pathStem: "late-owner"))
+        }
+
+        let didStartRegistration = await registrationStartedIterator.next()
+        XCTAssertEqual(didStartRegistration, true)
+        let invalidation = await client.invalidateOwner(windowID, ownerID)
+        XCTAssertTrue(invalidation.succeeded)
+
+        registrationResolutionContinuation.yield(undoManager)
+        registrationResolutionContinuation.finish()
+        await registrationTask.value
+
+        XCTAssertFalse(undoManager.canUndo)
+    }
+
+    // AC: EOP-003-undo_entry_action — owner tombstone은 같은 window의 다른 owner를 차단하지 않음
+    /// EOP-003-undo_entry_action: owner A 무효화 후에도 같은 window의 owner B는 undo를 등록할 수 있음
+    func testUndoManager_ownerTombstoneDoesNotBlockDifferentOwner() async {
+        let undoManager = UndoManager()
+        let client = UndoManagerClient.live(undoManager: undoManager)
+        let windowID = UUID()
+        let invalidatedOwnerID = UUID()
+        let activeOwnerID = UUID()
+
+        let invalidation = await client.invalidateOwner(windowID, invalidatedOwnerID)
+        XCTAssertTrue(invalidation.succeeded)
+        await client.registerUndo(windowID, invalidatedOwnerID, makeUndoManagerRecord(pathStem: "invalidated-owner"))
+        XCTAssertFalse(undoManager.canUndo)
+
+        await client.registerUndo(windowID, activeOwnerID, makeUndoManagerRecord(pathStem: "active-owner"))
+
+        XCTAssertTrue(undoManager.canUndo)
+    }
+
+    // AC: EOP-003-undo_entry_action — window invalidation은 모든 owner의 late registration을 영구 차단하고 stream을 종료함
+    /// EOP-003-undo_entry_action: window 무효화 뒤 어떤 owner도 undo를 등록할 수 없고 event stream이 종료됨
+    func testUndoManager_windowInvalidationRejectsLateRegistrationsAndFinishesStream() async {
+        let undoManager = UndoManager()
+        let client = UndoManagerClient.live(undoManager: undoManager)
+        let windowID = UUID()
+        let events = client.events(windowID)
+        let streamCompletion = Task {
+            var iterator = events.makeAsyncIterator()
+            return await iterator.next()
+        }
+
+        let invalidation = await client.invalidateWindow(windowID)
+        XCTAssertTrue(invalidation.succeeded)
+        await client.registerUndo(windowID, UUID(), makeUndoManagerRecord(pathStem: "late-window-owner-a"))
+        await client.registerUndo(windowID, UUID(), makeUndoManagerRecord(pathStem: "late-window-owner-b"))
+
+        let nextEvent = await streamCompletion.value
+        XCTAssertNil(nextEvent)
+        XCTAssertFalse(undoManager.canUndo)
+    }
+
+    // AC: EOP-003-undo_entry_action — manager resolution 실패는 tombstone을 만들지 않음
+    /// EOP-003-undo_entry_action: 무효화 resolve 실패 뒤 manager가 복구되면 같은 identity의 등록을 허용함
+    func testUndoManager_failedInvalidationResolutionDoesNotCreateTombstone() async {
+        let undoManager = UndoManager()
+        let resolverCallCount = LockIsolated(0)
+        let client = UndoManagerClient.live { _ in
+            let call = resolverCallCount.withValue { count in
+                count += 1
+                return count
+            }
+            return call == 1 ? nil : undoManager
+        }
+        let windowID = UUID()
+        let ownerID = UUID()
+
+        let invalidation = await client.invalidateOwner(windowID, ownerID)
+        XCTAssertEqual(invalidation, .init(succeeded: false, availability: .init()))
+
+        await client.registerUndo(windowID, ownerID, makeUndoManagerRecord(pathStem: "resolution-recovered"))
+
+        XCTAssertTrue(undoManager.canUndo)
+    }
+
     /// EOP-003-undo_entry_action: owner invalidation은 해당 owner action만 제거함
     func testUndoManager_ownerInvalidationRemovesOnlyMatchingActions() async {
         let undoManager = UndoManager()
@@ -954,6 +1076,13 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         }
         await store.finish()
     }
+}
+
+private func makeUndoManagerRecord(pathStem: String) -> EntryActionRecord {
+    EntryActionRecord(
+        operationKind: .rename,
+        targets: [.init(beforePath: "/\(pathStem)/old", afterPath: "/\(pathStem)/new")],
+    )
 }
 
 private func makeFailingDeleteClient(error: FileOpError) -> EntryFileOpsClient {

@@ -169,6 +169,9 @@ public extension UndoManagerClient {
                 }
                 await MainActor.run {
                     let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
+                    guard handlerStore.canRegister(windowID: windowID, ownerID: ownerID) else {
+                        return
+                    }
                     let handler = UndoManagerHandler(
                         undoManager: undoManager,
                         windowID: windowID,
@@ -237,7 +240,8 @@ public extension UndoManagerClient {
                 }
                 return await MainActor.run {
                     let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
-                    for handler in handlerStore.removeHandlers(windowID: windowID, ownerID: ownerID) {
+                    let handlers = handlerStore.invalidateOwner(windowID: windowID, ownerID: ownerID)
+                    for handler in handlers {
                         undoManager.removeAllActions(withTarget: handler)
                     }
                     return .init(
@@ -250,18 +254,18 @@ public extension UndoManagerClient {
                 guard let undoManager = await resolveUndoManager(windowID) else {
                     return .init(succeeded: false, availability: .init())
                 }
-                let result = await MainActor.run {
+                return await MainActor.run {
                     let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
-                    for handler in handlerStore.removeHandlers(windowID: windowID) {
+                    let handlers = handlerStore.invalidateWindow(windowID: windowID)
+                    for handler in handlers {
                         undoManager.removeAllActions(withTarget: handler)
                     }
+                    eventBridge.finish(windowID: windowID)
                     return UndoManagerInvalidationResult(
                         succeeded: true,
                         availability: .init(canUndo: undoManager.canUndo, canRedo: undoManager.canRedo),
                     )
                 }
-                eventBridge.finish(windowID: windowID)
-                return result
             },
         )
     }
@@ -357,8 +361,15 @@ private enum UndoManagerHandlerStoreKey {
 }
 
 private final class UndoManagerHandlerStore: @unchecked Sendable {
+    private struct OwnerIdentity: Hashable {
+        let windowID: UUID
+        let ownerID: UUID
+    }
+
     private let lock = NSLock()
     private var handlers: [UndoManagerHandler] = []
+    private var invalidatedOwners: Set<OwnerIdentity> = []
+    private var invalidatedWindows: Set<UUID> = []
 
     static func store(for undoManager: UndoManager) -> UndoManagerHandlerStore {
         if let store = objc_getAssociatedObject(undoManager, &UndoManagerHandlerStoreKey.value)
@@ -376,15 +387,34 @@ private final class UndoManagerHandlerStore: @unchecked Sendable {
         return store
     }
 
+    func canRegister(windowID: UUID, ownerID: UUID) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !invalidatedWindows.contains(windowID)
+            && !invalidatedOwners.contains(OwnerIdentity(windowID: windowID, ownerID: ownerID))
+    }
+
     func add(_ handler: UndoManagerHandler) {
         lock.lock()
         handlers.append(handler)
         lock.unlock()
     }
 
-    func removeHandlers(windowID: UUID, ownerID: UUID? = nil) -> [UndoManagerHandler] {
+    func invalidateOwner(windowID: UUID, ownerID: UUID) -> [UndoManagerHandler] {
         lock.lock()
+        invalidatedOwners.insert(OwnerIdentity(windowID: windowID, ownerID: ownerID))
         defer { lock.unlock() }
+        return removeHandlersLocked(windowID: windowID, ownerID: ownerID)
+    }
+
+    func invalidateWindow(windowID: UUID) -> [UndoManagerHandler] {
+        lock.lock()
+        invalidatedWindows.insert(windowID)
+        defer { lock.unlock() }
+        return removeHandlersLocked(windowID: windowID)
+    }
+
+    private func removeHandlersLocked(windowID: UUID, ownerID: UUID? = nil) -> [UndoManagerHandler] {
         var removed: [UndoManagerHandler] = []
         handlers.removeAll { handler in
             let matches = handler.windowID == windowID && (ownerID == nil || handler.ownerID == ownerID)
