@@ -150,7 +150,12 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case undoEntryAction(EntryActionRecord)
         case redoEntryAction(EntryActionRecord)
         case replayEntryAction(direction: EntryActionDirection, record: EntryActionRecord)
-        case entryActionApplied(direction: EntryActionDirection, record: EntryActionRecord)
+        case replaySucceeded(
+            direction: EntryActionDirection,
+            sourceRecordID: UUID,
+            updatedRecord: EntryActionRecord,
+        )
+        case replayFailed(direction: EntryActionDirection, appliedTargets: [EntryActionRecord.Target])
     }
 }
 

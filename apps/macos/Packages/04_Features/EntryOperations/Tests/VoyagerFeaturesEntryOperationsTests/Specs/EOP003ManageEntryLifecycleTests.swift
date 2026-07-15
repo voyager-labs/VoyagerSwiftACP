@@ -761,7 +761,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 
         await client.registerUndo(windowID, contentOwnerID, contentRecord)
         await client.registerUndo(windowID, sidebarOwnerID, sidebarRecord)
-        await client.invalidateOwner(windowID, sidebarOwnerID)
+        _ = await client.invalidateOwner(windowID, sidebarOwnerID)
         _ = await client.undo(windowID)
 
         let event = await receivedEvent.value
@@ -788,12 +788,171 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         }
 
         await client.registerUndo(windowID, ownerID, record)
-        await client.invalidateWindow(windowID)
+        _ = await client.invalidateWindow(windowID)
 
         let nextEvent = await streamCompletion.value
         let availability = await client.availability(windowID)
         XCTAssertNil(nextEvent)
         XCTAssertEqual(availability, .init())
+    }
+
+    /// EOP-003-undo_entry_action: target가 비어 replay가 실패하면 stack 이동 없이 양쪽 history를 폐기한다.
+    /// - 검증 내용: undo callback 직후 source stack이 유지되고 replayFailed commit에서 undo/redo stack이 함께 비워진다.
+    /// - 사전 조건: 빈 target undo record와 기존 redo record
+    /// - 기대 결과: operationFailed terminal의 appliedTargets는 빈 배열이고 두 stack은 비어 있다.
+    func testUndoReplay_emptyTargetsClearsBothStacksWithoutPrecommit() async {
+        let record = EntryActionRecord(operationKind: .rename, targets: [])
+        let staleRedo = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/stale/before", afterPath: "/stale/after")],
+        )
+        var state = EntryOperationsState()
+        state.undoRecords = [record]
+        state.redoRecords = [staleRedo]
+        let store = EntryOperationsTestSupport.makeStore(initialState: state)
+        // store.exhaustivity = .off: replay 내부 lifecycle action을 건너뛰고 stack commit/terminal 계약만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.undoRedo(.undoEntryAction(record)))
+        XCTAssertEqual(store.state.undoRecords, [record])
+        XCTAssertEqual(store.state.redoRecords, [staleRedo])
+        await store.receive { action in
+            guard case .undoRedo(.replayFailed(direction: .undo, appliedTargets: [])) = action else { return false }
+            return true
+        } assert: {
+            $0.undoRecords = []
+            $0.redoRecords = []
+        }
+        await store.receive { action in
+            guard case let .outcome(.entryActionReplayFinished(direction: .undo, terminal: terminal)) = action else {
+                return false
+            }
+            return terminal == .failure(reason: .operationFailed, appliedTargets: [])
+        }
+        await store.finish()
+    }
+
+    /// EOP-003-undo_entry_action: 두 번째 target 실패 시 적용 prefix만 보고하고 local history는 모두 폐기한다.
+    /// - 검증 내용: 첫 target 성공/두 번째 target 실패 후 pre-commit 없이 replayFailed가 양 stack을 clear한다.
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`의 독립 sandbox 두 개와 두 target setTags record
+    /// - 기대 결과: appliedTargets는 첫 target 하나이며 undo/redo stack은 모두 빈 배열이다.
+    func testUndoReplay_partialFailureReportsAppliedPrefixAndClearsBothStacks() async throws {
+        let firstSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        let secondSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer {
+            firstSandbox.cleanup()
+            secondSandbox.cleanup()
+        }
+        let firstTarget = EntryActionRecord.Target(
+            beforePath: firstSandbox.fileURL.path,
+            afterPath: firstSandbox.fileURL.path,
+            beforeTags: ["before"],
+            afterTags: ["after"],
+        )
+        let secondTarget = EntryActionRecord.Target(
+            beforePath: secondSandbox.fileURL.path,
+            afterPath: secondSandbox.fileURL.path,
+            beforeTags: ["before"],
+            afterTags: ["after"],
+        )
+        let record = EntryActionRecord(operationKind: .setTags, targets: [firstTarget, secondTarget])
+        let staleRedo = EntryActionRecord(operationKind: .createFolder, targets: [])
+        let callCount = LockIsolated(0)
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.setTags = { _, _ in
+            let invocation = callCount.withValue { value in
+                value += 1
+                return value
+            }
+            if invocation == 2 {
+                throw FileOpError.system(message: "second target failed")
+            }
+        }
+        var state = EntryOperationsState()
+        state.undoRecords = [record]
+        state.redoRecords = [staleRedo]
+        let store = EntryOperationsTestSupport.makeStore(initialState: state) {
+            $0.entryFileOpsClient = fileOps
+        }
+        // store.exhaustivity = .off: per-target lifecycle action 대신 partial terminal과 stack 원자성에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.undoRedo(.undoEntryAction(record)))
+        XCTAssertEqual(store.state.undoRecords, [record])
+        XCTAssertEqual(store.state.redoRecords, [staleRedo])
+        await store.receive { action in
+            guard case let .undoRedo(.replayFailed(direction: .undo, appliedTargets: targets)) = action else {
+                return false
+            }
+            return targets == [firstTarget]
+        } assert: {
+            $0.undoRecords = []
+            $0.redoRecords = []
+        }
+        await store.receive { action in
+            guard case let .outcome(.entryActionReplayFinished(direction: .undo, terminal: terminal)) = action else {
+                return false
+            }
+            return terminal == .failure(reason: .operationFailed, appliedTargets: [firstTarget])
+        }
+        XCTAssertEqual(callCount.value, 2)
+        await store.finish()
+    }
+
+    /// EOP-003-redo_entry_action: 동적 Trash destination은 replay refresh와 committed record에 반영된다.
+    /// - 검증 내용: moveToTrash client가 반환한 실제 경로를 pathsMutated와 replaySucceeded target이 공유한다.
+    /// - 사전 조건: record의 stale Trash 경로와 서로 다른 deterministic client 반환 경로
+    /// - 기대 결과: stale 경로가 아닌 실제 반환 경로만 refresh 및 redo→undo commit에 사용됨
+    func testRedoReplay_moveToTrashRefreshesUpdatedDestination() async {
+        let originalPath = "/source/item.txt"
+        let staleTrashPath = "/trash/stale-item.txt"
+        let actualTrashPath = "/trash/actual-item.txt"
+        let record = EntryActionRecord(
+            operationKind: .moveToTrash,
+            targets: [.init(beforePath: originalPath, afterPath: staleTrashPath)],
+        )
+        let updatedTarget = EntryActionRecord.Target(
+            beforePath: originalPath,
+            afterPath: actualTrashPath,
+        )
+        let updatedRecord = EntryActionRecord(
+            operationKind: .moveToTrash,
+            targets: [updatedTarget],
+            id: record.id,
+            timestamp: record.timestamp,
+        )
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.moveToTrashAndReturnURL = { url in
+            XCTAssertEqual(url.path, originalPath)
+            return URL(fileURLWithPath: actualTrashPath)
+        }
+        var state = EntryOperationsState()
+        state.redoRecords = [record]
+        let store = EntryOperationsTestSupport.makeStore(initialState: state) {
+            $0.entryFileOpsClient = fileOps
+        }
+        // store.exhaustivity = .off: lifecycle 중 updated path와 stack commit 계약만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.undoRedo(.redoEntryAction(record)))
+        await store.receive { action in
+            guard case let .lifecycle(.pathsMutated(paths)) = action else { return false }
+            return paths == [originalPath, actualTrashPath]
+        }
+        await store.receive { action in
+            guard case let .undoRedo(.replaySucceeded(
+                direction: .redo,
+                sourceRecordID: sourceRecordID,
+                updatedRecord: committedRecord,
+            )) = action else {
+                return false
+            }
+            return sourceRecordID == record.id && committedRecord == updatedRecord
+        } assert: {
+            $0.redoRecords = []
+            $0.undoRecords = [updatedRecord]
+        }
+        await store.finish()
     }
 }
 

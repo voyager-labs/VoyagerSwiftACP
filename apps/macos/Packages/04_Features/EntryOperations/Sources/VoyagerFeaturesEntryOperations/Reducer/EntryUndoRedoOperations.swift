@@ -81,12 +81,7 @@ struct EntryUndoRedoOperationsReducer {
                     return replayTerminalFailureEffect(direction: .undo, reason: .ownerBusy)
                 }
 
-                _ = state.undoRecords.popLast()
-                state.redoRecords.append(latestRecord)
-                return .merge(
-                    .send(.undoRedo(.replayEntryAction(direction: .undo, record: latestRecord))),
-                    availabilityEffect(windowID: state.windowID),
-                )
+                return .send(.undoRedo(.replayEntryAction(direction: .undo, record: latestRecord)))
 
             case let .undoRedo(.redoEntryAction(record: record)):
                 guard let latestRecord = state.latestRedoRecord, latestRecord.id == record.id else {
@@ -98,34 +93,42 @@ struct EntryUndoRedoOperationsReducer {
                     return replayTerminalFailureEffect(direction: .redo, reason: .ownerBusy)
                 }
 
-                _ = state.redoRecords.popLast()
-                state.undoRecords.append(latestRecord)
-                return .merge(
-                    .send(.undoRedo(.replayEntryAction(direction: .redo, record: latestRecord))),
-                    availabilityEffect(windowID: state.windowID),
-                )
+                return .send(.undoRedo(.replayEntryAction(direction: .redo, record: latestRecord)))
 
             case let .undoRedo(.replayEntryAction(direction: direction, record: record)):
                 return replayEntryAction(record, direction: direction)
 
-            case let .undoRedo(.entryActionApplied(direction: direction, record: record)):
+            case let .undoRedo(.replaySucceeded(direction, sourceRecordID, updatedRecord)):
                 switch direction {
                 case .undo:
-                    guard let recordIndex = state.redoRecords.firstIndex(where: { $0.id == record.id }) else {
-                        Self.logger.error("Undo unavailable: failed to update stack")
-                        return .none
+                    guard state.latestUndoRecord?.id == sourceRecordID else {
+                        Self.logger.error("Undo unavailable: replay commit record mismatch")
+                        return replayTerminalFailureEffect(direction: direction, reason: .ownerRecordMismatch)
                     }
-                    state.redoRecords[recordIndex] = record
-                    return .none
+                    _ = state.undoRecords.popLast()
+                    state.redoRecords.append(updatedRecord)
 
                 case .redo:
-                    guard let recordIndex = state.undoRecords.firstIndex(where: { $0.id == record.id }) else {
-                        Self.logger.error("Redo unavailable: failed to update stack")
-                        return .none
+                    guard state.latestRedoRecord?.id == sourceRecordID else {
+                        Self.logger.error("Redo unavailable: replay commit record mismatch")
+                        return replayTerminalFailureEffect(direction: direction, reason: .ownerRecordMismatch)
                     }
-                    state.undoRecords[recordIndex] = record
-                    return .none
+                    _ = state.redoRecords.popLast()
+                    state.undoRecords.append(updatedRecord)
                 }
+                return .send(.outcome(.entryActionReplayFinished(
+                    direction: direction,
+                    terminal: .success(updatedRecord),
+                )))
+
+            case let .undoRedo(.replayFailed(direction, appliedTargets)):
+                state.undoRecords.removeAll()
+                state.redoRecords.removeAll()
+                return replayTerminalFailureEffect(
+                    direction: direction,
+                    reason: .operationFailed,
+                    appliedTargets: appliedTargets,
+                )
 
             case let .lifecycle(.operationFinished(path, kind, result)):
                 switch (kind, result) {
@@ -172,13 +175,6 @@ struct EntryUndoRedoOperationsReducer {
         }
     }
 
-    private func availabilityEffect(windowID: UUID?) -> Effect<Action> {
-        .run { send in
-            let availability = await undoManagerClient.availability(windowID)
-            await send(.outcome(.undoManagerAvailabilityChanged(availability)))
-        }
-    }
-
     private func replayTerminalFailureEffect(
         direction: EntryActionDirection,
         reason: EntryActionReplayFailureReason,
@@ -208,16 +204,16 @@ struct EntryUndoRedoOperationsReducer {
                     id: record.id,
                     timestamp: record.timestamp,
                 )
-                await send(.undoRedo(.entryActionApplied(direction: direction, record: updatedRecord)))
-                await send(.outcome(.entryActionReplayFinished(
+                await send(.undoRedo(.replaySucceeded(
                     direction: direction,
-                    terminal: .success(updatedRecord),
+                    sourceRecordID: record.id,
+                    updatedRecord: updatedRecord,
                 )))
 
             case let .failure(appliedTargets):
-                await send(.outcome(.entryActionReplayFinished(
+                await send(.undoRedo(.replayFailed(
                     direction: direction,
-                    terminal: .failure(reason: .operationFailed, appliedTargets: appliedTargets),
+                    appliedTargets: appliedTargets,
                 )))
             }
         }
@@ -256,7 +252,8 @@ struct EntryUndoRedoOperationsReducer {
             await send(.lifecycle(.operationStarted(operation.operationPath, operation.operationKind)))
             do {
                 let updatedTarget = try await operation.perform()
-                await send(.lifecycle(.pathsMutated([target.beforePath, target.afterPath].compactMap(\.self))))
+                await send(.lifecycle(.pathsMutated([updatedTarget.beforePath, updatedTarget.afterPath]
+                        .compactMap(\.self))))
                 await send(.lifecycle(.operationFinished(
                     operation.operationPath,
                     operation.operationKind,

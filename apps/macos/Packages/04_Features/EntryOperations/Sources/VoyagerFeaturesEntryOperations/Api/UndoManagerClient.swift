@@ -22,6 +22,16 @@ public struct UndoManagerInvocationResult: Equatable, Sendable {
     }
 }
 
+public struct UndoManagerInvalidationResult: Equatable, Sendable {
+    public var succeeded: Bool
+    public var availability: UndoManagerAvailability
+
+    public init(succeeded: Bool, availability: UndoManagerAvailability) {
+        self.succeeded = succeeded
+        self.availability = availability
+    }
+}
+
 public struct UndoManagerEvent: Equatable, Sendable {
     public var ownerID: UUID
     public var record: EntryActionRecord
@@ -44,8 +54,11 @@ public struct UndoManagerClient: Sendable {
     public var undo: @Sendable (_ windowID: UUID?) async -> UndoManagerInvocationResult
     public var redo: @Sendable (_ windowID: UUID?) async -> UndoManagerInvocationResult
     public var availability: @Sendable (_ windowID: UUID?) async -> UndoManagerAvailability
-    public var invalidateOwner: @Sendable (_ windowID: UUID, _ ownerID: UUID) async -> Void
-    public var invalidateWindow: @Sendable (_ windowID: UUID) async -> Void
+    public var invalidateOwner: @Sendable (
+        _ windowID: UUID,
+        _ ownerID: UUID,
+    ) async -> UndoManagerInvalidationResult
+    public var invalidateWindow: @Sendable (_ windowID: UUID) async -> UndoManagerInvalidationResult
 
     nonisolated public init(
         registerUndo: @escaping @Sendable (
@@ -59,8 +72,15 @@ public struct UndoManagerClient: Sendable {
         undo: @escaping @Sendable (_ windowID: UUID?) async -> UndoManagerInvocationResult,
         redo: @escaping @Sendable (_ windowID: UUID?) async -> UndoManagerInvocationResult,
         availability: @escaping @Sendable (_ windowID: UUID?) async -> UndoManagerAvailability = { _ in .init() },
-        invalidateOwner: @escaping @Sendable (_ windowID: UUID, _ ownerID: UUID) async -> Void = { _, _ in },
-        invalidateWindow: @escaping @Sendable (_ windowID: UUID) async -> Void = { _ in },
+        invalidateOwner: @escaping @Sendable (
+            _ windowID: UUID,
+            _ ownerID: UUID,
+        ) async -> UndoManagerInvalidationResult = { _, _ in
+            .init(succeeded: true, availability: .init())
+        },
+        invalidateWindow: @escaping @Sendable (_ windowID: UUID) async -> UndoManagerInvalidationResult = { _ in
+            .init(succeeded: true, availability: .init())
+        },
     ) {
         self.registerUndo = registerUndo
         self.events = events
@@ -213,26 +233,35 @@ public extension UndoManagerClient {
             },
             invalidateOwner: { windowID, ownerID in
                 guard let undoManager = await resolveUndoManager(windowID) else {
-                    return
+                    return .init(succeeded: false, availability: .init())
                 }
-                await MainActor.run {
+                return await MainActor.run {
                     let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
                     for handler in handlerStore.removeHandlers(windowID: windowID, ownerID: ownerID) {
                         undoManager.removeAllActions(withTarget: handler)
                     }
+                    return .init(
+                        succeeded: true,
+                        availability: .init(canUndo: undoManager.canUndo, canRedo: undoManager.canRedo),
+                    )
                 }
             },
             invalidateWindow: { windowID in
-                eventBridge.finish(windowID: windowID)
                 guard let undoManager = await resolveUndoManager(windowID) else {
-                    return
+                    return .init(succeeded: false, availability: .init())
                 }
-                await MainActor.run {
+                let result = await MainActor.run {
                     let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
                     for handler in handlerStore.removeHandlers(windowID: windowID) {
                         undoManager.removeAllActions(withTarget: handler)
                     }
+                    return UndoManagerInvalidationResult(
+                        succeeded: true,
+                        availability: .init(canUndo: undoManager.canUndo, canRedo: undoManager.canRedo),
+                    )
                 }
+                eventBridge.finish(windowID: windowID)
+                return result
             },
         )
     }
