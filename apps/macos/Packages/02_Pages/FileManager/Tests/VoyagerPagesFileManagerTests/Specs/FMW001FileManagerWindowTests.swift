@@ -27,7 +27,96 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         state.content.entryViewLayout.selectedIds = ["selected-entry"]
         state.content.entryViewLayout.entryOperations.isLoading = isLoading
         state.content.entryViewLayout.isCollectionMode = isCollectionMode
+        state.content.navigation.navigationState = .folder("/tmp")
         return state
+    }
+
+    private var entryCommands: [FileManagerWindowAction.WindowCommand] {
+        [
+            .newFolder,
+            .openSelectedItem,
+            .quickLookSelectedItem,
+            .cut,
+            .copy,
+            .paste,
+            .duplicate,
+            .makeAlias,
+            .selectAll,
+            .copyAbsolutePaths,
+            .copyURLs,
+        ]
+    }
+
+    // MARK: - VOY-578-entry_commands
+
+    /// VOY-578-entry_commands: 일반 Directory loading 중 모든 전역 entry 명령 차단
+    /// stale 선택이 유지되어도 menu capability와 최종 routing이 함께 명령 실행을 막는지 검증한다.
+    /// - 검증 내용: capability false 및 11개 entry command의 하위 action 미방출
+    /// - 사전 조건: 일반 Directory mode, entry loading 중, stale 선택 ID 유지
+    /// - 기대 결과: 모든 entry command가 no-op으로 종료
+    func testOrdinaryDirectoryLoadingDisablesAndBlocksAllEntryCommands() async {
+        let state = makeSelectedState(isLoading: true, isCollectionMode: false)
+        XCTAssertFalse(state.menuCommandProjection.canPerformEntryCommands)
+        let store = makeStore(initialState: state)
+
+        for command in entryCommands {
+            await store.send(.request(command))
+        }
+        await store.finish()
+    }
+
+    /// VOY-578-entry_commands: 일반 Directory 정상 상태의 전역 entry 명령 유지
+    /// loading이 아닐 때 기존 entry 명령 routing이 모두 보존되는지 검증한다.
+    /// - 검증 내용: capability true 및 11개 entry command의 기존 하위 action 전달
+    /// - 사전 조건: 일반 Directory mode, entry loading 아님, 선택 ID 존재
+    /// - 기대 결과: 모든 entry command가 대응하는 하위 reducer로 전달
+    func testNormalDirectoryAllowsAllEntryCommands() async {
+        let state = makeSelectedState(isLoading: false, isCollectionMode: false)
+        XCTAssertTrue(state.menuCommandProjection.canPerformEntryCommands)
+
+        for command in entryCommands {
+            await assertEntryCommand(command, routesFrom: state)
+        }
+    }
+
+    /// VOY-578-entry_commands: Collection loading의 전역 entry 명령 정책 유지
+    /// Collection loading은 ordinary Directory loading guard에 포함되지 않는지 검증한다.
+    /// - 검증 내용: capability true 및 11개 entry command의 기존 하위 action 전달
+    /// - 사전 조건: Collection mode, entry loading 중, 선택 ID 존재
+    /// - 기대 결과: 모든 entry command가 대응하는 하위 reducer로 전달
+    func testCollectionLoadingAllowsAllEntryCommands() async {
+        let state = makeSelectedState(isLoading: true, isCollectionMode: true)
+        XCTAssertTrue(state.menuCommandProjection.canPerformEntryCommands)
+
+        for command in entryCommands {
+            await assertEntryCommand(command, routesFrom: state)
+        }
+    }
+
+    /// VOY-578-entry_commands: 일반 Directory loading 중 비-entry 명령 보존
+    /// entry command guard가 hidden files, undo/redo, navigation, layout, tab, composer 명령까지 막지 않는지 검증한다.
+    /// - 검증 내용: 각 비-entry command가 기존 하위 reducer action을 방출
+    /// - 사전 조건: 일반 Directory mode, entry loading 중
+    /// - 기대 결과: 명령 범주별 기존 routing 유지
+    func testOrdinaryDirectoryLoadingPreservesNonEntryCommands() async {
+        let state = makeSelectedState(isLoading: true, isCollectionMode: false)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.toggleShowHiddenFiles))
+        await store.receive(\.content.view.toggleShowHiddenFilesAndReload)
+        await store.send(.request(.requestUndo))
+        await store.receive(\.content.entryViewLayout.entryOperations.undoRedo.requestUndo)
+        await store.send(.request(.requestRedo))
+        await store.receive(\.content.entryViewLayout.entryOperations.undoRedo.requestRedo)
+        await store.send(.request(.goBack))
+        await store.receive(\.navigation.view.goBack)
+        await store.send(.request(.setViewLayout(.grid)))
+        await store.receive(\.content.view.changeLayout)
+        await store.send(.request(.openNewContentTab))
+        await store.receive(\.contentTabs.open)
+        await store.send(.request(.toggleComposer))
+        await store.receive(\.content.composer.view.setPresented)
+        await store.finish()
     }
 
     // MARK: - FMW-001-toggle_sidebar
@@ -433,6 +522,66 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         XCTAssertEqual(window.frame.width, 1180, accuracy: 0.5)
         XCTAssertEqual(window.frame.height, 720, accuracy: 0.5)
+    }
+
+    private func assertEntryCommand(
+        _ command: FileManagerWindowAction.WindowCommand,
+        routesFrom state: FileManagerWindowState,
+    ) async {
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(command))
+        await store.receive { action in
+            matchesEntryCommandAction(command, action) || matchesAdditionalEntryCommandAction(command, action)
+        }
+        await store.finish()
+    }
+
+    private func matchesEntryCommandAction(
+        _ command: FileManagerWindowAction.WindowCommand,
+        _ action: FileManagerWindowAction,
+    ) -> Bool {
+        switch (command, action) {
+        case (.newFolder, .content(.entryViewLayout(.entryOperations(.edit(.createNewFolder))))),
+             (
+                 .openSelectedItem,
+                 .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))),
+             ),
+             (
+                 .quickLookSelectedItem,
+                 .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))),
+             ),
+             (.cut, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.cutSelectedItems)))))),
+             (.copy, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedItems)))))),
+             (.paste, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.pasteItems)))))):
+            true
+
+        default:
+            false
+        }
+    }
+
+    private func matchesAdditionalEntryCommandAction(
+        _ command: FileManagerWindowAction.WindowCommand,
+        _ action: FileManagerWindowAction,
+    ) -> Bool {
+        switch (command, action) {
+        case (.duplicate, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.duplicateSelectedItems)))))),
+             (
+                 .makeAlias,
+                 .content(.entryViewLayout(.delegate(.executeCommand(.mutation(.createAliasForSelectedItems))))),
+             ),
+             (.selectAll, .content(.view(.selectAllEntries))),
+             (
+                 .copyAbsolutePaths,
+                 .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedAbsolutePaths))))),
+             ),
+             (.copyURLs, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedURLs)))))):
+            true
+
+        default:
+            false
+        }
     }
 
     /// FMW-001-open_file_manager_window: provider가 없으면 저장된 autosave frame을 복원한다.

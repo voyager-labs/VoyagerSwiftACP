@@ -327,7 +327,6 @@ struct FileManagerWindowCommandRoutingReducer {
         case .newFolder,
              .openSelectedItem,
              .quickLookSelectedItem,
-             .toggleShowHiddenFiles,
              .cut,
              .copy,
              .paste,
@@ -336,6 +335,9 @@ struct FileManagerWindowCommandRoutingReducer {
              .selectAll,
              .copyAbsolutePaths,
              .copyURLs:
+            handleEntryRequestIfAllowed(command, state: &state)
+
+        case .toggleShowHiddenFiles:
             handleEntryRequest(command, state: &state)
 
         case .saveCollection,
@@ -365,6 +367,14 @@ struct FileManagerWindowCommandRoutingReducer {
              .requestRedo:
             handleUndoRedoRequest(command)
         }
+    }
+
+    private func handleEntryRequestIfAllowed(
+        _ command: Action.WindowCommand,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard !state.content.isOrdinaryDirectoryLoading else { return .none }
+        return handleEntryRequest(command, state: &state)
     }
 
     private func toggleActiveContentTabPin(state: State) -> Effect<Action> {
