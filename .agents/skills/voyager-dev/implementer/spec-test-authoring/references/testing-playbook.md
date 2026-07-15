@@ -15,7 +15,7 @@ Keep TCA verification proportional: exhaustive where local correctness matters, 
 Voyager-dev owns test selection, execution, failure analysis, fix, and rerun loops for Voyager/macOS/SPM work.
 
 1. **Find the right command**
-    - Prefer official commands from this playbook, `../../verification/references/verification.md`, `../../verification/references/xcodebuildmcp-workflow.md`, README/AGENTS, or CI config.
+    - Prefer official commands from this playbook, `../../../../code-tooling/SKILL.md`, README/AGENTS, or CI config.
     - For monorepos, narrow by modified app/package before broad runs.
 2. **Run targeted first**
     - First pass: fastest relevant unit/spec tests.
@@ -98,7 +98,7 @@ python3 scripts/dev/macos_test_flow.py --flow onb.access_unlock --dry-run
 
 **v1 migration scope**: The checker reports unmigrated canonical flow documents without failing. Existing mapped suites are strict: structural mismatches (orphan suite, class/file mismatch, missing FLOW-ID marker) cause checker exit 1. Do not treat unmigrated docs as covered or blocked in v1.
 
-See `../spec-test-authoring/references/flow-test-topology.md` for the complete mapping contract.
+See `flow-test-topology.md` for the complete mapping contract.
 
 **Rollout status (v1)**: Pilot first: `AccessUnlockFlowTests` is the initial mapped suite. New and modified flows opt in next. Strict all-flow coverage is deferred to a separate approved task. No manifest, dependency graph, or CI workflow is required or planned for v1.
 

@@ -27,6 +27,7 @@ V2_HEADINGS = [
 PLAN_SECTIONS = ["TL;DR", "Context", "Work Objectives", "TODOs"]
 PLAN_TODO_FIELDS = ["What to do", "Must NOT do", "Acceptance", "QA", "Commit"]
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^]]*]\(([^)#]+)(?:#[^)]+)?\)")
+SKILL_PATH_LITERAL = re.compile(r"`((?:\.agents/|\.\.?/)[^`\s*]+(?:\.md|SKILL\.md))`")
 TODO = re.compile(r"^- \[[ xX]] \d+\. .+")
 
 
@@ -104,13 +105,15 @@ def validate_harness(root: Path, paths: set[str], mode: str) -> list[Diagnostic]
     diagnostics: list[Diagnostic] = []
     for path_string in sorted(paths):
         path = root / path_string
-        if mode == "staged" and path_string.startswith((".sisyphus/", ".omx/")):
+        if mode in {"staged", "base-ref"} and path_string.startswith(
+            (".sisyphus/", ".omx/")
+        ):
             diagnostics.append(
                 Diagnostic(
                     path_string,
                     1,
                     "HARNESS_STAGED_ARTIFACT",
-                    "local harness artifacts must not be staged",
+                    "local harness artifacts must not be tracked",
                 )
             )
             continue
@@ -212,19 +215,17 @@ def validate_harness(root: Path, paths: set[str], mode: str) -> list[Diagnostic]
                             "v2 rules require the five headings in canonical order",
                         )
                     )
-            for line_number, line in enumerate(text.splitlines(), 1):
-                for target in (str(value) for value in MARKDOWN_LINK.findall(line)):
-                    resolved = (path.parent / target).resolve()
-                    if not resolved.exists():
-                        diagnostics.append(
-                            diagnostic(
-                                path,
-                                root,
-                                line_number,
-                                "HARNESS_DEAD_REFERENCE",
-                                f"Markdown reference does not exist: {target}",
-                            )
-                        )
+            diagnostics.extend(validate_markdown_references(root, path, text))
+        elif (
+            path_string.startswith(".agents/skills/")
+            and not path_string.startswith(".agents/skills/common/")
+            and path.suffix == ".md"
+        ):
+            diagnostics.extend(
+                validate_markdown_references(
+                    root, path, path.read_text(encoding="utf-8")
+                )
+            )
         is_skill_eval = path.name == "evals.json" and "evals" in path.parts
         is_shadow_corpus = (
             path.parent == root / "scripts/evals" and path.suffix == ".json"
@@ -239,6 +240,30 @@ def validate_harness(root: Path, paths: set[str], mode: str) -> list[Diagnostic]
                     )
                 )
 
+    return diagnostics
+
+
+def validate_markdown_references(root: Path, path: Path, text: str) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    for line_number, line in enumerate(text.splitlines(), 1):
+        targets = [str(target) for target in MARKDOWN_LINK.findall(line)]
+        targets += [str(target) for target in SKILL_PATH_LITERAL.findall(line)]
+        for target in targets:
+            if "<" in target or ">" in target:
+                continue
+            resolved = (
+                root / target if target.startswith(".agents/") else path.parent / target
+            ).resolve()
+            if not resolved.is_relative_to(root.resolve()) or not resolved.exists():
+                diagnostics.append(
+                    diagnostic(
+                        path,
+                        root,
+                        line_number,
+                        "HARNESS_DEAD_REFERENCE",
+                        f"Markdown reference does not exist: {target}",
+                    )
+                )
     return diagnostics
 
 

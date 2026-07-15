@@ -12,7 +12,7 @@ metadata:
 
 ## Instructions
 
-1. Load `references/tca-contract.md` and `references/development-rules.md` before editing; for state/action, effect, navigation, performance, test, or anti-pattern decisions, load the matching focused reference in this directory; for system observation, callbacks, notifications, or long-lived tasks, also load `references/observation-lifecycle-rule.md` and `references/observation-lifecycle-spec.md`.
+1. Load `references/tca-contract.md` and `references/development-rules.md` before editing; for state/action, effect, navigation, performance, test, or anti-pattern decisions, load the matching focused reference in this directory; for system observation, callbacks, notifications, or long-lived tasks, also load `references/observation-lifecycle-rule.md`.
 2. Keep external calls behind dependency clients and route success/failure through typed actions.
 3. Keep multi-step async user intents under one cancellation boundary when later steps can commit durable state.
 4. Keep transient process state from leaking into durable semantic state.

@@ -173,6 +173,91 @@ class AgentValidationTests(unittest.TestCase):
             artifact_result, artifact_payload, "HARNESS_STAGED_ARTIFACT"
         )
 
+    def test_artifacts_are_rejected_only_in_tracked_scopes(self) -> None:
+        temp = self.make_repo()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        self.write(root, ".keep", "")
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "fixture"], cwd=root, check=True)
+        base_ref = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+
+        self.write(root, ".sisyphus/evidence/task.json", "{}")
+        working_result, working_payload = self.run_cli(VALIDATE, root, "--working-tree")
+        self.assertEqual(working_result.returncode, 0)
+        self.assertEqual(working_payload["diagnostics"], [])
+
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        staged_result, staged_payload = self.run_cli(VALIDATE, root, "--staged")
+        self.assert_exact_diagnostic(
+            staged_result, staged_payload, "HARNESS_STAGED_ARTIFACT"
+        )
+        subprocess.run(["git", "commit", "-qm", "artifact"], cwd=root, check=True)
+        base_result, base_payload = self.run_cli(VALIDATE, root, "--base-ref", base_ref)
+        self.assert_exact_diagnostic(
+            base_result, base_payload, "HARNESS_STAGED_ARTIFACT"
+        )
+
+    def test_local_skill_links_and_path_literals_are_checked(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(
+                root,
+                ".agents/skills/fixture/SKILL.md",
+                "[missing link](missing.md)\n`../missing-reference.md`\n[host](/etc/passwd)\n",
+            )
+            self.write(
+                root,
+                ".agents/skills/fixture/references/guide.md",
+                "`../../missing-reference.md`\n",
+            )
+            result, payload = self.run_cli(VALIDATE, root, "--all")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(
+            [item["code"] for item in payload["diagnostics"]],
+            [
+                "HARNESS_DEAD_REFERENCE",
+                "HARNESS_DEAD_REFERENCE",
+                "HARNESS_DEAD_REFERENCE",
+                "HARNESS_DEAD_REFERENCE",
+            ],
+        )
+
+    def test_rule_path_literals_are_checked(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(
+                root,
+                ".agents/rules/00-fixture.md",
+                f"{RULE}\n`.agents/skills/missing/SKILL.md`\n",
+            )
+            result, payload = self.run_cli(VALIDATE, root, "--all")
+
+        self.assert_exact_diagnostic(result, payload, "HARNESS_DEAD_REFERENCE")
+
+    def test_omx_artifacts_are_allowed_locally_and_rejected_when_staged(self) -> None:
+        temp = self.make_repo()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        self.write(root, ".omx/session.json", "{}")
+
+        working_result, working_payload = self.run_cli(VALIDATE, root, "--working-tree")
+        self.assertEqual(working_result.returncode, 0)
+        self.assertEqual(working_payload["diagnostics"], [])
+
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        staged_result, staged_payload = self.run_cli(VALIDATE, root, "--staged")
+        self.assert_exact_diagnostic(
+            staged_result, staged_payload, "HARNESS_STAGED_ARTIFACT"
+        )
+
     def test_scope_modes_select_working_tree_staged_and_base_ref(self) -> None:
         temp = self.make_repo()
         self.addCleanup(temp.cleanup)

@@ -10,7 +10,7 @@ schemaVersion: 2
 
 - Include these mandatory sections in every implementation plan that involves code changes:
     - **TDD Evidence Policy**: each implementation task must specify that a RED test runs and fails before source edits, and a GREEN test runs and passes after implementation.
-    - **Test Ownership Convention**: product behavior tests must target either spec-owner suites (`<SpecID><PascalCaseTitle>Tests.swift`) with `// MARK:` sections or canonical flow-document suites under `VoyagerTests/Flows/<CATEGORY>/` when they cover production-composition journeys and cross-feature handoffs. Keep the one-spec-one-owner convention for `Specs/` unchanged. See `.agents/skills/voyager-dev/verifier/spec-test-authoring/references/flow-test-topology.md`.
+    - **Test Ownership Convention**: product behavior tests must target either spec-owner suites (`<SpecID><PascalCaseTitle>Tests.swift`) with `// MARK:` sections or canonical flow-document suites under `VoyagerTests/Flows/<CATEGORY>/` when they cover production-composition journeys and cross-feature handoffs. Keep the one-spec-one-owner convention for `Specs/` unchanged. See `.agents/skills/voyager-dev/implementer/spec-test-authoring/references/flow-test-topology.md`.
     - **Commit Strategy**: reference the `commit-message` skill for all commits unless the plan explicitly justifies an alternative.
 - Write per-task acceptance criteria that include evidence requirements.
 

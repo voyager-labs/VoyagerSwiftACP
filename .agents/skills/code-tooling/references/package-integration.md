@@ -30,7 +30,7 @@ Layer 1 passing while Layer 3 fails is the most common integration problem. `swi
 
 ## Command surfaces
 
-Use the capability matrix in `.agents/skills/code-tooling/SKILL.md`: package-local layers use `xcrun swift`; simulator consumers use a supported XcodeBuildMCP operation; macOS consumers use existing `mise` tasks while no macOS MCP operation is exposed. Load `xcodebuildmcp-workflow.md` only for supported simulator operations.
+Use the capability matrix in `.agents/skills/code-tooling/SKILL.md`: package-local layers use `xcrun swift`; simulator consumers use a supported XcodeBuildMCP operation; macOS consumers use existing `mise` tasks while no macOS MCP operation is exposed. Load `xcodebuild-mcp.md` only for supported simulator operations.
 
 ### Simulator consumer commands
 
