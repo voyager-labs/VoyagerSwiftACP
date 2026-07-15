@@ -739,7 +739,7 @@ private enum DefaultWindowBootstrap {
         return records.filter { seenIDs.insert($0.id).inserted }
     }
 
-    private static func restorePinnedRecords(
+    nonisolated private static func restorePinnedRecords(
         from store: ContentTabPinnedRecordStore,
         dependencies: Dependencies,
     ) -> RestoreResult {

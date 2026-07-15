@@ -74,7 +74,15 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         mountSessionLapseGuardOverlayIfNeeded()
     }
 
-    /// ACC-003-guard_session_lapse: 윈도우 전체를 덮는 오버레이. state가 nil이면 IfLetStore가 EmptyView를 렌더하여 기저 상호작용을 차단하지 않는다.
+    /// ACC-003-guard_session_lapse: 윈도우 전체를 덮는 오버레이. state가 nil이면 AppKit hit-test에서 제외한다.
+    private static func isSessionLapseGuardHidden(_ state: AccountAccessFeature.State?) -> Bool {
+        guard let state else { return true }
+        return !SessionLapseGuardView.shouldShow(
+            accountAccessStepState: state.accountAccessStepState,
+            isSignInInProgress: state.isSignInInProgress,
+        )
+    }
+
     private func mountSessionLapseGuardOverlayIfNeeded() {
         guard let sessionLapseGuardStore else { return }
 
@@ -96,6 +104,18 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         addChild(overlayController)
 
         let overlayView = overlayController.view
+        overlayView.isHidden = Self.isSessionLapseGuardHidden(
+            sessionLapseGuardStore.withState(\.self),
+        )
+        sessionLapseGuardStore.publisher
+            .map(Self.isSessionLapseGuardHidden)
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak overlayView] isHidden in
+                overlayView?.isHidden = isHidden
+            }
+            .store(in: &cancellables)
+
         view.addSubview(overlayView)
         NSLayoutConstraint.activate([
             overlayView.topAnchor.constraint(equalTo: view.topAnchor),
