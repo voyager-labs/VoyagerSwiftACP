@@ -674,12 +674,12 @@ extension ACC001ValidateAccountSessionTests {
         await store.finish()
     }
 
-    /// ACC-001-validate_account_session: retry exhaustion fallback은 persisted refresh credential이 없으면 unlock하지 않는다.
-    /// - 검증 내용: complete envelope와 active device proof가 있어도 canonical session read에 refresh credential이 없으면 recovery로
+    /// ACC-001-validate_account_session: retry exhaustion fallback은 만료된 snapshot session이면 unlock하지 않는다.
+    /// - 검증 내용: complete envelope와 active device proof, refresh credential이 있어도 snapshot session이 만료면 recovery로
     /// 끝난다.
-    /// - 사전 조건: upstream failure가 반복되고 current binding의 trusted snapshot은 존재하지만 persisted session은 refresh 불가능하다.
+    /// - 사전 조건: upstream failure가 반복되고 current binding의 trusted snapshot session은 정확히 현재 시각에 만료된다.
     /// - 기대 결과: snapshot load는 한 번 수행되나 unlocked delegate 없이 network recovery를 전달한다.
-    func testValidateRetryExhaustionRejectsSnapshotWithoutRefreshCredential() async {
+    func testValidateRetryExhaustionRejectsExpiredSnapshotSession() async {
         nonisolated(unsafe) var attempts = 0
         nonisolated(unsafe) var loadedSnapshots = 0
         let clock = TestClock()
@@ -691,6 +691,7 @@ extension ACC001ValidateAccountSessionTests {
             sessionBindingID: binding,
             gatewayBinding: GatewayEnvironment(rawValue: "").binding,
             deviceID: "test-device-id",
+            sessionExpiresAt: referenceDate,
             deviceBindingVerifiedAt: referenceDate,
         )
         let envelope = AccessStatusSnapshotEnvelope(
@@ -708,6 +709,7 @@ extension ACC001ValidateAccountSessionTests {
                 read: { _ in AccountSession(
                     accessToken: "test-access-token",
                     status: .coreLicenseActive,
+                    refreshToken: "test-refresh-token",
                     expiresAt: sessionExpiry,
                     sessionBindingID: binding,
                 )
@@ -836,35 +838,6 @@ extension ACC001ValidateAccountSessionTests {
         XCTAssertNil(store.state.snapshot)
     }
 
-    /// ACC-001-validate_account_session: 만료된 session cache는 retry fallback에서 unlock하지 않는다.
-    /// - 검증 내용: entitlement와 binding proof가 fresh여도 sessionExpiresAt이 과거면 snapshot recovery로 제한한다.
-    /// - 사전 조건: 현재 generation의 active cache와 만료된 session expiry.
-    /// - 기대 결과: isComplete=false를 유지하고 unlocked 대신 recoveryRequired를 전달한다.
-    func testExpiredSessionCacheDoesNotUnlockAfterSyncFailure() async {
-        let expiredSnapshot = AccessStatusSnapshot.fetchResult(
-            status: .coreLicenseActive,
-            currentPeriodEnd: nil,
-            sessionExpiresAt: referenceDate.addingTimeInterval(-1),
-            fetchedAt: referenceDate,
-            deviceBindingVerifiedAt: referenceDate,
-        )
-        var state = sessionNearExpiryState()
-        state.syncGeneration = 1
-        state.inFlightSyncReason = .manual
-        state.isSubmitting = true
-        let store = makeTestStore(initialState: state)
-        // store.exhaustivity = .off: 만료 cache의 unlock 차단과 recovery route만 검증
-        store.exhaustivity = .off
-
-        await store.send(._cachedSnapshotRestored(generation: 1, snapshot: expiredSnapshot))
-        await store.receive(\.delegate.recoveryRequired)
-
-        XCTAssertFalse(store.state.isComplete)
-        XCTAssertEqual(store.state.status, .networkFailure)
-        XCTAssertNil(store.state.snapshot)
-        await store.finish()
-    }
-
     /// ACC-001-validate_account_session: superseded cache completion은 현재 sync state를 변경하지 않는다.
     /// - 검증 내용: 이전 generation의 snapshot completion을 reducer guard가 무시한다.
     /// - 사전 조건: generation 2 sync가 진행 중일 때 generation 1 cache completion이 도착한다.
@@ -883,7 +856,12 @@ extension ACC001ValidateAccountSessionTests {
         state.isSubmitting = true
         let store = makeTestStore(initialState: state)
 
-        await store.send(._cachedSnapshotRestored(generation: 1, snapshot: cachedSnapshot))
+        await store.send(._cachedSnapshotRestored(
+            generation: 1,
+            binding: nil,
+            snapshot: cachedSnapshot,
+            validUntil: nil,
+        ))
 
         XCTAssertEqual(store.state.syncGeneration, 2)
         XCTAssertEqual(store.state.inFlightSyncReason, .manual)

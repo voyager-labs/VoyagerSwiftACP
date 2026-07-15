@@ -184,11 +184,18 @@ public struct AccountAccessFeature {
             case ._sessionExpiredDetected:
                 return handleSessionExpiredDetected(&state)
 
-            case let ._cachedSnapshotRestored(generation: generation, snapshot: snapshot):
+            case let ._cachedSnapshotRestored(
+                generation: generation,
+                binding: binding,
+                snapshot: snapshot,
+                validUntil: validUntil,
+            ):
                 return handleCachedSnapshotRestored(
                     &state,
                     generation: generation,
+                    binding: binding,
                     snapshot: snapshot,
+                    validUntil: validUntil,
                 )
 
             case let .hydrateLaunchSnapshot(snapshot):

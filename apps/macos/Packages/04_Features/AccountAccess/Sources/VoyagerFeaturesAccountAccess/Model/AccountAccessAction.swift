@@ -116,7 +116,12 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case _refreshDeadlineReached(generation: UInt64)
     case _sessionExpiredDetected
     case _fetchRetryScheduled(Int)
-    case _cachedSnapshotRestored(generation: UInt64, snapshot: AccessStatusSnapshot?)
+    case _cachedSnapshotRestored(
+        generation: UInt64,
+        binding: UUID?,
+        snapshot: AccessStatusSnapshot?,
+        validUntil: Date?,
+    )
     case hydrateLaunchSnapshot(AccessStatusSnapshot)
     case hydrateAccessFailure(error: AccessError, sessionExpiresAt: Date?)
     case signOut

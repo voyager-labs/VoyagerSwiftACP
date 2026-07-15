@@ -4,6 +4,13 @@ import Foundation
 import VoyagerShared
 
 extension AccountAccessFeature {
+    private struct CachedSnapshotRestoreContext {
+        let generation: UInt64
+        let binding: UUID?
+        let currentStateSessionExpiry: Date?
+        let currentDeviceID: String?
+    }
+
     static var gatewayEnvironment: GatewayEnvironment {
         GatewayEnvironment(rawValue: EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL") ?? "")
     }
@@ -13,6 +20,7 @@ extension AccountAccessFeature {
         reason _: SyncReason,
         generation: UInt64,
         binding: UUID?,
+        currentStateSessionExpiry: Date?,
     ) -> Effect<Action> {
         let retryDelays = intent == .refresh ? [Duration.seconds(5)] : Self.sessionSyncRetryDelays
         return .run { [
@@ -64,9 +72,13 @@ extension AccountAccessFeature {
                         guard let action = await Self.cachedSnapshotRestoreAction(
                             snapshotClient,
                             sessionClient,
-                            now: date.now,
-                            generation: generation,
-                            binding: binding,
+                            now: { date.now },
+                            context: CachedSnapshotRestoreContext(
+                                generation: generation,
+                                binding: binding,
+                                currentStateSessionExpiry: currentStateSessionExpiry,
+                                currentDeviceID: device.deviceId,
+                            ),
                         )
                         else { return }
                         await send(action)
@@ -105,31 +117,28 @@ extension AccountAccessFeature {
     private static func cachedSnapshotRestoreAction(
         _ snapshotClient: AccessStatusSnapshotClient,
         _ sessionClient: AccountSessionClient,
-        now: Date,
-        generation: UInt64,
-        binding: UUID?,
+        now: @Sendable () -> Date,
+        context: CachedSnapshotRestoreContext,
     ) async -> Action? {
-        let envelope = await snapshotClient.load(binding, gatewayEnvironment)
+        let envelope = await snapshotClient.load(context.binding, gatewayEnvironment)
         guard !Task.isCancelled else { return nil }
-        guard
-            let envelope,
-            let snapshot = envelope.snapshot,
-            !envelope.isLegacy,
-            envelope.schemaVersion == AccessStatusSnapshotEnvelope.currentSchemaVersion,
-            envelope.sessionBindingID == binding,
-            envelope.gatewayBinding == gatewayEnvironment.binding,
-            snapshot.schemaVersion == AccessStatusSnapshot.currentSchemaVersion,
-            snapshot.sessionBindingID == binding,
-            snapshot.gatewayBinding == gatewayEnvironment.binding,
-            let binding,
-            let session = try? await sessionClient.read(now),
-            session.sessionBindingID == binding,
-            session.refreshToken?.isEmpty == false,
-            !Task.isCancelled
-        else {
-            return ._cachedSnapshotRestored(generation: generation, snapshot: nil)
-        }
-        return ._cachedSnapshotRestored(generation: generation, snapshot: snapshot)
+        let persistedSession = try? await sessionClient.read(now())
+        guard !Task.isCancelled else { return nil }
+        let admission = TrustedFallbackSnapshotPolicy.validatedAdmission(.init(
+            envelope: envelope,
+            persistedSession: persistedSession,
+            expectedBinding: context.binding,
+            currentStateSessionExpiry: context.currentStateSessionExpiry,
+            gatewayBinding: gatewayEnvironment.binding,
+            currentDeviceID: context.currentDeviceID,
+            now: now(),
+        ))
+        return ._cachedSnapshotRestored(
+            generation: context.generation,
+            binding: context.binding,
+            snapshot: admission?.snapshot,
+            validUntil: admission?.validUntil,
+        )
     }
 
     func invalidateSessionSync(_ state: inout State) {
@@ -203,6 +212,7 @@ extension AccountAccessFeature {
             reason: completion.reason,
             generation: state.syncGeneration,
             binding: completion.binding,
+            currentStateSessionExpiry: state.sessionExpiresAt,
         )
     }
 
@@ -467,16 +477,19 @@ extension AccountAccessFeature {
         .cancellable(id: CancelID.sessionSync, cancelInFlight: true)
     }
 
-    /// 캐시된 snapshot의 최대 허용 보관 기간.
-    /// 네트워크 장애 시 이 기간을 초과한 snapshot은 만료되지 않았더라도 신뢰하지 않는다 (entitlement bypass 방지).
-    private static let cachedSnapshotMaxAge: TimeInterval = 7 * 24 * 60 * 60 // 7일
-
     func handleCachedSnapshotRestored(
         _ state: inout State,
         generation: UInt64,
+        binding: UUID?,
         snapshot: AccessStatusSnapshot?,
+        validUntil: Date?,
     ) -> Effect<Action> {
-        guard generation == state.syncGeneration else {
+        guard
+            generation == state.syncGeneration,
+            binding == state.sessionBindingID,
+            state.hasAccountSession,
+            !state.isSessionExpired
+        else {
             return .none
         }
 
@@ -487,7 +500,16 @@ extension AccountAccessFeature {
         state.status = .networkFailure
         state.errorMessage = errorMessage(for: AccessError.networkFailure)
 
-        guard let snapshot, isTrustedFallbackSnapshot(snapshot, state: state, now: date.now) else {
+        let now = date.now
+        guard
+            let snapshot,
+            let validUntil,
+            validUntil.timeIntervalSinceReferenceDate.isFinite,
+            validUntil > now,
+            let currentSessionExpiry = state.sessionExpiresAt,
+            currentSessionExpiry.timeIntervalSinceReferenceDate.isFinite,
+            currentSessionExpiry > now
+        else {
             state.snapshot = nil
             state.trialExpiresAt = nil
             return .send(.delegate(.recoveryRequired(.accessFailure(
@@ -502,42 +524,6 @@ extension AccountAccessFeature {
         state.isComplete = true
         state.errorMessage = "일시적인 네트워크 오류"
         return .send(.delegate(.unlocked(snapshot)))
-    }
-
-    private func isTrustedFallbackSnapshot(
-        _ snapshot: AccessStatusSnapshot,
-        state: State,
-        now: Date,
-    ) -> Bool {
-        guard
-            state.hasAccountSession,
-            !state.isSessionExpired,
-            let binding = state.sessionBindingID,
-            snapshot.schemaVersion == AccessStatusSnapshot.currentSchemaVersion,
-            snapshot.sessionBindingID == binding,
-            snapshot.gatewayBinding == Self.gatewayEnvironment.binding,
-            snapshot.status.isActive,
-            let deviceBindingVerifiedAt = snapshot.deviceBindingVerifiedAt,
-            let deviceID = snapshot.deviceID,
-            !deviceID.isEmpty,
-            let currentDeviceID = try? deviceIdentityClient.deviceId(),
-            currentDeviceID == deviceID,
-            now.timeIntervalSinceReferenceDate.isFinite,
-            snapshot.fetchedAt.timeIntervalSinceReferenceDate.isFinite,
-            deviceBindingVerifiedAt.timeIntervalSinceReferenceDate.isFinite,
-            deviceBindingVerifiedAt <= now
-        else {
-            return false
-        }
-
-        if let currentPeriodEnd = snapshot.currentPeriodEnd {
-            guard currentPeriodEnd.timeIntervalSinceReferenceDate.isFinite, now < currentPeriodEnd else {
-                return false
-            }
-        }
-
-        let age = now.timeIntervalSince(snapshot.fetchedAt)
-        return age.isFinite && age >= 0 && age < Self.cachedSnapshotMaxAge
     }
 
     func errorMessage(for error: AccessError) -> String {
