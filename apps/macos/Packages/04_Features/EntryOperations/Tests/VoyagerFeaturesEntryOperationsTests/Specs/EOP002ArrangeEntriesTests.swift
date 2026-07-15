@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import UniformTypeIdentifiers
 import VoyagerEntitiesEntry
 @testable import VoyagerFeaturesEntryOperations
 import VoyagerShared
@@ -871,6 +872,62 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(store.state.clipboardOperation, .copy)
     }
 
+    // MARK: - EOP-002-drop_path_policy
+
+    /// EOP-002-drop_path_policy: path equivalence는 raw String equality를 유지한다.
+    /// - 사전 조건: 실제 fixture sandbox root와 동일 경로의 `/.` 표기를 비교한다.
+    /// - 기대 결과: 완전히 같은 문자열만 equivalent이고 표기만 다른 경로는 equivalent가 아니다.
+    func testDropPathPolicy_preservesRawPathEquivalence() throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let path = sandbox.root.path
+
+        XCTAssertTrue(EntryDropPathPolicy.areEquivalent(path, path))
+        XCTAssertFalse(EntryDropPathPolicy.areEquivalent(path, path + "/."))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-002-drop_path_policy: descendant 판정만 standardized path components를 사용한다.
+    /// - 사전 조건: fixture sandbox 아래 실제 child directory와 `..`를 포함한 equivalent 표기를 준비한다.
+    /// - 기대 결과: standardized candidate가 source 하위이면 descendant로 판정된다.
+    func testDropPathPolicy_standardizesDescendantComponents() throws {
+        let sandbox = try FixtureSandbox.copyingDirectory(from: "fixtures/fixtures/images/jpeg")
+        defer { sandbox.cleanup() }
+        let child = sandbox.fileURL.appendingPathComponent("Child")
+        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+        let candidate = child.appendingPathComponent("..").appendingPathComponent("Child").path
+
+        XCTAssertTrue(EntryDropPathPolicy.isDescendant(candidate, of: sandbox.fileURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-002-drop_path_policy: copy intent는 same-parent/self/descendant move guard를 우회한다.
+    /// - 사전 조건: 실제 fixture source와 같은 parent destination, prefersCopy=true를 사용한다.
+    /// - 기대 결과: 기존 정책대로 copy가 선택되고 Option intent가 유지된다.
+    func testDropValidation_copyBypassesMovePathGuards() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let store = EntryOperationsTestSupport.makeStore()
+        let context = EntryDropValidationContext(
+            sourcePaths: [sandbox.fileURL.path],
+            destinationPath: sandbox.root.path,
+            allowedOperationsRawValue: NSDragOperation.copy.rawValue | NSDragOperation.move.rawValue,
+            prefersCopy: true,
+        )
+
+        await store.send(.routing(.validateDrop(context: context))) {
+            $0.dropValidationResult = EntryDropValidationResult(
+                destinationPath: sandbox.root.path,
+                resolvedOperation: .copy,
+                isOptionDrag: true,
+            )
+        }
+        await store.finish()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
     /// EOP-002-create_entry_alias: 원본이 사라진 상태에서는 alias 생성이 실패해야 한다.
     /// 사용자가 존재하지 않는 `fixtures/fixtures/texts/plain/missing.txt`를 alias로 만들면 실패가 정상이라는 점을 확인한다.
     /// - 검증 내용: `.edit(.createAliases)`가 소스 부재를 감지해 failure 상태를 반환한다.
@@ -895,6 +952,406 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: aliasPath))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    // MARK: - EOP-002-provider_drop_impact
+
+    /// Provider decode가 지연되어도 perform-time move intent가 유지되고 한 번만 실행된다.
+    func testProviderDrop_delayedMovePreservesIntentAndEmitsImpact() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let destinationFolder = sandbox.root.appendingPathComponent("DelayedMoveTarget")
+        try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
+
+        let provider = DelayedFileURLItemProvider(fileURL: sandbox.fileURL)
+        let fileOpsRecorder = FileOpsRecorder()
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        let reloadRecorder = CallRecorder<[String]>()
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            var client = makeRecordedFileOpsClient(recorder: fileOpsRecorder)
+            client.postFileSystemChanged = reloadRecorder.record
+            $0.entryFileOpsClient = client
+        }
+        store.exhaustivity = .off
+
+        await store.send(.routing(.handleDrop(
+            providers: [provider.provider],
+            destinationPath: destinationFolder.path,
+            isOptionDrag: false,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(provider.loadCount, 1)
+        XCTAssertEqual(fileOpsRecorder.movedPaths.count, 1)
+        XCTAssertTrue(fileOpsRecorder.copiedPaths.isEmpty)
+        XCTAssertEqual(mutationImpacts(in: actionRecorder.recorded), [
+            EntryOperationsMutationImpact(
+                sourceParentPaths: [sandbox.root.path],
+                destinationPath: destinationFolder.path,
+            ),
+        ])
+        XCTAssertTrue(reloadRecorder.recorded.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// 여러 지연 provider의 copy intent가 유지되고 동일 source parent는 raw-equivalence로 dedup된다.
+    func testProviderDrop_delayedCopyDeduplicatesSuccessfulSourceParents() async throws {
+        let sandbox = try FixtureSandbox.copyingDirectory(from: "fixtures/fixtures/images/jpeg")
+        defer { sandbox.cleanup() }
+        let names = try FileManager.default.contentsOfDirectory(atPath: sandbox.fileURL.path).sorted()
+        let sourceURLs = names.prefix(2).map { name in
+            sandbox.fileURL.appendingPathComponent(name)
+        }
+        XCTAssertEqual(sourceURLs.count, 2)
+        let destinationFolder = sandbox.root.appendingPathComponent("DelayedCopyTarget")
+        try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
+
+        let providers = sourceURLs.map { DelayedFileURLItemProvider(fileURL: $0) }
+        let fileOpsRecorder = FileOpsRecorder()
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: fileOpsRecorder)
+        }
+        store.exhaustivity = .off
+
+        await store.send(.routing(.handleDrop(
+            providers: providers.map(\.provider),
+            destinationPath: destinationFolder.path,
+            isOptionDrag: true,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(providers.map(\.loadCount), [1, 1])
+        XCTAssertEqual(fileOpsRecorder.copiedPaths.count, 2)
+        XCTAssertTrue(fileOpsRecorder.movedPaths.isEmpty)
+        XCTAssertEqual(mutationImpacts(in: actionRecorder.recorded), [
+            EntryOperationsMutationImpact(
+                sourceParentPaths: [sandbox.fileURL.path],
+                destinationPath: destinationFolder.path,
+            ),
+        ])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// Batch 일부 실패 시 mutation impact에는 실제 성공한 source parent만 포함된다.
+    func testProviderDrop_partialFailureReportsOnlySuccessfulSourceParent() async throws {
+        let successfulSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { successfulSandbox.cleanup() }
+        let failedSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { failedSandbox.cleanup() }
+        let destinationFolder = successfulSandbox.root.appendingPathComponent("PartialTarget")
+        try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
+
+        let providers = [successfulSandbox.fileURL, failedSandbox.fileURL]
+            .map { DelayedFileURLItemProvider(fileURL: $0) }
+        let fileOpsRecorder = FileOpsRecorder()
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: fileOpsRecorder)
+            $0.entryOperationsAlertClient.showReplaceAlert = { _, _ in .stop }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.routing(.handleDrop(
+            providers: providers.map(\.provider),
+            destinationPath: destinationFolder.path,
+            isOptionDrag: true,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(fileOpsRecorder.copiedPaths.count, 1)
+        XCTAssertEqual(mutationImpacts(in: actionRecorder.recorded), [
+            EntryOperationsMutationImpact(
+                sourceParentPaths: [successfulSandbox.root.path],
+                destinationPath: destinationFolder.path,
+            ),
+        ])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: successfulSandbox.originalFixture.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: failedSandbox.originalFixture.path))
+    }
+
+    /// 모든 provider mutation이 실패하면 outward success outcome을 내보내지 않는다.
+    func testProviderDrop_allFailureEmitsNoMutationImpact() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let destinationFolder = sandbox.root.appendingPathComponent("BlockedTarget")
+        try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(
+            at: sandbox.fileURL,
+            to: destinationFolder.appendingPathComponent(sandbox.fileURL.lastPathComponent),
+        )
+
+        let provider = DelayedFileURLItemProvider(fileURL: sandbox.fileURL)
+        let fileOpsRecorder = FileOpsRecorder()
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: fileOpsRecorder)
+            $0.entryOperationsAlertClient.showReplaceAlert = { _, _ in .stop }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.routing(.handleDrop(
+            providers: [provider.provider],
+            destinationPath: destinationFolder.path,
+            isOptionDrag: false,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertTrue(fileOpsRecorder.movedPaths.isEmpty)
+        XCTAssertTrue(mutationImpacts(in: actionRecorder.recorded).isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// 같은 parent로의 move no-op은 mutation impact를 내보내지 않는다.
+    func testProviderDrop_sameParentNoOpEmitsNoMutationImpact() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let provider = DelayedFileURLItemProvider(fileURL: sandbox.fileURL)
+        let fileOpsRecorder = FileOpsRecorder()
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: fileOpsRecorder)
+        }
+        store.exhaustivity = .off
+
+        await store.send(.routing(.handleDrop(
+            providers: [provider.provider],
+            destinationPath: sandbox.root.path,
+            isOptionDrag: false,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertTrue(fileOpsRecorder.movedPaths.isEmpty)
+        XCTAssertTrue(mutationImpacts(in: actionRecorder.recorded).isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// Provider move가 source descendant를 대상으로 하면 Task 1 path guard에서 거절된다.
+    func testProviderDrop_descendantMoveEmitsNoMutationImpact() async throws {
+        let sandbox = try FixtureSandbox.copyingDirectory(from: "fixtures/fixtures/images/jpeg")
+        defer { sandbox.cleanup() }
+        let destinationFolder = sandbox.fileURL.appendingPathComponent("DescendantTarget")
+        try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
+
+        let provider = DelayedFileURLItemProvider(fileURL: sandbox.fileURL)
+        let fileOpsRecorder = FileOpsRecorder()
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: fileOpsRecorder)
+        }
+        store.exhaustivity = .off
+
+        await store.send(.routing(.handleDrop(
+            providers: [provider.provider],
+            destinationPath: destinationFolder.path,
+            isOptionDrag: false,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertTrue(fileOpsRecorder.movedPaths.isEmpty)
+        XCTAssertTrue(mutationImpacts(in: actionRecorder.recorded).isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-002-provider_drop_impact: 빈 provider request는 decode·filesystem mutation·outcome 없이 종료됨
+    /// Sidebar 경계 이후에도 비어 있는 provider 배열이 EOP 실행 경로를 만들지 않는지 검증한다.
+    /// - 검증 내용: provider decode 결과 없음, move/copy command 0회, mutation impact 0회
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`의 temp sandbox와 빈 provider 배열
+    /// - 기대 결과: source와 repository fixture가 유지되고 filesystem recorder와 outward outcome이 비어 있음
+    func testProviderDrop_emptyProvidersEmitNoMutationImpact() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let fileOpsRecorder = FileOpsRecorder()
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: fileOpsRecorder)
+        }
+        // store.exhaustivity = .off: provider effect의 내부 action 대신 최종 command/outcome 부재를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.handleDrop(
+            providers: [],
+            destinationPath: sandbox.root.path,
+            isOptionDrag: false,
+        )))
+        await store.finish()
+
+        XCTAssertTrue(fileOpsRecorder.movedPaths.isEmpty)
+        XCTAssertTrue(fileOpsRecorder.copiedPaths.isEmpty)
+        XCTAssertTrue(mutationImpacts(in: actionRecorder.recorded).isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-002-provider_drop_impact: provider 하나라도 fileURL decode에 실패하면 전체 session을 거절함
+    /// 유효한 fixture provider 뒤에 fileURL을 advertise하지만 invalid data를 반환하는 provider가 섞인 경로를 검증한다.
+    /// - 검증 내용: 두 provider load 후 `dropItems`, move/copy command, mutation impact가 모두 0회
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`의 temp copy와 invalid fileURL data provider
+    /// - 기대 결과: source와 repository fixture가 유지되고 batch 전체가 filesystem mutation 전에 종료됨
+    func testProviderDrop_mixedDecodeFailureRejectsEntireSession() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let validProvider = DelayedFileURLItemProvider(fileURL: sandbox.fileURL, delay: 0)
+        let failedLoadCount = LockIsolated(0)
+        let failingProvider = NSItemProvider()
+        failingProvider.registerDataRepresentation(
+            forTypeIdentifier: UTType.fileURL.identifier,
+            visibility: .all,
+        ) { completionHandler in
+            failedLoadCount.withValue { $0 += 1 }
+            completionHandler(Data("not-a-file-url".utf8), nil)
+            let progress = Progress(totalUnitCount: 1)
+            progress.completedUnitCount = 1
+            return progress
+        }
+        let fileOpsRecorder = FileOpsRecorder()
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: fileOpsRecorder)
+        }
+        // store.exhaustivity = .off: provider decode batch의 downstream command/outcome 부재를 recorder로 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.handleDrop(
+            providers: [validProvider.provider, failingProvider],
+            destinationPath: sandbox.root.appendingPathComponent("RejectedTarget").path,
+            isOptionDrag: false,
+        )))
+        await store.finish()
+
+        XCTAssertEqual(validProvider.loadCount, 1)
+        XCTAssertEqual(failedLoadCount.value, 1)
+        XCTAssertFalse(actionRecorder.recorded.contains { action in
+            if case .routing(.dropItems) = action { return true }
+            return false
+        })
+        XCTAssertTrue(fileOpsRecorder.movedPaths.isEmpty)
+        XCTAssertTrue(fileOpsRecorder.copiedPaths.isEmpty)
+        XCTAssertTrue(mutationImpacts(in: actionRecorder.recorded).isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-002-provider_drop_impact: directory를 자기 자신에 move-drop하면 path guard가 실행을 거절함
+    /// 사용자가 source directory 자체를 destination으로 지정하는 self-drop 경로를 검증한다.
+    /// - 검증 내용: decoded provider 1회, move/copy command 0회, mutation impact 0회
+    /// - 사전 조건: `fixtures/fixtures/images/jpeg`의 temp directory copy를 source와 destination으로 함께 사용
+    /// - 기대 결과: sandbox와 repository fixture가 유지되고 filesystem mutation과 outward outcome이 없음
+    func testProviderDrop_selfMoveEmitsNoMutationImpact() async throws {
+        let sandbox = try FixtureSandbox.copyingDirectory(from: "fixtures/fixtures/images/jpeg")
+        defer { sandbox.cleanup() }
+        let provider = DelayedFileURLItemProvider(fileURL: sandbox.fileURL)
+        let fileOpsRecorder = FileOpsRecorder()
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: fileOpsRecorder)
+        }
+        // store.exhaustivity = .off: provider decode 이후 path guard의 최종 mutation/outcome 부재를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.handleDrop(
+            providers: [provider.provider],
+            destinationPath: sandbox.fileURL.path,
+            isOptionDrag: false,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(provider.loadCount, 1)
+        XCTAssertTrue(fileOpsRecorder.movedPaths.isEmpty)
+        XCTAssertTrue(fileOpsRecorder.copiedPaths.isEmpty)
+        XCTAssertTrue(mutationImpacts(in: actionRecorder.recorded).isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-002-provider_drop_impact: missing destination 실패는 source와 outcome을 보존함
+    /// 존재하지 않는 destination hierarchy로 move할 때의 실제 filesystem failure를 검증한다.
+    /// - 검증 내용: missing destination의 실제 move 실패에서 성공 recorder와 mutation impact 0회
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`의 temp copy와 생성되지 않은 destination hierarchy
+    /// - 기대 결과: source와 repository fixture가 유지되고 destination과 outward outcome이 생성되지 않음
+    func testProviderDrop_missingDestinationEmitsNoMutationImpact() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let destination = sandbox.root
+            .appendingPathComponent("MissingParent")
+            .appendingPathComponent("Destination")
+        let provider = DelayedFileURLItemProvider(fileURL: sandbox.fileURL)
+        let fileOpsRecorder = FileOpsRecorder()
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: fileOpsRecorder)
+        }
+        // store.exhaustivity = .off: 실제 missing destination 실패의 최종 filesystem/outcome contract를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.handleDrop(
+            providers: [provider.provider],
+            destinationPath: destination.path,
+            isOptionDrag: false,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(provider.loadCount, 1)
+        XCTAssertTrue(fileOpsRecorder.movedPaths.isEmpty)
+        XCTAssertTrue(mutationImpacts(in: actionRecorder.recorded).isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-002-provider_drop_impact: unwritable destination 실패는 source와 outcome을 보존함
+    /// destination write가 permission-denied를 반환하는 filesystem failure를 검증한다.
+    /// - 검증 내용: move dependency permission-denied 실패에서 mutation impact 0회
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`의 temp copy와 permission-denied move client
+    /// - 기대 결과: source와 repository fixture가 유지되고 destination file과 outward outcome이 생성되지 않음
+    func testProviderDrop_unwritableDestinationEmitsNoMutationImpact() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let destination = sandbox.root.appendingPathComponent("UnwritableDestination")
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        let provider = DelayedFileURLItemProvider(fileURL: sandbox.fileURL)
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            var client = makeRecordedFileOpsClient(recorder: FileOpsRecorder())
+            client.moveFile = { _, _ in throw FileOpError.system(message: "permission denied") }
+            $0.entryFileOpsClient = client
+        }
+        // store.exhaustivity = .off: permission-denied dependency 실패의 최종 source/outcome 보존만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.handleDrop(
+            providers: [provider.provider],
+            destinationPath: destination.path,
+            isOptionDrag: false,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(provider.loadCount, 1)
+        XCTAssertTrue(mutationImpacts(in: actionRecorder.recorded).isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: destination.appendingPathComponent(sandbox.fileURL.lastPathComponent).path,
+        ))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+}
+
+private func mutationImpacts(in actions: [EntryOperationsAction]) -> [EntryOperationsMutationImpact] {
+    actions.compactMap { action in
+        guard case let .outcome(.entriesMutated(impact)) = action else { return nil }
+        return impact
     }
 }
 

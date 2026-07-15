@@ -240,110 +240,252 @@ struct EntryClipboardOperationsReducer {
                 )
 
             case let .clipboard(.pasteItems(sourcePaths, destinationPath, operation, operationKind)):
-                let destinationURL = URL(fileURLWithPath: destinationPath)
-                let destinations = EntryClipboardOperationsSupport.avoidNameCollisions(
+                return pasteItemsEffect(
                     sourcePaths: sourcePaths,
-                    destinationURL: destinationURL,
+                    destinationPath: destinationPath,
                     operation: operation,
-                    entryFileOpsClient: entryFileOpsClient,
+                    operationKind: operationKind,
+                    mutationImpactDestinationPath: nil,
                 )
 
-                guard !destinations.isEmpty else {
-                    if operation == .cut {
-                        return .run { send in
-                            await send(.lifecycle(.operationFinished(destinationPath, operationKind, .success(()))))
-                        }
-                    }
-                    return .none
-                }
-
-                let isCopy = operation == .copy
-
-                return .run { [entryFileOpsClient, alertClient] send in
-                    var targets: [EntryActionRecord.Target] = []
-
-                    for (sourceURL, destURL) in destinations {
-                        let sourcePath = sourceURL.path
-                        let kind: OperationKind = operationKind
-
-                        await send(.lifecycle(.operationStarted(sourcePath, kind)))
-
-                        do {
-                            if isCopy {
-                                try await entryFileOpsClient.pasteFile(sourceURL, destURL)
-                            } else {
-                                try await entryFileOpsClient.moveFile(sourceURL, destURL)
-                            }
-                            await send(.lifecycle(.pathsMutated([sourcePath, destURL.path])))
-                            let changedPaths = [
-                                sourceURL.deletingLastPathComponent().path,
-                                destURL.deletingLastPathComponent().path,
-                            ]
-                            entryFileOpsClient.postFileSystemChanged(Array(Set(changedPaths)))
-                            await send(.lifecycle(.pathsMutated([sourcePath, destURL.path])))
-                            targets.append(.init(beforePath: sourcePath, afterPath: destURL.path))
-                            await send(.lifecycle(.operationFinished(sourcePath, kind, .success(()))))
-                        } catch let error as FileOpError where error.isFileExists {
-                            guard let itemName = error.itemName else {
-                                await send(.lifecycle(.operationFinished(sourcePath, kind, .failure(error))))
-                                continue
-                            }
-
-                            let replaceResponse = await alertClient.showReplaceAlert(itemName, .move)
-                            let shouldReplace = switch replaceResponse {
-                            case .replace:
-                                true
-                            case .stop:
-                                false
-                            }
-
-                            if shouldReplace {
-                                do {
-                                    try await entryFileOpsClient.deleteImmediately(destURL)
-                                    if isCopy {
-                                        try await entryFileOpsClient.pasteFile(sourceURL, destURL)
-                                    } else {
-                                        try await entryFileOpsClient.moveFile(sourceURL, destURL)
-                                    }
-
-                                    await send(.lifecycle(.pathsMutated([sourcePath, destURL.path])))
-                                    let destinationFolder = destURL.deletingLastPathComponent().path
-                                    let changedPaths = [
-                                        sourceURL.deletingLastPathComponent().path,
-                                        destinationFolder,
-                                    ]
-                                    entryFileOpsClient.postFileSystemChanged(Array(Set(changedPaths)))
-                                    targets.append(.init(beforePath: sourcePath, afterPath: destURL.path))
-                                    await send(.lifecycle(.operationFinished(destinationFolder, kind, .success(()))))
-                                } catch {
-                                    await send(.lifecycle(.operationFinished(
-                                        sourcePath,
-                                        kind,
-                                        .failure(error.fileOpError),
-                                    )))
-                                }
-                            } else {
-                                await send(.lifecycle(.operationFinished(sourcePath, kind, .failure(.cancelled))))
-                            }
-                        } catch {
-                            await send(.lifecycle(.operationFinished(sourcePath, kind, .failure(error.fileOpError))))
-                        }
-                    }
-
-                    if !targets.isEmpty, operationKind.isUndoable {
-                        let record = EntryActionRecord(operationKind: operationKind, targets: targets)
-                        await send(.lifecycle(.entryActionCompleted(record)))
-                    }
-                }
+            case let .clipboard(.performDrop(sourcePaths, destinationPath, isOptionDrag)):
+                let operation: ClipboardOperation = isOptionDrag ? .copy : .cut
+                let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
+                return pasteItemsEffect(
+                    sourcePaths: sourcePaths,
+                    destinationPath: destinationPath,
+                    operation: operation,
+                    operationKind: operationKind,
+                    mutationImpactDestinationPath: destinationPath,
+                )
 
             default:
                 return .none
             }
         }
     }
+
+    private func pasteItemsEffect(
+        sourcePaths: [String],
+        destinationPath: String,
+        operation: ClipboardOperation,
+        operationKind: OperationKind,
+        mutationImpactDestinationPath: String?,
+    ) -> Effect<Action> {
+        let destinations = EntryClipboardOperationsSupport.avoidNameCollisions(
+            sourcePaths: sourcePaths,
+            destinationURL: URL(fileURLWithPath: destinationPath),
+            operation: operation,
+            entryFileOpsClient: entryFileOpsClient,
+        )
+        guard !destinations.isEmpty else {
+            return operation == .cut
+                ? .send(.lifecycle(.operationFinished(destinationPath, operationKind, .success(()))))
+                : .none
+        }
+
+        let executor = EntryClipboardOperationsSupport.PasteExecutor(
+            entryFileOpsClient: entryFileOpsClient,
+            alertClient: alertClient,
+            mutationImpactDestinationPath: mutationImpactDestinationPath,
+        )
+        return .run { send in
+            var targets: [EntryActionRecord.Target] = []
+            for (sourceURL, destinationURL) in destinations {
+                await send(.lifecycle(.operationStarted(sourceURL.path, operationKind)))
+                if let target = await executor.execute(
+                    sourceURL: sourceURL,
+                    destinationURL: destinationURL,
+                    isCopy: operation == .copy,
+                    operationKind: operationKind,
+                    send: send,
+                ) {
+                    targets.append(target)
+                }
+            }
+            await executor.finishBatch(targets, operationKind: operationKind, send: send)
+        }
+    }
 }
 
 private enum EntryClipboardOperationsSupport {
+    struct PasteExecutor {
+        let entryFileOpsClient: EntryFileOpsClient
+        let alertClient: EntryOperationsAlertClient
+        let mutationImpactDestinationPath: String?
+
+        func execute(
+            sourceURL: URL,
+            destinationURL: URL,
+            isCopy: Bool,
+            operationKind: OperationKind,
+            send: Send<EntryOperationsAction>,
+        ) async -> EntryActionRecord.Target? {
+            let context = OperationContext(isCopy: isCopy, operationKind: operationKind)
+            do {
+                try await mutate(sourceURL: sourceURL, destinationURL: destinationURL, isCopy: isCopy)
+                return await finishSuccess(
+                    sourceURL: sourceURL,
+                    destinationURL: destinationURL,
+                    context: .init(
+                        finishPath: sourceURL.path,
+                        operationKind: operationKind,
+                        repeatsPathsMutation: true,
+                    ),
+                    send: send,
+                )
+            } catch let error as FileOpError where error.isFileExists {
+                return await replaceExistingItem(
+                    sourceURL: sourceURL,
+                    destinationURL: destinationURL,
+                    context: context,
+                    error: error,
+                    send: send,
+                )
+            } catch {
+                await send(completionAction(
+                    sourceURL.path,
+                    operationKind: operationKind,
+                    result: .failure(error.fileOpError),
+                ))
+                return nil
+            }
+        }
+
+        func finishBatch(
+            _ targets: [EntryActionRecord.Target],
+            operationKind: OperationKind,
+            send: Send<EntryOperationsAction>,
+        ) async {
+            guard !targets.isEmpty else { return }
+            if operationKind.isUndoable {
+                let record = EntryActionRecord(operationKind: operationKind, targets: targets)
+                await send(.lifecycle(.entryActionCompleted(record)))
+            }
+            guard let mutationImpactDestinationPath else { return }
+            let impact = EntryOperationsMutationImpact(
+                sourceParentPaths: EntryClipboardOperationsSupport.uniqueSourceParentPaths(from: targets),
+                destinationPath: mutationImpactDestinationPath,
+            )
+            await send(.outcome(.entriesMutated(impact)))
+        }
+
+        private func replaceExistingItem(
+            sourceURL: URL,
+            destinationURL: URL,
+            context: OperationContext,
+            error: FileOpError,
+            send: Send<EntryOperationsAction>,
+        ) async -> EntryActionRecord.Target? {
+            guard let itemName = error.itemName else {
+                await send(completionAction(
+                    sourceURL.path,
+                    operationKind: context.operationKind,
+                    result: .failure(error),
+                ))
+                return nil
+            }
+            guard await alertClient.showReplaceAlert(itemName, .move) == .replace else {
+                await send(completionAction(
+                    sourceURL.path,
+                    operationKind: context.operationKind,
+                    result: .failure(.cancelled),
+                ))
+                return nil
+            }
+            do {
+                try await entryFileOpsClient.deleteImmediately(destinationURL)
+                try await mutate(sourceURL: sourceURL, destinationURL: destinationURL, isCopy: context.isCopy)
+                return await finishSuccess(
+                    sourceURL: sourceURL,
+                    destinationURL: destinationURL,
+                    context: .init(
+                        finishPath: destinationURL.deletingLastPathComponent().path,
+                        operationKind: context.operationKind,
+                        repeatsPathsMutation: false,
+                    ),
+                    send: send,
+                )
+            } catch {
+                await send(completionAction(
+                    sourceURL.path,
+                    operationKind: context.operationKind,
+                    result: .failure(error.fileOpError),
+                ))
+                return nil
+            }
+        }
+
+        private func completionAction(
+            _ path: String,
+            operationKind: OperationKind,
+            result: Result<Void, FileOpError>,
+        ) -> EntryOperationsAction {
+            if mutationImpactDestinationPath == nil {
+                return .lifecycle(.operationFinished(path, operationKind, result))
+            }
+            return .lifecycle(.dropOperationFinished(path, operationKind, result))
+        }
+
+        private func mutate(sourceURL: URL, destinationURL: URL, isCopy: Bool) async throws {
+            if isCopy {
+                try await entryFileOpsClient.pasteFile(sourceURL, destinationURL)
+            } else {
+                try await entryFileOpsClient.moveFile(sourceURL, destinationURL)
+            }
+        }
+
+        private func finishSuccess(
+            sourceURL: URL,
+            destinationURL: URL,
+            context: SuccessContext,
+            send: Send<EntryOperationsAction>,
+        ) async -> EntryActionRecord.Target {
+            let mutatedPaths = [sourceURL.path, destinationURL.path]
+            await send(.lifecycle(.pathsMutated(mutatedPaths)))
+            if mutationImpactDestinationPath == nil {
+                entryFileOpsClient.postFileSystemChanged([
+                    sourceURL.deletingLastPathComponent().path,
+                    destinationURL.deletingLastPathComponent().path,
+                ])
+            }
+            if context.repeatsPathsMutation {
+                await send(.lifecycle(.pathsMutated(mutatedPaths)))
+            }
+            await send(completionAction(
+                context.finishPath,
+                operationKind: context.operationKind,
+                result: .success(()),
+            ))
+            return .init(beforePath: sourceURL.path, afterPath: destinationURL.path)
+        }
+    }
+
+    private struct OperationContext {
+        let isCopy: Bool
+        let operationKind: OperationKind
+    }
+
+    private struct SuccessContext {
+        let finishPath: String
+        let operationKind: OperationKind
+        let repeatsPathsMutation: Bool
+    }
+
+    static func uniqueSourceParentPaths(from targets: [EntryActionRecord.Target]) -> [String] {
+        var result: [String] = []
+
+        for target in targets {
+            guard let sourcePath = target.beforePath else { continue }
+            let parentPath = URL(fileURLWithPath: sourcePath).deletingLastPathComponent().path
+            if !result.contains(where: { EntryDropPathPolicy.areEquivalent($0, parentPath) }) {
+                result.append(parentPath)
+            }
+        }
+
+        return result
+    }
+
     static func avoidNameCollisions(
         sourcePaths: [String],
         destinationURL: URL,

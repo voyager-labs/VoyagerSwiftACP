@@ -14,6 +14,7 @@ public struct EntryOperationsState: Equatable {
     public var renamingItem: EntryModel?
 
     public var windowID: UUID?
+    public var undoOwnerID: UUID
     public var itemStates: [String: ItemOperationState] = [:]
     public var undoRecords: [EntryActionRecord] = []
     public var redoRecords: [EntryActionRecord] = []
@@ -27,9 +28,11 @@ public struct EntryOperationsState: Equatable {
     public var commonApplicationsForSelectedFiles: [ApplicationInfo] = []
     public var dropValidationResult: EntryDropValidationResult = .empty
 
-    public init() {}
+    public init(undoOwnerID: UUID = UUID()) {
+        self.undoOwnerID = undoOwnerID
+    }
 
-    public mutating func resetForDuplicate(windowID: UUID) {
+    public mutating func resetForDuplicate(windowID: UUID, undoOwnerID: UUID) {
         loadingContext = .init()
         isLoading = false
         isReloading = false
@@ -37,6 +40,7 @@ public struct EntryOperationsState: Equatable {
         renamingText = ""
         renamingItem = nil
         self.windowID = windowID
+        self.undoOwnerID = undoOwnerID
         itemStates = [:]
         undoRecords = []
         redoRecords = []

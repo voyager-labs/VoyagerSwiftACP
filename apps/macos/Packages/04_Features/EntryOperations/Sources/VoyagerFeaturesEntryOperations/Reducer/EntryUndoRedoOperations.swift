@@ -5,7 +5,8 @@ import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 
 @Reducer
-struct EntryUndoRedoOperationsReducer { typealias State = EntryOperationsState
+struct EntryUndoRedoOperationsReducer {
+    typealias State = EntryOperationsState
     typealias Action = EntryOperationsAction
 
     @Dependency(\.entryFileOpsClient)
@@ -30,18 +31,14 @@ struct EntryUndoRedoOperationsReducer { typealias State = EntryOperationsState
                 }
                 state.appendUndoRecord(record)
 
-                let windowID = state.windowID
+                guard let windowID = state.windowID else {
+                    return .none
+                }
+                let ownerID = state.undoOwnerID
                 return .run { [record] send in
-                    await undoManagerClient.registerUndo(
-                        windowID,
-                        record,
-                        { record in
-                            await send(.undoRedo(.undoEntryAction(record)))
-                        },
-                        { record in
-                            await send(.undoRedo(.redoEntryAction(record)))
-                        },
-                    )
+                    await undoManagerClient.registerUndo(windowID, ownerID, record)
+                    let availability = await undoManagerClient.availability(windowID)
+                    await send(.outcome(.undoManagerAvailabilityChanged(availability)))
                 }
 
             case .undoRedo(.requestUndo):
@@ -56,7 +53,7 @@ struct EntryUndoRedoOperationsReducer { typealias State = EntryOperationsState
 
                 let windowID = state.windowID
                 return .run { _ in
-                    await undoManagerClient.undo(windowID)
+                    _ = await undoManagerClient.undo(windowID)
                 }
 
             case .undoRedo(.requestRedo):
@@ -71,36 +68,42 @@ struct EntryUndoRedoOperationsReducer { typealias State = EntryOperationsState
 
                 let windowID = state.windowID
                 return .run { _ in
-                    await undoManagerClient.redo(windowID)
+                    _ = await undoManagerClient.redo(windowID)
                 }
 
             case let .undoRedo(.undoEntryAction(record: record)):
                 guard let latestRecord = state.latestUndoRecord, latestRecord.id == record.id else {
                     Self.logger.error("Undo unavailable: latest record mismatch")
-                    return .none
+                    return replayTerminalFailureEffect(direction: .undo, reason: .ownerRecordMismatch)
                 }
                 guard !state.isEntryActionBusy(record) else {
                     Self.logger.error("Undo unavailable: target is busy")
-                    return .none
+                    return replayTerminalFailureEffect(direction: .undo, reason: .ownerBusy)
                 }
 
                 _ = state.undoRecords.popLast()
                 state.redoRecords.append(latestRecord)
-                return .send(.undoRedo(.replayEntryAction(direction: .undo, record: latestRecord)))
+                return .merge(
+                    .send(.undoRedo(.replayEntryAction(direction: .undo, record: latestRecord))),
+                    availabilityEffect(windowID: state.windowID),
+                )
 
             case let .undoRedo(.redoEntryAction(record: record)):
                 guard let latestRecord = state.latestRedoRecord, latestRecord.id == record.id else {
                     Self.logger.error("Redo unavailable: latest record mismatch")
-                    return .none
+                    return replayTerminalFailureEffect(direction: .redo, reason: .ownerRecordMismatch)
                 }
                 guard !state.isEntryActionBusy(record) else {
                     Self.logger.error("Redo unavailable: target is busy")
-                    return .none
+                    return replayTerminalFailureEffect(direction: .redo, reason: .ownerBusy)
                 }
 
                 _ = state.redoRecords.popLast()
                 state.undoRecords.append(latestRecord)
-                return .send(.undoRedo(.replayEntryAction(direction: .redo, record: latestRecord)))
+                return .merge(
+                    .send(.undoRedo(.replayEntryAction(direction: .redo, record: latestRecord))),
+                    availabilityEffect(windowID: state.windowID),
+                )
 
             case let .undoRedo(.replayEntryAction(direction: direction, record: record)):
                 return replayEntryAction(record, direction: direction)
@@ -169,17 +172,36 @@ struct EntryUndoRedoOperationsReducer { typealias State = EntryOperationsState
         }
     }
 
+    private func availabilityEffect(windowID: UUID?) -> Effect<Action> {
+        .run { send in
+            let availability = await undoManagerClient.availability(windowID)
+            await send(.outcome(.undoManagerAvailabilityChanged(availability)))
+        }
+    }
+
+    private func replayTerminalFailureEffect(
+        direction: EntryActionDirection,
+        reason: EntryActionReplayFailureReason,
+        appliedTargets: [EntryActionRecord.Target] = [],
+    ) -> Effect<Action> {
+        .send(.outcome(.entryActionReplayFinished(
+            direction: direction,
+            terminal: .failure(reason: reason, appliedTargets: appliedTargets),
+        )))
+    }
+
     private func replayEntryAction(
         _ record: EntryActionRecord,
         direction: EntryActionDirection,
     ) -> Effect<Action> {
         .run { send in
-            do {
-                let targets = try await applyEntryActionTargets(
-                    record: record,
-                    direction: direction,
-                    send: send,
-                )
+            let result = await applyEntryActionTargets(
+                record: record,
+                direction: direction,
+                send: send,
+            )
+            switch result {
+            case let .success(targets):
                 let updatedRecord = EntryActionRecord(
                     operationKind: record.operationKind,
                     targets: targets,
@@ -187,29 +209,49 @@ struct EntryUndoRedoOperationsReducer { typealias State = EntryOperationsState
                     timestamp: record.timestamp,
                 )
                 await send(.undoRedo(.entryActionApplied(direction: direction, record: updatedRecord)))
-            } catch {
-                Self.logger.error("Replay entry action failed: \(error.localizedDescription, privacy: .public)")
+                await send(.outcome(.entryActionReplayFinished(
+                    direction: direction,
+                    terminal: .success(updatedRecord),
+                )))
+
+            case let .failure(appliedTargets):
+                await send(.outcome(.entryActionReplayFinished(
+                    direction: direction,
+                    terminal: .failure(reason: .operationFailed, appliedTargets: appliedTargets),
+                )))
             }
         }
+    }
+
+    private enum ApplyEntryActionTargetsResult {
+        case success([EntryActionRecord.Target])
+        case failure(appliedTargets: [EntryActionRecord.Target])
     }
 
     private func applyEntryActionTargets(
         record: EntryActionRecord,
         direction: EntryActionDirection,
         send: Send<Action>,
-    ) async throws -> [EntryActionRecord.Target] {
+    ) async -> ApplyEntryActionTargetsResult {
         guard !record.targets.isEmpty else {
-            throw FileOpError.system(message: "Entry action targets missing")
+            Self.logger.error("Replay entry action failed: targets missing")
+            return .failure(appliedTargets: [])
         }
 
         var updatedTargets: [EntryActionRecord.Target] = []
 
         for target in record.targets {
-            let operation = try makeEntryActionOperation(
-                record: record,
-                target: target,
-                direction: direction,
-            )
+            let operation: EntryActionOperation
+            do {
+                operation = try makeEntryActionOperation(
+                    record: record,
+                    target: target,
+                    direction: direction,
+                )
+            } catch {
+                Self.logger.error("Replay entry action failed: \(error.localizedDescription, privacy: .public)")
+                return .failure(appliedTargets: updatedTargets)
+            }
 
             await send(.lifecycle(.operationStarted(operation.operationPath, operation.operationKind)))
             do {
@@ -228,11 +270,12 @@ struct EntryUndoRedoOperationsReducer { typealias State = EntryOperationsState
                     operation.operationKind,
                     .failure(fileError),
                 )))
-                throw fileError
+                Self.logger.error("Replay entry action failed: \(fileError.localizedDescription, privacy: .public)")
+                return .failure(appliedTargets: updatedTargets)
             }
         }
 
-        return updatedTargets
+        return .success(updatedTargets)
     }
 
     private func makeEntryActionOperation(
