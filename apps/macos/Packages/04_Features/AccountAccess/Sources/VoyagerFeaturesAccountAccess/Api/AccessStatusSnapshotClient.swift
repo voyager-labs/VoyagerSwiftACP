@@ -174,7 +174,15 @@ actor AccessStatusSnapshotStore {
         gatewayBinding: String,
         generation: Int,
     ) {
-        guard let envelope = decodedEnvelope() else { return }
+        guard let envelope = decodedEnvelope() else {
+            persist(currentEnvelope(
+                sessionBindingID: sessionBindingID,
+                gatewayBinding: gatewayBinding,
+                mutationGeneration: generation,
+                snapshot: snapshot,
+            ))
+            return
+        }
         if envelope.isLegacy {
             persist(currentEnvelope(
                 sessionBindingID: sessionBindingID,
@@ -184,10 +192,11 @@ actor AccessStatusSnapshotStore {
             ))
             return
         }
-        guard envelope.sessionBindingID == sessionBindingID,
-              envelope.gatewayBinding == gatewayBinding,
-              generation >= envelope.mutationGeneration
-        else { return }
+        let identityMatches = envelope.sessionBindingID == sessionBindingID
+            && envelope.gatewayBinding == gatewayBinding
+        let advancesTombstone = envelope.snapshot == nil
+            && generation > envelope.mutationGeneration
+        guard (identityMatches && generation >= envelope.mutationGeneration) || advancesTombstone else { return }
         persist(currentEnvelope(
             sessionBindingID: sessionBindingID,
             gatewayBinding: gatewayBinding,
@@ -198,10 +207,9 @@ actor AccessStatusSnapshotStore {
 
     func remove(sessionBindingID: UUID?, gatewayBinding: String, generation: Int) {
         guard let envelope = decodedEnvelope() else {
-            guard sessionBindingID == nil else { return }
             persist(currentEnvelope(
-                sessionBindingID: nil,
-                gatewayBinding: "",
+                sessionBindingID: sessionBindingID,
+                gatewayBinding: sessionBindingID == nil ? "" : gatewayBinding,
                 mutationGeneration: generation + 1,
             ))
             return

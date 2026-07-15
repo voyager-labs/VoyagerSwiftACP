@@ -276,6 +276,134 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
         XCTAssertGreaterThan(replacement?.mutationGeneration ?? 0, 3)
     }
 
+    /// ACC-002-check_entitlement_status: load 없이 첫 verified snapshot을 저장할 수 있다.
+    /// 최초 sync가 load보다 먼저 완료되어도 현재 binding/gateway/generation envelope를 생성하는지 검증한다.
+    /// - 검증 내용: 빈 storage의 save가 snapshot과 caller generation을 가진 envelope를 영속화한다.
+    /// - 사전 조건: access status snapshot storage가 비어 있고 현재 binding과 gateway가 제공된다.
+    /// - 기대 결과: 이후 load가 동일한 snapshot, binding, generation을 반환한다.
+    func testSnapshotStoreSavesFirstVerifiedSnapshotWithoutPriorLoad() async {
+        let client = AccessStatusSnapshotClient(store: AccessStatusSnapshotStore(userDefaults: .testValue))
+        let binding = UUID()
+        let gatewayEnvironment = GatewayEnvironment(rawValue: "https://gateway.example.com")
+        let snapshot = AccessStatusSnapshot(status: .coreLicenseActive)
+
+        await client.save(snapshot, binding, gatewayEnvironment, 3)
+
+        let restored = await client.load(binding, gatewayEnvironment)
+        XCTAssertEqual(restored?.snapshot, snapshot)
+        XCTAssertEqual(restored?.sessionBindingID, binding)
+        XCTAssertEqual(restored?.mutationGeneration, 3)
+    }
+
+    /// ACC-002-check_entitlement_status: envelope 없는 sign-out은 늦은 save를 막는 tombstone을 남긴다.
+    /// snapshot을 아직 load하지 않은 sign-out 뒤에 이전 sync save가 도착해도 access fact가 복원되지 않는지 검증한다.
+    /// - 검증 내용: binding remove가 generation+1 tombstone을 저장하고 더 낮은 generation save를 거부한다.
+    /// - 사전 조건: storage가 비어 있고 binding의 remove generation은 4이며 늦은 save generation은 4다.
+    /// - 기대 결과: 같은 binding을 다시 load해도 snapshot은 nil이고 mutation generation은 5다.
+    func testSnapshotStoreNoEnvelopeRemoveRejectsLateStaleSave() async {
+        let client = AccessStatusSnapshotClient(store: AccessStatusSnapshotStore(userDefaults: .testValue))
+        let binding = UUID()
+        let gatewayEnvironment = GatewayEnvironment(rawValue: "https://gateway.example.com")
+        let snapshot = AccessStatusSnapshot(status: .coreLicenseActive)
+
+        await client.remove(binding, gatewayEnvironment, 4)
+        await client.save(snapshot, binding, gatewayEnvironment, 4)
+
+        let restored = await client.load(binding, gatewayEnvironment)
+        XCTAssertNil(restored?.snapshot)
+        XCTAssertEqual(restored?.sessionBindingID, binding)
+        XCTAssertEqual(restored?.mutationGeneration, 5)
+    }
+
+    /// ACC-002-check_entitlement_status: 저장된 snapshot은 같은 binding sign-out 뒤 제거된다.
+    /// 정상 save 뒤 remove가 동일 binding의 snapshot을 tombstone으로 바꾸는지 검증한다.
+    /// - 검증 내용: remove generation이 기존 envelope보다 높은 generation tombstone을 기록한다.
+    /// - 사전 조건: binding/gateway가 일치하는 generation 3 verified snapshot이 저장되어 있다.
+    /// - 기대 결과: 이후 load는 snapshot 없이 binding을 유지하고 generation은 4보다 크다.
+    func testSnapshotStoreSaveThenRemoveLeavesBindingTombstone() async {
+        let client = AccessStatusSnapshotClient(store: AccessStatusSnapshotStore(userDefaults: .testValue))
+        let binding = UUID()
+        let gatewayEnvironment = GatewayEnvironment(rawValue: "https://gateway.example.com")
+        let snapshot = AccessStatusSnapshot(status: .coreLicenseActive)
+
+        await client.save(snapshot, binding, gatewayEnvironment, 3)
+        await client.remove(binding, gatewayEnvironment, 4)
+
+        let restored = await client.load(binding, gatewayEnvironment)
+        XCTAssertNil(restored?.snapshot)
+        XCTAssertEqual(restored?.sessionBindingID, binding)
+        XCTAssertGreaterThan(restored?.mutationGeneration ?? 0, 4)
+    }
+
+    /// ACC-002-check_entitlement_status: binding mismatch와 낮은 generation save는 현재 snapshot을 변경하지 않는다.
+    /// 첫 save envelope가 생성된 뒤 기존 CAS guard가 계속 적용되는지 검증한다.
+    /// - 검증 내용: 다른 binding 및 낮은 generation save가 현재 envelope를 덮어쓰지 않는다.
+    /// - 사전 조건: binding A의 generation 5 snapshot이 저장되어 있고 binding B와 generation 4 save를 시도한다.
+    /// - 기대 결과: binding A의 generation 5 snapshot만 유지된다.
+    func testSnapshotStorePreservesMismatchAndGenerationGuardsAfterFirstSave() async {
+        let client = AccessStatusSnapshotClient(store: AccessStatusSnapshotStore(userDefaults: .testValue))
+        let bindingA = UUID()
+        let bindingB = UUID()
+        let gatewayEnvironment = GatewayEnvironment(rawValue: "https://gateway.example.com")
+        let currentSnapshot = AccessStatusSnapshot(status: .coreLicenseActive)
+        let staleSnapshot = AccessStatusSnapshot(status: .trialActive)
+
+        await client.save(currentSnapshot, bindingA, gatewayEnvironment, 5)
+        await client.save(staleSnapshot, bindingA, gatewayEnvironment, 4)
+        await client.save(staleSnapshot, bindingB, gatewayEnvironment, 6)
+
+        let restored = await client.load(bindingA, gatewayEnvironment)
+        XCTAssertEqual(restored?.snapshot, currentSnapshot)
+        XCTAssertEqual(restored?.sessionBindingID, bindingA)
+        XCTAssertEqual(restored?.mutationGeneration, 5)
+    }
+
+    /// ACC-002-check_entitlement_status: 더 높은 generation의 새 binding은 tombstone을 교체할 수 있다.
+    /// sign-out tombstone 뒤 새 account session이 저장될 때 이전 binding의 늦은 save가 새 snapshot을 되살리지 않는지 검증한다.
+    /// - 검증 내용: tombstone보다 큰 generation의 binding B save만 허용하고 binding A의 늦은 save는 거부한다.
+    /// - 사전 조건: binding A generation 4 snapshot을 remove해 generation 5 tombstone을 만들고 binding B generation 6 save를 시도한다.
+    /// - 기대 결과: binding B snapshot이 저장되고 generation 4 binding A save 뒤에도 binding B envelope가 유지된다.
+    func testSnapshotStoreHigherGenerationSaveReplacesTombstoneWithNewBinding() async {
+        let client = AccessStatusSnapshotClient(store: AccessStatusSnapshotStore(userDefaults: .testValue))
+        let bindingA = UUID()
+        let bindingB = UUID()
+        let gatewayEnvironment = GatewayEnvironment(rawValue: "https://gateway.example.com")
+        let snapshotA = AccessStatusSnapshot(status: .coreLicenseActive)
+        let snapshotB = AccessStatusSnapshot(status: .trialActive)
+
+        await client.save(snapshotA, bindingA, gatewayEnvironment, 4)
+        await client.remove(bindingA, gatewayEnvironment, 4)
+        await client.save(snapshotB, bindingB, gatewayEnvironment, 6)
+        await client.save(snapshotA, bindingA, gatewayEnvironment, 4)
+
+        let restored = await client.load(bindingB, gatewayEnvironment)
+        XCTAssertEqual(restored?.snapshot, snapshotB)
+        XCTAssertEqual(restored?.sessionBindingID, bindingB)
+        XCTAssertEqual(restored?.mutationGeneration, 6)
+    }
+
+    /// ACC-002-check_entitlement_status: nil sign-out tombstone도 더 높은 generation에서만 새 binding을 허용한다.
+    /// signed-out tombstone이 남아 있어도 새 session은 더 높은 generation으로만 snapshot을 저장할 수 있는지 검증한다.
+    /// - 검증 내용: generation 5 save는 nil tombstone generation 5에 거부되고 generation 6 save만 새 binding을 저장한다.
+    /// - 사전 조건: storage가 비어 있고 nil binding sign-out remove generation은 4다.
+    /// - 기대 결과: binding B generation 6 snapshot이 저장되고 같은 generation의 늦은 save는 tombstone을 교체하지 못한다.
+    func testSnapshotStoreNilSignOutTombstoneRequiresHigherGenerationForNewBinding() async {
+        let client = AccessStatusSnapshotClient(store: AccessStatusSnapshotStore(userDefaults: .testValue))
+        let binding = UUID()
+        let gatewayEnvironment = GatewayEnvironment(rawValue: "https://gateway.example.com")
+        let staleSnapshot = AccessStatusSnapshot(status: .coreLicenseActive)
+        let currentSnapshot = AccessStatusSnapshot(status: .trialActive)
+
+        await client.remove(nil, GatewayEnvironment(rawValue: ""), 4)
+        await client.save(staleSnapshot, binding, gatewayEnvironment, 5)
+        await client.save(currentSnapshot, binding, gatewayEnvironment, 6)
+
+        let restored = await client.load(binding, gatewayEnvironment)
+        XCTAssertEqual(restored?.snapshot, currentSnapshot)
+        XCTAssertEqual(restored?.sessionBindingID, binding)
+        XCTAssertEqual(restored?.mutationGeneration, 6)
+    }
+
     func testSnapshotStoreRejectsStaleSaveAndLateSaveAfterSignOut() async {
         let client = AccessStatusSnapshotClient(store: AccessStatusSnapshotStore(userDefaults: .testValue))
         let binding = UUID()
