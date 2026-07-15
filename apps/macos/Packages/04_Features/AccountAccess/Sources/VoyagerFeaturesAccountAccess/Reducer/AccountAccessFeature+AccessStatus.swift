@@ -169,11 +169,40 @@ extension AccountAccessFeature {
         state.inFlightSyncReason = reason
         state.isSubmitting = true
         state.errorMessage = nil
+        let requestGeneration = state.syncGeneration
+        let binding = state.sessionBindingID
+        return .run { [snapshotClient] send in
+            let mutationGeneration = await snapshotClient.activate(binding, Self.gatewayEnvironment)
+            guard !Task.isCancelled else { return }
+            await send(._sessionSyncActivationCompleted(AccountAccessSessionSyncActivationCompletion(
+                requestGeneration: requestGeneration,
+                binding: binding,
+                intent: intent,
+                reason: reason,
+                mutationGeneration: mutationGeneration,
+            )))
+        }
+        .cancellable(id: CancelID.sessionSync, cancelInFlight: true)
+    }
+
+    func handleSessionSyncActivationCompleted(
+        _ state: inout State,
+        completion: AccountAccessSessionSyncActivationCompletion,
+    ) -> Effect<Action> {
+        guard completion.requestGeneration == state.syncGeneration,
+              completion.binding == state.sessionBindingID,
+              state.hasAccountSession,
+              !state.isSessionExpired
+        else {
+            return .none
+        }
+
+        state.syncGeneration = max(state.syncGeneration, UInt64(clamping: completion.mutationGeneration))
         return sessionSyncEffect(
-            intent: intent,
-            reason: reason,
+            intent: completion.intent,
+            reason: completion.reason,
             generation: state.syncGeneration,
-            binding: state.sessionBindingID,
+            binding: completion.binding,
         )
     }
 

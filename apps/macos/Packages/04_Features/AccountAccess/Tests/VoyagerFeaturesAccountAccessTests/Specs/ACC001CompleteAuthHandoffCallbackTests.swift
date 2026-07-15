@@ -336,6 +336,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             state.inFlightSyncReason = .login
             state.isSubmitting = true
         }
+        await store.receive(\._sessionSyncActivationCompleted)
         await store.receive(\._sessionSyncCompleted) { state in
             state.inFlightSyncReason = nil
             state.status = .coreLicenseActive
@@ -463,6 +464,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             state.inFlightSyncReason = .login
             state.isSubmitting = true
         }
+        await store.receive(\._sessionSyncActivationCompleted)
         await store.receive(\._sessionSyncCompleted) { state in
             state.inFlightSyncReason = nil
             state.status = .coreLicenseActive
@@ -683,6 +685,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.inFlightSyncReason = .login
             state.isSubmitting = true
         }
+        await store.receive(\._sessionSyncActivationCompleted)
         await store.receive(\._sessionSyncCompleted) { state in
             state.inFlightSyncReason = nil
             state.status = .coreLicenseActive
@@ -762,6 +765,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.inFlightSyncReason = .login
             state.isSubmitting = true
         }
+        await store.receive(\._sessionSyncActivationCompleted)
         await store.receive(\._sessionSyncCompleted) { state in
             state.inFlightSyncReason = nil
             state.status = .coreLicenseActive
@@ -862,6 +866,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.inFlightSyncReason = .login
             state.isSubmitting = true
         }
+        await store.receive(\._sessionSyncActivationCompleted)
         await store.receive(\._sessionSyncCompleted) { state in
             state.inFlightSyncReason = nil
             state.status = .coreLicenseActive
@@ -953,6 +958,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.inFlightSyncReason = .login
             state.isSubmitting = true
         }
+        await store.receive(\._sessionSyncActivationCompleted)
         await store.receive(\._sessionSyncCompleted) { state in
             state.inFlightSyncReason = nil
             state.status = .coreLicenseActive

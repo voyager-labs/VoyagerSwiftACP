@@ -41,6 +41,28 @@ public struct AccountAccessHandoffCompletion: Equatable, Sendable {
     }
 }
 
+public struct AccountAccessSessionSyncActivationCompletion: Equatable, Sendable {
+    public let requestGeneration: UInt64
+    public let binding: UUID?
+    public let intent: SessionSyncIntent
+    public let reason: SyncReason
+    public let mutationGeneration: Int
+
+    public init(
+        requestGeneration: UInt64,
+        binding: UUID?,
+        intent: SessionSyncIntent,
+        reason: SyncReason,
+        mutationGeneration: Int,
+    ) {
+        self.requestGeneration = requestGeneration
+        self.binding = binding
+        self.intent = intent
+        self.reason = reason
+        self.mutationGeneration = mutationGeneration
+    }
+}
+
 @CasePathable
 public enum AccountAccessAction: CasePathable, Sendable {
     case onAppear
@@ -65,6 +87,7 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case _onAppearSessionRestored(AccountSessionRestoration)
     case _loginSessionRestored(AccountSessionRestoration)
     case sessionSyncRequested(intent: SessionSyncIntent, reason: SyncReason)
+    case _sessionSyncActivationCompleted(AccountAccessSessionSyncActivationCompletion)
     case _sessionSyncCompleted(
         generation: UInt64,
         binding: UUID? = nil,

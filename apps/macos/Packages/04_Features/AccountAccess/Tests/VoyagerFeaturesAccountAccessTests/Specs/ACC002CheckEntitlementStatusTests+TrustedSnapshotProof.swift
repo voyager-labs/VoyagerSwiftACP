@@ -310,6 +310,7 @@ extension ACC002CheckEntitlementStatusTests {
         } withDependencies: {
             $0.date = .constant(now)
             $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                activate: { _, _ in 0 },
                 load: { _, _ in nil },
                 save: { snapshot, _, _, _ in savedSnapshots.append(snapshot) },
                 remove: { _, _, _ in },
@@ -363,6 +364,7 @@ extension ACC002CheckEntitlementStatusTests {
         } withDependencies: {
             $0.date = .constant(now)
             $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                activate: { _, _ in 0 },
                 load: { _, _ in nil },
                 save: { _, _, _, _ in XCTFail("inactive sync must not save a trusted snapshot") },
                 remove: { binding, environment, generation in removeCalls.append((binding, environment, generation)) },

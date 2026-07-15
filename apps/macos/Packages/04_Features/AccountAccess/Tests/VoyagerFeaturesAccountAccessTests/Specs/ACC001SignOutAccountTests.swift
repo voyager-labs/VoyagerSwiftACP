@@ -520,6 +520,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
         } withDependencies: {
             $0.accountSessionClient = AccountSessionClient(read: { _ in nil }, persist: { _ in }, delete: { _ in })
             $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                activate: { _, _ in 0 },
                 load: { _, _ in nil },
                 save: { _, _, _, _ in },
                 remove: { binding, environment, generation in

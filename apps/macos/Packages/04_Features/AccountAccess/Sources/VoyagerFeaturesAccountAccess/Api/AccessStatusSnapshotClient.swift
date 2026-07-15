@@ -4,6 +4,7 @@ import VoyagerEntitiesAppPreferences
 import VoyagerShared
 
 public struct AccessStatusSnapshotClient: Sendable {
+    var activate: @Sendable (_ sessionBindingID: UUID?, _ environment: GatewayEnvironment) async -> Int
     var load: @Sendable (_ sessionBindingID: UUID?, _ environment: GatewayEnvironment) async
         -> AccessStatusSnapshotEnvelope?
     var save: @Sendable (
@@ -16,6 +17,7 @@ public struct AccessStatusSnapshotClient: Sendable {
         -> Void
 
     init(
+        activate: @escaping @Sendable (_ sessionBindingID: UUID?, _ environment: GatewayEnvironment) async -> Int,
         load: @escaping @Sendable (_ sessionBindingID: UUID?, _ environment: GatewayEnvironment) async
             -> AccessStatusSnapshotEnvelope?,
         save: @escaping @Sendable (
@@ -31,6 +33,7 @@ public struct AccessStatusSnapshotClient: Sendable {
         ) async
             -> Void,
     ) {
+        self.activate = activate
         self.load = load
         self.save = save
         self.remove = remove
@@ -38,6 +41,9 @@ public struct AccessStatusSnapshotClient: Sendable {
 
     init(store: AccessStatusSnapshotStore) {
         self.init(
+            activate: { sessionBindingID, environment in
+                await store.activate(sessionBindingID: sessionBindingID, gatewayBinding: environment.binding)
+            },
             load: { sessionBindingID, environment in
                 await store.load(sessionBindingID: sessionBindingID, gatewayBinding: environment.binding)
             },
@@ -60,11 +66,13 @@ public struct AccessStatusSnapshotClient: Sendable {
     }
 
     public init(
+        activate: @escaping @Sendable () async -> Int,
         load: @escaping @Sendable () async -> AccessStatusSnapshot?,
         save: @escaping @Sendable (_ snapshot: AccessStatusSnapshot) async -> Void,
         remove: @escaping @Sendable () async -> Void,
     ) {
         self.init(
+            activate: { _, _ in await activate() },
             load: { _, _ in
                 guard let snapshot = await load() else { return nil }
                 return AccessStatusSnapshotEnvelope(
@@ -80,6 +88,19 @@ public struct AccessStatusSnapshotClient: Sendable {
             remove: { _, _, _ in
                 await remove()
             },
+        )
+    }
+
+    public init(
+        load: @escaping @Sendable () async -> AccessStatusSnapshot?,
+        save: @escaping @Sendable (_ snapshot: AccessStatusSnapshot) async -> Void,
+        remove: @escaping @Sendable () async -> Void,
+    ) {
+        self.init(
+            activate: { 0 },
+            load: load,
+            save: save,
+            remove: remove,
         )
     }
 }
@@ -166,6 +187,31 @@ actor AccessStatusSnapshotStore {
             return activated
         }
         return envelope
+    }
+
+    func activate(sessionBindingID: UUID?, gatewayBinding: String) -> Int {
+        guard let envelope = decodedEnvelope() else {
+            let activated = currentEnvelope(
+                sessionBindingID: sessionBindingID,
+                gatewayBinding: gatewayBinding,
+                mutationGeneration: 0,
+            )
+            persist(activated)
+            return activated.mutationGeneration
+        }
+        guard !envelope.isLegacy,
+              envelope.sessionBindingID == sessionBindingID,
+              envelope.gatewayBinding == gatewayBinding
+        else {
+            let activated = currentEnvelope(
+                sessionBindingID: sessionBindingID,
+                gatewayBinding: gatewayBinding,
+                mutationGeneration: envelope.mutationGeneration + 1,
+            )
+            persist(activated)
+            return activated.mutationGeneration
+        }
+        return envelope.mutationGeneration
     }
 
     func save(
@@ -261,6 +307,7 @@ actor AccessStatusSnapshotStore {
     }
 
     private func persist(_ envelope: AccessStatusSnapshotEnvelope) {
+        guard !Task.isCancelled else { return }
         guard let data = try? JSONEncoder().encode(envelope) else { return }
         userDefaults.setObject(data, SettingsKeys.accessStatusSnapshot)
     }
@@ -274,11 +321,7 @@ extension AccessStatusSnapshotClient: DependencyKey {
     }
 
     nonisolated public static var testValue: AccessStatusSnapshotClient {
-        AccessStatusSnapshotClient(
-            load: { nil },
-            save: { _ in },
-            remove: {},
-        )
+        AccessStatusSnapshotClient(activate: { 0 }, load: { nil }, save: { _ in }, remove: {})
     }
 
     nonisolated public static var previewValue: AccessStatusSnapshotClient {

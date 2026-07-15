@@ -438,7 +438,9 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         await store.receive(\.delegate.signedOut)
         await store.finish()
     }
+}
 
+extension ACC001ValidateAccountSessionTests {
     /// ACC-001-validate_account_session: ambiguous refresh transport failure는 같은 request ID로 5초 안에 한 번 재시도한다.
     /// - 검증 내용: 첫 upstream timeout 뒤 TestClock 5초에서 두 번째 refresh가 같은 request ID를 사용한다.
     /// - 사전 조건: refresh deadline으로 시작한 로그인 세션과 첫 호출에서 upstream(0)을 throw하는 client.
@@ -537,14 +539,10 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
                     throw SessionSyncError.upstream(503)
                 },
             )
-            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
-                load: { _, _ in
-                    loadedSnapshots += 1
-                    return cachedEnvelope
-                },
-                save: { _, _, _, _ in },
-                remove: { _, _, _ in },
-            )
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(activate: { _, _ in 0 }, load: { _, _ in
+                loadedSnapshots += 1
+                return cachedEnvelope
+            }, save: { _, _, _, _ in }, remove: { _, _, _ in })
             $0.continuousClock = clock
             $0.date = .constant(referenceDate)
         }
@@ -619,14 +617,10 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
                     throw SessionSyncError.upstream(503)
                 },
             )
-            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
-                load: { _, _ in
-                    loadedSnapshots += 1
-                    return envelope
-                },
-                save: { _, _, _, _ in },
-                remove: { _, _, _ in },
-            )
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(activate: { _, _ in 0 }, load: { _, _ in
+                loadedSnapshots += 1
+                return envelope
+            }, save: { _, _, _, _ in }, remove: { _, _, _ in })
             $0.continuousClock = clock
             $0.date = .constant(referenceDate)
         }
@@ -636,6 +630,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
             state.inFlightSyncReason = .manual
             state.isSubmitting = true
         }
+        await store.receive(\._sessionSyncActivationCompleted)
         for _ in 0 ..< 10 where attempts < 1 {
             await Task.yield()
         }
@@ -1184,6 +1179,40 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
     }
 }
 
+private actor ActivationGate {
+    private var continuation: CheckedContinuation<Int, Never>?
+
+    func wait() async -> Int {
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func resume(with generation: Int) {
+        continuation?.resume(returning: generation)
+        continuation = nil
+    }
+}
+
+private actor SyncRecorder {
+    private var callCount = 0
+    private var savedGenerations: [Int] = []
+
+    func recordSync() {
+        callCount += 1
+    }
+
+    func recordSave(_ generation: Int) {
+        savedGenerations.append(generation)
+    }
+
+    func syncCallCount() -> Int {
+        callCount
+    }
+
+    func saved() -> [Int] {
+        savedGenerations
+    }
+}
+
 private enum StorageReadError: Error {
     case unavailable
 }
@@ -1326,6 +1355,115 @@ extension ACC001ValidateAccountSessionTests {
         XCTAssertFalse(fetchCalled)
         await store.send(.signOut)
         await store.receive(\.delegate.signedOut)
+        await store.finish()
+    }
+}
+
+extension ACC001ValidateAccountSessionTests {
+    // MARK: - ACC-001-session_sync_activation
+
+    /// ACC-001-session_sync_activation: activation 완료 전에는 auth network sync를 시작하지 않고 persisted generation으로 reseed한다.
+    /// - 검증 내용: activation gate가 열린 뒤에만 sync가 호출되고, 완료 snapshot save는 activation generation을 사용한다.
+    /// - 사전 조건: 재시작 뒤 reducer generation보다 높은 persisted mutation generation과 binding된 유효 session.
+    /// - 기대 결과: network sync와 save가 generation 77에서 실행된다.
+    func testSessionSyncActivationReseedsBeforeNetworkAndSnapshotSave() async {
+        let binding = UUID()
+        let activationGate = ActivationGate()
+        let recorder = SyncRecorder()
+        var state = sessionNearExpiryState()
+        state.sessionBindingID = binding
+        let store = TestStore(initialState: state) {
+            AccountAccessFeature()
+        } withDependencies: {
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                activate: { _, _ in await activationGate.wait() },
+                load: { _, _ in nil },
+                save: { _, _, _, generation in await recorder.recordSave(generation) },
+                remove: { _, _, _ in },
+            )
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in throw DeviceBindingError.notConfigured },
+                refreshToken: { throw AccessError.notConfigured },
+                syncSession: { _, _ in
+                    await recorder.recordSync()
+                    return Self.activeCompleteSyncResult
+                },
+            )
+            $0.date = .constant(referenceDate)
+        }
+        // store.exhaustivity = .off: activation 이후 complete sync의 snapshot projection보다 generation reseed와 호출 순서를 검증
+        store.exhaustivity = .off
+
+        await store.send(.sessionSyncRequested(intent: .validate, reason: .manual))
+        let syncCallCountBeforeActivation = await recorder.syncCallCount()
+        XCTAssertEqual(syncCallCountBeforeActivation, 0)
+
+        await activationGate.resume(with: 77)
+        await store.receive(\._sessionSyncActivationCompleted)
+        await store.receive(\._sessionSyncCompleted)
+        await store.receive(\.delegate.unlocked)
+
+        XCTAssertEqual(store.state.syncGeneration, 77)
+        let syncCallCount = await recorder.syncCallCount()
+        let savedGenerations = await recorder.saved()
+        XCTAssertEqual(syncCallCount, 1)
+        XCTAssertEqual(savedGenerations, [77])
+        await store.finish()
+    }
+
+    /// ACC-001-session_sync_activation: logout 중 activation 완료는 stale no-op이며 network sync를 시작하지 않는다.
+    /// - 검증 내용: activation 대기 중 sign-out 뒤 도착한 completion이 state, sync, save를 변경하지 않는다.
+    /// - 사전 조건: binding된 유효 session의 manual sync activation이 보류되어 있다.
+    /// - 기대 결과: signed-out 상태를 유지하고 auth network 호출은 없다.
+    func testLogoutDuringSessionSyncActivationDropsLateCompletionWithoutNetworkSync() async {
+        let binding = UUID()
+        let activationGate = ActivationGate()
+        let recorder = SyncRecorder()
+        var state = sessionNearExpiryState()
+        state.sessionBindingID = binding
+        let store = TestStore(initialState: state) {
+            AccountAccessFeature()
+        } withDependencies: {
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                activate: { _, _ in await activationGate.wait() },
+                load: { _, _ in nil },
+                save: { _, _, _, generation in await recorder.recordSave(generation) },
+                remove: { _, _, _ in },
+            )
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in throw DeviceBindingError.notConfigured },
+                refreshToken: { throw AccessError.notConfigured },
+                syncSession: { _, _ in
+                    await recorder.recordSync()
+                    return Self.activeCompleteSyncResult
+                },
+            )
+            $0.date = .constant(referenceDate)
+        }
+        // store.exhaustivity = .off: sign-out cleanup의 presentation 세부보다 stale activation completion 차단을 검증
+        store.exhaustivity = .off
+
+        await store.send(.sessionSyncRequested(intent: .validate, reason: .manual))
+        await store.send(.signOut)
+        await store.receive(\.delegate.signedOut)
+        await activationGate.resume(with: 77)
+        await store.send(._sessionSyncActivationCompleted(AccountAccessSessionSyncActivationCompletion(
+            requestGeneration: 1,
+            binding: binding,
+            intent: .validate,
+            reason: .manual,
+            mutationGeneration: 77,
+        )))
+
+        XCTAssertFalse(store.state.hasAccountSession)
+        let syncCallCount = await recorder.syncCallCount()
+        let savedGenerations = await recorder.saved()
+        XCTAssertEqual(syncCallCount, 0)
+        XCTAssertEqual(savedGenerations, [])
         await store.finish()
     }
 }

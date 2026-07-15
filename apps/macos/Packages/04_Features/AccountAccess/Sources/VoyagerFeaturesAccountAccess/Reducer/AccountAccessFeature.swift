@@ -120,6 +120,9 @@ public struct AccountAccessFeature {
             case let .sessionSyncRequested(intent, reason):
                 return requestSessionSync(&state, intent: intent, reason: reason)
 
+            case let ._sessionSyncActivationCompleted(completion):
+                return handleSessionSyncActivationCompleted(&state, completion: completion)
+
             case let ._sessionSyncCompleted(generation, binding, result):
                 return handleSessionSyncCompleted(&state, generation: generation, binding: binding, result: result)
 
