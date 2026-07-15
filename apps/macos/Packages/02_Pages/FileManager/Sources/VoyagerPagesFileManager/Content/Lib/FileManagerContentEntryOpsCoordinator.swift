@@ -144,6 +144,9 @@ enum FileManagerContentEntryOpsCoordinator {
         entries: [EntryModel],
         state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
+        if case let .folder(path) = state.navigation.navigationState {
+            state.completedDirectorySnapshotPath = path
+        }
         guard applyPendingSelectionForLoadedEntries(entries: entries, state: &state) else {
             return .none
         }

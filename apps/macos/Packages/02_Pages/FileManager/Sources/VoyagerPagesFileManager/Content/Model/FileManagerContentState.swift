@@ -17,6 +17,7 @@ public struct FileManagerContentState: Equatable {
     public var aiChat: AiChatFeature.State = .init()
     /// 외부에서 오픈 요청된 파일의 선택 focus ID (itemsLoaded 후 소비됨)
     public var pendingSelectEntryID: String?
+    var completedDirectorySnapshotPath: String?
 
     var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
     var homeLocationItems: [FileManagerFixedLocationItem] = []
@@ -30,6 +31,13 @@ public struct FileManagerContentState: Equatable {
 
     var isCollectionMode: Bool {
         entryViewLayout.isCollectionMode
+    }
+
+    var isOrdinaryDirectoryLoading: Bool {
+        !composer.isCollectionSearching
+            && !entryViewLayout.isCollectionContentLoading
+            && entryViewLayout.entryOperations.isLoading
+            && !isCollectionMode
     }
 
     mutating func syncComposerCollectionState() {

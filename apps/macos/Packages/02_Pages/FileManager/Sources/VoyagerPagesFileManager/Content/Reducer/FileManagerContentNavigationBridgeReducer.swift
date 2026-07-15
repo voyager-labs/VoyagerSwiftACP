@@ -29,6 +29,7 @@ struct FileManagerContentNavigationBridgeReducer {
         Reduce { state, action in
             switch action {
             case let .internal(.applyNavigationState(navigationState)):
+                state.completedDirectorySnapshotPath = nil
                 let scrollPositionKey = scrollPositionKey(for: navigationState)
                 state.entryViewLayout.currentPath = scrollPositionKey
                 state.entryViewLayout.savedScrollOffset = state.navigation.scrollPositions[scrollPositionKey]
