@@ -89,9 +89,9 @@ final class EntitlementAccessFlowTests: XCTestCase {
 
     /// ACC-002-handle_entitlement_change: trial 만료는 이미 열린 gate를 다시 잠근다.
     /// 활성 trial 결과 뒤 만료 entitlement snapshot이 lifecycle guard로 재투영되는지를 검증한다.
-    /// - 검증 내용: trial active는 granted를 유지하고 trial expired sync 결과는 recoveryRequired와 inactive projection으로 전환한다.
+    /// - 검증 내용: trial active는 granted를 유지하고 trial expired sync 결과는 recoveryRequired와 expired projection으로 전환한다.
     /// - 사전 조건: verified trial snapshot으로 granted 상태이며 다음 sync generation은 1이다.
-    /// - 기대 결과: access status는 trialExpired, gate는 recoveryRequired, Settings entitlement axis는 inactive다.
+    /// - 기대 결과: access status는 trialExpired, gate는 recoveryRequired, Settings entitlement axis는 entitlementExpired다.
     func testTrialUnlocksThenExpiryRelocksCanonicalGate() async {
         let activeSnapshot = AccessStatusSnapshot(
             status: .trialActive,
@@ -120,17 +120,17 @@ final class EntitlementAccessFlowTests: XCTestCase {
 
         XCTAssertEqual(store.state.lifecycle.accountAccess.status, .trialExpired)
         XCTAssertEqual(store.state.lifecycle.accessGatePhase, .recoveryRequired)
-        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementInactive)
+        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementExpired)
         await store.finish()
     }
 
     // FLOW-PATH: entitlement_change
 
     /// ACC-002-handle_entitlement_change: entitlement 변경은 gate와 Settings 상태를 같은 canonical child에서 다시 계산한다.
-    /// active entitlement가 inactive 상태로 바뀔 때 surface projection이 stale active로 남지 않는지 검증한다.
-    /// - 검증 내용: inactive sync completion이 lifecycle recovery delegate와 Settings inactive projection을 발행한다.
+    /// active entitlement가 revoked 상태로 바뀔 때 surface projection이 stale active로 남지 않는지 검증한다.
+    /// - 검증 내용: revoked sync completion이 lifecycle recovery delegate와 Settings revoked projection을 발행한다.
     /// - 사전 조건: core license가 granted 상태이고 entitlement refresh generation은 1이다.
-    /// - 기대 결과: gate는 recoveryRequired이며 Settings entitlement axis는 entitlementInactive다.
+    /// - 기대 결과: gate는 recoveryRequired이며 Settings entitlement axis는 entitlementRevoked다.
     func testEntitlementChangeReprojectsGateAndSettingsState() async {
         let revokedSyncResult = makeSyncResult(status: "revoked", hasAccess: false)
         var initialState = AppRootFeature.State()
@@ -152,7 +152,7 @@ final class EntitlementAccessFlowTests: XCTestCase {
 
         XCTAssertEqual(store.state.lifecycle.accessGatePhase, .recoveryRequired)
         XCTAssertEqual(store.state.lifecycle.accountAccess.status, .revoked)
-        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementInactive)
+        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementRevoked)
         await store.finish()
     }
 
@@ -228,7 +228,7 @@ final class EntitlementAccessFlowTests: XCTestCase {
                 directFetchCount.withValue { $0 += 1 }
                 return AccessStatusResponse(hasAccess: false, status: "trial_expired", productKey: "trial")
             }
-            $0.accountSessionClient.read = { nil }
+            $0.accountSessionClient.read = { _ in nil }
             $0.date = .constant(Date(timeIntervalSince1970: 0))
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.onboardingWindowClient.isRequired = { true }
@@ -430,8 +430,11 @@ final class EntitlementAccessFlowTests: XCTestCase {
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.onboardingWindowClient.isRequired = { false }
             $0.accountSessionClient.delete = { _ in }
-            $0.accessStatusSnapshotClient.save = { _ in }
-            $0.accessStatusSnapshotClient.remove = {}
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                load: { nil },
+                save: { _ in },
+                remove: {},
+            )
             $0.notificationCenterClient.notifications = { _, _ in
                 AsyncStream { $0.finish() }
             }

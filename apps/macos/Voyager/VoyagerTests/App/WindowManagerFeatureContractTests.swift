@@ -1,7 +1,9 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
+import VoyagerEntitiesTag
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
@@ -1906,6 +1908,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.uuid = .constant(windowID)
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.fileManagerBuiltInCollectionClient = .liveValue
+            $0.builtInCollectionClient = .liveValue
             $0.collectionFileClient = .liveValue
             $0.contentTabPinnedRecordClient = pinnedRecordClient
             $0.fileManagerClient = fileManagerClient

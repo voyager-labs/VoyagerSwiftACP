@@ -274,8 +274,11 @@ final class AccountSettingsFlowTests: XCTestCase {
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.onboardingWindowClient.isRequired = { false }
             $0.accountSessionClient.delete = { _ in }
-            $0.accessStatusSnapshotClient.save = { _ in }
-            $0.accessStatusSnapshotClient.remove = {}
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                load: { nil },
+                save: { _ in },
+                remove: {},
+            )
             $0.signInHandoffClient = SignInHandoffClient { _ in .failure }
             $0.notificationCenterClient.notifications = { _, _ in
                 AsyncStream { $0.finish() }
