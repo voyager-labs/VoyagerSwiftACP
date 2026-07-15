@@ -39,9 +39,9 @@ pre-commit:
     sisyphus-artifacts-guard:
       run: |
         staged=$(git diff --cached --name-only)
-        if echo "$staged" | grep -qE '^\.sisyphus/'; then
-          echo "ERROR: .sisyphus/ paths are staged for commit. These are local-only agent harness artifacts." >&2
-          echo "Run: git reset HEAD -- .sisyphus/" >&2
+        if echo "$staged" | grep -qE '^(\.sisyphus|\.omx)/'; then
+          echo "ERROR: .sisyphus/ or .omx/ paths are staged for commit. These are local-only agent harness artifacts." >&2
+          echo "Run: git reset HEAD -- .sisyphus/ .omx/" >&2
           exit 1
         fi
     agent-harness:
