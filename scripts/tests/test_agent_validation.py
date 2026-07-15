@@ -245,6 +245,50 @@ class AgentValidationTests(unittest.TestCase):
 
         self.assert_exact_diagnostic(result, payload, "HARNESS_DEAD_REFERENCE")
 
+    def test_deleted_agent_reference_target_checks_unchanged_referrer(self) -> None:
+        temp = self.make_repo()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        self.write(
+            root,
+            ".agents/skills/fixture/SKILL.md",
+            "[guide](references/guide.md)\n",
+        )
+        self.write(root, ".agents/skills/fixture/references/guide.md", "# Guide\n")
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "fixture"], cwd=root, check=True)
+        base_ref = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        (root / ".agents/skills/fixture/references/guide.md").unlink()
+        subprocess.run(["git", "add", "-u"], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "delete guide"], cwd=root, check=True)
+
+        result, payload = self.run_cli(VALIDATE, root, "--base-ref", base_ref)
+
+        self.assert_exact_diagnostic(result, payload, "HARNESS_DEAD_REFERENCE")
+
+    def test_nested_rule_directories_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(root, ".agents/rules/domain/00-fixture.md", RULE)
+            result, payload = self.run_cli(VALIDATE, root, "--all")
+
+        self.assert_exact_diagnostic(result, payload, "HARNESS_INVALID_PLACEMENT")
+
+    def test_all_scope_excludes_common_submodule_contents(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write(root, ".agents/skills/common/fixture/evals.json", "{")
+            result, payload = self.run_cli(VALIDATE, root, "--all")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(payload["diagnostics"], [])
+
     def test_omx_artifacts_are_allowed_locally_and_rejected_when_staged(self) -> None:
         temp = self.make_repo()
         self.addCleanup(temp.cleanup)

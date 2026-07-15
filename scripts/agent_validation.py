@@ -42,20 +42,31 @@ def git_paths(root: Path, mode: str, base_ref: str | None) -> set[str]:
         return {
             path.relative_to(root).as_posix()
             for path in root.rglob("*")
-            if path.is_file() and ".git" not in path.parts
+            if path.is_file()
+            and ".git" not in path.parts
+            and not path.is_relative_to(root / ".agents/skills/common")
         }
     if mode == "staged":
-        command = ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"]
+        command = ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMRD"]
+        deleted_command = ["git", "diff", "--cached", "--name-only", "--diff-filter=D"]
     elif mode == "base-ref":
         command = [
             "git",
             "diff",
             "--name-only",
-            "--diff-filter=ACMR",
+            "--diff-filter=ACMRD",
+            f"{base_ref}...HEAD",
+        ]
+        deleted_command = [
+            "git",
+            "diff",
+            "--name-only",
+            "--diff-filter=D",
             f"{base_ref}...HEAD",
         ]
     else:
         command = ["git", "status", "--porcelain"]
+        deleted_command = None
 
     completed = subprocess.run(
         command, cwd=root, text=True, capture_output=True, check=False
@@ -65,7 +76,27 @@ def git_paths(root: Path, mode: str, base_ref: str | None) -> set[str]:
             completed.stderr.strip() or "could not determine validation scope"
         )
     if mode != "working-tree":
-        return {line for line in completed.stdout.splitlines() if line}
+        paths = {line for line in completed.stdout.splitlines() if line}
+        if deleted_command is not None:
+            deleted = subprocess.run(
+                deleted_command,
+                cwd=root,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            if deleted.returncode != 0:
+                raise RuntimeError(
+                    deleted.stderr.strip() or "could not determine deleted paths"
+                )
+            deleted_paths = {
+                (root / line).resolve()
+                for line in deleted.stdout.splitlines()
+                if line.startswith(".agents/") and line.endswith(".md")
+            }
+            if deleted_paths:
+                paths.update(markdown_referrers(root, deleted_paths))
+        return paths
 
     paths: set[str] = set()
     for line in completed.stdout.splitlines():
@@ -121,14 +152,17 @@ def validate_harness(root: Path, paths: set[str], mode: str) -> list[Diagnostic]
             continue
         if not path.is_file():
             continue
-        if path_string.startswith(".agents/rules/voyager/"):
+        if (
+            path_string.startswith(".agents/rules/")
+            and len(Path(path_string).relative_to(".agents/rules").parts) > 1
+        ):
             diagnostics.append(
                 diagnostic(
                     path,
                     root,
                     1,
                     "HARNESS_INVALID_PLACEMENT",
-                    "rules must use an established domain directory",
+                    "rules must live directly under .agents/rules",
                 )
             )
         if path.name == "SKILL.md" and not re.fullmatch(
@@ -267,6 +301,32 @@ def validate_markdown_references(root: Path, path: Path, text: str) -> list[Diag
                     )
                 )
     return diagnostics
+
+
+def markdown_referrers(root: Path, deleted_paths: set[Path]) -> set[str]:
+    referrers: set[str] = set()
+    for directory in (root / ".agents/rules", root / ".agents/skills"):
+        if not directory.is_dir():
+            continue
+        for path in directory.rglob("*.md"):
+            if path.is_relative_to(root / ".agents/skills/common"):
+                continue
+            for line in path.read_text(encoding="utf-8").splitlines():
+                targets = [str(target) for target in MARKDOWN_LINK.findall(line)]
+                targets += [str(target) for target in SKILL_PATH_LITERAL.findall(line)]
+                resolved_targets = {
+                    (
+                        root / target
+                        if target.startswith(".agents/")
+                        else path.parent / target
+                    ).resolve()
+                    for target in targets
+                    if "<" not in target and ">" not in target
+                }
+                if resolved_targets & deleted_paths:
+                    referrers.add(path.relative_to(root).as_posix())
+                    break
+    return referrers
 
 
 def verify_plans(root: Path, paths: set[str]) -> list[Diagnostic]:
