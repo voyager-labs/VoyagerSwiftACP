@@ -186,9 +186,9 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     }
 
     /// FMW-001-request_undo: terminal이 invocation result보다 먼저 도착해도 late result는 무시됨
-    /// - 검증 내용: invoking 중 content terminal success가 gate를 idle로 닫고 뒤늦은 동일 request result가 상태를 덮지 않음
+    /// - 검증 내용: invoking 중 content terminal success가 request-scoped refresh를 거쳐 뒤늦은 invocation result를 무시함
     /// - 사전 조건: undo client가 invocation result 반환 직전에 controllable gate에서 대기함
-    /// - 기대 결과: terminal 직후 idle, availability 재조회 반영, late result 수신 후에도 idle 유지
+    /// - 기대 결과: terminal 직후 refreshing, matching availability 반영 후 idle, late result 수신 후에도 idle 유지
     func testUndoReplay_fastTerminalBeforeInvocationResult_ignoresLateResult() async throws {
         let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000572"))
         let gate = FileManagerUndoInvocationGate()
@@ -230,9 +230,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         await store.send(.content(.entryViewLayout(.entryOperations(.outcome(
             .entryActionReplayFinished(direction: .undo, terminal: .success(record)),
         ))))) {
-            $0.undoRedoPhase = .idle
+            $0.undoRedoPhase = .refreshing(requestID: requestID)
         }
-        await store.receive(\.internal.undoManagerAvailabilityChanged) {
+        await store.receive(\.internal.undoManagerReplayAvailabilityChanged) {
+            $0.undoRedoPhase = .idle
             $0.undoManagerAvailability = terminalAvailability
         }
         await gate.resume()
@@ -241,6 +242,35 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         XCTAssertEqual(calls.value, 1)
         XCTAssertEqual(store.state.undoRedoPhase, .idle)
         XCTAssertEqual(store.state.undoManagerAvailability, terminalAvailability)
+        await store.finish()
+    }
+
+    /// FMW-001-request_undo: replay availability completion은 matching request만 반영한다.
+    /// - 검증 내용: stale request completion을 무시하고 matching completion에서 availability와 idle을 함께 commit한다.
+    /// - 사전 조건: request-scoped refreshing phase와 서로 다른 stale requestID
+    /// - 기대 결과: stale completion 상태 불변, matching completion 후 idle 및 최신 availability 반영
+    func testUndoReplay_availabilityRefreshIgnoresStaleRequest() async {
+        let requestID = UUID()
+        let staleRequestID = UUID()
+        let availability = UndoManagerAvailability(canUndo: false, canRedo: true)
+        var state = FileManagerWindowState()
+        state.undoRedoPhase = .refreshing(requestID: requestID)
+        state.undoManagerAvailability = .init(canUndo: true, canRedo: false)
+        let store = TestStore(initialState: state) {
+            FileManagerWindowCommandRoutingReducer()
+        }
+
+        await store.send(.internal(.undoManagerReplayAvailabilityChanged(
+            requestID: staleRequestID,
+            availability: .init(canUndo: true, canRedo: true),
+        )))
+        await store.send(.internal(.undoManagerReplayAvailabilityChanged(
+            requestID: requestID,
+            availability: availability,
+        ))) {
+            $0.undoRedoPhase = .idle
+            $0.undoManagerAvailability = availability
+        }
         await store.finish()
     }
 
@@ -283,6 +313,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
                 ),
             ))))) {
                 $0.undoRedoPhase = .desynchronized
+                $0.undoManagerAvailability = .init()
             }
             XCTAssertFalse(store.state.menuCommandProjection.canUndo)
             XCTAssertFalse(store.state.menuCommandProjection.canRedo)
@@ -330,6 +361,181 @@ final class FMW001FileManagerWindowTests: XCTestCase {
             $0.undoRedoPhase = .desynchronized
         }
         await directionMismatchStore.finish()
+    }
+
+    /// FMW-001-request_undo: 비텍스트 Cmd-Z/Cmd-Shift-Z는 Content delegate를 거쳐 Window request로 변환된다.
+    /// - 검증 내용: keyboard action이 child EntryOperations request를 직접 만들지 않고 typed delegate와 Window request를 순서대로 방출한다.
+    /// - 사전 조건: native editable text responder가 없는 기본 Content 상태
+    /// - 기대 결과: undo/redo 각각 requestUndoRedo delegate와 requestUndo/requestRedo Window action이 대응한다.
+    func testKeyboardUndoRedo_routesThroughContentDelegateAndWindowRequest() async {
+        for (modifiers, direction) in [
+            (KeyModifiers.command, EntryActionDirection.undo),
+            (KeyModifiers.command.union(.shift), EntryActionDirection.redo),
+        ] {
+            let command = KeyCommand(
+                keyCode: 6,
+                modifiers: modifiers,
+                characters: modifiers.contains(.shift) ? "Z" : "z",
+                charactersIgnoringModifiers: "z",
+            )
+            let contentStore = TestStore(initialState: FileManagerContentState()) {
+                FileManagerContentKeyCommandReducer()
+            }
+            await contentStore.send(.view(.handleKeyCommand(command)))
+            await contentStore.receive { action in
+                guard case let .delegate(.requestUndoRedo(receivedDirection)) = action else { return false }
+                return receivedDirection == direction
+            }
+            await contentStore.finish()
+
+            let windowStore = makeStore()
+            await windowStore.send(.content(.delegate(.requestUndoRedo(direction))))
+            await windowStore.receive { action in
+                switch (direction, action) {
+                case (.undo, .request(.requestUndo)), (.redo, .request(.requestRedo)):
+                    true
+                default:
+                    false
+                }
+            }
+            await windowStore.finish()
+        }
+    }
+
+    /// FMW-001-request_undo: editable text responder가 처리 가능한 Cmd-Z는 native responder가 먼저 소비한다.
+    /// - 검증 내용: native undo closure가 true일 때 Content delegate가 방출되지 않는다.
+    /// - 사전 조건: undo 가능한 editable text responder를 나타내는 deterministic native seam
+    /// - 기대 결과: native undo 1회 호출, FileManager delegate 없음
+    func testKeyboardUndo_nativeEditableTextResponderHasPriority() async {
+        let nativeUndoCalls = LockIsolated(0)
+        let store = TestStore(initialState: FileManagerContentState()) {
+            Reduce<FileManagerContentState, FileManagerContentAction> { state, action in
+                guard case let .view(.handleKeyCommand(command)) = action else { return .none }
+                return FileManagerContentKeyCommandHandler.effect(
+                    for: command,
+                    state: state,
+                    consumeNativeUndo: {
+                        nativeUndoCalls.withValue { $0 += 1 }
+                        return true
+                    },
+                    consumeNativeRedo: { false },
+                )
+            }
+        }
+
+        await store.send(.view(.handleKeyCommand(KeyCommand(
+            keyCode: 6,
+            modifiers: .command,
+            characters: "z",
+            charactersIgnoringModifiers: "z",
+        ))))
+        await store.finish()
+
+        XCTAssertEqual(nativeUndoCalls.value, 1)
+    }
+
+    /// FMW-001-request_undo: operation failure recovery는 owner invalidation 성공 때만 idle로 복귀한다.
+    /// - 검증 내용: replay failure가 recovering으로 잠근 뒤 typed availability를 반영하고 stale completion은 무시한다.
+    /// - 사전 조건: replaying request/owner/window와 성공 invalidation 결과
+    /// - 기대 결과: 성공 completion은 idle, stale request completion은 상태 불변
+    func testUndoReplay_operationFailureRecoversOnlyForMatchingInvalidation() async {
+        let requestID = UUID()
+        let staleRequestID = UUID()
+        let windowID = UUID()
+        let gate = FileManagerUndoInvocationGate()
+        var state = FileManagerWindowState()
+        state.windowID = windowID
+        state.undoManagerAvailability = .init(canUndo: true, canRedo: true)
+        state.undoRedoPhase = .replaying(requestID: requestID, direction: .undo)
+        let ownerID = state.content.entryViewLayout.entryOperations.undoOwnerID
+        let recoveredAvailability = UndoManagerAvailability(canUndo: false, canRedo: true)
+        let client = UndoManagerClient(
+            registerUndo: { _, _, _ in },
+            undo: { _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            invalidateOwner: { receivedWindowID, receivedOwnerID in
+                XCTAssertEqual(receivedWindowID, windowID)
+                XCTAssertEqual(receivedOwnerID, ownerID)
+                await gate.suspend()
+                return .init(succeeded: true, availability: recoveredAvailability)
+            },
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.undoManagerClient = client
+        }
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.outcome(
+            .entryActionReplayFinished(
+                direction: .undo,
+                terminal: .failure(reason: .operationFailed, appliedTargets: []),
+            ),
+        ))))) {
+            $0.undoRedoPhase = .recovering(requestID: requestID, direction: .undo, ownerID: ownerID)
+            $0.undoManagerAvailability = .init()
+        }
+        await gate.waitUntilSuspended()
+        await store.send(.internal(.undoManagerOwnerInvalidationFinished(
+            requestID: staleRequestID,
+            ownerID: ownerID,
+            result: .init(succeeded: true, availability: .init(canUndo: true, canRedo: true)),
+        )))
+        await gate.resume()
+        await store.receive { action in
+            guard case let .internal(.undoManagerOwnerInvalidationFinished(
+                receivedRequestID,
+                receivedOwnerID,
+                result,
+            )) = action else { return false }
+            return receivedRequestID == requestID
+                && receivedOwnerID == ownerID
+                && result == .init(succeeded: true, availability: recoveredAvailability)
+        } assert: {
+            $0.undoRedoPhase = .idle
+            $0.undoManagerAvailability = recoveredAvailability
+        }
+        await store.finish()
+    }
+
+    /// FMW-001-request_undo: owner invalidation 실패는 desynchronized fail-closed 상태를 유지한다.
+    /// - 검증 내용: resolver/cleanup 실패 결과가 undo/redo availability를 비우고 command를 계속 잠근다.
+    /// - 사전 조건: replaying operation failure와 실패 invalidation client
+    /// - 기대 결과: desynchronized, canUndo/canRedo false
+    func testUndoReplay_invalidationFailureDesynchronizesAndDisablesMenu() async {
+        let requestID = UUID()
+        var state = FileManagerWindowState()
+        state.windowID = UUID()
+        state.undoManagerAvailability = .init(canUndo: true, canRedo: true)
+        state.undoRedoPhase = .replaying(requestID: requestID, direction: .redo)
+        let ownerID = state.content.entryViewLayout.entryOperations.undoOwnerID
+        let client = UndoManagerClient(
+            registerUndo: { _, _, _ in },
+            undo: { _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            invalidateOwner: { _, _ in .init(succeeded: false, availability: .init(canUndo: true, canRedo: true)) },
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.undoManagerClient = client
+        }
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.outcome(
+            .entryActionReplayFinished(
+                direction: .redo,
+                terminal: .failure(reason: .operationFailed, appliedTargets: []),
+            ),
+        ))))) {
+            $0.undoRedoPhase = .recovering(requestID: requestID, direction: .redo, ownerID: ownerID)
+            $0.undoManagerAvailability = .init()
+        }
+        await store.receive(\.internal.undoManagerOwnerInvalidationFinished) {
+            $0.undoRedoPhase = .desynchronized
+        }
+        XCTAssertFalse(store.state.menuCommandProjection.canUndo)
+        XCTAssertFalse(store.state.menuCommandProjection.canRedo)
+        await store.finish()
     }
 
     // MARK: - FMW-001-toggle_composer

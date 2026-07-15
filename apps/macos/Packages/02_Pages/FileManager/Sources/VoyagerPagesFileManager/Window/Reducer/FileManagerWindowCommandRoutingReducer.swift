@@ -116,6 +116,15 @@ struct FileManagerWindowCommandRoutingReducer {
                 return .none
 
             case let .internal(.undoManagerAvailabilityChanged(availability)):
+                guard state.undoRedoPhase == .idle else { return .none }
+                state.undoManagerAvailability = availability
+                return .none
+
+            case let .internal(.undoManagerReplayAvailabilityChanged(requestID, availability)):
+                guard case let .refreshing(currentRequestID) = state.undoRedoPhase,
+                      currentRequestID == requestID
+                else { return .none }
+                state.undoRedoPhase = .idle
                 state.undoManagerAvailability = availability
                 return .none
 
@@ -211,6 +220,9 @@ struct FileManagerWindowCommandRoutingReducer {
 
             case .content(.delegate(.openAISettings)):
                 return .send(.delegate(.openAISettings))
+
+            case let .content(.delegate(.requestUndoRedo(direction))):
+                return .send(.request(direction == .undo ? .requestUndo : .requestRedo))
 
             case .inspector(.closeChat):
                 return .cancel(id: CancelID.contextualAiChatOpen)

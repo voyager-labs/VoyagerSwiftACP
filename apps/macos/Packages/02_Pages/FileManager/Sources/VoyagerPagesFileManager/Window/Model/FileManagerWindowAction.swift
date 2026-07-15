@@ -35,7 +35,6 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
 
     case onAppear
     case onDisappear
-    case closeWindow
 
     @CasePathable
     public enum Internal: Sendable {
@@ -50,10 +49,19 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case undoManagerWindowIDChanged(UUID)
         case undoManagerEventReceived(UndoManagerEvent)
         case undoManagerAvailabilityChanged(UndoManagerAvailability)
+        case undoManagerReplayAvailabilityChanged(
+            requestID: UUID,
+            availability: UndoManagerAvailability,
+        )
         case undoManagerInvocationFinished(
             requestID: UUID,
             direction: EntryActionDirection,
             result: UndoManagerInvocationResult,
+        )
+        case undoManagerOwnerInvalidationFinished(
+            requestID: UUID,
+            ownerID: UUID,
+            result: UndoManagerInvalidationResult,
         )
     }
 
@@ -96,6 +104,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
 
     @CasePathable
     public enum Delegate: Sendable {
+        case closeWindow
         case openPathInNewWindow(String)
         case openAISettings
         case requestAttachmentPicker

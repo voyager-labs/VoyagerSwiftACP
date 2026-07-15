@@ -1456,22 +1456,157 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             invalidateOwner: { receivedWindowID, ownerID in
                 XCTAssertEqual(receivedWindowID, windowID)
                 invalidatedOwners.withValue { $0.append(ownerID) }
+                return .init(succeeded: true, availability: .init())
             },
         )
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
             $0.undoManagerClient = client
+            $0.uuid = .incrementing
         }
+        // 비포괄적: full feature의 projection 파생 액션보다 owner invalidation과 close commit 순서를 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.contentTabs(.close(inactiveID)))
+        await store.send(.contentTabs(.requestClose(inactiveID)))
+        await store.receive(\.internal.undoManagerOwnerInvalidationFinished)
+        await store.receive(\.contentTabs.commitClose)
         await store.finish()
 
         XCTAssertEqual(invalidatedOwners.value, [closedOwnerID])
         XCTAssertFalse(invalidatedOwners.value.contains(sidebarOwnerID))
         XCTAssertEqual(store.state.sidebarEntryDropOperations.undoOwnerID, sidebarOwnerID)
         XCTAssertNil(store.state.tabContentStates[inactiveID])
+    }
+
+    /// CTM-004-sidebar_entry_drop_routing: active/inactive/last tab은 owner invalidation 완료 전 identity와 cache를 유지한다.
+    /// - 검증 내용: 세 close 종류 모두 teardown phase에서 row/cache/owner를 보존하고 성공 completion 뒤 기존 fallback/reset을 한 번만 commit한다.
+    /// - 사전 조건: windowID가 있는 Directory tab 상태와 지연되는 invalidateOwner client
+    /// - 기대 결과: completion 전 identity 보존, completion 후 inactive 제거·active fallback·last Home reset
+    func testContentTabClose_preservesActiveInactiveAndLastIdentityUntilInvalidationCompletes() async throws {
+        let scenarios: [(name: String, state: FileManagerFeature.State, closingID: ContentTabID)] = try {
+            let activeID = ContentTabID(rawValue: "teardown-active")
+            let inactiveID = ContentTabID(rawValue: "teardown-inactive")
+            let inactiveClose = makeDirectoryReloadState(
+                activeID: activeID,
+                activePath: "/active",
+                inactiveTabs: [.init(id: inactiveID, path: "/inactive", isPinned: false)],
+            )
+            var activeClose = inactiveClose
+            activeClose.contentTabs.activeTabID = inactiveID
+            activeClose.contentTabs.previousActiveTabID = activeID
+            activeClose.content = try XCTUnwrap(activeClose.tabContentStates[inactiveID])
+            let lastClose = makeDirectoryReloadState(
+                activeID: ContentTabID(rawValue: "teardown-last"),
+                activePath: "/last",
+            )
+            let lastID = try XCTUnwrap(lastClose.contentTabs.activeTabID)
+            return [
+                ("inactive", inactiveClose, inactiveID),
+                ("active", activeClose, inactiveID),
+                ("last", lastClose, lastID),
+            ]
+        }()
+
+        for scenario in scenarios {
+            let windowID = UUID()
+            let gate = CTM004ReplayFileOperationGate()
+            var state = scenario.state
+            state.windowID = windowID
+            let ownerID = if scenario.closingID == state.contentTabs.activeTabID {
+                state.content.entryViewLayout.entryOperations.undoOwnerID
+            } else {
+                try XCTUnwrap(state.tabContentStates[scenario.closingID]).entryViewLayout.entryOperations.undoOwnerID
+            }
+            let scenarioName = scenario.name
+            let client = UndoManagerClient(
+                registerUndo: { _, _, _ in },
+                undo: { _ in .init(didInvoke: false, availability: .init()) },
+                redo: { _ in .init(didInvoke: false, availability: .init()) },
+                invalidateOwner: { _, receivedOwnerID in
+                    XCTAssertEqual(receivedOwnerID, ownerID, scenarioName)
+                    await gate.suspend()
+                    return .init(succeeded: true, availability: .init())
+                },
+            )
+            let store = TestStore(initialState: state) {
+                FileManagerFeature()
+            } withDependencies: {
+                $0.undoManagerClient = client
+                $0.uuid = .incrementing
+                $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            }
+            // store.exhaustivity = .off: close 후 handoff cleanup 중 핵심 teardown ordering만 검증한다.
+            store.exhaustivity = .off
+
+            await store.send(.contentTabs(.requestClose(scenario.closingID)))
+            await gate.waitUntilSuspended()
+            XCTAssertNotNil(store.state.contentTabs.tabs[id: scenario.closingID], scenario.name)
+            XCTAssertNotNil(store.state.tabContentStates[scenario.closingID], scenario.name)
+            XCTAssertEqual(store.state.pendingContentTabTeardown?.ownerID, ownerID, scenario.name)
+            XCTAssertFalse(store.state.menuCommandProjection.canUndo, scenario.name)
+            XCTAssertFalse(store.state.menuCommandProjection.canRedo, scenario.name)
+
+            await store.send(.sidebar(.delegate(.pinContentTab(scenario.closingID))))
+            XCTAssertEqual(store.state.contentTabs.tabs[id: scenario.closingID]?.isPinned, false, scenario.name)
+
+            await gate.resume()
+            await store.receive(\.internal.undoManagerOwnerInvalidationFinished)
+            await store.receive(\.contentTabs.commitClose)
+            await store.finish()
+
+            if scenario.name == "last" {
+                XCTAssertEqual(store.state.contentTabs.tabs[id: scenario.closingID]?.anchor, .homeDefault)
+                XCTAssertNotNil(store.state.tabContentStates[scenario.closingID])
+            } else {
+                XCTAssertNil(store.state.contentTabs.tabs[id: scenario.closingID])
+                XCTAssertNil(store.state.tabContentStates[scenario.closingID])
+            }
+        }
+    }
+
+    /// CTM-004-sidebar_entry_drop_routing: tab owner invalidation 실패는 identity를 보존하고 desynchronized로 잠근다.
+    /// - 검증 내용: 실패 completion 이후 tab row/cache/owner가 유지되고 menu availability가 비활성화된다.
+    /// - 사전 조건: inactive tab과 실패 invalidateOwner client
+    /// - 기대 결과: tab/cache 보존, pending teardown 정리, desynchronized
+    func testContentTabClose_invalidationFailurePreservesIdentityAndDesynchronizes() async throws {
+        let activeID = ContentTabID(rawValue: "teardown-failure-active")
+        let inactiveID = ContentTabID(rawValue: "teardown-failure-inactive")
+        var state = makeDirectoryReloadState(
+            activeID: activeID,
+            activePath: "/active",
+            inactiveTabs: [.init(id: inactiveID, path: "/inactive", isPinned: false)],
+        )
+        state.windowID = UUID()
+        state.undoManagerAvailability = .init(canUndo: true, canRedo: true)
+        let ownerID = try XCTUnwrap(state.tabContentStates[inactiveID]).entryViewLayout.entryOperations.undoOwnerID
+        let client = UndoManagerClient(
+            registerUndo: { _, _, _ in },
+            undo: { _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            invalidateOwner: { _, _ in .init(succeeded: false, availability: .init(canUndo: true, canRedo: true)) },
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.undoManagerClient = client
+            $0.uuid = .incrementing
+        }
+        // store.exhaustivity = .off: child projection action보다 invalidation 실패 terminal 상태를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.requestClose(inactiveID)))
+        await store.receive(\.internal.undoManagerOwnerInvalidationFinished)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: inactiveID])
+        XCTAssertEqual(
+            store.state.tabContentStates[inactiveID]?.entryViewLayout.entryOperations.undoOwnerID,
+            ownerID,
+        )
+        XCTAssertNil(store.state.pendingContentTabTeardown)
+        XCTAssertEqual(store.state.undoRedoPhase, .desynchronized)
+        XCTAssertFalse(store.state.menuCommandProjection.canUndo)
+        XCTAssertFalse(store.state.menuCommandProjection.canRedo)
+        await store.finish()
     }
 
     /// CTM-004-directory_reload_lifecycle: 실제 shared UndoManager의 Sidebar replay 동안 두 menu command를 잠금
@@ -1705,6 +1840,47 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-004-directory_reload_lifecycle: partial replay failure는 applied prefix 부모만 refresh한다.
+    /// - 검증 내용: 실패 target 경로는 제외하고 appliedTargets 첫 항목의 source/destination parent만 반영한다.
+    /// - 사전 조건: active source, inactive applied destination, unrelated failed destination tab
+    /// - 기대 결과: active reload 1회, applied destination만 pending, failed destination 불변
+    func testSidebarReplay_partialFailureRefreshesOnlyAppliedPrefixPaths() async {
+        let activeID = ContentTabID(rawValue: "partial-source")
+        let appliedID = ContentTabID(rawValue: "partial-applied")
+        let failedID = ContentTabID(rawValue: "partial-failed")
+        let appliedTarget = EntryActionRecord.Target(
+            beforePath: "/source/first.txt",
+            afterPath: "/applied/first.txt",
+        )
+        let state = makeDirectoryReloadState(
+            activeID: activeID,
+            activePath: "/source",
+            inactiveTabs: [
+                .init(id: appliedID, path: "/applied", isPinned: false),
+                .init(id: failedID, path: "/failed", isPinned: false),
+            ],
+        )
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerFeature.State, FileManagerFeature.Action> { state, action in
+                guard case let .internal(.sidebarEntryDrop(.outcome(.entryActionReplayFinished(
+                    _,
+                    terminal,
+                )))) = action else { return .none }
+                return handleSidebarEntryActionReplayTerminal(terminal, state: &state)
+            }
+        }
+
+        await store.send(.internal(.sidebarEntryDrop(.outcome(.entryActionReplayFinished(
+            direction: .undo,
+            terminal: .failure(reason: .operationFailed, appliedTargets: [appliedTarget]),
+        ))))) {
+            $0.pendingDirectoryReloadTabIDs = [appliedID]
+        }
+        await store.receive(routedDirectoryReloadAction(tabID: activeID))
+        XCTAssertFalse(store.state.pendingDirectoryReloadTabIDs.contains(failedID))
+        await store.finish()
+    }
+
     /// CTM-004-directory_reload_lifecycle: source tab 종료 뒤 Sidebar replay는 surviving affected tab만 갱신함
     /// - 검증 내용: closed source owner를 재생성하지 않고 destination active reload와 source mirror pending 처리
     /// - 사전 조건: fixture source owner tab은 없고 destination active/source mirror inactive만 생존함
@@ -1774,16 +1950,42 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             operationKind: .rename,
             targets: [.init(beforePath: sandbox.fileURL.path, afterPath: sandbox.fileURL.path + ".renamed")],
         )
+        let refreshRequestID = UUID()
+        let refreshedAvailability = UndoManagerAvailability(canUndo: true, canRedo: false)
+        let client = UndoManagerClient(
+            registerUndo: { _, _, _ in },
+            undo: { _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            availability: { _ in refreshedAvailability },
+        )
         let store = TestStore(initialState: state) {
-            FileManagerWindowRoutingReducer()
+            CombineReducers {
+                FileManagerWindowCommandRoutingReducer()
+                FileManagerWindowRoutingReducer()
+            }
+        } withDependencies: {
+            $0.undoManagerClient = client
+            $0.uuid = .constant(refreshRequestID)
         }
 
         await store.send(.content(.entryViewLayout(.entryOperations(.outcome(
             .entryActionReplayFinished(direction: .undo, terminal: .success(record)),
-        )))))
-        await store.receive(\.internal.undoManagerAvailabilityChanged)
+        ))))) {
+            $0.undoRedoPhase = .refreshing(requestID: refreshRequestID)
+        }
+        await store.receive { action in
+            guard case let .internal(.undoManagerReplayAvailabilityChanged(requestID, availability)) = action else {
+                return false
+            }
+            return requestID == refreshRequestID && availability == refreshedAvailability
+        } assert: {
+            $0.undoRedoPhase = .idle
+            $0.undoManagerAvailability = refreshedAvailability
+        }
 
-        XCTAssertEqual(store.state, state)
+        var expectedState = state
+        expectedState.undoManagerAvailability = refreshedAvailability
+        XCTAssertEqual(store.state, expectedState)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
         await store.finish()
     }
@@ -2101,14 +2303,34 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             activePath: "/active",
             inactiveTabs: [.init(id: closedID, path: "/closed", isPinned: false)],
         )
+        let closeWindowID = UUID()
+        let closeRequestID = UUID()
+        closeState.windowID = closeWindowID
         closeState.pendingDirectoryReloadTabIDs = [closedID]
+        let closeClient = UndoManagerClient(
+            registerUndo: { _, _, _ in },
+            undo: { _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            invalidateOwner: { receivedWindowID, _ in
+                XCTAssertEqual(receivedWindowID, closeWindowID)
+                return .init(succeeded: true, availability: .init())
+            },
+        )
         let closeStore = TestStore(initialState: closeState) {
-            FileManagerWindowRoutingReducer()
+            FileManagerFeature()
+        } withDependencies: {
+            $0.undoManagerClient = closeClient
+            $0.uuid = .constant(closeRequestID)
         }
-        await closeStore.send(.contentTabs(.close(closedID))) {
-            $0.pendingDirectoryReloadTabIDs = []
-        }
+        // 비포괄적: full feature의 파생 projection보다 two-phase close 완료와 pending cleanup을 검증한다.
+        closeStore.exhaustivity = .off
+        await closeStore.send(.contentTabs(.requestClose(closedID)))
+        await closeStore.receive(\.internal.undoManagerOwnerInvalidationFinished)
+        await closeStore.receive(\.contentTabs.commitClose)
         await closeStore.finish()
+        XCTAssertNil(closeStore.state.contentTabs.tabs[id: closedID])
+        XCTAssertNil(closeStore.state.tabContentStates[closedID])
+        XCTAssertEqual(closeStore.state.pendingDirectoryReloadTabIDs, [])
 
         let retainedID = ContentTabID(rawValue: "retained")
         let missingID = ContentTabID(rawValue: "missing")
