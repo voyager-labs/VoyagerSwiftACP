@@ -170,7 +170,7 @@ After creating, editing, or adding files to a package:
 4. Test consumer target (XcodeBuildMCP)  → consumer tests pass
 ```
 
-Each step must pass before moving to the next. For detailed integration-layer verification (consumer build/test, stale import detection, public surface checks), see `package-integration-verification.md`.
+Each step must pass before moving to the next. For detailed integration-layer verification (consumer build/test, stale import detection, public surface checks), see `package-integration.md`.
 
 ## Decision flowchart
 
