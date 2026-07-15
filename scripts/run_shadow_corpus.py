@@ -222,9 +222,9 @@ def main() -> int:
     corpus = json.loads((root / args.corpus).read_text())
     cases = corpus.get("cases", [])
     errors = [error for case in cases for error in validate_case(case)]
-    if {case.get("id") for case in cases} != {
-        f"E{number:02d}" for number in range(1, 19)
-    }:
+    expected_ids = {f"E{number:02d}" for number in range(1, 19)}
+    case_ids = [case.get("id") for case in cases]
+    if len(case_ids) != len(expected_ids) or set(case_ids) != expected_ids:
         errors.append("corpus must contain E01 through E18 exactly once")
     if args.trials < 3:
         errors.append("adoption gate requires at least three trials")

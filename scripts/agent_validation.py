@@ -378,15 +378,15 @@ def verify_plans(root: Path, paths: set[str]) -> list[Diagnostic]:
                         f"plan requires ## {section}",
                     )
                 )
-        text = "\n".join(lines)
+        tdd_evidence = plan_section_text(lines, headings, "TDD Evidence")
         no_source_changes = bool(
-            re.search(
+            tdd_evidence
+            and re.search(
                 r"source changes:\s*no|no executable behavior changes",
-                text,
+                tdd_evidence,
                 re.IGNORECASE,
             )
         )
-        tdd_evidence = plan_section_text(lines, headings, "TDD Evidence")
         if (
             tdd_evidence is not None
             and not no_source_changes
@@ -471,9 +471,17 @@ def verify_plans(root: Path, paths: set[str]) -> list[Diagnostic]:
                     )
                 )
             qa = plan_field_text(block, "QA")
+            todo_has_no_source_changes = bool(
+                qa
+                and re.search(
+                    r"source changes:\s*no|no executable behavior changes",
+                    qa,
+                    re.IGNORECASE,
+                )
+            )
             if (
                 qa is not None
-                and not no_source_changes
+                and not todo_has_no_source_changes
                 and not (
                     re.search(r"\bRED\b", qa, re.IGNORECASE)
                     and re.search(r"\bGREEN\b", qa, re.IGNORECASE)

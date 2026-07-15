@@ -18,6 +18,7 @@ class ShadowCorpusTests(unittest.TestCase):
         cases = corpus["cases"]
 
         self.assertNotEqual(corpus["fixed_settings"]["baseline_ref"], "HEAD")
+        self.assertEqual(len(cases), 18)
         baseline = subprocess.run(
             [
                 "git",

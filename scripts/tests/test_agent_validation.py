@@ -140,6 +140,22 @@ class AgentValidationTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0)
             self.assertEqual(payload["diagnostics"], [])
 
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mixed_plan = PLAN.replace(
+                "Context.", "Context. No executable behavior changes in docs tasks."
+            ).replace(
+                "RED evidence fails before implementation; GREEN evidence passes after implementation.",
+                "Run tests.",
+            )
+            self.write(root, ".sisyphus/plans/fixture.md", mixed_plan)
+            result, payload = self.run_cli(VERIFY, root, "--all")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "PLAN_TODO_TDD_EVIDENCE",
+                [item["code"] for item in payload["diagnostics"]],
+            )
+
     def test_invalid_harness_fixtures_have_exact_diagnostics(self) -> None:
         cases = {
             "heading": (
