@@ -154,8 +154,8 @@ Do NOT read all reference files at once. Load only what the current task needs:
 | Find definition / references | `codegraph.md`                            | All others                |
 | Search or rewrite patterns   | `ast-grep.md`                             | All others                |
 | Build / test / compile check | `xcodebuild-mcp.md` and capability matrix | All others                |
-| SwiftPM package integration  | `package-integration.md`                  | Unrelated tool references |
-| Swift 6 package rules        | `swift6-package-rules.md`                 | Unrelated tool references |
+| SwiftPM package integration  | `references/package-integration.md`       | Unrelated tool references |
+| Swift 6 package rules        | `references/swift6-package-rules.md`      | Unrelated tool references |
 | Unused code scan             | `periphery.md`                            | All others                |
 | Multiple concerns            | Load only the files for tools you'll use  | Others                    |
 
