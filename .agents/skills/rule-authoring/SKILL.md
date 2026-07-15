@@ -83,6 +83,5 @@ Use this skill for `.agents/rules/**` authoring and placement only. It does not 
 3. Keep skill directory names in `kebab-case` and keep each rule file to 150 lines or fewer.
 
 - Place cross-cutting rules, which apply regardless of platform, in `.agents/rules/`.
-- Place rules applying only to `apps/macos/**` or `apps/backend/**` in the matching domain directory.
-- Do not create `.agents/rules/voyager/` or a subdirectory that duplicates the `30-macos/` domain split.
-- Do not place cross-cutting rules in `20-backend/` or `30-macos/`, or platform-specific rules in `.agents/rules/`.
+- Place platform-specific policies in the owning platform skill references, not in `.agents/rules/` subdirectories.
+- Do not recreate deleted domain directories such as `20-backend/` or `30-macos/`.

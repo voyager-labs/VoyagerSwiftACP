@@ -88,11 +88,11 @@ git diff --check            # Check for whitespace errors before commit
 
 ## Plan quality conventions
 
-Plans under `.sisyphus/plans/` must follow the quality contract in `.agents/rules/11-plan-quality-contract.md`. Every implementation plan includes TDD evidence policy, test ownership convention, and commit workflow references. Agents that write or review plans must load and apply this rule.
+Plans under `.sisyphus/plans/` must follow the quality contract in `.agents/rules/04-plan-quality-contract.md`. Every implementation plan includes TDD evidence policy, test ownership convention, and commit workflow references. Agents that write or review plans must load and apply this rule.
 
 ## Destructive operation safety
 
-Agents must never run destructive git or filesystem operations (`git checkout -- .`, `git clean`, `git reset --hard`, `rm -rf`, etc.) without first asking the user for explicit confirmation, even when tool permissions allow it. See `.agents/rules/12-destructive-operation-confirmation.md`.
+Agents must never run destructive git or filesystem operations (`git checkout -- .`, `git clean`, `git reset --hard`, `rm -rf`, etc.) without first asking the user for explicit confirmation, even when tool permissions allow it. See `.agents/rules/05-destructive-operation-confirmation.md`.
 
 ## Commit attribution
 

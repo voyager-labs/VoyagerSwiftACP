@@ -19,26 +19,26 @@ Always check defaults before the first build in a session:
 # Check current defaults
 XcodeBuildMCP_session_show_defaults()
 
-# Set defaults (required if not configured)
+# Set defaults for an actual simulator-capable scheme
 XcodeBuildMCP_session_set_defaults(
-  workspacePath: "apps/macos/Voyager/Voyager.xcworkspace",
-  scheme: "Voyager-Dev",
+  projectPath: "<simulator-project>.xcodeproj",
+  scheme: "<simulator-capable-scheme>",
   simulatorName: "iPhone"
 )
 
 # Set defaults with full parameters
 XcodeBuildMCP_session_set_defaults(
-  workspacePath: "apps/macos/Voyager/Voyager.xcworkspace",
-  scheme: "Voyager-Dev",
-   simulatorName: "iPhone",
+  projectPath: "<simulator-project>.xcodeproj",
+  scheme: "<simulator-capable-scheme>",
+  simulatorName: "iPhone",
   configuration: "Debug",
   derivedDataPath: ".build",
-  bundleId: "com.voyager.app"
+  bundleId: "<simulator-app-bundle-id>"
 )
 
 # Named profiles for multi-configuration workflows
 XcodeBuildMCP_session_set_defaults(
-  scheme: "Voyager-Prod",
+  scheme: "<simulator-capable-release-scheme>",
   configuration: "Release",
   profile: "release",
   createIfNotExists: true,
