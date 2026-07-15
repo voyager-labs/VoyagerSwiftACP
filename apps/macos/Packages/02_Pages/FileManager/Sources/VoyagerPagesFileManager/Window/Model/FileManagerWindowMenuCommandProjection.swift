@@ -30,8 +30,8 @@ public extension FileManagerWindowState {
         let activeContentTab = contentTabs.activeTabID.flatMap { contentTabs.tabs[id: $0] }
 
         return FileManagerWindowMenuCommandProjection(
-            canOpen: !selectedIds.isEmpty,
-            canQuickLook: !selectedIds.isEmpty,
+            canOpen: !selectedIds.isEmpty && !content.isOrdinaryDirectoryLoading,
+            canQuickLook: !selectedIds.isEmpty && !content.isOrdinaryDirectoryLoading,
             canGoBack: content.navigation.canGoBack,
             canGoForward: content.navigation.canGoForward,
             canGoToEnclosingDirectory: content.navigation.canGoToEnclosingDirectory,

@@ -19,6 +19,17 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         }
     }
 
+    private func makeSelectedState(
+        isLoading: Bool,
+        isCollectionMode: Bool,
+    ) -> FileManagerWindowState {
+        var state = FileManagerWindowState()
+        state.content.entryViewLayout.selectedIds = ["selected-entry"]
+        state.content.entryViewLayout.entryOperations.isLoading = isLoading
+        state.content.entryViewLayout.isCollectionMode = isCollectionMode
+        return state
+    }
+
     // MARK: - FMW-001-toggle_sidebar
 
     /// FMW-001-toggle_sidebar: 사이드바 토글 명령 라우팅
@@ -145,6 +156,58 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         await store.finish()
     }
 
+    /// FMW-001-open_selected_item: 일반 Directory loading 중 Open 비활성 및 no-op
+    /// 이전 Directory 선택이 남아 있어도 새 Directory 로딩 중에는 전역 Open이 실행되지 않는지 검증한다.
+    /// - 검증 내용: menu projection 비활성 및 request(.openSelectedItem) 최종 routing 차단
+    /// - 사전 조건: 일반 Directory mode, entry loading 중, stale 선택 ID 유지
+    /// - 기대 결과: canOpen false이고 하위 reducer action 없이 종료
+    func testOrdinaryDirectoryLoadingDisablesAndBlocksOpenSelectedItem() async {
+        let state = makeSelectedState(isLoading: true, isCollectionMode: false)
+        XCTAssertFalse(state.menuCommandProjection.canOpen)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.openSelectedItem))
+        await store.finish()
+    }
+
+    /// FMW-001-open_selected_item: 일반 상태에서 Open 허용 및 routing
+    /// 로딩 중이 아닌 기존 선택 항목의 전역 Open 동작이 유지되는지 검증한다.
+    /// - 검증 내용: menu projection 활성 및 request(.openSelectedItem) 하위 routing
+    /// - 사전 조건: 일반 Directory mode, entry loading 아님, 선택 ID 존재
+    /// - 기대 결과: canOpen true이고 openSelectedItem command가 entry view layout으로 전달됨
+    func testNormalDirectoryAllowsOpenSelectedItem() async {
+        let state = makeSelectedState(isLoading: false, isCollectionMode: false)
+        XCTAssertTrue(state.menuCommandProjection.canOpen)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.openSelectedItem))
+        await store.receive {
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))) = $0
+            else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
+    /// FMW-001-open_selected_item: Collection loading 중 Open 정책 유지
+    /// Collection loading은 ordinary Directory loading 차단 정책에 포함되지 않는지 검증한다.
+    /// - 검증 내용: menu projection 활성 및 request(.openSelectedItem) 하위 routing
+    /// - 사전 조건: Collection mode, entry loading 중, 선택 ID 존재
+    /// - 기대 결과: canOpen true이고 openSelectedItem command가 entry view layout으로 전달됨
+    func testCollectionLoadingAllowsOpenSelectedItem() async {
+        let state = makeSelectedState(isLoading: true, isCollectionMode: true)
+        XCTAssertTrue(state.menuCommandProjection.canOpen)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.openSelectedItem))
+        await store.receive {
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))) = $0
+            else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
     // MARK: - FMW-001-quick_look_selected_item
 
     /// FMW-001-quick_look_selected_item: 선택 항목 없을 때 quickLookSelectedItem no-op
@@ -156,6 +219,58 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         let store = makeStore()
 
         await store.send(.request(.quickLookSelectedItem))
+        await store.finish()
+    }
+
+    /// FMW-001-quick_look_selected_item: 일반 Directory loading 중 Quick Look 비활성 및 no-op
+    /// 이전 Directory 선택이 남아 있어도 새 Directory 로딩 중에는 전역 Quick Look이 실행되지 않는지 검증한다.
+    /// - 검증 내용: menu projection 비활성 및 request(.quickLookSelectedItem) 최종 routing 차단
+    /// - 사전 조건: 일반 Directory mode, entry loading 중, stale 선택 ID 유지
+    /// - 기대 결과: canQuickLook false이고 하위 reducer action 없이 종료
+    func testOrdinaryDirectoryLoadingDisablesAndBlocksQuickLookSelectedItem() async {
+        let state = makeSelectedState(isLoading: true, isCollectionMode: false)
+        XCTAssertFalse(state.menuCommandProjection.canQuickLook)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.quickLookSelectedItem))
+        await store.finish()
+    }
+
+    /// FMW-001-quick_look_selected_item: 일반 상태에서 Quick Look 허용 및 routing
+    /// 로딩 중이 아닌 기존 선택 항목의 전역 Quick Look 동작이 유지되는지 검증한다.
+    /// - 검증 내용: menu projection 활성 및 request(.quickLookSelectedItem) 하위 routing
+    /// - 사전 조건: 일반 Directory mode, entry loading 아님, 선택 ID 존재
+    /// - 기대 결과: canQuickLook true이고 quickLookSelectedItem command가 entry view layout으로 전달됨
+    func testNormalDirectoryAllowsQuickLookSelectedItem() async {
+        let state = makeSelectedState(isLoading: false, isCollectionMode: false)
+        XCTAssertTrue(state.menuCommandProjection.canQuickLook)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.quickLookSelectedItem))
+        await store.receive {
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))) = $0
+            else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
+    /// FMW-001-quick_look_selected_item: Collection loading 중 Quick Look 정책 유지
+    /// Collection loading은 ordinary Directory loading 차단 정책에 포함되지 않는지 검증한다.
+    /// - 검증 내용: menu projection 활성 및 request(.quickLookSelectedItem) 하위 routing
+    /// - 사전 조건: Collection mode, entry loading 중, 선택 ID 존재
+    /// - 기대 결과: canQuickLook true이고 quickLookSelectedItem command가 entry view layout으로 전달됨
+    func testCollectionLoadingAllowsQuickLookSelectedItem() async {
+        let state = makeSelectedState(isLoading: true, isCollectionMode: true)
+        XCTAssertTrue(state.menuCommandProjection.canQuickLook)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.quickLookSelectedItem))
+        await store.receive {
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))) = $0
+            else { return false }
+            return true
+        }
         await store.finish()
     }
 
