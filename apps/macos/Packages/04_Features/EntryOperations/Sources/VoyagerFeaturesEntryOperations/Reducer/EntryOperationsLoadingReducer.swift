@@ -40,7 +40,7 @@ public struct EntryOperationsLoadingReducer {
                         return
                     } catch {
                         guard !Task.isCancelled else { return }
-                        await send(.loading(.itemsLoaded([])))
+                        await send(.loading(.itemsLoadFailed))
                     }
                 }
                 .cancellable(
@@ -102,6 +102,15 @@ public struct EntryOperationsLoadingReducer {
                         return .send(.edit(.cancelRename))
                     }
                 }
+                return .none
+
+            case .loading(.itemsLoadFailed):
+                state.loadingContext.items = []
+                state.isLoading = false
+                state.isReloading = false
+                state.renamingItemId = nil
+                state.renamingText = ""
+                state.renamingItem = nil
                 return .none
 
             default:

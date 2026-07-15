@@ -44,6 +44,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case loadTagItems(tagName: String, showHidden: Bool)
         case loadComputerItems
         case itemsLoaded([EntryModel])
+        case itemsLoadFailed
     }
 
     @CasePathable
