@@ -31,6 +31,16 @@ public struct AccountAccessHandoffClaimCompletion: Equatable, Sendable {
     }
 }
 
+public struct AccountAccessHandoffCompletion: Equatable, Sendable {
+    public let expiresAt: Date?
+    public let sessionBindingID: UUID
+
+    public init(expiresAt: Date?, sessionBindingID: UUID) {
+        self.expiresAt = expiresAt
+        self.sessionBindingID = sessionBindingID
+    }
+}
+
 @CasePathable
 public enum AccountAccessAction: CasePathable, Sendable {
     case onAppear
@@ -49,7 +59,7 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case _handoffExchangeCompleted(
         state: String,
         generation: UInt64,
-        result: Result<Date?, AppHandoffExchangeError>,
+        result: Result<AccountAccessHandoffCompletion, AppHandoffExchangeError>,
     )
     case _handoffPersistenceRollbackFailed(generation: UInt64)
     case _onAppearSessionRestored(AccountSessionRestoration)

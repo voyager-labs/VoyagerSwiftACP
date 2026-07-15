@@ -221,6 +221,13 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
     /// - 기대 결과: hasAccountSession=true, isSignInInProgress=false, didSignInFail=false, fetchGeneration=1
     func testExchangeSuccessSetsLoggedIn() {
         let persistedSessionExpiry = Date(timeIntervalSince1970: 1_700_003_600)
+        let sessionBindingID = UUID()
+        let persistedSession = AccountSession(
+            accessToken: "persisted-access-token",
+            status: .coreLicenseActive,
+            expiresAt: persistedSessionExpiry,
+            sessionBindingID: sessionBindingID,
+        )
         var state = awaitingCallbackState()
         state.handoffPendingState = nil
         state.handoffExchangeState = Self.validState
@@ -233,7 +240,10 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
                 action: ._handoffExchangeCompleted(
                     state: Self.validState,
                     generation: 0,
-                    result: .success(persistedSessionExpiry),
+                    result: .success(AccountAccessHandoffCompletion(
+                        expiresAt: persistedSession.expiresAt,
+                        sessionBindingID: persistedSession.sessionBindingID,
+                    )),
                 ),
             )
         }
@@ -242,7 +252,41 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         XCTAssertFalse(state.isSignInInProgress)
         XCTAssertFalse(state.didSignInFail)
         XCTAssertEqual(state.sessionExpiresAt, persistedSessionExpiry)
+        XCTAssertEqual(state.sessionBindingID, sessionBindingID)
         XCTAssertTrue(state.ttlTimerActive)
+    }
+
+    /// ACC-001-exchange_handoff_token: 이전 generation의 handoff 완료는 새 handoff 상태를 변경하지 않는다.
+    /// 늦게 도착한 canonical session이 새 handoff의 binding과 expiry를 덮어쓰지 않는지 검증한다.
+    /// - 검증 내용: generation과 pending state guard가 실패하면 sessionExpiresAt과 sessionBindingID를 변경하지 않는다.
+    /// - 사전 조건: generation=2의 새 handoff exchange가 진행 중이고 generation=1 완료 action이 도착한다.
+    /// - 기대 결과: 새 handoff의 state와 기존 session expiry/binding이 그대로 유지된다.
+    func testStaleExchangeCompletionPreservesCurrentSessionBinding() {
+        let currentBinding = UUID()
+        let staleBinding = UUID()
+        let currentExpiry = referenceDate.addingTimeInterval(3600)
+        var state = awaitingCallbackState()
+        state.handoffGeneration = 2
+        state.handoffPendingState = nil
+        state.handoffExchangeState = "new-handoff-state"
+        state.sessionExpiresAt = currentExpiry
+        state.sessionBindingID = currentBinding
+
+        _ = AccountAccessFeature().reduce(
+            into: &state,
+            action: ._handoffExchangeCompleted(
+                state: Self.validState,
+                generation: 1,
+                result: .success(AccountAccessHandoffCompletion(
+                    expiresAt: referenceDate.addingTimeInterval(7200),
+                    sessionBindingID: staleBinding,
+                )),
+            ),
+        )
+
+        XCTAssertEqual(state.handoffExchangeState, "new-handoff-state")
+        XCTAssertEqual(state.sessionExpiresAt, currentExpiry)
+        XCTAssertEqual(state.sessionBindingID, currentBinding)
     }
 
     /// ACC-001-exchange_handoff_token: 이전 generation의 claim completion은 새 handoff exchange를 시작하지 않는다.
