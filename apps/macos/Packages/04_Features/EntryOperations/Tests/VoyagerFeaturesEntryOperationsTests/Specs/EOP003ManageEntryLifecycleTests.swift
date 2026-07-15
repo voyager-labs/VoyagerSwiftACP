@@ -4,6 +4,8 @@ import VoyagerEntitiesEntry
 @testable import VoyagerFeaturesEntryOperations
 import XCTest
 
+private typealias EntryLoadSuspensionGate = EntryOperationsLoadSuspensionGate
+
 @MainActor
 final class EOP003ManageEntryLifecycleTests: XCTestCase {
     // MARK: - EOP-003-move_entries_to_trash
@@ -635,6 +637,48 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertEqual(store.state.undoRecords.count, 1)
         XCTAssertEqual(store.state.undoRecords.first?.id, record.id)
         XCTAssertTrue(store.state.redoRecords.isEmpty)
+    }
+
+    // MARK: - EOP-003-load_entry_items
+
+    /// EOP-003-load_entry_items (VOY-578): 취소된 Recents 응답은 최신 항목을 덮어쓰지 않음
+    /// 취소를 무시하는 Recents loader가 늦게 완료돼도 stale itemsLoaded를 방출하지 않는지 검증한다.
+    /// - 검증 내용: Recents load 보류 후 replacement Directory load 완료, Recents 재개 뒤 최신 항목 유지
+    /// - 사전 조건: Recents dependency가 continuation에서 대기하고 같은 cancellation ID의 Directory load가 뒤따름
+    /// - 기대 결과: 취소된 Recents 응답은 itemsLoaded를 보내지 않고 replacement 항목이 유지됨
+    func testCancelledRecentItemsResponseDoesNotOverwriteLatestItems() async {
+        let preservedLatest = await EntryOperationsTestSupport.cancelledLoadPreservesLatest(.recents)
+        XCTAssertTrue(preservedLatest)
+    }
+
+    /// EOP-003-load_entry_items (VOY-578): 취소된 Tag 응답은 최신 항목을 덮어쓰지 않음
+    /// 취소를 무시하는 Tag loader가 늦게 완료돼도 stale itemsLoaded를 방출하지 않는지 검증한다.
+    /// - 검증 내용: Tag load 보류 후 replacement Directory load 완료, Tag 재개 뒤 최신 항목 유지
+    /// - 사전 조건: Tag dependency가 continuation에서 대기하고 같은 cancellation ID의 Directory load가 뒤따름
+    /// - 기대 결과: 취소된 Tag 응답은 itemsLoaded를 보내지 않고 replacement 항목이 유지됨
+    func testCancelledTagItemsResponseDoesNotOverwriteLatestItems() async {
+        let preservedLatest = await EntryOperationsTestSupport.cancelledLoadPreservesLatest(.tag)
+        XCTAssertTrue(preservedLatest)
+    }
+
+    /// EOP-003-load_entry_items (VOY-578): 취소된 Computer 성공 응답은 최신 항목을 덮어쓰지 않음
+    /// 취소를 무시하는 Computer loader가 성공으로 늦게 완료돼도 stale itemsLoaded를 방출하지 않는지 검증한다.
+    /// - 검증 내용: Computer load 보류 후 replacement Directory load 완료, 성공 재개 뒤 최신 항목 유지
+    /// - 사전 조건: Computer dependency가 continuation에서 대기하고 같은 cancellation ID의 Directory load가 뒤따름
+    /// - 기대 결과: 취소된 Computer 성공 응답은 itemsLoaded를 보내지 않고 replacement 항목이 유지됨
+    func testCancelledComputerItemsSuccessDoesNotOverwriteLatestItems() async {
+        let preservedLatest = await EntryOperationsTestSupport.cancelledLoadPreservesLatest(.computerSuccess)
+        XCTAssertTrue(preservedLatest)
+    }
+
+    /// EOP-003-load_entry_items (VOY-578): 취소된 Computer 오류 응답은 빈 항목 fallback을 방출하지 않음
+    /// 취소를 무시하는 Computer loader가 오류로 늦게 완료돼도 stale 빈 itemsLoaded를 방출하지 않는지 검증한다.
+    /// - 검증 내용: Computer load 보류 후 replacement Directory load 완료, 오류 재개 뒤 최신 항목 유지
+    /// - 사전 조건: Computer dependency가 continuation에서 대기하고 같은 cancellation ID의 Directory load가 뒤따름
+    /// - 기대 결과: 취소된 Computer 오류 fallback은 itemsLoaded를 보내지 않고 replacement 항목이 유지됨
+    func testCancelledComputerItemsFailureDoesNotClearLatestItems() async {
+        let preservedLatest = await EntryOperationsTestSupport.cancelledLoadPreservesLatest(.computerFailure)
+        XCTAssertTrue(preservedLatest)
     }
 }
 

@@ -52,6 +52,7 @@ public struct EntryOperationsLoadingReducer {
                 state.isLoading = true
                 return .run { [entryLoadingClient, workspaceClient] send in
                     let recentItems = await entryLoadingClient.loadRecentItems(showHidden, workspaceClient)
+                    guard !Task.isCancelled else { return }
                     await send(.loading(.itemsLoaded(recentItems)))
                 }
                 .cancellable(
@@ -63,6 +64,7 @@ public struct EntryOperationsLoadingReducer {
                 state.isLoading = true
                 return .run { [entryLoadingClient, workspaceClient] send in
                     let taggedItems = await entryLoadingClient.loadFilesWithTag(tagName, showHidden, workspaceClient)
+                    guard !Task.isCancelled else { return }
                     await send(.loading(.itemsLoaded(taggedItems)))
                 }
                 .cancellable(
@@ -75,8 +77,12 @@ public struct EntryOperationsLoadingReducer {
                 return .run { [entryLoadingClient] send in
                     do {
                         let computerItems = try await entryLoadingClient.loadComputerItems()
+                        try Task.checkCancellation()
                         await send(.loading(.itemsLoaded(computerItems)))
+                    } catch is CancellationError {
+                        return
                     } catch {
+                        guard !Task.isCancelled else { return }
                         await send(.loading(.itemsLoaded([])))
                     }
                 }
