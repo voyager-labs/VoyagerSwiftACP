@@ -166,6 +166,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
             $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [newID] }
             $0.fileManagerWindowClient.open = { id in
                 openedIDs.withValue { $0.append(id) }
             }
@@ -215,6 +216,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 return true
             }
             $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [newID] }
             $0.fileManagerWindowClient.open = { _ in }
         }
         store.exhaustivity = .off
@@ -273,6 +275,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 return true
             }
             $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [newID] }
             $0.fileManagerWindowClient.open = { _ in }
         }
         store.exhaustivity = .off
@@ -340,6 +343,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 return true
             }
             $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [newID] }
             $0.fileManagerWindowClient.open = { _ in }
         }
         store.exhaustivity = .off
@@ -393,6 +397,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 return true
             }
             $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [newID] }
             $0.fileManagerWindowClient.open = { _ in }
         }
         store.exhaustivity = .off
@@ -565,6 +570,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 return ContentTabPinnedRecordStore()
             }
             $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [newID] }
             $0.fileManagerWindowClient.open = { _ in }
         }
         // 명시적 path window의 부수 window/open action은 완전히 검증하지 않으므로
@@ -843,6 +849,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 projectsURL,
             ])
             $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [newID] }
             $0.fileManagerWindowClient.open = { _ in }
             $0.userDefaultsClient.bool = { key in
                 switch key {
@@ -912,6 +919,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 projectsURL,
             ])
             $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [newID] }
             $0.fileManagerWindowClient.open = { _ in }
             $0.userDefaultsClient.bool = { key in
                 switch key {
@@ -993,6 +1001,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 )
             }
             $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [newID] }
             $0.fileManagerWindowClient.open = { _ in }
             $0.fileManagerClient.fileExistsWithIsDirectory = Self.fileExistsForFavoriteURLs([
                 URL(fileURLWithPath: "/Users/test/Projects"),
@@ -1068,6 +1077,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 projectsURL,
             ])
             $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [newID] }
             $0.fileManagerWindowClient.open = { _ in }
             $0.userDefaultsClient.bool = { key in
                 switch key {
@@ -1132,6 +1142,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 return []
             }
             $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [newID] }
             $0.fileManagerWindowClient.open = { _ in }
             $0.userDefaultsClient.bool = { key in
                 switch key {
