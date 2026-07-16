@@ -23,6 +23,41 @@ final class MenuCommandsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// FMW-001-request_undo: Edit 메뉴는 native text responder를 Window Entry command보다 우선한다.
+    /// - 검증 내용: native action 성공 시 native route, 실패/미지원 시 Window fallback
+    /// - 사전 조건: text responder 처리 가능 여부와 deterministic native action 결과
+    /// - 기대 결과: native 성공만 Window fallback을 차단하고 미지원 시 native action을 호출하지 않는다.
+    func testEditMenuUndoRedoPrioritizesNativeResponderBeforeWindowFallback() {
+        let nativeCalls = LockIsolated(0)
+
+        let nativeRoute = EditMenuUndoRedoRouting.resolve(
+            canHandleByTextResponder: true,
+            sendNativeAction: {
+                nativeCalls.withValue { $0 += 1 }
+                return true
+            },
+        )
+        let rejectedNativeRoute = EditMenuUndoRedoRouting.resolve(
+            canHandleByTextResponder: true,
+            sendNativeAction: {
+                nativeCalls.withValue { $0 += 1 }
+                return false
+            },
+        )
+        let unsupportedRoute = EditMenuUndoRedoRouting.resolve(
+            canHandleByTextResponder: false,
+            sendNativeAction: {
+                nativeCalls.withValue { $0 += 1 }
+                return true
+            },
+        )
+
+        XCTAssertEqual(nativeRoute, .native)
+        XCTAssertEqual(rejectedNativeRoute, .window)
+        XCTAssertEqual(unsupportedRoute, .window)
+        XCTAssertEqual(nativeCalls.value, 2)
+    }
+
     /// testTask3EntryCommandsRouteToWindowManagerDelegate 테스트 동작을 검증한다.
     func testTask3EntryCommandsRouteToWindowManagerDelegate() async {
         let appCases: [(MenuCommandItem.AppCommand, WindowManagerAction)] = [
