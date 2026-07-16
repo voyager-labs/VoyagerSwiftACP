@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryOperations
 
 public struct FileManagerWindowClient: Sendable {
     public var open: @Sendable (_ id: UUID) async -> Void
@@ -108,18 +109,18 @@ private func configureFileManagerWindowTabbingPolicyIfNeeded() {
 }
 
 @MainActor
-public func resolveFileManagerUndoManager(windowID: UUID?) -> UndoManager? {
-    if let windowID {
-        return fileManagerWindowControllersByID[windowID]?.windowUndoManager
-    }
+private func resolveFileManagerEntryOperationsUndoManager(windowID: UUID?) -> UndoManager? {
+    guard let windowID else { return nil }
+    return fileManagerWindowControllersByID[windowID]?.entryOperationsUndoManager
+}
 
-    if let keyWindow = NSApp.keyWindow,
-       let controller = fileManagerWindowControllers.first(where: { $0.window === keyWindow })
-    {
-        return controller.windowUndoManager
-    }
-
-    return (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager
+@MainActor
+public func makeFileManagerUndoManagerClientLive() -> UndoManagerClient {
+    .live(resolveUndoManager: { windowID in
+        await MainActor.run {
+            resolveFileManagerEntryOperationsUndoManager(windowID: windowID)
+        }
+    })
 }
 
 @MainActor
@@ -221,11 +222,11 @@ private func fileManagerWindowOpen(windowID: UUID) {
         return
     }
 
-    let undoManager = UndoManager()
+    let entryOperationsUndoManager = UndoManager()
     let controller = makeManagedWindowController(
         windowID: windowID,
         fileManagerStore: fileManagerStore,
-        undoManager: undoManager,
+        entryOperationsUndoManager: entryOperationsUndoManager,
     )
     registerFileManagerWindowController(controller)
     controller.showWindow(nil as Any?)
@@ -253,11 +254,11 @@ private func fileManagerWindowOpenTab(windowID: UUID) {
         return
     }
 
-    let undoManager = UndoManager()
+    let entryOperationsUndoManager = UndoManager()
     let controller = makeManagedWindowController(
         windowID: windowID,
         fileManagerStore: fileManagerStore,
-        undoManager: undoManager,
+        entryOperationsUndoManager: entryOperationsUndoManager,
     )
     registerFileManagerWindowController(controller)
 
@@ -327,12 +328,12 @@ private func currentFileManagerWindowSize() -> NSSize? {
 private func makeManagedWindowController(
     windowID: UUID,
     fileManagerStore: StoreOf<FileManagerFeature>,
-    undoManager: UndoManager,
+    entryOperationsUndoManager: UndoManager,
 ) -> FileManagerWindowCoordinator {
     FileManagerWindowCoordinator(
         windowID: windowID,
         store: fileManagerStore,
-        windowUndoManager: undoManager,
+        entryOperationsUndoManager: entryOperationsUndoManager,
         path: nil,
         onBecameKey: { id in
             fileManagerWindowOnBecameKey?(id)

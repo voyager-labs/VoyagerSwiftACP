@@ -1236,30 +1236,54 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         )
         var state = FileManagerFeature.State()
         state.windowID = windowID
-        state.undoManagerAvailability = .init(canUndo: true, canRedo: true)
         state.sidebarEntryDropOperations.undoRecords = [record]
         state.sidebarEntryDropOperations.redoRecords = [record]
         state.content.entryViewLayout.entryOperations.undoRecords = [record]
         state.content.entryViewLayout.entryOperations.redoRecords = [record]
+        let undoTarget = UndoManagerRecordIdentity(
+            ownerID: state.sidebarEntryDropOperations.undoOwnerID,
+            recordID: record.id,
+        )
+        let redoTarget = UndoManagerRecordIdentity(
+            ownerID: state.content.entryViewLayout.entryOperations.undoOwnerID,
+            recordID: record.id,
+        )
+        state.undoManagerAvailability = .init(
+            canUndo: true,
+            canRedo: true,
+            undoTarget: undoTarget,
+            redoTarget: redoTarget,
+        )
         let initialContentOperations = state.content.entryViewLayout.entryOperations
         let initialSidebarOperations = state.sidebarEntryDropOperations
         XCTAssertTrue(state.menuCommandProjection.canUndo)
         XCTAssertTrue(state.menuCommandProjection.canRedo)
 
         let calls = LockIsolated<[String]>([])
-        let availability = LockIsolated(UndoManagerAvailability(canUndo: true, canRedo: true))
+        let initialAvailability = state.undoManagerAvailability
+        let availability = LockIsolated(initialAvailability)
         let client = UndoManagerClient(
             registerUndo: { _, _, _ in },
-            undo: { receivedWindowID in
+            undo: { receivedWindowID, receivedTarget in
                 XCTAssertEqual(receivedWindowID, windowID)
+                XCTAssertEqual(receivedTarget, undoTarget)
                 calls.withValue { $0.append("undo") }
-                availability.setValue(.init(canUndo: false, canRedo: true))
+                availability.setValue(.init(
+                    canUndo: false,
+                    canRedo: true,
+                    redoTarget: redoTarget,
+                ))
                 return .init(didInvoke: false, availability: availability.value)
             },
-            redo: { receivedWindowID in
+            redo: { receivedWindowID, receivedTarget in
                 XCTAssertEqual(receivedWindowID, windowID)
+                XCTAssertEqual(receivedTarget, redoTarget)
                 calls.withValue { $0.append("redo") }
-                availability.setValue(.init(canUndo: true, canRedo: false))
+                availability.setValue(.init(
+                    canUndo: true,
+                    canRedo: false,
+                    undoTarget: undoTarget,
+                ))
                 return .init(didInvoke: false, availability: availability.value)
             },
             availability: { _ in availability.value },
@@ -1276,14 +1300,22 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             $0.undoRedoPhase = .invoking(requestID: requestID, direction: .undo)
         }
         await store.receive(\.internal.undoManagerInvocationFinished) {
-            $0.undoManagerAvailability = .init(canUndo: false, canRedo: true)
+            $0.undoManagerAvailability = .init(
+                canUndo: false,
+                canRedo: true,
+                redoTarget: redoTarget,
+            )
             $0.undoRedoPhase = .idle
         }
         await store.send(.request(.requestRedo)) {
             $0.undoRedoPhase = .invoking(requestID: requestID, direction: .redo)
         }
         await store.receive(\.internal.undoManagerInvocationFinished) {
-            $0.undoManagerAvailability = .init(canUndo: true, canRedo: false)
+            $0.undoManagerAvailability = .init(
+                canUndo: true,
+                canRedo: false,
+                undoTarget: undoTarget,
+            )
             $0.undoRedoPhase = .idle
         }
 
@@ -1300,19 +1332,53 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 사전 조건: 초기 root availability false/false
     /// - 기대 결과: 마지막 shared-manager snapshot이 메뉴 canUndo/canRedo를 결정함
     func testUndoManagerAvailabilityOutcomes_syncSingleWindowRoot() async {
-        let store = TestStore(initialState: FileManagerFeature.State()) {
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/availability/old", afterPath: "/availability/new")],
+        )
+        var state = FileManagerFeature.State()
+        state.content.entryViewLayout.entryOperations.undoRecords = [record]
+        state.sidebarEntryDropOperations.redoRecords = [record]
+        state.syncActiveTabContentState()
+        let contentTarget = UndoManagerRecordIdentity(
+            ownerID: state.content.entryViewLayout.entryOperations.undoOwnerID,
+            recordID: record.id,
+        )
+        let sidebarTarget = UndoManagerRecordIdentity(
+            ownerID: state.sidebarEntryDropOperations.undoOwnerID,
+            recordID: record.id,
+        )
+        let store = TestStore(initialState: state) {
             FileManagerWindowRoutingReducer()
         }
 
         await store.send(.content(.entryViewLayout(.entryOperations(.outcome(
-            .undoManagerAvailabilityChanged(.init(canUndo: true, canRedo: false)),
+            .undoManagerAvailabilityChanged(.init(
+                canUndo: true,
+                canRedo: false,
+                undoTarget: contentTarget,
+            )),
         ))))) {
-            $0.undoManagerAvailability = .init(canUndo: true, canRedo: false)
+            $0.undoManagerAvailability = .init(
+                canUndo: true,
+                canRedo: false,
+                undoTarget: contentTarget,
+            )
         }
+        XCTAssertTrue(store.state.menuCommandProjection.canUndo)
+
         await store.send(.internal(.sidebarEntryDrop(.outcome(
-            .undoManagerAvailabilityChanged(.init(canUndo: false, canRedo: true)),
+            .undoManagerAvailabilityChanged(.init(
+                canUndo: false,
+                canRedo: true,
+                redoTarget: sidebarTarget,
+            )),
         )))) {
-            $0.undoManagerAvailability = .init(canUndo: false, canRedo: true)
+            $0.undoManagerAvailability = .init(
+                canUndo: false,
+                canRedo: true,
+                redoTarget: sidebarTarget,
+            )
         }
 
         XCTAssertFalse(store.state.menuCommandProjection.canUndo)
@@ -1496,8 +1562,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         let invalidatedOwners = LockIsolated<[UUID]>([])
         let client = UndoManagerClient(
             registerUndo: { _, _, _ in },
-            undo: { _ in .init(didInvoke: false, availability: .init()) },
-            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             invalidateOwner: { receivedWindowID, ownerID in
                 XCTAssertEqual(receivedWindowID, windowID)
                 invalidatedOwners.withValue { $0.append(ownerID) }
@@ -1566,8 +1632,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             let scenarioName = scenario.name
             let client = UndoManagerClient(
                 registerUndo: { _, _, _ in },
-                undo: { _ in .init(didInvoke: false, availability: .init()) },
-                redo: { _ in .init(didInvoke: false, availability: .init()) },
+                undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+                redo: { _, _ in .init(didInvoke: false, availability: .init()) },
                 invalidateOwner: { _, receivedOwnerID in
                     XCTAssertEqual(receivedOwnerID, ownerID, scenarioName)
                     await gate.suspend()
@@ -1627,8 +1693,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         let ownerID = try XCTUnwrap(state.tabContentStates[inactiveID]).entryViewLayout.entryOperations.undoOwnerID
         let client = UndoManagerClient(
             registerUndo: { _, _, _ in },
-            undo: { _ in .init(didInvoke: false, availability: .init()) },
-            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             invalidateOwner: { _, _ in .init(succeeded: false, availability: .init(canUndo: true, canRedo: true)) },
         )
         let store = TestStore(initialState: state) {
@@ -1676,8 +1742,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         let invalidationCount = LockIsolated(0)
         let client = UndoManagerClient(
             registerUndo: { _, _, _ in },
-            undo: { _ in .init(didInvoke: false, availability: .init()) },
-            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             invalidateOwner: { _, _ in
                 invalidationCount.withValue { $0 += 1 }
                 return .init(succeeded: true, availability: .init())
@@ -1727,8 +1793,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         let invalidationCount = LockIsolated(0)
         let client = UndoManagerClient(
             registerUndo: { _, _, _ in },
-            undo: { _ in .init(didInvoke: false, availability: .init()) },
-            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             invalidateOwner: { _, _ in
                 invalidationCount.withValue { $0 += 1 }
                 return .init(succeeded: true, availability: .init())
@@ -1792,8 +1858,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             let invalidationCount = LockIsolated(0)
             let client = UndoManagerClient(
                 registerUndo: { _, _, _ in },
-                undo: { _ in .init(didInvoke: false, availability: .init()) },
-                redo: { _ in .init(didInvoke: false, availability: .init()) },
+                undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+                redo: { _, _ in .init(didInvoke: false, availability: .init()) },
                 invalidateOwner: { _, _ in
                     invalidationCount.withValue { $0 += 1 }
                     return .init(succeeded: true, availability: .init())
@@ -2158,8 +2224,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         let refreshedAvailability = UndoManagerAvailability(canUndo: true, canRedo: false)
         let client = UndoManagerClient(
             registerUndo: { _, _, _ in },
-            undo: { _ in .init(didInvoke: false, availability: .init()) },
-            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             availability: { _ in refreshedAvailability },
         )
         let store = TestStore(initialState: state) {
@@ -2513,8 +2579,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         closeState.pendingDirectoryReloadTabIDs = [closedID]
         let closeClient = UndoManagerClient(
             registerUndo: { _, _, _ in },
-            undo: { _ in .init(didInvoke: false, availability: .init()) },
-            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             invalidateOwner: { receivedWindowID, _ in
                 XCTAssertEqual(receivedWindowID, closeWindowID)
                 return .init(succeeded: true, availability: .init())
@@ -2645,8 +2711,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             $0.entryLoadingClient = loadingClient
             $0.undoManagerClient = UndoManagerClient(
                 registerUndo: { _, _, _ in },
-                undo: { _ in .init(didInvoke: false, availability: .init()) },
-                redo: { _ in .init(didInvoke: false, availability: .init()) },
+                undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+                redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             )
         }
     }

@@ -8,8 +8,9 @@ import VoyagerShared
 
 public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
     public let windowID: UUID
-    public let windowUndoManager: UndoManager
+    let entryOperationsUndoManager: UndoManager
     public let store: StoreOf<FileManagerFeature>
+    private let responderUndoManager: UndoManager
     private let onBecameKey: (@MainActor (UUID) -> Void)?
     private let onResignedKey: (@MainActor (UUID) -> Void)?
     private let onWillClose: (@MainActor (UUID) -> Void)?
@@ -19,7 +20,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
     public init(
         windowID: UUID,
         store: StoreOf<FileManagerFeature>,
-        windowUndoManager: UndoManager,
+        entryOperationsUndoManager: UndoManager,
         path: String? = nil,
         onBecameKey: (@MainActor (UUID) -> Void)? = nil,
         onResignedKey: (@MainActor (UUID) -> Void)? = nil,
@@ -29,7 +30,8 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
     ) {
         self.windowID = windowID
         self.store = store
-        self.windowUndoManager = windowUndoManager
+        self.entryOperationsUndoManager = entryOperationsUndoManager
+        responderUndoManager = UndoManager()
         self.onBecameKey = onBecameKey
         self.onResignedKey = onResignedKey
         self.onWillClose = onWillClose
@@ -60,10 +62,10 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
     ) {
         let windowID = UUID()
         let state = Self.createInitialState(path: path, duplicateState: duplicateState)
-        let undoManager = UndoManager()
+        let entryOperationsUndoManager = UndoManager()
         let store = Self.createStore(
             state: state,
-            undoManager: undoManager,
+            entryOperationsUndoManager: entryOperationsUndoManager,
             registryClient: registryClient,
         )
 
@@ -78,7 +80,8 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
 
         self.windowID = windowID
         self.store = store
-        windowUndoManager = undoManager
+        self.entryOperationsUndoManager = entryOperationsUndoManager
+        responderUndoManager = UndoManager()
         self.onBecameKey = onBecameKey
         self.onResignedKey = onResignedKey
         self.onWillClose = onWillClose
@@ -120,13 +123,13 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
 
     private static func createStore(
         state: FileManagerFeature.State,
-        undoManager: UndoManager,
+        entryOperationsUndoManager: UndoManager,
         registryClient: RegistryClient,
     ) -> StoreOf<FileManagerFeature> {
         Store(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
-            $0.undoManagerClient = .live(undoManager: undoManager)
+            $0.undoManagerClient = .live(undoManager: entryOperationsUndoManager)
             $0.registryClient = registryClient
         }
     }
@@ -215,6 +218,6 @@ public extension FileManagerWindowCoordinator {
     }
 
     func windowWillReturnUndoManager(_: NSWindow) -> UndoManager? {
-        windowUndoManager
+        responderUndoManager
     }
 }

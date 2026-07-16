@@ -716,18 +716,16 @@ struct FileManagerWindowCommandRoutingReducer {
     }
 
     private func handleUndoRedoRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
-        guard state.undoRedoPhase == .idle else { return .none }
         let direction: EntryActionDirection
         switch command {
         case .requestUndo:
-            guard state.undoManagerAvailability.canUndo else { return .none }
             direction = .undo
         case .requestRedo:
-            guard state.undoManagerAvailability.canRedo else { return .none }
             direction = .redo
         default:
             return .none
         }
+        guard let expectedTarget = state.validatedUndoRedoTarget(for: direction) else { return .none }
 
         let requestID = uuid()
         let windowID = state.windowID
@@ -735,9 +733,9 @@ struct FileManagerWindowCommandRoutingReducer {
         return .run { send in
             let result = switch direction {
             case .undo:
-                await undoManagerClient.undo(windowID)
+                await undoManagerClient.undo(windowID, expectedTarget: expectedTarget)
             case .redo:
-                await undoManagerClient.redo(windowID)
+                await undoManagerClient.redo(windowID, expectedTarget: expectedTarget)
             }
             await send(.internal(.undoManagerInvocationFinished(
                 requestID: requestID,

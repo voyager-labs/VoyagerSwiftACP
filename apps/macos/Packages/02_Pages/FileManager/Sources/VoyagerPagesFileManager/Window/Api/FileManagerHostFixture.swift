@@ -23,7 +23,7 @@ public enum FileManagerHostFixture {
         return FileManagerWindowCoordinator(
             windowID: UUID(),
             store: store,
-            windowUndoManager: undoManager,
+            entryOperationsUndoManager: undoManager,
         )
     }
 }

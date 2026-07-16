@@ -185,6 +185,68 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         await store.finish()
     }
 
+    /// FMW-001-request_undo: Window responder와 EntryOperations는 서로 다른 UndoManager를 사용한다.
+    /// responder에 더 늦게 등록된 foreign action이 Window Entry undo의 native top이 될 수 없는지 검증한다.
+    /// - 검증 내용: manager identity 분리, Entry A undo 성공, foreign B 미호출과 responder history 보존
+    /// - 사전 조건: Entry manager에 A를 등록한 뒤 responder manager에 B를 등록한다.
+    /// - 기대 결과: Window Entry undo는 A만 실행하고 B는 responder manager에 남는다.
+    func testEntryUndoManager_isolatedFromForeignResponderAction() async throws {
+        let entryOperationsUndoManager = UndoManager()
+        let windowID = UUID()
+        let client = UndoManagerClient.live(undoManager: entryOperationsUndoManager)
+        let coordinator = makeCoordinator(
+            windowID: windowID,
+            entryOperationsUndoManager: entryOperationsUndoManager,
+            undoManagerClient: client,
+        )
+        let window = try XCTUnwrap(coordinator.window)
+        let responderUndoManager = try XCTUnwrap(coordinator.windowWillReturnUndoManager(window))
+        XCTAssertFalse(entryOperationsUndoManager === responderUndoManager)
+
+        let ownerID = UUID()
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/entry/old", afterPath: "/entry/new")],
+        )
+        let expectedTarget = UndoManagerRecordIdentity(ownerID: ownerID, recordID: record.id)
+        await client.registerUndo(windowID, ownerID, record)
+
+        let foreignTarget = ForeignUndoTarget()
+        responderUndoManager.registerUndo(withTarget: foreignTarget) { target in
+            target.invocationCount += 1
+        }
+
+        let result = await client.undo(windowID, expectedTarget: expectedTarget)
+
+        XCTAssertTrue(result.didInvoke)
+        XCTAssertEqual(result.availability.redoTarget, expectedTarget)
+        XCTAssertEqual(foreignTarget.invocationCount, 0)
+        XCTAssertTrue(responderUndoManager.canUndo)
+        XCTAssertTrue(entryOperationsUndoManager.canRedo)
+        _ = await client.invalidateWindow(windowID)
+    }
+
+    /// FMW-001-request_undo: 등록되지 않은 Window ID의 Entry manager resolver는 fail-closed 처리한다.
+    /// native key window나 first responder manager로 fallback하지 않는 factory 계약을 검증한다.
+    /// - 검증 내용: undo/redo 모두 didInvoke=false이고 availability가 비어 있다.
+    /// - 사전 조건: registry에 존재하지 않는 임의 Window ID와 expected target
+    /// - 기대 결과: 어떤 native manager도 호출하지 않고 no-op으로 종료한다.
+    func testFileManagerUndoManagerClient_missingWindowResolverIsNoOp() async {
+        let client = makeFileManagerUndoManagerClientLive()
+        let missingWindowID = UUID()
+        let target = UndoManagerRecordIdentity(ownerID: UUID(), recordID: UUID())
+
+        let undoResult = await client.undo(missingWindowID, expectedTarget: target)
+        let redoResult = await client.redo(missingWindowID, expectedTarget: target)
+        let availability = await client.availability(missingWindowID)
+
+        XCTAssertFalse(undoResult.didInvoke)
+        XCTAssertFalse(redoResult.didInvoke)
+        XCTAssertEqual(undoResult.availability, .init())
+        XCTAssertEqual(redoResult.availability, .init())
+        XCTAssertEqual(availability, .init())
+    }
+
     /// FMW-001-request_undo: terminal이 invocation result보다 먼저 도착해도 late result는 무시됨
     /// - 검증 내용: invoking 중 content terminal success가 request-scoped refresh를 거쳐 뒤늦은 invocation result를 무시함
     /// - 사전 조건: undo client가 invocation result 반환 직전에 controllable gate에서 대기함
@@ -194,21 +256,30 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         let gate = FileManagerUndoInvocationGate()
         let calls = LockIsolated(0)
         let terminalAvailability = UndoManagerAvailability(canUndo: false, canRedo: true)
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/source/old", afterPath: "/source/new")],
+        )
+        var state = FileManagerWindowState()
+        let ownerID = state.content.entryViewLayout.entryOperations.undoOwnerID
+        let expectedTarget = UndoManagerRecordIdentity(ownerID: ownerID, recordID: record.id)
+        state.content.entryViewLayout.entryOperations.undoRecords = [record]
+        state.syncActiveTabContentState()
+        state.undoManagerAvailability = .init(
+            canUndo: true,
+            canRedo: false,
+            undoTarget: expectedTarget,
+        )
         let client = UndoManagerClient(
             registerUndo: { _, _, _ in },
-            undo: { _ in
+            undo: { _, receivedTarget in
+                XCTAssertEqual(receivedTarget, expectedTarget)
                 calls.withValue { $0 += 1 }
                 await gate.suspend()
                 return .init(didInvoke: true, availability: terminalAvailability)
             },
-            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             availability: { _ in terminalAvailability },
-        )
-        var state = FileManagerWindowState()
-        state.undoManagerAvailability = .init(canUndo: true, canRedo: false)
-        let record = EntryActionRecord(
-            operationKind: .rename,
-            targets: [.init(beforePath: "/source/old", afterPath: "/source/new")],
         )
         let store = TestStore(initialState: state) {
             CombineReducers {
@@ -284,11 +355,11 @@ final class FMW001FileManagerWindowTests: XCTestCase {
             let calls = LockIsolated(0)
             let client = UndoManagerClient(
                 registerUndo: { _, _, _ in },
-                undo: { _ in
+                undo: { _, _ in
                     calls.withValue { $0 += 1 }
                     return .init(didInvoke: true, availability: .init())
                 },
-                redo: { _ in
+                redo: { _, _ in
                     calls.withValue { $0 += 1 }
                     return .init(didInvoke: true, availability: .init())
                 },
@@ -402,36 +473,45 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         }
     }
 
-    /// FMW-001-request_undo: editable text responder가 처리 가능한 Cmd-Z는 native responder가 먼저 소비한다.
-    /// - 검증 내용: native undo closure가 true일 때 Content delegate가 방출되지 않는다.
-    /// - 사전 조건: undo 가능한 editable text responder를 나타내는 deterministic native seam
-    /// - 기대 결과: native undo 1회 호출, FileManager delegate 없음
-    func testKeyboardUndo_nativeEditableTextResponderHasPriority() async {
-        let nativeUndoCalls = LockIsolated(0)
-        let store = TestStore(initialState: FileManagerContentState()) {
-            Reduce<FileManagerContentState, FileManagerContentAction> { state, action in
-                guard case let .view(.handleKeyCommand(command)) = action else { return .none }
-                return FileManagerContentKeyCommandHandler.effect(
-                    for: command,
-                    state: state,
-                    consumeNativeUndo: {
-                        nativeUndoCalls.withValue { $0 += 1 }
-                        return true
-                    },
-                    consumeNativeRedo: { false },
-                )
+    /// FMW-001-request_undo: editable text responder가 처리 가능한 Cmd-Z/Cmd-Shift-Z는 native responder가 먼저 소비한다.
+    /// Menu/keyboard가 responder 전용 manager를 우선하고 Window Entry request를 만들지 않는 계약을 검증한다.
+    /// - 검증 내용: direction별 native closure가 true일 때 Content delegate가 방출되지 않는다.
+    /// - 사전 조건: undo/redo 가능한 editable text responder를 나타내는 deterministic native seam
+    /// - 기대 결과: native undo/redo 각각 1회 호출, FileManager delegate 없음
+    func testKeyboardUndoRedo_nativeEditableTextResponderHasPriority() async {
+        for direction in [EntryActionDirection.undo, .redo] {
+            let nativeCalls = LockIsolated(0)
+            let store = TestStore(initialState: FileManagerContentState()) {
+                Reduce<FileManagerContentState, FileManagerContentAction> { state, action in
+                    guard case let .view(.handleKeyCommand(command)) = action else { return .none }
+                    return FileManagerContentKeyCommandHandler.effect(
+                        for: command,
+                        state: state,
+                        consumeNativeUndo: {
+                            guard direction == .undo else { return false }
+                            nativeCalls.withValue { $0 += 1 }
+                            return true
+                        },
+                        consumeNativeRedo: {
+                            guard direction == .redo else { return false }
+                            nativeCalls.withValue { $0 += 1 }
+                            return true
+                        },
+                    )
+                }
             }
+            let modifiers: KeyModifiers = direction == .undo ? .command : [.command, .shift]
+
+            await store.send(.view(.handleKeyCommand(KeyCommand(
+                keyCode: 6,
+                modifiers: modifiers,
+                characters: direction == .undo ? "z" : "Z",
+                charactersIgnoringModifiers: "z",
+            ))))
+            await store.finish()
+
+            XCTAssertEqual(nativeCalls.value, 1)
         }
-
-        await store.send(.view(.handleKeyCommand(KeyCommand(
-            keyCode: 6,
-            modifiers: .command,
-            characters: "z",
-            charactersIgnoringModifiers: "z",
-        ))))
-        await store.finish()
-
-        XCTAssertEqual(nativeUndoCalls.value, 1)
     }
 
     /// FMW-001-request_undo: sidebar replay recovery는 dedicated owner만 회전한다.
@@ -500,8 +580,8 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         let recoveredAvailability = UndoManagerAvailability(canUndo: false, canRedo: true)
         let client = UndoManagerClient(
             registerUndo: { _, _, _ in },
-            undo: { _ in .init(didInvoke: false, availability: .init()) },
-            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             invalidateOwner: { receivedWindowID, receivedOwnerID in
                 XCTAssertEqual(receivedWindowID, windowID)
                 XCTAssertEqual(receivedOwnerID, ownerID)
@@ -649,8 +729,8 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         state.syncActiveTabContentState()
         let client = UndoManagerClient(
             registerUndo: { _, ownerID, _ in registerOwnerIDs.withValue { $0.append(ownerID) } },
-            undo: { _ in .init(didInvoke: false, availability: .init()) },
-            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _, _ in .init(didInvoke: false, availability: .init()) },
         )
         let store = TestStore(initialState: state) {
             CombineReducers {
@@ -699,8 +779,8 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         let ownerID = state.content.entryViewLayout.entryOperations.undoOwnerID
         let client = UndoManagerClient(
             registerUndo: { _, _, _ in },
-            undo: { _ in .init(didInvoke: false, availability: .init()) },
-            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             invalidateOwner: { _, _ in .init(succeeded: false, availability: .init(canUndo: true, canRedo: true)) },
         )
         let store = TestStore(initialState: state) {
@@ -730,6 +810,234 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         XCTAssertEqual(store.state.content.entryViewLayout.entryOperations.undoOwnerID, ownerID)
         XCTAssertEqual(uuidCalls.value, 0)
         await store.finish()
+    }
+
+    /// FMW-001-request_undo: busy owner는 shared manager 호출을 막고 idle snapshot에서만 허용한다.
+    /// sidebar, active, inactive owner 모두 같은 owner-aware preflight를 사용하는지 undo/redo 양방향으로 검증한다.
+    /// - 검증 내용: busy에서는 menu disabled/client 0회/UUID 0회이고 idle에서는 expected target으로 정확히 1회 호출한다.
+    /// - 사전 조건: manager top identity와 local latest record가 일치하며 동일 record target의 busy 상태만 전환한다.
+    /// - 기대 결과: 여섯 owner-direction 조합 모두 busy no-op 후 idle invocation이 성립한다.
+    func testUndoRedoBusyOwnerBlocksInvocationUntilIdleAcrossAllOwnerLocations() async {
+        for location in UndoOwnerLocation.allCases {
+            for direction in [EntryActionDirection.undo, .redo] {
+                let ownerID = UUID()
+                let record = EntryActionRecord(
+                    operationKind: .rename,
+                    targets: [.init(
+                        beforePath: "/\(location.rawValue)/old",
+                        afterPath: "/\(location.rawValue)/new",
+                    )],
+                )
+                let target = UndoManagerRecordIdentity(ownerID: ownerID, recordID: record.id)
+                let calls = LockIsolated(0)
+                let receivedTargets = LockIsolated<[UndoManagerRecordIdentity?]>([])
+                let uuidCalls = LockIsolated(0)
+                let requestID = UUID()
+
+                let busyState = makeUndoRedoState(
+                    location: location,
+                    direction: direction,
+                    ownerID: ownerID,
+                    record: record,
+                    isBusy: true,
+                )
+                let busyAvailability = busyState.undoManagerAvailability
+                let client = UndoManagerClient(
+                    registerUndo: { _, _, _ in },
+                    undo: { _, receivedTarget in
+                        calls.withValue { $0 += 1 }
+                        receivedTargets.withValue { $0.append(receivedTarget) }
+                        return .init(didInvoke: false, availability: busyAvailability)
+                    },
+                    redo: { _, receivedTarget in
+                        calls.withValue { $0 += 1 }
+                        receivedTargets.withValue { $0.append(receivedTarget) }
+                        return .init(didInvoke: false, availability: busyAvailability)
+                    },
+                )
+                let makeUUID = UUIDGenerator {
+                    uuidCalls.withValue { $0 += 1 }
+                    return requestID
+                }
+                let busyStore = makeStore(initialState: busyState)
+                busyStore.dependencies.undoManagerClient = client
+                busyStore.dependencies.uuid = makeUUID
+
+                XCTAssertFalse(canInvoke(direction, projection: busyStore.state.menuCommandProjection))
+                await busyStore.send(.request(command(for: direction)))
+                XCTAssertEqual(busyStore.state.undoRedoPhase, .idle)
+                XCTAssertEqual(calls.value, 0)
+                XCTAssertEqual(uuidCalls.value, 0)
+                await busyStore.finish()
+
+                let idleState = makeUndoRedoState(
+                    location: location,
+                    direction: direction,
+                    ownerID: ownerID,
+                    record: record,
+                    isBusy: false,
+                )
+                let idleStore = makeStore(initialState: idleState)
+                idleStore.dependencies.undoManagerClient = client
+                idleStore.dependencies.uuid = makeUUID
+
+                XCTAssertTrue(canInvoke(direction, projection: idleStore.state.menuCommandProjection))
+                await idleStore.send(.request(command(for: direction))) {
+                    $0.undoRedoPhase = .invoking(requestID: requestID, direction: direction)
+                }
+                await idleStore.receive(\.internal.undoManagerInvocationFinished) {
+                    $0.undoRedoPhase = .idle
+                    $0.undoManagerAvailability = busyAvailability
+                }
+                XCTAssertEqual(calls.value, 1, location.rawValue)
+                XCTAssertEqual(receivedTargets.value, [target], location.rawValue)
+                XCTAssertEqual(uuidCalls.value, 1, location.rawValue)
+                await idleStore.finish()
+            }
+        }
+    }
+
+    /// FMW-001-request_undo: 검증 불가능한 top identity는 fail-closed no-op 처리한다.
+    /// native availability가 true여도 owner/record를 유일하게 증명하지 못하면 Window가 호출하지 않는지 검증한다.
+    /// - 검증 내용: unknown, missing, duplicate, record mismatch에서 menu disabled/client 0회/UUID 0회이다.
+    /// - 사전 조건: undo와 redo 각각 manager target metadata 또는 local owner 구성이 불완전하다.
+    /// - 기대 결과: phase는 idle을 유지하고 shared manager 호출이나 request ID 소비가 없다.
+    func testUndoRedoUnknownMissingDuplicateAndMismatchFailClosedWithoutInvocation() async {
+        for direction in [EntryActionDirection.undo, .redo] {
+            let ownerID = UUID()
+            let record = EntryActionRecord(
+                operationKind: .rename,
+                targets: [.init(beforePath: "/validation/old", afterPath: "/validation/new")],
+            )
+            let baseState = makeUndoRedoState(
+                location: .active,
+                direction: direction,
+                ownerID: ownerID,
+                record: record,
+                isBusy: false,
+            )
+
+            var unknownState = baseState
+            setManagerTarget(nil, direction: direction, state: &unknownState)
+
+            var missingState = baseState
+            setManagerTarget(
+                .init(ownerID: UUID(), recordID: record.id),
+                direction: direction,
+                state: &missingState,
+            )
+
+            var duplicateState = baseState
+            duplicateState.sidebarEntryDropOperations = duplicateState.content.entryViewLayout.entryOperations
+
+            var mismatchState = baseState
+            setManagerTarget(
+                .init(ownerID: ownerID, recordID: UUID()),
+                direction: direction,
+                state: &mismatchState,
+            )
+
+            for (name, state) in [
+                ("unknown", unknownState),
+                ("missing", missingState),
+                ("duplicate", duplicateState),
+                ("mismatch", mismatchState),
+            ] {
+                let calls = LockIsolated(0)
+                let uuidCalls = LockIsolated(0)
+                let client = UndoManagerClient(
+                    registerUndo: { _, _, _ in },
+                    undo: { _, _ in
+                        calls.withValue { $0 += 1 }
+                        return .init(didInvoke: true, availability: .init())
+                    },
+                    redo: { _, _ in
+                        calls.withValue { $0 += 1 }
+                        return .init(didInvoke: true, availability: .init())
+                    },
+                )
+                let store = makeStore(initialState: state)
+                store.dependencies.undoManagerClient = client
+                store.dependencies.uuid = UUIDGenerator {
+                    uuidCalls.withValue { $0 += 1 }
+                    return UUID()
+                }
+
+                XCTAssertFalse(canInvoke(direction, projection: store.state.menuCommandProjection), name)
+                await store.send(.request(command(for: direction)))
+                XCTAssertEqual(store.state.undoRedoPhase, .idle, name)
+                XCTAssertEqual(calls.value, 0, name)
+                XCTAssertEqual(uuidCalls.value, 0, name)
+                await store.finish()
+            }
+        }
+    }
+
+    private enum UndoOwnerLocation: String, CaseIterable {
+        case sidebar
+        case active
+        case inactive
+    }
+
+    private func makeUndoRedoState(
+        location: UndoOwnerLocation,
+        direction: EntryActionDirection,
+        ownerID: UUID,
+        record: EntryActionRecord,
+        isBusy: Bool,
+    ) -> FileManagerWindowState {
+        var state = FileManagerWindowState()
+        state.windowID = UUID()
+        var operations = EntryOperationsState(undoOwnerID: ownerID)
+        switch direction {
+        case .undo:
+            operations.undoRecords = [record]
+        case .redo:
+            operations.redoRecords = [record]
+        }
+        if let busyPath = record.targets.first?.beforePath {
+            operations.itemStates[busyPath] = .init(isBusy: isBusy)
+        }
+
+        switch location {
+        case .sidebar:
+            state.sidebarEntryDropOperations = operations
+        case .active:
+            state.content.entryViewLayout.entryOperations = operations
+            state.syncActiveTabContentState()
+        case .inactive:
+            var inactiveContent = FileManagerContentFeature.State()
+            inactiveContent.entryViewLayout.entryOperations = operations
+            state.tabContentStates[ContentTabID(rawValue: "owner-aware-inactive")] = inactiveContent
+        }
+
+        let target = UndoManagerRecordIdentity(ownerID: ownerID, recordID: record.id)
+        setManagerTarget(target, direction: direction, state: &state)
+        return state
+    }
+
+    private func setManagerTarget(
+        _ target: UndoManagerRecordIdentity?,
+        direction: EntryActionDirection,
+        state: inout FileManagerWindowState,
+    ) {
+        switch direction {
+        case .undo:
+            state.undoManagerAvailability = .init(canUndo: true, undoTarget: target)
+        case .redo:
+            state.undoManagerAvailability = .init(canRedo: true, redoTarget: target)
+        }
+    }
+
+    private func command(for direction: EntryActionDirection) -> FileManagerWindowAction.WindowCommand {
+        direction == .undo ? .requestUndo : .requestRedo
+    }
+
+    private func canInvoke(
+        _ direction: EntryActionDirection,
+        projection: FileManagerWindowMenuCommandProjection,
+    ) -> Bool {
+        direction == .undo ? projection.canUndo : projection.canRedo
     }
 
     // MARK: - FMW-001-toggle_composer
@@ -889,6 +1197,28 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         XCTAssertEqual(window.frame.width, 1240, accuracy: 0.5)
         XCTAssertEqual(window.frame.height, 760, accuracy: 0.5)
     }
+
+    private func makeCoordinator(
+        windowID: UUID,
+        entryOperationsUndoManager: UndoManager,
+        undoManagerClient: UndoManagerClient,
+    ) -> FileManagerWindowCoordinator {
+        let store = Store(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.undoManagerClient = undoManagerClient
+        }
+        return FileManagerWindowCoordinator(
+            windowID: windowID,
+            store: store,
+            entryOperationsUndoManager: entryOperationsUndoManager,
+            makeContentViewController: { _, _ in NSViewController() },
+        )
+    }
+}
+
+private final class ForeignUndoTarget {
+    var invocationCount = 0
 }
 
 private actor FileManagerUndoInvocationGate {
