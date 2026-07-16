@@ -1,5 +1,5 @@
 {
-  "originHash" : "2974a8aeab862af98b03e66856d7009ddc79460fecc72c2082a37da45d22e605",
+  "originHash" : "6ba8e43c74a1f990ffcee0194259b4f1702f38d872334eb3ff658065314837e2",
   "pins" : [
     {
       "identity" : "combine-schedulers",
@@ -11,21 +11,21 @@
       }
     },
     {
+      "identity" : "hotswiftui",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/johnno1962/HotSwiftUI",
+      "state" : {
+        "revision" : "868e889cf8d79e1641bdd9bc3816d0a245a145bc",
+        "version" : "1.2.5"
+      }
+    },
+    {
       "identity" : "inject",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/krzysztofzablocki/Inject.git",
       "state" : {
         "revision" : "f53380e986a8b056e37d7ce9ca68de610b8415ef",
         "version" : "1.6.0"
-      }
-    },
-    {
-      "identity" : "injectionnext",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/johnno1962/InjectionNext",
-      "state" : {
-        "revision" : "f257a3eae921caf3f46385380716bc825c20c793",
-        "version" : "1.5.4"
       }
     },
     {
