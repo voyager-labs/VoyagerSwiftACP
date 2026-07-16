@@ -269,6 +269,41 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 
     // MARK: - EOP-003-undo_entry_action
 
+    /// EOP-003-undo_entry_action: undo owner 회전은 로컬 history만 초기화한다.
+    /// - 검증 내용: owner ID와 undo/redo history 외 모든 EntryOperationsState 필드 보존
+    /// - 사전 조건: loading/rename/clipboard/counter 상태와 undo/redo record가 함께 존재함
+    /// - 기대 결과: 새 owner ID, 빈 history, 그 외 상태 동일
+    func testUndoOwnerRotation_preservesOperationStateAndClearsLocalHistory() {
+        let oldOwnerID = UUID()
+        let newOwnerID = UUID()
+        let undoRecord = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/a/old.txt", afterPath: "/a/new.txt")],
+        )
+        let redoRecord = EntryActionRecord(
+            operationKind: .createFolder,
+            targets: [.init(beforePath: nil, afterPath: "/b/new-folder")],
+        )
+        var state = EntryOperationsState(undoOwnerID: oldOwnerID)
+        state.windowID = UUID()
+        state.isLoading = true
+        state.isReloading = true
+        state.renamingText = "preserved-name"
+        state.clipboardItems = ["/preserved/item"]
+        state.pendingEmptyTrashItemCount = 3
+        state.emptyTrashCompletedCount = 2
+        state.undoRecords = [undoRecord]
+        state.redoRecords = [redoRecord]
+        var expected = state
+        expected.undoOwnerID = newOwnerID
+        expected.undoRecords = []
+        expected.redoRecords = []
+
+        state.rotateUndoOwner(to: newOwnerID)
+
+        XCTAssertEqual(state, expected)
+    }
+
     /// EOP-003-undo_entry_action: 새 action 완료 시 undo stack에 push되고 redo stack이 clear된다
     /// `entryActionCompleted`가 isUndoable 작업으로 들어오면 undoRecords에 append하고 redoRecords를 비운다.
     /// - 검증 내용: `entryActionCompleted`가 undo stack에 record를 추가하고 redo stack을 clear한다.

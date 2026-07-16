@@ -1377,6 +1377,51 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-004-sidebar_entry_drop_routing: inactive tab recovery는 matching cache owner만 회전한다.
+    /// - 검증 내용: inactive cache의 owner/history 회전과 active content 불변
+    /// - 사전 조건: inactive tab owner를 대상으로 성공한 invalidation completion
+    /// - 기대 결과: inactive cache에 새 owner와 빈 history, active content는 동일
+    func testUndoReplay_recoveryRotatesMatchingInactiveContentOwner() async {
+        let activeID = ContentTabID(rawValue: "recovery-active")
+        let inactiveID = ContentTabID(rawValue: "recovery-inactive")
+        let requestID = UUID()
+        let ownerID = UUID()
+        let newOwnerID = UUID()
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/inactive/old", afterPath: "/inactive/new")],
+        )
+        var state = makeDirectoryReloadState(
+            activeID: activeID,
+            activePath: "/active",
+            inactiveTabs: [.init(id: inactiveID, path: "/inactive", isPinned: false)],
+        )
+        state.undoRedoPhase = .recovering(requestID: requestID, direction: .redo, ownerID: ownerID)
+        state.tabContentStates[inactiveID]?.entryViewLayout.entryOperations.undoOwnerID = ownerID
+        state.tabContentStates[inactiveID]?.entryViewLayout.entryOperations.undoRecords = [record]
+        state.tabContentStates[inactiveID]?.entryViewLayout.entryOperations.redoRecords = [record]
+        let activeOperations = state.content.entryViewLayout.entryOperations
+        let availability = UndoManagerAvailability(canUndo: true, canRedo: false)
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.uuid = .constant(newOwnerID)
+        }
+
+        await store.send(.internal(.undoManagerOwnerInvalidationFinished(
+            requestID: requestID,
+            ownerID: ownerID,
+            result: .init(succeeded: true, availability: availability),
+        ))) {
+            $0.tabContentStates[inactiveID]?.entryViewLayout.entryOperations.rotateUndoOwner(to: newOwnerID)
+            $0.undoRedoPhase = .idle
+            $0.undoManagerAvailability = availability
+        }
+
+        XCTAssertEqual(store.state.content.entryViewLayout.entryOperations, activeOperations)
+        await store.finish()
+    }
+
     /// CTM-004-sidebar_entry_drop_routing: inactive content owner event는 해당 tab state로만 전달됨
     func testUndoManagerEvent_routesToMatchingInactiveContentOwner() async {
         let activeID = ContentTabID(rawValue: "event-active")

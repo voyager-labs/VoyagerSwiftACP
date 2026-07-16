@@ -32,6 +32,12 @@ public struct EntryOperationsState: Equatable {
         self.undoOwnerID = undoOwnerID
     }
 
+    public mutating func rotateUndoOwner(to undoOwnerID: UUID) {
+        self.undoOwnerID = undoOwnerID
+        undoRecords = []
+        redoRecords = []
+    }
+
     public mutating func resetForDuplicate(windowID: UUID, undoOwnerID: UUID) {
         loadingContext = .init()
         isLoading = false

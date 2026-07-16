@@ -434,11 +434,50 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         XCTAssertEqual(nativeUndoCalls.value, 1)
     }
 
+    /// FMW-001-request_undo: sidebar replay recovery는 dedicated owner만 회전한다.
+    /// - 검증 내용: sidebar owner/history 회전과 active content owner 불변
+    /// - 사전 조건: sidebar owner를 대상으로 성공한 invalidation completion
+    /// - 기대 결과: sidebar에 새 owner와 빈 history, idle availability 반영
+    func testUndoReplay_sidebarRecoveryRotatesOnlyDedicatedOwner() async {
+        let requestID = UUID()
+        let ownerID = UUID()
+        let newOwnerID = UUID()
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/sidebar/old", afterPath: "/sidebar/new")],
+        )
+        var state = FileManagerWindowState()
+        state.undoRedoPhase = .recovering(requestID: requestID, direction: .undo, ownerID: ownerID)
+        state.sidebarEntryDropOperations.undoOwnerID = ownerID
+        state.sidebarEntryDropOperations.undoRecords = [record]
+        state.sidebarEntryDropOperations.redoRecords = [record]
+        let activeOperations = state.content.entryViewLayout.entryOperations
+        let availability = UndoManagerAvailability(canUndo: false, canRedo: true)
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.uuid = .constant(newOwnerID)
+        }
+
+        await store.send(.internal(.undoManagerOwnerInvalidationFinished(
+            requestID: requestID,
+            ownerID: ownerID,
+            result: .init(succeeded: true, availability: availability),
+        ))) {
+            $0.sidebarEntryDropOperations.rotateUndoOwner(to: newOwnerID)
+            $0.undoRedoPhase = .idle
+            $0.undoManagerAvailability = availability
+        }
+
+        XCTAssertEqual(store.state.content.entryViewLayout.entryOperations, activeOperations)
+        await store.finish()
+    }
+
     /// FMW-001-request_undo: operation failure recovery는 owner invalidation 성공 때만 idle로 복귀한다.
     /// - 검증 내용: replay failure가 recovering으로 잠근 뒤 typed availability를 반영하고 stale completion은 무시한다.
     /// - 사전 조건: replaying request/owner/window와 성공 invalidation 결과
     /// - 기대 결과: 성공 completion은 idle, stale request completion은 상태 불변
-    func testUndoReplay_operationFailureRecoversOnlyForMatchingInvalidation() async {
+    func testUndoReplay_operationFailureRecoversOnlyForMatchingInvalidation() async throws {
         let requestID = UUID()
         let staleRequestID = UUID()
         let windowID = UUID()
@@ -448,6 +487,16 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         state.undoManagerAvailability = .init(canUndo: true, canRedo: true)
         state.undoRedoPhase = .replaying(requestID: requestID, direction: .undo)
         let ownerID = state.content.entryViewLayout.entryOperations.undoOwnerID
+        let newOwnerID = UUID()
+        let uuidCalls = LockIsolated(0)
+        let replayRecord = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/active/old", afterPath: "/active/new")],
+        )
+        state.content.entryViewLayout.entryOperations.undoRecords = [replayRecord]
+        state.content.entryViewLayout.entryOperations.redoRecords = [replayRecord]
+        state.syncActiveTabContentState()
+        let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
         let recoveredAvailability = UndoManagerAvailability(canUndo: false, canRedo: true)
         let client = UndoManagerClient(
             registerUndo: { _, _, _ in },
@@ -464,6 +513,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
             FileManagerWindowRoutingReducer()
         } withDependencies: {
             $0.undoManagerClient = client
+            $0.uuid = UUIDGenerator {
+                uuidCalls.withValue { $0 += 1 }
+                return newOwnerID
+            }
         }
 
         await store.send(.content(.entryViewLayout(.entryOperations(.outcome(
@@ -481,6 +534,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
             ownerID: ownerID,
             result: .init(succeeded: true, availability: .init(canUndo: true, canRedo: true)),
         )))
+        XCTAssertEqual(uuidCalls.value, 0)
         await gate.resume()
         await store.receive { action in
             guard case let .internal(.undoManagerOwnerInvalidationFinished(
@@ -492,10 +546,143 @@ final class FMW001FileManagerWindowTests: XCTestCase {
                 && receivedOwnerID == ownerID
                 && result == .init(succeeded: true, availability: recoveredAvailability)
         } assert: {
+            $0.content.entryViewLayout.entryOperations.rotateUndoOwner(to: newOwnerID)
+            $0.syncActiveTabContentState()
             $0.undoRedoPhase = .idle
             $0.undoManagerAvailability = recoveredAvailability
         }
+        XCTAssertEqual(uuidCalls.value, 1)
+        XCTAssertEqual(
+            store.state.tabContentStates[activeTabID]?.entryViewLayout.entryOperations,
+            store.state.content.entryViewLayout.entryOperations,
+        )
         await store.finish()
+    }
+
+    /// FMW-001-request_undo: recovery 대상 누락과 inactive owner 중복은 fail-closed 처리된다.
+    /// - 검증 내용: missing/ambiguous completion이 UUID를 소비하지 않고 availability를 비움
+    /// - 사전 조건: 현재 owner가 없거나 inactive cache 두 곳에 같은 owner가 존재함
+    /// - 기대 결과: desynchronized, owner 불변, UUID 호출 0회
+    func testUndoReplay_missingOrAmbiguousRecoveryTargetFailsClosedWithoutUUIDConsumption() async {
+        let uuidCalls = LockIsolated(0)
+        let missingRequestID = UUID()
+        let missingOwnerID = UUID()
+        var missingState = FileManagerWindowState()
+        missingState.undoRedoPhase = .recovering(
+            requestID: missingRequestID,
+            direction: .undo,
+            ownerID: missingOwnerID,
+        )
+        let missingStore = TestStore(initialState: missingState) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.uuid = UUIDGenerator {
+                uuidCalls.withValue { $0 += 1 }
+                return UUID()
+            }
+        }
+
+        await missingStore.send(.internal(.undoManagerOwnerInvalidationFinished(
+            requestID: missingRequestID,
+            ownerID: missingOwnerID,
+            result: .init(succeeded: true, availability: .init(canUndo: true, canRedo: true)),
+        ))) {
+            $0.undoRedoPhase = .desynchronized
+        }
+        await missingStore.finish()
+
+        let ambiguousRequestID = UUID()
+        let ambiguousOwnerID = UUID()
+        let firstTabID = ContentTabID(rawValue: "ambiguous-first")
+        let secondTabID = ContentTabID(rawValue: "ambiguous-second")
+        var ambiguousState = FileManagerWindowState()
+        ambiguousState.undoRedoPhase = .recovering(
+            requestID: ambiguousRequestID,
+            direction: .redo,
+            ownerID: ambiguousOwnerID,
+        )
+        var firstContent = FileManagerContentFeature.State()
+        firstContent.entryViewLayout.entryOperations.undoOwnerID = ambiguousOwnerID
+        var secondContent = FileManagerContentFeature.State()
+        secondContent.entryViewLayout.entryOperations.undoOwnerID = ambiguousOwnerID
+        ambiguousState.tabContentStates[firstTabID] = firstContent
+        ambiguousState.tabContentStates[secondTabID] = secondContent
+        let ambiguousStore = TestStore(initialState: ambiguousState) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.uuid = UUIDGenerator {
+                uuidCalls.withValue { $0 += 1 }
+                return UUID()
+            }
+        }
+
+        await ambiguousStore.send(.internal(.undoManagerOwnerInvalidationFinished(
+            requestID: ambiguousRequestID,
+            ownerID: ambiguousOwnerID,
+            result: .init(succeeded: true, availability: .init(canUndo: true, canRedo: true)),
+        ))) {
+            $0.undoRedoPhase = .desynchronized
+        }
+        await ambiguousStore.finish()
+        XCTAssertEqual(uuidCalls.value, 0)
+    }
+
+    /// FMW-001-request_undo: 회전된 active owner는 다음 native undo 등록에 사용된다.
+    /// - 검증 내용: recovery 직후 entryActionCompleted가 새 owner로 registerUndo를 호출함
+    /// - 사전 조건: active owner invalidation 성공과 deterministic replacement owner
+    /// - 기대 결과: 새 owner로 1회 등록되고 local undo history에 record가 추가됨
+    func testUndoReplay_activeRecoveryAllowsRegistrationWithRotatedOwner() async {
+        let requestID = UUID()
+        let windowID = UUID()
+        let oldOwnerID = UUID()
+        let newOwnerID = UUID()
+        let registerOwnerIDs = LockIsolated<[UUID]>([])
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/active/old", afterPath: "/active/new")],
+        )
+        var state = FileManagerWindowState()
+        state.windowID = windowID
+        state.undoRedoPhase = .recovering(requestID: requestID, direction: .undo, ownerID: oldOwnerID)
+        state.content.entryViewLayout.entryOperations.windowID = windowID
+        state.content.entryViewLayout.entryOperations.undoOwnerID = oldOwnerID
+        state.syncActiveTabContentState()
+        let client = UndoManagerClient(
+            registerUndo: { _, ownerID, _ in registerOwnerIDs.withValue { $0.append(ownerID) } },
+            undo: { _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _ in .init(didInvoke: false, availability: .init()) },
+        )
+        let store = TestStore(initialState: state) {
+            CombineReducers {
+                FileManagerWindowRoutingReducer()
+                Scope(
+                    state: \.content.entryViewLayout.entryOperations,
+                    action: \.content.entryViewLayout.entryOperations,
+                ) {
+                    EntryOperationsFeature()
+                }
+            }
+        } withDependencies: {
+            $0.undoManagerClient = client
+            $0.uuid = .constant(newOwnerID)
+        }
+
+        await store.send(.internal(.undoManagerOwnerInvalidationFinished(
+            requestID: requestID,
+            ownerID: oldOwnerID,
+            result: .init(succeeded: true, availability: .init()),
+        ))) {
+            $0.content.entryViewLayout.entryOperations.rotateUndoOwner(to: newOwnerID)
+            $0.syncActiveTabContentState()
+            $0.undoRedoPhase = .idle
+        }
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(record)))))) {
+            $0.content.entryViewLayout.entryOperations.undoRecords = [record]
+        }
+        await store.receive(\.content.entryViewLayout.entryOperations.outcome.undoManagerAvailabilityChanged)
+        await store.finish()
+
+        XCTAssertEqual(registerOwnerIDs.value, [newOwnerID])
     }
 
     /// FMW-001-request_undo: owner invalidation 실패는 desynchronized fail-closed 상태를 유지한다.
@@ -504,6 +691,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     /// - 기대 결과: desynchronized, canUndo/canRedo false
     func testUndoReplay_invalidationFailureDesynchronizesAndDisablesMenu() async {
         let requestID = UUID()
+        let uuidCalls = LockIsolated(0)
         var state = FileManagerWindowState()
         state.windowID = UUID()
         state.undoManagerAvailability = .init(canUndo: true, canRedo: true)
@@ -519,6 +707,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
             FileManagerWindowRoutingReducer()
         } withDependencies: {
             $0.undoManagerClient = client
+            $0.uuid = UUIDGenerator {
+                uuidCalls.withValue { $0 += 1 }
+                return UUID()
+            }
         }
 
         await store.send(.content(.entryViewLayout(.entryOperations(.outcome(
@@ -535,6 +727,8 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         }
         XCTAssertFalse(store.state.menuCommandProjection.canUndo)
         XCTAssertFalse(store.state.menuCommandProjection.canRedo)
+        XCTAssertEqual(store.state.content.entryViewLayout.entryOperations.undoOwnerID, ownerID)
+        XCTAssertEqual(uuidCalls.value, 0)
         await store.finish()
     }
 

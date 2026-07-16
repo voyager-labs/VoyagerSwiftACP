@@ -423,6 +423,7 @@ struct FileManagerWindowRoutingReducer {
                     requestID: requestID,
                     ownerID: ownerID,
                     result: result,
+                    makeUndoOwnerID: { uuid() },
                     state: &state,
                 )
 
@@ -769,17 +770,57 @@ private func invalidateUndoOwnerEffect(
     }
 }
 
+private func rotateRecoveredUndoOwner(
+    ownerID: UUID,
+    makeUndoOwnerID: () -> UUID,
+    state: inout FileManagerWindowState,
+) -> Bool {
+    if state.sidebarEntryDropOperations.undoOwnerID == ownerID {
+        state.sidebarEntryDropOperations.rotateUndoOwner(to: makeUndoOwnerID())
+        return true
+    }
+    if state.content.entryViewLayout.entryOperations.undoOwnerID == ownerID {
+        state.content.entryViewLayout.entryOperations.rotateUndoOwner(to: makeUndoOwnerID())
+        state.syncActiveTabContentState()
+        return true
+    }
+
+    let activeTabID = state.contentTabs.activeTabID
+    let matchingTabIDs = state.tabContentStates.compactMap { element -> ContentTabID? in
+        let (tabID, contentState) = element
+        guard tabID != activeTabID,
+              contentState.entryViewLayout.entryOperations.undoOwnerID == ownerID
+        else { return nil }
+        return tabID
+    }
+    guard matchingTabIDs.count == 1, let tabID = matchingTabIDs.first else { return false }
+    state.tabContentStates[tabID]?.entryViewLayout.entryOperations.rotateUndoOwner(to: makeUndoOwnerID())
+    return true
+}
+
 private func handleUndoManagerOwnerInvalidationFinished(
     requestID: UUID,
     ownerID: UUID,
     result: UndoManagerInvalidationResult,
+    makeUndoOwnerID: () -> UUID,
     state: inout FileManagerWindowState,
 ) -> Effect<FileManagerWindowAction> {
     switch state.undoRedoPhase {
     case let .recovering(currentRequestID, _, currentOwnerID):
         guard currentRequestID == requestID, currentOwnerID == ownerID else { return .none }
-        state.undoRedoPhase = result.succeeded ? .idle : .desynchronized
-        state.undoManagerAvailability = result.succeeded ? result.availability : .init()
+        guard result.succeeded,
+              rotateRecoveredUndoOwner(
+                  ownerID: ownerID,
+                  makeUndoOwnerID: makeUndoOwnerID,
+                  state: &state,
+              )
+        else {
+            state.undoRedoPhase = .desynchronized
+            state.undoManagerAvailability = .init()
+            return .none
+        }
+        state.undoRedoPhase = .idle
+        state.undoManagerAvailability = result.availability
         return .none
 
     case let .tearingDownTab(currentRequestID, currentOwnerID):
