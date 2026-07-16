@@ -47,8 +47,8 @@ enum EntryOperationsTestSupport {
             $0.pasteboardClient = .noOp
             $0.undoManagerClient = UndoManagerClient(
                 registerUndo: { _, _, _ in },
-                undo: { _ in .init(didInvoke: false, availability: .init()) },
-                redo: { _ in .init(didInvoke: false, availability: .init()) },
+                undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+                redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             )
             $0.trashMetadataStoreClient = .testValue
             configure(&$0)
@@ -75,8 +75,8 @@ enum EntryOperationsTestSupport {
             $0.pasteboardClient = .noOp
             $0.undoManagerClient = UndoManagerClient(
                 registerUndo: { _, _, _ in },
-                undo: { _ in .init(didInvoke: false, availability: .init()) },
-                redo: { _ in .init(didInvoke: false, availability: .init()) },
+                undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+                redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             )
             $0.trashMetadataStoreClient = .testValue
             configure(&$0)

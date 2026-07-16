@@ -724,16 +724,40 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await client.registerUndo(windowID, sidebarOwnerID, sidebarRecord)
 
         let registeredAvailability = await client.availability(windowID)
-        XCTAssertEqual(registeredAvailability, .init(canUndo: true, canRedo: false))
-        _ = await client.undo(windowID)
-        _ = await client.undo(windowID)
+        XCTAssertEqual(registeredAvailability, .init(
+            canUndo: true,
+            canRedo: false,
+            undoTarget: .init(ownerID: sidebarOwnerID, recordID: sidebarRecord.id),
+        ))
+        _ = await client.undo(
+            windowID,
+            expectedTarget: .init(ownerID: sidebarOwnerID, recordID: sidebarRecord.id),
+        )
+        let afterSidebarUndo = await client.availability(windowID)
+        XCTAssertEqual(afterSidebarUndo.undoTarget, .init(ownerID: contentOwnerID, recordID: contentRecord.id))
+        XCTAssertEqual(afterSidebarUndo.redoTarget, .init(ownerID: sidebarOwnerID, recordID: sidebarRecord.id))
+        _ = await client.undo(
+            windowID,
+            expectedTarget: .init(ownerID: contentOwnerID, recordID: contentRecord.id),
+        )
 
         let values = await receivedEvents.value
         XCTAssertEqual(values.map(\.ownerID), [sidebarOwnerID, contentOwnerID])
         XCTAssertEqual(values.map(\.record), [sidebarRecord, contentRecord])
         XCTAssertEqual(values.map(\.direction), [.undo, .undo])
         let fullyUndoneAvailability = await client.availability(windowID)
-        XCTAssertEqual(fullyUndoneAvailability, .init(canUndo: false, canRedo: true))
+        XCTAssertEqual(fullyUndoneAvailability, .init(
+            canUndo: false,
+            canRedo: true,
+            redoTarget: .init(ownerID: contentOwnerID, recordID: contentRecord.id),
+        ))
+        _ = await client.redo(
+            windowID,
+            expectedTarget: .init(ownerID: contentOwnerID, recordID: contentRecord.id),
+        )
+        let afterContentRedo = await client.availability(windowID)
+        XCTAssertEqual(afterContentRedo.undoTarget, .init(ownerID: contentOwnerID, recordID: contentRecord.id))
+        XCTAssertEqual(afterContentRedo.redoTarget, .init(ownerID: sidebarOwnerID, recordID: sidebarRecord.id))
     }
 
     /// EOP-003-redo_entry_action: 새 owner 등록이 반대 owner의 stale global redo를 양방향으로 제거함
@@ -756,7 +780,10 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         )
 
         await client.registerUndo(windowID, contentOwnerID, contentRecord)
-        _ = await client.undo(windowID)
+        _ = await client.undo(
+            windowID,
+            expectedTarget: .init(ownerID: contentOwnerID, recordID: contentRecord.id),
+        )
         let contentRedoAvailability = await client.availability(windowID)
         XCTAssertTrue(contentRedoAvailability.canRedo)
         await client.registerUndo(windowID, sidebarOwnerID, sidebarRecord)
@@ -765,12 +792,46 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 
         undoManager.removeAllActions()
         await client.registerUndo(windowID, sidebarOwnerID, sidebarRecord)
-        _ = await client.undo(windowID)
+        _ = await client.undo(
+            windowID,
+            expectedTarget: .init(ownerID: sidebarOwnerID, recordID: sidebarRecord.id),
+        )
         let sidebarRedoAvailability = await client.availability(windowID)
         XCTAssertTrue(sidebarRedoAvailability.canRedo)
         await client.registerUndo(windowID, contentOwnerID, contentRecord)
         let afterContentRegistration = await client.availability(windowID)
         XCTAssertFalse(afterContentRegistration.canRedo)
+    }
+
+    /// EOP-003-undo_entry_action: expected target mismatch는 native manager를 호출하지 않는다.
+    /// Window preflight 이후 top이 바뀌는 경쟁에서도 live client가 마지막 원자 검증을 수행하는지 확인한다.
+    /// - 검증 내용: nil/wrong expected target은 didInvoke=false이고 올바른 target만 native undo를 실행한다.
+    /// - 사전 조건: 단일 owner/record가 shared UndoManager undo top으로 등록되어 있다.
+    /// - 기대 결과: mismatch 동안 canUndo와 top identity가 유지되고 matching 호출에서만 redo로 이동한다.
+    func testUndoManager_expectedTargetMismatchDoesNotInvokeNativeManager() async {
+        let undoManager = UndoManager()
+        let client = UndoManagerClient.live(undoManager: undoManager)
+        let windowID = UUID()
+        let ownerID = UUID()
+        let record = makeUndoManagerRecord(pathStem: "expected-target")
+        let expectedTarget = UndoManagerRecordIdentity(ownerID: ownerID, recordID: record.id)
+        await client.registerUndo(windowID, ownerID, record)
+
+        let missingResult = await client.undo(windowID)
+        let mismatchResult = await client.undo(
+            windowID,
+            expectedTarget: .init(ownerID: ownerID, recordID: UUID()),
+        )
+
+        XCTAssertFalse(missingResult.didInvoke)
+        XCTAssertFalse(mismatchResult.didInvoke)
+        XCTAssertTrue(undoManager.canUndo)
+        XCTAssertEqual(mismatchResult.availability.undoTarget, expectedTarget)
+
+        let matchingResult = await client.undo(windowID, expectedTarget: expectedTarget)
+        XCTAssertTrue(matchingResult.didInvoke)
+        XCTAssertFalse(matchingResult.availability.canUndo)
+        XCTAssertEqual(matchingResult.availability.redoTarget, expectedTarget)
     }
 
     // AC: EOP-003-undo_entry_action — owner invalidation은 이미 등록된 action을 제거함
@@ -845,9 +906,15 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await client.registerUndo(windowID, invalidatedOwnerID, makeUndoManagerRecord(pathStem: "invalidated-owner"))
         XCTAssertFalse(undoManager.canUndo)
 
-        await client.registerUndo(windowID, activeOwnerID, makeUndoManagerRecord(pathStem: "active-owner"))
+        let activeRecord = makeUndoManagerRecord(pathStem: "active-owner")
+        await client.registerUndo(windowID, activeOwnerID, activeRecord)
 
         XCTAssertTrue(undoManager.canUndo)
+        let activeAvailability = await client.availability(windowID)
+        XCTAssertEqual(
+            activeAvailability.undoTarget,
+            .init(ownerID: activeOwnerID, recordID: activeRecord.id),
+        )
     }
 
     // AC: EOP-003-undo_entry_action — window invalidation은 모든 owner의 late registration을 영구 차단하고 stream을 종료함
@@ -919,7 +986,10 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await client.registerUndo(windowID, contentOwnerID, contentRecord)
         await client.registerUndo(windowID, sidebarOwnerID, sidebarRecord)
         _ = await client.invalidateOwner(windowID, sidebarOwnerID)
-        _ = await client.undo(windowID)
+        _ = await client.undo(
+            windowID,
+            expectedTarget: .init(ownerID: contentOwnerID, recordID: contentRecord.id),
+        )
 
         let event = await receivedEvent.value
         XCTAssertEqual(event?.ownerID, contentOwnerID)

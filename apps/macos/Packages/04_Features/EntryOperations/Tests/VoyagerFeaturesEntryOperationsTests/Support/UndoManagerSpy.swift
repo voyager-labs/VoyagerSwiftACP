@@ -83,11 +83,11 @@ final class UndoManagerSpy: @unchecked Sendable {
             events: { [weak self] windowID in
                 self?.events(windowID: windowID) ?? AsyncStream { $0.finish() }
             },
-            undo: { [weak self] windowID in
+            undo: { [weak self] windowID, _ in
                 self?.recordUndo(windowID: windowID)
                 return .init(didInvoke: true, availability: .init(canUndo: false, canRedo: true))
             },
-            redo: { [weak self] windowID in
+            redo: { [weak self] windowID, _ in
                 self?.recordRedo(windowID: windowID)
                 return .init(didInvoke: true, availability: .init(canUndo: true, canRedo: false))
             },

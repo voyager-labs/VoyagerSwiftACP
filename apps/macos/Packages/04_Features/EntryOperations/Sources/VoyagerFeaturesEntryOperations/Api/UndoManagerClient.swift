@@ -2,13 +2,32 @@ import AppKit
 import ComposableArchitecture
 import ObjectiveC
 
+public struct UndoManagerRecordIdentity: Equatable, Hashable, Sendable {
+    public var ownerID: UUID
+    public var recordID: EntryActionRecord.ID
+
+    public init(ownerID: UUID, recordID: EntryActionRecord.ID) {
+        self.ownerID = ownerID
+        self.recordID = recordID
+    }
+}
+
 public struct UndoManagerAvailability: Equatable, Sendable {
     public var canUndo: Bool
     public var canRedo: Bool
+    public var undoTarget: UndoManagerRecordIdentity?
+    public var redoTarget: UndoManagerRecordIdentity?
 
-    public init(canUndo: Bool = false, canRedo: Bool = false) {
+    public init(
+        canUndo: Bool = false,
+        canRedo: Bool = false,
+        undoTarget: UndoManagerRecordIdentity? = nil,
+        redoTarget: UndoManagerRecordIdentity? = nil,
+    ) {
         self.canUndo = canUndo
         self.canRedo = canRedo
+        self.undoTarget = undoTarget
+        self.redoTarget = redoTarget
     }
 }
 
@@ -51,8 +70,14 @@ public struct UndoManagerClient: Sendable {
         _ record: EntryActionRecord,
     ) async -> Void
     public var events: @Sendable (_ windowID: UUID) -> AsyncStream<UndoManagerEvent>
-    public var undo: @Sendable (_ windowID: UUID?) async -> UndoManagerInvocationResult
-    public var redo: @Sendable (_ windowID: UUID?) async -> UndoManagerInvocationResult
+    private var undoHandler: @Sendable (
+        _ windowID: UUID?,
+        _ expectedTarget: UndoManagerRecordIdentity?,
+    ) async -> UndoManagerInvocationResult
+    private var redoHandler: @Sendable (
+        _ windowID: UUID?,
+        _ expectedTarget: UndoManagerRecordIdentity?,
+    ) async -> UndoManagerInvocationResult
     public var availability: @Sendable (_ windowID: UUID?) async -> UndoManagerAvailability
     public var invalidateOwner: @Sendable (
         _ windowID: UUID,
@@ -69,8 +94,14 @@ public struct UndoManagerClient: Sendable {
         events: @escaping @Sendable (_ windowID: UUID) -> AsyncStream<UndoManagerEvent> = { _ in
             AsyncStream { $0.finish() }
         },
-        undo: @escaping @Sendable (_ windowID: UUID?) async -> UndoManagerInvocationResult,
-        redo: @escaping @Sendable (_ windowID: UUID?) async -> UndoManagerInvocationResult,
+        undo: @escaping @Sendable (
+            _ windowID: UUID?,
+            _ expectedTarget: UndoManagerRecordIdentity?,
+        ) async -> UndoManagerInvocationResult,
+        redo: @escaping @Sendable (
+            _ windowID: UUID?,
+            _ expectedTarget: UndoManagerRecordIdentity?,
+        ) async -> UndoManagerInvocationResult,
         availability: @escaping @Sendable (_ windowID: UUID?) async -> UndoManagerAvailability = { _ in .init() },
         invalidateOwner: @escaping @Sendable (
             _ windowID: UUID,
@@ -84,11 +115,25 @@ public struct UndoManagerClient: Sendable {
     ) {
         self.registerUndo = registerUndo
         self.events = events
-        self.undo = undo
-        self.redo = redo
+        undoHandler = undo
+        redoHandler = redo
         self.availability = availability
         self.invalidateOwner = invalidateOwner
         self.invalidateWindow = invalidateWindow
+    }
+
+    public func undo(
+        _ windowID: UUID?,
+        expectedTarget: UndoManagerRecordIdentity? = nil,
+    ) async -> UndoManagerInvocationResult {
+        await undoHandler(windowID, expectedTarget)
+    }
+
+    public func redo(
+        _ windowID: UUID?,
+        expectedTarget: UndoManagerRecordIdentity? = nil,
+    ) async -> UndoManagerInvocationResult {
+        await redoHandler(windowID, expectedTarget)
     }
 }
 
@@ -100,13 +145,13 @@ extension UndoManagerClient: DependencyKey {
                     "UndoManagerClient.liveValue not configured — use .live(undoManager:) at the composition root",
                 )
             },
-            undo: { _ in
+            undo: { _, _ in
                 assertionFailure(
                     "UndoManagerClient.liveValue not configured — use .live(undoManager:) at the composition root",
                 )
                 return .init(didInvoke: false, availability: .init())
             },
-            redo: { _ in
+            redo: { _, _ in
                 assertionFailure(
                     "UndoManagerClient.liveValue not configured — use .live(undoManager:) at the composition root",
                 )
@@ -126,10 +171,10 @@ extension UndoManagerClient: DependencyKey {
             registerUndo: { _, _, _ in
                 fatalError("undoManagerClient.registerUndo test dependency is not configured")
             },
-            undo: { _ in
+            undo: { _, _ in
                 fatalError("undoManagerClient.undo test dependency is not configured")
             },
-            redo: { _ in
+            redo: { _, _ in
                 fatalError("undoManagerClient.redo test dependency is not configured")
             },
             availability: { _ in .init() },
@@ -139,8 +184,8 @@ extension UndoManagerClient: DependencyKey {
     nonisolated public static var previewValue: UndoManagerClient {
         .init(
             registerUndo: { _, _, _ in },
-            undo: { _ in .init(didInvoke: false, availability: .init()) },
-            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            undo: { _, _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _, _ in .init(didInvoke: false, availability: .init()) },
             availability: { _ in .init() },
         )
     }
@@ -177,49 +222,78 @@ public extension UndoManagerClient {
                         windowID: windowID,
                         ownerID: ownerID,
                         eventBridge: eventBridge,
+                        handlerStore: handlerStore,
                     )
                     handlerStore.add(handler)
                     undoManager.registerUndo(withTarget: handler) { target in
                         target.handleUndo(record)
                     }
+                    handlerStore.didRegister(
+                        windowID: windowID,
+                        identity: .init(ownerID: ownerID, recordID: record.id),
+                    )
                 }
             },
             events: { windowID in
                 eventBridge.stream(windowID: windowID)
             },
-            undo: { windowID in
+            undo: { windowID, expectedTarget in
                 guard let undoManager = await resolveUndoManager(windowID) else {
                     return .init(didInvoke: false, availability: .init())
                 }
                 return await MainActor.run {
-                    guard undoManager.canUndo else {
+                    let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
+                    guard let expectedTarget,
+                          undoManager.canUndo,
+                          handlerStore.undoTarget(windowID: windowID) == expectedTarget
+                    else {
                         return .init(
                             didInvoke: false,
-                            availability: .init(canUndo: undoManager.canUndo, canRedo: undoManager.canRedo),
+                            availability: makeAvailability(
+                                undoManager: undoManager,
+                                handlerStore: handlerStore,
+                                windowID: windowID,
+                            ),
                         )
                     }
                     undoManager.undo()
                     return .init(
                         didInvoke: true,
-                        availability: .init(canUndo: undoManager.canUndo, canRedo: undoManager.canRedo),
+                        availability: makeAvailability(
+                            undoManager: undoManager,
+                            handlerStore: handlerStore,
+                            windowID: windowID,
+                        ),
                     )
                 }
             },
-            redo: { windowID in
+            redo: { windowID, expectedTarget in
                 guard let undoManager = await resolveUndoManager(windowID) else {
                     return .init(didInvoke: false, availability: .init())
                 }
                 return await MainActor.run {
-                    guard undoManager.canRedo else {
+                    let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
+                    guard let expectedTarget,
+                          undoManager.canRedo,
+                          handlerStore.redoTarget(windowID: windowID) == expectedTarget
+                    else {
                         return .init(
                             didInvoke: false,
-                            availability: .init(canUndo: undoManager.canUndo, canRedo: undoManager.canRedo),
+                            availability: makeAvailability(
+                                undoManager: undoManager,
+                                handlerStore: handlerStore,
+                                windowID: windowID,
+                            ),
                         )
                     }
                     undoManager.redo()
                     return .init(
                         didInvoke: true,
-                        availability: .init(canUndo: undoManager.canUndo, canRedo: undoManager.canRedo),
+                        availability: makeAvailability(
+                            undoManager: undoManager,
+                            handlerStore: handlerStore,
+                            windowID: windowID,
+                        ),
                     )
                 }
             },
@@ -228,9 +302,10 @@ public extension UndoManagerClient {
                     return .init()
                 }
                 return await MainActor.run {
-                    UndoManagerAvailability(
-                        canUndo: undoManager.canUndo,
-                        canRedo: undoManager.canRedo,
+                    makeAvailability(
+                        undoManager: undoManager,
+                        handlerStore: UndoManagerHandlerStore.store(for: undoManager),
+                        windowID: windowID,
                     )
                 }
             },
@@ -246,7 +321,11 @@ public extension UndoManagerClient {
                     }
                     return .init(
                         succeeded: true,
-                        availability: .init(canUndo: undoManager.canUndo, canRedo: undoManager.canRedo),
+                        availability: makeAvailability(
+                            undoManager: undoManager,
+                            handlerStore: handlerStore,
+                            windowID: windowID,
+                        ),
                     )
                 }
             },
@@ -263,12 +342,30 @@ public extension UndoManagerClient {
                     eventBridge.finish(windowID: windowID)
                     return UndoManagerInvalidationResult(
                         succeeded: true,
-                        availability: .init(canUndo: undoManager.canUndo, canRedo: undoManager.canRedo),
+                        availability: makeAvailability(
+                            undoManager: undoManager,
+                            handlerStore: handlerStore,
+                            windowID: windowID,
+                        ),
                     )
                 }
             },
         )
     }
+}
+
+@MainActor
+private func makeAvailability(
+    undoManager: UndoManager,
+    handlerStore: UndoManagerHandlerStore,
+    windowID: UUID?,
+) -> UndoManagerAvailability {
+    UndoManagerAvailability(
+        canUndo: undoManager.canUndo,
+        canRedo: undoManager.canRedo,
+        undoTarget: undoManager.canUndo ? handlerStore.undoTarget(windowID: windowID) : nil,
+        redoTarget: undoManager.canRedo ? handlerStore.redoTarget(windowID: windowID) : nil,
+    )
 }
 
 private final class UndoManagerEventBridge: @unchecked Sendable {
@@ -320,24 +417,29 @@ private final class UndoManagerHandler {
     let ownerID: UUID
     private let undoManager: UndoManager
     private let eventBridge: UndoManagerEventBridge
+    private let handlerStore: UndoManagerHandlerStore
 
     init(
         undoManager: UndoManager,
         windowID: UUID,
         ownerID: UUID,
         eventBridge: UndoManagerEventBridge,
+        handlerStore: UndoManagerHandlerStore,
     ) {
         self.undoManager = undoManager
         self.windowID = windowID
         self.ownerID = ownerID
         self.eventBridge = eventBridge
+        self.handlerStore = handlerStore
     }
 
     @MainActor
     func handleUndo(_ record: EntryActionRecord) {
+        let identity = UndoManagerRecordIdentity(ownerID: ownerID, recordID: record.id)
         undoManager.registerUndo(withTarget: self) { target in
             target.handleRedo(record)
         }
+        handlerStore.didUndo(windowID: windowID, identity: identity)
         eventBridge.yield(
             UndoManagerEvent(ownerID: ownerID, record: record, direction: .undo),
             windowID: windowID,
@@ -346,9 +448,11 @@ private final class UndoManagerHandler {
 
     @MainActor
     func handleRedo(_ record: EntryActionRecord) {
+        let identity = UndoManagerRecordIdentity(ownerID: ownerID, recordID: record.id)
         undoManager.registerUndo(withTarget: self) { target in
             target.handleUndo(record)
         }
+        handlerStore.didRedo(windowID: windowID, identity: identity)
         eventBridge.yield(
             UndoManagerEvent(ownerID: ownerID, record: record, direction: .redo),
             windowID: windowID,
@@ -366,8 +470,15 @@ private final class UndoManagerHandlerStore: @unchecked Sendable {
         let ownerID: UUID
     }
 
+    private struct StoredRecordIdentity: Equatable {
+        let windowID: UUID
+        let target: UndoManagerRecordIdentity
+    }
+
     private let lock = NSLock()
     private var handlers: [UndoManagerHandler] = []
+    private var undoRecords: [StoredRecordIdentity] = []
+    private var redoRecords: [StoredRecordIdentity] = []
     private var invalidatedOwners: Set<OwnerIdentity> = []
     private var invalidatedWindows: Set<UUID> = []
 
@@ -388,30 +499,102 @@ private final class UndoManagerHandlerStore: @unchecked Sendable {
     }
 
     func canRegister(windowID: UUID, ownerID: UUID) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return !invalidatedWindows.contains(windowID)
-            && !invalidatedOwners.contains(OwnerIdentity(windowID: windowID, ownerID: ownerID))
+        lock.withLock {
+            !invalidatedWindows.contains(windowID)
+                && !invalidatedOwners.contains(OwnerIdentity(windowID: windowID, ownerID: ownerID))
+        }
     }
 
     func add(_ handler: UndoManagerHandler) {
-        lock.lock()
-        handlers.append(handler)
-        lock.unlock()
+        lock.withLock {
+            handlers.append(handler)
+        }
+    }
+
+    func didRegister(windowID: UUID, identity: UndoManagerRecordIdentity) {
+        lock.withLock {
+            undoRecords.append(.init(windowID: windowID, target: identity))
+            redoRecords.removeAll()
+        }
+    }
+
+    func didUndo(windowID: UUID, identity: UndoManagerRecordIdentity) {
+        transition(
+            expected: .init(windowID: windowID, target: identity),
+            source: &undoRecords,
+            destination: &redoRecords,
+        )
+    }
+
+    func didRedo(windowID: UUID, identity: UndoManagerRecordIdentity) {
+        transition(
+            expected: .init(windowID: windowID, target: identity),
+            source: &redoRecords,
+            destination: &undoRecords,
+        )
+    }
+
+    func undoTarget(windowID: UUID?) -> UndoManagerRecordIdentity? {
+        lock.withLock {
+            targetLocked(from: undoRecords, windowID: windowID)
+        }
+    }
+
+    func redoTarget(windowID: UUID?) -> UndoManagerRecordIdentity? {
+        lock.withLock {
+            targetLocked(from: redoRecords, windowID: windowID)
+        }
     }
 
     func invalidateOwner(windowID: UUID, ownerID: UUID) -> [UndoManagerHandler] {
-        lock.lock()
-        invalidatedOwners.insert(OwnerIdentity(windowID: windowID, ownerID: ownerID))
-        defer { lock.unlock() }
-        return removeHandlersLocked(windowID: windowID, ownerID: ownerID)
+        lock.withLock {
+            invalidatedOwners.insert(OwnerIdentity(windowID: windowID, ownerID: ownerID))
+            removeRecordsLocked(windowID: windowID, ownerID: ownerID)
+            return removeHandlersLocked(windowID: windowID, ownerID: ownerID)
+        }
     }
 
     func invalidateWindow(windowID: UUID) -> [UndoManagerHandler] {
-        lock.lock()
-        invalidatedWindows.insert(windowID)
-        defer { lock.unlock() }
-        return removeHandlersLocked(windowID: windowID)
+        lock.withLock {
+            invalidatedWindows.insert(windowID)
+            removeRecordsLocked(windowID: windowID)
+            return removeHandlersLocked(windowID: windowID)
+        }
+    }
+
+    private func transition(
+        expected: StoredRecordIdentity,
+        source: inout [StoredRecordIdentity],
+        destination: inout [StoredRecordIdentity],
+    ) {
+        lock.withLock {
+            guard source.last == expected else {
+                source.removeAll()
+                destination.removeAll()
+                return
+            }
+            source.removeLast()
+            destination.append(expected)
+        }
+    }
+
+    private func targetLocked(
+        from records: [StoredRecordIdentity],
+        windowID: UUID?,
+    ) -> UndoManagerRecordIdentity? {
+        guard let record = records.last,
+              windowID == nil || record.windowID == windowID
+        else { return nil }
+        return record.target
+    }
+
+    private func removeRecordsLocked(windowID: UUID, ownerID: UUID? = nil) {
+        undoRecords.removeAll { record in
+            record.windowID == windowID && (ownerID == nil || record.target.ownerID == ownerID)
+        }
+        redoRecords.removeAll { record in
+            record.windowID == windowID && (ownerID == nil || record.target.ownerID == ownerID)
+        }
     }
 
     private func removeHandlersLocked(windowID: UUID, ownerID: UUID? = nil) -> [UndoManagerHandler] {
