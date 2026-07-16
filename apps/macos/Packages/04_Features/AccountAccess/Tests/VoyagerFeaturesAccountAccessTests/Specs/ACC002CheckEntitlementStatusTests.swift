@@ -102,8 +102,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         nonisolated(unsafe) var fetchCalled = false
         let store = makeTestStore(
             accountSessionClient: AccountSessionClient(
-                read: {
-                    AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
+                read: { _ in AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
                 },
                 persist: { _ in },
                 delete: { _ in },
@@ -138,14 +137,10 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         nonisolated(unsafe) var sessionReadCount = 0
         nonisolated(unsafe) var fetchCount = 0
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: {
-                    sessionReadCount += 1
-                    return AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
-                },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: AccountSessionClient(read: { _ in sessionReadCount += 1
+                return AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
+            }, persist: { _ in },
+            delete: { _ in }),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
@@ -752,17 +747,13 @@ extension ACC002CheckEntitlementStatusTests {
         state.fetchGeneration = 1
         state.fetchRetryCount = 3
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: {
-                    AccountSession(
-                        accessToken: "cached-session",
-                        status: .coreLicenseActive,
-                        expiresAt: sessionExpiry,
-                    )
-                },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: AccountSessionClient(read: { _ in AccountSession(
+                accessToken: "cached-session",
+                status: .coreLicenseActive,
+                expiresAt: sessionExpiry,
+            )
+            }, persist: { _ in },
+            delete: { _ in }),
             snapshotClient: AccessStatusSnapshotClient(
                 load: { cachedSnapshot },
                 save: { _ in },
@@ -925,17 +916,13 @@ extension ACC002CheckEntitlementStatusTests {
         state.fetchGeneration = 1
         state.fetchRetryCount = 3
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: {
-                    AccountSession(
-                        accessToken: "cached-session",
-                        status: .coreLicenseActive,
-                        expiresAt: sessionExpiry,
-                    )
-                },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: AccountSessionClient(read: { _ in AccountSession(
+                accessToken: "cached-session",
+                status: .coreLicenseActive,
+                expiresAt: sessionExpiry,
+            )
+            }, persist: { _ in },
+            delete: { _ in }),
             snapshotClient: AccessStatusSnapshotClient(
                 load: { cachedSnapshot },
                 save: { _ in },
@@ -1186,17 +1173,13 @@ extension ACC002CheckEntitlementStatusTests {
     func testIntegrationOnAppearToUnlockedFullPipeline() async {
         let sessionExpiry = referenceDate.addingTimeInterval(3600)
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: {
-                    AccountSession(
-                        accessToken: "valid-token",
-                        status: .coreLicenseActive,
-                        expiresAt: sessionExpiry,
-                    )
-                },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: AccountSessionClient(read: { _ in AccountSession(
+                accessToken: "valid-token",
+                status: .coreLicenseActive,
+                expiresAt: sessionExpiry,
+            )
+            }, persist: { _ in },
+            delete: { _ in }),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
@@ -1268,17 +1251,13 @@ extension ACC002CheckEntitlementStatusTests {
             deviceBindingVerifiedAt: referenceDate,
         )
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: {
-                    AccountSession(
-                        accessToken: "cached-session",
-                        status: .coreLicenseActive,
-                        expiresAt: sessionExpiry,
-                    )
-                },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: AccountSessionClient(read: { _ in AccountSession(
+                accessToken: "cached-session",
+                status: .coreLicenseActive,
+                expiresAt: sessionExpiry,
+            )
+            }, persist: { _ in },
+            delete: { _ in }),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
@@ -1348,17 +1327,13 @@ extension ACC002CheckEntitlementStatusTests {
         state.fetchGeneration = 1
         state.fetchRetryCount = 3
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: {
-                    AccountSession(
-                        accessToken: "current-session",
-                        status: .coreLicenseActive,
-                        expiresAt: currentExpiry,
-                    )
-                },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: AccountSessionClient(read: { _ in AccountSession(
+                accessToken: "current-session",
+                status: .coreLicenseActive,
+                expiresAt: currentExpiry,
+            )
+            }, persist: { _ in },
+            delete: { _ in }),
             snapshotClient: AccessStatusSnapshotClient(
                 load: { cachedSnapshot },
                 save: { savedSnapshots.append($0) },

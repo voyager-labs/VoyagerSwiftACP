@@ -556,6 +556,149 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         XCTAssertNil(AuthNetworkClient.exchangeError(for: URLError(.cancelled)))
         XCTAssertEqual(AuthNetworkClient.exchangeError(for: URLError(.timedOut)), .networkFailure)
     }
+}
+
+extension ACC005AuthNetworkClientTests {
+    // MARK: - ACC-005-auth_network_client
+
+    /// ACC-005-auth_network_client: rotated token persistence는 기존 session binding을 유지한다.
+    /// refresh session-sync가 새 token을 저장해도 trusted snapshot 소유 binding이 바뀌지 않는지 검증한다.
+    /// - 검증 내용: rotated token file이 access/refresh token을 갱신하고 previous sessionBindingID를 보존한다.
+    /// - 사전 조건: binding을 가진 current token file과 rotated session-sync response가 있다.
+    /// - 기대 결과: CAS 저장 뒤 token은 rotated 값이고 sessionBindingID는 source binding과 같다.
+    func testSessionSyncRotationPreservesPreviousSessionBinding() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let binding = UUID()
+        let source = AccountTokensFile(
+            updatedAtMs: 1,
+            accessToken: "source-access-token",
+            accessTokenExpiresAtMs: 1_700_000_000_000,
+            accessTokenExpiresIn: 900_000,
+            refreshToken: "source-refresh-token",
+            refreshTokenExpiresAtMs: 1_702_592_000_000,
+            sessionBindingID: binding,
+        )
+        try await store.write(source)
+
+        let result = try await AuthNetworkClient.sessionSyncResult(
+            data: rotatedSessionSyncResponseData(),
+            intent: .refresh,
+            source: source,
+            store: store,
+        )
+
+        let storedValue = try await store.read()
+        let persisted = try XCTUnwrap(storedValue)
+        XCTAssertEqual(result.sessionStatus, .rotated)
+        XCTAssertEqual(result.syncStatus, .complete)
+        XCTAssertEqual(result.accessStatus, AccessStatusResponse(hasAccess: true, status: "active"))
+        XCTAssertEqual(result.sessionExpiresAt, Date(timeIntervalSince1970: 1_700_003_600))
+        XCTAssertEqual(persisted.accessToken, "rotated-access-token")
+        XCTAssertEqual(persisted.refreshToken, "rotated-refresh-token")
+        XCTAssertEqual(persisted.sessionBindingID, binding)
+    }
+
+    /// ACC-005-auth_network_client: stale source는 rotated token CAS를 거부한다.
+    /// 동시 session-sync가 더 최신 token을 저장한 뒤 이전 source가 rotation을 commit하지 못하는지 검증한다.
+    /// - 검증 내용: rotated file의 CAS가 false를 반환하고 더 최신 persisted token/binding을 유지한다.
+    /// - 사전 조건: rotation source와 다른 current token file이 이미 storage에 있다.
+    /// - 기대 결과: stale rotated token은 저장되지 않고 current token의 binding이 보존된다.
+    func testSessionSyncRotationRejectsStaleSourceCas() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let sourceBinding = UUID()
+        let currentBinding = UUID()
+        let source = AccountTokensFile(
+            updatedAtMs: 1,
+            accessToken: "source-access-token",
+            accessTokenExpiresAtMs: 1_700_000_000_000,
+            accessTokenExpiresIn: 900_000,
+            refreshToken: "source-refresh-token",
+            refreshTokenExpiresAtMs: 1_702_592_000_000,
+            sessionBindingID: sourceBinding,
+        )
+        let current = AccountTokensFile(
+            updatedAtMs: 2,
+            accessToken: "current-access-token",
+            accessTokenExpiresAtMs: 1_700_000_100_000,
+            accessTokenExpiresIn: 900_000,
+            refreshToken: "current-refresh-token",
+            refreshTokenExpiresAtMs: 1_702_592_100_000,
+            sessionBindingID: currentBinding,
+        )
+        try await store.write(current)
+
+        do {
+            _ = try await AuthNetworkClient.sessionSyncResult(
+                data: rotatedSessionSyncResponseData(),
+                intent: .refresh,
+                source: source,
+                store: store,
+            )
+            XCTFail("stale source rotation은 storageFailure를 throw해야 함")
+        } catch {
+            XCTAssertEqual(error as? SessionSyncError, .storageFailure)
+        }
+
+        let persisted = try await store.read()
+        XCTAssertEqual(persisted, current)
+    }
+
+    private func rotatedSessionSyncResponseData() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(SessionSyncResponse(
+            syncStatus: .complete,
+            session: .init(
+                status: .rotated,
+                accessToken: "rotated-access-token",
+                refreshToken: "rotated-refresh-token",
+                expiresAt: 1_700_003_600,
+                expiresIn: 3_600_000,
+                refreshTokenExpiresAt: 1_702_592_000,
+            ),
+            access: AccessStatusResponse(hasAccess: true, status: "active"),
+            device: .init(outcome: .bound, connectedDeviceAvailability: .available),
+            partial: nil,
+        ))
+    }
+}
+
+extension ACC005AuthNetworkClientTests {
+    func testGatewayEnvironmentCanonicalizesEquivalentGatewayURLs() {
+        let cases: [(raw: String, binding: String)] = [
+            (" HTTPS://Gateway.Example.com:443/a//b/../c/ ", "https://gateway.example.com/a/c"),
+            ("http://GATEWAY.example.com:80/", "http://gateway.example.com/"),
+            ("https://gateway.example.com:8443/a/", "https://gateway.example.com:8443/a"),
+            ("https://gateway.example.com/a/./b", "https://gateway.example.com/a/b"),
+        ]
+
+        for testCase in cases {
+            let environment = GatewayEnvironment(rawValue: testCase.raw)
+
+            XCTAssertEqual(environment.binding, testCase.binding)
+            XCTAssertEqual(environment.baseURL?.absoluteString, testCase.binding)
+        }
+    }
+
+    func testGatewayEnvironmentRejectsUnsafeOrInvalidURLs() {
+        let invalidURLs = [
+            "gateway.example.com",
+            "ftp://gateway.example.com",
+            "https:///missing-host",
+            "https://user@gateway.example.com",
+            "https://gateway.example.com/path?query=value",
+            "https://gateway.example.com/path#fragment",
+        ]
+
+        for rawURL in invalidURLs {
+            let environment = GatewayEnvironment(rawValue: rawURL)
+
+            XCTAssertNil(environment.baseURL)
+            XCTAssertEqual(environment.binding, "")
+        }
+    }
 
     /// ACC-005-test_value: testValue의 모든 closure가 notConfigured를 throw한다.
     /// DependencyKey.testValue가 안전한 기본값을 제공하는지 검증한다.

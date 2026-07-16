@@ -241,7 +241,7 @@ public struct SessionLapseGuardView: View {
         }
     }
 
-    static func shouldShow(
+    public static func shouldShow(
         accountAccessStepState: AccountAccessStepState,
         isSignInInProgress: Bool,
     ) -> Bool {

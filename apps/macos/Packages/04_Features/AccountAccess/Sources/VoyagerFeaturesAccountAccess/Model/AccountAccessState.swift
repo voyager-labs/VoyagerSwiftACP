@@ -85,6 +85,8 @@ public struct AccountAccessState: Equatable {
     public var consecutiveRefreshFailures: Int = 0
     /// 현재 세션의 access token 만료 시각. Refresh deadline이 이 값을 기준으로 계산된다.
     public var sessionExpiresAt: Date?
+    /// 현재 credential의 stable binding. 비동기 sync completion은 이 값을 함께 검증한다.
+    public var sessionBindingID: UUID?
 
     /// 세션 만료 여부. true이면 중복 _sessionExpiredDetected를 무시한다 (dedup guard).
     public var isSessionExpired: Bool = false
@@ -213,6 +215,7 @@ public struct AccountAccessState: Equatable {
         deviceBindingRetryCount = 0
         hasAccountSession = snapshot.hasSession
         sessionExpiresAt = snapshot.sessionExpiresAt
+        sessionBindingID = nil
         isSessionExpired = false
         didBootstrap = true
         fetchGeneration += 1
@@ -245,6 +248,7 @@ public struct AccountAccessState: Equatable {
         deviceBindingRetryCount = 0
         hasAccountSession = sessionExpiresAt != nil
         self.sessionExpiresAt = sessionExpiresAt
+        sessionBindingID = nil
         isSessionExpired = false
         isComplete = false
         didBootstrap = true

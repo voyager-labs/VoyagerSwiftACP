@@ -37,9 +37,8 @@ Load this skill when the task involves any of these operations:
 | Search code pattern (AST)  | **ast-grep** `ast_grep_search`    | —                          | [02-ast-grep](references/ast-grep.md)                                    |
 | Rewrite code pattern (AST) | **ast-grep** `ast_grep_replace`   | —                          | [02-ast-grep](references/ast-grep.md)                                    |
 | Rename across codebase     | **ast-grep** `ast_grep_replace`   | manual `edit` (replaceAll) | [02-ast-grep](references/ast-grep.md)                                    |
-| Check compile errors       | **XcodeBuildMCP** `build_sim`     | —                          | [xcodebuild-mcp](references/xcodebuild-mcp.md)                           |
-| Run tests                  | **XcodeBuildMCP** `test_sim`      | —                          | [xcodebuild-mcp](references/xcodebuild-mcp.md)                           |
-| Build and run app          | **XcodeBuildMCP** `build_run_sim` | —                          | [xcodebuild-mcp](references/xcodebuild-mcp.md)                           |
+| Simulator compile/test/run | **XcodeBuildMCP** when supported  | Explicit matrix fallback   | [xcodebuild-mcp](references/xcodebuild-mcp.md)                           |
+| macOS/package verification | Capability matrix below           | Existing repository route  | [xcodebuild-mcp](references/xcodebuild-mcp.md)                           |
 | Take UI snapshot           | **XcodeBuildMCP** `snapshot_ui`   | —                          | [xcodebuild-mcp](references/xcodebuild-mcp.md)                           |
 | Detect unused code         | **Periphery** CLI                 | —                          | [periphery](references/periphery.md)                                     |
 
@@ -68,11 +67,11 @@ What do you need to do?
   → ast-grep ast_grep_replace (dry-run first)
   → Then XcodeBuildMCP build_sim to verify
 
-"Does this compile?" / "What are the errors?"
-  → XcodeBuildMCP session_show_defaults → build_sim
+"Verify simulator compile/test/run"
+  → Capability matrix → session_show_defaults → supported XcodeBuildMCP operation
 
-"Run the tests"
-  → XcodeBuildMCP session_show_defaults → test_sim
+"Verify macOS scheme or SwiftPM package"
+  → Capability matrix → repository mise task or xcrun swift command
 
 "Find unused code"
   → Periphery CLI (mise exec -- periphery scan)
@@ -108,11 +107,24 @@ When you need to find or rewrite structural code patterns (TCA composition, API 
 
 Load `references/ast-grep.md` for pattern syntax, examples, and custom rules.
 
-### 4. XcodeBuildMCP is the only build/test tool
+### 4. Capability-based build and test executor selection
 
-All build and test operations go through XcodeBuildMCP. Never call `xcodebuild` directly.
+This matrix owns executor selection and applies to interactive agents, while repository `mise` tasks remain valid human and CI paths.
 
-Load `references/xcodebuild-mcp.md` for session setup, build/test commands, and simulator management.
+| Required outcome                                      | Preferred executor                                                                      | Supported scope                                                              | Existing fallback                                                                                  | Stop condition                                                                                                       |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Package-local build or focused package tests          | `xcrun swift build` / `xcrun swift test --package-path <path>`                          | Local SwiftPM package compilation and tests                                  | Unfiltered `xcrun swift test` for the same package when a focused filter is unavailable            | Package path, toolchain, or test suite cannot be identified                                                          |
+| Simulator project build, focused/full test, or launch | XcodeBuildMCP `build_sim`, `test_sim`, or `build_run_sim` after `session_show_defaults` | Exposed iOS-simulator project/scheme/defaults only                           | Stop; this repository has no verified simulator-specific repository task                           | MCP tool, defaults, simulator, or requested simulator scope is unavailable                                           |
+| macOS scheme build                                    | `mise run macos-build`                                                                  | Voyager macOS development scheme                                             | Stop if the repository task cannot run in the current environment                                  | No macOS-capable MCP operation is exposed and the repository task is unavailable or cannot prove the required scheme |
+| macOS scheme focused test                             | No focused macOS executor is exposed in the current tool surface                        | None                                                                         | `mise run macos-test` only after recording it as a broader fallback and inspecting target coverage | A focused result is required but the broader repository task cannot prove intended target coverage                   |
+| macOS scheme full test                                | `mise run macos-test`                                                                   | Voyager macOS development scheme; inspect its result/log for target coverage | Stop if the repository task cannot run in the current environment                                  | No macOS-capable MCP operation is exposed and the repository task is unavailable or cannot prove intended targets    |
+| Swift lint or format                                  | `mise exec -- swiftlint ...` / `mise exec -- swiftformat ...`                           | Touched macOS Swift sources                                                  | Stop when the pinned repository tool is unavailable                                                | Style result cannot be produced by the repository toolchain                                                          |
+| Physical-device build, test, install, or launch       | No preferred executor in the current tool surface                                       | None: device operations are not exposed here                                 | Stop and report the missing device capability                                                      | Never invent a device MCP operation or substitute an unrelated simulator/macOS result                                |
+
+Before the first available XcodeBuildMCP build, run, or test operation in a session, call `XcodeBuildMCP_session_show_defaults()`. Use an MCP operation only when both the operation and its required scope are exposed; do not call raw `xcodebuild` from an agent as a substitute for this matrix.
+
+Load `references/xcodebuild-mcp.md` for session setup and the supported simulator operations. Load `references/package-integration.md` for local SwiftPM product, target, dependency, and consumer wiring verification. Load `references/swift6-package-rules.md` when creating packages, adding or moving types into packages, editing `Package.swift`, or fixing Sendable errors.
+Load `references/voyager-verification.md` for focused Voyager verification, SwiftFormat path resolution, and callback/async proof requirements.
 
 ### 5. Periphery for dead code scans
 
@@ -128,7 +140,7 @@ If you need both definition AND references — call `codegraph_node` and `codegr
 
 - **Reading entire files to find a definition** — use `codegraph_node` instead
 - **Using text grep for code patterns** — use `ast_grep_search` for AST-aware matching
-- **Calling xcodebuild directly** — use XcodeBuildMCP for all build/test operations
+- **Treating XcodeBuildMCP as universal** — select the executor by operation and supported platform from the capability matrix
 - **Running CodeGraph queries on a stale index** — check `codegraph_status` first
 - **Sequential calls when parallel is possible** — independent queries should run simultaneously
 - **Skipping session defaults before building** — always run `session_show_defaults` first
@@ -137,13 +149,15 @@ If you need both definition AND references — call `codegraph_node` and `codegr
 
 Do NOT read all reference files at once. Load only what the current task needs:
 
-| Task type                    | Read                                     | Skip       |
-| ---------------------------- | ---------------------------------------- | ---------- |
-| Find definition / references | `codegraph.md`                           | All others |
-| Search or rewrite patterns   | `ast-grep.md`                            | All others |
-| Build / test / compile check | `xcodebuild-mcp.md`                      | All others |
-| Unused code scan             | `periphery.md`                           | All others |
-| Multiple concerns            | Load only the files for tools you'll use | Others     |
+| Task type                    | Read                                      | Skip                      |
+| ---------------------------- | ----------------------------------------- | ------------------------- |
+| Find definition / references | `codegraph.md`                            | All others                |
+| Search or rewrite patterns   | `ast-grep.md`                             | All others                |
+| Build / test / compile check | `xcodebuild-mcp.md` and capability matrix | All others                |
+| SwiftPM package integration  | `references/package-integration.md`       | Unrelated tool references |
+| Swift 6 package rules        | `references/swift6-package-rules.md`      | Unrelated tool references |
+| Unused code scan             | `periphery.md`                            | All others                |
+| Multiple concerns            | Load only the files for tools you'll use  | Others                    |
 
 ## Related Skills
 
@@ -151,4 +165,3 @@ Do NOT read all reference files at once. Load only what the current task needs:
 | ----------------- | ---------------------------------------------------- |
 | `codegraph-usage` | Deep CodeGraph guides with Voyager-specific examples |
 | `voyager-dev`     | Voyager macOS TCA + FSD orchestrator                 |
-| `verification`    | Build/test verification gates                        |

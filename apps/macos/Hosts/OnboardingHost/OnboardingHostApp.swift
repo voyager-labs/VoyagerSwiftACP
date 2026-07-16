@@ -206,7 +206,7 @@ enum OnboardingHostMockAuthAssembly {
 
         return OnboardingHostAuthClients(
             accountSessionClient: AccountSessionClient(
-                read: { sessionHolder.session },
+                read: { _ in sessionHolder.session },
                 persist: { session in sessionHolder.setSession(session) },
                 delete: { _ in sessionHolder.setSession(nil) },
             ),

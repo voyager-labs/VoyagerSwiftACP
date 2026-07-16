@@ -28,6 +28,23 @@ struct EditMenuCommands: Commands {
 
         let selectedCount = viewStore.selectedItemCount
         let hasSelectedItems = selectedCount > 0
+        let canPerformEntryCommands = viewStore.canPerformEntryCommands
+        let canCut = Self.canPerformTextOrEntryCommand(
+            canHandleByTextResponder: canTextResponderHandle(#selector(NSText.cut(_:))),
+            canPerformEntryCommands: canPerformEntryCommands,
+        )
+        let canCopy = Self.canPerformTextOrEntryCommand(
+            canHandleByTextResponder: canTextResponderHandle(#selector(NSText.copy(_:))),
+            canPerformEntryCommands: canPerformEntryCommands,
+        )
+        let canPaste = Self.canPerformTextOrEntryCommand(
+            canHandleByTextResponder: canTextResponderHandle(#selector(NSText.paste(_:))),
+            canPerformEntryCommands: canPerformEntryCommands,
+        )
+        let canSelectAll = Self.canPerformTextOrEntryCommand(
+            canHandleByTextResponder: canTextResponderHandle(#selector(NSText.selectAll(_:))),
+            canPerformEntryCommands: canPerformEntryCommands,
+        )
         let copyAbsolutePathTitle = selectedCount == 1 ? "Copy Absolute Path" : "Copy Absolute Paths"
         let copyURLTitle = selectedCount == 1 ? "Copy URL" : "Copy URLs"
 
@@ -79,39 +96,42 @@ struct EditMenuCommands: Commands {
                 sendTextResponderAction(#selector(NSText.cut(_:)), fallback: .cut)
             }
             .keyboardShortcut("x", modifiers: .command)
+            .disabled(!canCut)
 
             Button("Copy") {
                 sendTextResponderAction(#selector(NSText.copy(_:)), fallback: .copy)
             }
             .keyboardShortcut("c", modifiers: .command)
+            .disabled(!canCopy)
 
             Divider()
 
             Button(copyAbsolutePathTitle) {
                 sendEditCommand(.copyAbsolutePaths)
             }
-            .disabled(!hasSelectedItems)
+            .disabled(!canPerformEntryCommands || !hasSelectedItems)
 
             Button(copyURLTitle) {
                 sendEditCommand(.copyURLs)
             }
-            .disabled(!hasSelectedItems)
+            .disabled(!canPerformEntryCommands || !hasSelectedItems)
 
             Button("Paste") {
                 sendTextResponderAction(#selector(NSText.paste(_:)), fallback: .paste)
             }
             .keyboardShortcut("v", modifiers: .command)
+            .disabled(!canPaste)
 
             Button("Duplicate") {
                 sendEditCommand(.duplicate)
             }
             .keyboardShortcut("d", modifiers: .command)
-            .disabled(!hasSelectedItems)
+            .disabled(!canPerformEntryCommands || !hasSelectedItems)
 
             Button("Make Alias") {
                 sendEditCommand(.makeAlias)
             }
-            .disabled(!hasSelectedItems)
+            .disabled(!canPerformEntryCommands || !hasSelectedItems)
         }
 
         CommandGroup(replacing: .textEditing) {
@@ -119,12 +139,24 @@ struct EditMenuCommands: Commands {
                 sendTextResponderAction(#selector(NSText.selectAll(_:)), fallback: .selectAll)
             }
             .keyboardShortcut("a", modifiers: .command)
+            .disabled(!canSelectAll)
         }
+    }
+
+    static func canPerformTextOrEntryCommand(
+        canHandleByTextResponder: Bool,
+        canPerformEntryCommands: Bool,
+    ) -> Bool {
+        canHandleByTextResponder || canPerformEntryCommands
     }
 
     private func isTextEditingResponder() -> Bool {
         guard let responder = NSApp.keyWindow?.firstResponder else { return false }
         return responder is NSTextView || responder is NSTextField
+    }
+
+    private func canTextResponderHandle(_ selector: Selector) -> Bool {
+        isTextEditingResponder() && NSApp.target(forAction: selector, to: nil, from: nil) != nil
     }
 
     private func textResponderUndoManager() -> UndoManager? {

@@ -32,6 +32,13 @@ public struct FileManagerContentState: Equatable {
         entryViewLayout.isCollectionMode
     }
 
+    var isOrdinaryDirectoryLoading: Bool {
+        !composer.isCollectionSearching
+            && !entryViewLayout.isCollectionContentLoading
+            && entryViewLayout.entryOperations.isLoading
+            && !isCollectionMode
+    }
+
     mutating func syncComposerCollectionState() {
         composer.collectionContext = collection.collectionContext
         composer.openedCollectionURL = collection.collectionSession.document?.url

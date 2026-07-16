@@ -16,19 +16,19 @@ This reference covers **integration ceremony only**: how the thin app shell wire
 
 ## Canonical neighbors
 
-| Neighbor                                                           | What it provides (linked, not restated)                         |
-| ------------------------------------------------------------------ | --------------------------------------------------------------- |
-| `package-extraction-posture.md`                                    | Extraction readiness checks and modularization direction        |
-| `../../../reviewer/boundary/references/layer-and-segment-rules.md` | `01_App` and `06_Shared` layer contracts, dependency direction  |
-| `../../../reviewer/boundary/references/public-boundary-spec.md`    | Public surface rules, deep import rules, entity cross-reference |
-| `../../../implementer/tca-contract/references/tca-contract.md`     | Dependency client definition mechanics, `Sendable` rules        |
+| Neighbor                                                         | What it provides (linked, not restated)                         |
+| ---------------------------------------------------------------- | --------------------------------------------------------------- |
+| `package-extraction-posture.md`                                  | Extraction readiness checks and modularization direction        |
+| `../../../reviewer/review/references/layer-and-segment-rules.md` | `01_App` and `06_Shared` layer contracts, dependency direction  |
+| `../../../reviewer/review/references/public-boundary-spec.md`    | Public surface rules, deep import rules, entity cross-reference |
+| `../../../implementer/tca-contract/references/tca-contract.md`   | Dependency client definition mechanics, `Sendable` rules        |
 
 ## Non-goals
 
 - Extraction readiness evaluation (see `package-extraction-posture.md`).
-- FSD layer definitions and `01_App` contract details (see `../../../reviewer/boundary/references/layer-and-segment-rules.md`).
+- FSD layer definitions and `01_App` contract details (see `../../../reviewer/review/references/layer-and-segment-rules.md`).
 - TCA dependency client definition mechanics (see `../../../implementer/tca-contract/references/tca-contract.md`).
-- Public boundary stability principles (see `../../../reviewer/boundary/references/public-boundary-spec.md`).
+- Public boundary stability principles (see `../../../reviewer/review/references/public-boundary-spec.md`).
 
 ---
 

@@ -48,19 +48,19 @@ enum AccountAccessFlowTestSupport {
         TestStore(initialState: initialState) {
             AppRootFeature()
         } withDependencies: {
-            $0.accountSessionClient = AccountSessionClient(
-                read: { session },
-                persist: { _ in },
-                delete: { _ in },
-            )
+            $0.accountSessionClient = AccountSessionClient(read: { _ in session }, persist: { _ in },
+                                                           delete: { _ in })
             $0.authNetworkClient = AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in exchangeSession },
                 fetchAccessStatus: { syncResult.accessStatus },
                 refreshToken: { exchangeSession },
                 syncSession: { _, _ in syncResult },
             )
-            $0.accessStatusSnapshotClient.save = { _ in }
-            $0.accessStatusSnapshotClient.remove = {}
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                load: { nil },
+                save: { _ in },
+                remove: {},
+            )
             $0.helperAppClient.start = {}
             $0.helperAppClient.stop = {}
             $0.helperAppClient.terminationEvents = { AsyncStream { $0.finish() } }

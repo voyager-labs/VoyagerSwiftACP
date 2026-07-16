@@ -176,9 +176,17 @@ struct VoyagerApp: App {
                     appRootStore.send(.windowManager(.event(.windowClosed(id))))
                 },
             ),
-            resolveSessionLapseGuardStore: { [appRootStore] in
-                appRootStore.scope(state: \.lifecycle.presentedAccountAccess, action: \.lifecycle.accountAccess)
-            },
+            sessionLapseGuardProvider: FileManagerSessionLapseGuardProvider(
+                resolveStore: { [appRootStore] in
+                    appRootStore.scope(
+                        state: \.lifecycle.presentedAccountAccess,
+                        action: \.lifecycle.accountAccess,
+                    )
+                },
+                resolveState: { [appRootStore] in
+                    appRootStore.state.lifecycle.presentedAccountAccess
+                },
+            ),
         )
     }
 

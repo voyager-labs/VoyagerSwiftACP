@@ -100,14 +100,15 @@ public extension AuthNetworkClient {
         context: AppHandoffContext,
     ) async throws -> AccountSession {
         // extracted from AppHandoffExchangeClient.swift:21-67
-        guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL")
+        guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL"),
+              let gatewayURL = GatewayEnvironment(rawValue: gatewayURLString).baseURL
         else {
             throw AppHandoffExchangeError.networkFailure
         }
 
         let builder = AppHandoffURLBuilder(
             webBaseURL: EnvironmentLoader.stringValue(forKey: "PUBLIC_WEB_BASE_URL") ?? "",
-            gatewayURL: gatewayURLString,
+            gatewayURL: gatewayURL.absoluteString,
         )
 
         guard let exchangeURL = builder.exchangeURL else {
@@ -156,11 +157,9 @@ public extension AuthNetworkClient {
         let store = AccountTokenFileStore.withDefaultHome()
         let file = try await store.read()
         guard let file else { throw AccessError.notConfigured }
-        guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL")
-        else {
-            throw AccessError.networkFailure
-        }
-        guard let base = URL(string: gatewayURLString) else { throw AccessError.networkFailure }
+        guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL"),
+              let base = GatewayEnvironment(rawValue: gatewayURLString).baseURL
+        else { throw AccessError.networkFailure }
         let accessStatusURL = base.appendingPathComponent("access/status")
         var request = URLRequest(url: accessStatusURL)
         request.httpMethod = "GET"
@@ -189,11 +188,9 @@ public extension AuthNetworkClient {
         let store = AccountTokenFileStore.withDefaultHome()
         let file = try await store.read()
         guard let file else { throw DeviceBindingError.notConfigured }
-        guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL")
-        else {
-            throw DeviceBindingError.networkFailure
-        }
-        guard let base = URL(string: gatewayURLString) else { throw DeviceBindingError.networkFailure }
+        guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL"),
+              let base = GatewayEnvironment(rawValue: gatewayURLString).baseURL
+        else { throw DeviceBindingError.networkFailure }
         let bindingURL = base.appendingPathComponent("access/device-bindings")
         var request = URLRequest(url: bindingURL)
         request.httpMethod = "POST"
@@ -237,11 +234,9 @@ public extension AuthNetworkClient {
         file: AccountTokensFile,
     ) async throws -> (session: AccountSession, source: AccountTokensFile) {
         // extracted from AccountAccessClient.swift:87-128 (excluding write-back)
-        guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL")
-        else {
-            throw AccessError.networkFailure
-        }
-        guard let base = URL(string: gatewayURLString) else { throw AccessError.networkFailure }
+        guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL"),
+              let base = GatewayEnvironment(rawValue: gatewayURLString).baseURL
+        else { throw AccessError.networkFailure }
         let refreshURL = base.appendingPathComponent("auth/token/refresh")
         var request = URLRequest(url: refreshURL)
         request.httpMethod = "POST"
@@ -274,6 +269,7 @@ public extension AuthNetworkClient {
                 status: .none,
                 refreshToken: sessionPayload.refreshToken ?? file.refreshToken,
                 expiresAt: sessionPayload.expiresAt.map { Date(timeIntervalSince1970: $0) },
+                sessionBindingID: file.sessionBindingID ?? UUID(),
             ),
             source: file,
         )
@@ -296,7 +292,7 @@ public extension AuthNetworkClient {
         }
 
         guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL"),
-              let baseURL = URL(string: gatewayURLString)
+              let baseURL = GatewayEnvironment(rawValue: gatewayURLString).baseURL
         else {
             throw SessionSyncError.upstream(0)
         }
@@ -340,7 +336,7 @@ public extension AuthNetworkClient {
         throw syncError
     }
 
-    private static func sessionSyncResult(
+    internal static func sessionSyncResult(
         data: Data,
         intent: SessionSyncIntent,
         source: AccountTokensFile,
@@ -473,7 +469,7 @@ public extension AuthNetworkClient {
         _ refreshed: (session: AccountSession, source: AccountTokensFile),
         store: AccountTokenFileStore,
     ) async throws -> AccountSession {
-        guard let tokens = AccountTokenSessionMapper.sessionToTokensFile(refreshed.session),
+        guard let tokens = AccountTokenSessionMapper.sessionToTokensFile(refreshed.session, now: Date()),
               let persistedSession = AccountTokenSessionMapper.tokensFileToSession(tokens)
         else {
             throw SessionSyncError.storageFailure
@@ -529,6 +525,7 @@ public extension AuthNetworkClient {
             accessTokenExpiresIn: session.expiresIn ?? max(0, expiresAtMs - now),
             refreshToken: refreshToken,
             refreshTokenExpiresAtMs: (session.refreshTokenExpiresAt ?? previous.refreshTokenExpiresAtMs / 1000) * 1000,
+            sessionBindingID: previous.sessionBindingID,
         )
     }
 }

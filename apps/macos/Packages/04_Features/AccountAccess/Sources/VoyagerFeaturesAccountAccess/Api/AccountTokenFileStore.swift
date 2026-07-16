@@ -43,7 +43,8 @@ actor AccountTokenFileStore {
 
     func read() throws -> AccountTokensFile? {
         try withExclusiveLock {
-            try readUnlocked()
+            guard let file = try readUnlocked() else { return nil }
+            return try migrateBindingIfNeededUnlocked(file)
         }
     }
 
@@ -157,6 +158,23 @@ actor AccountTokenFileStore {
         } catch AccountTokenRollbackError.invalidPayload {
             return nil
         }
+    }
+
+    private func migrateBindingIfNeededUnlocked(_ file: AccountTokensFile) throws -> AccountTokensFile {
+        guard file.sessionBindingID == nil else { return file }
+
+        let migrated = AccountTokensFile(
+            schemaVersion: AccountTokensFile.currentSchemaVersion,
+            updatedAtMs: file.updatedAtMs,
+            accessToken: file.accessToken,
+            accessTokenExpiresAtMs: file.accessTokenExpiresAtMs,
+            accessTokenExpiresIn: file.accessTokenExpiresIn,
+            refreshToken: file.refreshToken,
+            refreshTokenExpiresAtMs: file.refreshTokenExpiresAtMs,
+            sessionBindingID: UUID(),
+        )
+        try replacePayload(with: encoder.encode(migrated))
+        return migrated
     }
 
     private func readPayloadUnlocked(at url: URL) throws -> AccountTokensFile {
@@ -347,10 +365,14 @@ private struct AccountTokenHandoffMarker: Codable {
 
 private extension AccountTokensFile {
     func matches(_ session: AccountSession) -> Bool {
-        accessToken == session.accessToken && refreshToken == session.refreshToken
+        accessToken == session.accessToken
+            && refreshToken == session.refreshToken
+            && sessionBindingID == session.sessionBindingID
     }
 
     func matches(_ file: AccountTokensFile) -> Bool {
-        accessToken == file.accessToken && refreshToken == file.refreshToken
+        accessToken == file.accessToken
+            && refreshToken == file.refreshToken
+            && sessionBindingID == file.sessionBindingID
     }
 }

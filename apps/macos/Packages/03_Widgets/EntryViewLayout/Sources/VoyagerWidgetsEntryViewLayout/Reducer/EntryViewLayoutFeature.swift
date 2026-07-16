@@ -274,7 +274,8 @@ public struct EntryViewLayoutFeature {
 
             case let .entryOperations(entryOperationsAction):
                 switch entryOperationsAction {
-                case .loading(.itemsLoaded):
+                case .loading(.itemsLoaded),
+                     .loading(.itemsLoadFailed):
                     return Self.updateEntriesAndReapply(&state)
 
                 default:
