@@ -12,6 +12,8 @@ struct EntryOperationsLifecycleReducer {
     var alertClient
     @Dependency(\.entryThumbnailCacheClient)
     var entryThumbnailCacheClient
+    @Dependency(\.uuid)
+    var uuid
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -21,7 +23,7 @@ struct EntryOperationsLifecycleReducer {
                 return .none
 
             case let .lifecycle(.resetForDuplicate(windowID)):
-                state.resetForDuplicate(windowID: windowID)
+                state.resetForDuplicate(windowID: windowID, undoOwnerID: uuid())
                 return .none
 
             case let .lifecycle(.syncSelectedEntryIDs(ids)):
@@ -36,7 +38,8 @@ struct EntryOperationsLifecycleReducer {
                 state.itemStates[filePath] = ItemOperationState(isBusy: true, lastError: nil)
                 return .none
 
-            case let .lifecycle(.operationFinished(filePath, kind, result)):
+            case let .lifecycle(.operationFinished(filePath, kind, result)),
+                 let .lifecycle(.dropOperationFinished(filePath, kind, result)):
                 state.itemStates[filePath]?.isBusy = false
 
                 if case .rename = kind {

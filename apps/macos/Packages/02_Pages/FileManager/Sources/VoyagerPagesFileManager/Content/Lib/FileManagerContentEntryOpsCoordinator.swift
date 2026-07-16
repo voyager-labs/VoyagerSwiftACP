@@ -16,14 +16,20 @@ enum FileManagerContentEntryOpsCoordinator {
         case let .lifecycle(.entryActionCompleted(record)):
             handleEntryActionCompleted(record, state: state)
 
-        case let .undoRedo(.entryActionApplied(direction: direction, record: record)):
+        case let .undoRedo(.replaySucceeded(direction: direction, sourceRecordID: _, updatedRecord: record)):
             handleEntryActionApplied(direction: direction, record: record, state: state)
 
         case let .lifecycle(.pathsMutated(paths)):
             handleMutatedPaths(paths, state: state)
 
-        case .lifecycle(.operationFinished):
+        case .lifecycle(.operationFinished(_, _, .success)):
             reloadEntryItemsEffect(state: state)
+
+        case .lifecycle(.operationFinished(_, _, .failure)):
+            .none
+
+        case .lifecycle(.dropOperationFinished):
+            .none
 
         case .lifecycle(.emptyTrashCompleted):
             .send(.delegate(.closeWindow))

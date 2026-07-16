@@ -8,6 +8,7 @@ public struct FileManagerSidebarFeature {
     public var body: some Reducer<State, Action> {
         FileManagerSidebarPreferenceReducer()
         FileManagerSidebarContentTabSyncReducer()
+        FileManagerSidebarEntryDropRoutingReducer()
     }
 }
 
@@ -25,6 +26,21 @@ struct FileManagerSidebarContentTabSyncReducer {
             default:
                 return .none
             }
+        }
+    }
+}
+
+@Reducer
+struct FileManagerSidebarEntryDropRoutingReducer {
+    typealias State = FileManagerSidebarState
+    typealias Action = FileManagerSidebarAction
+
+    var body: some Reducer<State, Action> {
+        Reduce { _, action in
+            guard case let .view(.entryDropRequested(request)) = action else {
+                return .none
+            }
+            return .send(.delegate(.entryDropRequested(request)))
         }
     }
 }

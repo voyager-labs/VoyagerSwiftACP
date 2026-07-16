@@ -1,5 +1,7 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
+import UniformTypeIdentifiers
 import VoyagerEntitiesEntry
 @testable import VoyagerFeaturesEntryOperations
 import XCTest
@@ -40,6 +42,130 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: sourcePath))
         XCTAssertTrue(FileManager.default.fileExists(atPath: trashPath))
         XCTAssertEqual(store.state.undoRecords.count, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-003-move_entries_to_trash: Sidebar provider batch는 전용 Trash mutation과 Put Back 계약을 보존함
+    /// `fixtures/fixtures/texts/plain/11.txt` 두 복사본의 provider를 all-or-none 해석해 generic move/paste 없이 처리한다.
+    /// - 검증 내용: provider 두 개 trash 이동, metadata 저장, Undo 등록, Put Back 원위치 복구
+    /// - 사전 조건: fixture-backed sandbox 두 개, source별 fake Trash, Window/owner identity와 UndoManager spy
+    /// - 기대 결과: moveToTrash만 두 번 호출되고 metadata/Undo가 생성되며 두 파일 모두 원래 위치로 복구됨
+    func testHandleDropToTrash_successPreservesMetadataUndoAndPutBack() async throws {
+        let firstSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        let secondSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer {
+            firstSandbox.cleanup()
+            secondSandbox.cleanup()
+        }
+        let sourceURLs = [firstSandbox.fileURL, secondSandbox.fileURL]
+        let providers = sourceURLs.map {
+            NSItemProvider(item: $0 as NSURL, typeIdentifier: UTType.fileURL.identifier)
+        }
+        let trashCalls = LockIsolated<[URL]>([])
+        let genericCalls = LockIsolated(0)
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.pasteFile = { _, _ in
+            genericCalls.withValue { $0 += 1 }
+            throw FileOpError.system(message: "generic paste must not run")
+        }
+        fileOps.moveFile = { _, _ in
+            genericCalls.withValue { $0 += 1 }
+            throw FileOpError.system(message: "generic move must not run")
+        }
+        fileOps.moveToTrashAndReturnURL = { sourceURL in
+            let trashRoot = sourceURL.deletingLastPathComponent().appendingPathComponent(".Trash")
+            try FileManager.default.createDirectory(at: trashRoot, withIntermediateDirectories: true)
+            let trashURL = trashRoot.appendingPathComponent(sourceURL.lastPathComponent)
+            try FileManager.default.moveItem(at: sourceURL, to: trashURL)
+            trashCalls.withValue { $0.append(trashURL) }
+            return trashURL
+        }
+        fileOps.putBackFromTrash = { trashURL, originalPath in
+            try FileManager.default.moveItem(at: trashURL, to: URL(fileURLWithPath: originalPath))
+        }
+        let windowID = UUID()
+        let ownerID = UUID()
+        var state = EntryOperationsState(undoOwnerID: ownerID)
+        state.windowID = windowID
+        let undoSpy = UndoManagerSpy()
+        let store = EntryOperationsTestSupport.makeStore(initialState: state) {
+            $0.entryFileOpsClient = fileOps
+            $0.undoManagerClient = undoSpy.client
+        }
+        // store.exhaustivity = .off: provider decode부터 Trash/Undo lifecycle까지 최종 불변식으로 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.handleDropToTrash(providers: providers)))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        let trashURLs = trashCalls.value
+        XCTAssertEqual(Set(trashURLs.map(\.path)), Set(sourceURLs.map {
+            $0.deletingLastPathComponent().appendingPathComponent(".Trash/\($0.lastPathComponent)").path
+        }))
+        XCTAssertEqual(genericCalls.value, 0)
+        XCTAssertEqual(store.state.undoRecords.count, 1)
+        XCTAssertEqual(undoSpy.registerUndoCalls.count, 1)
+        XCTAssertEqual(undoSpy.registerUndoCalls.first?.windowID, windowID)
+        XCTAssertEqual(undoSpy.registerUndoCalls.first?.ownerID, ownerID)
+        for sourceURL in sourceURLs {
+            let trashURL = sourceURL.deletingLastPathComponent()
+                .appendingPathComponent(".Trash/\(sourceURL.lastPathComponent)")
+            let metadata = await store.dependencies.trashMetadataStoreClient.find(trashURL.path)
+            XCTAssertEqual(metadata?.originalPath, sourceURL.path)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: sourceURL.path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: trashURL.path))
+        }
+
+        await store.send(.trash(.putBackFromTrash(paths: trashURLs.map(\.path))))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertTrue(sourceURLs.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
+        XCTAssertTrue(trashURLs.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: firstSandbox.originalFixture.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: secondSandbox.originalFixture.path))
+    }
+
+    /// EOP-003-move_entries_to_trash: provider 하나라도 decode 실패하면 batch 전체를 변경하지 않음
+    /// all-or-none resolver가 일부 성공 path를 Trash mutation으로 흘리지 않는 회귀를 검증한다.
+    /// - 검증 내용: valid + invalid provider batch의 moveToTrash/generic move/paste 호출 0회, metadata/Undo 없음
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt` temp copy provider와 fileURL payload가 없는 provider
+    /// - 기대 결과: fixture copy와 원본이 유지되고 EntryOperations state가 변경되지 않음
+    func testHandleDropToTrash_decodeFailureMutatesNothing() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let validProvider = NSItemProvider(
+            item: sandbox.fileURL as NSURL,
+            typeIdentifier: UTType.fileURL.identifier,
+        )
+        let mutationCalls = LockIsolated(0)
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.pasteFile = { _, _ in
+            mutationCalls.withValue { $0 += 1 }
+            throw FileOpError.system(message: "generic paste must not run")
+        }
+        fileOps.moveFile = { _, _ in
+            mutationCalls.withValue { $0 += 1 }
+            throw FileOpError.system(message: "generic move must not run")
+        }
+        fileOps.moveToTrashAndReturnURL = { _ in
+            mutationCalls.withValue { $0 += 1 }
+            throw FileOpError.system(message: "trash mutation must not run")
+        }
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init()) {
+            $0.entryFileOpsClient = fileOps
+        }
+        // store.exhaustivity = .off: decode failure의 action 부재와 filesystem 불변만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.handleDropToTrash(providers: [validProvider, NSItemProvider()])))
+        await store.finish()
+
+        XCTAssertEqual(mutationCalls.value, 0)
+        XCTAssertTrue(store.state.undoRecords.isEmpty)
+        XCTAssertTrue(store.state.itemStates.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
@@ -268,6 +394,41 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 
     // MARK: - EOP-003-undo_entry_action
 
+    /// EOP-003-undo_entry_action: undo owner 회전은 로컬 history만 초기화한다.
+    /// - 검증 내용: owner ID와 undo/redo history 외 모든 EntryOperationsState 필드 보존
+    /// - 사전 조건: loading/rename/clipboard/counter 상태와 undo/redo record가 함께 존재함
+    /// - 기대 결과: 새 owner ID, 빈 history, 그 외 상태 동일
+    func testUndoOwnerRotation_preservesOperationStateAndClearsLocalHistory() {
+        let oldOwnerID = UUID()
+        let newOwnerID = UUID()
+        let undoRecord = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/a/old.txt", afterPath: "/a/new.txt")],
+        )
+        let redoRecord = EntryActionRecord(
+            operationKind: .createFolder,
+            targets: [.init(beforePath: nil, afterPath: "/b/new-folder")],
+        )
+        var state = EntryOperationsState(undoOwnerID: oldOwnerID)
+        state.windowID = UUID()
+        state.isLoading = true
+        state.isReloading = true
+        state.renamingText = "preserved-name"
+        state.clipboardItems = ["/preserved/item"]
+        state.pendingEmptyTrashItemCount = 3
+        state.emptyTrashCompletedCount = 2
+        state.undoRecords = [undoRecord]
+        state.redoRecords = [redoRecord]
+        var expected = state
+        expected.undoOwnerID = newOwnerID
+        expected.undoRecords = []
+        expected.redoRecords = []
+
+        state.rotateUndoOwner(to: newOwnerID)
+
+        XCTAssertEqual(state, expected)
+    }
+
     /// EOP-003-undo_entry_action: 새 action 완료 시 undo stack에 push되고 redo stack이 clear된다
     /// `entryActionCompleted`가 isUndoable 작업으로 들어오면 undoRecords에 append하고 redoRecords를 비운다.
     /// - 검증 내용: `entryActionCompleted`가 undo stack에 record를 추가하고 redo stack을 clear한다.
@@ -288,6 +449,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         )
 
         var initialState = EntryOperationsState()
+        initialState.windowID = UUID()
         initialState.undoRecords = [existingUndo]
         initialState.redoRecords = [existingRedo]
 
@@ -296,6 +458,10 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await store.send(.lifecycle(.entryActionCompleted(newRecord))) {
             $0.undoRecords = [existingUndo, newRecord]
             $0.redoRecords = []
+        }
+        await store.receive { action in
+            guard case let .outcome(.undoManagerAvailabilityChanged(availability)) = action else { return false }
+            return availability == .init()
         }
 
         await store.finish()
@@ -396,6 +562,10 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let store = EntryOperationsTestSupport.makeStore(initialState: initialState)
 
         await store.send(.undoRedo(.undoEntryAction(wrongRecord)))
+        await store.receive { action in
+            guard case let .outcome(.entryActionReplayFinished(.undo, terminal)) = action else { return false }
+            return terminal == .failure(reason: .ownerRecordMismatch, appliedTargets: [])
+        }
         await store.finish()
 
         XCTAssertEqual(store.state.undoRecords.count, 1)
@@ -569,6 +739,10 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let store = EntryOperationsTestSupport.makeStore(initialState: initialState)
 
         await store.send(.undoRedo(.redoEntryAction(wrongRecord)))
+        await store.receive { action in
+            guard case let .outcome(.entryActionReplayFinished(.redo, terminal)) = action else { return false }
+            return terminal == .failure(reason: .ownerRecordMismatch, appliedTargets: [])
+        }
         await store.finish()
 
         // AC: EOP-003-redo_entry_action Edge Case #10 — ID 불일치로 redo 무시
@@ -584,14 +758,18 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
     /// - 검증 내용: `entryActionCompleted` 이후 spy에 registerUndo 호출이 기록되고, record가 일치한다.
     /// - 사전 조건: UndoManagerSpy를 주입하고 undoRecords가 비어있다.
     /// - 기대 결과: spy.registerUndoCalls에 1개의 호출이 기록되며, record가 전송한 것과 일치한다.
-    func testUndo_undoManagerResolved_registersUndoHandler() async {
+    func testUndo_undoManagerResolved_registersUndoHandler() async throws {
         let spy = UndoManagerSpy()
         let record = EntryActionRecord(
             operationKind: .rename,
             targets: [.init(beforePath: "/a/old.txt", afterPath: "/a/new.txt")],
         )
 
-        let store = EntryOperationsTestSupport.makeStore(initialState: EntryOperationsState()) {
+        let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000568"))
+        let ownerID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000567"))
+        var initialState = EntryOperationsState(undoOwnerID: ownerID)
+        initialState.windowID = windowID
+        let store = EntryOperationsTestSupport.makeStore(initialState: initialState) {
             $0.undoManagerClient = spy.client
         }
 
@@ -599,11 +777,17 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
             $0.undoRecords = [record]
             $0.redoRecords = []
         }
+        await store.receive { action in
+            guard case let .outcome(.undoManagerAvailabilityChanged(availability)) = action else { return false }
+            return availability == .init()
+        }
 
         await store.finish()
 
         // AC: EOP-003-undo_entry_action Edge Case #9 — registerUndo 핸들러가 등록되었다
         XCTAssertEqual(spy.registerUndoCalls.count, 1)
+        XCTAssertEqual(spy.registerUndoCalls.first?.windowID, windowID)
+        XCTAssertEqual(spy.registerUndoCalls.first?.ownerID, ownerID)
         XCTAssertEqual(spy.registeredRecords.first, record)
     }
 
@@ -636,6 +820,499 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertEqual(store.state.undoRecords.first?.id, record.id)
         XCTAssertTrue(store.state.redoRecords.isEmpty)
     }
+
+    /// EOP-003-undo_entry_action: 공유 UndoManager가 owner와 무관하게 전역 등록 역순으로 callback을 실행함
+    /// - 검증 내용: content와 Sidebar owner를 교차 등록해도 마지막 등록 owner부터 undo됨
+    /// - 사전 조건: 같은 windowID와 같은 live UndoManagerClient를 두 논리 owner가 공유함
+    /// - 기대 결과: Sidebar callback 후 content callback 순서이며 availability도 단일 manager 상태를 반영함
+    func testUndoManager_sharedOwnersFollowGlobalRegistrationOrder() async throws {
+        let undoManager = UndoManager()
+        let client = UndoManagerClient.live(undoManager: undoManager)
+        let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000569"))
+        let contentOwnerID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
+        let sidebarOwnerID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000002"))
+        let contentRecord = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/content/old", afterPath: "/content/new")],
+        )
+        let sidebarRecord = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [.init(beforePath: "/sidebar/source", afterPath: "/sidebar/destination")],
+        )
+        let events = client.events(windowID)
+        let receivedEvents = Task {
+            var iterator = events.makeAsyncIterator()
+            return await [iterator.next(), iterator.next()].compactMap(\.self)
+        }
+
+        await client.registerUndo(windowID, contentOwnerID, contentRecord)
+        await client.registerUndo(windowID, sidebarOwnerID, sidebarRecord)
+
+        let registeredAvailability = await client.availability(windowID)
+        XCTAssertEqual(registeredAvailability, .init(
+            canUndo: true,
+            canRedo: false,
+            undoTarget: .init(ownerID: sidebarOwnerID, recordID: sidebarRecord.id),
+        ))
+        _ = await client.undo(
+            windowID,
+            expectedTarget: .init(ownerID: sidebarOwnerID, recordID: sidebarRecord.id),
+        )
+        let afterSidebarUndo = await client.availability(windowID)
+        XCTAssertEqual(afterSidebarUndo.undoTarget, .init(ownerID: contentOwnerID, recordID: contentRecord.id))
+        XCTAssertEqual(afterSidebarUndo.redoTarget, .init(ownerID: sidebarOwnerID, recordID: sidebarRecord.id))
+        _ = await client.undo(
+            windowID,
+            expectedTarget: .init(ownerID: contentOwnerID, recordID: contentRecord.id),
+        )
+
+        let values = await receivedEvents.value
+        XCTAssertEqual(values.map(\.ownerID), [sidebarOwnerID, contentOwnerID])
+        XCTAssertEqual(values.map(\.record), [sidebarRecord, contentRecord])
+        XCTAssertEqual(values.map(\.direction), [.undo, .undo])
+        let fullyUndoneAvailability = await client.availability(windowID)
+        XCTAssertEqual(fullyUndoneAvailability, .init(
+            canUndo: false,
+            canRedo: true,
+            redoTarget: .init(ownerID: contentOwnerID, recordID: contentRecord.id),
+        ))
+        _ = await client.redo(
+            windowID,
+            expectedTarget: .init(ownerID: contentOwnerID, recordID: contentRecord.id),
+        )
+        let afterContentRedo = await client.availability(windowID)
+        XCTAssertEqual(afterContentRedo.undoTarget, .init(ownerID: contentOwnerID, recordID: contentRecord.id))
+        XCTAssertEqual(afterContentRedo.redoTarget, .init(ownerID: sidebarOwnerID, recordID: sidebarRecord.id))
+    }
+
+    /// EOP-003-redo_entry_action: 새 owner 등록이 반대 owner의 stale global redo를 양방향으로 제거함
+    /// - 검증 내용: content undo 뒤 Sidebar 등록, Sidebar undo 뒤 content 등록 모두 canRedo=false
+    /// - 사전 조건: 같은 live UndoManagerClient에서 undo로 redo availability를 만든 상태
+    /// - 기대 결과: 어느 owner가 새 등록을 만들든 NSUndoManager의 redo stack이 제거됨
+    func testUndoManager_crossOwnerRegistrationClearsGlobalRedoInBothDirections() async throws {
+        let undoManager = UndoManager()
+        let client = UndoManagerClient.live(undoManager: undoManager)
+        let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000570"))
+        let contentOwnerID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000003"))
+        let sidebarOwnerID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000004"))
+        let contentRecord = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/content/old", afterPath: "/content/new")],
+        )
+        let sidebarRecord = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [.init(beforePath: "/sidebar/source", afterPath: "/sidebar/destination")],
+        )
+
+        await client.registerUndo(windowID, contentOwnerID, contentRecord)
+        _ = await client.undo(
+            windowID,
+            expectedTarget: .init(ownerID: contentOwnerID, recordID: contentRecord.id),
+        )
+        let contentRedoAvailability = await client.availability(windowID)
+        XCTAssertTrue(contentRedoAvailability.canRedo)
+        await client.registerUndo(windowID, sidebarOwnerID, sidebarRecord)
+        let afterSidebarRegistration = await client.availability(windowID)
+        XCTAssertFalse(afterSidebarRegistration.canRedo)
+
+        undoManager.removeAllActions()
+        await client.registerUndo(windowID, sidebarOwnerID, sidebarRecord)
+        _ = await client.undo(
+            windowID,
+            expectedTarget: .init(ownerID: sidebarOwnerID, recordID: sidebarRecord.id),
+        )
+        let sidebarRedoAvailability = await client.availability(windowID)
+        XCTAssertTrue(sidebarRedoAvailability.canRedo)
+        await client.registerUndo(windowID, contentOwnerID, contentRecord)
+        let afterContentRegistration = await client.availability(windowID)
+        XCTAssertFalse(afterContentRegistration.canRedo)
+    }
+
+    /// EOP-003-undo_entry_action: expected target mismatch는 native manager를 호출하지 않는다.
+    /// Window preflight 이후 top이 바뀌는 경쟁에서도 live client가 마지막 원자 검증을 수행하는지 확인한다.
+    /// - 검증 내용: nil/wrong expected target은 didInvoke=false이고 올바른 target만 native undo를 실행한다.
+    /// - 사전 조건: 단일 owner/record가 shared UndoManager undo top으로 등록되어 있다.
+    /// - 기대 결과: mismatch 동안 canUndo와 top identity가 유지되고 matching 호출에서만 redo로 이동한다.
+    func testUndoManager_expectedTargetMismatchDoesNotInvokeNativeManager() async {
+        let undoManager = UndoManager()
+        let client = UndoManagerClient.live(undoManager: undoManager)
+        let windowID = UUID()
+        let ownerID = UUID()
+        let record = makeUndoManagerRecord(pathStem: "expected-target")
+        let expectedTarget = UndoManagerRecordIdentity(ownerID: ownerID, recordID: record.id)
+        await client.registerUndo(windowID, ownerID, record)
+
+        let missingResult = await client.undo(windowID)
+        let mismatchResult = await client.undo(
+            windowID,
+            expectedTarget: .init(ownerID: ownerID, recordID: UUID()),
+        )
+
+        XCTAssertFalse(missingResult.didInvoke)
+        XCTAssertFalse(mismatchResult.didInvoke)
+        XCTAssertTrue(undoManager.canUndo)
+        XCTAssertEqual(mismatchResult.availability.undoTarget, expectedTarget)
+
+        let matchingResult = await client.undo(windowID, expectedTarget: expectedTarget)
+        XCTAssertTrue(matchingResult.didInvoke)
+        XCTAssertFalse(matchingResult.availability.canUndo)
+        XCTAssertEqual(matchingResult.availability.redoTarget, expectedTarget)
+    }
+
+    // AC: EOP-003-undo_entry_action — owner invalidation은 이미 등록된 action을 제거함
+    /// EOP-003-undo_entry_action: owner 무효화가 기존 undo action을 제거하고 identity를 폐기함
+    func testUndoManager_registerThenInvalidateOwnerRemovesUndo() async {
+        let undoManager = UndoManager()
+        let client = UndoManagerClient.live(undoManager: undoManager)
+        let windowID = UUID()
+        let ownerID = UUID()
+
+        await client.registerUndo(windowID, ownerID, makeUndoManagerRecord(pathStem: "registered-owner"))
+        XCTAssertTrue(undoManager.canUndo)
+
+        let result = await client.invalidateOwner(windowID, ownerID)
+
+        XCTAssertEqual(result, .init(succeeded: true, availability: .init()))
+        XCTAssertFalse(undoManager.canUndo)
+    }
+
+    // AC: EOP-003-undo_entry_action — owner invalidation이 resolver 대기 중인 late registration보다 먼저 선형화됨
+    /// EOP-003-undo_entry_action: register resolve가 늦게 끝나도 이미 무효화된 owner에는 action을 등록하지 않음
+    func testUndoManager_ownerInvalidationRejectsRegistrationAfterBlockedResolverResumes() async {
+        let undoManager = UndoManager()
+        let windowID = UUID()
+        let ownerID = UUID()
+        let resolverCallCount = LockIsolated(0)
+        let (registrationStarted, registrationStartedContinuation) = AsyncStream<Bool>.makeStream()
+        let (registrationResolution, registrationResolutionContinuation) = AsyncStream<UndoManager>.makeStream()
+        let client = UndoManagerClient.live { _ in
+            let call = resolverCallCount.withValue { count in
+                count += 1
+                return count
+            }
+            guard call == 1 else {
+                return undoManager
+            }
+            registrationStartedContinuation.yield(true)
+            registrationStartedContinuation.finish()
+            for await resolvedUndoManager in registrationResolution {
+                return resolvedUndoManager
+            }
+            return nil
+        }
+        var registrationStartedIterator = registrationStarted.makeAsyncIterator()
+        let registrationTask = Task {
+            await client.registerUndo(windowID, ownerID, makeUndoManagerRecord(pathStem: "late-owner"))
+        }
+
+        let didStartRegistration = await registrationStartedIterator.next()
+        XCTAssertEqual(didStartRegistration, true)
+        let invalidation = await client.invalidateOwner(windowID, ownerID)
+        XCTAssertTrue(invalidation.succeeded)
+
+        registrationResolutionContinuation.yield(undoManager)
+        registrationResolutionContinuation.finish()
+        await registrationTask.value
+
+        XCTAssertFalse(undoManager.canUndo)
+    }
+
+    // AC: EOP-003-undo_entry_action — owner tombstone은 같은 window의 다른 owner를 차단하지 않음
+    /// EOP-003-undo_entry_action: owner A 무효화 후에도 같은 window의 owner B는 undo를 등록할 수 있음
+    func testUndoManager_ownerTombstoneDoesNotBlockDifferentOwner() async {
+        let undoManager = UndoManager()
+        let client = UndoManagerClient.live(undoManager: undoManager)
+        let windowID = UUID()
+        let invalidatedOwnerID = UUID()
+        let activeOwnerID = UUID()
+
+        let invalidation = await client.invalidateOwner(windowID, invalidatedOwnerID)
+        XCTAssertTrue(invalidation.succeeded)
+        await client.registerUndo(windowID, invalidatedOwnerID, makeUndoManagerRecord(pathStem: "invalidated-owner"))
+        XCTAssertFalse(undoManager.canUndo)
+
+        let activeRecord = makeUndoManagerRecord(pathStem: "active-owner")
+        await client.registerUndo(windowID, activeOwnerID, activeRecord)
+
+        XCTAssertTrue(undoManager.canUndo)
+        let activeAvailability = await client.availability(windowID)
+        XCTAssertEqual(
+            activeAvailability.undoTarget,
+            .init(ownerID: activeOwnerID, recordID: activeRecord.id),
+        )
+    }
+
+    // AC: EOP-003-undo_entry_action — window invalidation은 모든 owner의 late registration을 영구 차단하고 stream을 종료함
+    /// EOP-003-undo_entry_action: window 무효화 뒤 어떤 owner도 undo를 등록할 수 없고 event stream이 종료됨
+    func testUndoManager_windowInvalidationRejectsLateRegistrationsAndFinishesStream() async {
+        let undoManager = UndoManager()
+        let client = UndoManagerClient.live(undoManager: undoManager)
+        let windowID = UUID()
+        let events = client.events(windowID)
+        let streamCompletion = Task {
+            var iterator = events.makeAsyncIterator()
+            return await iterator.next()
+        }
+
+        let invalidation = await client.invalidateWindow(windowID)
+        XCTAssertTrue(invalidation.succeeded)
+        await client.registerUndo(windowID, UUID(), makeUndoManagerRecord(pathStem: "late-window-owner-a"))
+        await client.registerUndo(windowID, UUID(), makeUndoManagerRecord(pathStem: "late-window-owner-b"))
+
+        let nextEvent = await streamCompletion.value
+        XCTAssertNil(nextEvent)
+        XCTAssertFalse(undoManager.canUndo)
+    }
+
+    // AC: EOP-003-undo_entry_action — manager resolution 실패는 tombstone을 만들지 않음
+    /// EOP-003-undo_entry_action: 무효화 resolve 실패 뒤 manager가 복구되면 같은 identity의 등록을 허용함
+    func testUndoManager_failedInvalidationResolutionDoesNotCreateTombstone() async {
+        let undoManager = UndoManager()
+        let resolverCallCount = LockIsolated(0)
+        let client = UndoManagerClient.live { _ in
+            let call = resolverCallCount.withValue { count in
+                count += 1
+                return count
+            }
+            return call == 1 ? nil : undoManager
+        }
+        let windowID = UUID()
+        let ownerID = UUID()
+
+        let invalidation = await client.invalidateOwner(windowID, ownerID)
+        XCTAssertEqual(invalidation, .init(succeeded: false, availability: .init()))
+
+        await client.registerUndo(windowID, ownerID, makeUndoManagerRecord(pathStem: "resolution-recovered"))
+
+        XCTAssertTrue(undoManager.canUndo)
+    }
+
+    /// EOP-003-undo_entry_action: owner invalidation은 해당 owner action만 제거함
+    func testUndoManager_ownerInvalidationRemovesOnlyMatchingActions() async {
+        let undoManager = UndoManager()
+        let client = UndoManagerClient.live(undoManager: undoManager)
+        let windowID = UUID()
+        let contentOwnerID = UUID()
+        let sidebarOwnerID = UUID()
+        let contentRecord = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/content/old", afterPath: "/content/new")],
+        )
+        let sidebarRecord = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [.init(beforePath: "/sidebar/source", afterPath: "/sidebar/destination")],
+        )
+        let events = client.events(windowID)
+        let receivedEvent = Task {
+            var iterator = events.makeAsyncIterator()
+            return await iterator.next()
+        }
+
+        await client.registerUndo(windowID, contentOwnerID, contentRecord)
+        await client.registerUndo(windowID, sidebarOwnerID, sidebarRecord)
+        _ = await client.invalidateOwner(windowID, sidebarOwnerID)
+        _ = await client.undo(
+            windowID,
+            expectedTarget: .init(ownerID: contentOwnerID, recordID: contentRecord.id),
+        )
+
+        let event = await receivedEvent.value
+        XCTAssertEqual(event?.ownerID, contentOwnerID)
+        XCTAssertEqual(event?.record, contentRecord)
+        let availability = await client.availability(windowID)
+        XCTAssertFalse(availability.canUndo)
+    }
+
+    /// EOP-003-undo_entry_action: window invalidation은 stream을 종료하고 action을 제거함
+    func testUndoManager_windowInvalidationFinishesStreamAndRemovesActions() async {
+        let undoManager = UndoManager()
+        let client = UndoManagerClient.live(undoManager: undoManager)
+        let windowID = UUID()
+        let ownerID = UUID()
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/content/old", afterPath: "/content/new")],
+        )
+        let events = client.events(windowID)
+        let streamCompletion = Task {
+            var iterator = events.makeAsyncIterator()
+            return await iterator.next()
+        }
+
+        await client.registerUndo(windowID, ownerID, record)
+        _ = await client.invalidateWindow(windowID)
+
+        let nextEvent = await streamCompletion.value
+        let availability = await client.availability(windowID)
+        XCTAssertNil(nextEvent)
+        XCTAssertEqual(availability, .init())
+    }
+
+    /// EOP-003-undo_entry_action: target가 비어 replay가 실패하면 stack 이동 없이 양쪽 history를 폐기한다.
+    /// - 검증 내용: undo callback 직후 source stack이 유지되고 replayFailed commit에서 undo/redo stack이 함께 비워진다.
+    /// - 사전 조건: 빈 target undo record와 기존 redo record
+    /// - 기대 결과: operationFailed terminal의 appliedTargets는 빈 배열이고 두 stack은 비어 있다.
+    func testUndoReplay_emptyTargetsClearsBothStacksWithoutPrecommit() async {
+        let record = EntryActionRecord(operationKind: .rename, targets: [])
+        let staleRedo = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/stale/before", afterPath: "/stale/after")],
+        )
+        var state = EntryOperationsState()
+        state.undoRecords = [record]
+        state.redoRecords = [staleRedo]
+        let store = EntryOperationsTestSupport.makeStore(initialState: state)
+        // store.exhaustivity = .off: replay 내부 lifecycle action을 건너뛰고 stack commit/terminal 계약만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.undoRedo(.undoEntryAction(record)))
+        XCTAssertEqual(store.state.undoRecords, [record])
+        XCTAssertEqual(store.state.redoRecords, [staleRedo])
+        await store.receive { action in
+            guard case .undoRedo(.replayFailed(direction: .undo, appliedTargets: [])) = action else { return false }
+            return true
+        } assert: {
+            $0.undoRecords = []
+            $0.redoRecords = []
+        }
+        await store.receive { action in
+            guard case let .outcome(.entryActionReplayFinished(direction: .undo, terminal: terminal)) = action else {
+                return false
+            }
+            return terminal == .failure(reason: .operationFailed, appliedTargets: [])
+        }
+        await store.finish()
+    }
+
+    /// EOP-003-undo_entry_action: 두 번째 target 실패 시 적용 prefix만 보고하고 local history는 모두 폐기한다.
+    /// - 검증 내용: 첫 target 성공/두 번째 target 실패 후 pre-commit 없이 replayFailed가 양 stack을 clear한다.
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`의 독립 sandbox 두 개와 두 target setTags record
+    /// - 기대 결과: appliedTargets는 첫 target 하나이며 undo/redo stack은 모두 빈 배열이다.
+    func testUndoReplay_partialFailureReportsAppliedPrefixAndClearsBothStacks() async throws {
+        let firstSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        let secondSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer {
+            firstSandbox.cleanup()
+            secondSandbox.cleanup()
+        }
+        let firstTarget = EntryActionRecord.Target(
+            beforePath: firstSandbox.fileURL.path,
+            afterPath: firstSandbox.fileURL.path,
+            beforeTags: ["before"],
+            afterTags: ["after"],
+        )
+        let secondTarget = EntryActionRecord.Target(
+            beforePath: secondSandbox.fileURL.path,
+            afterPath: secondSandbox.fileURL.path,
+            beforeTags: ["before"],
+            afterTags: ["after"],
+        )
+        let record = EntryActionRecord(operationKind: .setTags, targets: [firstTarget, secondTarget])
+        let staleRedo = EntryActionRecord(operationKind: .createFolder, targets: [])
+        let callCount = LockIsolated(0)
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.setTags = { _, _ in
+            let invocation = callCount.withValue { value in
+                value += 1
+                return value
+            }
+            if invocation == 2 {
+                throw FileOpError.system(message: "second target failed")
+            }
+        }
+        var state = EntryOperationsState()
+        state.undoRecords = [record]
+        state.redoRecords = [staleRedo]
+        let store = EntryOperationsTestSupport.makeStore(initialState: state) {
+            $0.entryFileOpsClient = fileOps
+        }
+        // store.exhaustivity = .off: per-target lifecycle action 대신 partial terminal과 stack 원자성에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.undoRedo(.undoEntryAction(record)))
+        XCTAssertEqual(store.state.undoRecords, [record])
+        XCTAssertEqual(store.state.redoRecords, [staleRedo])
+        await store.receive { action in
+            guard case let .undoRedo(.replayFailed(direction: .undo, appliedTargets: targets)) = action else {
+                return false
+            }
+            return targets == [firstTarget]
+        } assert: {
+            $0.undoRecords = []
+            $0.redoRecords = []
+        }
+        await store.receive { action in
+            guard case let .outcome(.entryActionReplayFinished(direction: .undo, terminal: terminal)) = action else {
+                return false
+            }
+            return terminal == .failure(reason: .operationFailed, appliedTargets: [firstTarget])
+        }
+        XCTAssertEqual(callCount.value, 2)
+        await store.finish()
+    }
+
+    /// EOP-003-redo_entry_action: 동적 Trash destination은 replay refresh와 committed record에 반영된다.
+    /// - 검증 내용: moveToTrash client가 반환한 실제 경로를 pathsMutated와 replaySucceeded target이 공유한다.
+    /// - 사전 조건: record의 stale Trash 경로와 서로 다른 deterministic client 반환 경로
+    /// - 기대 결과: stale 경로가 아닌 실제 반환 경로만 refresh 및 redo→undo commit에 사용됨
+    func testRedoReplay_moveToTrashRefreshesUpdatedDestination() async {
+        let originalPath = "/source/item.txt"
+        let staleTrashPath = "/trash/stale-item.txt"
+        let actualTrashPath = "/trash/actual-item.txt"
+        let record = EntryActionRecord(
+            operationKind: .moveToTrash,
+            targets: [.init(beforePath: originalPath, afterPath: staleTrashPath)],
+        )
+        let updatedTarget = EntryActionRecord.Target(
+            beforePath: originalPath,
+            afterPath: actualTrashPath,
+        )
+        let updatedRecord = EntryActionRecord(
+            operationKind: .moveToTrash,
+            targets: [updatedTarget],
+            id: record.id,
+            timestamp: record.timestamp,
+        )
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.moveToTrashAndReturnURL = { url in
+            XCTAssertEqual(url.path, originalPath)
+            return URL(fileURLWithPath: actualTrashPath)
+        }
+        var state = EntryOperationsState()
+        state.redoRecords = [record]
+        let store = EntryOperationsTestSupport.makeStore(initialState: state) {
+            $0.entryFileOpsClient = fileOps
+        }
+        // store.exhaustivity = .off: lifecycle 중 updated path와 stack commit 계약만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.undoRedo(.redoEntryAction(record)))
+        await store.receive { action in
+            guard case let .lifecycle(.pathsMutated(paths)) = action else { return false }
+            return paths == [originalPath, actualTrashPath]
+        }
+        await store.receive { action in
+            guard case let .undoRedo(.replaySucceeded(
+                direction: .redo,
+                sourceRecordID: sourceRecordID,
+                updatedRecord: committedRecord,
+            )) = action else {
+                return false
+            }
+            return sourceRecordID == record.id && committedRecord == updatedRecord
+        } assert: {
+            $0.redoRecords = []
+            $0.undoRecords = [updatedRecord]
+        }
+        await store.finish()
+    }
+}
+
+private func makeUndoManagerRecord(pathStem: String) -> EntryActionRecord {
+    EntryActionRecord(
+        operationKind: .rename,
+        targets: [.init(beforePath: "/\(pathStem)/old", afterPath: "/\(pathStem)/new")],
+    )
 }
 
 private func makeFailingDeleteClient(error: FileOpError) -> EntryFileOpsClient {

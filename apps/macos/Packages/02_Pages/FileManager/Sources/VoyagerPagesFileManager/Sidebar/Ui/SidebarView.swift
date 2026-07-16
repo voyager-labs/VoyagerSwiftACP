@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
+import UniformTypeIdentifiers
 import VoyagerEntitiesTag
 import VoyagerShared
 
@@ -10,14 +11,13 @@ struct SidebarView: View {
     @Environment(\.colorScheme)
     private var colorScheme
 
-    @State
-    private var contentTabHoveredItemID: ContentTabID?
+    @State private var contentTabHoveredItemID: ContentTabID?
 
-    @State
-    private var fixedLocationHoveredItemID: FileManagerFixedLocationItem.ID?
+    @State private var fixedLocationHoveredItemID: FileManagerFixedLocationItem.ID?
 
-    @State
-    private var isNewTabHovered = false
+    @State private var isNewTabHovered = false
+
+    @State private var sidebarEntryDropTarget: FileManagerSidebarEntryDropTarget?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -63,8 +63,7 @@ struct SidebarView: View {
         store.contentTabSidebarItems.filter { !$0.isPinned }
     }
 
-    @ViewBuilder
-    private var fixedLocationsGrid: some View {
+    @ViewBuilder private var fixedLocationsGrid: some View {
         if store.fixedLocationItems.isEmpty {
             Color.clear
                 .frame(height: fixedLocationGridHeight(for: 1))
@@ -79,17 +78,23 @@ struct SidebarView: View {
 
                 LazyVGrid(columns: metrics.columns, alignment: .leading, spacing: fixedLocationGridGap) {
                     ForEach(store.fixedLocationItems) { item in
+                        let dropTarget = FileManagerSidebarEntryDropTarget.fixedLocation(item.id)
                         FixedLocationButton(
                             item: item,
                             width: metrics.cellWidth,
                             height: fixedLocationCellHeight,
                             isHovered: fixedLocationHoveredItemID == item.id,
+                            isDropTarget: sidebarEntryDropTarget == dropTarget,
                             onSelect: {
                                 store.send(.delegate(.selectFixedLocation(item.id)))
                             },
                             onHover: { isHovered in
                                 fixedLocationHoveredItemID = isHovered ? item.id : nil
                             },
+                        )
+                        .onDrop(
+                            of: [.fileURL],
+                            delegate: entryDropDelegate(for: dropTarget, allowsCopy: item.kind != .trash),
                         )
                     }
                 }
@@ -103,8 +108,7 @@ struct SidebarView: View {
         }
     }
 
-    @ViewBuilder
-    private var fixedLocationsVisibilityMenu: some View {
+    @ViewBuilder private var fixedLocationsVisibilityMenu: some View {
         if !store.allFixedLocationItems.isEmpty {
             Section("Locations") {
                 Button("Show All") {
@@ -234,10 +238,21 @@ struct SidebarView: View {
         }
     }
 
+    @ViewBuilder
     private func contentTabRow(_ item: ContentTabProjection.ContentTabSidebarItem) -> some View {
+        if let dropTarget = FileManagerSidebarEntryDropDelegate.target(for: item) {
+            contentTabSidebarRow(item)
+                .onDrop(of: [.fileURL], delegate: entryDropDelegate(for: dropTarget))
+        } else {
+            contentTabSidebarRow(item)
+        }
+    }
+
+    private func contentTabSidebarRow(_ item: ContentTabProjection.ContentTabSidebarItem) -> some View {
         ContentTabSidebarRow(
             item: item,
             isHovered: contentTabHoveredItemID == item.id,
+            isDropTarget: sidebarEntryDropTarget == .contentTab(item.id),
             onSelect: {
                 store.send(.delegate(.selectContentTab(item.id)))
             },
@@ -256,11 +271,26 @@ struct SidebarView: View {
             },
         )
     }
+
+    private func entryDropDelegate(
+        for target: FileManagerSidebarEntryDropTarget,
+        allowsCopy: Bool = true,
+    ) -> FileManagerSidebarEntryDropDelegate {
+        FileManagerSidebarEntryDropDelegate(
+            dropTarget: $sidebarEntryDropTarget,
+            target: target,
+            allowsCopy: allowsCopy,
+            onDrop: { request in
+                store.send(.view(.entryDropRequested(request)))
+            },
+        )
+    }
 }
 
 private struct ContentTabSidebarRow: View {
     let item: ContentTabProjection.ContentTabSidebarItem
     let isHovered: Bool
+    let isDropTarget: Bool
     let onSelect: () -> Void
     let onDuplicate: (() -> Void)?
     let onPin: () -> Void
@@ -314,8 +344,7 @@ private struct ContentTabSidebarRow: View {
         .onHover(perform: onHover)
     }
 
-    @ViewBuilder
-    private var leadingIcon: some View {
+    @ViewBuilder private var leadingIcon: some View {
         if let tagColorCode = item.tagColorCode {
             ColorDotView(nsColor: TagColor(colorCode: tagColorCode).nsColor, size: 8)
                 .frame(width: 16)
@@ -326,7 +355,9 @@ private struct ContentTabSidebarRow: View {
     }
 
     private var backgroundColor: Color {
-        if item.isActive {
+        if isDropTarget {
+            VoyagerDS.Interaction.hoverFill(for: colorScheme)
+        } else if item.isActive {
             VoyagerDS.Surface.sidebarSelectionBackground(for: colorScheme)
         } else if isHovered {
             VoyagerDS.Interaction.hoverFill(for: colorScheme)
@@ -397,6 +428,7 @@ private struct FixedLocationButton: View {
     let width: CGFloat
     let height: CGFloat
     let isHovered: Bool
+    let isDropTarget: Bool
     let onSelect: () -> Void
     let onHover: (Bool) -> Void
 
@@ -413,7 +445,7 @@ private struct FixedLocationButton: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.primary.opacity(isHovered ? 0.12 : 0.06), lineWidth: 1),
+                        .stroke(Color.primary.opacity(isHovered || isDropTarget ? 0.12 : 0.06), lineWidth: 1),
                 )
         }
         .buttonStyle(.plain)
@@ -423,7 +455,9 @@ private struct FixedLocationButton: View {
     }
 
     private var backgroundColor: Color {
-        isHovered ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : Color.primary.opacity(0.06)
+        isHovered || isDropTarget
+            ? VoyagerDS.Interaction.hoverFill(for: colorScheme)
+            : Color.primary.opacity(0.06)
     }
 }
 
@@ -434,8 +468,7 @@ private struct SidebarCloseButton: View {
     @Environment(\.colorScheme)
     private var colorScheme
 
-    @State
-    private var isHovered = false
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {

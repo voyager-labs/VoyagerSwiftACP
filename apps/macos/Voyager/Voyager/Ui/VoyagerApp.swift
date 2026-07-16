@@ -42,11 +42,7 @@ struct VoyagerApp: App {
                 return true
             })
             $0.fileManagerWindowClient = fileManagerWindowClient
-            $0.undoManagerClient = .live(resolveUndoManager: { windowID in
-                await MainActor.run {
-                    resolveFileManagerUndoManager(windowID: windowID)
-                }
-            })
+            $0.undoManagerClient = makeFileManagerUndoManagerClientLive()
             $0.metricsClient = Self.makeFileManagerMetricsClient()
         }
 

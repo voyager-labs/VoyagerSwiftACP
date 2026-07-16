@@ -2,6 +2,19 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
+enum EditMenuUndoRedoRouting: Equatable {
+    case native
+    case window
+
+    static func resolve(
+        canHandleByTextResponder: Bool,
+        sendNativeAction: () -> Bool,
+    ) -> Self {
+        guard canHandleByTextResponder, sendNativeAction() else { return .window }
+        return .native
+    }
+}
+
 @ViewAction(for: MenuCommandsFeature.self)
 struct EditMenuCommands: Commands {
     private let undoSelector = Selector(("undo:"))
@@ -155,12 +168,11 @@ struct EditMenuCommands: Commands {
         selector: Selector,
         fallback command: MenuCommandItem.EditCommand,
     ) {
-        if canHandleByTextResponder,
-           NSApp.sendAction(selector, to: nil, from: nil)
-        {
-            return
-        }
-
+        let routing = EditMenuUndoRedoRouting.resolve(
+            canHandleByTextResponder: canHandleByTextResponder,
+            sendNativeAction: { NSApp.sendAction(selector, to: nil, from: nil) },
+        )
+        guard routing == .window else { return }
         sendEditCommand(command)
     }
 }

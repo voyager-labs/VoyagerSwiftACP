@@ -734,7 +734,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.bridge(.undoRedo(.entryActionApplied(direction: .undo, record: trashedRecord))))
+        await store.send(.bridge(.undoRedo(.replaySucceeded(
+            direction: .undo,
+            sourceRecordID: trashedRecord.id,
+            updatedRecord: trashedRecord,
+        ))))
         await store.receive { action in
             guard case .forwarded = action else { return false }
             return true

@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryOperations
 
 @Reducer
 public struct FileManagerFeature {
@@ -17,6 +18,10 @@ public struct FileManagerFeature {
 
         Scope(state: \.content.navigation, action: \.navigation) {
             ContentPageNavigationFeature()
+        }
+
+        Scope(state: \.sidebarEntryDropOperations, action: \.internal.sidebarEntryDrop) {
+            EntryOperationsFeature()
         }
 
         Scope(state: \.sidebar, action: \.sidebar) {

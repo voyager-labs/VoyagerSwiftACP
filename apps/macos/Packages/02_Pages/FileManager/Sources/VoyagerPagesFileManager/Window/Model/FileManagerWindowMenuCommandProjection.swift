@@ -1,4 +1,5 @@
 import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
@@ -48,13 +49,57 @@ public extension FileManagerWindowState {
             groupKey: content.entryViewLayout.entryArrangements.groupKey,
             sortKey: content.entryViewLayout.entryArrangements.sortKey,
             sortOrder: content.entryViewLayout.entryArrangements.sortOrder,
-            canUndo: content.entryViewLayout.entryOperations.canUndoEntryAction,
-            canRedo: content.entryViewLayout.entryOperations.canRedoEntryAction,
+            canUndo: validatedUndoRedoTarget(for: .undo) != nil,
+            canRedo: validatedUndoRedoTarget(for: .redo) != nil,
             selectedItemCount: selectedIds.count,
             isComposerPresented: content.composer.isPresented,
             isContextualAiChatPresented: inspector.inspectorVisible
                 && inspector.inspectorPaneExists
                 && inspector.activeMode == .chat,
         )
+    }
+}
+
+extension FileManagerWindowState {
+    func validatedUndoRedoTarget(for direction: EntryActionDirection) -> UndoManagerRecordIdentity? {
+        guard undoRedoPhase == .idle else { return nil }
+
+        let managerTarget: UndoManagerRecordIdentity?
+        switch direction {
+        case .undo:
+            guard undoManagerAvailability.canUndo else { return nil }
+            managerTarget = undoManagerAvailability.undoTarget
+        case .redo:
+            guard undoManagerAvailability.canRedo else { return nil }
+            managerTarget = undoManagerAvailability.redoTarget
+        }
+        guard let managerTarget else { return nil }
+
+        var candidates: [EntryOperationsState] = []
+        if sidebarEntryDropOperations.undoOwnerID == managerTarget.ownerID {
+            candidates.append(sidebarEntryDropOperations)
+        }
+        if content.entryViewLayout.entryOperations.undoOwnerID == managerTarget.ownerID {
+            candidates.append(content.entryViewLayout.entryOperations)
+        }
+        for (tabID, contentState) in tabContentStates where tabID != contentTabs.activeTabID {
+            let operations = contentState.entryViewLayout.entryOperations
+            if operations.undoOwnerID == managerTarget.ownerID {
+                candidates.append(operations)
+            }
+        }
+        guard candidates.count == 1, let operations = candidates.first else { return nil }
+
+        let localRecord = switch direction {
+        case .undo:
+            operations.latestUndoRecord
+        case .redo:
+            operations.latestRedoRecord
+        }
+        guard let localRecord,
+              localRecord.id == managerTarget.recordID,
+              !operations.isEntryActionBusy(localRecord)
+        else { return nil }
+        return managerTarget
     }
 }

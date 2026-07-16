@@ -20,6 +20,7 @@ struct WindowManagerFeature {
 
     nonisolated private enum CancelID: Hashable {
         case defaultWindowBootstrap
+        case windowOpen(State.WindowID)
     }
 
     let pickAttachments: @Sendable () async -> [URL]
@@ -41,6 +42,8 @@ struct WindowManagerFeature {
     private var fileManagerWindowClient
     @Dependency(\.attachmentPickerClient)
     private var attachmentPickerClient
+    @Dependency(\.undoManagerClient)
+    private var undoManagerClient
 
     @Dependency(\.contentTabPinnedRecordClient)
     private var contentTabPinnedRecordClient
@@ -69,13 +72,13 @@ struct WindowManagerFeature {
             case let .lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: flag)):
                 guard !flag else { return .none }
 
-                if state.windows.isEmpty {
+                let reopenWindowID = state.focusedWindowID
+                    .flatMap { state.closingWindowIDs.contains($0) ? nil : $0 }
+                    ?? state.windows.first(where: { !state.closingWindowIDs.contains($0.id) })?.id
+                guard let reopenWindowID else {
                     return .send(.file(.newWindow(path: nil)))
                 }
-
-                guard let reopenWindowID = state.focusedWindowID ?? state.windows.first?.id else {
-                    return .none
-                }
+                guard !state.pendingWindowOpenIDs.contains(reopenWindowID) else { return .none }
 
                 state.focusedWindowID = reopenWindowID
                 return .run { [fileManagerWindowClient, reopenWindowID] _ in
@@ -201,6 +204,7 @@ struct WindowManagerFeature {
                 return sendCommandToFocusedWindow(state, .copyURLs)
 
             case let .event(.windowBecameKey(id)):
+                guard !state.closingWindowIDs.contains(id) else { return .none }
                 state.focusedWindowID = id
                 return .none
 
@@ -211,11 +215,51 @@ struct WindowManagerFeature {
                 return .none
 
             case let .event(.windowClosed(id)):
+                guard state.windows[id: id] != nil else {
+                    return .run { [fileManagerWindowClient] _ in
+                        await fileManagerWindowClient.finalizeClose(id)
+                    }
+                }
+                guard !state.invalidatingWindowIDs.contains(id) else { return .none }
+                state.closingWindowIDs.insert(id)
+                state.invalidatingWindowIDs.insert(id)
+                return .run { [undoManagerClient, fileManagerWindowClient] send in
+                    let result = await undoManagerClient.invalidateWindow(id)
+                    if result.succeeded {
+                        await fileManagerWindowClient.finalizeClose(id)
+                    }
+                    await send(.windowInvalidationFinished(id: id, result: result))
+                }
+
+            case let .windowOpenCompleted(id, shouldBootstrapDefaultWindow, isRegistered):
+                guard state.pendingWindowOpenIDs.contains(id),
+                      state.windows[id: id] != nil,
+                      !state.closingWindowIDs.contains(id)
+                else { return .none }
+                guard isRegistered else {
+                    state.closingWindowIDs.insert(id)
+                    return finalizePendingWindowClose(id, state: &state)
+                }
+                state.pendingWindowOpenIDs.remove(id)
+                guard shouldBootstrapDefaultWindow else { return .none }
+                return defaultWindowBootstrapEffectIfNeeded(for: id, state: &state)
+
+            case let .pendingWindowCloseFinalized(id):
+                return finalizePendingWindowClose(id, state: &state)
+
+            case let .windowInvalidationFinished(id, result):
+                guard state.closingWindowIDs.contains(id) else { return .none }
+                guard result.succeeded else { return .none }
                 let wasFocused = state.focusedWindowID == id
                 state.windows.remove(id: id)
+                state.pendingWindowOpenIDs.remove(id)
+                state.closingWindowIDs.remove(id)
+                state.invalidatingWindowIDs.remove(id)
                 state.defaultWindowBootstrapWindowIDs.remove(id)
                 if wasFocused {
-                    state.focusedWindowID = state.windows.first?.id
+                    state.focusedWindowID = state.windows.first(where: {
+                        !state.closingWindowIDs.contains($0.id)
+                    })?.id
                 }
                 guard state.defaultWindowBootstrapWindowIDs.isEmpty,
                       state.defaultWindowBootstrapRequestID != nil
@@ -227,6 +271,9 @@ struct WindowManagerFeature {
                 return .run { _ in
                     await fileManagerWindowClient.focusPath(path)
                 }
+
+            case let .windows(.element(id: id, action: .window(.delegate(.closeWindow)))):
+                return closeWindow(id, state: &state)
 
             case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewWindow(path))))):
                 return .send(.file(.newWindow(path: path)))
@@ -302,9 +349,7 @@ struct WindowManagerFeature {
     private func handleWindowCommand(_ action: Action, state: inout State) -> Effect<Action> {
         switch action {
         case let .file(.newWindow(path, selectEntryID)):
-            return openWindowSession(path: path, selectEntryID: selectEntryID, state: &state) { id in
-                await fileManagerWindowClient.open(id)
-            }
+            return openWindowSession(path: path, selectEntryID: selectEntryID, state: &state)
 
         case let .file(.openCollectionFile(url)):
             return openCollectionWindowSession(url: url, state: &state)
@@ -314,20 +359,29 @@ struct WindowManagerFeature {
 
         case .window(.closeFocusedWindow):
             guard let id = state.focusedWindowID else { return .none }
-            return .run { [id] _ in
-                await fileManagerWindowClient.close(id)
-            }
+            return closeWindow(id, state: &state)
 
         case .window(.closeAllWindows):
-            state.windows.removeAll()
+            let openWindowIDs = state.windows.ids.filter { !state.closingWindowIDs.contains($0) }
+            guard !openWindowIDs.isEmpty else { return .none }
+            let pendingWindowOpenIDs = openWindowIDs.filter { state.pendingWindowOpenIDs.contains($0) }
+            state.closingWindowIDs.formUnion(openWindowIDs)
             state.focusedWindowID = nil
-            state.defaultWindowBootstrapRequestID = nil
-            state.defaultWindowBootstrapWindowIDs.removeAll()
-            return .merge(
-                .cancel(id: CancelID.defaultWindowBootstrap),
-                .run { _ in
-                    await fileManagerWindowClient.closeAll()
-                },
+
+            let closeAllEffect = Effect<Action>.run { [fileManagerWindowClient] send in
+                await fileManagerWindowClient.closeAll()
+                let registeredWindowIDs = await fileManagerWindowClient.registeredWindowIDs()
+                for id in pendingWindowOpenIDs where !registeredWindowIDs.contains(id) {
+                    await fileManagerWindowClient.finalizeClose(id)
+                    await send(.pendingWindowCloseFinalized(id: id))
+                }
+            }
+            guard !pendingWindowOpenIDs.isEmpty else { return closeAllEffect }
+            return .concatenate(
+                .merge(pendingWindowOpenIDs.map { id in
+                    .cancel(id: CancelID.windowOpen(id))
+                }),
+                closeAllEffect,
             )
 
         default:
@@ -339,7 +393,6 @@ struct WindowManagerFeature {
         path: String?,
         selectEntryID: String?,
         state: inout State,
-        open: @escaping @Sendable (UUID) async -> Void,
     ) -> Effect<Action> {
         if onboardingWindowClient.showIfNeeded() {
             return .none
@@ -348,20 +401,15 @@ struct WindowManagerFeature {
 
         state.windows.append(windowSession)
         state.focusedWindowID = windowSession.id
-
-        let bootstrapEffect: Effect<Action> = if path == nil {
-            defaultWindowBootstrapEffectIfNeeded(for: windowSession.id, state: &state)
-        } else {
-            .none
-        }
+        state.pendingWindowOpenIDs.insert(windowSession.id)
 
         return .concatenate(
             windowIDChangedEffect(for: windowSession.id),
             appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
-            .run { [id = windowSession.id] _ in
-                await open(id)
-            },
-            bootstrapEffect,
+            windowOpenEffect(
+                for: windowSession.id,
+                shouldBootstrapDefaultWindow: path == nil,
+            ),
         )
     }
 
@@ -373,7 +421,7 @@ struct WindowManagerFeature {
 
         state.windows.append(windowSession)
         state.focusedWindowID = windowSession.id
-        let bootstrapEffect = defaultWindowBootstrapEffectIfNeeded(for: windowSession.id, state: &state)
+        state.pendingWindowOpenIDs.insert(windowSession.id)
 
         return .concatenate(
             windowIDChangedEffect(for: windowSession.id),
@@ -382,11 +430,78 @@ struct WindowManagerFeature {
                 action: .window(.navigation(.view(.openCollectionFile(url)))),
             ))),
             appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
-            .run { [fileManagerWindowClient, id = windowSession.id] _ in
-                await fileManagerWindowClient.open(id)
-            },
-            bootstrapEffect,
+            windowOpenEffect(for: windowSession.id, shouldBootstrapDefaultWindow: true),
         )
+    }
+
+    private func windowOpenEffect(
+        for id: State.WindowID,
+        shouldBootstrapDefaultWindow: Bool,
+    ) -> Effect<Action> {
+        .run { [fileManagerWindowClient] send in
+            await fileManagerWindowClient.open(id)
+            guard !Task.isCancelled else { return }
+            let registeredWindowIDs = await fileManagerWindowClient.registeredWindowIDs()
+            guard !Task.isCancelled else { return }
+            await send(.windowOpenCompleted(
+                id: id,
+                shouldBootstrapDefaultWindow: shouldBootstrapDefaultWindow,
+                isRegistered: registeredWindowIDs.contains(id),
+            ))
+        }
+        .cancellable(id: CancelID.windowOpen(id))
+    }
+
+    private func closeWindow(_ id: State.WindowID, state: inout State) -> Effect<Action> {
+        guard state.windows[id: id] != nil,
+              !state.closingWindowIDs.contains(id)
+        else { return .none }
+        state.closingWindowIDs.insert(id)
+        if state.focusedWindowID == id {
+            state.focusedWindowID = state.windows.first(where: {
+                $0.id != id && !state.closingWindowIDs.contains($0.id)
+            })?.id
+        }
+
+        guard state.pendingWindowOpenIDs.contains(id) else {
+            return .run { [fileManagerWindowClient] _ in
+                await fileManagerWindowClient.close(id)
+            }
+        }
+        return .concatenate(
+            .cancel(id: CancelID.windowOpen(id)),
+            .run { [fileManagerWindowClient] send in
+                await fileManagerWindowClient.close(id)
+                let registeredWindowIDs = await fileManagerWindowClient.registeredWindowIDs()
+                guard !registeredWindowIDs.contains(id) else { return }
+                await fileManagerWindowClient.finalizeClose(id)
+                await send(.pendingWindowCloseFinalized(id: id))
+            },
+        )
+    }
+
+    private func finalizePendingWindowClose(
+        _ id: State.WindowID,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.closingWindowIDs.contains(id),
+              state.pendingWindowOpenIDs.remove(id) != nil
+        else { return .none }
+        let wasFocused = state.focusedWindowID == id
+        state.windows.remove(id: id)
+        state.closingWindowIDs.remove(id)
+        state.invalidatingWindowIDs.remove(id)
+        state.defaultWindowBootstrapWindowIDs.remove(id)
+        if wasFocused {
+            state.focusedWindowID = state.windows.first(where: {
+                !state.closingWindowIDs.contains($0.id)
+            })?.id
+        }
+        guard state.defaultWindowBootstrapWindowIDs.isEmpty,
+              state.defaultWindowBootstrapRequestID != nil
+        else { return .none }
+        state.defaultWindowBootstrapRequestID = nil
+        return .cancel(id: CancelID.defaultWindowBootstrap)
     }
 
     private func windowIDChangedEffect(for id: UUID) -> Effect<Action> {
@@ -410,7 +525,9 @@ struct WindowManagerFeature {
         _ state: State,
         _ command: FileManagerWindowAction.WindowCommand,
     ) -> Effect<Action> {
-        guard let id = state.focusedWindowID else { return .none }
+        guard let id = state.focusedWindowID,
+              !state.closingWindowIDs.contains(id)
+        else { return .none }
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }
 
