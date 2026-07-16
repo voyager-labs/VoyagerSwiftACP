@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import HotSwiftUI
 import SwiftUI
 import VoyagerEntitiesTag
 import VoyagerShared
@@ -272,6 +273,8 @@ private struct ContentTabSidebarRow: View {
     @Environment(\.fileManagerKeyCommandFocusCoordinator)
     private var keyCommandFocusCoordinator
 
+    @ObserveInjection private var injection
+
     var body: some View {
         HStack(spacing: 8) {
             leadingIcon
@@ -308,6 +311,7 @@ private struct ContentTabSidebarRow: View {
             keyCommandFocusCoordinator?.requestFocus()
         }
         .onHover(perform: onHover)
+        .enableInjection()
     }
 
     @ViewBuilder

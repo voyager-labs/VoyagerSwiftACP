@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import HotSwiftUI
 import SwiftUI
 import VoyagerEntitiesAi
 import VoyagerFeaturesContentPageNavigation
@@ -7,6 +8,8 @@ import VoyagerShared
 
 struct FileManagerHomePageView: View {
     let store: StoreOf<FileManagerContentFeature>
+
+    @ObserveInjection var redraw
 
     private let dashboardCardWidth: CGFloat = 160
     private let dashboardCardHeight: CGFloat = 48
@@ -30,6 +33,7 @@ struct FileManagerHomePageView: View {
         .task {
             store.send(.view(.homeAppeared))
         }
+        .enableInjection()
     }
 
     // MARK: - Favorites

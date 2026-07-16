@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import HotSwiftUI
 import SwiftUI
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
@@ -6,6 +7,8 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 
 struct FileManagerContentPaneView: View {
+    @ObserveInjection private var injection
+
     let store: StoreOf<FileManagerContentFeature>
     let chromeProps: FileManagerContentChromeProps
     let overlayProps: FileManagerContentOverlayProps
@@ -63,6 +66,7 @@ struct FileManagerContentPaneView: View {
         .background(.thickMaterial)
         .overlay(FileManagerContentMaterialTint())
         .ignoresSafeArea(.all, edges: .top)
+        .enableInjection()
     }
 
     private var contentBody: some View {
