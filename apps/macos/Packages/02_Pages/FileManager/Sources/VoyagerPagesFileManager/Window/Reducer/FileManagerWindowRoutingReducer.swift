@@ -401,6 +401,13 @@ struct FileManagerWindowRoutingReducer {
             case let .internal(.sidebarEntryDrop(.outcome(.entriesMutated(impact)))):
                 return handleEntriesMutated(impact, state: &state)
 
+            case let .internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(record))))
+                where record.operationKind == .moveToTrash:
+                return handleAffectedDirectoryRefresh(
+                    paths: parentDirectoryPaths(for: record.targets),
+                    state: &state,
+                )
+
             case let .internal(.sidebarEntryDrop(.outcome(.undoManagerAvailabilityChanged(availability)))):
                 state.undoManagerAvailability = availability
                 return .none
@@ -860,13 +867,17 @@ func handleSidebarEntryActionReplayTerminal(
         return .none
     }
 
+    return handleAffectedDirectoryRefresh(paths: parentDirectoryPaths(for: targets), state: &state)
+}
+
+private func parentDirectoryPaths(for targets: [EntryActionRecord.Target]) -> [String] {
     var parentPaths: [String] = []
     for path in targets.flatMap({ [$0.beforePath, $0.afterPath] }).compactMap(\.self) {
         let parentPath = URL(fileURLWithPath: path).deletingLastPathComponent().path
         guard !parentPaths.contains(where: { EntryDropPathPolicy.areEquivalent($0, parentPath) }) else { continue }
         parentPaths.append(parentPath)
     }
-    return handleAffectedDirectoryRefresh(paths: parentPaths, state: &state)
+    return parentPaths
 }
 
 private func handleAffectedDirectoryRefresh(

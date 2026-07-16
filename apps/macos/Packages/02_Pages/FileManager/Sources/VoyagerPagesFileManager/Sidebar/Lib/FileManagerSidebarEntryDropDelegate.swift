@@ -13,7 +13,20 @@ struct FileManagerSidebarEntryDropDelegate: DropDelegate {
     @Binding var dropTarget: FileManagerSidebarEntryDropTarget?
 
     let target: FileManagerSidebarEntryDropTarget
+    let allowsCopy: Bool
     let onDrop: (FileManagerSidebarEntryDropRequest) -> Void
+
+    init(
+        dropTarget: Binding<FileManagerSidebarEntryDropTarget?>,
+        target: FileManagerSidebarEntryDropTarget,
+        allowsCopy: Bool = true,
+        onDrop: @escaping (FileManagerSidebarEntryDropRequest) -> Void,
+    ) {
+        _dropTarget = dropTarget
+        self.target = target
+        self.allowsCopy = allowsCopy
+        self.onDrop = onDrop
+    }
 
     static func target(
         for item: ContentTabProjection.ContentTabSidebarItem,
@@ -25,11 +38,12 @@ struct FileManagerSidebarEntryDropDelegate: DropDelegate {
     static func proposalOperation(
         hasFileURLItems: Bool,
         isOptionDrag: Bool,
+        allowsCopy: Bool = true,
     ) -> DropOperation {
         guard hasFileURLItems else {
             return .forbidden
         }
-        return isOptionDrag ? .copy : .move
+        return isOptionDrag && allowsCopy ? .copy : .move
     }
 
     func validateDrop(info: DropInfo) -> Bool {
@@ -68,6 +82,7 @@ struct FileManagerSidebarEntryDropDelegate: DropDelegate {
         let operation = Self.proposalOperation(
             hasFileURLItems: dropInfo.hasItemsConforming(to: [.fileURL]),
             isOptionDrag: isOptionDrag,
+            allowsCopy: allowsCopy,
         )
         if operation == .forbidden {
             clearDropTarget()

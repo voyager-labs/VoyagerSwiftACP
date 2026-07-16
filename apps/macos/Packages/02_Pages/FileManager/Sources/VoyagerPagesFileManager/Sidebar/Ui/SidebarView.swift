@@ -92,7 +92,10 @@ struct SidebarView: View {
                                 fixedLocationHoveredItemID = isHovered ? item.id : nil
                             },
                         )
-                        .onDrop(of: [.fileURL], delegate: entryDropDelegate(for: dropTarget))
+                        .onDrop(
+                            of: [.fileURL],
+                            delegate: entryDropDelegate(for: dropTarget, allowsCopy: item.kind != .trash),
+                        )
                     }
                 }
                 .padding(.horizontal, fixedLocationGridHorizontalPadding)
@@ -271,10 +274,12 @@ struct SidebarView: View {
 
     private func entryDropDelegate(
         for target: FileManagerSidebarEntryDropTarget,
+        allowsCopy: Bool = true,
     ) -> FileManagerSidebarEntryDropDelegate {
         FileManagerSidebarEntryDropDelegate(
             dropTarget: $sidebarEntryDropTarget,
             target: target,
+            allowsCopy: allowsCopy,
             onDrop: { request in
                 store.send(.view(.entryDropRequested(request)))
             },

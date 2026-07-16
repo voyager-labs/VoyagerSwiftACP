@@ -129,6 +129,27 @@ final class FileManagerSidebarEntryDropContractTests: XCTestCase {
         XCTAssertNil(dropTarget.value)
     }
 
+    func testTrashPreflightAlwaysProposesMoveEvenWithOption() {
+        let target = FileManagerSidebarEntryDropTarget.fixedLocation("trash")
+        let delegate = makeDelegate(
+            target: target,
+            dropTarget: FileManagerSidebarEntryDropTargetBox(),
+            allowsCopy: false,
+        )
+        let info = FileManagerSidebarEntryDropInfoSpy(
+            providers: [fileProvider(path: "/file.txt")],
+        )
+
+        XCTAssertEqual(
+            delegate.dropUpdated(dropInfo: info, isOptionDrag: false)?.operation,
+            .move,
+        )
+        XCTAssertEqual(
+            delegate.dropUpdated(dropInfo: info, isOptionDrag: true)?.operation,
+            .move,
+        )
+    }
+
     func testRejectedPreflightClearsHighlightWithoutQueryingProviders() {
         let target = FileManagerSidebarEntryDropTarget.fixedLocation("desktop")
         let dropTarget = FileManagerSidebarEntryDropTargetBox(target)
@@ -289,6 +310,7 @@ final class FileManagerSidebarEntryDropContractTests: XCTestCase {
     private func makeDelegate(
         target: FileManagerSidebarEntryDropTarget,
         dropTarget: FileManagerSidebarEntryDropTargetBox,
+        allowsCopy: Bool = true,
         onDrop: @escaping (FileManagerSidebarEntryDropRequest) -> Void = { _ in },
     ) -> FileManagerSidebarEntryDropDelegate {
         FileManagerSidebarEntryDropDelegate(
@@ -297,6 +319,7 @@ final class FileManagerSidebarEntryDropContractTests: XCTestCase {
                 set: { dropTarget.value = $0 },
             ),
             target: target,
+            allowsCopy: allowsCopy,
             onDrop: onDrop,
         )
     }

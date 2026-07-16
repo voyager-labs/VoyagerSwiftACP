@@ -419,6 +419,13 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             "/",
             "/Users/test/.Trash",
         ])
+        XCTAssertEqual(state.sidebar.fixedLocationItems.map(\.kind), [
+            .directory,
+            .directory,
+            .directory,
+            .directory,
+            .trash,
+        ])
     }
 
     /// CTM-004-sidebar_fixed_locations: fixed Locations grid는 pinned/unpinned ContentTab row와 섞이지 않음
@@ -969,6 +976,50 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         )
     }
 
+    /// CTM-004-sidebar_entry_drop_routing: Trash Fixed Location은 Option 여부와 무관하게 전용 Trash route를 사용함
+    /// Window가 typed location kind만 판별하고 provider decode나 generic move를 수행하지 않는 경계를 검증한다.
+    /// - 검증 내용: `handleDropToTrash` exactly-once, generic `handleDrop` action 부재
+    /// - 사전 조건: `.trash` kind의 visible Fixed Location과 동일 identity의 provider 두 개, Option drag
+    /// - 기대 결과: provider identity/order를 보존한 Trash route 하나만 방출되고 Window state는 불변
+    func testEntryDrop_trashFixedLocationRoutesOnlyToTrashOperations() async {
+        let location = FileManagerFixedLocationItem(
+            id: "canonical-trash",
+            title: "Renamed Location",
+            path: "/typed/location",
+            iconName: "folder",
+            accessibilityLabel: "Typed Location",
+            kind: .trash,
+        )
+        var state = FileManagerFeature.State()
+        state.sidebar.setFixedLocationItems([location])
+        let providers = [NSItemProvider(), NSItemProvider()]
+        let request = FileManagerSidebarEntryDropRequest(
+            target: .fixedLocation(location.id),
+            providers: providers,
+            isOptionDrag: true,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerWindowCommandRoutingReducer()
+        }
+        let expectedRoute = AnyCasePath<FileManagerFeature.Action, Void>(
+            embed: { _ in
+                .internal(.sidebarEntryDrop(.routing(.handleDropToTrash(providers: providers))))
+            },
+            extract: { action in
+                guard case let .internal(.sidebarEntryDrop(.routing(.handleDropToTrash(receivedProviders)))) = action
+                else { return nil }
+                XCTAssertEqual(receivedProviders.count, providers.count)
+                XCTAssertTrue(zip(receivedProviders, providers).allSatisfy { $0 === $1 })
+                return ()
+            },
+        )
+
+        await store.send(.sidebar(.delegate(.entryDropRequested(request))))
+        await store.receive(expectedRoute)
+        XCTAssertEqual(store.state, state)
+        await store.finish()
+    }
+
     /// CTM-004-sidebar_entry_drop_routing: NSURL-backed fileURL provider가 실제 move chain을 완료함
     /// production drag writer와 같은 NSURL payload가 Sidebar view에서 Window-owned EOP 경로로 전달되는지 검증한다.
     /// - 검증 내용: provider decode, direct Window shortcut 없는 단일 move, tab identity와 selection 보존
@@ -1440,6 +1491,47 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(store.state.contentTabs, initialTabs)
         XCTAssertEqual(store.state.tabContentStates, initialInactiveStates)
         XCTAssertEqual(store.state.content.entryViewLayout.selectedIds, ["selected-entry"])
+        await store.finish()
+    }
+
+    /// CTM-004-directory_reload_lifecycle: 성공한 Sidebar Trash record의 실제 target 부모만 refresh함
+    /// moveToTrash client가 확정한 source/Trash 경로를 기준으로 active와 inactive Directory를 갱신한다.
+    /// - 검증 내용: active source reload 1회, inactive Trash parent pending, unrelated tab 불변
+    /// - 사전 조건: source active tab, Trash parent와 unrelated inactive tab, 성공한 moveToTrash record
+    /// - 기대 결과: 요청 경로가 아니라 record target 부모만 기존 directory refresh helper에 전달됨
+    func testSidebarTrashCompletion_refreshesSuccessfulTargetParents() async {
+        let activeID = ContentTabID(rawValue: "trash-source")
+        let trashID = ContentTabID(rawValue: "trash-destination")
+        let unrelatedID = ContentTabID(rawValue: "trash-unrelated")
+        let state = makeDirectoryReloadState(
+            activeID: activeID,
+            activePath: "/source",
+            inactiveTabs: [
+                .init(id: trashID, path: "/actual-trash", isPinned: false),
+                .init(id: unrelatedID, path: "/unrelated", isPinned: false),
+            ],
+        )
+        let record = EntryActionRecord(
+            operationKind: .moveToTrash,
+            targets: [.init(
+                beforePath: "/source/item.txt",
+                afterPath: "/actual-trash/item.txt",
+            )],
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: routed listing reload의 하위 정렬 action보다 target parent refresh를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(record))))) {
+            $0.pendingDirectoryReloadTabIDs = [trashID]
+        }
+        await store.receive(routedDirectoryReloadAction(tabID: activeID))
+        await store.skipReceivedActions()
+        XCTAssertFalse(store.state.pendingDirectoryReloadTabIDs.contains(unrelatedID))
         await store.finish()
     }
 
@@ -3043,6 +3135,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                     name: "Trash",
                     url: URL(fileURLWithPath: "/Users/test/.Trash"),
                     iconName: "trash",
+                    kind: .trash,
                 ),
             ]
         }

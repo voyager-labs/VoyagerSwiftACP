@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import UniformTypeIdentifiers
 import VoyagerEntitiesEntry
 @testable import VoyagerFeaturesEntryOperations
 import XCTest
@@ -41,6 +42,130 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: sourcePath))
         XCTAssertTrue(FileManager.default.fileExists(atPath: trashPath))
         XCTAssertEqual(store.state.undoRecords.count, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-003-move_entries_to_trash: Sidebar provider batch는 전용 Trash mutation과 Put Back 계약을 보존함
+    /// `fixtures/fixtures/texts/plain/11.txt` 두 복사본의 provider를 all-or-none 해석해 generic move/paste 없이 처리한다.
+    /// - 검증 내용: provider 두 개 trash 이동, metadata 저장, Undo 등록, Put Back 원위치 복구
+    /// - 사전 조건: fixture-backed sandbox 두 개, source별 fake Trash, Window/owner identity와 UndoManager spy
+    /// - 기대 결과: moveToTrash만 두 번 호출되고 metadata/Undo가 생성되며 두 파일 모두 원래 위치로 복구됨
+    func testHandleDropToTrash_successPreservesMetadataUndoAndPutBack() async throws {
+        let firstSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        let secondSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer {
+            firstSandbox.cleanup()
+            secondSandbox.cleanup()
+        }
+        let sourceURLs = [firstSandbox.fileURL, secondSandbox.fileURL]
+        let providers = sourceURLs.map {
+            NSItemProvider(item: $0 as NSURL, typeIdentifier: UTType.fileURL.identifier)
+        }
+        let trashCalls = LockIsolated<[URL]>([])
+        let genericCalls = LockIsolated(0)
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.pasteFile = { _, _ in
+            genericCalls.withValue { $0 += 1 }
+            throw FileOpError.system(message: "generic paste must not run")
+        }
+        fileOps.moveFile = { _, _ in
+            genericCalls.withValue { $0 += 1 }
+            throw FileOpError.system(message: "generic move must not run")
+        }
+        fileOps.moveToTrashAndReturnURL = { sourceURL in
+            let trashRoot = sourceURL.deletingLastPathComponent().appendingPathComponent(".Trash")
+            try FileManager.default.createDirectory(at: trashRoot, withIntermediateDirectories: true)
+            let trashURL = trashRoot.appendingPathComponent(sourceURL.lastPathComponent)
+            try FileManager.default.moveItem(at: sourceURL, to: trashURL)
+            trashCalls.withValue { $0.append(trashURL) }
+            return trashURL
+        }
+        fileOps.putBackFromTrash = { trashURL, originalPath in
+            try FileManager.default.moveItem(at: trashURL, to: URL(fileURLWithPath: originalPath))
+        }
+        let windowID = UUID()
+        let ownerID = UUID()
+        var state = EntryOperationsState(undoOwnerID: ownerID)
+        state.windowID = windowID
+        let undoSpy = UndoManagerSpy()
+        let store = EntryOperationsTestSupport.makeStore(initialState: state) {
+            $0.entryFileOpsClient = fileOps
+            $0.undoManagerClient = undoSpy.client
+        }
+        // store.exhaustivity = .off: provider decode부터 Trash/Undo lifecycle까지 최종 불변식으로 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.handleDropToTrash(providers: providers)))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        let trashURLs = trashCalls.value
+        XCTAssertEqual(Set(trashURLs.map(\.path)), Set(sourceURLs.map {
+            $0.deletingLastPathComponent().appendingPathComponent(".Trash/\($0.lastPathComponent)").path
+        }))
+        XCTAssertEqual(genericCalls.value, 0)
+        XCTAssertEqual(store.state.undoRecords.count, 1)
+        XCTAssertEqual(undoSpy.registerUndoCalls.count, 1)
+        XCTAssertEqual(undoSpy.registerUndoCalls.first?.windowID, windowID)
+        XCTAssertEqual(undoSpy.registerUndoCalls.first?.ownerID, ownerID)
+        for sourceURL in sourceURLs {
+            let trashURL = sourceURL.deletingLastPathComponent()
+                .appendingPathComponent(".Trash/\(sourceURL.lastPathComponent)")
+            let metadata = await store.dependencies.trashMetadataStoreClient.find(trashURL.path)
+            XCTAssertEqual(metadata?.originalPath, sourceURL.path)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: sourceURL.path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: trashURL.path))
+        }
+
+        await store.send(.trash(.putBackFromTrash(paths: trashURLs.map(\.path))))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertTrue(sourceURLs.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
+        XCTAssertTrue(trashURLs.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: firstSandbox.originalFixture.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: secondSandbox.originalFixture.path))
+    }
+
+    /// EOP-003-move_entries_to_trash: provider 하나라도 decode 실패하면 batch 전체를 변경하지 않음
+    /// all-or-none resolver가 일부 성공 path를 Trash mutation으로 흘리지 않는 회귀를 검증한다.
+    /// - 검증 내용: valid + invalid provider batch의 moveToTrash/generic move/paste 호출 0회, metadata/Undo 없음
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt` temp copy provider와 fileURL payload가 없는 provider
+    /// - 기대 결과: fixture copy와 원본이 유지되고 EntryOperations state가 변경되지 않음
+    func testHandleDropToTrash_decodeFailureMutatesNothing() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let validProvider = NSItemProvider(
+            item: sandbox.fileURL as NSURL,
+            typeIdentifier: UTType.fileURL.identifier,
+        )
+        let mutationCalls = LockIsolated(0)
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.pasteFile = { _, _ in
+            mutationCalls.withValue { $0 += 1 }
+            throw FileOpError.system(message: "generic paste must not run")
+        }
+        fileOps.moveFile = { _, _ in
+            mutationCalls.withValue { $0 += 1 }
+            throw FileOpError.system(message: "generic move must not run")
+        }
+        fileOps.moveToTrashAndReturnURL = { _ in
+            mutationCalls.withValue { $0 += 1 }
+            throw FileOpError.system(message: "trash mutation must not run")
+        }
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init()) {
+            $0.entryFileOpsClient = fileOps
+        }
+        // store.exhaustivity = .off: decode failure의 action 부재와 filesystem 불변만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.handleDropToTrash(providers: [validProvider, NSItemProvider()])))
+        await store.finish()
+
+        XCTAssertEqual(mutationCalls.value, 0)
+        XCTAssertTrue(store.state.undoRecords.isEmpty)
+        XCTAssertTrue(store.state.itemStates.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 

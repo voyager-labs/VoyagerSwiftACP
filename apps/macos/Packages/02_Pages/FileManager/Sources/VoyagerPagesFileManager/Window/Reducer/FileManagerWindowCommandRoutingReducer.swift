@@ -183,6 +183,15 @@ struct FileManagerWindowCommandRoutingReducer {
                 )
 
             case let .sidebar(.delegate(.entryDropRequested(request))):
+                if case let .fixedLocation(id) = request.target {
+                    guard let location = state.sidebar.fixedLocationItems.first(where: { $0.id == id })
+                    else { return .none }
+                    if location.kind == .trash {
+                        return .send(.internal(.sidebarEntryDrop(.routing(.handleDropToTrash(
+                            providers: request.providers,
+                        )))))
+                    }
+                }
                 guard let destinationPath = sidebarEntryDropDestinationPath(
                     for: request.target,
                     state: state,

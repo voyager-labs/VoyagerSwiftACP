@@ -42,6 +42,13 @@ struct EntryOperationsCommandRoutingReducer {
                     )))
                 }
 
+            case let .routing(.handleDropToTrash(providers)):
+                return .run { @MainActor send in
+                    let paths = await resolveEntryDroppedPaths(from: providers)
+                    guard !paths.isEmpty else { return }
+                    send(.trash(.moveToTrash(paths: paths)))
+                }
+
             case let .routing(.dropItems(sourcePaths, destinationPath, isOptionDrag)):
                 guard isOptionDrag || isAllowedMoveDrop(
                     sourcePaths: sourcePaths,

@@ -41,6 +41,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case validateDrop(context: EntryDropValidationContext)
         case saveDragPaths([String])
         case handleDrop(providers: [NSItemProvider], destinationPath: String, isOptionDrag: Bool)
+        case handleDropToTrash(providers: [NSItemProvider])
         case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
         case handleDropToTag(providers: [NSItemProvider], tagName: String)
     }
