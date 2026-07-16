@@ -1654,6 +1654,165 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-004-sidebar_entry_drop_routing: desynchronized 상태에서도 inactive unpinned tab을 즉시 닫는다.
+    /// owner invalidation을 재시도하지 않고 inactive tab identity와 cache만 정리하는 회귀를 검증한다.
+    /// - 검증 내용: phase/pending/availability 유지, invalidation 0회, inactive row/cache/pending reload 제거
+    /// - 사전 조건: desynchronized Window에 active tab과 inactive unpinned tab이 존재함
+    /// - 기대 결과: active content/cache는 유지되고 inactive tab 관련 상태만 제거됨
+    func testContentTabClose_desynchronizedClosesInactiveWithoutInvalidation() async {
+        let activeID = ContentTabID(rawValue: "desynchronized-inactive-close-active")
+        let inactiveID = ContentTabID(rawValue: "desynchronized-inactive-close-target")
+        var state = makeDirectoryReloadState(
+            activeID: activeID,
+            activePath: "/active",
+            inactiveTabs: [.init(id: inactiveID, path: "/inactive", isPinned: false)],
+        )
+        state.windowID = UUID()
+        state.undoRedoPhase = .desynchronized
+        state.undoManagerAvailability = .init(canUndo: true, canRedo: true)
+        state.pendingDirectoryReloadTabIDs = [inactiveID]
+        let activeContent = state.content
+        let activeCache = state.tabContentStates[activeID]
+        let invalidationCount = LockIsolated(0)
+        let client = UndoManagerClient(
+            registerUndo: { _, _, _ in },
+            undo: { _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            invalidateOwner: { _, _ in
+                invalidationCount.withValue { $0 += 1 }
+                return .init(succeeded: true, availability: .init())
+            },
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.undoManagerClient = client
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: full feature projection보다 desynchronized close의 terminal 상태를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.requestClose(inactiveID)))
+        await store.finish()
+
+        XCTAssertEqual(store.state.undoRedoPhase, .desynchronized)
+        XCTAssertNil(store.state.pendingContentTabTeardown)
+        XCTAssertEqual(store.state.undoManagerAvailability, .init(canUndo: true, canRedo: true))
+        XCTAssertEqual(invalidationCount.value, 0)
+        XCTAssertNil(store.state.contentTabs.tabs[id: inactiveID])
+        XCTAssertNil(store.state.tabContentStates[inactiveID])
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertEqual(store.state.content, activeContent)
+        XCTAssertEqual(store.state.tabContentStates[activeID], activeCache)
+        XCTAssertFalse(store.state.pendingDirectoryReloadTabIDs.contains(inactiveID))
+    }
+
+    /// CTM-004-sidebar_entry_drop_routing: desynchronized 상태에서도 active unpinned tab을 즉시 닫고 handoff한다.
+    /// owner invalidation 없이 기존 active-close fallback과 cache 정리를 그대로 수행하는지 검증한다.
+    /// - 검증 내용: phase/pending 유지, invalidation 0회, closing cache 제거와 fallback content 복원
+    /// - 사전 조건: desynchronized Window의 active unpinned tab 뒤에 inactive fallback tab이 존재함
+    /// - 기대 결과: fallback tab이 active가 되고 해당 cache가 active content로 복원됨
+    func testContentTabClose_desynchronizedClosesActiveAndRestoresFallbackWithoutInvalidation() async throws {
+        let activeID = ContentTabID(rawValue: "desynchronized-active-close-target")
+        let fallbackID = ContentTabID(rawValue: "desynchronized-active-close-fallback")
+        var state = makeDirectoryReloadState(
+            activeID: activeID,
+            activePath: "/active",
+            inactiveTabs: [.init(id: fallbackID, path: "/fallback", isPinned: false)],
+        )
+        state.windowID = UUID()
+        state.undoRedoPhase = .desynchronized
+        state.pendingDirectoryReloadTabIDs = [activeID]
+        let fallbackContent = try XCTUnwrap(state.tabContentStates[fallbackID])
+        let invalidationCount = LockIsolated(0)
+        let client = UndoManagerClient(
+            registerUndo: { _, _, _ in },
+            undo: { _ in .init(didInvoke: false, availability: .init()) },
+            redo: { _ in .init(didInvoke: false, availability: .init()) },
+            invalidateOwner: { _, _ in
+                invalidationCount.withValue { $0 += 1 }
+                return .init(succeeded: true, availability: .init())
+            },
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.undoManagerClient = client
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: active handoff의 파생 action보다 desynchronized close 결과를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.requestClose(activeID)))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(store.state.undoRedoPhase, .desynchronized)
+        XCTAssertNil(store.state.pendingContentTabTeardown)
+        XCTAssertEqual(invalidationCount.value, 0)
+        XCTAssertNil(store.state.contentTabs.tabs[id: activeID])
+        XCTAssertNil(store.state.tabContentStates[activeID])
+        XCTAssertEqual(store.state.contentTabs.activeTabID, fallbackID)
+        XCTAssertEqual(store.state.tabContentStates[fallbackID], fallbackContent)
+        XCTAssertEqual(store.state.content.navigation.navigationState, fallbackContent.navigation.navigationState)
+        XCTAssertEqual(
+            store.state.content.entryViewLayout.entryOperations.undoOwnerID,
+            fallbackContent.entryViewLayout.entryOperations.undoOwnerID,
+        )
+        XCTAssertFalse(store.state.pendingDirectoryReloadTabIDs.contains(activeID))
+    }
+
+    /// CTM-004-sidebar_entry_drop_routing: in-flight undo/redo phase는 unpinned tab close를 계속 차단한다.
+    /// desynchronized 예외가 invoking/replaying/refreshing/recovering/tearingDownTab으로 확장되지 않음을 검증한다.
+    /// - 검증 내용: 각 phase에서 tab/cache/phase/pending 불변, invalidation 0회
+    /// - 사전 조건: active tab과 inactive unpinned target, 5개 in-flight phase별 Window state
+    /// - 기대 결과: 모든 close request가 no-op으로 종료됨
+    func testContentTabClose_inFlightPhasesRemainBlocked() async {
+        let requestID = UUID()
+        let ownerID = UUID()
+        let phases: [FileManagerUndoRedoPhase] = [
+            .invoking(requestID: requestID, direction: .undo),
+            .replaying(requestID: requestID, direction: .redo),
+            .refreshing(requestID: requestID),
+            .recovering(requestID: requestID, direction: .undo, ownerID: ownerID),
+            .tearingDownTab(requestID: requestID, ownerID: ownerID),
+        ]
+
+        for phase in phases {
+            let activeID = ContentTabID(rawValue: "in-flight-close-active")
+            let inactiveID = ContentTabID(rawValue: "in-flight-close-target")
+            var state = makeDirectoryReloadState(
+                activeID: activeID,
+                activePath: "/active",
+                inactiveTabs: [.init(id: inactiveID, path: "/inactive", isPinned: false)],
+            )
+            state.windowID = UUID()
+            state.undoRedoPhase = phase
+            let initialState = state
+            let invalidationCount = LockIsolated(0)
+            let client = UndoManagerClient(
+                registerUndo: { _, _, _ in },
+                undo: { _ in .init(didInvoke: false, availability: .init()) },
+                redo: { _ in .init(didInvoke: false, availability: .init()) },
+                invalidateOwner: { _, _ in
+                    invalidationCount.withValue { $0 += 1 }
+                    return .init(succeeded: true, availability: .init())
+                },
+            )
+            let store = TestStore(initialState: state) {
+                FileManagerWindowRoutingReducer()
+            } withDependencies: {
+                $0.undoManagerClient = client
+            }
+
+            await store.send(.contentTabs(.requestClose(inactiveID)))
+            await store.finish()
+
+            XCTAssertEqual(store.state, initialState)
+            XCTAssertEqual(invalidationCount.value, 0)
+        }
+    }
+
     /// CTM-004-directory_reload_lifecycle: 실제 shared UndoManager의 Sidebar replay 동안 두 menu command를 잠금
     /// - 검증 내용: NSUndoManager stack 이동 후 delayed move replay terminal 전까지 undo/redo와 추가 filesystem 호출 차단
     /// - 사전 조건: Window-owned Sidebar record가 실제 shared UndoManager에 등록되고 moveFile이 gate에서 대기함

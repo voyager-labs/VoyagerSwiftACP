@@ -1067,9 +1067,20 @@ private extension FileManagerWindowRoutingReducer {
         state: inout State,
     ) -> Effect<Action> {
         guard state.pendingContentTabTeardown == nil,
-              state.undoRedoPhase == .idle,
               state.contentTabs.tabs[id: tabID]?.isPinned == false
         else { return .none }
+
+        switch state.undoRedoPhase {
+        case .idle:
+            break
+
+        case .desynchronized:
+            _ = ContentTabFeature().reduce(into: &state.contentTabs, action: .commitClose(tabID))
+            return finalizeContentTabClose(tabID: tabID, state: &state)
+
+        case .invoking, .replaying, .refreshing, .recovering, .tearingDownTab:
+            return .none
+        }
 
         let usesActiveContent = state.contentTabs.activeTabID == tabID
         let ownerID = usesActiveContent
