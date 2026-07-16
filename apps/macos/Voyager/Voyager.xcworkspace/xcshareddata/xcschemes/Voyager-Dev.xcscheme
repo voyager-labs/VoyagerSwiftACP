@@ -89,11 +89,6 @@ shouldUseLaunchSchemeArgsEnv = "YES">
       </BuildableProductRunnable>
       <EnvironmentVariables>
          <EnvironmentVariable
-            key = "INJECTION_PROJECT_ROOT"
-            value = "$(SRCROOT)"
-            isEnabled = "YES">
-         </EnvironmentVariable>
-         <EnvironmentVariable
             key = "VOYAGER_PROJECT_ROOT"
             value = "$(SRCROOT)/../../.."
             isEnabled = "YES">
