@@ -108,6 +108,13 @@ struct FileManagerWindowRoutingReducer {
             case let .sidebar(.delegate(.duplicateContentTab(sourceID))):
                 return .send(.request(.duplicateContentTab(sourceID)))
 
+            case let .sidebar(.delegate(.contentTabReorderRequested(sourceID, targetID, placement))):
+                return .send(.contentTabs(.reorder(
+                    sourceID: sourceID,
+                    targetID: targetID,
+                    placement: placement,
+                )))
+
             case .content(.delegate(.closeWindow)):
                 return .send(.delegate(.closeWindow))
 
@@ -371,6 +378,10 @@ struct FileManagerWindowRoutingReducer {
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
+
+            case .contentTabs(.reorder):
+                state.syncContentTabSidebarItems()
+                return .none
 
             case .contentTabs:
                 cleanPendingDirectoryReloadTabIDs(state: &state)

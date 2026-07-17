@@ -9,6 +9,7 @@ public struct FileManagerSidebarFeature {
         FileManagerSidebarPreferenceReducer()
         FileManagerSidebarContentTabSyncReducer()
         FileManagerSidebarEntryDropRoutingReducer()
+        FileManagerSidebarContentTabReorderRoutingReducer()
     }
 }
 
@@ -41,6 +42,25 @@ struct FileManagerSidebarEntryDropRoutingReducer {
                 return .none
             }
             return .send(.delegate(.entryDropRequested(request)))
+        }
+    }
+}
+
+@Reducer
+struct FileManagerSidebarContentTabReorderRoutingReducer {
+    typealias State = FileManagerSidebarState
+    typealias Action = FileManagerSidebarAction
+
+    var body: some Reducer<State, Action> {
+        Reduce { _, action in
+            guard case let .view(.contentTabReorderRequested(sourceID, targetID, placement)) = action else {
+                return .none
+            }
+            return .send(.delegate(.contentTabReorderRequested(
+                sourceID: sourceID,
+                targetID: targetID,
+                placement: placement,
+            )))
         }
     }
 }
