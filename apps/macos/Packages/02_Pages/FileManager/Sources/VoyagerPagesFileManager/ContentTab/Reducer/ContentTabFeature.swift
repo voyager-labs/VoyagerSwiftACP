@@ -44,6 +44,9 @@ public struct ContentTabFeature {
             case let .duplicate(sourceID, duplicateID):
                 return duplicate(sourceID: sourceID, duplicateID: duplicateID, state: &state)
 
+            case let .reorder(sourceID, targetID, placement):
+                return reorder(sourceID: sourceID, targetID: targetID, placement: placement, state: &state)
+
             case let .pin(id):
                 return pin(id: id, state: &state)
 
@@ -231,6 +234,56 @@ extension ContentTabFeature {
             state.activeTabID = duplicateID
         }
 
+        return .none
+    }
+
+    private func reorder(
+        sourceID: ContentTabID,
+        targetID: ContentTabID,
+        placement: ContentTabReorderPlacement,
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
+        guard sourceID != targetID,
+              let source = state.tabs[id: sourceID],
+              let target = state.tabs[id: targetID],
+              !source.isPinned,
+              !target.isPinned
+        else {
+            return .none
+        }
+
+        let originalUnpinnedIDs = state.tabs.filter { !$0.isPinned }.map(\.id)
+        var reorderedUnpinnedIDs = originalUnpinnedIDs
+        reorderedUnpinnedIDs.removeAll { $0 == sourceID }
+
+        guard let targetIndex = reorderedUnpinnedIDs.firstIndex(of: targetID) else {
+            return .none
+        }
+
+        let proposedIndex = placement == .before ? targetIndex : targetIndex + 1
+        let insertionIndex = min(max(proposedIndex, reorderedUnpinnedIDs.startIndex), reorderedUnpinnedIDs.endIndex)
+        reorderedUnpinnedIDs.insert(sourceID, at: insertionIndex)
+
+        guard reorderedUnpinnedIDs != originalUnpinnedIDs else {
+            return .none
+        }
+
+        var reorderedUnpinnedIterator = reorderedUnpinnedIDs.makeIterator()
+        var reorderedTabs: [ContentTabItem] = []
+        for tab in state.tabs {
+            if tab.isPinned {
+                reorderedTabs.append(tab)
+                continue
+            }
+
+            guard let reorderedID = reorderedUnpinnedIterator.next(),
+                  let reorderedTab = state.tabs[id: reorderedID]
+            else {
+                return .none
+            }
+            reorderedTabs.append(reorderedTab)
+        }
+        state.tabs = .init(uniqueElements: reorderedTabs)
         return .none
     }
 

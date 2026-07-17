@@ -100,35 +100,29 @@ final class FileManagerSidebarEntryDropContractTests: XCTestCase {
         XCTAssertNil(FileManagerSidebarEntryDropDelegate.target(for: aiChat))
     }
 
-    func testPreflightQueriesOnlyFileURLConformanceAndUsesMoveCopyProposals() {
+    /// fileURL-only preflight는 provider를 추출하지 않고 hover와 Option proposal을 유지한다.
+    func testPreflightUsesConformanceOnlyAndPreservesMoveCopyProposals() {
         let target = FileManagerSidebarEntryDropTarget.fixedLocation("desktop")
         let dropTarget = FileManagerSidebarEntryDropTargetBox()
         let delegate = makeDelegate(target: target, dropTarget: dropTarget)
-        let info = FileManagerSidebarEntryDropInfoSpy(
-            providers: [fileProvider(path: "/file.txt")],
+        let info = FileManagerSidebarEntryDropPreflightInfoSpy(
+            hasFileURLItems: true,
+            hasReorderItems: false,
         )
 
         XCTAssertTrue(delegate.validateDrop(dropInfo: info))
         delegate.dropEntered(dropInfo: info)
         XCTAssertEqual(dropTarget.value, target)
-        XCTAssertEqual(
-            delegate.dropUpdated(dropInfo: info, isOptionDrag: false)?.operation,
-            .move,
-        )
-        XCTAssertEqual(
-            delegate.dropUpdated(dropInfo: info, isOptionDrag: true)?.operation,
-            .copy,
-        )
-        XCTAssertEqual(
-            info.hasItemsConformingQueries,
-            Array(repeating: [.fileURL], count: 4),
-        )
-        XCTAssertTrue(info.itemProviderQueries.isEmpty)
+        XCTAssertEqual(delegate.dropUpdated(dropInfo: info, isOptionDrag: false)?.operation, .move)
+        XCTAssertEqual(delegate.dropUpdated(dropInfo: info, isOptionDrag: true)?.operation, .copy)
+        XCTAssertEqual(delegate.dropUpdated(dropInfo: info, isOptionDrag: false)?.operation, .move)
+        XCTAssertEqual(info.providerExtractionCount, 0)
 
         delegate.dropExited()
         XCTAssertNil(dropTarget.value)
     }
 
+    /// 복사를 허용하지 않는 휴지통은 Option 입력과 무관하게 move를 제안한다.
     func testTrashPreflightAlwaysProposesMoveEvenWithOption() {
         let target = FileManagerSidebarEntryDropTarget.fixedLocation("trash")
         let delegate = makeDelegate(
@@ -136,8 +130,9 @@ final class FileManagerSidebarEntryDropContractTests: XCTestCase {
             dropTarget: FileManagerSidebarEntryDropTargetBox(),
             allowsCopy: false,
         )
-        let info = FileManagerSidebarEntryDropInfoSpy(
-            providers: [fileProvider(path: "/file.txt")],
+        let info = FileManagerSidebarEntryDropPreflightInfoSpy(
+            hasFileURLItems: true,
+            hasReorderItems: false,
         )
 
         XCTAssertEqual(
@@ -150,35 +145,44 @@ final class FileManagerSidebarEntryDropContractTests: XCTestCase {
         )
     }
 
-    func testRejectedPreflightClearsHighlightWithoutQueryingProviders() {
+    /// reorder와 fileURL conformance가 함께 보이는 preflight는 own highlight만 정리한다.
+    func testRejectedPreflightClearsHighlightWithoutProviderExtraction() {
         let target = FileManagerSidebarEntryDropTarget.fixedLocation("desktop")
+        let otherTarget = FileManagerSidebarEntryDropTarget.fixedLocation("downloads")
         let dropTarget = FileManagerSidebarEntryDropTargetBox(target)
         let delegate = makeDelegate(target: target, dropTarget: dropTarget)
-        let info = FileManagerSidebarEntryDropInfoSpy(
-            providers: [textProvider()],
-        )
+        let invalidInfos = [
+            FileManagerSidebarEntryDropPreflightInfoSpy(
+                hasFileURLItems: false,
+                hasReorderItems: false,
+            ),
+            FileManagerSidebarEntryDropPreflightInfoSpy(
+                hasFileURLItems: true,
+                hasReorderItems: true,
+            ),
+        ]
 
-        XCTAssertFalse(delegate.validateDrop(dropInfo: info))
-        XCTAssertNil(dropTarget.value)
+        for info in invalidInfos {
+            dropTarget.value = target
+            XCTAssertFalse(delegate.validateDrop(dropInfo: info))
+            XCTAssertNil(dropTarget.value)
 
-        dropTarget.value = target
-        delegate.dropEntered(dropInfo: info)
-        XCTAssertNil(dropTarget.value)
+            dropTarget.value = target
+            delegate.dropEntered(dropInfo: info)
+            XCTAssertNil(dropTarget.value)
 
-        dropTarget.value = target
-        XCTAssertEqual(
-            delegate.dropUpdated(dropInfo: info, isOptionDrag: false)?.operation,
-            .forbidden,
-        )
-        XCTAssertNil(dropTarget.value)
-        XCTAssertEqual(
-            info.hasItemsConformingQueries,
-            Array(repeating: [.fileURL], count: 3),
-        )
-        XCTAssertTrue(info.itemProviderQueries.isEmpty)
+            dropTarget.value = target
+            XCTAssertEqual(delegate.dropUpdated(dropInfo: info, isOptionDrag: false)?.operation, .forbidden)
+            XCTAssertNil(dropTarget.value)
+            XCTAssertEqual(info.providerExtractionCount, 0)
+        }
+
+        dropTarget.value = otherTarget
+        XCTAssertFalse(delegate.validateDrop(dropInfo: invalidInfos[0]))
+        XCTAssertEqual(dropTarget.value, otherTarget)
     }
 
-    func testPerformDropQueriesFileURLProvidersOnceAndAcceptsNSURLFileProvider() throws {
+    func testPerformDropQueriesCompleteSessionOnceAndAcceptsNSURLFileProvider() throws {
         let target = FileManagerSidebarEntryDropTarget.fixedLocation("desktop")
         let fileProvider = fileProvider(path: "/file.txt")
         let dropTarget = FileManagerSidebarEntryDropTargetBox(target)
@@ -188,12 +192,11 @@ final class FileManagerSidebarEntryDropContractTests: XCTestCase {
             dropTarget: dropTarget,
             onDrop: { requests.append($0) },
         )
-        let info = FileManagerSidebarEntryDropInfoSpy(providers: [fileProvider])
+        let info = FileManagerSidebarEntryDropPerformInfoSpy(providers: [fileProvider])
 
         XCTAssertTrue(delegate.performDrop(dropInfo: info, isOptionDrag: true))
         XCTAssertNil(dropTarget.value)
-        XCTAssertTrue(info.hasItemsConformingQueries.isEmpty)
-        XCTAssertEqual(info.itemProviderQueries, [[.fileURL]])
+        XCTAssertEqual(info.providerExtractionCount, 1)
 
         info.providers.append(textProvider())
         let request = try XCTUnwrap(requests.first)
@@ -221,18 +224,17 @@ final class FileManagerSidebarEntryDropContractTests: XCTestCase {
 
         for providers in invalidSessions {
             dropTarget.value = target
-            let info = FileManagerSidebarEntryDropInfoSpy(providers: providers)
+            let info = FileManagerSidebarEntryDropPerformInfoSpy(providers: providers)
 
             XCTAssertFalse(delegate.performDrop(dropInfo: info, isOptionDrag: false))
             XCTAssertNil(dropTarget.value)
-            XCTAssertTrue(info.hasItemsConformingQueries.isEmpty)
-            XCTAssertEqual(info.itemProviderQueries, [[.fileURL]])
+            XCTAssertEqual(info.providerExtractionCount, 1)
         }
 
         XCTAssertTrue(requests.isEmpty)
     }
 
-    func testPerformDropForwardsOnlyFileURLProvidersFromMixedSession() throws {
+    func testPerformDropRejectsMixedFileURLAndUnrelatedProviderSession() {
         let target = FileManagerSidebarEntryDropTarget.fixedLocation("desktop")
         let fileProvider = fileProvider(path: "/file.txt")
         let textProvider = textProvider()
@@ -242,17 +244,13 @@ final class FileManagerSidebarEntryDropContractTests: XCTestCase {
             dropTarget: FileManagerSidebarEntryDropTargetBox(target),
             onDrop: { requests.append($0) },
         )
-        let info = FileManagerSidebarEntryDropInfoSpy(
+        let info = FileManagerSidebarEntryDropPerformInfoSpy(
             providers: [fileProvider, textProvider],
         )
 
-        XCTAssertTrue(delegate.performDrop(dropInfo: info, isOptionDrag: false))
-        XCTAssertEqual(info.itemProviderQueries, [[.fileURL]])
-
-        let request = try XCTUnwrap(requests.first)
-        XCTAssertEqual(requests.count, 1)
-        XCTAssertEqual(request.providers.count, 1)
-        XCTAssertIdentical(request.providers[0], fileProvider)
+        XCTAssertFalse(delegate.performDrop(dropInfo: info, isOptionDrag: false))
+        XCTAssertEqual(info.providerExtractionCount, 1)
+        XCTAssertTrue(requests.isEmpty)
     }
 
     func testLifecyclePreservesAnotherEntryHighlight() {
@@ -260,8 +258,9 @@ final class FileManagerSidebarEntryDropContractTests: XCTestCase {
         let otherTarget = FileManagerSidebarEntryDropTarget.fixedLocation("downloads")
         let dropTarget = FileManagerSidebarEntryDropTargetBox(otherTarget)
         let delegate = makeDelegate(target: target, dropTarget: dropTarget)
-        let rejectedInfo = FileManagerSidebarEntryDropInfoSpy(
-            providers: [textProvider()],
+        let rejectedInfo = FileManagerSidebarEntryDropPreflightInfoSpy(
+            hasFileURLItems: false,
+            hasReorderItems: false,
         )
 
         XCTAssertFalse(delegate.validateDrop(dropInfo: rejectedInfo))
@@ -276,7 +275,7 @@ final class FileManagerSidebarEntryDropContractTests: XCTestCase {
         delegate.dropExited()
         XCTAssertEqual(dropTarget.value, otherTarget)
 
-        let acceptedInfo = FileManagerSidebarEntryDropInfoSpy(
+        let acceptedInfo = FileManagerSidebarEntryDropPerformInfoSpy(
             providers: [fileProvider(path: "/file.txt")],
         )
         XCTAssertTrue(delegate.performDrop(dropInfo: acceptedInfo, isOptionDrag: false))
@@ -339,32 +338,33 @@ final class FileManagerSidebarEntryDropContractTests: XCTestCase {
     }
 }
 
-private final class FileManagerSidebarEntryDropInfoSpy: FileManagerSidebarEntryDropInfo {
-    var providers: [NSItemProvider]
+private final class FileManagerSidebarEntryDropPreflightInfoSpy: FileManagerSidebarDropPreflightInfo {
+    private let conformingTypeIdentifiers: Set<String>
+    private(set) var providerExtractionCount = 0
 
-    private(set) var hasItemsConformingQueries: [[UTType]] = []
-    private(set) var itemProviderQueries: [[UTType]] = []
+    init(hasFileURLItems: Bool, hasReorderItems: Bool) {
+        conformingTypeIdentifiers = Set([
+            hasFileURLItems ? UTType.fileURL.identifier : nil,
+            hasReorderItems ? UTType.contentTabReorder.identifier : nil,
+        ].compactMap(\.self))
+    }
+
+    func hasItemsConforming(to contentTypes: [UTType]) -> Bool {
+        contentTypes.contains { conformingTypeIdentifiers.contains($0.identifier) }
+    }
+}
+
+private final class FileManagerSidebarEntryDropPerformInfoSpy: FileManagerSidebarDropPerformInfo {
+    var providers: [NSItemProvider]
+    private(set) var providerExtractionCount = 0
 
     init(providers: [NSItemProvider]) {
         self.providers = providers
     }
 
-    func hasItemsConforming(to contentTypes: [UTType]) -> Bool {
-        hasItemsConformingQueries.append(contentTypes)
-        return !matchingProviders(for: contentTypes).isEmpty
-    }
-
-    func itemProviders(for contentTypes: [UTType]) -> [NSItemProvider] {
-        itemProviderQueries.append(contentTypes)
-        return matchingProviders(for: contentTypes)
-    }
-
-    private func matchingProviders(for contentTypes: [UTType]) -> [NSItemProvider] {
-        providers.filter { provider in
-            contentTypes.contains { contentType in
-                provider.hasItemConformingToTypeIdentifier(contentType.identifier)
-            }
-        }
+    func itemProviders(for _: [UTType]) -> [NSItemProvider] {
+        providerExtractionCount += 1
+        return providers
     }
 }
 

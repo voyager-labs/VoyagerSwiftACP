@@ -2,12 +2,15 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-protocol FileManagerSidebarEntryDropInfo {
+protocol FileManagerSidebarDropPreflightInfo {
     func hasItemsConforming(to contentTypes: [UTType]) -> Bool
+}
+
+protocol FileManagerSidebarDropPerformInfo {
     func itemProviders(for contentTypes: [UTType]) -> [NSItemProvider]
 }
 
-extension DropInfo: FileManagerSidebarEntryDropInfo {}
+extension DropInfo: FileManagerSidebarDropPreflightInfo, FileManagerSidebarDropPerformInfo {}
 
 struct FileManagerSidebarEntryDropDelegate: DropDelegate {
     @Binding var dropTarget: FileManagerSidebarEntryDropTarget?
@@ -50,8 +53,8 @@ struct FileManagerSidebarEntryDropDelegate: DropDelegate {
         validateDrop(dropInfo: info)
     }
 
-    func validateDrop(dropInfo: some FileManagerSidebarEntryDropInfo) -> Bool {
-        let isAccepted = dropInfo.hasItemsConforming(to: [.fileURL])
+    func validateDrop(dropInfo: some FileManagerSidebarDropPreflightInfo) -> Bool {
+        let isAccepted = acceptsCandidate(dropInfo: dropInfo)
         if !isAccepted {
             clearDropTarget()
         }
@@ -62,8 +65,8 @@ struct FileManagerSidebarEntryDropDelegate: DropDelegate {
         dropEntered(dropInfo: info)
     }
 
-    func dropEntered(dropInfo: some FileManagerSidebarEntryDropInfo) {
-        if dropInfo.hasItemsConforming(to: [.fileURL]) {
+    func dropEntered(dropInfo: some FileManagerSidebarDropPreflightInfo) {
+        if acceptsCandidate(dropInfo: dropInfo) {
             dropTarget = target
         } else {
             clearDropTarget()
@@ -76,11 +79,11 @@ struct FileManagerSidebarEntryDropDelegate: DropDelegate {
     }
 
     func dropUpdated(
-        dropInfo: some FileManagerSidebarEntryDropInfo,
+        dropInfo: some FileManagerSidebarDropPreflightInfo,
         isOptionDrag: Bool,
     ) -> DropProposal? {
         let operation = Self.proposalOperation(
-            hasFileURLItems: dropInfo.hasItemsConforming(to: [.fileURL]),
+            hasFileURLItems: acceptsCandidate(dropInfo: dropInfo),
             isOptionDrag: isOptionDrag,
             allowsCopy: allowsCopy,
         )
@@ -104,10 +107,10 @@ struct FileManagerSidebarEntryDropDelegate: DropDelegate {
     }
 
     func performDrop(
-        dropInfo: some FileManagerSidebarEntryDropInfo,
+        dropInfo: some FileManagerSidebarDropPerformInfo,
         isOptionDrag: Bool,
     ) -> Bool {
-        let providers = dropInfo.itemProviders(for: [.fileURL])
+        let providers = dropInfo.itemProviders(for: [.item])
         return performDrop(providers: providers, isOptionDrag: isOptionDrag)
     }
 
@@ -124,6 +127,14 @@ struct FileManagerSidebarEntryDropDelegate: DropDelegate {
         )
         onDrop(request)
         return true
+    }
+
+    private func acceptsCandidate(
+        dropInfo: some FileManagerSidebarDropPreflightInfo,
+    ) -> Bool {
+        let hasFileURLItems = dropInfo.hasItemsConforming(to: [.fileURL])
+        let hasReorderItems = dropInfo.hasItemsConforming(to: [.contentTabReorder])
+        return hasFileURLItems && !hasReorderItems
     }
 
     private func clearDropTarget() {
