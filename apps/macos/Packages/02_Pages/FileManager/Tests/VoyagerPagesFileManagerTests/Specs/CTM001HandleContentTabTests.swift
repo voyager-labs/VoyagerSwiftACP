@@ -1872,4 +1872,322 @@ final class CTM001HandleContentTabTests: XCTestCase {
             "Inspector aiChat sessionID must remain nil",
         )
     }
+
+    // MARK: - CTM-001-external_tab_reservation
+
+    /// CTM-001-external_tab_reservation: 외부 file reservation은 caller가 제공한 identity와 pending selection을 사용한다.
+    /// 시스템 open 배치가 일반 파일을 기존 window의 새 Content Tab으로 예약하는 계약의 RED 기준을 검증한다.
+    /// - 검증 내용: 외부 예약 후 active tab ID와 active content pending selection이 caller 입력과 일치한다.
+    /// - 사전 조건: seed Directory tab이 active이고 caller가 tab ID, parent Directory anchor, file selection ID를 제공한다.
+    /// - 기대 결과: 새 tab은 caller ID로 active가 되고 파일 selection은 첫 load 전에 content snapshot에 존재한다.
+    func testExternalTabReservation_usesCallerIdentityAndPendingSelection() async {
+        let callerTabID = ContentTabID(rawValue: "external-file-tab")
+        let pendingSelection = "/tmp/report.txt"
+        let store = TestStore(initialState: FileManagerWindowState.makeInitial(path: "/seed")) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: 기존 open 경로의 내부 handoff보다 결여된 external reservation 계약 검증에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.reserveExternalContentTabs([
+            ExternalContentTabReservation(
+                id: callerTabID,
+                anchor: .directory(path: "/tmp"),
+                pendingSelectEntryID: pendingSelection,
+            ),
+        ]))
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, callerTabID)
+        XCTAssertEqual(store.state.content.pendingSelectEntryID, pendingSelection)
+        XCTAssertEqual(store.state.tabContentStates[callerTabID]?.pendingSelectEntryID, pendingSelection)
+    }
+
+    /// CTM-001-external_tab_reservation: 기존 window에 ordered reservation을 원자 적용한다.
+    /// active Directory와 pinned inactive tab이 있는 window에 Directory, Collection, regular-file tab을 배치한다.
+    /// - 검증 내용: 기존 active snapshot 저장, ordered append, active/previous ID, content/inspector snapshot 원자 갱신이다.
+    /// - 사전 조건: 기존 active content/inspector와 pinned inactive metadata가 있고 Collection reservation은 inactive가 된다.
+    /// - 기대 결과: 기존 metadata는 유지되고 모든 snapshot이 생성되며 regular-file pending selection은 active load 전에 존재한다.
+    func testExternalTabReservation_appliesOrderedSnapshotsAtomically() async throws {
+        let scenario = try ExternalTabReservationTestFixture.makeAtomicScenario()
+        var expectedState = scenario.initialState
+        XCTAssertTrue(expectedState.reserveExternalContentTabs(scenario.reservations))
+        let store = TestStore(initialState: scenario.initialState) {
+            FileManagerFeature()
+        }
+
+        await store.send(.reserveExternalContentTabs(scenario.reservations)) {
+            $0 = expectedState
+        }
+        await store.finish()
+
+        scenario.assertResult(store.state)
+    }
+
+    /// CTM-001-external_tab_reservation: invalid reservation set은 전체를 fail-closed 처리한다.
+    /// duplicate ID, capacity 초과, external-incompatible anchor가 기존 window를 부분 변경하지 않는지 검증한다.
+    /// - 검증 내용: 각 invalid batch 처리 후 FileManagerWindowState 전체 equality가 유지된다.
+    /// - 사전 조건: 기존 Directory window와 duplicate/capacity/home/Collection-pending invalid 입력이다.
+    /// - 기대 결과: tabs, active/previous IDs, content, tab/inspector snapshots mutation이 모두 0회다.
+    func testExternalTabReservation_invalidSetsDoNotMutateState() async {
+        let initialState = FileManagerWindowState.makeInitial(path: "/seed")
+        let existingID = initialState.contentTabs.activeTabID ?? ContentTabID(rawValue: "missing-active")
+        let invalidSets = ExternalTabReservationTestFixture.makeInvalidSets(existingID: existingID)
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        }
+
+        for reservations in invalidSets {
+            await store.send(.reserveExternalContentTabs(reservations))
+            XCTAssertEqual(store.state, initialState)
+        }
+        XCTAssertEqual(ContentTabConstants.maxTabs, 20)
+    }
+
+    /// CTM-001-external_tab_reservation: pending tab-close 중 external reservation은 fail-closed 처리된다.
+    /// 미저장 Collection close transaction이 진행 중일 때 active content 교체를 막는 window invariant를 검증한다.
+    /// - 검증 내용: valid reservation action 이후에도 전체 FileManagerWindowState가 동일하다.
+    /// - 사전 조건: active Directory tab을 대상으로 pending close transaction이 설정되어 있다.
+    /// - 기대 결과: reservation append와 active/content/snapshot mutation이 모두 0회다.
+    func testExternalTabReservation_pendingCloseDoesNotMutateState() async throws {
+        var initialState = FileManagerWindowState.makeInitial(path: "/seed")
+        let activeID = try XCTUnwrap(initialState.contentTabs.activeTabID)
+        initialState.pendingContentTabClose = PendingContentTabClose(
+            tabID: activeID,
+            previousActiveTabID: nil,
+            previousActiveContent: nil,
+            targetContent: initialState.content,
+            previousActiveInspector: nil,
+            targetInspector: initialState.inspector,
+        )
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        }
+
+        await store.send(.reserveExternalContentTabs([
+            ExternalContentTabReservation(
+                id: ContentTabID(rawValue: "blocked-by-pending-close"),
+                anchor: .directory(path: "/blocked"),
+            ),
+        ]))
+        XCTAssertEqual(store.state, initialState)
+    }
+
+    /// CTM-001-external_tab_reservation: external initial factory는 Home 없이 reservation만으로 window state를 만든다.
+    /// overflow window가 bootstrap Home을 만들지 않고 첫 reservation부터 deterministic tab state를 소유하는지 검증한다.
+    /// - 검증 내용: ordered tab IDs, active/previous ID, per-tab content/inspector snapshot과 Home 부재다.
+    /// - 사전 조건: Directory regular-file reservation과 Collection reservation 두 개다.
+    /// - 기대 결과: 정확히 두 reservation tab만 존재하고 마지막 Collection이 active이며 load effect 없이 snapshot만 생성된다.
+    func testExternalTabReservation_makeInitialContainsReservationsWithoutHome() throws {
+        let fileID = ContentTabID(rawValue: "overflow-file")
+        let collectionID = ContentTabID(rawValue: "overflow-collection")
+        let collectionURL = URL(fileURLWithPath: "/tmp/overflow.voycoll")
+        let state = try XCTUnwrap(FileManagerWindowState.makeExternalInitial(
+            reservations: [
+                ExternalContentTabReservation(
+                    id: fileID,
+                    anchor: .directory(path: "/tmp"),
+                    pendingSelectEntryID: "/tmp/file.txt",
+                ),
+                ExternalContentTabReservation(id: collectionID, anchor: .collectionFile(url: collectionURL)),
+            ],
+        ))
+
+        XCTAssertEqual(state.contentTabs.tabs.map(\.id), [fileID, collectionID])
+        XCTAssertFalse(state.contentTabs.tabs.contains(where: { $0.anchor == .homeDefault }))
+        XCTAssertEqual(state.contentTabs.activeTabID, collectionID)
+        XCTAssertEqual(state.contentTabs.previousActiveTabID, fileID)
+        XCTAssertEqual(state.tabContentStates[fileID]?.pendingSelectEntryID, "/tmp/file.txt")
+        XCTAssertEqual(state.content, state.tabContentStates[collectionID])
+        XCTAssertEqual(Set(state.tabContentStates.keys), Set([fileID, collectionID]))
+        XCTAssertEqual(Set(state.tabInspectorStates.keys), Set([fileID, collectionID]))
+        XCTAssertNil(FileManagerWindowState.makeExternalInitial(reservations: []))
+    }
+}
+
+private enum ExternalTabReservationTestFixture {
+    struct AtomicScenario {
+        let initialState: FileManagerWindowState
+        let reservations: [ExternalContentTabReservation]
+        let originalActiveID: ContentTabID
+        let pinnedID: ContentTabID
+        let pinnedTab: ContentTabItem
+        let pinnedContent: FileManagerContentState
+        let pinnedRecord: ContentTabPinnedRecord
+        let directoryID: ContentTabID
+        let collectionID: ContentTabID
+        let fileID: ContentTabID
+        let collectionURL: URL
+        let pendingSelection: String
+        let expectedOriginalContent: FileManagerContentState
+        let expectedOriginalInspector: FileManagerInspectorFeature.State
+
+        func assertResult(_ state: FileManagerWindowState) {
+            XCTAssertEqual(
+                state.contentTabs.tabs.map(\.id),
+                [pinnedID, originalActiveID, directoryID, collectionID, fileID],
+            )
+            XCTAssertEqual(state.contentTabs.activeTabID, fileID)
+            XCTAssertEqual(state.contentTabs.previousActiveTabID, collectionID)
+            XCTAssertEqual(state.tabContentStates[originalActiveID], expectedOriginalContent)
+            XCTAssertEqual(state.tabInspectorStates[originalActiveID], expectedOriginalInspector)
+            XCTAssertEqual(state.contentTabs.tabs[id: pinnedID], pinnedTab)
+            XCTAssertEqual(state.contentTabs.pinnedRecords[pinnedID], pinnedRecord)
+            XCTAssertEqual(state.tabContentStates[pinnedID], pinnedContent)
+            XCTAssertEqual(state.tabContentStates[fileID]?.pendingSelectEntryID, pendingSelection)
+            XCTAssertEqual(state.content.pendingSelectEntryID, pendingSelection)
+            XCTAssertEqual(state.content, state.tabContentStates[fileID])
+            XCTAssertNotNil(state.tabInspectorStates[directoryID])
+            XCTAssertNotNil(state.tabInspectorStates[collectionID])
+            XCTAssertNotNil(state.tabInspectorStates[fileID])
+            for reservation in reservations {
+                XCTAssertTrue(state.tabContentStates[reservation.id]?.entryViewLayout.showHiddenFiles ?? false)
+                XCTAssertEqual(state.tabContentStates[reservation.id]?.entryViewLayout.gridIconSize, 73)
+            }
+            guard case let .collection(navigation) = state.tabContentStates[collectionID]?.navigation.navigationState
+            else {
+                return XCTFail("inactive Collection reservation must own an effect-free collection snapshot")
+            }
+            XCTAssertEqual(navigation.kind, .file(url: collectionURL, name: "ordered"))
+        }
+    }
+
+    private struct PinnedState {
+        let id: ContentTabID
+        let tab: ContentTabItem
+        let content: FileManagerContentState
+        let record: ContentTabPinnedRecord
+    }
+
+    static func makeInvalidSets(existingID: ContentTabID) -> [[ExternalContentTabReservation]] {
+        [
+            [ExternalContentTabReservation(id: existingID, anchor: .directory(path: "/existing"))],
+            duplicateReservationSet(),
+            overCapacityReservationSet(),
+            [ExternalContentTabReservation(id: ContentTabID(rawValue: "home"), anchor: .homeDefault)],
+            [relativeDirectoryReservation()],
+            [relativeSelectionReservation()],
+            [foreignSelectionReservation()],
+            [collectionSelectionReservation()],
+        ]
+    }
+
+    static func makeAtomicScenario() throws -> AtomicScenario {
+        var initialState = FileManagerWindowState.makeInitial(path: "/seed")
+        let originalActiveID = try XCTUnwrap(initialState.contentTabs.activeTabID)
+        initialState.content.pendingSelectEntryID = "/seed/current.txt"
+        initialState.content.entryViewLayout.showHiddenFiles = true
+        initialState.content.entryViewLayout.gridIconSize = 73
+        initialState.inspector.inspectorVisible = true
+        initialState.inspector.inspectorPaneExists = true
+        let expectedOriginalContent = initialState.content
+        let expectedOriginalInspector = initialState.inspector.tabSnapshot()
+        let pinned = makePinnedTabState()
+        initialState.contentTabs.tabs.insert(pinned.tab, at: 0)
+        initialState.tabContentStates[pinned.id] = pinned.content
+        initialState.contentTabs.pinnedRecords[pinned.id] = pinned.record
+
+        let directoryID = ContentTabID(rawValue: "external-directory")
+        let collectionID = ContentTabID(rawValue: "external-collection")
+        let fileID = ContentTabID(rawValue: "external-file")
+        let collectionURL = URL(fileURLWithPath: "/tmp/ordered.voycoll")
+        let pendingSelection = "/tmp/report.txt"
+        let reservations = [
+            ExternalContentTabReservation(id: directoryID, anchor: .directory(path: "/external")),
+            ExternalContentTabReservation(id: collectionID, anchor: .collectionFile(url: collectionURL)),
+            ExternalContentTabReservation(
+                id: fileID,
+                anchor: .directory(path: "/tmp"),
+                pendingSelectEntryID: pendingSelection,
+            ),
+        ]
+        return AtomicScenario(
+            initialState: initialState,
+            reservations: reservations,
+            originalActiveID: originalActiveID,
+            pinnedID: pinned.id,
+            pinnedTab: pinned.tab,
+            pinnedContent: pinned.content,
+            pinnedRecord: pinned.record,
+            directoryID: directoryID,
+            collectionID: collectionID,
+            fileID: fileID,
+            collectionURL: collectionURL,
+            pendingSelection: pendingSelection,
+            expectedOriginalContent: expectedOriginalContent,
+            expectedOriginalInspector: expectedOriginalInspector,
+        )
+    }
+
+    private static func relativeDirectoryReservation() -> ExternalContentTabReservation {
+        ExternalContentTabReservation(
+            id: ContentTabID(rawValue: "relative-directory"),
+            anchor: .directory(path: "relative"),
+        )
+    }
+
+    private static func relativeSelectionReservation() -> ExternalContentTabReservation {
+        ExternalContentTabReservation(
+            id: ContentTabID(rawValue: "relative-selection"),
+            anchor: .directory(path: "/tmp"),
+            pendingSelectEntryID: "relative.txt",
+        )
+    }
+
+    private static func foreignSelectionReservation() -> ExternalContentTabReservation {
+        ExternalContentTabReservation(
+            id: ContentTabID(rawValue: "foreign-selection"),
+            anchor: .directory(path: "/tmp"),
+            pendingSelectEntryID: "/other/report.txt",
+        )
+    }
+
+    private static func collectionSelectionReservation() -> ExternalContentTabReservation {
+        ExternalContentTabReservation(
+            id: ContentTabID(rawValue: "collection-selection"),
+            anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/a.voycoll")),
+            pendingSelectEntryID: "/tmp/a.voycoll",
+        )
+    }
+
+    private static func duplicateReservationSet() -> [ExternalContentTabReservation] {
+        let id = ContentTabID(rawValue: "duplicate")
+        return [
+            ExternalContentTabReservation(id: id, anchor: .directory(path: "/one")),
+            ExternalContentTabReservation(id: id, anchor: .directory(path: "/two")),
+        ]
+    }
+
+    private static func overCapacityReservationSet() -> [ExternalContentTabReservation] {
+        (0 ..< ContentTabConstants.maxTabs).map {
+            ExternalContentTabReservation(
+                id: ContentTabID(rawValue: "capacity-\($0)"),
+                anchor: .directory(path: "/capacity/\($0)"),
+            )
+        }
+    }
+
+    private static func makePinnedTabState() -> PinnedState {
+        let id = ContentTabID(rawValue: "existing-pinned")
+        let tab = ContentTabItem(
+            id: id,
+            page: .directory,
+            anchor: .directory(path: "/pinned"),
+            isPinned: true,
+            title: "Pinned",
+            iconName: "pin",
+        )
+        var content = FileManagerContentState.initialContent(for: tab.anchor)
+        content.pendingSelectEntryID = "/pinned/keep.txt"
+        let record = ContentTabPinnedRecord(
+            id: id.rawValue,
+            page: tab.page,
+            anchor: tab.anchor,
+            title: tab.title,
+            iconName: tab.iconName,
+            pinnedAt: Date(timeIntervalSince1970: 100),
+        )
+        return PinnedState(id: id, tab: tab, content: content, record: record)
+    }
 }
