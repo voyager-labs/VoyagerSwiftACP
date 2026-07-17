@@ -405,6 +405,75 @@ final class FileManagerWindowManagerTests: XCTestCase {
         XCTAssertTrue(tracker.pendingWindowIDs.isEmpty)
     }
 
+    /// request가 MainActor에 도착하기 전에 discard되면 다음 request가 tombstone을 소비하고 즉시 종료한다.
+    func test_activationTrackerConsumesPreDiscardOnNextRequest() async {
+        let windowID = UUID()
+        let tracker = FileManagerWindowActivationTracker()
+        let requestCompleted = expectation(description: "pre-discarded request completed")
+        let result = LockIsolated<FileManagerWindowActivationResult?>(nil)
+        var activationCount = 0
+
+        tracker.discard(windowID)
+        let request = Task { @MainActor in
+            let activationResult = await tracker.request(windowID) {
+                activationCount += 1
+            }
+            result.setValue(activationResult)
+            requestCompleted.fulfill()
+        }
+
+        await fulfillment(of: [requestCompleted], timeout: 1)
+        if result.value == nil {
+            request.cancel()
+        }
+        await request.value
+
+        XCTAssertEqual(result.value, .discarded)
+        XCTAssertEqual(activationCount, 0)
+        XCTAssertTrue(tracker.pendingWindowIDs.isEmpty)
+        XCTAssertTrue(tracker.discardedWindowIDs.isEmpty)
+    }
+
+    /// discardAll이 사이에 실행돼도 이전 pre-discard tombstone은 후속 request까지 보존한다.
+    func test_activationTrackerPreservesPreDiscardAcrossDiscardAll() async {
+        let preDiscardedWindowID = UUID()
+        let closeAllWindowID = UUID()
+        let tracker = FileManagerWindowActivationTracker()
+
+        tracker.discard(preDiscardedWindowID)
+        tracker.discardAll([closeAllWindowID])
+
+        let result = await tracker.request(preDiscardedWindowID)
+
+        XCTAssertEqual(result, .discarded)
+        XCTAssertEqual(tracker.discardedWindowIDs, [closeAllWindowID])
+        XCTAssertTrue(tracker.pendingWindowIDs.isEmpty)
+    }
+
+    /// tombstone은 새 등록과 request 소비로 제거되고 closeAll 및 상한으로 누적을 제한한다.
+    func test_activationTrackerCleansDiscardedLifecycleTombstones() {
+        let staleWindowID = UUID()
+        let registeredWindowID = UUID()
+        let closeAllWindowID = UUID()
+        let tracker = FileManagerWindowActivationTracker()
+
+        tracker.discard(staleWindowID)
+        tracker.discard(registeredWindowID)
+        tracker.consumeRegistration(for: registeredWindowID) {}
+
+        XCTAssertEqual(tracker.discardedWindowIDs, [staleWindowID])
+
+        tracker.discardAll([closeAllWindowID])
+
+        XCTAssertEqual(tracker.discardedWindowIDs, [staleWindowID, closeAllWindowID])
+
+        for _ in 0 ... FileManagerWindowActivationTracker.discardedWindowLimit {
+            tracker.discard(UUID())
+        }
+
+        XCTAssertEqual(tracker.discardedWindowIDs.count, FileManagerWindowActivationTracker.discardedWindowLimit)
+    }
+
     /// close 계열 discard와 task cancellation은 pending activation을 discarded로 완료한다.
     func test_activationTrackerReturnsDiscardedOnDiscardAndCancellation() async {
         let firstWindowID = UUID()
@@ -433,16 +502,24 @@ final class FileManagerWindowManagerTests: XCTestCase {
         XCTAssertEqual(discardedResults.1, .discarded)
         XCTAssertTrue(tracker.pendingWindowIDs.isEmpty)
 
+        let cancelledWindowID = UUID()
         let cancellationStarted = expectation(description: "cancelled request started")
+        let cancellationCompletionCount = LockIsolated(0)
         let cancelledRequest = Task { @MainActor in
             cancellationStarted.fulfill()
-            return await tracker.request(firstWindowID)
+            let result = await tracker.request(cancelledWindowID)
+            cancellationCompletionCount.withValue { $0 += 1 }
+            return result
         }
         await fulfillment(of: [cancellationStarted], timeout: 1)
+        XCTAssertEqual(tracker.pendingWindowIDs, [cancelledWindowID])
         cancelledRequest.cancel()
 
         let cancelledResult = await cancelledRequest.value
+        tracker.complete(cancelledWindowID, result: .becameKey)
+
         XCTAssertEqual(cancelledResult, .discarded)
+        XCTAssertEqual(cancellationCompletionCount.value, 1)
         XCTAssertTrue(tracker.pendingWindowIDs.isEmpty)
     }
 }

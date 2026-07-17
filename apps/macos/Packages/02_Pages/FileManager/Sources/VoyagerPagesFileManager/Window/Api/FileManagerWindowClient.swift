@@ -103,6 +103,8 @@ public extension DependencyValues {
 
 @MainActor
 final class FileManagerWindowActivationTracker {
+    static let discardedWindowLimit = 256
+
     private struct Waiter {
         let requestID: UUID
         let continuation: CheckedContinuation<FileManagerWindowActivationResult, Never>
@@ -110,6 +112,8 @@ final class FileManagerWindowActivationTracker {
 
     private var waitersByWindowID: [UUID: [Waiter]] = [:]
     private var activationRequestedWindowIDs: Set<UUID> = []
+    private var discardedWindowIDOrder: [UUID] = []
+    private(set) var discardedWindowIDs: Set<UUID> = []
     private(set) var pendingWindowIDs: [UUID] = []
 
     func request(
@@ -119,6 +123,7 @@ final class FileManagerWindowActivationTracker {
         let requestID = UUID()
         return await withTaskCancellationHandler {
             guard !Task.isCancelled else { return .discarded }
+            guard !consumeDiscardedLifecycle(for: windowID) else { return .discarded }
             return await withCheckedContinuation { continuation in
                 guard !Task.isCancelled else {
                     continuation.resume(returning: .discarded)
@@ -148,6 +153,7 @@ final class FileManagerWindowActivationTracker {
         for windowID: UUID,
         activate: () -> Void,
     ) {
+        clearDiscardedLifecycle(for: windowID)
         guard waitersByWindowID[windowID]?.isEmpty == false,
               activationRequestedWindowIDs.insert(windowID).inserted
         else { return }
@@ -155,10 +161,13 @@ final class FileManagerWindowActivationTracker {
     }
 
     func discard(_ windowID: UUID) {
+        recordDiscardedLifecycle(for: windowID)
         complete(windowID, result: .discarded)
     }
 
-    func discardAll() {
+    func discardAll(_ windowIDs: [UUID] = []) {
+        let pendingWindowIDs = pendingWindowIDs
+        (windowIDs + pendingWindowIDs).forEach { recordDiscardedLifecycle(for: $0) }
         let waiters = pendingWindowIDs.flatMap { takeWaiters(for: $0) }
         waiters.forEach { $0.continuation.resume(returning: .discarded) }
     }
@@ -186,6 +195,24 @@ final class FileManagerWindowActivationTracker {
         pendingWindowIDs.removeAll { $0 == windowID }
         activationRequestedWindowIDs.remove(windowID)
         return waitersByWindowID.removeValue(forKey: windowID) ?? []
+    }
+
+    private func recordDiscardedLifecycle(for windowID: UUID) {
+        guard discardedWindowIDs.insert(windowID).inserted else { return }
+        discardedWindowIDOrder.append(windowID)
+        while discardedWindowIDOrder.count > Self.discardedWindowLimit {
+            discardedWindowIDs.remove(discardedWindowIDOrder.removeFirst())
+        }
+    }
+
+    private func consumeDiscardedLifecycle(for windowID: UUID) -> Bool {
+        guard discardedWindowIDs.remove(windowID) != nil else { return false }
+        discardedWindowIDOrder.removeAll { $0 == windowID }
+        return true
+    }
+
+    private func clearDiscardedLifecycle(for windowID: UUID) {
+        _ = consumeDiscardedLifecycle(for: windowID)
     }
 }
 
@@ -392,8 +419,8 @@ private func fileManagerWindowClose(windowID: UUID) {
 
 @MainActor
 private func fileManagerWindowCloseAll() {
-    fileManagerWindowActivationTracker.discardAll()
     let controllers = fileManagerWindowControllers
+    fileManagerWindowActivationTracker.discardAll(controllers.map(\.windowID))
     controllers.forEach { $0.window?.close() }
 }
 

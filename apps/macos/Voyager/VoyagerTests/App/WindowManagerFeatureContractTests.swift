@@ -2842,7 +2842,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(keyEventCount.value, 2)
     }
 
-    /// B activation 대기 중 B가 닫혀 discarded되면 최신 state의 A를 한 번 재시도한 뒤 terminal을 보낸다.
+    /// B activation request 전에 B가 닫히면 tombstone을 소비하고 최신 state의 A를 재시도한 뒤 terminal을 한 번 보낸다.
     func testPlacementActivationRetriesPreviousSurvivorAfterDiscard() async throws {
         let batchID = UUID()
         let firstWindowID = UUID()
@@ -2888,11 +2888,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .init(id: finalWindowID, window: finalWindow),
         ]
         initialState.externalWindowBatchIDs = [firstWindowID: batchID, finalWindowID: batchID]
+        let tracker = FileManagerWindowActivationTracker()
+        let finalRequestGate = WindowBootstrapSuspensionGate()
         let activatedIDs = LockIsolated<[UUID]>([])
-        let finalStarted = expectation(description: "final activation started")
         let firstStarted = expectation(description: "fallback activation started")
-        let finalGate = AsyncStream<FileManagerWindowActivationResult>.makeStream()
-        let firstGate = AsyncStream<FileManagerWindowActivationResult>.makeStream()
         let completionCount = LockIsolated(0)
         let store = TestStore(initialState: initialState) {
             CombineReducers {
@@ -2907,33 +2906,28 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.fileManagerWindowClient.activate = { id in
                 activatedIDs.withValue { $0.append(id) }
-                let stream: AsyncStream<FileManagerWindowActivationResult>
                 if id == finalWindowID {
-                    finalStarted.fulfill()
-                    stream = finalGate.stream
-                } else {
-                    XCTAssertEqual(id, firstWindowID)
+                    await finalRequestGate.wait()
+                    return await tracker.request(id)
+                }
+                XCTAssertEqual(id, firstWindowID)
+                return await tracker.request(id) {
                     firstStarted.fulfill()
-                    stream = firstGate.stream
                 }
-                for await result in stream {
-                    return result
-                }
-                return .discarded
             }
         }
 
         await store.send(.placement(.activate(plan))) {
             $0.externalOpenActivationAttempt = finalAttempt
         }
-        await fulfillment(of: [finalStarted], timeout: 1)
+        await finalRequestGate.waitUntilWaiting()
         await store.send(.event(.windowClosed(finalWindowID))) {
             $0.windows.remove(id: finalWindowID)
             $0.externalWindowBatchIDs[finalWindowID] = nil
         }
+        tracker.discard(finalWindowID)
+        await finalRequestGate.open()
 
-        finalGate.continuation.yield(.discarded)
-        finalGate.continuation.finish()
         await store.receive { action in
             action.isActivationResult(finalAttempt, .discarded)
         } assert: {
@@ -2942,14 +2936,14 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await fulfillment(of: [firstStarted], timeout: 1)
         XCTAssertEqual(completionCount.value, 0)
 
-        firstGate.continuation.yield(.becameKey)
-        firstGate.continuation.finish()
+        tracker.complete(firstWindowID, result: .becameKey)
         await store.receive { action in
             action.isActivationResult(firstAttempt, .becameKey)
         } assert: {
             $0.externalOpenActivationAttempt = nil
         }
         await store.receive(\.delegate.externalOpenActivationCompleted, batchID)
+        await store.finish()
 
         XCTAssertEqual(activatedIDs.value, [finalWindowID, firstWindowID])
         XCTAssertEqual(completionCount.value, 1)
