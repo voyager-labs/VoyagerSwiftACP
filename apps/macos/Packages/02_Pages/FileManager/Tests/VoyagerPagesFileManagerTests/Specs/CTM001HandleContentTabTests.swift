@@ -370,6 +370,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
             recentlyClosed: nil,
         )
 
+        lastTabState.selectedTabIDs = [lastID]
+        lastTabState.selectionAnchorID = lastID
+
         _ = reducer.reduce(into: &lastTabState, action: .commitClose(lastID))
 
         // 마지막 tab은 제거되지 않고 Home tab으로 reset됨
@@ -379,7 +382,54 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(lastTabState.tabs[0].title, "Home")
         XCTAssertEqual(lastTabState.tabs[0].iconName, "house")
         XCTAssertEqual(lastTabState.activeTabID, lastID)
+        XCTAssertEqual(lastTabState.selectedTabIDs, [lastID])
+        XCTAssertEqual(lastTabState.selectionAnchorID, lastID)
         XCTAssertNil(lastTabState.recentlyClosed)
+    }
+
+    /// CTM-001-close_content_tab: 실제 identity 삭제는 닫힌 selected ID와 anchor만 정리함
+    /// 일반 multi-tab close가 surviving selection과 unrelated metadata를 유지하면서 stale identity를 제거하는지 검증한다.
+    /// - 검증 내용: selected+anchor close와 unselected anchor-only close의 reconciliation
+    /// - 사전 조건: A/B/C 탭 중 닫힐 A 또는 C가 anchor이고 surviving B가 selected인 두 상태
+    /// - 기대 결과: 닫힌 ID만 selection에서 제거되고 닫힌 anchor는 nil, surviving B와 metadata는 유지됨
+    func testCloseContentTab_reconcilesOnlyRemovedIdentitySelectionAndAnchor() {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let tabC = ContentTabID(rawValue: "C")
+        let tabs = closeReconciliationTabs(tabA: tabA, tabB: tabB, tabC: tabC)
+        let reducer = ContentTabFeature()
+
+        var selectedAnchorState = ContentTabState(
+            tabs: tabs,
+            activeTabID: tabB,
+            previousActiveTabID: tabC,
+            pinnedRecordPersistenceError: "selected-anchor-sentinel",
+        )
+        selectedAnchorState.selectedTabIDs = [tabA, tabB]
+        selectedAnchorState.selectionAnchorID = tabA
+        _ = reducer.reduce(into: &selectedAnchorState, action: .commitClose(tabA))
+
+        XCTAssertEqual(selectedAnchorState.tabs.map(\.id), [tabB, tabC])
+        XCTAssertEqual(selectedAnchorState.selectedTabIDs, [tabB])
+        XCTAssertNil(selectedAnchorState.selectionAnchorID)
+        XCTAssertEqual(selectedAnchorState.activeTabID, tabB)
+        XCTAssertEqual(selectedAnchorState.pinnedRecordPersistenceError, "selected-anchor-sentinel")
+
+        var anchorOnlyState = ContentTabState(
+            tabs: tabs,
+            activeTabID: tabB,
+            previousActiveTabID: tabA,
+            pinnedRecordPersistenceError: "anchor-only-sentinel",
+        )
+        anchorOnlyState.selectedTabIDs = [tabB]
+        anchorOnlyState.selectionAnchorID = tabC
+        _ = reducer.reduce(into: &anchorOnlyState, action: .commitClose(tabC))
+
+        XCTAssertEqual(anchorOnlyState.tabs.map(\.id), [tabA, tabB])
+        XCTAssertEqual(anchorOnlyState.selectedTabIDs, [tabB])
+        XCTAssertNil(anchorOnlyState.selectionAnchorID)
+        XCTAssertEqual(anchorOnlyState.activeTabID, tabB)
+        XCTAssertEqual(anchorOnlyState.pinnedRecordPersistenceError, "anchor-only-sentinel")
     }
 
     /// CTM-001-close_content_tab: pinned tab close는 restore snapshot을 생성하지 않음
@@ -492,6 +542,55 @@ final class CTM001HandleContentTabTests: XCTestCase {
         _ = reducer.reduce(into: &state, action: .restore)
         XCTAssertEqual(state.tabs.count, 2)
         XCTAssertNil(state.recentlyClosed)
+    }
+
+    /// CTM-001-restore_last_closed_tab: open과 restore의 새 identity는 기존 selection/anchor를 상속하지 않음
+    /// 새 tab 생성 lifecycle이 active identity만 전환하고 runtime selection intent를 보존하는지 검증한다.
+    /// - 검증 내용: open과 restore 각각의 fresh ID가 unselected이며 기존 selected set/anchor가 동일함
+    /// - 사전 조건: selected/anchored Home tab과 Directory recentlyClosed snapshot
+    /// - 기대 결과: 두 새 tab은 active로 생성되지만 Home selection/anchor만 유지되고 metadata sentinel도 보존됨
+    func testOpenAndRestore_createUnselectedIDsWhilePreservingSelectionAndAnchor() throws {
+        let homeID = ContentTabID(rawValue: "home")
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: ClosedContentTabSnapshot(
+                page: .directory,
+                anchor: .directory(path: "/restored"),
+                wasPinned: false,
+                closedAt: Date(timeIntervalSince1970: 451),
+                title: "Restored",
+                iconName: "folder",
+            ),
+            pinnedRecordPersistenceError: "sentinel",
+        )
+        state.selectedTabIDs = [homeID]
+        state.selectionAnchorID = homeID
+        let reducer = ContentTabFeature()
+
+        _ = reducer.reduce(into: &state, action: .open(.homeDefault))
+        let openedID = try XCTUnwrap(state.activeTabID)
+        XCTAssertNotEqual(openedID, homeID)
+        XCTAssertFalse(state.selectedTabIDs.contains(openedID))
+        XCTAssertEqual(state.selectedTabIDs, [homeID])
+        XCTAssertEqual(state.selectionAnchorID, homeID)
+
+        _ = reducer.reduce(into: &state, action: .restore)
+        let restoredID = try XCTUnwrap(state.activeTabID)
+        XCTAssertNotEqual(restoredID, openedID)
+        XCTAssertFalse(state.selectedTabIDs.contains(restoredID))
+        XCTAssertEqual(state.selectedTabIDs, [homeID])
+        XCTAssertEqual(state.selectionAnchorID, homeID)
+        XCTAssertEqual(state.pinnedRecordPersistenceError, "sentinel")
     }
 
     /// CTM-001-restore_last_closed_tab: candidate가 없으면 restore는 no-op
@@ -617,22 +716,23 @@ final class CTM001HandleContentTabTests: XCTestCase {
     /// - 기대 결과: 탭은 남고 pinned 상태만 해제됨
     func testPinContentTabs_pinnedCloseOnlyUnpins() async {
         let pinnedID = ContentTabID()
-        let store = TestStore(
-            initialState: ContentTabState(
-                tabs: [
-                    ContentTabItem(
-                        id: pinnedID,
-                        page: .home,
-                        anchor: .homeDefault,
-                        isPinned: true,
-                        title: nil,
-                        iconName: nil,
-                    ),
-                ],
-                activeTabID: pinnedID,
-                recentlyClosed: nil,
-            ),
-        ) {
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: true,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: pinnedID,
+            recentlyClosed: nil,
+        )
+        state.selectedTabIDs = [pinnedID]
+        state.selectionAnchorID = pinnedID
+        let store = TestStore(initialState: state) {
             ContentTabFeature()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
@@ -643,6 +743,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
         }
         await store.receive(\.pinnedRecordSaveSucceeded)
         await store.finish()
+
+        XCTAssertEqual(store.state.selectedTabIDs, [pinnedID])
+        XCTAssertEqual(store.state.selectionAnchorID, pinnedID)
     }
 
     // MARK: - CTM-001-restore_last_closed_tab_routing
@@ -1258,7 +1361,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             title: "Closed Home",
             iconName: "house",
         )
-        let original = ContentTabState(
+        var original = ContentTabState(
             tabs: [unpinned1, pinned1, unpinned2, pinned2, unpinned3],
             activeTabID: unpinned2.id,
             previousActiveTabID: unpinned1.id,
@@ -1267,6 +1370,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
             pendingPinnedRecordIDs: [pinned2.id],
             pinnedRecordPersistenceError: "existing_error",
         )
+        original.selectedTabIDs = [pinned1.id, unpinned3.id]
+        original.selectionAnchorID = unpinned1.id
         var state = original
         var expected = original
         expected.tabs = [unpinned3, pinned1, unpinned1, pinned2, unpinned2]
@@ -2155,5 +2260,38 @@ final class CTM001HandleContentTabTests: XCTestCase {
             store.state.inspector.aiChat.sessionID,
             "Inspector aiChat sessionID must remain nil",
         )
+    }
+
+    private func closeReconciliationTabs(
+        tabA: ContentTabID,
+        tabB: ContentTabID,
+        tabC: ContentTabID,
+    ) -> IdentifiedArrayOf<ContentTabItem> {
+        [
+            ContentTabItem(
+                id: tabA,
+                page: .directory,
+                anchor: .directory(path: "/A"),
+                isPinned: false,
+                title: "A",
+                iconName: "folder",
+            ),
+            ContentTabItem(
+                id: tabB,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            ),
+            ContentTabItem(
+                id: tabC,
+                page: .directory,
+                anchor: .directory(path: "/C"),
+                isPinned: false,
+                title: "C",
+                iconName: "folder",
+            ),
+        ]
     }
 }
