@@ -58,9 +58,11 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
 
     /// ACC-001-detect_session_expiry: capability miss만 legacy fallback 후보이고 credential·upstream 오류는 직접 반환한다.
     /// session-sync HTTP 경계가 오류 종류에 따라 fallback을 허용하는지 검증한다.
-    /// - 검증 내용: 404/405는 nil fallback signal, 401은 invalid credential, 400/413/429은 terminal mapping, 503은 upstream mapping.
+    /// - 검증 내용: 404/405는 nil fallback signal, 401은 invalid credential, 400/413/429은 terminal mapping, 503은 upstream
+    /// mapping.
     /// - 사전 조건: session-sync HTTP status code.
-    /// - 기대 결과: 401/400/413/429/503이 legacy call의 trigger로 해석되지 않고, non-transient 상태는 retry/snapshot fallback에 들어가지 않는다.
+    /// - 기대 결과: 401/400/413/429/503이 legacy call의 trigger로 해석되지 않고, non-transient 상태는 retry/snapshot fallback에 들어가지
+    /// 않는다.
     func testSessionSyncFallbackBoundaryMapsOnlyCapabilityMisses() {
         XCTAssertNil(AuthNetworkClient.sessionSyncError(for: 404))
         XCTAssertNil(AuthNetworkClient.sessionSyncError(for: 405))
@@ -246,9 +248,15 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
         initialState.snapshot = staleSnapshot
         initialState.trialExpiresAt = referenceDate
 
-        let activeResponse = AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
-        productKey: "core",
-        source: "polar",)
+        let activeResponse = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            source: "polar",
+        )
 
         let store = makeTestStore(initialState: initialState)
         store.exhaustivity = .off

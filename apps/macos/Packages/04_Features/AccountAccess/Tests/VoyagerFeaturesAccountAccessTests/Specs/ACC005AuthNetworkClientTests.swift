@@ -236,10 +236,16 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
     /// - 기대 결과: 반환된 응답이 mock이 설정한 값과 일치
     func testFetchAccessStatusSuccess() async throws {
         let expectedDate = Date(timeIntervalSince1970: 1_800_000_000)
-        let expectedResponse = AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
-        productKey: "core",
-        currentPeriodEnd: expectedDate,
-        source: "polar",)
+        let expectedResponse = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            currentPeriodEnd: expectedDate,
+            source: "polar",
+        )
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
             fetchAccessStatus: { expectedResponse },

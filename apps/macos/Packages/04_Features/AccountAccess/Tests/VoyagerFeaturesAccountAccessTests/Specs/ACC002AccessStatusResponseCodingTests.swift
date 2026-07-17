@@ -89,29 +89,53 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
 
     /// active + trial productKey → .trialActive
     func testToAccessStatusActiveTrial() {
-        let response = AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
-        productKey: "trial",
-        source: "polar",)
+        let response = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            reason: "active_entitlement",
+            productKey: "trial",
+            source: "polar",
+        )
         XCTAssertEqual(response.toAccessStatus(), .trialActive)
     }
 
     /// active + core productKey → .coreLicenseActive
     func testToAccessStatusActiveCore() {
-        let response = AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
-        productKey: "core",
-        source: "polar",)
+        let response = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            source: "polar",
+        )
         XCTAssertEqual(response.toAccessStatus(), .coreLicenseActive)
     }
 
     /// active + lifetime productKey → .coreLicenseActive
     func testToAccessStatusActiveLifetime() {
-        let response = AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", productKey: "lifetime",)
+        let response = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            productKey: "lifetime",
+        )
         XCTAssertEqual(response.toAccessStatus(), .coreLicenseActive)
     }
 
     /// active + null productKey → .coreLicenseActive (fallback)
     func testToAccessStatusActiveNullProductKey() {
-        let response = AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", productKey: nil,)
+        let response = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            productKey: nil,
+        )
         XCTAssertEqual(response.toAccessStatus(), .coreLicenseActive)
     }
 
@@ -208,10 +232,16 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
 
     /// 동일 struct 인스턴스를 encode → decode했을 때 값이 보존된다.
     func testRoundTripEncodeDecode() throws {
-        let original = AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
-        productKey: "core",
-        currentPeriodEnd: Date(timeIntervalSince1970: 1_800_000_000),
-        source: "polar",)
+        let original = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            currentPeriodEnd: Date(timeIntervalSince1970: 1_800_000_000),
+            source: "polar",
+        )
 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601

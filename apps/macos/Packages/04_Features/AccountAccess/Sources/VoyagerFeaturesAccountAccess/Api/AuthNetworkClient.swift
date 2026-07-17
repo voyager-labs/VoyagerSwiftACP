@@ -382,7 +382,7 @@ public extension AuthNetworkClient {
             .invalidCredential
         case 400, 413, 429:
             .invalidResponse(statusCode)
-        case 500...599:
+        case 500 ... 599:
             .upstream(statusCode)
         default:
             .invalidResponse(statusCode)

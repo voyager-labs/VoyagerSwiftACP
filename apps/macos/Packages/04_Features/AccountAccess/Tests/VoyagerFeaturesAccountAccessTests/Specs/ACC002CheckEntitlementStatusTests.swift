@@ -102,7 +102,10 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
 
     func testOnAppearSessionRestoredTriggersFetch() async {
         let expiry = referenceDate.addingTimeInterval(3600)
-        let store = makeStore(result: .success(syncResult(access: response(), expiry: expiry)), session: session(expiresAt: expiry))
+        let store = makeStore(
+            result: .success(syncResult(access: response(), expiry: expiry)),
+            session: session(expiresAt: expiry),
+        )
         store.exhaustivity = .off
         await store.send(.onAppear)
         await store.receive(\._onAppearSessionRestored)
@@ -117,7 +120,10 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
 
     func testOnAppearIsIdempotentOnReentry() async {
         let expiry = referenceDate.addingTimeInterval(3600)
-        let store = makeStore(result: .success(syncResult(access: response(), expiry: expiry)), session: session(expiresAt: expiry))
+        let store = makeStore(
+            result: .success(syncResult(access: response(), expiry: expiry)),
+            session: session(expiresAt: expiry),
+        )
         store.exhaustivity = .off
         await store.send(.onAppear)
         await store.receive(\._onAppearSessionRestored)
@@ -131,7 +137,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         await store.skipInFlightEffects()
     }
 
-    func testOpenPricingMissingURLConfigProjectsErrorWithoutCrash() async throws {
+    func testOpenPricingMissingURLConfigProjectsErrorWithoutCrash() async {
         var state = signedInState()
         state.status = AccessStatus.none
         let store = makeStore(
@@ -169,7 +175,10 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     }
 
     func testActiveAccessDeviceBindingSeatCapacityDoesNotUnlock() async {
-        let store = makeStore(result: .success(syncResult(access: response(), outcome: .deviceLimitReached)), state: signedInState())
+        let store = makeStore(
+            result: .success(syncResult(access: response(), outcome: .deviceLimitReached)),
+            state: signedInState(),
+        )
         await sync(store)
         await store.receive(\.delegate.recoveryRequired)
         XCTAssertEqual(store.state.deviceBindingFailure, .seatCapacityExceeded)
@@ -178,7 +187,10 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     }
 
     func testActiveAccessDeviceBindingTransientFailureIsRetryable() async {
-        let store = makeStore(result: .success(syncResult(access: response(), outcome: .notAttempted)), state: signedInState())
+        let store = makeStore(
+            result: .success(syncResult(access: response(), outcome: .notAttempted)),
+            state: signedInState(),
+        )
         await sync(store)
         await store.receive(\.delegate.recoveryRequired)
         XCTAssertEqual(store.state.status, .networkFailure)
@@ -265,7 +277,11 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
 
     func testRetryTappedIncrementsGenerationAndTriggersFetch() async {
         let expiry = referenceDate.addingTimeInterval(3600)
-        let store = makeStore(result: .success(syncResult(access: response())), state: signedInState(expiry: expiry), session: session(expiresAt: expiry))
+        let store = makeStore(
+            result: .success(syncResult(access: response())),
+            state: signedInState(expiry: expiry),
+            session: session(expiresAt: expiry),
+        )
         store.exhaustivity = .off
         await store.send(.retryTapped)
         await store.receive(\.revalidatePersistedSession)
@@ -280,7 +296,13 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     }
 
     func testFetchAccessStatusInactiveDoesNotUnlock() async {
-        let store = makeStore(result: .success(syncResult(access: response(hasAccess: false, status: "expired", productKey: "trial"), outcome: .notAttempted)), state: signedInState())
+        let store = makeStore(
+            result: .success(syncResult(
+                access: response(hasAccess: false, status: "expired", productKey: "trial"),
+                outcome: .notAttempted,
+            )),
+            state: signedInState(),
+        )
         await sync(store)
         await store.receive(\.delegate.recoveryRequired)
         XCTAssertEqual(store.state.status, .trialExpired)
@@ -288,24 +310,37 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     }
 
     func testInactiveAccessSendsTerminalRecoveryDelegate() async {
-        let store = makeStore(result: .success(syncResult(access: response(hasAccess: false, status: "revoked"), outcome: .notAttempted)), state: signedInState())
+        let store = makeStore(
+            result: .success(syncResult(access: response(hasAccess: false, status: "revoked"), outcome: .notAttempted)),
+            state: signedInState(),
+        )
         await sync(store)
         await store.receive(\.delegate.recoveryRequired)
         XCTAssertEqual(store.state.status, .revoked)
     }
 
     func testDeviceBindingFailureSendsTerminalRecoveryDelegate() async {
-        let store = makeStore(result: .success(syncResult(access: response(), outcome: .deviceLimitReached)), state: signedInState())
+        let store = makeStore(
+            result: .success(syncResult(access: response(), outcome: .deviceLimitReached)),
+            state: signedInState(),
+        )
         await sync(store)
         await store.receive(\.delegate.recoveryRequired)
         XCTAssertEqual(store.state.deviceBindingFailure, .seatCapacityExceeded)
     }
 
-    private func restoreSnapshot(_ snapshot: AccessStatusSnapshot?, validUntil: Date?) async -> AccountAccessFeature.State {
+    private func restoreSnapshot(_ snapshot: AccessStatusSnapshot?, validUntil: Date?) async -> AccountAccessFeature
+        .State
+    {
         var state = signedInState()
         state.syncGeneration = 1
         let store = makeStore(result: .success(syncResult()), state: state)
-        await store.send(._cachedSnapshotRestored(generation: 1, binding: nil, snapshot: snapshot, validUntil: validUntil))
+        await store.send(._cachedSnapshotRestored(
+            generation: 1,
+            binding: nil,
+            snapshot: snapshot,
+            validUntil: validUntil,
+        ))
         if snapshot != nil, validUntil != nil {
             await store.receive(\.delegate)
         } else {
@@ -315,7 +350,15 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     }
 
     func testCachedSnapshotRestoredAfterThreeFailures() async {
-        let snapshot = AccessStatusSnapshot(status: .coreLicenseActive, fetchedAt: referenceDate, sessionExpiresAt: referenceDate.addingTimeInterval(3600), deviceBindingVerifiedAt: referenceDate, ownershipStatus: "owned", updateStatus: "active", updatesThrough: eligibleUpdatesThrough)
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: referenceDate,
+            sessionExpiresAt: referenceDate.addingTimeInterval(3600),
+            deviceBindingVerifiedAt: referenceDate,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: eligibleUpdatesThrough,
+        )
         let state = await restoreSnapshot(snapshot, validUntil: referenceDate.addingTimeInterval(60))
         XCTAssertEqual(state.snapshot, snapshot)
         XCTAssertTrue(state.isComplete)
@@ -337,7 +380,10 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
 
     func testTrialActivePreservesTrialExpiresAtDetail() async {
         let end = referenceDate.addingTimeInterval(7200)
-        let store = makeStore(result: .success(syncResult(access: response(productKey: "trial", currentPeriodEnd: end))), state: signedInState())
+        let store = makeStore(
+            result: .success(syncResult(access: response(productKey: "trial", currentPeriodEnd: end))),
+            state: signedInState(),
+        )
         await sync(store)
         await store.receive(\.delegate.unlocked)
         XCTAssertEqual(store.state.status, .trialActive)
@@ -345,7 +391,12 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     }
 
     func testExpiredSnapshotRejectedOnRestore() async {
-        let snapshot = AccessStatusSnapshot(status: .coreLicenseActive, fetchedAt: referenceDate, sessionExpiresAt: referenceDate.addingTimeInterval(-1), deviceBindingVerifiedAt: referenceDate)
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: referenceDate,
+            sessionExpiresAt: referenceDate.addingTimeInterval(-1),
+            deviceBindingVerifiedAt: referenceDate,
+        )
         let state = await restoreSnapshot(snapshot, validUntil: referenceDate.addingTimeInterval(-1))
         XCTAssertEqual(state.status, .networkFailure)
         XCTAssertFalse(state.isComplete)
@@ -353,14 +404,26 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
 
     func testCachedSnapshotRestoredWithSessionExpiresAtRestoresSessionAxis() async {
         let expiry = referenceDate.addingTimeInterval(3600)
-        let snapshot = AccessStatusSnapshot(status: .coreLicenseActive, fetchedAt: referenceDate, sessionExpiresAt: expiry, deviceBindingVerifiedAt: referenceDate, ownershipStatus: "owned", updateStatus: "active", updatesThrough: eligibleUpdatesThrough)
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: referenceDate,
+            sessionExpiresAt: expiry,
+            deviceBindingVerifiedAt: referenceDate,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: eligibleUpdatesThrough,
+        )
         let state = await restoreSnapshot(snapshot, validUntil: referenceDate.addingTimeInterval(60))
         XCTAssertTrue(state.hasAccountSession)
         XCTAssertEqual(state.sessionExpiresAt, expiry)
     }
 
     func testCachedSnapshotRestoredWithoutSessionDoesNotFakeSession() async {
-        let snapshot = AccessStatusSnapshot(status: .coreLicenseActive, fetchedAt: referenceDate, deviceBindingVerifiedAt: referenceDate)
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: referenceDate,
+            deviceBindingVerifiedAt: referenceDate,
+        )
         let state = await restoreSnapshot(snapshot, validUntil: referenceDate.addingTimeInterval(60))
         XCTAssertFalse(state.isComplete)
         XCTAssertEqual(state.status, .coreLicenseActive)
@@ -384,7 +447,11 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             save: { snapshot, _, _, _ in saved = snapshot },
             remove: { _, _, _ in },
         )
-        let store = makeStore(result: .success(syncResult(access: response())), state: signedInState(expiry: expiry), snapshotClient: client)
+        let store = makeStore(
+            result: .success(syncResult(access: response())),
+            state: signedInState(expiry: expiry),
+            snapshotClient: client,
+        )
         await sync(store)
         await store.receive(\.delegate.unlocked)
         XCTAssertEqual(saved?.sessionExpiresAt, expiry)
@@ -408,7 +475,11 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     func testHydrateLaunchSnapshotWithTrialExpiredSessionMapsToBlockedAndSignedIn() async {
         let expiry = referenceDate.addingTimeInterval(3600)
         let store = makeStore(result: .success(syncResult()), state: .init())
-        await store.send(.hydrateLaunchSnapshot(AccessStatusSnapshot(status: .trialExpired, fetchedAt: referenceDate, sessionExpiresAt: expiry)))
+        await store.send(.hydrateLaunchSnapshot(AccessStatusSnapshot(
+            status: .trialExpired,
+            fetchedAt: referenceDate,
+            sessionExpiresAt: expiry,
+        )))
         XCTAssertTrue(store.state.hasAccountSession)
         XCTAssertEqual(store.state.accountAccessStepState, .blocked)
         await store.skipInFlightEffects()
@@ -417,7 +488,11 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     func testHydrateLaunchSnapshotWithNetworkFailureSessionMapsToErrorAndSignedIn() async {
         let expiry = referenceDate.addingTimeInterval(3600)
         let store = makeStore(result: .success(syncResult()), state: .init())
-        await store.send(.hydrateLaunchSnapshot(AccessStatusSnapshot(status: .networkFailure, fetchedAt: referenceDate, sessionExpiresAt: expiry)))
+        await store.send(.hydrateLaunchSnapshot(AccessStatusSnapshot(
+            status: .networkFailure,
+            fetchedAt: referenceDate,
+            sessionExpiresAt: expiry,
+        )))
         XCTAssertTrue(store.state.hasAccountSession)
         XCTAssertEqual(store.state.accountAccessStepState, .error)
         await store.skipInFlightEffects()
@@ -435,9 +510,22 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         let expiry = referenceDate.addingTimeInterval(7200)
         var state = signedInState(expiry: expiry)
         state.syncGeneration = 1
-        let snapshot = AccessStatusSnapshot(status: .coreLicenseActive, fetchedAt: referenceDate, sessionExpiresAt: referenceDate.addingTimeInterval(3600), deviceBindingVerifiedAt: referenceDate, ownershipStatus: "owned", updateStatus: "active", updatesThrough: eligibleUpdatesThrough)
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: referenceDate,
+            sessionExpiresAt: referenceDate.addingTimeInterval(3600),
+            deviceBindingVerifiedAt: referenceDate,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: eligibleUpdatesThrough,
+        )
         let store = makeStore(result: .success(syncResult()), state: state)
-        await store.send(._cachedSnapshotRestored(generation: 1, binding: nil, snapshot: snapshot, validUntil: referenceDate.addingTimeInterval(60)))
+        await store.send(._cachedSnapshotRestored(
+            generation: 1,
+            binding: nil,
+            snapshot: snapshot,
+            validUntil: referenceDate.addingTimeInterval(60),
+        ))
         await store.receive(\.delegate.unlocked)
         XCTAssertEqual(store.state.sessionExpiresAt, expiry)
         XCTAssertEqual(store.state.snapshot?.sessionExpiresAt, snapshot.sessionExpiresAt)
@@ -451,7 +539,11 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             save: { _, _, _, _ in saves += 1 },
             remove: { _, _, _ in },
         )
-        let store = makeStore(result: .success(syncResult(access: response(), outcome: .deviceLimitReached)), state: signedInState(), snapshotClient: client)
+        let store = makeStore(
+            result: .success(syncResult(access: response(), outcome: .deviceLimitReached)),
+            state: signedInState(),
+            snapshotClient: client,
+        )
         await sync(store)
         await store.receive(\.delegate.recoveryRequired)
         XCTAssertEqual(saves, 0)

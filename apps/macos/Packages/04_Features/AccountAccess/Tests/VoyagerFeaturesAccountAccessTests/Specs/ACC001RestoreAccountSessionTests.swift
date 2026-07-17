@@ -245,7 +245,13 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
                     return SessionSyncResult(
                         sessionStatus: .rotated,
                         syncStatus: .complete,
-                        accessStatus: AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", updatesThrough: Date(timeIntervalSince1970: 2_000_000_000)),
+                        accessStatus: AccessStatusResponse(
+                            hasAccess: true,
+                            status: "active",
+                            ownershipStatus: "owned",
+                            updateStatus: "active",
+                            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
+                        ),
                         deviceBindingOutcome: .bound,
                         connectedDeviceAvailability: .available,
                         sessionExpiresAt: rotatedExpiry,
@@ -290,9 +296,15 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
-                    productKey: "core",
-                    source: "polar",)
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 bindDevice: { _ in
                     bindCalled = true
@@ -550,9 +562,15 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         initialState.snapshot = staleSnapshot
         initialState.trialExpiresAt = referenceDate
 
-        let activeResponse = AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
-        productKey: "core",
-        source: "polar",)
+        let activeResponse = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            source: "polar",
+        )
 
         let store = makeTestStore(
             accountSessionClient: AccountSessionClient(read: { _ in nil }, persist: { _ in },
@@ -759,9 +777,15 @@ extension ACC001RestoreAccountSessionTests {
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
-                    productKey: "core",
-                    source: "polar",)
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 bindDevice: { _ in
                     bindCalled = true

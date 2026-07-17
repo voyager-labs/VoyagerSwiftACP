@@ -2,6 +2,10 @@ import Foundation
 import VoyagerShared
 
 enum VerifiedReleaseCandidate {
+    enum CandidateVerificationError: Error {
+        case artifactMismatch
+    }
+
     static func manifestURL(for artifactURL: URL) -> URL {
         artifactURL.deletingLastPathComponent().appendingPathComponent("release-manifest-v1.json")
     }
@@ -18,9 +22,5 @@ enum VerifiedReleaseCandidate {
             throw CandidateVerificationError.artifactMismatch
         }
         return try manifest.verifiedReleaseIdentity(publicKey: publicKey, now: now)
-    }
-
-    enum CandidateVerificationError: Error {
-        case artifactMismatch
     }
 }

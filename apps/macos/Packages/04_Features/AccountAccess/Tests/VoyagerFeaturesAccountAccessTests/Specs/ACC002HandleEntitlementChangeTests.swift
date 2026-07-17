@@ -93,7 +93,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
 
     private func receiveValidForegroundRevalidation(
         from store: TestStore<AccountAccessFeature.State, AccountAccessFeature.Action>,
-        sessionExpiry: Date,
+        sessionExpiry _: Date,
     ) async {
         await store.receive(\.revalidatePersistedSession)
         await store.receive(\._persistedSessionRevalidated)
@@ -216,9 +216,15 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
-                    productKey: "core",
-                    source: "polar",)
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
@@ -260,9 +266,15 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
-                    productKey: "core",
-                    source: "polar",)
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
@@ -292,9 +304,15 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
-                    AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
-                    productKey: "core",
-                    source: "polar",)
+                    AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
@@ -347,9 +365,15 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
-                    AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
-                    productKey: "trial",
-                    source: "polar",)
+                    AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
+                        reason: "active_entitlement",
+                        productKey: "trial",
+                        source: "polar",
+                    )
                 },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
@@ -438,9 +462,15 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     fetchCallCount += 1
-                    return AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
-                    productKey: "core",
-                    source: "polar",)
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },

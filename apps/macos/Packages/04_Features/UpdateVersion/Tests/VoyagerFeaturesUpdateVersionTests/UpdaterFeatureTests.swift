@@ -78,7 +78,8 @@ final class UpdaterFeatureTests: XCTestCase {
 
     func testCandidateBridgeVerifiesManifestAndArtifactBeforeEligibility() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let artifactURL = try XCTUnwrap(URL(string: "https://downloads.voyager.fm/releases/versions/0.8.2/Voyager-0.8.2.zip"))
+        let artifactURL =
+            try XCTUnwrap(URL(string: "https://downloads.voyager.fm/releases/versions/0.8.2/Voyager-0.8.2.zip"))
         let privateKey = Curve25519.Signing.PrivateKey()
         let unsigned = ReleaseManifest(
             artifact: .init(
@@ -111,7 +112,7 @@ final class UpdaterFeatureTests: XCTestCase {
         )
         XCTAssertThrowsError(try VerifiedReleaseCandidate.verifiedIdentity(
             manifestData: data,
-            artifactURL: URL(string: "https://downloads.voyager.fm/releases/versions/0.8.2/other.zip")!,
+            artifactURL: XCTUnwrap(URL(string: "https://downloads.voyager.fm/releases/versions/0.8.2/other.zip")),
             now: now,
             publicKey: privateKey.publicKey.rawRepresentation.base64EncodedString(),
         ))

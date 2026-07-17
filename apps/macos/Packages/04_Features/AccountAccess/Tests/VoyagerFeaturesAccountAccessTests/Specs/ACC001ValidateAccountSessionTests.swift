@@ -1412,7 +1412,13 @@ private extension ACC001ValidateAccountSessionTests {
         SessionSyncResult(
             sessionStatus: .unchanged,
             syncStatus: .complete,
-            accessStatus: AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", updatesThrough: Date(timeIntervalSince1970: 2_000_000_000)),
+            accessStatus: AccessStatusResponse(
+                hasAccess: true,
+                status: "active",
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
+            ),
             deviceBindingOutcome: .bound,
             connectedDeviceAvailability: .available,
         )

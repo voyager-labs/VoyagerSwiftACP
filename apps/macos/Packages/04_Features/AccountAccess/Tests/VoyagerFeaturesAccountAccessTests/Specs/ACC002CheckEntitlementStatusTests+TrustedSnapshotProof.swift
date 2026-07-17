@@ -30,7 +30,17 @@ extension ACC002CheckEntitlementStatusTests {
         await store.send(._sessionSyncCompleted(generation: 1, result: .success(SessionSyncResult(
             sessionStatus: .unchanged,
             syncStatus: .complete,
-            accessStatus: AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement", productKey: "core", currentPeriodEnd: periodEnd, source: "polar", updatesThrough: Date(timeIntervalSince1970: 2_000_000_000)),
+            accessStatus: AccessStatusResponse(
+                hasAccess: true,
+                status: "active",
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                reason: "active_entitlement",
+                productKey: "core",
+                currentPeriodEnd: periodEnd,
+                source: "polar",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
+            ),
             deviceBindingOutcome: .bound,
             connectedDeviceAvailability: .available,
         )))) { state in
@@ -187,7 +197,13 @@ extension ACC002CheckEntitlementStatusTests {
             result: .success(SessionSyncResult(
                 sessionStatus: .unchanged,
                 syncStatus: .complete,
-                accessStatus: AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", updatesThrough: Date(timeIntervalSince1970: 2_000_000_000)),
+                accessStatus: AccessStatusResponse(
+                    hasAccess: true,
+                    status: "active",
+                    ownershipStatus: "owned",
+                    updateStatus: "active",
+                    updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
+                ),
                 deviceBindingOutcome: .bound,
                 connectedDeviceAvailability: .available,
             )),

@@ -289,17 +289,18 @@ private final class UpdaterCoordinator: NSObject, @preconcurrency SPUUpdaterDele
     private func loadManifestData(for artifactURL: URL) throws -> Data {
         let semaphore = DispatchSemaphore(value: 0)
         let result = ManifestLoadResult()
-        URLSession.shared.dataTask(with: VerifiedReleaseCandidate.manifestURL(for: artifactURL)) { data, response, error in
-            defer { semaphore.signal() }
-            guard error == nil,
-                  let response = response as? HTTPURLResponse,
-                  response.statusCode == 200,
-                  let data
-            else {
-                return
-            }
-            result.set(.success(data))
-        }.resume()
+        URLSession.shared
+            .dataTask(with: VerifiedReleaseCandidate.manifestURL(for: artifactURL)) { data, response, error in
+                defer { semaphore.signal() }
+                guard error == nil,
+                      let response = response as? HTTPURLResponse,
+                      response.statusCode == 200,
+                      let data
+                else {
+                    return
+                }
+                result.set(.success(data))
+            }.resume()
         guard semaphore.wait(timeout: .now() + 10) == .success else {
             throw CandidateVerificationError.manifestUnavailable
         }
