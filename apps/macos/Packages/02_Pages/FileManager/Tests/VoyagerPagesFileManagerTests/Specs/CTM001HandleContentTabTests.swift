@@ -2030,6 +2030,39 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(directoryLoads.value, 0)
     }
 
+    /// CTM-001-external_tab_reservation: explicit Collection resync는 active Directory를 다시 load하지 않는다.
+    /// live window onAppear가 이미 적용한 Directory navigation을 후속 resync가 중복 실행하지 않는지 검증한다.
+    /// - 검증 내용: package-owned resync action 이후 directory loadItems 호출 0회다.
+    /// - 사전 조건: Home 없는 external window에서 Directory reservation이 active다.
+    /// - 기대 결과: Collection 전용 resync가 Directory navigation을 변경하거나 reload하지 않는다.
+    func testExternalTabReservation_collectionResyncSkipsActiveDirectory() async throws {
+        let windowID = UUID()
+        let tabID = ContentTabID(rawValue: "external-directory-resync")
+        let initialState = try XCTUnwrap(FileManagerWindowState.makeExternalInitial(
+            reservations: [.init(id: tabID, anchor: .directory(path: "/external"))],
+            windowID: windowID,
+        ))
+        let directoryLoads = LockIsolated(0)
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { _, _ in
+                directoryLoads.withValue { $0 += 1 }
+                return []
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { $0.finish() }
+            }
+        }
+        // store.exhaustivity = .off: child navigation action보다 Collection resync의 Directory no-op 경계를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.resyncActiveCollectionNavigation)
+
+        XCTAssertEqual(directoryLoads.value, 0)
+    }
+
     /// CTM-001-external_tab_reservation: invalid reservation set은 전체를 fail-closed 처리한다.
     /// duplicate ID, capacity 초과, external-incompatible anchor가 기존 window를 부분 변경하지 않는지 검증한다.
     /// - 검증 내용: 각 invalid batch 처리 후 FileManagerWindowState 전체 equality가 유지된다.

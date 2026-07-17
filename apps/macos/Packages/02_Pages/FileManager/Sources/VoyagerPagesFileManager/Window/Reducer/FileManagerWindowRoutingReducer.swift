@@ -80,6 +80,12 @@ struct FileManagerWindowRoutingReducer {
                 else { return .none }
                 return .send(.contentTabs(.setCurrent(activeReservation.id)))
 
+            case .resyncActiveCollectionNavigation:
+                guard let activeTabID = state.contentTabs.activeTabID,
+                      case .collectionFile = state.contentTabs.tabs[id: activeTabID]?.anchor
+                else { return .none }
+                return resyncContentNavigationEffect(state: state)
+
             case let .sidebar(.delegate(.selectContentTab(tabID))):
                 return .merge(
                     .send(.contentTabs(.setCurrent(tabID))),
