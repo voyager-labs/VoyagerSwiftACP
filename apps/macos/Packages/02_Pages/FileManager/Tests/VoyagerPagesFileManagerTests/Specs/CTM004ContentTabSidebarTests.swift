@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
@@ -924,7 +925,1436 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(state.sidebar.contentTabSidebarItems[0].pageType, .home)
     }
 
+    // MARK: - CTM-004-content_tab_reorder_drop_contract
+
+    /// CTM-004-content_tab_reorder_drop_contract: provider copy는 base와 local marker 두 type만 보존함
+    /// SwiftUI drag source가 만드는 provider의 serialized payload와 own-process token shape를 검증한다.
+    /// - 검증 내용: provider/pasteboard exact type set, base JSON round trip, canonical UUID marker bytes
+    /// - 사전 조건: 고정 source/scope/token과 Sidebar-local session store
+    /// - 기대 결과: copied item은 `{base, local}`만 가지며 marker에는 token 외 데이터가 없음
+    func testContentTabReorderProviderCopyPreservesExactBaseAndLocalShapes() async throws {
+        let token = try makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let payload = ContentTabReorderDragPayload(
+            sourceID: ContentTabID(rawValue: "source"),
+            dragScopeID: contentTabReorderScopeID,
+        )
+        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let provider = try ContentTabReorderItemProviderFactory.makeProvider(
+            payload: payload,
+            sessionStore: sessionStore,
+            token: token,
+        )
+
+        XCTAssertEqual(Set(provider.registeredTypeIdentifiers), [
+            UTType.contentTabReorder.identifier,
+            UTType.contentTabReorderLocal.identifier,
+        ])
+        XCTAssertEqual(provider.registeredTypeIdentifiers.count, 2)
+        XCTAssertFalse(provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier))
+
+        let pasteboard = try await copyContentTabReorderProviderToNamedPasteboard(provider)
+        defer { pasteboard.clearContents() }
+        let item = try XCTUnwrap(pasteboard.pasteboardItems?.first)
+        XCTAssertEqual(Set(item.types), [.contentTabReorder, .contentTabReorderLocal])
+        XCTAssertEqual(item.data(forType: .contentTabReorderLocal), token.data)
+        let baseData = try XCTUnwrap(item.data(forType: .contentTabReorder))
+        XCTAssertEqual(try JSONDecoder().decode(ContentTabReorderDragPayload.self, from: baseData), payload)
+        XCTAssertEqual(ContentTabReorderLocalToken(data: token.data), token)
+        XCTAssertNil(ContentTabReorderLocalToken(data: Data(token.rawValue.uuidString.lowercased().utf8)))
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: local store는 최신 drag 한 건만 유지하고 exact token을 한 번만 소비함
+    /// 새 drag replacement, foreign token, TTL, replay, explicit clear를 monotonic clock으로 검증한다.
+    /// - 검증 내용: capacity one, issue/expiry, exact consume, replay rejection, expired rejection, clear
+    /// - 사전 조건: 수동 monotonic nanosecond clock과 서로 다른 payload/token 세트
+    /// - 기대 결과: 최신 nonexpired exact token만 payload를 반환하며 성공 consume 뒤 entry가 제거됨
+    func testContentTabReorderLocalSessionStoreEnforcesCapacityTTLConsumeReplayAndClear() throws {
+        let now = LockIsolated<UInt64>(100)
+        let store = ContentTabReorderLocalSessionStore(
+            timeToLiveNanoseconds: 10,
+            nowNanoseconds: { now.value },
+        )
+        let firstToken = try makeContentTabReorderToken("11111111-1111-1111-1111-111111111111")
+        let secondToken = try makeContentTabReorderToken("22222222-2222-2222-2222-222222222222")
+        let foreignToken = try makeContentTabReorderToken("33333333-3333-3333-3333-333333333333")
+        let firstPayload = ContentTabReorderDragPayload(
+            sourceID: .init(rawValue: "first"),
+            dragScopeID: contentTabReorderScopeID,
+        )
+        let secondPayload = ContentTabReorderDragPayload(
+            sourceID: .init(rawValue: "second"),
+            dragScopeID: contentTabReorderScopeID,
+        )
+
+        store.begin(payload: firstPayload, token: firstToken)
+        XCTAssertEqual(store.entry?.issuedAtNanoseconds, 100)
+        XCTAssertEqual(store.entry?.expiresAtNanoseconds, 110)
+
+        now.setValue(101)
+        store.begin(payload: secondPayload, token: secondToken)
+        XCTAssertEqual(store.entry?.token, secondToken)
+        XCTAssertEqual(store.entry?.payload, secondPayload)
+        XCTAssertNil(store.consume(token: foreignToken))
+        XCTAssertEqual(store.entry?.token, secondToken)
+        XCTAssertEqual(store.consume(token: secondToken), secondPayload)
+        XCTAssertNil(store.entry)
+        XCTAssertNil(store.consume(token: secondToken))
+
+        now.setValue(200)
+        store.begin(payload: firstPayload, token: firstToken)
+        now.setValue(210)
+        XCTAssertNil(store.consume(token: firstToken))
+        XCTAssertEqual(store.entry?.token, firstToken)
+        store.clear()
+        XCTAssertNil(store.entry)
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: AppKit preflight는 exact local runtime과 base-only shape만 허용함
+    /// entered/updated hot path가 payload나 token을 읽지 않고 승인 상태와 owned boundary만 사용하는지 검증한다.
+    /// - 검증 내용: 두 exact shape의 move proposal, data query 0회, update 중 Binding write 0회, pinned target 거부
+    /// - 사전 조건: exact local runtime/base-only item과 유효한 local store entry
+    /// - 기대 결과: repeated update는 setter/data/store를 건드리지 않고 exit 뒤에도 session entry가 유지됨
+    func testContentTabReorderDestinationPreflightAcceptsExactShapesWithoutConsumptionOrRepeatedQueries() throws {
+        let sourceID = ContentTabID(rawValue: "source")
+        let targetID = ContentTabID(rawValue: "target")
+        let token = try makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        sessionStore.begin(
+            payload: .init(sourceID: sourceID, dragScopeID: contentTabReorderScopeID),
+            token: token,
+        )
+        let exactShapes: [Set<NSPasteboard.PasteboardType>] = [
+            Set(contentTabReorderRuntimeAuxiliaryTypes + [.contentTabReorder, .contentTabReorderLocal]),
+            [.contentTabReorder],
+        ]
+
+        for types in exactShapes {
+            assertContentTabReorderPreflightAcceptsWithoutQueries(
+                types: types,
+                targetID: targetID,
+                sessionStore: sessionStore,
+                token: token,
+            )
+        }
+
+        let pinnedBoundary = ContentTabReorderActiveBoundaryBox(2)
+        let pinnedView = makeContentTabReorderDestinationView(
+            targetID: targetID,
+            activeBoundary: pinnedBoundary,
+            sessionStore: sessionStore,
+            boundaryID: 2,
+            pinState: { $0 == targetID ? true : false },
+        )
+        let baseOnlyItem = ContentTabReorderPasteboardItem(
+            types: [.contentTabReorder],
+            dataForType: { _ in
+                XCTFail("preflight는 payload data를 읽지 않아야 함")
+                return nil
+            },
+        )
+
+        XCTAssertEqual(pinnedView.draggingEntered(pasteboardItems: [baseOnlyItem]), [])
+        XCTAssertNil(pinnedBoundary.value)
+        XCTAssertEqual(sessionStore.entry?.token, token)
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: drag 종료와 dismantle은 accepted state와 owned boundary만 정리함
+    /// 취소·외부 종료·SwiftUI teardown이 더 최신 destination boundary나 local session token을 제거하지 않는지 검증한다.
+    /// - 검증 내용: draggingEnded/dismantle의 accepted-state reset, owned cleanup, foreign boundary 보존, store 보존
+    /// - 사전 조건: exact base-only preflight와 destination-owned 또는 newer foreign active boundary
+    /// - 기대 결과: teardown 뒤 update는 거부되고 own boundary만 nil이 되며 token은 계속 소비 가능 상태로 남음
+    func testContentTabReorderDestinationEndAndDismantleClearOnlyOwnedState() throws {
+        let targetID = ContentTabID(rawValue: "target")
+        let token = try makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        sessionStore.begin(
+            payload: .init(
+                sourceID: ContentTabID(rawValue: "source"),
+                dragScopeID: contentTabReorderScopeID,
+            ),
+            token: token,
+        )
+        var dataQueryCount = 0
+        let item = ContentTabReorderPasteboardItem(
+            types: [.contentTabReorder],
+            dataForType: { _ in
+                dataQueryCount += 1
+                return nil
+            },
+        )
+        let activeBoundary = ContentTabReorderActiveBoundaryBox()
+        let view = makeContentTabReorderDestinationView(
+            targetID: targetID,
+            activeBoundary: activeBoundary,
+            sessionStore: sessionStore,
+            boundaryID: 2,
+        )
+
+        XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), .move)
+        activeBoundary.setValue(3)
+        view.draggingEnded()
+        XCTAssertEqual(activeBoundary.value, 3)
+        XCTAssertEqual(view.draggingUpdated(), [])
+        XCTAssertEqual(dataQueryCount, 0)
+        XCTAssertEqual(sessionStore.entry?.token, token)
+
+        activeBoundary.setValue(nil)
+        XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), .move)
+        view.draggingEnded()
+        XCTAssertNil(activeBoundary.value)
+        XCTAssertEqual(sessionStore.entry?.token, token)
+
+        XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), .move)
+        activeBoundary.setValue(3)
+        ContentTabReorderDropDestination.dismantleNSView(view, coordinator: ())
+        XCTAssertEqual(activeBoundary.value, 3)
+        XCTAssertEqual(view.draggingUpdated(), [])
+        XCTAssertEqual(dataQueryCount, 0)
+        XCTAssertEqual(sessionStore.entry?.token, token)
+
+        activeBoundary.setValue(nil)
+        XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), .move)
+        ContentTabReorderDropDestination.dismantleNSView(view, coordinator: ())
+        XCTAssertNil(activeBoundary.value)
+        XCTAssertEqual(sessionStore.entry?.token, token)
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: copied local marker는 perform 반환 전에 reorder를 commit함
+    /// AppKit pasteboard의 synchronous token read와 capacity-one consume가 callback보다 먼저 끝나는지 검증한다.
+    /// - 검증 내용: perform true, reorder/validation callback 각 1회, store consume, owned cleanup
+    /// - 사전 조건: factory provider를 isolated named pasteboard로 복사한 same-scope local drag
+    /// - 기대 결과: performDrop 반환 직후 fixed target/placement invocation과 validation true가 이미 기록됨
+    func testContentTabReorderLocalMarkerCommitsSynchronouslyBeforePerformReturns() async throws {
+        let sourceID = ContentTabID(rawValue: "source")
+        let targetID = ContentTabID(rawValue: "target")
+        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let provider = try makeContentTabReorderProvider(
+            sourceID: sourceID.rawValue,
+            sessionStore: sessionStore,
+            token: makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"),
+        )
+        let pasteboard = try await copyContentTabReorderProviderToRuntimePasteboard(provider)
+        defer { pasteboard.clearContents() }
+        let activeBoundary = ContentTabReorderActiveBoundaryBox(2)
+        var invocations: [ContentTabReorderInvocation] = []
+        var validationResults: [Bool] = []
+        let view = makeContentTabReorderDestinationView(
+            targetID: targetID,
+            activeBoundary: activeBoundary,
+            sessionStore: sessionStore,
+            boundaryID: 2,
+            placement: .after,
+            onReorder: { source, target, placement in
+                invocations.append(.init(sourceID: source, targetID: target, placement: placement))
+            },
+            onValidationCompleted: { validationResults.append($0) },
+        )
+
+        XCTAssertEqual(view.draggingEntered(pasteboard: pasteboard), .move)
+        XCTAssertTrue(view.performDrop(pasteboard: pasteboard))
+        XCTAssertEqual(view.draggingUpdated(), [])
+        XCTAssertEqual(invocations, [
+            .init(sourceID: sourceID, targetID: targetID, placement: .after),
+        ])
+        XCTAssertEqual(validationResults, [true])
+        XCTAssertNil(sessionStore.entry)
+        XCTAssertNil(activeBoundary.value)
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: valid local marker는 관측된 runtime transport shape만 허용함
+    /// exact 10-type SwiftUI transport는 consume하고 direct competing semantic type은 consume 전에 거부한다.
+    /// - 검증 내용: exact runtime shape 성공, fileURL/URL/string/public.filename/NSFilenamesPboardType 거부
+    /// - 사전 조건: same-scope base/local payload와 관측된 8개 promise/dyn representation
+    /// - 기대 결과: runtime shape는 정확히 한 번 reorder하고 semantic extra는 token을 보존한 채 거부됨
+    func testContentTabReorderLocalMarkerAllowsTransportButRejectsSemanticExtrasBeforeConsume() throws {
+        let sourceID = ContentTabID(rawValue: "source")
+        let targetID = ContentTabID(rawValue: "target")
+        let token = try makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let payload = ContentTabReorderDragPayload(sourceID: sourceID, dragScopeID: contentTabReorderScopeID)
+        let payloadData = try JSONEncoder().encode(payload)
+        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        sessionStore.begin(payload: payload, token: token)
+        var invocations: [ContentTabReorderInvocation] = []
+        var validationResults: [Bool] = []
+        let view = makeContentTabReorderDestinationView(
+            targetID: targetID,
+            activeBoundary: ContentTabReorderActiveBoundaryBox(2),
+            sessionStore: sessionStore,
+            boundaryID: 2,
+            onReorder: { source, target, placement in
+                invocations.append(.init(sourceID: source, targetID: target, placement: placement))
+            },
+            onValidationCompleted: { validationResults.append($0) },
+        )
+        let runtimePasteboard = makeContentTabReorderRuntimePasteboard(
+            baseData: payloadData,
+            markerData: token.data,
+        )
+
+        XCTAssertEqual(try Set(XCTUnwrap(runtimePasteboard.pasteboardItems?.first).types),
+                       Set(contentTabReorderRuntimeAuxiliaryTypes + [.contentTabReorder, .contentTabReorderLocal]))
+        XCTAssertTrue(view.performDrop(pasteboard: runtimePasteboard))
+        XCTAssertEqual(invocations, [
+            .init(sourceID: sourceID, targetID: targetID, placement: .after),
+        ])
+        XCTAssertEqual(validationResults, [true])
+        XCTAssertNil(sessionStore.entry)
+        runtimePasteboard.clearContents()
+
+        assertContentTabReorderDirectSemanticTypesRejectBeforeConsume(
+            payload: payload,
+            payloadData: payloadData,
+            token: token,
+            targetID: targetID,
+        )
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: complete pasteboard shape가 정확하지 않으면 동기 거부함
+    /// marker-only, fileURL, mixed, unrelated, additional type, multiple item session을 격리한다.
+    /// - 검증 내용: 여섯 invalid shape의 perform false, reorder 0회, validation false 1회, owned cleanup
+    /// - 사전 조건: isolated named pasteboard별 invalid item/type cardinality
+    /// - 기대 결과: 어느 shape도 semantic callback에 도달하지 않고 Entry type이 reorder로 소비되지 않음
+    func testContentTabReorderDestinationRejectsInvalidCompletePasteboardShapes() {
+        let invalidItems: [[[NSPasteboard.PasteboardType: Data]]] = [
+            [[.contentTabReorderLocal: Data()]],
+            [[.fileURL: Data()]],
+            [[.contentTabReorder: Data(), .fileURL: Data()]],
+            [[.contentTabReorder: Data(), .string: Data()]],
+            [[.string: Data()]],
+            [[.contentTabReorder: Data()], [.fileURL: Data()]],
+        ]
+
+        for items in invalidItems {
+            let pasteboard = makeContentTabReorderPasteboard(items: items)
+            let activeBoundary = ContentTabReorderActiveBoundaryBox(2)
+            var reorderCount = 0
+            var validationResults: [Bool] = []
+            let view = makeContentTabReorderDestinationView(
+                targetID: .init(rawValue: "target"),
+                activeBoundary: activeBoundary,
+                sessionStore: ContentTabReorderLocalSessionStore(),
+                boundaryID: 2,
+                onReorder: { _, _, _ in reorderCount += 1 },
+                onValidationCompleted: { validationResults.append($0) },
+            )
+
+            XCTAssertFalse(view.performDrop(pasteboard: pasteboard))
+            XCTAssertEqual(reorderCount, 0)
+            XCTAssertEqual(validationResults, [false])
+            XCTAssertNil(activeBoundary.value)
+            pasteboard.clearContents()
+        }
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: marker가 있으면 malformed/stale/foreign/missing token에 fallback하지 않음
+    /// valid base JSON이 함께 있어도 local marker branch 실패를 complete-session rejection으로 고정한다.
+    /// - 검증 내용: 네 token/store failure의 callback 0회와 validation false exactly-once
+    /// - 사전 조건: exact 10-type runtime shape, 성공 가능한 base payload, 각기 실패하는 marker/store 상태
+    /// - 기대 결과: base JSON은 읽히지 않고 모든 perform이 false로 종료됨
+    func testContentTabReorderLocalMarkerFailuresRejectWithoutBaseFallback() throws {
+        let sourceID = ContentTabID(rawValue: "source")
+        let targetID = ContentTabID(rawValue: "target")
+        let payload = ContentTabReorderDragPayload(sourceID: sourceID, dragScopeID: contentTabReorderScopeID)
+        let baseData = try JSONEncoder().encode(payload)
+        let storedToken = try makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let foreignToken = try makeContentTabReorderToken("BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")
+
+        let now = LockIsolated<UInt64>(100)
+        let staleStore = ContentTabReorderLocalSessionStore(
+            timeToLiveNanoseconds: 10,
+            nowNanoseconds: { now.value },
+        )
+        staleStore.begin(payload: payload, token: storedToken)
+        now.setValue(110)
+
+        let liveStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        liveStore.begin(payload: payload, token: storedToken)
+        let missingStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let cases: [(ContentTabReorderLocalSessionStore, Data)] = [
+            (liveStore, Data(storedToken.rawValue.uuidString.lowercased().utf8)),
+            (liveStore, foreignToken.data),
+            (staleStore, storedToken.data),
+            (missingStore, storedToken.data),
+        ]
+
+        for (store, markerData) in cases {
+            let pasteboard = makeContentTabReorderRuntimePasteboard(
+                baseData: baseData,
+                markerData: markerData,
+            )
+            var reorderCount = 0
+            var validationResults: [Bool] = []
+            let view = makeContentTabReorderDestinationView(
+                targetID: targetID,
+                activeBoundary: ContentTabReorderActiveBoundaryBox(2),
+                sessionStore: store,
+                boundaryID: 2,
+                onReorder: { _, _, _ in reorderCount += 1 },
+                onValidationCompleted: { validationResults.append($0) },
+            )
+
+            XCTAssertFalse(view.performDrop(pasteboard: pasteboard))
+            XCTAssertEqual(reorderCount, 0)
+            XCTAssertEqual(validationResults, [false])
+            pasteboard.clearContents()
+        }
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: consumed local marker는 같은 pasteboard replay를 거부함
+    /// 첫 성공이 store entry를 제거해 두 번째 perform에서 valid base JSON fallback이 금지되는지 검증한다.
+    /// - 검증 내용: 첫 perform success, 두 번째 false, reorder 총 1회, validation `[true, false]`
+    /// - 사전 조건: same-scope exact 10-type runtime shape와 한 건의 matching store entry
+    /// - 기대 결과: token replay는 callback을 추가하지 않고 owned boundary만 정리함
+    func testContentTabReorderConsumedLocalMarkerCannotReplay() throws {
+        let sourceID = ContentTabID(rawValue: "source")
+        let targetID = ContentTabID(rawValue: "target")
+        let token = try makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let payload = ContentTabReorderDragPayload(sourceID: sourceID, dragScopeID: contentTabReorderScopeID)
+        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        sessionStore.begin(payload: payload, token: token)
+        let pasteboard = try makeContentTabReorderRuntimePasteboard(
+            baseData: JSONEncoder().encode(payload),
+            markerData: token.data,
+        )
+        defer { pasteboard.clearContents() }
+        let activeBoundary = ContentTabReorderActiveBoundaryBox(2)
+        var reorderCount = 0
+        var validationResults: [Bool] = []
+        let view = makeContentTabReorderDestinationView(
+            targetID: targetID,
+            activeBoundary: activeBoundary,
+            sessionStore: sessionStore,
+            boundaryID: 2,
+            onReorder: { _, _, _ in reorderCount += 1 },
+            onValidationCompleted: { validationResults.append($0) },
+        )
+
+        XCTAssertTrue(view.performDrop(pasteboard: pasteboard))
+        activeBoundary.setValue(2)
+        XCTAssertFalse(view.performDrop(pasteboard: pasteboard))
+        XCTAssertEqual(reorderCount, 1)
+        XCTAssertEqual(validationResults, [true, false])
+        XCTAssertNil(activeBoundary.value)
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: local payload semantic gate는 scope/identity/pin 상태를 모두 검증함
+    /// matching token consume 뒤에도 foreign scope, same ID, pinned/missing source와 target을 commit하지 않는다.
+    /// - 검증 내용: 여섯 semantic invalid case의 reorder 0회, validation false 1회, store consume와 cleanup
+    /// - 사전 조건: exact local shape와 각 case에 맞춘 Sidebar item pin-state snapshot
+    /// - 기대 결과: 모든 case가 perform false이고 source/target/placement callback을 만들지 않음
+    func testContentTabReorderLocalPayloadRejectsScopeSameIDAndPinnedEndpoints() throws {
+        let sourceID = ContentTabID(rawValue: "source")
+        let targetID = ContentTabID(rawValue: "target")
+        try assertContentTabReorderSemanticRejection(
+            payload: .init(sourceID: sourceID, dragScopeID: foreignContentTabReorderScopeID),
+            targetID: targetID,
+            pinState: { _ in false },
+        )
+        try assertContentTabReorderSemanticRejection(
+            payload: .init(sourceID: targetID, dragScopeID: contentTabReorderScopeID),
+            targetID: targetID,
+            pinState: { _ in false },
+        )
+        try assertContentTabReorderSemanticRejection(
+            payload: .init(sourceID: sourceID, dragScopeID: contentTabReorderScopeID),
+            targetID: targetID,
+            pinState: { $0 == sourceID },
+        )
+        try assertContentTabReorderSemanticRejection(
+            payload: .init(sourceID: sourceID, dragScopeID: contentTabReorderScopeID),
+            targetID: targetID,
+            pinState: { $0 == targetID },
+        )
+        try assertContentTabReorderSemanticRejection(
+            payload: .init(sourceID: sourceID, dragScopeID: contentTabReorderScopeID),
+            targetID: targetID,
+            pinState: { $0 == targetID ? false : nil },
+        )
+        try assertContentTabReorderSemanticRejection(
+            payload: .init(sourceID: sourceID, dragScopeID: contentTabReorderScopeID),
+            targetID: targetID,
+            pinState: { $0 == sourceID ? false : nil },
+        )
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: marker-free base shape만 synchronous JSON fallback을 사용함
+    /// compatibility payload 성공/실패가 perform 반환 전에 exactly-once 결과를 내는지 검증한다.
+    /// - 검증 내용: valid base success, malformed base rejection, callback counts와 owned cleanup
+    /// - 사전 조건: local marker 없는 exact `{base}` pasteboard 두 개
+    /// - 기대 결과: valid는 reorder/true 각 1회, malformed는 reorder 0회/false 1회
+    func testContentTabReorderBaseOnlyFallbackSucceedsAndFailsSynchronously() throws {
+        let sourceID = ContentTabID(rawValue: "source")
+        let targetID = ContentTabID(rawValue: "target")
+        let payload = ContentTabReorderDragPayload(sourceID: sourceID, dragScopeID: contentTabReorderScopeID)
+        let cases: [(Data, Bool)] = try [
+            (JSONEncoder().encode(payload), true),
+            (Data("malformed".utf8), false),
+        ]
+
+        for (data, expectedSuccess) in cases {
+            let pasteboard = makeContentTabReorderPasteboard(items: [[.contentTabReorder: data]])
+            let activeBoundary = ContentTabReorderActiveBoundaryBox(4)
+            var invocations: [ContentTabReorderInvocation] = []
+            var validationResults: [Bool] = []
+            let view = makeContentTabReorderDestinationView(
+                targetID: targetID,
+                activeBoundary: activeBoundary,
+                sessionStore: ContentTabReorderLocalSessionStore(),
+                boundaryID: 4,
+                placement: .before,
+                onReorder: { source, target, placement in
+                    invocations.append(.init(sourceID: source, targetID: target, placement: placement))
+                },
+                onValidationCompleted: { validationResults.append($0) },
+            )
+
+            XCTAssertEqual(view.performDrop(pasteboard: pasteboard), expectedSuccess)
+            XCTAssertEqual(validationResults, [expectedSuccess])
+            XCTAssertEqual(invocations.count, expectedSuccess ? 1 : 0)
+            if expectedSuccess {
+                XCTAssertEqual(invocations.first, .init(
+                    sourceID: sourceID,
+                    targetID: targetID,
+                    placement: .before,
+                ))
+            }
+            XCTAssertNil(activeBoundary.value)
+            pasteboard.clearContents()
+        }
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: marker-free fallback은 promise/dyn extra를 모두 거부함
+    /// base JSON이 유효해도 runtime auxiliary type이 하나라도 붙으면 compatibility fallback을 시작하지 않는다.
+    /// - 검증 내용: 8개 promise/dyn type 각각의 perform false, reorder 0회, validation false exactly-once
+    /// - 사전 조건: marker 없는 base payload에 runtime auxiliary type을 한 개씩 추가한 isolated pasteboard
+    /// - 기대 결과: 모든 extra shape가 callback 없이 거부되고 base-only exact shape 계약이 유지됨
+    func testContentTabReorderMarkerFreeFallbackRejectsEveryRuntimeAuxiliaryExtra() throws {
+        let sourceID = ContentTabID(rawValue: "source")
+        let targetID = ContentTabID(rawValue: "target")
+        let payload = ContentTabReorderDragPayload(sourceID: sourceID, dragScopeID: contentTabReorderScopeID)
+        let payloadData = try JSONEncoder().encode(payload)
+        var reorderCount = 0
+        var validationResults: [Bool] = []
+        let view = makeContentTabReorderDestinationView(
+            targetID: targetID,
+            activeBoundary: ContentTabReorderActiveBoundaryBox(4),
+            sessionStore: ContentTabReorderLocalSessionStore(),
+            boundaryID: 4,
+            onReorder: { _, _, _ in reorderCount += 1 },
+            onValidationCompleted: { validationResults.append($0) },
+        )
+
+        for auxiliaryType in contentTabReorderRuntimeAuxiliaryTypes {
+            let pasteboard = makeContentTabReorderPasteboard(items: [
+                [
+                    .contentTabReorder: payloadData,
+                    auxiliaryType: Data(),
+                ],
+            ])
+            let validationCount = validationResults.count
+
+            XCTAssertFalse(view.performDrop(pasteboard: pasteboard))
+            XCTAssertEqual(reorderCount, 0)
+            XCTAssertEqual(validationResults.count, validationCount + 1)
+            XCTAssertFalse(validationResults.last ?? true)
+            pasteboard.clearContents()
+        }
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: unpinned 목록은 각 insertion boundary를 semantic target과 연결함
+    /// presentation boundary identity가 reducer index로 누출되지 않고 고정 target/placement를 소유하는지 검증한다.
+    /// - 검증 내용: before-first, after-first, after-middle, after-last 매핑과 빈 목록
+    /// - 사전 조건: Home, First, Middle, Last 순서의 unpinned ContentTab ID 목록
+    /// - 기대 결과: boundary 0...4가 첫 ID before 및 각 ID after로 정확히 매핑되고 빈 목록은 boundary를 만들지 않음
+    func testContentTabReorderBoundariesMapEveryStableInsertionSlot() {
+        let itemIDs = ["home", "first", "middle", "last"].map(ContentTabID.init(rawValue:))
+
+        let boundaries = ContentTabReorderDropBoundary.make(for: itemIDs)
+
+        XCTAssertEqual(boundaries.count, 5)
+        XCTAssertEqual(boundaries[0], .init(id: 0, targetID: itemIDs[0], placement: .before))
+        XCTAssertEqual(boundaries[1], .init(id: 1, targetID: itemIDs[0], placement: .after))
+        XCTAssertEqual(boundaries[3], .init(id: 3, targetID: itemIDs[2], placement: .after))
+        XCTAssertEqual(boundaries[4], .init(id: 4, targetID: itemIDs[3], placement: .after))
+        XCTAssertTrue(ContentTabReorderDropBoundary.make(for: []).isEmpty)
+    }
+
+    /// CTM-004-content_tab_reorder_drop_contract: pure reorder provider는 reorder destination만 정확히 한 번 실행함
+    /// base+local provider가 Entry request로 소비되지 않고 fixed boundary semantic 값으로만 전달되는지 검증한다.
+    /// - 검증 내용: Entry callback 0회, reorder callback 1회, source/target/placement 보존
+    /// - 사전 조건: same-scope local provider와 unpinned after boundary
+    /// - 기대 결과: Entry perform은 거부되고 AppKit destination perform만 성공함
+    func testCrossTypePureReorderRunsOnlyReorderPathExactlyOnce() async throws {
+        let sourceID = ContentTabID(rawValue: "source-a")
+        let targetID = ContentTabID(rawValue: "target-c")
+        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let provider = try makeContentTabReorderProvider(
+            sourceID: sourceID.rawValue,
+            sessionStore: sessionStore,
+            token: makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"),
+        )
+        let pasteboard = try await copyContentTabReorderProviderToRuntimePasteboard(provider)
+        defer { pasteboard.clearContents() }
+        var actions: [CrossTypeDropAction] = []
+        let entryDelegate = FileManagerSidebarEntryDropDelegate(
+            dropTarget: .constant(nil),
+            target: .contentTab(targetID),
+            onDrop: { _ in actions.append(.entry) },
+        )
+        var invocations: [ContentTabReorderInvocation] = []
+        let reorderView = makeContentTabReorderDestinationView(
+            targetID: targetID,
+            activeBoundary: ContentTabReorderActiveBoundaryBox(),
+            sessionStore: sessionStore,
+            boundaryID: 3,
+            placement: .after,
+            onReorder: { source, target, placement in
+                actions.append(.reorder)
+                invocations.append(.init(sourceID: source, targetID: target, placement: placement))
+            },
+        )
+
+        XCTAssertFalse(entryDelegate.performDrop(providers: [provider], isOptionDrag: false))
+        XCTAssertTrue(reorderView.performDrop(pasteboard: pasteboard))
+        XCTAssertEqual(actions, [.reorder])
+        XCTAssertEqual(invocations, [
+            .init(sourceID: sourceID, targetID: targetID, placement: .after),
+        ])
+    }
+
+    private var contentTabReorderScopeID: ContentTabReorderDragScopeID {
+        ContentTabReorderDragScopeID(
+            rawValue: UUID(uuid: (
+                0x11, 0x11, 0x11, 0x11,
+                0x11, 0x11,
+                0x11, 0x11,
+                0x11, 0x11,
+                0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
+            )),
+        )
+    }
+
+    private var foreignContentTabReorderScopeID: ContentTabReorderDragScopeID {
+        ContentTabReorderDragScopeID(
+            rawValue: UUID(uuid: (
+                0x22, 0x22, 0x22, 0x22,
+                0x22, 0x22,
+                0x22, 0x22,
+                0x22, 0x22,
+                0x22, 0x22, 0x22, 0x22, 0x22, 0x22,
+            )),
+        )
+    }
+
+    private func makeContentTabReorderToken(_ value: String) throws -> ContentTabReorderLocalToken {
+        try ContentTabReorderLocalToken(rawValue: XCTUnwrap(UUID(uuidString: value)))
+    }
+
+    private func makeContentTabReorderProvider(
+        sourceID: String = "source",
+        scopeID: ContentTabReorderDragScopeID? = nil,
+        sessionStore: ContentTabReorderLocalSessionStore? = nil,
+        token: ContentTabReorderLocalToken? = nil,
+    ) throws -> NSItemProvider {
+        let resolvedStore = sessionStore ?? ContentTabReorderLocalSessionStore()
+        let resolvedToken = try token ?? makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        return try ContentTabReorderItemProviderFactory.makeProvider(
+            payload: .init(
+                sourceID: ContentTabID(rawValue: sourceID),
+                dragScopeID: scopeID ?? contentTabReorderScopeID,
+            ),
+            sessionStore: resolvedStore,
+            token: resolvedToken,
+        )
+    }
+
+    private func makeMixedContentTabReorderProvider() throws -> NSItemProvider {
+        let provider = try makeContentTabReorderProvider()
+        provider.registerDataRepresentation(
+            forTypeIdentifier: UTType.fileURL.identifier,
+            visibility: .all,
+        ) { completion in
+            completion(Data("file:///tmp/file".utf8), nil)
+            return Progress(totalUnitCount: 1)
+        }
+        return provider
+    }
+
+    private func makeFileURLProvider(path: String) -> NSItemProvider {
+        NSItemProvider(
+            item: URL(fileURLWithPath: path) as NSURL,
+            typeIdentifier: UTType.fileURL.identifier,
+        )
+    }
+
+    private func makeContentTabReorderDestinationView(
+        targetID: ContentTabID,
+        activeBoundary: ContentTabReorderActiveBoundaryBox,
+        sessionStore: ContentTabReorderLocalSessionStore,
+        boundaryID: Int = 1,
+        placement: ContentTabReorderPlacement = .after,
+        pinState: @escaping @MainActor (ContentTabID) -> Bool? = { _ in false },
+        onReorder: @escaping @MainActor (
+            ContentTabID,
+            ContentTabID,
+            ContentTabReorderPlacement,
+        ) -> Void = { _, _, _ in },
+        onValidationCompleted: @escaping @MainActor (Bool) -> Void = { _ in },
+    ) -> ContentTabReorderDropDestinationView {
+        ContentTabReorderDropDestinationView(configuration: .init(
+            activeBoundaryID: activeBoundary.binding,
+            boundary: .init(id: boundaryID, targetID: targetID, placement: placement),
+            dragScopeID: contentTabReorderScopeID,
+            sessionStore: sessionStore,
+            pinState: pinState,
+            onReorder: onReorder,
+            onDropValidationCompleted: onValidationCompleted,
+        ))
+    }
+
+    private func assertContentTabReorderPreflightAcceptsWithoutQueries(
+        types: Set<NSPasteboard.PasteboardType>,
+        targetID: ContentTabID,
+        sessionStore: ContentTabReorderLocalSessionStore,
+        token: ContentTabReorderLocalToken,
+    ) {
+        var dataQueryCount = 0
+        let item = ContentTabReorderPasteboardItem(
+            types: types,
+            dataForType: { _ in
+                dataQueryCount += 1
+                return nil
+            },
+        )
+        let activeBoundary = ContentTabReorderActiveBoundaryBox()
+        let view = makeContentTabReorderDestinationView(
+            targetID: targetID,
+            activeBoundary: activeBoundary,
+            sessionStore: sessionStore,
+            boundaryID: 2,
+        )
+
+        XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), .move)
+        XCTAssertEqual(activeBoundary.value, 2)
+        XCTAssertEqual(activeBoundary.setterInvocationCount, 1)
+        XCTAssertEqual(dataQueryCount, 0)
+        XCTAssertEqual(sessionStore.entry?.token, token)
+
+        XCTAssertEqual(view.draggingUpdated(), .move)
+        XCTAssertEqual(view.draggingUpdated(), .move)
+        XCTAssertEqual(activeBoundary.setterInvocationCount, 1)
+        XCTAssertEqual(dataQueryCount, 0)
+        XCTAssertEqual(sessionStore.entry?.token, token)
+
+        activeBoundary.setValue(3)
+        view.draggingExited()
+        XCTAssertEqual(activeBoundary.value, 3)
+        XCTAssertEqual(view.draggingUpdated(), [])
+        XCTAssertEqual(sessionStore.entry?.token, token)
+
+        activeBoundary.setValue(nil)
+        XCTAssertEqual(view.draggingEntered(pasteboardItems: [item]), .move)
+        view.draggingExited()
+        XCTAssertNil(activeBoundary.value)
+        XCTAssertEqual(sessionStore.entry?.token, token)
+    }
+
+    private func assertContentTabReorderDirectSemanticTypesRejectBeforeConsume(
+        payload: ContentTabReorderDragPayload,
+        payloadData: Data,
+        token: ContentTabReorderLocalToken,
+        targetID: ContentTabID,
+    ) {
+        let semanticTypes: [NSPasteboard.PasteboardType] = [
+            .fileURL,
+            .URL,
+            .string,
+            .init("public.filename"),
+            .init("NSFilenamesPboardType"),
+        ]
+        for semanticType in semanticTypes {
+            let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+            sessionStore.begin(payload: payload, token: token)
+            var reorderCount = 0
+            var validationResults: [Bool] = []
+            let view = makeContentTabReorderDestinationView(
+                targetID: targetID,
+                activeBoundary: ContentTabReorderActiveBoundaryBox(2),
+                sessionStore: sessionStore,
+                boundaryID: 2,
+                onReorder: { _, _, _ in reorderCount += 1 },
+                onValidationCompleted: { validationResults.append($0) },
+            )
+            let semanticItem = makeContentTabReorderRuntimePasteboardItem(
+                baseData: payloadData,
+                markerData: token.data,
+                additionalTypes: [semanticType],
+            )
+
+            XCTAssertTrue(semanticItem.types.contains(semanticType), semanticType.rawValue)
+            XCTAssertFalse(view.performDrop(pasteboardItems: [semanticItem]), semanticType.rawValue)
+            XCTAssertEqual(reorderCount, 0, semanticType.rawValue)
+            XCTAssertEqual(validationResults, [false], semanticType.rawValue)
+            XCTAssertEqual(sessionStore.entry?.token, token, semanticType.rawValue)
+        }
+    }
+
+    private var contentTabReorderRuntimeAuxiliaryTypes: [NSPasteboard.PasteboardType] {
+        [
+            .init("com.apple.NSFilePromiseItemMetaData"),
+            .init("com.apple.pasteboard.NSFilePromiseID"),
+            .init("com.apple.pasteboard.promised-file-content-type"),
+            .init("com.apple.pasteboard.promised-file-name"),
+            .init("com.apple.pasteboard.promised-file-url"),
+            .init("com.apple.pasteboard.promised-suggested-file-name"),
+            .init("dyn.ah62d4rv4gu8y6y4usm1044pxqzb085xyqz1hk64uqm10c6xenv61a3k"),
+            .init("dyn.ah62d4rv4gu8yc6durvwwa3xmrvw1gkdusm1044pxqyuha2pxsvw0e55bsmwca7d3sbwu"),
+        ]
+    }
+
+    private func contentTabReorderRuntimeRepresentations(
+        baseData: Data,
+        markerData: Data,
+        additionalTypes: [NSPasteboard.PasteboardType] = [],
+    ) -> [NSPasteboard.PasteboardType: Data] {
+        var representations = Dictionary(uniqueKeysWithValues: contentTabReorderRuntimeAuxiliaryTypes.map {
+            ($0, Data())
+        })
+        representations[.contentTabReorder] = baseData
+        representations[.contentTabReorderLocal] = markerData
+        for type in additionalTypes {
+            representations[type] = Data()
+        }
+        return representations
+    }
+
+    private func makeContentTabReorderRuntimePasteboardItem(
+        baseData: Data,
+        markerData: Data,
+        additionalTypes: [NSPasteboard.PasteboardType] = [],
+    ) -> ContentTabReorderPasteboardItem {
+        let representations = contentTabReorderRuntimeRepresentations(
+            baseData: baseData,
+            markerData: markerData,
+            additionalTypes: additionalTypes,
+        )
+        return ContentTabReorderPasteboardItem(
+            types: Set(representations.keys),
+            dataForType: { representations[$0] },
+        )
+    }
+
+    private func makeContentTabReorderRuntimePasteboard(
+        baseData: Data,
+        markerData: Data,
+        additionalTypes: [NSPasteboard.PasteboardType] = [],
+    ) -> NSPasteboard {
+        let representations = contentTabReorderRuntimeRepresentations(
+            baseData: baseData,
+            markerData: markerData,
+            additionalTypes: additionalTypes,
+        )
+        return makeContentTabReorderPasteboard(items: [representations])
+    }
+
+    private func makeContentTabReorderPasteboardItem(
+        representations: [NSPasteboard.PasteboardType: Data],
+    ) -> NSPasteboardItem {
+        let item = NSPasteboardItem()
+        for (type, data) in representations {
+            if type.rawValue == "NSFilenamesPboardType" {
+                item.setPropertyList(["/tmp/entry"], forType: type)
+            } else {
+                item.setData(data, forType: type)
+            }
+        }
+        return item
+    }
+
+    private func makeContentTabReorderPasteboard(
+        items: [[NSPasteboard.PasteboardType: Data]],
+    ) -> NSPasteboard {
+        makeContentTabReorderPasteboard(items: items.map {
+            makeContentTabReorderPasteboardItem(representations: $0)
+        })
+    }
+
+    private func makeContentTabReorderPasteboard(items: [NSPasteboardItem]) -> NSPasteboard {
+        let name = NSPasteboard.Name("fm.voyager.ctm004.\(UUID().uuidString)")
+        let pasteboard = NSPasteboard(name: name)
+        pasteboard.clearContents()
+        pasteboard.writeObjects(items)
+        return pasteboard
+    }
+
+    private func copyContentTabReorderProviderToNamedPasteboard(
+        _ provider: NSItemProvider,
+    ) async throws -> NSPasteboard {
+        let baseData = try await loadProviderData(provider, typeIdentifier: UTType.contentTabReorder.identifier)
+        let markerData = try await loadProviderData(
+            provider,
+            typeIdentifier: UTType.contentTabReorderLocal.identifier,
+        )
+        return makeContentTabReorderPasteboard(items: [
+            [
+                .contentTabReorder: baseData,
+                .contentTabReorderLocal: markerData,
+            ],
+        ])
+    }
+
+    private func copyContentTabReorderProviderToRuntimePasteboard(
+        _ provider: NSItemProvider,
+    ) async throws -> NSPasteboard {
+        let baseData = try await loadProviderData(provider, typeIdentifier: UTType.contentTabReorder.identifier)
+        let markerData = try await loadProviderData(
+            provider,
+            typeIdentifier: UTType.contentTabReorderLocal.identifier,
+        )
+        return makeContentTabReorderRuntimePasteboard(
+            baseData: baseData,
+            markerData: markerData,
+        )
+    }
+
+    private func loadProviderData(
+        _ provider: NSItemProvider,
+        typeIdentifier: String,
+    ) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { data, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let data {
+                    continuation.resume(returning: data)
+                } else {
+                    continuation.resume(throwing: ContentTabReorderTestError.missingData)
+                }
+            }
+        }
+    }
+
+    private func assertContentTabReorderSemanticRejection(
+        payload: ContentTabReorderDragPayload,
+        targetID: ContentTabID,
+        pinState: @escaping @MainActor (ContentTabID) -> Bool?,
+    ) throws {
+        let token = try makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        sessionStore.begin(payload: payload, token: token)
+        let pasteboard = try makeContentTabReorderRuntimePasteboard(
+            baseData: JSONEncoder().encode(payload),
+            markerData: token.data,
+        )
+        var reorderCount = 0
+        var validationResults: [Bool] = []
+        let activeBoundary = ContentTabReorderActiveBoundaryBox(2)
+        let view = makeContentTabReorderDestinationView(
+            targetID: targetID,
+            activeBoundary: activeBoundary,
+            sessionStore: sessionStore,
+            boundaryID: 2,
+            pinState: pinState,
+            onReorder: { _, _, _ in reorderCount += 1 },
+            onValidationCompleted: { validationResults.append($0) },
+        )
+
+        XCTAssertFalse(view.performDrop(pasteboard: pasteboard))
+        XCTAssertEqual(reorderCount, 0)
+        XCTAssertEqual(validationResults, [false])
+        XCTAssertNil(sessionStore.entry)
+        XCTAssertNil(activeBoundary.value)
+        pasteboard.clearContents()
+    }
+
+    private func makeContentTabReorderPasteboard(providers: [NSItemProvider]) -> NSPasteboard {
+        let items = providers.map { provider in
+            Dictionary(uniqueKeysWithValues: provider.registeredTypeIdentifiers.map {
+                (NSPasteboard.PasteboardType($0), Data())
+            })
+        }
+        return makeContentTabReorderPasteboard(items: items)
+    }
+
+    private func assertContentTabReorderPerformRejection(providers: [NSItemProvider]) {
+        let pasteboard = makeContentTabReorderPasteboard(providers: providers)
+        let activeBoundary = ContentTabReorderActiveBoundaryBox(1)
+        var reorderCount = 0
+        let view = makeContentTabReorderDestinationView(
+            targetID: .init(rawValue: "target"),
+            activeBoundary: activeBoundary,
+            sessionStore: ContentTabReorderLocalSessionStore(),
+            onReorder: { _, _, _ in reorderCount += 1 },
+        )
+
+        XCTAssertFalse(view.performDrop(pasteboard: pasteboard))
+        XCTAssertEqual(reorderCount, 0)
+        XCTAssertNil(activeBoundary.value)
+        pasteboard.clearContents()
+    }
+
+    private enum CrossTypeDropAction: Equatable {
+        case entry
+        case reorder
+    }
+
+    private enum ContentTabReorderTestError: Error {
+        case missingData
+    }
+
+    private struct ContentTabReorderInvocation: Equatable {
+        let sourceID: ContentTabID
+        let targetID: ContentTabID
+        let placement: ContentTabReorderPlacement
+    }
+
+    private struct ContentTabReorderActiveBoundaryStorage {
+        var value: Int?
+        var getterInvocationCount: Int
+        var setterInvocationCount: Int
+    }
+
+    private final class ContentTabReorderActiveBoundaryBox: Sendable {
+        private let storage: LockIsolated<ContentTabReorderActiveBoundaryStorage>
+
+        init(_ value: Int? = nil) {
+            storage = LockIsolated(ContentTabReorderActiveBoundaryStorage(
+                value: value,
+                getterInvocationCount: 0,
+                setterInvocationCount: 0,
+            ))
+        }
+
+        var value: Int? {
+            storage.value.value
+        }
+
+        var getterInvocationCount: Int {
+            storage.value.getterInvocationCount
+        }
+
+        var setterInvocationCount: Int {
+            storage.value.setterInvocationCount
+        }
+
+        func setValue(_ newValue: Int?) {
+            storage.withValue { $0.value = newValue }
+        }
+
+        var binding: Binding<Int?> {
+            Binding(
+                get: {
+                    self.storage.withValue {
+                        $0.getterInvocationCount += 1
+                        return $0.value
+                    }
+                },
+                set: { newValue in
+                    self.storage.withValue {
+                        $0.value = newValue
+                        $0.setterInvocationCount += 1
+                    }
+                },
+            )
+        }
+    }
+
+    // MARK: - CTM-004-sidebar_content_tab_reorder_routing
+
+    /// CTM-004-sidebar_content_tab_reorder_routing: Sidebar View reorder 요청을 같은 Delegate 값으로 한 번 relay함
+    /// SwiftUI adapter가 보낸 semantic source/target/placement가 Entry 계약 없이 feature 경계를 통과하는지 검증한다.
+    /// - 검증 내용: View action 뒤 동일한 Delegate action 한 개만 수신하고 Sidebar state는 변경되지 않음
+    /// - 사전 조건: unpinned source A와 target C, placement after
+    /// - 기대 결과: sourceID/targetID/placement가 그대로 보존된 Delegate action 정확히 1회
+    func testSidebarReorderViewRelaysSameSemanticValueExactlyOnce() async {
+        let sourceID = ContentTabID(rawValue: "relay-source")
+        let targetID = ContentTabID(rawValue: "relay-target")
+        let initialState = FileManagerSidebarState()
+        let store = TestStore(initialState: initialState) {
+            FileManagerSidebarFeature()
+        }
+
+        await store.send(.view(.contentTabReorderRequested(
+            sourceID: sourceID,
+            targetID: targetID,
+            placement: .after,
+        )))
+        await store.receive { action in
+            guard case let .delegate(.contentTabReorderRequested(source, target, placement)) = action else {
+                return false
+            }
+            return source == sourceID && target == targetID && placement == .after
+        }
+
+        XCTAssertEqual(store.state, initialState)
+        await store.finish()
+    }
+
+    /// CTM-004-sidebar_content_tab_reorder_routing: Window는 Sidebar Delegate를 ContentTab reorder 한 번으로 전달함
+    /// Window routing shell이 semantic 값을 변형하거나 배열을 직접 변경하지 않는지 검증한다.
+    /// - 검증 내용: Sidebar Delegate 입력 뒤 동일한 `.contentTabs(.reorder)` 한 개만 수신하고 Window state는 동일함
+    /// - 사전 조건: source A, target C, placement before인 Window state
+    /// - 기대 결과: 값이 보존된 ContentTab action 정확히 1회, routing reducer 직접 state mutation 0회
+    func testWindowReorderDelegateRoutesOneContentTabActionWithoutMutation() async {
+        let sourceID = ContentTabID(rawValue: "route-source")
+        let targetID = ContentTabID(rawValue: "route-target")
+        let initialState = FileManagerFeature.State()
+        let store = TestStore(initialState: initialState) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.sidebar(.delegate(.contentTabReorderRequested(
+            sourceID: sourceID,
+            targetID: targetID,
+            placement: .before,
+        ))))
+        await store.receive { action in
+            guard case let .contentTabs(.reorder(source, target, placement)) = action else {
+                return false
+            }
+            return source == sourceID && target == targetID && placement == .before
+        }
+
+        XCTAssertEqual(store.state, initialState)
+        await store.finish()
+    }
+
+    /// CTM-004-sidebar_content_tab_reorder_routing: 전체 relay 뒤 child reorder와 generic projection sync가 순서대로 실행됨
+    /// Sidebar drag 요청이 active handoff 없이 unpinned 표시 순서만 바꾸는 실제 reducer chain을 검증한다.
+    /// - 검증 내용: View→Delegate→ContentTab action, tabs/sidebar `[B, C, A]`, runtime snapshot exact equality
+    /// - 사전 조건: pinned P와 unpinned A/B/C, B active, C previous, 서로 다른 content/inspector cache
+    /// - 기대 결과: pinned P 유지, unpinned `[B, C, A]`, active/previous/content/inspector/cache 불변, 추가 action 없음
+    func testSidebarReorderFullChainProjectsOrderAndPreservesRuntimeState() async {
+        let pinnedID = ContentTabID(rawValue: "pinned")
+        let sourceID = ContentTabID(rawValue: "source-a")
+        let activeID = ContentTabID(rawValue: "active-b")
+        let targetID = ContentTabID(rawValue: "target-c")
+        let state = makeContentTabReorderRuntimeState(
+            pinnedID: pinnedID,
+            sourceID: sourceID,
+            activeID: activeID,
+            targetID: targetID,
+        )
+        let runtimeBefore = ContentTabReorderRuntimeSnapshot(state: state)
+        let store = TestStore(initialState: state) { FileManagerFeature() }
+
+        await store.send(.sidebar(.view(.contentTabReorderRequested(
+            sourceID: sourceID,
+            targetID: targetID,
+            placement: .after,
+        ))))
+        await store.receive { action in
+            guard case let .sidebar(.delegate(.contentTabReorderRequested(source, target, placement))) = action else {
+                return false
+            }
+            return source == sourceID && target == targetID && placement == .after
+        }
+        await store.receive { action in
+            guard case let .contentTabs(.reorder(source, target, placement)) = action else {
+                return false
+            }
+            return source == sourceID && target == targetID && placement == .after
+        } assert: {
+            $0.contentTabs.tabs = [
+                self.makeContentTabReorderItem(id: pinnedID, isPinned: true),
+                self.makeContentTabReorderItem(id: activeID),
+                self.makeContentTabReorderItem(id: targetID),
+                self.makeContentTabReorderItem(id: sourceID),
+            ]
+            $0.syncContentTabSidebarItems()
+        }
+
+        XCTAssertEqual(store.state.contentTabs.tabs.ids, [pinnedID, activeID, targetID, sourceID])
+        XCTAssertEqual(
+            store.state.sidebar.contentTabSidebarItems.filter { !$0.isPinned }.map(\.id),
+            [activeID, targetID, sourceID],
+        )
+        XCTAssertEqual(ContentTabReorderRuntimeSnapshot(state: store.state), runtimeBefore)
+        await store.finish()
+    }
+
+    private func makeContentTabReorderRuntimeState(
+        pinnedID: ContentTabID,
+        sourceID: ContentTabID,
+        activeID: ContentTabID,
+        targetID: ContentTabID,
+    ) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                makeContentTabReorderItem(id: pinnedID, isPinned: true),
+                makeContentTabReorderItem(id: sourceID),
+                makeContentTabReorderItem(id: activeID),
+                makeContentTabReorderItem(id: targetID),
+            ],
+            activeTabID: activeID,
+        )
+        state.contentTabs.previousActiveTabID = targetID
+        state.content.navigation.seedInitialFolderPath("/runtime/active")
+        state.content.pendingSelectEntryID = "active-entry"
+        state.inspector.inspectorVisible = true
+        state.inspector.inspectorPaneExists = true
+        state.inspector.inspectorWidth = 321
+        var inactiveContent = FileManagerContentState()
+        inactiveContent.navigation.seedInitialFolderPath("/runtime/inactive")
+        inactiveContent.pendingSelectEntryID = "inactive-entry"
+        var inactiveInspector = FileManagerInspectorState()
+        inactiveInspector.inspectorVisible = true
+        inactiveInspector.inspectorWidth = 432
+        state.tabContentStates = [activeID: state.content, sourceID: inactiveContent]
+        state.tabInspectorStates = [activeID: state.inspector, targetID: inactiveInspector]
+        seedContentTabReorderProjectionSentinels(state: &state, sourceID: sourceID)
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    private func seedContentTabReorderProjectionSentinels(
+        state: inout FileManagerFeature.State,
+        sourceID: ContentTabID,
+    ) {
+        state.pendingDirectoryReloadTabIDs = [sourceID, ContentTabID(rawValue: "stale-pending-reload")]
+        state.applyFixedLocationItems([
+            FileManagerFixedLocationItem(
+                id: "projection-source-location",
+                title: "Projection Source Location",
+                path: "/projection/source/location",
+                iconName: "folder",
+                accessibilityLabel: "Projection Source Location",
+            ),
+        ])
+        state.content.homeLocationItems = [
+            FileManagerFixedLocationItem(
+                id: "preserved-home-location",
+                title: "Preserved Home Location",
+                path: "/preserved/home/location",
+                iconName: "folder",
+                accessibilityLabel: "Preserved Home Location",
+            ),
+        ]
+        state.applyHomeFavoriteItems([
+            FileManagerHomeFavoriteItem(
+                id: ContentTabID(rawValue: "projection-source-favorite"),
+                title: "Projection Source Favorite",
+                iconName: "folder",
+                filePath: "/projection/source/favorite",
+                anchor: .directory(path: "/projection/source/favorite"),
+                page: .directory,
+            ),
+        ])
+        state.content.homeFavoriteItems = [
+            FileManagerHomeFavoriteItem(
+                id: ContentTabID(rawValue: "preserved-home-favorite"),
+                title: "Preserved Home Favorite",
+                iconName: "folder",
+                filePath: "/preserved/home/favorite",
+                anchor: .directory(path: "/preserved/home/favorite"),
+                page: .directory,
+            ),
+        ]
+    }
+
+    private func makeContentTabReorderItem(
+        id: ContentTabID,
+        isPinned: Bool = false,
+    ) -> ContentTabItem {
+        ContentTabItem(
+            id: id,
+            page: .directory,
+            anchor: .directory(path: "/tabs/\(id.rawValue)"),
+            isPinned: isPinned,
+            title: id.rawValue,
+            iconName: "folder",
+        )
+    }
+
+    private struct ContentTabReorderRuntimeSnapshot: Equatable {
+        let activeTabID: ContentTabID?
+        let previousActiveTabID: ContentTabID?
+        let pendingDirectoryReloadTabIDs: Set<ContentTabID>
+        let content: FileManagerContentState
+        let inspector: FileManagerInspectorState
+        let homeLocationItems: [FileManagerFixedLocationItem]
+        let homeFavoriteItems: [FileManagerHomeFavoriteItem]
+        let tabContentStates: [ContentTabID: FileManagerContentState]
+        let tabInspectorStates: [ContentTabID: FileManagerInspectorState]
+
+        init(state: FileManagerFeature.State) {
+            activeTabID = state.contentTabs.activeTabID
+            previousActiveTabID = state.contentTabs.previousActiveTabID
+            pendingDirectoryReloadTabIDs = state.pendingDirectoryReloadTabIDs
+            content = state.content
+            inspector = state.inspector
+            homeLocationItems = state.content.homeLocationItems
+            homeFavoriteItems = state.content.homeFavoriteItems
+            tabContentStates = state.tabContentStates
+            tabInspectorStates = state.tabInspectorStates
+        }
+    }
+
     // MARK: - CTM-004-sidebar_entry_drop_routing
+
+    /// CTM-004-sidebar_entry_drop_routing: pure fileURL provider는 Entry 경로만 정확히 한 번 실행함
+    /// 여러 파일의 기존 Entry cardinality와 Option copy intent를 유지하면서 reorder 경로와 격리되는지 검증한다.
+    /// - 검증 내용: 2개 pure fileURL classifier 허용, Entry callback/Delegate action 1회, reorder callback/action 0회
+    /// - 사전 조건: unpinned Directory target과 서로 다른 pure fileURL provider 두 개, Option 활성화
+    /// - 기대 결과: Entry request만 provider identity와 copy intent를 보존해 한 번 relay되고 Sidebar state는 동일함
+    func testCrossTypePureFileURLRunsOnlyEntryPathExactlyOnce() async throws {
+        let targetID = ContentTabID(rawValue: "entry-target")
+        let providers = [
+            makeFileURLProvider(path: "/tmp/entry-a"),
+            makeFileURLProvider(path: "/tmp/entry-b"),
+        ]
+        let actions = LockIsolated<[CrossTypeDropAction]>([])
+        let requests = LockIsolated<[FileManagerSidebarEntryDropRequest]>([])
+        let delegate = FileManagerSidebarEntryDropDelegate(
+            dropTarget: .constant(nil),
+            target: .contentTab(targetID),
+            onDrop: { request in
+                actions.withValue { $0.append(.entry) }
+                requests.withValue { $0.append(request) }
+            },
+        )
+
+        XCTAssertTrue(FileManagerSidebarEntryDropClassifier.accepts(providers))
+        XCTAssertTrue(delegate.performDrop(providers: providers, isOptionDrag: true))
+        assertContentTabReorderPerformRejection(providers: providers)
+        XCTAssertEqual(actions.value, [.entry])
+
+        let request = try XCTUnwrap(requests.value.first)
+        let initialState = FileManagerSidebarState()
+        let store = TestStore(initialState: initialState) { FileManagerSidebarFeature() }
+        await store.send(.view(.entryDropRequested(request)))
+        await store.receive { action in
+            guard case let .delegate(.entryDropRequested(relayed)) = action else { return false }
+            return relayed.target == .contentTab(targetID)
+                && relayed.isOptionDrag
+                && relayed.providers.elementsEqual(providers, by: { $0 === $1 })
+        }
+        XCTAssertEqual(store.state, initialState)
+        await store.finish()
+    }
+
+    /// CTM-004-sidebar_entry_drop_routing: Entry classifier는 reorder UTI가 섞인 배열 전체를 거부함
+    /// custom-only와 custom+fileURL provider가 기존 Entry request/action으로 침투하지 않는지 검증한다.
+    /// - 검증 내용: empty/unrelated/custom-only/mixed 및 pure fileURL+mixed 배열 거부, Entry callback 0회
+    /// - 사전 조건: pure fileURL, pure reorder, mixed reorder+fileURL, plain-text provider
+    /// - 기대 결과: 1...N pure fileURL만 허용되고 reorder UTI가 하나라도 있으면 배열 전체가 거부됨
+    func testEntryDropClassifierRejectsEveryReorderAdvertisingProvider() throws {
+        let fileURLProvider = makeFileURLProvider(path: "/tmp/entry")
+        let secondFileURLProvider = makeFileURLProvider(path: "/tmp/entry-second")
+        let reorderProvider = try makeContentTabReorderProvider()
+        let mixedProvider = try makeMixedContentTabReorderProvider()
+        let unrelatedProvider = NSItemProvider(
+            item: "unrelated" as NSString,
+            typeIdentifier: UTType.plainText.identifier,
+        )
+        let actions = LockIsolated<[CrossTypeDropAction]>([])
+        let delegate = FileManagerSidebarEntryDropDelegate(
+            dropTarget: .constant(nil),
+            target: .contentTab(ContentTabID(rawValue: "entry-target")),
+            onDrop: { _ in actions.withValue { $0.append(.entry) } },
+        )
+
+        XCTAssertTrue(FileManagerSidebarEntryDropClassifier.accepts([fileURLProvider]))
+        XCTAssertTrue(FileManagerSidebarEntryDropClassifier.accepts([fileURLProvider, secondFileURLProvider]))
+        XCTAssertFalse(FileManagerSidebarEntryDropClassifier.accepts([]))
+        XCTAssertFalse(FileManagerSidebarEntryDropClassifier.accepts([unrelatedProvider]))
+        XCTAssertFalse(delegate.performDrop(providers: [reorderProvider], isOptionDrag: false))
+        XCTAssertFalse(delegate.performDrop(providers: [mixedProvider], isOptionDrag: false))
+        XCTAssertFalse(delegate.performDrop(providers: [fileURLProvider, mixedProvider], isOptionDrag: true))
+        XCTAssertEqual(actions.value, [])
+    }
+
+    /// CTM-004-sidebar_entry_drop_routing: mixed reorder+fileURL provider는 양쪽 경로에서 완전 no-op임
+    /// 동일 provider가 두 onDrop type filter에 보이더라도 semantic action과 runtime state를 만들지 않는지 검증한다.
+    /// - 검증 내용: Entry/reorder callback과 action 각각 0회, full ContentTab/Sidebar/runtime snapshot 불변
+    /// - 사전 조건: pinned P와 unpinned A/B/C runtime state, custom+fileURL 단일 provider
+    /// - 기대 결과: 두 delegate performDrop이 false이고 전체 관련 FileManager state가 입력과 정확히 같음
+    func testCrossTypeMixedProviderTriggersNeitherPathAndPreservesRuntimeState() throws {
+        let pinnedID = ContentTabID(rawValue: "pinned")
+        let sourceID = ContentTabID(rawValue: "source-a")
+        let activeID = ContentTabID(rawValue: "active-b")
+        let targetID = ContentTabID(rawValue: "target-c")
+        let initialState = makeContentTabReorderRuntimeState(
+            pinnedID: pinnedID,
+            sourceID: sourceID,
+            activeID: activeID,
+            targetID: targetID,
+        )
+        let store = TestStore(initialState: initialState) { FileManagerFeature() }
+        let provider = try makeMixedContentTabReorderProvider()
+        let actions = LockIsolated<[CrossTypeDropAction]>([])
+        let entryDelegate = FileManagerSidebarEntryDropDelegate(
+            dropTarget: .constant(nil),
+            target: .contentTab(targetID),
+            onDrop: { _ in actions.withValue { $0.append(.entry) } },
+        )
+        let pasteboard = makeContentTabReorderPasteboard(providers: [provider])
+        defer { pasteboard.clearContents() }
+        let activeBoundary = ContentTabReorderActiveBoundaryBox(1)
+        let reorderView = makeContentTabReorderDestinationView(
+            targetID: targetID,
+            activeBoundary: activeBoundary,
+            sessionStore: ContentTabReorderLocalSessionStore(),
+            onReorder: { _, _, _ in actions.withValue { $0.append(.reorder) } },
+        )
+
+        XCTAssertEqual(reorderView.draggingEntered(pasteboard: pasteboard), [])
+        XCTAssertNil(activeBoundary.value)
+        XCTAssertFalse(entryDelegate.performDrop(providers: [provider], isOptionDrag: true))
+        XCTAssertFalse(reorderView.performDrop(pasteboard: pasteboard))
+        XCTAssertEqual(actions.value, [])
+        XCTAssertEqual(store.state.contentTabs, initialState.contentTabs)
+        XCTAssertEqual(store.state.sidebar, initialState.sidebar)
+        XCTAssertEqual(ContentTabReorderRuntimeSnapshot(state: store.state), .init(state: initialState))
+    }
+
+    /// CTM-004-sidebar_entry_drop_routing: separate reorder/fileURL provider session은 양쪽 경로에서 거부됨
+    /// UTI별 provider 조회가 반대 계약 provider를 숨기지 않고 전체 drag session을 검증하는지 확인한다.
+    /// - 검증 내용: Entry/reorder validate·perform 거부, callback/action 0회, ContentTab/Sidebar/runtime 불변
+    /// - 사전 조건: pure reorder-only provider와 별도 pure fileURL-only provider로 구성된 한 session
+    /// - 기대 결과: 양쪽 classifier가 완전한 2-provider 배열을 보고 전체 관련 state를 변경하지 않음
+    func testCrossTypeSeparateProvidersTriggerNeitherPathAndPreserveRuntimeState() throws {
+        let pinnedID = ContentTabID(rawValue: "pinned")
+        let sourceID = ContentTabID(rawValue: "source-a")
+        let activeID = ContentTabID(rawValue: "active-b")
+        let targetID = ContentTabID(rawValue: "target-c")
+        let initialState = makeContentTabReorderRuntimeState(
+            pinnedID: pinnedID,
+            sourceID: sourceID,
+            activeID: activeID,
+            targetID: targetID,
+        )
+        let store = TestStore(initialState: initialState) { FileManagerFeature() }
+        let providers = try [
+            makeContentTabReorderProvider(sourceID: sourceID.rawValue),
+            makeFileURLProvider(path: "/tmp/entry"),
+        ]
+        let actions = LockIsolated<[CrossTypeDropAction]>([])
+        let entryDelegate = FileManagerSidebarEntryDropDelegate(
+            dropTarget: .constant(nil),
+            target: .contentTab(targetID),
+            onDrop: { _ in actions.withValue { $0.append(.entry) } },
+        )
+        let pasteboard = makeContentTabReorderPasteboard(providers: providers)
+        defer { pasteboard.clearContents() }
+        let activeBoundary = ContentTabReorderActiveBoundaryBox(1)
+        let reorderView = makeContentTabReorderDestinationView(
+            targetID: targetID,
+            activeBoundary: activeBoundary,
+            sessionStore: ContentTabReorderLocalSessionStore(),
+            onReorder: { _, _, _ in actions.withValue { $0.append(.reorder) } },
+        )
+
+        XCTAssertEqual(reorderView.draggingEntered(pasteboard: pasteboard), [])
+        XCTAssertNil(activeBoundary.value)
+        XCTAssertFalse(entryDelegate.performDrop(providers: providers, isOptionDrag: false))
+        XCTAssertFalse(reorderView.performDrop(pasteboard: pasteboard))
+        XCTAssertEqual(actions.value, [])
+        XCTAssertEqual(store.state.contentTabs, initialState.contentTabs)
+        XCTAssertEqual(store.state.sidebar, initialState.sidebar)
+        XCTAssertEqual(ContentTabReorderRuntimeSnapshot(state: store.state), .init(state: initialState))
+    }
 
     /// CTM-004-sidebar_entry_drop_routing: visible Fixed Location은 현재 visible item의 path로 한 번만 전달됨
     func testEntryDrop_visibleFixedLocationForwardsExactlyOnce() async {

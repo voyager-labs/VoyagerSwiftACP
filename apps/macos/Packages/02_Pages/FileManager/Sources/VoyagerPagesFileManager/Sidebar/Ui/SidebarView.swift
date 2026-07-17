@@ -19,6 +19,10 @@ struct SidebarView: View {
 
     @State private var sidebarEntryDropTarget: FileManagerSidebarEntryDropTarget?
 
+    @State private var contentTabReorderDragScopeID = ContentTabReorderDragScopeID()
+    @State private var contentTabReorderSessionStore = ContentTabReorderLocalSessionStore()
+    @State private var activeContentTabReorderBoundaryID: Int?
+
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
@@ -35,7 +39,7 @@ struct SidebarView: View {
                             contentTabSectionDivider
                         }
 
-                        contentTabRows(unpinnedContentTabSidebarItems)
+                        reorderableContentTabRows(unpinnedContentTabSidebarItems)
 
                         Spacer()
                             .frame(height: 4)
@@ -53,6 +57,10 @@ struct SidebarView: View {
         }
         .background(Color.clear)
         .navigationSplitViewColumnWidth(ideal: store.sidebarWidth)
+        .onDisappear {
+            contentTabReorderSessionStore.clear()
+            activeContentTabReorderBoundaryID = nil
+        }
     }
 
     private var pinnedContentTabSidebarItems: [ContentTabProjection.ContentTabSidebarItem] {
@@ -201,14 +209,37 @@ struct SidebarView: View {
             .padding(.vertical, 6)
     }
 
-    private func contentTabRows(_ items: [ContentTabProjection.ContentTabSidebarItem]) -> some View {
+    private func contentTabRows(
+        _ items: [ContentTabProjection.ContentTabSidebarItem],
+    ) -> some View {
         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-            contentTabRow(item)
+            entryDroppableContentTabRow(item)
 
             if index < items.count - 1 {
                 Spacer()
                     .frame(height: 4)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func reorderableContentTabRows(
+        _ items: [ContentTabProjection.ContentTabSidebarItem],
+    ) -> some View {
+        if !items.isEmpty {
+            let boundaries = ContentTabReorderDropBoundary.make(for: items.map(\.id))
+
+            VStack(alignment: .leading, spacing: 0) {
+                contentTabReorderDropSlot(boundaries[0])
+                    .transaction { $0.animation = nil }
+
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    reorderableContentTabRow(item)
+                    contentTabReorderDropSlot(boundaries[index + 1])
+                        .transaction { $0.animation = nil }
+                }
+            }
+            .animation(.easeInOut(duration: 0.15), value: items.map(\.id))
         }
     }
 
@@ -238,8 +269,48 @@ struct SidebarView: View {
         }
     }
 
+    private func reorderableContentTabRow(
+        _ item: ContentTabProjection.ContentTabSidebarItem,
+    ) -> some View {
+        entryDroppableContentTabRow(item)
+            .onDrag {
+                let payload = ContentTabReorderDragPayload(
+                    sourceID: item.id,
+                    dragScopeID: contentTabReorderDragScopeID,
+                )
+                return (try? ContentTabReorderItemProviderFactory.makeProvider(
+                    payload: payload,
+                    sessionStore: contentTabReorderSessionStore,
+                )) ?? NSItemProvider()
+            }
+    }
+
+    private func contentTabReorderDropSlot(
+        _ boundary: ContentTabReorderDropBoundary,
+    ) -> some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(height: 4)
+            .frame(maxWidth: .infinity)
+            .overlay {
+                if activeContentTabReorderBoundaryID == boundary.id {
+                    Rectangle()
+                        .fill(Color.accentColor)
+                        .frame(height: 2)
+                        .allowsHitTesting(false)
+                }
+            }
+            .padding(.horizontal, 8)
+            .background {
+                contentTabReorderDropDestination(for: boundary)
+            }
+            .contentShape(Rectangle())
+    }
+
     @ViewBuilder
-    private func contentTabRow(_ item: ContentTabProjection.ContentTabSidebarItem) -> some View {
+    private func entryDroppableContentTabRow(
+        _ item: ContentTabProjection.ContentTabSidebarItem,
+    ) -> some View {
         if let dropTarget = FileManagerSidebarEntryDropDelegate.target(for: item) {
             contentTabSidebarRow(item)
                 .onDrop(of: [.fileURL], delegate: entryDropDelegate(for: dropTarget))
@@ -268,6 +339,27 @@ struct SidebarView: View {
             },
             onHover: { isHovered in
                 contentTabHoveredItemID = isHovered ? item.id : nil
+            },
+        )
+    }
+
+    private func contentTabReorderDropDestination(
+        for boundary: ContentTabReorderDropBoundary,
+    ) -> ContentTabReorderDropDestination {
+        ContentTabReorderDropDestination(
+            activeBoundaryID: $activeContentTabReorderBoundaryID,
+            boundary: boundary,
+            dragScopeID: contentTabReorderDragScopeID,
+            sessionStore: contentTabReorderSessionStore,
+            pinState: { id in
+                store.contentTabSidebarItems.first(where: { $0.id == id })?.isPinned
+            },
+            onReorder: { sourceID, targetID, placement in
+                store.send(.view(.contentTabReorderRequested(
+                    sourceID: sourceID,
+                    targetID: targetID,
+                    placement: placement,
+                )))
             },
         )
     }
