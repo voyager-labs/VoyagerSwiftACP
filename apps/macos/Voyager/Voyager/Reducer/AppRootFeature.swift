@@ -16,11 +16,13 @@ struct AppRootFeature {
     typealias Action = AppRootAction
 
     @Dependency(\.collectionAlertClient)
-    private var collectionAlertClient
+    var collectionAlertClient
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
     @Dependency(\.onboardingWindowClient)
-    private var onboardingWindowClient
+    var onboardingWindowClient
+    @Dependency(\.uuid)
+    var uuid
 
     private enum CancelID {
         static let appDidBecomeActiveObserver = "appDidBecomeActiveObserver"
@@ -71,6 +73,9 @@ struct AppRootFeature {
             reduceExternalFileURL(into: &state, action: action)
         }
         Reduce { state, action in
+            reduceExternalOpenBatch(into: &state, action: action)
+        }
+        Reduce { state, action in
             reduceWindowPostAction(into: &state, action: action)
         }
         Reduce { state, _ in
@@ -85,31 +90,39 @@ struct AppRootFeature {
     ) -> Effect<Action> {
         switch action {
         case .lifecycle(.launch(.willFinishLaunching)):
-            .merge(
+            return .merge(
                 startLaunchObservers(),
                 .send(.settings(.bootstrapLocalPreferences)),
                 .send(.settings(.ai(.onAppear))),
             )
 
         case let .lifecycle(.delegate(delegateAction)):
-            reduceLifecycleDelegate(into: &state, delegateAction)
+            return reduceLifecycleDelegate(into: &state, delegateAction)
 
         case .lifecycle(.termination(.willTerminate)):
-            .cancel(id: CancelID.appDidBecomeActiveObserver)
+            return .merge(
+                .cancel(id: CancelID.appDidBecomeActiveObserver),
+                suspendActiveExternalOpenNormalization(state: &state),
+            )
 
         case .lifecycle(.sessionExpiredDetected):
-            .none
+            return .none
 
         case .lifecycle(.accountAccess):
-            .send(.settings(.accountAccessPresentationUpdated(
+            let presentationEffect = Effect<Action>.send(.settings(.accountAccessPresentationUpdated(
                 makeAccountAccessPresentation(state.lifecycle.accountAccess),
             )))
+            guard !state.lifecycle.isExternalRouteFlushAllowed else { return presentationEffect }
+            return .merge(
+                presentationEffect,
+                suspendActiveExternalOpenNormalization(state: &state),
+            )
 
         case .appDidBecomeActive:
-            .none
+            return .none
 
         default:
-            .none
+            return .none
         }
     }
 
@@ -123,6 +136,9 @@ struct AppRootFeature {
                 state.isExternalURLFlushDelegateScheduled = false
                 guard !onboardingWindowClient.isRequired() else { return .none }
                 guard canFlushPendingExternalRoutes(state) else {
+                    if state.activeExternalOpenBatch != nil || !state.externalOpenBatchQueue.isEmpty {
+                        return .none
+                    }
                     guard state.lifecycle.accessGatePhase == .recoveryRequired else { return .none }
                     return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
                 }
@@ -281,6 +297,9 @@ struct AppRootFeature {
                 message: "접근 권한이 없어 \(path)를 열 수 없습니다. macOS 시스템 설정에서 Voyager의 파일 및 폴더 접근 권한을 확인해 주세요.",
             )
 
+        case let .batchNormalized(result):
+            return handleExternalOpenBatchNormalized(result, state: &state)
+
         case .selectEntryCompleted:
             return .none
         }
@@ -321,58 +340,6 @@ struct AppRootFeature {
         default:
             return .none
         }
-    }
-
-    private func reduceExternalFileURL(
-        into _: inout State,
-        action: Action,
-    ) -> Effect<Action> {
-        switch action {
-        case let .receiveExternalFileURL(url, source, mode):
-            .send(.externalFileRouter(.receiveFileURL(url, source: source, mode: mode)))
-
-        case let .receiveCollectionFileURL(url):
-            .send(.windowManager(.file(.openCollectionFile(url))))
-
-        default:
-            .none
-        }
-    }
-
-    /// didOpenFirstWindow 분기에서 버퍼링된 외부 URL 큐를 소비하고 리셋
-    private func flushPendingExternalURL(state: inout State) -> Effect<Action> {
-        let urls = state.pendingExternalURLs
-        guard !urls.isEmpty else { return .none }
-        state.pendingExternalURLs = []
-        // 버퍼링된 URL을 적재 순서대로 ExternalFileRouter에 전달
-        return .concatenate(urls.map { url in
-            .send(.externalFileRouter(.receive(url)))
-        })
-    }
-
-    /// Cold state에서 버퍼링된 file:// URL 큐를 flush
-    private func flushPendingExternalFileRoutes(state: inout State) -> Effect<Action> {
-        let routes = state.pendingExternalFileRoutes
-        guard !routes.isEmpty else { return .none }
-        state.pendingExternalFileRoutes = []
-        return .concatenate(routes.map { route in
-            .send(.externalFileRouter(.receiveFileURL(route.url, source: route.source, mode: route.mode)))
-        })
-    }
-
-    private func hasPendingExternalRoutes(_ state: State) -> Bool {
-        !state.pendingExternalURLs.isEmpty || !state.pendingExternalFileRoutes.isEmpty
-    }
-
-    private func canFlushPendingExternalRoutes(_ state: State) -> Bool {
-        state.lifecycle.isExternalRouteFlushAllowed
-    }
-
-    private func flushPendingExternalRoutes(state: inout State) -> Effect<Action> {
-        .concatenate(
-            flushPendingExternalURL(state: &state),
-            flushPendingExternalFileRoutes(state: &state),
-        )
     }
 
     private func reduceWindowPostAction(
