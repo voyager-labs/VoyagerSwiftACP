@@ -114,13 +114,29 @@ extension AppRootFeature {
         return .send(.externalFileRouter(.receiveBatch(batch.request)))
     }
 
-    func suspendActiveExternalOpenNormalization(state: inout State) -> Effect<Action> {
-        guard let active = state.activeExternalOpenBatch,
-              active.phase == .normalizing
-        else { return .none }
+    func handleActiveExternalOpenBatchGateClosure(state: inout State) -> Effect<Action> {
+        guard let active = state.activeExternalOpenBatch else { return .none }
         state.activeExternalOpenBatch = nil
-        state.externalOpenBatchQueue.insert(active.batch, at: 0)
-        return .send(.externalFileRouter(.cancelBatch(active.batch.request.batchID)))
+
+        switch active.phase {
+        case .normalizing, .planning:
+            var retryBatch = active.batch
+            retryBatch.request = .init(
+                batchID: uuid(),
+                items: active.batch.request.items,
+            )
+            state.externalOpenBatchQueue.insert(retryBatch, at: 0)
+            guard active.phase == .normalizing else { return .none }
+            return .send(.externalFileRouter(.cancelBatch(active.batch.request.batchID)))
+
+        case .applying, .alerting, .activating, .advancing:
+            if !hasPendingExternalRoutes(state) {
+                state.isInitialWindowFallbackPending = false
+                state.isExternalURLRouteInFlightWithoutWindow = false
+                state.isExternalURLFlushDelegateScheduled = false
+            }
+            return .none
+        }
     }
 
     func reduceExternalOpenBatch(

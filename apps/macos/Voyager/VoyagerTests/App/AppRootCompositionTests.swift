@@ -593,14 +593,33 @@ final class AppRootCompositionTests: XCTestCase {
         await store.finish()
     }
 
-    /// access gate가 닫히면 normalizing batch를 queue front로 되돌리고 Router batch를 취소한다.
+    /// access gate가 닫히면 normalizing batch를 새 identity로 queue front에 되돌리고 Router batch를 취소한다.
+    /// duplicate 항목의 identity와 FIFO 순서를 그대로 보존하는지 함께 검증한다.
     func testGateClosureRequeuesActiveNormalizationAtFront() async throws {
         let batchID = UUID(200)
+        let retryBatchID = UUID(205)
         let url = try XCTUnwrap(URL(string: "file:///tmp/retry"))
-        let request = ExternalFileRouterBatchRequest(
-            batchID: batchID,
+        let items = [
+            ExternalFileRouterBatchRequest.Item(
+                itemID: UUID(201),
+                index: 0,
+                url: url,
+                source: .systemOpenEvent,
+                mode: .open,
+            ),
+            ExternalFileRouterBatchRequest.Item(
+                itemID: UUID(202),
+                index: 1,
+                url: url,
+                source: .systemOpenEvent,
+                mode: .open,
+            ),
+        ]
+        let request = ExternalFileRouterBatchRequest(batchID: batchID, items: items)
+        let laterRequest = ExternalFileRouterBatchRequest(
+            batchID: UUID(203),
             items: [
-                .init(itemID: UUID(201), index: 0, url: url, source: .systemOpenEvent, mode: .open),
+                .init(itemID: UUID(204), index: 0, url: url, source: .deepLink, mode: .reveal),
             ],
         )
         var initialState = AppRootFeature.State()
@@ -608,8 +627,148 @@ final class AppRootCompositionTests: XCTestCase {
         initialState.externalFileRouter.activeBatchID = batchID
         initialState.activeExternalOpenBatch = .init(
             batch: .init(request: request, requiresInitialWindowFallback: true),
-            preferredWindowIDs: [UUID(202)],
+            preferredWindowIDs: [UUID(206)],
         )
+        initialState.externalOpenBatchQueue = [
+            .init(request: laterRequest, requiresInitialWindowFallback: false),
+        ]
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.uuid = .constant(retryBatchID)
+        }
+        // store.exhaustivity = .off: account-access presentation effect는 기존 lifecycle owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        XCTAssertNil(store.state.activeExternalOpenBatch)
+        XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request), [
+            .init(batchID: retryBatchID, items: items),
+            laterRequest,
+        ])
+
+        await store.receive(\.externalFileRouter.cancelBatch, batchID)
+        XCTAssertNil(store.state.externalFileRouter.activeBatchID)
+    }
+
+    /// planning 중 gate가 닫히면 입력 identity를 보존한 새 batch로 재큐하고 old placement completion을 무시한다.
+    func testGateClosureRequeuesPlanningWithFreshIdentityAndIgnoresOldCompletion() async throws {
+        let batchID = UUID(210)
+        let retryBatchID = UUID(211)
+        let duplicateURL = try XCTUnwrap(URL(string: "file:///tmp/planning-duplicate"))
+        let items = [
+            ExternalFileRouterBatchRequest.Item(
+                itemID: UUID(212),
+                index: 0,
+                url: duplicateURL,
+                source: .systemOpenEvent,
+                mode: .open,
+            ),
+            ExternalFileRouterBatchRequest.Item(
+                itemID: UUID(213),
+                index: 1,
+                url: duplicateURL,
+                source: .systemOpenEvent,
+                mode: .open,
+            ),
+        ]
+        let request = ExternalFileRouterBatchRequest(batchID: batchID, items: items)
+        let laterRequest = ExternalFileRouterBatchRequest(
+            batchID: UUID(214),
+            items: [
+                .init(
+                    itemID: UUID(215),
+                    index: 0,
+                    url: URL(fileURLWithPath: "/tmp/later"),
+                    source: .deepLink,
+                    mode: .reveal,
+                ),
+            ],
+        )
+        var active = AppRootActiveExternalOpenBatch(
+            batch: .init(request: request, requiresInitialWindowFallback: false),
+            preferredWindowIDs: [UUID(216)],
+        )
+        active.normalizedItems = items.map { item in
+            .init(
+                itemID: item.itemID,
+                index: item.index,
+                url: item.url,
+                source: item.source,
+                mode: item.mode,
+                outcome: .success(.directory(path: "/tmp", revealPath: item.url.path)),
+            )
+        }
+        active.phase = .planning
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.activeExternalOpenBatch = active
+        initialState.externalOpenBatchQueue = [
+            .init(request: laterRequest, requiresInitialWindowFallback: false),
+        ]
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.uuid = .constant(retryBatchID)
+        }
+        // store.exhaustivity = .off: account-access presentation effect는 기존 lifecycle owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        XCTAssertNil(store.state.activeExternalOpenBatch)
+        XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request), [
+            .init(batchID: retryBatchID, items: items),
+            laterRequest,
+        ])
+
+        let stalePlan = ExternalOpenPlacementPlan(batchID: batchID, windows: [])
+        await store.send(.windowManager(.delegate(.externalOpenPlacementCompleted(.init(
+            batchID: batchID,
+            result: .success(stalePlan),
+        )))))
+
+        XCTAssertNil(store.state.activeExternalOpenBatch)
+        XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request.batchID), [retryBatchID, laterRequest.batchID])
+    }
+
+    /// applying 중 gate가 닫히면 committed batch를 재큐하지 않고 old completion을 무시하며 다음 FIFO를 동결한다.
+    func testGateClosureDropsApplyingBatchAndFreezesNextQueue() async throws {
+        let batchID = UUID(220)
+        let nextBatchID = UUID(221)
+        let itemID = UUID(222)
+        let nextItemID = UUID(223)
+        let url = try XCTUnwrap(URL(string: "file:///tmp/applying"))
+        let nextURL = try XCTUnwrap(URL(string: "file:///tmp/next-frozen"))
+        let request = ExternalFileRouterBatchRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: itemID, index: 0, url: url, source: .systemOpenEvent, mode: .open),
+            ],
+        )
+        let nextRequest = ExternalFileRouterBatchRequest(
+            batchID: nextBatchID,
+            items: [
+                .init(itemID: nextItemID, index: 0, url: nextURL, source: .systemOpenEvent, mode: .open),
+            ],
+        )
+        let plan = ExternalOpenPlacementPlan(batchID: batchID, windows: [])
+        var active = AppRootActiveExternalOpenBatch(
+            batch: .init(request: request, requiresInitialWindowFallback: true),
+            preferredWindowIDs: [],
+        )
+        active.placementPlan = plan
+        active.phase = .applying
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.activeExternalOpenBatch = active
+        initialState.externalOpenBatchQueue = [
+            .init(request: nextRequest, requiresInitialWindowFallback: true),
+        ]
+        initialState.isInitialWindowFallbackPending = true
+        initialState.isExternalURLRouteInFlightWithoutWindow = true
+        initialState.isExternalURLFlushDelegateScheduled = true
 
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
@@ -619,10 +778,62 @@ final class AppRootCompositionTests: XCTestCase {
 
         await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
         XCTAssertNil(store.state.activeExternalOpenBatch)
-        XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request), [request])
+        XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request), [nextRequest])
+        XCTAssertTrue(store.state.isInitialWindowFallbackPending)
+        XCTAssertTrue(store.state.isExternalURLRouteInFlightWithoutWindow)
+        XCTAssertTrue(store.state.isExternalURLFlushDelegateScheduled)
 
-        await store.receive(\.externalFileRouter.cancelBatch, batchID)
-        XCTAssertNil(store.state.externalFileRouter.activeBatchID)
+        await store.send(.windowManager(.delegate(.externalOpenApplyCompleted(.init(
+            batchID: batchID,
+            result: .success(plan),
+        )))))
+
+        XCTAssertNil(store.state.activeExternalOpenBatch)
+        XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request.batchID), [nextBatchID])
+    }
+
+    /// terminal phase의 마지막 batch를 drop하면 no-window bookkeeping만 정리하고 gate 뒤 창을 열지 않는다.
+    func testGateClosureDropsLastApplyingBatchWithoutOpeningFallbackWindow() async throws {
+        let batchID = UUID(230)
+        let itemID = UUID(231)
+        let url = try XCTUnwrap(URL(string: "file:///tmp/applying-last"))
+        let request = ExternalFileRouterBatchRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: itemID, index: 0, url: url, source: .systemOpenEvent, mode: .open),
+            ],
+        )
+        var active = AppRootActiveExternalOpenBatch(
+            batch: .init(request: request, requiresInitialWindowFallback: true),
+            preferredWindowIDs: [],
+        )
+        active.placementPlan = .init(batchID: batchID, windows: [])
+        active.phase = .applying
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.activeExternalOpenBatch = active
+        initialState.isInitialWindowFallbackPending = true
+        initialState.isExternalURLRouteInFlightWithoutWindow = true
+        initialState.isExternalURLFlushDelegateScheduled = true
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        }
+        // store.exhaustivity = .off: account-access presentation effect는 기존 lifecycle owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+
+        XCTAssertNil(store.state.activeExternalOpenBatch)
+        XCTAssertTrue(store.state.externalOpenBatchQueue.isEmpty)
+        XCTAssertFalse(store.state.isInitialWindowFallbackPending)
+        XCTAssertFalse(store.state.isExternalURLRouteInFlightWithoutWindow)
+        XCTAssertFalse(store.state.isExternalURLFlushDelegateScheduled)
+        XCTAssertTrue(store.state.windowManager.windows.isEmpty)
+
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
+        XCTAssertTrue(store.state.windowManager.windows.isEmpty)
+        await store.finish()
     }
 
     /// stale continuation과 올바른 batch의 너무 이른 advance는 active transaction을 변경하지 않는다.
@@ -911,6 +1122,107 @@ final class AppRootCompositionTests: XCTestCase {
         await store.receive(\.externalOpenAdvanceToNextBatch, firstBatchID)
 
         XCTAssertEqual(store.state.activeExternalOpenBatch?.batch.request.batchID, secondBatchID)
+        await store.finish()
+    }
+
+    /// activating native effect가 지연된 동안 gate가 닫히면 late completion이 다음 batch를 시작하지 않는다.
+    func testGateClosureDuringDelayedActivationDropsBatchAndFreezesNextQueue() async throws {
+        let batchID = UUID(710)
+        let nextBatchID = UUID(711)
+        let itemID = UUID(712)
+        let nextItemID = UUID(713)
+        let windowID = UUID(714)
+        let tabID = ContentTabID(rawValue: "gate-closure-activation-tab")
+        let url = try XCTUnwrap(URL(string: "file:///tmp/activation-gate"))
+        let nextURL = try XCTUnwrap(URL(string: "file:///tmp/activation-next"))
+        let request = ExternalFileRouterBatchRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: itemID, index: 0, url: url, source: .systemOpenEvent, mode: .open),
+            ],
+        )
+        let nextRequest = ExternalFileRouterBatchRequest(
+            batchID: nextBatchID,
+            items: [
+                .init(itemID: nextItemID, index: 0, url: nextURL, source: .systemOpenEvent, mode: .open),
+            ],
+        )
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: false,
+                    items: [.init(itemID: itemID, tabID: tabID)],
+                ),
+            ],
+        )
+        let reservation = ExternalContentTabReservation(
+            id: tabID,
+            anchor: .directory(path: "/tmp/activation-gate"),
+        )
+        let window = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(
+            reservations: [reservation],
+        ))
+        var active = AppRootActiveExternalOpenBatch(
+            batch: .init(request: request, requiresInitialWindowFallback: false),
+            preferredWindowIDs: [],
+        )
+        active.normalizedItems = [
+            .init(
+                itemID: itemID,
+                index: 0,
+                url: url,
+                source: .systemOpenEvent,
+                mode: .open,
+                outcome: .success(.directory(path: "/tmp/activation-gate", revealPath: nil)),
+            ),
+        ]
+        active.placementPlan = plan
+        active.phase = .applying
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.windowManager.windows = [.init(id: windowID, window: window)]
+        initialState.activeExternalOpenBatch = active
+        initialState.externalOpenBatchQueue = [
+            .init(request: nextRequest, requiresInitialWindowFallback: false),
+        ]
+
+        let activationStarted = expectation(description: "gate closure activation started")
+        let activationGate = AsyncStream<Void>.makeStream()
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.fileManagerWindowClient.activate = { _ in
+                activationStarted.fulfill()
+                for await _ in activationGate.stream {
+                    break
+                }
+                return .becameKey
+            }
+        }
+        // store.exhaustivity = .off: child activation mechanics 대신 gate closure 이후 terminal 경계만 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.windowManager(.delegate(.externalOpenApplyCompleted(.init(
+            batchID: batchID,
+            result: .success(plan),
+        ))))) {
+            $0.activeExternalOpenBatch?.phase = .activating
+        }
+        await store.receive(\.windowManager.placement.activate, plan)
+        await fulfillment(of: [activationStarted], timeout: 1)
+
+        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        XCTAssertNil(store.state.activeExternalOpenBatch)
+        XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request.batchID), [nextBatchID])
+
+        activationGate.continuation.yield(())
+        activationGate.continuation.finish()
+        await store.receive(\.windowManager.delegate.externalOpenActivationCompleted, batchID)
+
+        XCTAssertNil(store.state.activeExternalOpenBatch)
+        XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request.batchID), [nextBatchID])
         await store.finish()
     }
 

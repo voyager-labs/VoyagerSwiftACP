@@ -102,7 +102,7 @@ struct AppRootFeature {
         case .lifecycle(.termination(.willTerminate)):
             return .merge(
                 .cancel(id: CancelID.appDidBecomeActiveObserver),
-                suspendActiveExternalOpenNormalization(state: &state),
+                handleActiveExternalOpenBatchGateClosure(state: &state),
             )
 
         case .lifecycle(.sessionExpiredDetected):
@@ -115,7 +115,7 @@ struct AppRootFeature {
             guard !state.lifecycle.isExternalRouteFlushAllowed else { return presentationEffect }
             return .merge(
                 presentationEffect,
-                suspendActiveExternalOpenNormalization(state: &state),
+                handleActiveExternalOpenBatchGateClosure(state: &state),
             )
 
         case .appDidBecomeActive:
@@ -145,6 +145,7 @@ struct AppRootFeature {
                 state.isExternalURLFlushDelegateScheduled = false
                 return .none
             }
+            guard state.lifecycle.isExternalRouteFlushAllowed else { return .none }
             return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
 
         case let .reopenWindowIfNeeded(hasVisibleWindows):
