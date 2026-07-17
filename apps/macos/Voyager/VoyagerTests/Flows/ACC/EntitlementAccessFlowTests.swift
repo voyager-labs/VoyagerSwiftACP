@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Dependencies
 @testable import Voyager
 import VoyagerFeaturesAccountAccess
+import VoyagerFeaturesExternalFileRouter
 import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
 @testable import VoyagerPagesSettings
@@ -361,6 +362,48 @@ final class EntitlementAccessFlowTests: XCTestCase {
         await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
 
         XCTAssertEqual(store.state.pendingExternalURLs, [deepLink])
+        await store.finish()
+    }
+
+    /// ACC-002-check_entitlement_status: 복구 단계는 외부 파일 batch를 보존하며 account 복구 창을 연다.
+    /// 외부 파일 cold-launch 중 복구가 필요해도 queue를 소비하지 않고 복구 UI 진입점을 보장한다.
+    /// - 검증 내용: recoveryRequired의 초기 창 delegate 전달과 external-open queue 불변성을 함께 확인한다.
+    /// - 사전 조건: pending external-open batch가 있고 access gate는 recoveryRequired다.
+    /// - 기대 결과: 초기 창 요청은 전달되고 queue와 active batch 상태는 그대로 유지된다.
+    func testOpenInitialWindowPreservesExternalBatchQueueDuringRecovery() async throws {
+        let batchID = UUID(400)
+        let itemID = UUID(401)
+        let url = try XCTUnwrap(URL(string: "file:///tmp/recovery-item"))
+        let request = ExternalFileRouterBatchRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: itemID, index: 0, url: url, source: .systemOpenEvent, mode: .open),
+            ],
+        )
+        var initialState = AppRootFeature.State()
+        initialState.externalOpenBatchQueue = [
+            .init(request: request, requiresInitialWindowFallback: true),
+        ]
+        initialState.lifecycle.accessGatePhase = .recoveryRequired
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.continuousClock = ImmediateClock()
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: recovery 창 생성 mechanics는 WindowManager owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
+        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
+
+        XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request.batchID), [batchID])
+        XCTAssertNil(store.state.activeExternalOpenBatch)
         await store.finish()
     }
 

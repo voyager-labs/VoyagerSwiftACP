@@ -136,9 +136,6 @@ struct AppRootFeature {
                 state.isExternalURLFlushDelegateScheduled = false
                 guard !onboardingWindowClient.isRequired() else { return .none }
                 guard canFlushPendingExternalRoutes(state) else {
-                    if state.activeExternalOpenBatch != nil || !state.externalOpenBatchQueue.isEmpty {
-                        return .none
-                    }
                     guard state.lifecycle.accessGatePhase == .recoveryRequired else { return .none }
                     return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
                 }
