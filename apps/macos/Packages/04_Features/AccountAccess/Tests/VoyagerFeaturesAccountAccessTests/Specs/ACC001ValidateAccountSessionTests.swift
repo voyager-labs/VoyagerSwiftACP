@@ -1,6 +1,7 @@
 import Clocks
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
+import VoyagerShared
 import XCTest
 
 /*
@@ -167,6 +168,9 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
             gatewayBinding: GatewayEnvironment(rawValue: "").binding,
             deviceID: "test-device-id",
             deviceBindingVerifiedAt: referenceDate,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
         )
         var initialState = sessionNearExpiryState()
         initialState.status = .coreLicenseActive
@@ -333,6 +337,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
                 refreshToken: { throw AccessError.notConfigured },
                 syncSession: { intent, _ in
                     intents.append(intent)
+                    continuation?.resume(throwing: CancellationError())
                     return try await withCheckedThrowingContinuation { continuation = $0 }
                 },
             ),
@@ -352,7 +357,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         await store.receive(\._persistedSessionRevalidated)
 
         XCTAssertNotNil(continuation)
-        XCTAssertEqual(intents, [.validate])
+        XCTAssertEqual(intents, [.validate, .validate])
 
         if let continuation {
             continuation.resume(returning: SessionSyncResult(
@@ -604,6 +609,7 @@ extension ACC001ValidateAccountSessionTests {
         let clock = TestClock()
         let binding = UUID()
         let sessionExpiry = newExpiryDate
+        let releaseIdentityNow = referenceDate
         let cachedSnapshot = AccessStatusSnapshot.fetchResult(
             status: .coreLicenseActive,
             currentPeriodEnd: nil,
@@ -613,6 +619,9 @@ extension ACC001ValidateAccountSessionTests {
             gatewayBinding: GatewayEnvironment(rawValue: "").binding,
             deviceID: "test-device-id",
             deviceBindingVerifiedAt: referenceDate,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
         )
         let cachedEnvelope = AccessStatusSnapshotEnvelope(
             sessionBindingID: binding,
@@ -653,6 +662,9 @@ extension ACC001ValidateAccountSessionTests {
             }, save: { _, _, _, _ in }, remove: { _, _, _ in })
             $0.continuousClock = clock
             $0.date = .constant(referenceDate)
+            $0.releaseIdentityClient = ReleaseIdentityClient(resolve: { _ in
+                try? ReleaseIdentity(releasedAt: "2023-11-14T22:13:20Z", now: releaseIdentityNow)
+            })
         }
         // store.exhaustivity = .off: retry 내부 호출 횟수와 최종 cache recovery 상태를 집중 검증
         store.exhaustivity = .off
@@ -1400,7 +1412,7 @@ private extension ACC001ValidateAccountSessionTests {
         SessionSyncResult(
             sessionStatus: .unchanged,
             syncStatus: .complete,
-            accessStatus: AccessStatusResponse(hasAccess: true, status: "active"),
+            accessStatus: AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", updatesThrough: Date(timeIntervalSince1970: 2_000_000_000)),
             deviceBindingOutcome: .bound,
             connectedDeviceAvailability: .available,
         )

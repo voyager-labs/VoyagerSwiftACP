@@ -9,14 +9,20 @@ public struct AccessStatusResponse: Equatable, Sendable, Codable {
     public var productKey: String?
     public var currentPeriodEnd: Date?
     public var source: String?
+    public var ownershipStatus: String?
+    public var updateStatus: String?
+    public var updatesThrough: Date?
 
     public init(
         hasAccess: Bool,
         status: String,
+        ownershipStatus: String? = nil,
+        updateStatus: String? = nil,
         reason: String? = nil,
         productKey: String? = nil,
         currentPeriodEnd: Date? = nil,
         source: String? = nil,
+        updatesThrough: Date? = nil,
     ) {
         self.hasAccess = hasAccess
         self.status = status
@@ -24,6 +30,21 @@ public struct AccessStatusResponse: Equatable, Sendable, Codable {
         self.productKey = productKey
         self.currentPeriodEnd = currentPeriodEnd
         self.source = source
+        self.ownershipStatus = ownershipStatus
+        self.updateStatus = updateStatus
+        self.updatesThrough = updatesThrough
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case hasAccess = "has_access"
+        case status
+        case reason
+        case productKey = "product_key"
+        case currentPeriodEnd = "current_period_end"
+        case source
+        case ownershipStatus = "ownership_status"
+        case updateStatus = "update_status"
+        case updatesThrough = "updates_through"
     }
 
     /// Backend raw status + productKey → canonical AccessStatus 변환.

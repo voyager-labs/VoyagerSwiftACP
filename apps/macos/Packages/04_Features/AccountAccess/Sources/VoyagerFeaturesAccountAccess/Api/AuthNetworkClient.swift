@@ -380,8 +380,12 @@ public extension AuthNetworkClient {
             nil
         case 401:
             .invalidCredential
-        default:
+        case 400, 413, 429:
+            .invalidResponse(statusCode)
+        case 500...599:
             .upstream(statusCode)
+        default:
+            .invalidResponse(statusCode)
         }
     }
 

@@ -30,14 +30,7 @@ extension ACC002CheckEntitlementStatusTests {
         await store.send(._sessionSyncCompleted(generation: 1, result: .success(SessionSyncResult(
             sessionStatus: .unchanged,
             syncStatus: .complete,
-            accessStatus: AccessStatusResponse(
-                hasAccess: true,
-                status: "active",
-                reason: "active_entitlement",
-                productKey: "core",
-                currentPeriodEnd: periodEnd,
-                source: "polar",
-            ),
+            accessStatus: AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement", productKey: "core", currentPeriodEnd: periodEnd, source: "polar", updatesThrough: Date(timeIntervalSince1970: 2_000_000_000)),
             deviceBindingOutcome: .bound,
             connectedDeviceAvailability: .available,
         )))) { state in
@@ -50,6 +43,9 @@ extension ACC002CheckEntitlementStatusTests {
                 deviceID: "test-device-id",
                 sessionExpiresAt: sessionExpiry,
                 deviceBindingVerifiedAt: bindingCompletionDate,
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isComplete = true
             state.lastCompleteSyncAt = bindingCompletionDate
@@ -75,6 +71,9 @@ extension ACC002CheckEntitlementStatusTests {
             deviceID: "test-device-id",
             sessionExpiresAt: now.addingTimeInterval(3600),
             deviceBindingVerifiedAt: now,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
         )
         var state = AccountAccessFeature.State()
         state.hasAccountSession = true
@@ -177,6 +176,9 @@ extension ACC002CheckEntitlementStatusTests {
             deviceID: "test-device-id",
             sessionExpiresAt: now.addingTimeInterval(3600),
             deviceBindingVerifiedAt: now,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
         )
 
         await store.send(._sessionSyncCompleted(
@@ -185,7 +187,7 @@ extension ACC002CheckEntitlementStatusTests {
             result: .success(SessionSyncResult(
                 sessionStatus: .unchanged,
                 syncStatus: .complete,
-                accessStatus: AccessStatusResponse(hasAccess: true, status: "active"),
+                accessStatus: AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", updatesThrough: Date(timeIntervalSince1970: 2_000_000_000)),
                 deviceBindingOutcome: .bound,
                 connectedDeviceAvailability: .available,
             )),

@@ -111,6 +111,7 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case openPricingTapped
     case openAccountTapped
     case openAccessHelpTapped
+    case openEligibleDownloadTapped
     case openBetaCodeHelpTapped
     case _webURLResult(Result<Void, AccessError>)
     case _refreshDeadlineReached(generation: UInt64)
@@ -134,6 +135,7 @@ public enum AccountAccessAction: CasePathable, Sendable {
         case snapshot(AccessStatusSnapshot)
         case accessFailure(error: AccessError, sessionExpiresAt: Date?)
         case deviceBindingFailure(snapshot: AccessStatusSnapshot, error: DeviceBindingError)
+        case updateEligibility(snapshot: AccessStatusSnapshot, failure: UpdateEligibilityFailure)
     }
 
     public enum PersistedSessionRevalidationResult: Equatable, Sendable {

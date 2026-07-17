@@ -38,6 +38,9 @@ public struct AccountAccessFeature {
     @Dependency(\.deviceIdentityClient)
     var deviceIdentityClient
 
+    @Dependency(\.releaseIdentityClient)
+    var releaseIdentityClient
+
     enum CancelID: Hashable {
         case signInHandoff(AccountAccessHandoffScope)
         case handoffClaim(AccountAccessHandoffScope)
@@ -171,6 +174,9 @@ public struct AccountAccessFeature {
 
             case .openAccessHelpTapped:
                 return handleOpenAccessHelp(&state)
+
+            case .openEligibleDownloadTapped:
+                return handleOpenEligibleDownload(&state)
 
             case .openBetaCodeHelpTapped:
                 return handleOpenBetaCodeHelp(&state)
@@ -646,6 +652,7 @@ extension AccountAccessFeature {
         state.fetchRetryCount = 0
         state.deviceBindingFailure = nil
         state.deviceBindingRetryCount = 0
+        state.updateEligibilityFailure = nil
         state.errorMessage = nil
 
         return .merge(
@@ -700,6 +707,10 @@ extension AccountAccessFeature {
 
     private func handleOpenAccessHelp(_: inout State) -> Effect<Action> {
         openWebURL(makeURL: checkoutURLClient.supportURL)
+    }
+
+    private func handleOpenEligibleDownload(_: inout State) -> Effect<Action> {
+        openWebURL(makeURL: checkoutURLClient.eligibleDownloadURL)
     }
 
     private func handleOpenBetaCodeHelp(_: inout State) -> Effect<Action> {

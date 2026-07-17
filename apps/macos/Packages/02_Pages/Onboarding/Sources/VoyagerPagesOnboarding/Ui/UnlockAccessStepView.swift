@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import SwiftUI
 import VoyagerFeaturesAccountAccess
+import VoyagerShared
 
 struct UnlockAccessStepView: View {
     let store: Store<OnboardingAccessProjection, OnboardingAccessIntent>
@@ -91,36 +92,102 @@ struct UnlockAccessStepView: View {
     private func actionCTAs(
         viewStore: ViewStore<OnboardingAccessProjection, OnboardingAccessIntent>,
     ) -> some View {
-        if viewStore.canStartLogin {
+        if let failure = viewStore.updateEligibilityFailure {
+            updateEligibilityRecoveryCTAs(viewStore: viewStore, failure: failure)
+        } else {
+            if viewStore.canStartLogin {
+                Button {
+                    viewStore.send(.login)
+                } label: {
+                    Label("Sign In", systemImage: "person.crop.circle.badge.plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(viewStore.isSignInInProgress)
+            }
+
+            if viewStore.hasAccountSession, viewStore.hasDeviceBindingFailure {
+                deviceBindingFailureCTAs(viewStore: viewStore)
+            } else if viewStore.hasAccountSession,
+                      viewStore.isBlocked,
+                      let status = viewStore.status
+            {
+                blockedStatusCTAs(viewStore: viewStore, status: status)
+            }
+
+            if viewStore.canRefreshAccess, !viewStore.isComplete {
+                Button {
+                    viewStore.send(.refresh)
+                } label: {
+                    Label("Refresh Access", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .disabled(viewStore.isSubmitting || viewStore.isSignInInProgress)
+            }
+        }
+    }
+
+    private func updateEligibilityRecoveryCTAs(
+        viewStore: ViewStore<OnboardingAccessProjection, OnboardingAccessIntent>,
+        failure: UpdateEligibilityFailure,
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("This version is not eligible for your update access.")
+                .font(.system(size: 13, weight: .semibold))
+
+            Text("Version: \(AppVersionInfo.displayText)")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+
+            Text(updatesThroughText(snapshot: viewStore.snapshot))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+
+            Text(recoveryDescription(for: failure))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+
             Button {
-                viewStore.send(.login)
+                viewStore.send(.retry)
             } label: {
-                Label("Sign In", systemImage: "person.crop.circle.badge.plus")
+                Label("Retry", systemImage: "arrow.clockwise")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(viewStore.isSignInInProgress)
-        }
+            .disabled(!viewStore.canRetry && !viewStore.canRefreshAccess)
 
-        if viewStore.hasAccountSession, viewStore.hasDeviceBindingFailure {
-            deviceBindingFailureCTAs(viewStore: viewStore)
-        } else if viewStore.hasAccountSession,
-                  viewStore.isBlocked,
-                  let status = viewStore.status
-        {
-            blockedStatusCTAs(viewStore: viewStore, status: status)
-        }
-
-        if viewStore.canRefreshAccess, !viewStore.isComplete {
-            Button {
-                viewStore.send(.refresh)
-            } label: {
-                Label("Refresh Access", systemImage: "arrow.clockwise")
+            HStack {
+                Button("Open Account") {
+                    viewStore.send(.openAccount)
+                }
+                Button("Download Eligible Version") {
+                    viewStore.send(.openEligibleDownload)
+                }
+                Button("Contact Support") {
+                    viewStore.send(.openAccessHelp)
+                }
             }
             .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .disabled(viewStore.isSubmitting || viewStore.isSignInInProgress)
+        }
+    }
+
+    private func updatesThroughText(snapshot: AccessStatusSnapshot?) -> String {
+        guard let updatesThrough = snapshot?.updatesThrough else {
+            return "Updates through: unavailable"
+        }
+        return "Updates through: \(formatDate(updatesThrough))"
+    }
+
+    private func recoveryDescription(for failure: UpdateEligibilityFailure) -> String {
+        switch failure {
+        case .missingReleaseIdentity, .invalidReleaseIdentity:
+            "Voyager could not verify this build's release identity."
+        case .missingUpdatesThrough, .invalidUpdatesThrough, .invalidAccessTuple:
+            "Your account response did not include valid update eligibility."
+        case .buildReleasedAfterUpdatesThrough:
+            "This build was released after the date covered by your update access."
         }
     }
 
@@ -159,7 +226,7 @@ struct UnlockAccessStepView: View {
                 .controlSize(.large)
                 .disabled(!viewStore.canRetry)
 
-            case .login, .webPricing, .next, .pending:
+            case .login, .webPricing, .next, .pending, .eligibleDownload:
                 EmptyView()
             }
         }

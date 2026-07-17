@@ -336,13 +336,9 @@ final class ACC001SignOutAccountTests: XCTestCase {
     /// - 사전 조건: fetchGeneration=5, hasAccountSession=true
     /// - 기대 결과: signOut으로 fetchGeneration=6이 되고, generation=5 응답은 무시된다.
     func testReducerSignOutDiscardsLateAccessStatusResponse() async {
-        let activeResponse = AccessStatusResponse(
-            hasAccess: true,
-            status: "active",
-            reason: "active_entitlement",
-            productKey: "core",
-            source: "polar",
-        )
+        let activeResponse = AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
+        productKey: "core",
+        source: "polar",)
 
         let store = makeTestStore(initialState: {
             var state = signedInState()
@@ -396,13 +392,9 @@ final class ACC001SignOutAccountTests: XCTestCase {
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     XCTFail("stale retry must not reach fetchAccessStatus")
-                    return AccessStatusResponse(
-                        hasAccess: true,
-                        status: "active",
-                        reason: "active_entitlement",
-                        productKey: "core",
-                        source: "polar",
-                    )
+                    return AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
+                    productKey: "core",
+                    source: "polar",)
                 },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },

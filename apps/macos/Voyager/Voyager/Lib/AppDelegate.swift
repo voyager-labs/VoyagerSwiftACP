@@ -37,7 +37,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         withAppRootStore {
             $0.send(.lifecycle(.launch(.willFinishLaunching)))
-            $0.send(.updater(.configureAtLaunch))
         }
     }
 

@@ -1,7 +1,7 @@
 import Foundation
 
 public struct AccessStatusSnapshot: Equatable, Sendable, Codable {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
 
     public var schemaVersion: Int
     public var status: AccessStatus
@@ -14,6 +14,12 @@ public struct AccessStatusSnapshot: Equatable, Sendable, Codable {
     public var sessionExpiresAt: Date?
     /// 현재 기기 binding 검증 시각. `nil`이면 active entitlement만으로 unlock을 확정하지 않는다.
     public var deviceBindingVerifiedAt: Date?
+    /// 서버가 인증한 구매 소유권 유형. 구형 snapshot과의 호환성을 위해 optional이다.
+    public var ownershipStatus: String?
+    /// 서버가 인증한 업데이트 권한 유형. 구형 snapshot과의 호환성을 위해 optional이다.
+    public var updateStatus: String?
+    /// 이 build를 실행할 수 있는 마지막 출시 시각.
+    public var updatesThrough: Date?
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion
@@ -26,6 +32,9 @@ public struct AccessStatusSnapshot: Equatable, Sendable, Codable {
         case deviceID
         case sessionExpiresAt
         case deviceBindingVerifiedAt
+        case ownershipStatus
+        case updateStatus
+        case updatesThrough
     }
 
     public init(
@@ -38,6 +47,9 @@ public struct AccessStatusSnapshot: Equatable, Sendable, Codable {
         deviceID: String? = nil,
         sessionExpiresAt: Date? = nil,
         deviceBindingVerifiedAt: Date? = nil,
+        ownershipStatus: String? = nil,
+        updateStatus: String? = nil,
+        updatesThrough: Date? = nil,
     ) {
         self.schemaVersion = schemaVersion
         self.status = status
@@ -48,6 +60,9 @@ public struct AccessStatusSnapshot: Equatable, Sendable, Codable {
         self.deviceID = deviceID
         self.sessionExpiresAt = sessionExpiresAt
         self.deviceBindingVerifiedAt = deviceBindingVerifiedAt
+        self.ownershipStatus = ownershipStatus
+        self.updateStatus = updateStatus
+        self.updatesThrough = updatesThrough
     }
 
     /// access_status 조회 결과와 현재 세션 축을 하나의 복구 스냅샷으로 고정한다.
@@ -60,6 +75,9 @@ public struct AccessStatusSnapshot: Equatable, Sendable, Codable {
         gatewayBinding: String = "",
         deviceID: String? = nil,
         deviceBindingVerifiedAt: Date? = nil,
+        ownershipStatus: String? = nil,
+        updateStatus: String? = nil,
+        updatesThrough: Date? = nil,
     ) -> Self {
         Self(
             status: status,
@@ -70,6 +88,9 @@ public struct AccessStatusSnapshot: Equatable, Sendable, Codable {
             deviceID: deviceID,
             sessionExpiresAt: sessionExpiresAt,
             deviceBindingVerifiedAt: deviceBindingVerifiedAt,
+            ownershipStatus: ownershipStatus,
+            updateStatus: updateStatus,
+            updatesThrough: updatesThrough,
         )
     }
 
@@ -87,6 +108,9 @@ public struct AccessStatusSnapshot: Equatable, Sendable, Codable {
         sessionExpiresAt = try container.decodeIfPresent(Date.self, forKey: .sessionExpiresAt)
         // device binding proof backward compat: 키 없으면 nil
         deviceBindingVerifiedAt = try container.decodeIfPresent(Date.self, forKey: .deviceBindingVerifiedAt)
+        ownershipStatus = try container.decodeIfPresent(String.self, forKey: .ownershipStatus)
+        updateStatus = try container.decodeIfPresent(String.self, forKey: .updateStatus)
+        updatesThrough = try container.decodeIfPresent(Date.self, forKey: .updatesThrough)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -100,6 +124,9 @@ public struct AccessStatusSnapshot: Equatable, Sendable, Codable {
         try container.encodeIfPresent(deviceID, forKey: .deviceID)
         try container.encodeIfPresent(sessionExpiresAt, forKey: .sessionExpiresAt)
         try container.encodeIfPresent(deviceBindingVerifiedAt, forKey: .deviceBindingVerifiedAt)
+        try container.encodeIfPresent(ownershipStatus, forKey: .ownershipStatus)
+        try container.encodeIfPresent(updateStatus, forKey: .updateStatus)
+        try container.encodeIfPresent(updatesThrough, forKey: .updatesThrough)
     }
 
     public var isActive: Bool {

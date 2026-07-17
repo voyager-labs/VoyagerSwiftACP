@@ -90,6 +90,7 @@ public struct AccountAccessState: Equatable {
 
     /// 세션 만료 여부. true이면 중복 _sessionExpiredDetected를 무시한다 (dedup guard).
     public var isSessionExpired: Bool = false
+    public var updateEligibilityFailure: UpdateEligibilityFailure?
 
     public init() {}
 
@@ -128,6 +129,9 @@ public struct AccountAccessState: Equatable {
         }
         if let deviceBindingFailure {
             return deviceBindingFailure.stepState
+        }
+        if updateEligibilityFailure != nil {
+            return .blocked
         }
         if isComplete, status?.isActive == true {
             return .complete
@@ -183,6 +187,9 @@ public struct AccountAccessState: Equatable {
         if isComplete, status?.isActive == true {
             return .next
         }
+        if updateEligibilityFailure != nil {
+            return .eligibleDownload
+        }
         if let deviceBindingFailure {
             return primaryCTA(for: deviceBindingFailure)
         }
@@ -211,6 +218,7 @@ public struct AccountAccessState: Equatable {
         handoffPendingState = nil
         handoffExchangeState = nil
         errorMessage = nil
+        updateEligibilityFailure = nil
         deviceBindingFailure = nil
         deviceBindingRetryCount = 0
         hasAccountSession = snapshot.hasSession
@@ -256,6 +264,7 @@ public struct AccountAccessState: Equatable {
         lastCompleteSyncAt = nil
         syncGeneration += 1
         inFlightSyncReason = nil
+        updateEligibilityFailure = nil
     }
 
     private static func errorMessage(for error: AccessError) -> String {

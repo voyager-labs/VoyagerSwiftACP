@@ -23,6 +23,8 @@ public struct CheckoutURLClient: Sendable {
 
     /// 계정(billing portal) 페이지 URL을 반환한다.
     public var accountURL: @Sendable () throws -> URL
+    /// 현재 entitlement에 적합한 다운로드 페이지 URL을 반환한다.
+    public var eligibleDownloadURL: @Sendable () throws -> URL
 
     nonisolated public init(
         openURL: @escaping @Sendable (URL) -> Void,
@@ -30,12 +32,14 @@ public struct CheckoutURLClient: Sendable {
         pricingURL: @escaping @Sendable () throws -> URL,
         supportURL: @escaping @Sendable () throws -> URL,
         accountURL: @escaping @Sendable () throws -> URL,
+        eligibleDownloadURL: @escaping @Sendable () throws -> URL = { throw AccessError.notConfigured },
     ) {
         self.openURL = openURL
         self.checkoutURL = checkoutURL
         self.pricingURL = pricingURL
         self.supportURL = supportURL
         self.accountURL = accountURL
+        self.eligibleDownloadURL = eligibleDownloadURL
     }
 }
 
@@ -116,6 +120,9 @@ extension CheckoutURLClient: DependencyKey {
             accountURL: {
                 try webRouteURL(path: "/account")
             },
+            eligibleDownloadURL: {
+                try webRouteURL(path: "/download")
+            },
         )
     }
 
@@ -126,6 +133,7 @@ extension CheckoutURLClient: DependencyKey {
             pricingURL: { testURL(path: "/pricing") },
             supportURL: { testURL(path: "/support") },
             accountURL: { testURL(path: "/account") },
+            eligibleDownloadURL: { testURL(path: "/download") },
         )
     }
 

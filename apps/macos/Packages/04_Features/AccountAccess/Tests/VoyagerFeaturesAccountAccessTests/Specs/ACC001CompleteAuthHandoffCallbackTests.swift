@@ -12,13 +12,9 @@ import XCTest
  AppHandoffCallback 파식 테스트와 reducer 통합 테스트를 모두 포함한다.
  */
 
-private let activeAccessStatusResponse = AccessStatusResponse(
-    hasAccess: true,
-    status: "active",
-    reason: "active_entitlement",
-    productKey: "core",
-    source: "polar",
-)
+private let activeAccessStatusResponse = AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
+productKey: "core",
+ source: "polar", updatesThrough: Date(timeIntervalSince1970: 2_000_000_000))
 
 @MainActor
 final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
@@ -289,13 +285,9 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     return AccountSession(accessToken: "valid-flow-token", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: {
-                    AccessStatusResponse(
-                        hasAccess: true,
-                        status: "active",
-                        reason: "active_entitlement",
-                        productKey: "core",
-                        source: "polar",
-                    )
+                    AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
+                    productKey: "core",
+                    source: "polar",)
                 },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
@@ -347,7 +339,10 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                 gatewayBinding: GatewayEnvironment(rawValue: "").binding,
                 deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
-                deviceBindingVerifiedAt: self.referenceDate,
+            deviceBindingVerifiedAt: self.referenceDate,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true
@@ -382,13 +377,9 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     return AccountSession(accessToken: "should-not-reach", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: {
-                    AccessStatusResponse(
-                        hasAccess: true,
-                        status: "active",
-                        reason: "active_entitlement",
-                        productKey: "core",
-                        source: "polar",
-                    )
+                    AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
+                    productKey: "core",
+                    source: "polar",)
                 },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
@@ -475,7 +466,10 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                 gatewayBinding: GatewayEnvironment(rawValue: "").binding,
                 deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
-                deviceBindingVerifiedAt: self.referenceDate,
+            deviceBindingVerifiedAt: self.referenceDate,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true
@@ -613,13 +607,9 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     return AccountSession(accessToken: "should-not-reach", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: {
-                    AccessStatusResponse(
-                        hasAccess: true,
-                        status: "active",
-                        reason: "active_entitlement",
-                        productKey: "core",
-                        source: "polar",
-                    )
+                    AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
+                    productKey: "core",
+                    source: "polar",)
                 },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
@@ -696,7 +686,10 @@ extension ACC001CompleteAuthHandoffCallbackTests {
                 gatewayBinding: GatewayEnvironment(rawValue: "").binding,
                 deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
-                deviceBindingVerifiedAt: self.referenceDate,
+            deviceBindingVerifiedAt: self.referenceDate,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true
@@ -776,7 +769,10 @@ extension ACC001CompleteAuthHandoffCallbackTests {
                 gatewayBinding: GatewayEnvironment(rawValue: "").binding,
                 deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
-                deviceBindingVerifiedAt: self.referenceDate,
+            deviceBindingVerifiedAt: self.referenceDate,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true
@@ -877,7 +873,10 @@ extension ACC001CompleteAuthHandoffCallbackTests {
                 gatewayBinding: GatewayEnvironment(rawValue: "").binding,
                 deviceID: "test-device-id",
                 sessionExpiresAt: state.sessionExpiresAt,
-                deviceBindingVerifiedAt: self.referenceDate,
+            deviceBindingVerifiedAt: self.referenceDate,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true
@@ -910,13 +909,9 @@ extension ACC001CompleteAuthHandoffCallbackTests {
                     AccountSession(accessToken: "obh-token", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: {
-                    AccessStatusResponse(
-                        hasAccess: true,
-                        status: "active",
-                        reason: "active_entitlement",
-                        productKey: "core",
-                        source: "polar",
-                    )
+                    AccessStatusResponse(hasAccess: true, status: "active", ownershipStatus: "owned", updateStatus: "active", reason: "active_entitlement",
+                    productKey: "core",
+                    source: "polar",)
                 },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
@@ -969,7 +964,10 @@ extension ACC001CompleteAuthHandoffCallbackTests {
                 gatewayBinding: GatewayEnvironment(rawValue: "").binding,
                 deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
-                deviceBindingVerifiedAt: self.referenceDate,
+            deviceBindingVerifiedAt: self.referenceDate,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true

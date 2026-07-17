@@ -105,6 +105,7 @@ public struct SessionLapseGuardView: View {
     static let accountButtonTitle = "Open account"
     static let retryButtonTitle = "Retry"
     static let webPricingButtonTitle = "View pricing"
+    static let eligibleDownloadButtonTitle = "Download eligible version"
 
     public init(store: StoreOf<AccountAccessFeature>) {
         self.store = store
@@ -206,6 +207,8 @@ public struct SessionLapseGuardView: View {
             return "Access required to continue."
         case .retry:
             return "Could not verify access."
+        case .eligibleDownload:
+            return "Download an eligible version to continue."
         case .login, .next, .pending:
             break
         }
@@ -223,6 +226,8 @@ public struct SessionLapseGuardView: View {
             retryButtonTitle
         case .webPricing:
             webPricingButtonTitle
+        case .eligibleDownload:
+            eligibleDownloadButtonTitle
         case .login, .next, .pending:
             loginButtonTitle
         }
@@ -236,6 +241,8 @@ public struct SessionLapseGuardView: View {
             .retryTapped
         case .webPricing:
             .openPricingTapped
+        case .eligibleDownload:
+            .openEligibleDownloadTapped
         case .login, .next, .pending:
             .loginTapped(context: .paywall, scope: .lifecycle)
         }

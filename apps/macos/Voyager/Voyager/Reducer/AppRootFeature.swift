@@ -161,6 +161,13 @@ struct AppRootFeature {
         into state: inout State,
         action: Action,
     ) -> Effect<Action> {
+        if let updaterEffect = reduceUpdaterAccessEligibility(action) {
+            return updaterEffect
+        }
+        if let updaterEffect = reduceSettingsUpdaterAction(action) {
+            return updaterEffect
+        }
+
         switch action {
         case let .appPreferences(.delegate(.updated(preferences))):
             state.appPreferences = preferences
@@ -192,17 +199,41 @@ struct AppRootFeature {
         case let .settings(.delegate(delegateAction)):
             return reduceSettingsDelegate(into: &state, delegateAction)
 
-        case .settings(.general(.checkForUpdates)):
-            return .send(.updater(.checkForUpdates))
-
-        case let .settings(.general(.toggleAutomaticUpdate(enabled))):
-            return .send(.updater(.setAutomaticUpdate(enabled)))
-
         case let .externalFileRouter(action):
             return reduceExternalFileRouter(into: &state, action)
 
         default:
             return .none
+        }
+    }
+
+    private func reduceUpdaterAccessEligibility(_ action: Action) -> Effect<Action>? {
+        switch action {
+        case let .lifecycle(.accountAccess(.delegate(.unlocked(snapshot)))):
+            .send(.updater(.accessGranted(
+                updateStatus: snapshot.updateStatus,
+                updatesThrough: snapshot.updatesThrough,
+            )))
+
+        case .lifecycle(.accountAccess(.delegate(.recoveryRequired))),
+             .lifecycle(.accountAccess(.delegate(.signedOut))):
+            .send(.updater(.accessRevoked))
+
+        default:
+            nil
+        }
+    }
+
+    private func reduceSettingsUpdaterAction(_ action: Action) -> Effect<Action>? {
+        switch action {
+        case .settings(.general(.checkForUpdates)):
+            .send(.updater(.checkForUpdates))
+
+        case let .settings(.general(.toggleAutomaticUpdate(enabled))):
+            .send(.updater(.setAutomaticUpdate(enabled)))
+
+        default:
+            nil
         }
     }
 

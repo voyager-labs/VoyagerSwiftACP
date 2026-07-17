@@ -9,6 +9,7 @@ PROJECT_PATH="${PROJECT_PATH:-apps/macos/Voyager/Voyager.xcodeproj}"
 SCHEME="${SCHEME:-Voyager-Prod}"
 CONFIGURATION="${CONFIGURATION:-Release}"
 CURRENT_PROJECT_VERSION_OVERRIDE="${CURRENT_PROJECT_VERSION_OVERRIDE:-}"
+VOYAGER_RELEASED_AT="${VOYAGER_RELEASED_AT:-}"
 
 RELEASES_PREFIX="${RELEASES_PREFIX:-releases}"
 VERSION_PREFIX="${VERSION_PREFIX:-releases/versions}"
@@ -48,6 +49,7 @@ EOF
 
 resolve_version() {
   if [[ -n "${VERSION:-}" ]]; then
+    validate_gated_version "${VERSION}"
     export VERSION
     return
   fi
@@ -63,7 +65,33 @@ resolve_version() {
   fi
 
   VERSION="${tag#v}"
+  validate_gated_version "${VERSION}"
   export VERSION
+}
+
+validate_gated_version() {
+  if ! python3 - "$1" <<'PY'
+import re
+import sys
+
+match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:-[A-Za-z0-9.]+)?", sys.argv[1])
+if not match or tuple(map(int, match.groups()[:3])) < (0, 8, 2):
+    raise SystemExit("The first gated Sparkle release is v0.8.2; earlier releases are not supported.")
+PY
+  then
+    exit 1
+  fi
+}
+
+prepare_release_identity() {
+  : "${VOYAGER_RELEASED_AT:?Missing env: VOYAGER_RELEASED_AT}"
+  local identity_env_path="${BUILD_DIR}/release-identity.env"
+
+  VOYAGER_RELEASED_AT="${VOYAGER_RELEASED_AT}" \
+    bash "${SCRIPT_DIR}/prepare-release-identity.sh" "${identity_env_path}"
+  # shellcheck source=/dev/null
+  source "${identity_env_path}"
+  export VOYAGER_RELEASED_AT RELEASE_MANIFEST_RELEASED_AT
 }
 
 have_wrangler() {
@@ -130,10 +158,11 @@ fetch_baseline() {
 
 build_notarize() {
   resolve_version
+  prepare_release_identity
   : "${DOWNLOADS_BASE_URL:?Missing env: DOWNLOADS_BASE_URL}"
   : "${SPARKLE_PRIVATE_KEY:?Missing env: SPARKLE_PRIVATE_KEY}"
 
-  export BUILD_DIR PROJECT_PATH SCHEME CONFIGURATION CURRENT_PROJECT_VERSION_OVERRIDE
+  export BUILD_DIR PROJECT_PATH SCHEME CONFIGURATION CURRENT_PROJECT_VERSION_OVERRIDE VOYAGER_RELEASED_AT
   export DOWNLOADS_BASE_URL SPARKLE_PRIVATE_KEY SPARKLE_BASELINE_COUNT VERSION
 
   log "Building archive..."
@@ -161,16 +190,41 @@ build_notarize() {
 
   log "Generating Sparkle appcast..."
   "${SCRIPT_DIR}/generate-sparkle-appcast.sh"
+
+  log "Generating signed release manifest..."
+  python3 "${SCRIPT_DIR}/generate-release-manifest.py" \
+    "${BUILD_DIR}/Voyager-${VERSION}.zip" \
+    "${BUILD_DIR}/appcast.xml" \
+    "${DOWNLOADS_BASE_URL%/}/releases/versions/${VERSION}/Voyager-${VERSION}.zip" \
+    "${VERSION}" \
+    "${RELEASE_MANIFEST_RELEASED_AT}" \
+    "${BUILD_DIR}/release-manifest-v1.json"
+
+  log "Verifying signed release manifest..."
+  xcrun swiftc \
+    "${REPO_ROOT}/apps/macos/Packages/06_Shared/VoyagerShared/Sources/VoyagerShared/Model/AppVersionInfo.swift" \
+    "${REPO_ROOT}/apps/macos/Packages/06_Shared/VoyagerShared/Sources/VoyagerShared/Model/ReleaseManifest.swift" \
+    "${SCRIPT_DIR}/release-manifest-verifier/main.swift" \
+    -o "${BUILD_DIR}/verify-release-manifest"
+  SPARKLE_PRIVATE_KEY="${SPARKLE_PRIVATE_KEY}" "${BUILD_DIR}/verify-release-manifest" \
+    "${BUILD_DIR}/release-manifest-v1.json" \
+    "${BUILD_DIR}/Voyager-${VERSION}.zip" \
+    "${BUILD_DIR}/appcast.xml" \
+    "${DOWNLOADS_BASE_URL%/}/releases/versions/${VERSION}/Voyager-${VERSION}.zip" \
+    "${RELEASE_MANIFEST_RELEASED_AT}"
 }
 
 generate_latest() {
   resolve_version
+  prepare_release_identity
   local dmg_path="${BUILD_DIR}/Voyager.dmg"
   local out_path="${BUILD_DIR}/latest.json"
+  local manifest_path="${BUILD_DIR}/release-manifest-v1.json"
   local versioned_url="${VERSION_PREFIX}/${VERSION}/Voyager.dmg"
   local latest_url="${RELEASES_PREFIX}/Voyager.dmg"
 
-  "${SCRIPT_DIR}/generate-latest-json.sh" \
+  [[ -f "${manifest_path}" ]] || { echo "Missing file: ${manifest_path}" >&2; exit 1; }
+  VOYAGER_RELEASED_AT="${RELEASE_MANIFEST_RELEASED_AT}" "${SCRIPT_DIR}/generate-latest-json.sh" \
     "${dmg_path}" \
     "${VERSION}" \
     "${versioned_url}" \
@@ -186,10 +240,12 @@ upload_r2() {
   local zip_path="${BUILD_DIR}/Voyager-${VERSION}.zip"
   local appcast_path="${BUILD_DIR}/appcast.xml"
   local latest_path="${BUILD_DIR}/latest.json"
+  local manifest_path="${BUILD_DIR}/release-manifest-v1.json"
 
   [[ -f "${dmg_path}" ]] || { echo "Missing file: ${dmg_path}" >&2; exit 1; }
   [[ -f "${zip_path}" ]] || { echo "Missing file: ${zip_path}" >&2; exit 1; }
   [[ -f "${appcast_path}" ]] || { echo "Missing file: ${appcast_path}" >&2; exit 1; }
+  [[ -f "${manifest_path}" ]] || { echo "Missing file: ${manifest_path}" >&2; exit 1; }
 
   generate_latest
   [[ -f "${latest_path}" ]] || { echo "Missing file: ${latest_path}" >&2; exit 1; }
@@ -198,6 +254,7 @@ upload_r2() {
   wrangler r2 object put "${R2_BUCKET}/${VERSION_PREFIX}/${VERSION}/Voyager.dmg" --remote --file "${dmg_path}"
   wrangler r2 object put "${R2_BUCKET}/${RELEASES_PREFIX}/Voyager.dmg" --remote --file "${dmg_path}"
   wrangler r2 object put "${R2_BUCKET}/${RELEASES_PREFIX}/latest.json" --remote --file "${latest_path}"
+  wrangler r2 object put "${R2_BUCKET}/${VERSION_PREFIX}/${VERSION}/release-manifest-v1.json" --remote --file "${manifest_path}"
   wrangler r2 object put "${R2_BUCKET}/${VERSION_PREFIX}/${VERSION}/Voyager-${VERSION}.zip" --remote --file "${zip_path}"
   wrangler r2 object put "${R2_BUCKET}/${SPARKLE_APPCAST_KEY}" --remote --file "${appcast_path}"
 }
