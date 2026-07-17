@@ -56,6 +56,20 @@ public struct ContentTabState: Equatable, Sendable {
     public var pinnedRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
     public var pendingPinnedRecordIDs: Set<ContentTabID> = []
     public var pinnedRecordPersistenceError: String?
+    public internal(set) var selectedTabIDs: Set<ContentTabID> = []
+    var selectionAnchorID: ContentTabID?
+
+    public var selectedTabCount: Int {
+        selectedTabIDs.count
+    }
+
+    public var isBulkActionEnabled: Bool {
+        !selectedTabIDs.isEmpty
+    }
+
+    var selectionOrderedTabIDs: [ContentTabID] {
+        tabs.filter(\.isPinned).map(\.id) + tabs.filter { !$0.isPinned }.map(\.id)
+    }
 
     public init(
         tabs: IdentifiedArrayOf<ContentTabItem> = [],
@@ -73,6 +87,14 @@ public struct ContentTabState: Equatable, Sendable {
         self.pinnedRecords = pinnedRecords
         self.pendingPinnedRecordIDs = pendingPinnedRecordIDs
         self.pinnedRecordPersistenceError = pinnedRecordPersistenceError
+    }
+
+    mutating func reconcileSelection() {
+        let currentTabIDs = Set(tabs.ids)
+        selectedTabIDs.formIntersection(currentTabIDs)
+        if let selectionAnchorID, !currentTabIDs.contains(selectionAnchorID) {
+            self.selectionAnchorID = nil
+        }
     }
 }
 

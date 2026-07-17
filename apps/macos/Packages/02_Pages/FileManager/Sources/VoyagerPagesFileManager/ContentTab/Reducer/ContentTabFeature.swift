@@ -29,6 +29,15 @@ public struct ContentTabFeature {
             case let .setCurrent(id):
                 return setCurrent(id: id, state: &state)
 
+            case let .toggleSelection(id):
+                return toggleSelection(id: id, state: &state)
+
+            case let .selectRange(targetID):
+                return selectRange(to: targetID, state: &state)
+
+            case .clearSelection:
+                return clearSelection(state: &state)
+
             case .requestClose:
                 return .none
 
@@ -76,6 +85,55 @@ public struct ContentTabFeature {
 }
 
 extension ContentTabFeature {
+    // MARK: - CTM-001-select_content_tabs
+
+    /// 유효한 target만 membership을 반전하고 deselect를 포함해 target을 anchor로 유지한다.
+    private func toggleSelection(
+        id: ContentTabID,
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
+        guard state.tabs[id: id] != nil else { return .none }
+
+        if state.selectedTabIDs.contains(id) {
+            state.selectedTabIDs.remove(id)
+        } else {
+            state.selectedTabIDs.insert(id)
+        }
+        state.selectionAnchorID = id
+        return .none
+    }
+
+    /// pinned-first ordering의 anchor-target inclusive interval로 기존 선택을 교체한다.
+    private func selectRange(
+        to targetID: ContentTabID,
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
+        guard state.tabs[id: targetID] != nil else { return .none }
+
+        let orderedIDs = state.selectionOrderedTabIDs
+        guard let anchorID = state.selectionAnchorID,
+              let anchorIndex = orderedIDs.firstIndex(of: anchorID),
+              let targetIndex = orderedIDs.firstIndex(of: targetID)
+        else {
+            state.selectedTabIDs = [targetID]
+            state.selectionAnchorID = targetID
+            return .none
+        }
+
+        let lowerBound = min(anchorIndex, targetIndex)
+        let upperBound = max(anchorIndex, targetIndex)
+        state.selectedTabIDs = Set(orderedIDs[lowerBound ... upperBound])
+        return .none
+    }
+
+    /// 이미 비어 있으면 whole-state no-op이며, 아니면 selection runtime state만 비운다.
+    private func clearSelection(state: inout ContentTabState) -> Effect<ContentTabAction> {
+        guard !state.selectedTabIDs.isEmpty || state.selectionAnchorID != nil else { return .none }
+        state.selectedTabIDs.removeAll()
+        state.selectionAnchorID = nil
+        return .none
+    }
+
     private func open(anchor: ContentTabPageAnchor, state: inout ContentTabState) -> Effect<ContentTabAction> {
         guard state.tabs.count < ContentTabConstants.maxTabs else {
             state.previousActiveTabID = nil
@@ -172,6 +230,7 @@ extension ContentTabFeature {
         }()
 
         state.tabs.remove(id: id)
+        state.reconcileSelection()
 
         if wasActive {
             state.previousActiveTabID = id
