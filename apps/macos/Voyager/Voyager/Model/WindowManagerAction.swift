@@ -218,6 +218,7 @@ enum ExternalOpenPlacementApplication {
     struct Result {
         let windows: IdentifiedArrayOf<WindowSessionFeature.State>
         let newWindowIDs: [WindowManagerState.WindowID]
+        let existingWindowActivations: [(windowID: WindowManagerState.WindowID, tabID: ContentTabID)]
     }
 
     static func apply(
@@ -232,6 +233,7 @@ enum ExternalOpenPlacementApplication {
 
         var updatedWindows = windows
         var newWindowIDs: [WindowManagerState.WindowID] = []
+        var existingWindowActivations: [(windowID: WindowManagerState.WindowID, tabID: ContentTabID)] = []
         for placementWindow in plan.windows {
             let reservations = placementWindow.items.compactMap { item -> ExternalContentTabReservation? in
                 guard let reservation = reservationsByItemID[item.itemID],
@@ -245,6 +247,7 @@ enum ExternalOpenPlacementApplication {
                 guard updatedWindows[id: placementWindow.windowID] == nil,
                       let window = FileManagerWindowFeature.State.makeExternalInitial(
                           reservations: reservations,
+                          windowID: placementWindow.windowID,
                       )
                 else { return nil }
                 updatedWindows.append(.init(id: placementWindow.windowID, window: window))
@@ -254,9 +257,18 @@ enum ExternalOpenPlacementApplication {
                       window.reserveExternalContentTabs(reservations)
                 else { return nil }
                 updatedWindows[id: placementWindow.windowID]?.window = window
+                guard let activeReservation = reservations.last else { return nil }
+                existingWindowActivations.append((
+                    windowID: placementWindow.windowID,
+                    tabID: activeReservation.id,
+                ))
             }
         }
-        return Result(windows: updatedWindows, newWindowIDs: newWindowIDs)
+        return Result(
+            windows: updatedWindows,
+            newWindowIDs: newWindowIDs,
+            existingWindowActivations: existingWindowActivations,
+        )
     }
 
     static func lastSurvivingWindowID(

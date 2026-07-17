@@ -1898,6 +1898,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 pendingSelectEntryID: pendingSelection,
             ),
         ]))
+        await store.receive(\.contentTabs.setCurrent, callerTabID)
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, callerTabID)
         XCTAssertEqual(store.state.content.pendingSelectEntryID, pendingSelection)
@@ -1911,18 +1912,122 @@ final class CTM001HandleContentTabTests: XCTestCase {
     /// - 기대 결과: 기존 metadata는 유지되고 모든 snapshot이 생성되며 regular-file pending selection은 active load 전에 존재한다.
     func testExternalTabReservation_appliesOrderedSnapshotsAtomically() async throws {
         let scenario = try ExternalTabReservationTestFixture.makeAtomicScenario()
-        var expectedState = scenario.initialState
-        XCTAssertTrue(expectedState.reserveExternalContentTabs(scenario.reservations))
+        var stagedState = scenario.initialState
+        XCTAssertTrue(stagedState.reserveExternalContentTabs(scenario.reservations))
         let store = TestStore(initialState: scenario.initialState) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { _, _ in [] }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { $0.finish() }
+            }
         }
+        // store.exhaustivity = .off: append 이후 canonical handoff의 navigation child action은 별도 owner가 검증한다.
+        store.exhaustivity = .off
 
         await store.send(.reserveExternalContentTabs(scenario.reservations)) {
-            $0 = expectedState
+            $0 = stagedState
         }
+        await store.receive(\.contentTabs.setCurrent, scenario.fileID)
+        await store.skipReceivedActions()
         await store.finish()
 
         scenario.assertResult(store.state)
+    }
+
+    /// CTM-001-external_tab_reservation: 기존 Directory load를 취소한 뒤 예약 Directory를 한 번 load한다.
+    /// external reservation activation이 일반 tab handoff cancellation과 reload 경로를 재사용하는지 검증한다.
+    /// - 검증 내용: 이전 load cancellation 1회와 destination loadItems 1회다.
+    /// - 사전 조건: seed Directory load가 대기 중이고 새 Directory reservation 하나가 append된다.
+    /// - 기대 결과: setCurrent handoff가 이전 load를 취소하고 새 경로만 한 번 load한다.
+    func testExternalTabReservation_cancelsOutgoingLoadBeforeLoadingDestination() async {
+        let tabID = ContentTabID(rawValue: "external-directory-cancellation")
+        let oldLoadStarted = expectation(description: "outgoing load started")
+        let oldLoadCancelled = expectation(description: "outgoing load cancelled")
+        let oldLoadGate = AsyncStream<Void>.makeStream()
+        let cancellationCount = LockIsolated(0)
+        let loadPaths = LockIsolated<[String]>([])
+        let store = TestStore(initialState: FileManagerWindowState.makeInitial(path: "/seed")) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { url, _ in
+                loadPaths.withValue { $0.append(url.path) }
+                guard url.path == "/seed" else { return [] }
+                oldLoadStarted.fulfill()
+                return await withTaskCancellationHandler {
+                    for await _ in oldLoadGate.stream {}
+                    return []
+                } onCancel: {
+                    cancellationCount.withValue { $0 += 1 }
+                    oldLoadGate.continuation.finish()
+                    oldLoadCancelled.fulfill()
+                }
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { $0.finish() }
+            }
+        }
+        // store.exhaustivity = .off: cancellation과 경로별 load 호출 외 navigation child action은 별도 owner가 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .loadItems(path: "/seed", showHidden: false),
+        )))))
+        await fulfillment(of: [oldLoadStarted], timeout: 1)
+        await store.send(.reserveExternalContentTabs([
+            .init(id: tabID, anchor: .directory(path: "/external")),
+        ]))
+        await store.receive(\.contentTabs.setCurrent, tabID)
+        await fulfillment(of: [oldLoadCancelled], timeout: 1)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(cancellationCount.value, 1)
+        XCTAssertEqual(loadPaths.value, ["/seed", "/external"])
+    }
+
+    /// CTM-001-external_tab_reservation: Collection reservation은 canonical open 경로를 정확히 한 번 사용한다.
+    /// Directory reload와 Collection open이 중복 실행되지 않는 handoff 분기를 검증한다.
+    /// - 검증 내용: openCollectionFile load 1회와 directory loadItems 0회다.
+    /// - 사전 조건: seed Directory가 active이고 Collection file reservation 하나가 append된다.
+    /// - 기대 결과: setCurrent 후 Collection file open만 한 번 실행된다.
+    func testExternalTabReservation_opensCollectionExactlyOnceWithoutDirectoryLoad() async {
+        enum TestError: Error {
+            case loadFailed
+        }
+        let tabID = ContentTabID(rawValue: "external-collection-open")
+        let collectionURL = URL(fileURLWithPath: "/tmp/external-once.voycoll")
+        let openedURLs = LockIsolated<[URL]>([])
+        let directoryLoads = LockIsolated(0)
+        let store = TestStore(initialState: FileManagerWindowState.makeInitial(path: "/seed")) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.collectionFileClient.load = { url in
+                openedURLs.withValue { $0.append(url) }
+                throw TestError.loadFailed
+            }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+            $0.entryLoadingClient.loadItems = { _, _ in
+                directoryLoads.withValue { $0 += 1 }
+                return []
+            }
+        }
+        // store.exhaustivity = .off: 실패 alert 세부 action보다 reservation의 canonical Collection open 횟수를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.reserveExternalContentTabs([
+            .init(id: tabID, anchor: .collectionFile(url: collectionURL)),
+        ]))
+        await store.receive(\.contentTabs.setCurrent, tabID)
+        await store.receive(\.navigation.view.openCollectionFile, collectionURL)
+        await store.receive(\.navigation.internal.collectionFileLoaded)
+        await store.finish()
+
+        XCTAssertEqual(openedURLs.value, [collectionURL])
+        XCTAssertEqual(directoryLoads.value, 0)
     }
 
     /// CTM-001-external_tab_reservation: invalid reservation set은 전체를 fail-closed 처리한다.
@@ -2029,7 +2134,7 @@ private enum ExternalTabReservationTestFixture {
                 [pinnedID, originalActiveID, directoryID, collectionID, fileID],
             )
             XCTAssertEqual(state.contentTabs.activeTabID, fileID)
-            XCTAssertEqual(state.contentTabs.previousActiveTabID, collectionID)
+            XCTAssertEqual(state.contentTabs.previousActiveTabID, originalActiveID)
             XCTAssertEqual(state.tabContentStates[originalActiveID], expectedOriginalContent)
             XCTAssertEqual(state.tabInspectorStates[originalActiveID], expectedOriginalInspector)
             XCTAssertEqual(state.contentTabs.tabs[id: pinnedID], pinnedTab)
@@ -2037,7 +2142,7 @@ private enum ExternalTabReservationTestFixture {
             XCTAssertEqual(state.tabContentStates[pinnedID], pinnedContent)
             XCTAssertEqual(state.tabContentStates[fileID]?.pendingSelectEntryID, pendingSelection)
             XCTAssertEqual(state.content.pendingSelectEntryID, pendingSelection)
-            XCTAssertEqual(state.content, state.tabContentStates[fileID])
+            XCTAssertEqual(state.content.navigation.currentPath, "/tmp")
             XCTAssertNotNil(state.tabInspectorStates[directoryID])
             XCTAssertNotNil(state.tabInspectorStates[collectionID])
             XCTAssertNotNil(state.tabInspectorStates[fileID])

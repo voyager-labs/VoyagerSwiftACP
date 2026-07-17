@@ -56,17 +56,9 @@ public extension FileManagerWindowState {
             updatedInspectorStates[reservation.id] = snapshots.inspector[reservation.id]
         }
 
-        guard let activeReservation = reservations.last,
-              let activeContent = updatedContentStates[activeReservation.id]
-        else { return false }
-
         contentTabs.tabs = updatedTabs
-        contentTabs.previousActiveTabID = reservations.dropLast().last?.id ?? previousActiveTabID
-        contentTabs.activeTabID = activeReservation.id
         tabContentStates = updatedContentStates
         tabInspectorStates = updatedInspectorStates
-        content = activeContent
-        inspector = updatedInspectorStates[activeReservation.id] ?? .init()
         syncContentTabSidebarItems()
         return true
     }

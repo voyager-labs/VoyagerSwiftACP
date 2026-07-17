@@ -526,15 +526,20 @@ private extension WindowManagerFeature {
             state.defaultWindowBootstrapWindowIDs.remove(windowID)
         }
 
-        var effects = application.newWindowIDs.flatMap { windowID in
+        var effects: [Effect<Action>] = application.existingWindowActivations.map { activation in
+            Effect.send(.windows(.element(
+                id: activation.windowID,
+                action: .window(.contentTabs(.setCurrent(activation.tabID))),
+            )))
+        }
+        effects.append(contentsOf: application.newWindowIDs.flatMap { windowID in
             [
-                windowIDChangedEffect(for: windowID),
                 appPreferencesEffect(for: windowID, preferences: state.appPreferences),
                 Effect.run { [fileManagerWindowClient] _ in
                     await fileManagerWindowClient.open(windowID)
                 },
             ]
-        }
+        })
         if state.defaultWindowBootstrapWindowIDs.isEmpty,
            state.defaultWindowBootstrapRequestID != nil
         {

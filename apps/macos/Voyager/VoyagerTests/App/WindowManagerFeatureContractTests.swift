@@ -3,7 +3,9 @@ import Foundation
 @testable import Voyager
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
@@ -2496,6 +2498,86 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(store.state, initialState)
     }
 
+    /// 기존 mounted window의 external reservation은 state commit 후 canonical tab handoff로 활성화된다.
+    /// Directory load가 장기 실행 중이어도 apply terminal은 load 완료를 기다리지 않는 경계를 검증한다.
+    /// - 검증 내용: ordered append, old→new active 전환, suspended load 전 terminal 1회다.
+    /// - 사전 조건: seed tab이 active인 기존 window와 Directory reservation 하나다.
+    /// - 기대 결과: 마지막 preallocated tab이 active가 되고 apply completion은 load gate가 닫힌 동안 도착한다.
+    func testPlacementApplicationActivatesExistingWindowWithoutAwaitingDirectoryLoad() async throws {
+        let batchID = UUID()
+        let windowID = UUID()
+        let itemID = UUID()
+        let tabID = ContentTabID(rawValue: "existing-window-external")
+        var existingWindow = FileManagerWindowFeature.State.makeInitial(path: "/seed")
+        existingWindow.content.entryViewLayout.entryOperations.windowID = windowID
+        existingWindow.content.composer.cancellationOwnerID = windowID
+        existingWindow.syncActiveTabContentState()
+        let previousActiveID = try XCTUnwrap(existingWindow.contentTabs.activeTabID)
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [.init(id: windowID, window: existingWindow)]
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: false,
+                    items: [.init(itemID: itemID, tabID: tabID)],
+                ),
+            ],
+        )
+        let loadGate = WindowBootstrapSuspensionGate()
+        let loadStarted = expectation(description: "destination load started")
+        let terminalReceived = expectation(description: "apply terminal received")
+        let terminalCount = LockIsolated(0)
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.externalOpenApplyCompleted(.init(
+                        batchID: batchID,
+                        result: .success(plan),
+                    ))) = action {
+                        terminalCount.withValue { $0 += 1 }
+                        terminalReceived.fulfill()
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { url, _ in
+                XCTAssertEqual(url.path, "/external")
+                loadStarted.fulfill()
+                await loadGate.wait()
+                return []
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { $0.finish() }
+            }
+        }
+        // store.exhaustivity = .off: child navigation action보다 WindowManager commit/terminal 경계를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.apply(
+            plan: plan,
+            reservationsByItemID: [
+                itemID: .init(id: tabID, anchor: .directory(path: "/external")),
+            ],
+        )))
+        await fulfillment(of: [loadStarted, terminalReceived], timeout: 1)
+        await store.skipReceivedActions()
+
+        let committedWindow = try XCTUnwrap(store.state.windows[id: windowID]?.window)
+        XCTAssertEqual(committedWindow.contentTabs.tabs.map(\.id), [previousActiveID, tabID])
+        XCTAssertEqual(committedWindow.contentTabs.activeTabID, tabID)
+        XCTAssertEqual(committedWindow.contentTabs.previousActiveTabID, previousActiveID)
+        XCTAssertEqual(terminalCount.value, 1)
+
+        await loadGate.open()
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
     /// external placement 적용은 reservation 첫 항목부터 overflow window를 만들고 bootstrap 대상으로 등록하지 않는다.
     func testPlacementApplicationCreatesNoHomeOverflowWindowsOutsideBootstrap() async {
         let batchID = UUID()
@@ -2550,6 +2632,14 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         XCTAssertEqual(store.state.windows.map(\.id), [firstWindowID, secondWindowID])
         XCTAssertEqual(store.state.windows.map(\.window.contentTabs.tabs.count), [20, 1])
+        XCTAssertTrue(store.state.windows.allSatisfy { window in
+            window.window.content.entryViewLayout.entryOperations.windowID == window.id
+                && window.window.content.composer.cancellationOwnerID == window.id
+                && window.window.tabContentStates.values.allSatisfy { content in
+                    content.entryViewLayout.entryOperations.windowID == window.id
+                        && content.composer.cancellationOwnerID == window.id
+                }
+        })
         XCTAssertTrue(store.state.windows.allSatisfy { window in
             !window.window.contentTabs.tabs.contains(where: { $0.page == .home || $0.isPinned })
         })

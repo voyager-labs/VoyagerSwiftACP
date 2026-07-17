@@ -102,6 +102,7 @@ public struct FileManagerWindowState: Equatable {
 
     public static func makeExternalInitial(
         reservations: [ExternalContentTabReservation],
+        windowID: UUID? = nil,
     ) -> Self? {
         guard canReserveExternalContentTabs(
             reservations,
@@ -109,7 +110,10 @@ public struct FileManagerWindowState: Equatable {
             existingCount: 0,
         ) else { return nil }
 
-        let windowContext = FileManagerContentFeature.State()
+        var windowContext = FileManagerContentFeature.State()
+        if let windowID {
+            windowContext.applyWindowContext(windowID: windowID)
+        }
         let snapshots = externalSnapshots(
             for: reservations,
             inheritingWindowContextFrom: windowContext,
@@ -735,6 +739,11 @@ extension FileManagerContentFeature.State {
         }
 
         return content
+    }
+
+    mutating func applyWindowContext(windowID: UUID) {
+        entryViewLayout.entryOperations.windowID = windowID
+        composer.cancellationOwnerID = windowID
     }
 
     mutating func applyWindowContext(from source: Self) {
