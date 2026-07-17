@@ -25,6 +25,7 @@ public struct ExternalFileRouterFeature {
 
     private enum CancelID: Hashable {
         case pathProbe(URL)
+        case batchNormalization
     }
 
     public var body: some Reducer<State, Action> {
@@ -42,6 +43,19 @@ public struct ExternalFileRouterFeature {
 
             case let .normalizeCompleted(result):
                 return handleNormalizeCompleted(result: result, state: &state)
+
+            case let .receiveBatch(batch):
+                return handleReceiveBatch(batch, state: &state)
+
+            case let .batchNormalizationCompleted(result):
+                guard state.activeBatchID == result.batchID else { return .none }
+                state.activeBatchID = nil
+                return .send(.delegate(.batchNormalized(result)))
+
+            case let .cancelBatch(batchID):
+                guard state.activeBatchID == batchID else { return .none }
+                state.activeBatchID = nil
+                return .cancel(id: CancelID.batchNormalization)
 
             case let .routeCompleted(status):
                 state.currentStatus = status
@@ -154,6 +168,82 @@ private extension ExternalFileRouterFeature {
         .cancellable(id: CancelID.pathProbe(url), cancelInFlight: false)
     }
 
+    /// system-open callback batch를 하나의 cancellation boundary에서 정규화한다.
+    func handleReceiveBatch(_ batch: ExternalFileRouterBatchRequest, state: inout State) -> Effect<Action> {
+        state.activeBatchID = batch.batchID
+
+        return .run { [pathProbeClient, batch] send in
+            let completed = await withTaskGroup(
+                of: IndexedBatchResult.self,
+                returning: [IndexedBatchResult].self,
+            ) { group in
+                for (offset, item) in batch.items.enumerated() {
+                    group.addTask { [pathProbeClient, item] in
+                        IndexedBatchResult(
+                            offset: offset,
+                            result: Self.normalizeBatchItem(item, pathProbeClient: pathProbeClient),
+                        )
+                    }
+                }
+
+                var results: [IndexedBatchResult] = []
+                results.reserveCapacity(batch.items.count)
+                for await result in group {
+                    results.append(result)
+                }
+                return results
+            }
+
+            guard !Task.isCancelled else { return }
+            let orderedItems = completed
+                .sorted { $0.offset < $1.offset }
+                .map(\.result)
+            await send(.batchNormalizationCompleted(.init(batchID: batch.batchID, items: orderedItems)))
+        }
+        .cancellable(id: CancelID.batchNormalization, cancelInFlight: true)
+    }
+
+    static func normalizeBatchItem(
+        _ item: ExternalFileRouterBatchRequest.Item,
+        pathProbeClient: PathProbeClient,
+    ) -> ExternalFileRouterBatchItemResult {
+        guard item.url.isFileURL else {
+            return makeBatchItemResult(item, outcome: .failure(.urlValidationError(item.url)))
+        }
+
+        let path = FilePathNormalizer.normalize(item.url.path)
+        let probe = pathProbeClient.probeExistence(path)
+        let outcome: ExternalFileRouterBatchOutcome = if probe.permissionDenied {
+            .failure(.permissionDenied(path))
+        } else if !probe.exists {
+            .failure(.invalidPath(path))
+        } else if item.url.pathExtension.lowercased() == "voycoll" {
+            .success(.collection(path: path))
+        } else if probe.isDirectory {
+            .success(.directory(path: path, revealPath: nil))
+        } else {
+            .success(.directory(
+                path: (path as NSString).deletingLastPathComponent,
+                revealPath: path,
+            ))
+        }
+        return makeBatchItemResult(item, outcome: outcome)
+    }
+
+    static func makeBatchItemResult(
+        _ item: ExternalFileRouterBatchRequest.Item,
+        outcome: ExternalFileRouterBatchOutcome,
+    ) -> ExternalFileRouterBatchItemResult {
+        ExternalFileRouterBatchItemResult(
+            itemID: item.itemID,
+            index: item.index,
+            url: item.url,
+            source: item.source,
+            mode: item.mode,
+            outcome: outcome,
+        )
+    }
+
     /// path 정규화 완료 후 라우팅을 결정한다.
     ///
     /// path_normalized 상태로 전환 후:
@@ -228,4 +318,9 @@ private extension ExternalFileRouterFeature {
             return .none
         }
     }
+}
+
+private struct IndexedBatchResult {
+    let offset: Int
+    let result: ExternalFileRouterBatchItemResult
 }

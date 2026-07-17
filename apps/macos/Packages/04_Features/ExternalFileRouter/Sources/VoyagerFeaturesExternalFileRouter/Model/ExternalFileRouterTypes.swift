@@ -91,6 +91,84 @@ public struct ExternalFileRouterNormalizationResult: Equatable, Sendable {
     }
 }
 
+// MARK: - ExternalFileRouter Batch
+
+/// 시스템 open callback 한 번에서 전달된 ordered file URL 묶음
+public struct ExternalFileRouterBatchRequest: Equatable, Sendable {
+    public let batchID: UUID
+    public let items: [Item]
+
+    public init(batchID: UUID, items: [Item]) {
+        self.batchID = batchID
+        self.items = items
+    }
+
+    public struct Item: Equatable, Sendable {
+        public let itemID: UUID
+        public let index: Int
+        public let url: URL
+        public let source: RouteSource
+        public let mode: DeepLinkMode
+
+        public init(itemID: UUID, index: Int, url: URL, source: RouteSource, mode: DeepLinkMode) {
+            self.itemID = itemID
+            self.index = index
+            self.url = url
+            self.source = source
+            self.mode = mode
+        }
+    }
+}
+
+/// ordered batch 정규화의 항목별 성공 목적지
+public enum ExternalFileRouterBatchDestination: Equatable, Sendable {
+    case collection(path: String)
+    case directory(path: String, revealPath: String?)
+}
+
+/// ordered batch 정규화의 항목별 성공 또는 실패
+public enum ExternalFileRouterBatchOutcome: Equatable, Sendable {
+    case success(ExternalFileRouterBatchDestination)
+    case failure(ExternalFileRouterError)
+}
+
+/// 입력 항목 identity와 위치를 그대로 보존하는 batch 결과 항목
+public struct ExternalFileRouterBatchItemResult: Equatable, Sendable {
+    public let itemID: UUID
+    public let index: Int
+    public let url: URL
+    public let source: RouteSource
+    public let mode: DeepLinkMode
+    public let outcome: ExternalFileRouterBatchOutcome
+
+    public init(
+        itemID: UUID,
+        index: Int,
+        url: URL,
+        source: RouteSource,
+        mode: DeepLinkMode,
+        outcome: ExternalFileRouterBatchOutcome,
+    ) {
+        self.itemID = itemID
+        self.index = index
+        self.url = url
+        self.source = source
+        self.mode = mode
+        self.outcome = outcome
+    }
+}
+
+/// callback 입력 수와 순서가 동일한 batch 정규화 결과
+public struct ExternalFileRouterBatchResult: Equatable, Sendable {
+    public let batchID: UUID
+    public let items: [ExternalFileRouterBatchItemResult]
+
+    public init(batchID: UUID, items: [ExternalFileRouterBatchItemResult]) {
+        self.batchID = batchID
+        self.items = items
+    }
+}
+
 // MARK: - ExternalFileRouter Error
 
 /// ExternalFileRouter 처리 중 발생 가능한 오류
@@ -116,6 +194,12 @@ public enum ExternalFileRouterAction: CasePathable {
     /// 외부 file:// URL 직접 수신 (system open event, NSServices).
     /// ExternalFileURLParser를 거치지 않고 직접 요청을 생성한다.
     case receiveFileURL(URL, source: RouteSource, mode: DeepLinkMode)
+    /// system-open callback의 ordered batch를 한 effect로 정규화
+    case receiveBatch(ExternalFileRouterBatchRequest)
+    /// ordered batch 정규화 완료
+    case batchNormalizationCompleted(ExternalFileRouterBatchResult)
+    /// 일치하는 active batch 정규화를 취소
+    case cancelBatch(UUID)
     /// URL 정규화 완료 (pathReceived → pathNormalized)
     /// 동시 요청 겹침 시 state pollution 방지를 위해 요청 context를 payload로 전달
     case normalizeCompleted(ExternalFileRouterNormalizationResult)
@@ -145,6 +229,8 @@ public enum ExternalFileRouterAction: CasePathable {
         case showInvalidPathError(path: String)
         /// 접근 권한 거부 오류를 부모 reducer에 위임 (permissionDeniedError)
         case showPermissionDeniedError(path: String)
+        /// ordered batch의 1:1 정규화 결과를 부모 reducer에 한 번만 위임
+        case batchNormalized(ExternalFileRouterBatchResult)
     }
 }
 
@@ -156,16 +242,20 @@ public struct ExternalFileRouterState: Equatable {
     public var currentStatus: ExternalFileRouterStatus?
     /// 현재 처리 중인 요청 정보
     public var currentRequest: ExternalFileRouterRequest?
+    /// 현재 정규화 중인 system-open batch identity
+    public var activeBatchID: UUID?
     /// ExternalFileURLParser에서 수신할 URL scheme (기본값: "voyager")
     public var expectedScheme: String
 
     public init(
         currentStatus: ExternalFileRouterStatus? = nil,
         currentRequest: ExternalFileRouterRequest? = nil,
+        activeBatchID: UUID? = nil,
         expectedScheme: String = "voyager",
     ) {
         self.currentStatus = currentStatus
         self.currentRequest = currentRequest
+        self.activeBatchID = activeBatchID
         self.expectedScheme = expectedScheme
     }
 }

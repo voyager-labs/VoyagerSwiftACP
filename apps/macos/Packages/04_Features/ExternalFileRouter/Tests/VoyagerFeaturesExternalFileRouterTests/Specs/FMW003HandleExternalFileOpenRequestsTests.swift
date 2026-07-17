@@ -529,3 +529,135 @@ extension FMW003HandleExternalFileOpenRequestsTests {
         await store.finish()
     }
 }
+
+// MARK: - FMW-003-open_external_path
+
+extension FMW003HandleExternalFileOpenRequestsTests {
+    /// FMW-003-open_external_path: 지연된 probe와 실패가 섞여도 callback 입력 순서의 결과를 한 번 반환한다.
+    /// 시스템 open callback의 모든 occurrence가 완료된 뒤 하나의 ordered normalization 결과가 생성되는지 검증한다.
+    /// - 검증 내용: batch identity, item identity/index, duplicate occurrence, 실패 위치, destination 분류를 확인한다.
+    /// - 사전 조건: directory probe는 뒤 항목이 먼저 완료될 때까지 대기하고 invalid/permission/file/`.voycoll` 입력이 섞여 있다.
+    /// - 기대 결과: beginning/middle/end 실패를 포함한 7개 결과가 원래 순서로 한 번만 delegate된다.
+    func testSystemOpenBatchPreservesOrderFailuresDuplicatesAndClassification() async throws {
+        let batchID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000100"))
+        let itemIDs = try (0 ..< 7).map { offset in
+            try XCTUnwrap(UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", offset + 1)))
+        }
+        let urls = [
+            URL(fileURLWithPath: "/tmp/missing"),
+            URL(fileURLWithPath: "/tmp/folder"),
+            URL(fileURLWithPath: "/tmp/document.txt"),
+            URL(fileURLWithPath: "/tmp/restricted"),
+            URL(fileURLWithPath: "/tmp/list.voycoll"),
+            URL(fileURLWithPath: "/tmp/document.txt"),
+            URL(fileURLWithPath: "/tmp/missing"),
+        ]
+        let batch = makeBatchRequest(batchID: batchID, itemIDs: itemIDs, urls: urls)
+        let expected = makeBatchResult(batchID: batchID, itemIDs: itemIDs, urls: urls)
+
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
+        } withDependencies: {
+            $0.pathProbeClient.probeExistence = probeBatchPath
+        }
+
+        await store.send(.receiveBatch(batch)) {
+            $0.activeBatchID = batchID
+        }
+        await store.receive(\.batchNormalizationCompleted, expected) {
+            $0.activeBatchID = nil
+        }
+        await store.receive(\.delegate.batchNormalized, expected)
+        // store.finish() 불필요: 모든 effect가 receive로 소비됨
+    }
+
+    /// FMW-003-open_external_path: 취소되거나 현재 batch와 다른 completion은 결과를 위임하지 않는다.
+    /// lifecycle gate가 batch를 취소한 뒤 늦게 도착한 completion이 라우팅을 재개하지 않는지 검증한다.
+    /// - 검증 내용: matching cancel이 active identity를 지우고 late/stale completion의 state/delegate mutation이 없는지 확인한다.
+    /// - 사전 조건: active batch identity와 취소 후 도착한 동일 batch 및 다른 batchID의 synthetic completion이 있다.
+    /// - 기대 결과: cancellation 이후 active batch는 nil이며 batchNormalized delegate는 0회다.
+    func testCancelledAndStaleBatchCompletionDoesNotMutateOrDelegate() async throws {
+        let batchID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000200"))
+        let staleBatchID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000201"))
+        var state = ExternalFileRouterState()
+        state.activeBatchID = batchID
+        let cancelledResult = ExternalFileRouterBatchResult(batchID: batchID, items: [])
+        let staleResult = ExternalFileRouterBatchResult(batchID: staleBatchID, items: [])
+
+        let store = TestStore(initialState: state) {
+            ExternalFileRouterFeature()
+        }
+
+        await store.send(.cancelBatch(batchID)) {
+            $0.activeBatchID = nil
+        }
+        await store.send(.batchNormalizationCompleted(cancelledResult))
+        await store.send(.batchNormalizationCompleted(staleResult))
+        await store.finish()
+    }
+}
+
+private func makeBatchRequest(
+    batchID: UUID,
+    itemIDs: [UUID],
+    urls: [URL],
+) -> ExternalFileRouterBatchRequest {
+    ExternalFileRouterBatchRequest(
+        batchID: batchID,
+        items: zip(itemIDs, urls).enumerated().map { index, pair in
+            .init(
+                itemID: pair.0,
+                index: index,
+                url: pair.1,
+                source: .systemOpenEvent,
+                mode: .open,
+            )
+        },
+    )
+}
+
+private func makeBatchResult(
+    batchID: UUID,
+    itemIDs: [UUID],
+    urls: [URL],
+) -> ExternalFileRouterBatchResult {
+    let outcomes: [ExternalFileRouterBatchOutcome] = [
+        .failure(.invalidPath("/tmp/missing")),
+        .success(.directory(path: "/tmp/folder", revealPath: nil)),
+        .success(.directory(path: "/tmp", revealPath: "/tmp/document.txt")),
+        .failure(.permissionDenied("/tmp/restricted")),
+        .success(.collection(path: "/tmp/list.voycoll")),
+        .success(.directory(path: "/tmp", revealPath: "/tmp/document.txt")),
+        .failure(.invalidPath("/tmp/missing")),
+    ]
+    let items = zip(urls, outcomes).enumerated().map { index, pair in
+        ExternalFileRouterBatchItemResult(
+            itemID: itemIDs[index],
+            index: index,
+            url: pair.0,
+            source: .systemOpenEvent,
+            mode: .open,
+            outcome: pair.1,
+        )
+    }
+    return ExternalFileRouterBatchResult(batchID: batchID, items: items)
+}
+
+private func probeBatchPath(_ path: String) -> PathProbeResult {
+    switch path {
+    case "/tmp/folder":
+        Thread.sleep(forTimeInterval: 0.05)
+        return PathProbeResult(exists: true, isDirectory: true)
+    case "/tmp/missing":
+        return PathProbeResult(exists: false, isDirectory: false)
+    case "/tmp/document.txt":
+        return PathProbeResult(exists: true, isDirectory: false)
+    case "/tmp/list.voycoll":
+        return PathProbeResult(exists: true, isDirectory: true)
+    case "/tmp/restricted":
+        return PathProbeResult(exists: false, isDirectory: false, permissionDenied: true)
+    default:
+        XCTFail("예상하지 못한 probe path: \(path)")
+        return PathProbeResult(exists: false, isDirectory: false)
+    }
+}
