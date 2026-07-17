@@ -252,23 +252,38 @@ extension ContentTabFeature {
             return .none
         }
 
-        let originalIDs = state.tabs.ids
-        var reorderedTabs = state.tabs
-        reorderedTabs.remove(id: sourceID)
+        let originalUnpinnedIDs = state.tabs.filter { !$0.isPinned }.map(\.id)
+        var reorderedUnpinnedIDs = originalUnpinnedIDs
+        reorderedUnpinnedIDs.removeAll { $0 == sourceID }
 
-        guard let targetIndex = reorderedTabs.index(id: targetID) else {
+        guard let targetIndex = reorderedUnpinnedIDs.firstIndex(of: targetID) else {
             return .none
         }
 
         let proposedIndex = placement == .before ? targetIndex : targetIndex + 1
-        let insertionIndex = min(max(proposedIndex, reorderedTabs.startIndex), reorderedTabs.endIndex)
-        reorderedTabs.insert(source, at: insertionIndex)
+        let insertionIndex = min(max(proposedIndex, reorderedUnpinnedIDs.startIndex), reorderedUnpinnedIDs.endIndex)
+        reorderedUnpinnedIDs.insert(sourceID, at: insertionIndex)
 
-        guard reorderedTabs.ids != originalIDs else {
+        guard reorderedUnpinnedIDs != originalUnpinnedIDs else {
             return .none
         }
 
-        state.tabs = reorderedTabs
+        var reorderedUnpinnedIterator = reorderedUnpinnedIDs.makeIterator()
+        var reorderedTabs: [ContentTabItem] = []
+        for tab in state.tabs {
+            if tab.isPinned {
+                reorderedTabs.append(tab)
+                continue
+            }
+
+            guard let reorderedID = reorderedUnpinnedIterator.next(),
+                  let reorderedTab = state.tabs[id: reorderedID]
+            else {
+                return .none
+            }
+            reorderedTabs.append(reorderedTab)
+        }
+        state.tabs = .init(uniqueElements: reorderedTabs)
         return .none
     }
 

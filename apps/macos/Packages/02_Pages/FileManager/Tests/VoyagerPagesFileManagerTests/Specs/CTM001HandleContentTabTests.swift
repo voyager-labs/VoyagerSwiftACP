@@ -1236,10 +1236,10 @@ final class CTM001HandleContentTabTests: XCTestCase {
     }
 
     /// CTM-001-reorder_content_tab: raw interleaving에서 unpinned 표시 순서만 semantic하게 변경함
-    /// pinned-first 정규화 없이 U3를 U1 앞으로 이동하면서 pinned subsequence와 persistence state를 보존하는지 검증한다.
-    /// - 검증 내용: raw `[U1, P1, U2, P2, U3]`에서 `U3 before U1` 후 pinned와 unpinned subsequence 검증
+    /// pinned-first 정규화 없이 U3를 U1 앞으로 이동하면서 pinned raw slot과 persistence state를 보존하는지 검증한다.
+    /// - 검증 내용: raw `[U1, P1, U2, P2, U3]`에서 `U3 before U1` 후 pinned slot과 unpinned 표시 순서 검증
     /// - 사전 조건: P1/P2가 interleaved된 raw tabs와 두 pinned record, active/previous/recentlyClosed state
-    /// - 기대 결과: raw `[U3, U1, P1, U2, P2]`, pinned `[P1, P2]`, unpinned `[U3, U1, U2]`이며 나머지 state 불변
+    /// - 기대 결과: raw `[U3, P1, U1, P2, U2]`, pinned raw slot과 나머지 state 불변
     func testReorderContentTab_interleavedRawOrderPreservesPinnedSubsequenceAndPersistence() {
         let unpinned1 = makeReorderDirectoryTab("U1", isPinned: false)
         let pinned1 = makeReorderDirectoryTab("P1", isPinned: true)
@@ -1269,7 +1269,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         )
         var state = original
         var expected = original
-        expected.tabs = [unpinned3, unpinned1, pinned1, unpinned2, pinned2]
+        expected.tabs = [unpinned3, pinned1, unpinned1, pinned2, unpinned2]
 
         _ = ContentTabFeature().reduce(
             into: &state,
@@ -1279,6 +1279,32 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(state, expected)
         XCTAssertEqual(state.tabs.filter(\.isPinned).map(\.id), [pinned1.id, pinned2.id])
         XCTAssertEqual(state.tabs.filter { !$0.isPinned }.map(\.id), [unpinned3.id, unpinned1.id, unpinned2.id])
+    }
+
+    /// CTM-001-reorder_content_tab: 화면상 인접한 unpinned placement는 pinned raw slot을 포함한 완전 no-op임
+    /// Sidebar에서 이미 U1 다음에 보이는 U2를 U1 뒤로 다시 놓을 때 hidden pinned raw 위치가 바뀌지 않는지 검증한다.
+    /// - 검증 내용: raw `[U1, P1, U2]`에서 `U2 after U1` 후 whole-state equality 검증
+    /// - 사전 조건: U1/U2 사이에 pinned P1이 interleaved되어 있지만 Sidebar unpinned 표시 순서는 `[U1, U2]`
+    /// - 기대 결과: raw tabs와 pinned record를 포함한 전체 state가 기존과 동일함
+    func testReorderContentTab_displayNoOpPreservesInterleavedPinnedRawSlot() {
+        let unpinned1 = makeReorderDirectoryTab("U1", isPinned: false)
+        let pinned1 = makeReorderDirectoryTab("P1", isPinned: true)
+        let unpinned2 = makeReorderDirectoryTab("U2", isPinned: false)
+        let original = ContentTabState(
+            tabs: [unpinned1, pinned1, unpinned2],
+            activeTabID: unpinned2.id,
+            previousActiveTabID: unpinned1.id,
+            pinnedRecords: [pinned1.id: makePinnedRecord(pinned1, pinnedAt: 1)],
+        )
+        var state = original
+
+        _ = ContentTabFeature().reduce(
+            into: &state,
+            action: .reorder(sourceID: unpinned2.id, targetID: unpinned1.id, placement: .after),
+        )
+
+        XCTAssertEqual(state, original)
+        XCTAssertEqual(state.tabs.map(\.id), [unpinned1.id, pinned1.id, unpinned2.id])
     }
 
     // MARK: - CTM-001-handle_content_tab_invariants
