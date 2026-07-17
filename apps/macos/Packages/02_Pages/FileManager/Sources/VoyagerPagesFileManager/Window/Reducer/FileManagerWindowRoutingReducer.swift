@@ -74,6 +74,10 @@ struct FileManagerWindowRoutingReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case let .reserveExternalContentTabs(reservations):
+                state.reserveExternalContentTabs(reservations)
+                return .none
+
             case let .sidebar(.delegate(.selectContentTab(tabID))):
                 return .merge(
                     .send(.contentTabs(.setCurrent(tabID))),

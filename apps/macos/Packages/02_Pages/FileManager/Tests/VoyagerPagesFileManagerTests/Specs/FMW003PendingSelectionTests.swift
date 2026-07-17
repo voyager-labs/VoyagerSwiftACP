@@ -208,6 +208,48 @@ final class FMW003PendingSelectionTests: XCTestCase {
         // pendingSelectEntryID가 nil이므로 coordinator가 즉시 .none 반환
         await store.finish()
     }
+
+    // MARK: - FMW-003-handle_external_file_open_requests
+
+    /// FMW-003-handle_external_file_open_requests: regular-file reservation은 첫 itemsLoaded 전에 pending selection을 저장한다.
+    /// 시스템 open으로 parent Directory tab을 만든 뒤 파일 entry를 reveal하는 기존 pending-selection seam을 검증한다.
+    /// - 검증 내용: external initial snapshot의 pending ID가 itemsLoaded에서 소비되어 selection state로 전환된다.
+    /// - 사전 조건: caller tab ID, parent Directory anchor, regular-file full path를 가진 reservation 하나다.
+    /// - 기대 결과: load 전 pending ID가 존재하고 load 후 clear되며 해당 entry가 선택되고 scroll 요청이 설정된다.
+    func testExternalReservation_pendingSelectionExistsBeforeRegularFileLoad() async throws {
+        let tabID = ContentTabID(rawValue: "external-regular-file")
+        let filePath = "/test/report.txt"
+        let windowState = try XCTUnwrap(FileManagerWindowState.makeExternalInitial(reservations: [
+            ExternalContentTabReservation(
+                id: tabID,
+                anchor: .directory(path: "/test"),
+                pendingSelectEntryID: filePath,
+            ),
+        ]))
+        XCTAssertEqual(windowState.content.pendingSelectEntryID, filePath)
+        XCTAssertEqual(windowState.tabContentStates[tabID]?.pendingSelectEntryID, filePath)
+
+        let store = TestStore(
+            initialState: LifecycleBridgeHarness.State(content: windowState.content),
+        ) {
+            LifecycleBridgeHarness()
+        }
+        // store.exhaustivity = .off: pending selection 소비 외 entry layout의 부수 state 변경은 기존 owner가 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.bridge(.loading(.itemsLoaded([Self.makeEntry(fullPath: filePath)])))) {
+            $0.content.pendingSelectEntryID = nil
+            $0.content.entryViewLayout.selectedIds = Set([filePath])
+            $0.content.entryViewLayout.lastSelectedId = filePath
+            $0.content.entryViewLayout.rangeAnchorId = filePath
+            $0.content.entryViewLayout.shouldScrollToSelection = true
+        }
+        await store.receive { action in
+            guard case .forwarded(.entryViewLayout(.delegate(.selectionChanged))) = action else { return false }
+            return true
+        }
+        await store.finish()
+    }
 }
 
 /// EVM001FileManagerNavigationTests.LifecycleBridgeHarness와 동일한 패턴.
