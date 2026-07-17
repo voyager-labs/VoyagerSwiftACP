@@ -33,6 +33,28 @@ final class CTM001HandleContentTabTests: XCTestCase {
         }
     }
 
+    private func makeReorderDirectoryTab(_ id: String, isPinned: Bool) -> ContentTabItem {
+        ContentTabItem(
+            id: ContentTabID(rawValue: id),
+            page: .directory,
+            anchor: .directory(path: "/\(id.lowercased())"),
+            isPinned: isPinned,
+            title: "Title \(id)",
+            iconName: "icon.\(id.lowercased())",
+        )
+    }
+
+    private func makePinnedRecord(_ tab: ContentTabItem, pinnedAt: TimeInterval) -> ContentTabPinnedRecord {
+        ContentTabPinnedRecord(
+            id: tab.id.rawValue,
+            page: tab.page,
+            anchor: tab.anchor,
+            title: tab.title,
+            iconName: tab.iconName,
+            pinnedAt: Date(timeIntervalSince1970: pinnedAt),
+        )
+    }
+
     // MARK: - CTM-001-open_new_content_tab
 
     /// CTM-001-open_new_content_tab: 빈 상태와 FileManager window 초기 상태는 Home Content Tab을 활성화함
@@ -1021,6 +1043,242 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         XCTAssertEqual(state.recentlyClosed?.anchor, anchorC)
         XCTAssertEqual(state.recentlyClosed?.page, .directory)
+    }
+
+    // MARK: - CTM-001-reorder_content_tab
+
+    /// CTM-001-reorder_content_tab: 첫 unpinned tab을 마지막 target 뒤로 이동함
+    /// semantic ID와 after placement로 forward reorder할 때 tab 순서 외 상태와 metadata가 보존되는지 검증한다.
+    /// - 검증 내용: `[A, B, C]`에서 `A after C`가 `[B, C, A]`가 되고 전체 state는 기대 tabs 외 동일함
+    /// - 사전 조건: 서로 다른 page/anchor/title/icon metadata와 active/previous/recentlyClosed를 가진 unpinned tab 3개
+    /// - 기대 결과: A가 마지막 경계로 이동하고 모든 tab value 및 non-tab state가 원본과 동일함
+    func testReorderContentTab_movesForwardAfterLastTargetAndPreservesMetadata() {
+        let tabA = ContentTabItem(
+            id: ContentTabID(rawValue: "A"),
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Home A",
+            iconName: "house.a",
+        )
+        let tabB = ContentTabItem(
+            id: ContentTabID(rawValue: "B"),
+            page: .directory,
+            anchor: .directory(path: "/b"),
+            isPinned: false,
+            title: "Directory B",
+            iconName: "folder.b",
+        )
+        let tabC = ContentTabItem(
+            id: ContentTabID(rawValue: "C"),
+            page: .collection,
+            anchor: .virtualCollection(id: "C"),
+            isPinned: false,
+            title: "Collection C",
+            iconName: "rectangle.stack.c",
+        )
+        let recentlyClosed = ClosedContentTabSnapshot(
+            page: .aiChat,
+            anchor: .aiChat(sessionID: "closed-session"),
+            wasPinned: false,
+            closedAt: Date(timeIntervalSince1970: 1_234_567_890),
+            title: "Closed Chat",
+            iconName: "sparkles",
+        )
+        let original = ContentTabState(
+            tabs: [tabA, tabB, tabC],
+            activeTabID: tabB.id,
+            previousActiveTabID: tabA.id,
+            recentlyClosed: recentlyClosed,
+            pinnedRecordPersistenceError: "existing_error",
+        )
+        var state = original
+        var expected = original
+        expected.tabs = [tabB, tabC, tabA]
+
+        _ = ContentTabFeature().reduce(
+            into: &state,
+            action: .reorder(sourceID: tabA.id, targetID: tabC.id, placement: .after),
+        )
+
+        XCTAssertEqual(state, expected)
+    }
+
+    /// CTM-001-reorder_content_tab: 마지막 unpinned tab을 첫 target 앞으로 이동함
+    /// semantic ID와 before placement로 backward reorder할 때 첫 삽입 경계와 whole-state 보존을 검증한다.
+    /// - 검증 내용: `[A, B, C]`에서 `C before A`가 `[C, A, B]`가 되고 전체 state는 기대 tabs 외 동일함
+    /// - 사전 조건: active/previous identity를 가진 unpinned tab 3개
+    /// - 기대 결과: C가 첫 경계로 이동하고 active/previous identity 및 tab metadata가 원본과 동일함
+    func testReorderContentTab_movesBackwardBeforeFirstTarget() {
+        let tabA = ContentTabItem(
+            id: ContentTabID(rawValue: "A"),
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "A",
+            iconName: "a",
+        )
+        let tabB = ContentTabItem(
+            id: ContentTabID(rawValue: "B"),
+            page: .directory,
+            anchor: .directory(path: "/b"),
+            isPinned: false,
+            title: "B",
+            iconName: "b",
+        )
+        let tabC = ContentTabItem(
+            id: ContentTabID(rawValue: "C"),
+            page: .directory,
+            anchor: .directory(path: "/c"),
+            isPinned: false,
+            title: "C",
+            iconName: "c",
+        )
+        let original = ContentTabState(
+            tabs: [tabA, tabB, tabC],
+            activeTabID: tabC.id,
+            previousActiveTabID: tabB.id,
+        )
+        var state = original
+        var expected = original
+        expected.tabs = [tabC, tabA, tabB]
+
+        _ = ContentTabFeature().reduce(
+            into: &state,
+            action: .reorder(sourceID: tabC.id, targetID: tabA.id, placement: .before),
+        )
+
+        XCTAssertEqual(state, expected)
+    }
+
+    /// CTM-001-reorder_content_tab: 인접 tab의 동일 결과 placement는 완전 no-op임
+    /// source 제거 후 계산된 ID 순서가 원본과 같으면 원본 tabs와 전체 state를 유지하는지 검증한다.
+    /// - 검증 내용: `[A, B, C]`에서 `A before B`와 `B after A`가 모두 원본 ID 순서를 유지함
+    /// - 사전 조건: 인접한 unpinned A와 B를 포함한 tab 3개
+    /// - 기대 결과: 각 action 후 state가 action 전 원본과 정확히 동일함
+    func testReorderContentTab_adjacentSameResultPlacementsAreNoOps() {
+        let tabA = ContentTabItem(
+            id: ContentTabID(rawValue: "A"),
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "A",
+            iconName: "a",
+        )
+        let tabB = ContentTabItem(
+            id: ContentTabID(rawValue: "B"),
+            page: .directory,
+            anchor: .directory(path: "/b"),
+            isPinned: false,
+            title: "B",
+            iconName: "b",
+        )
+        let tabC = ContentTabItem(
+            id: ContentTabID(rawValue: "C"),
+            page: .directory,
+            anchor: .directory(path: "/c"),
+            isPinned: false,
+            title: "C",
+            iconName: "c",
+        )
+        let original = ContentTabState(tabs: [tabA, tabB, tabC], activeTabID: tabA.id)
+        let reducer = ContentTabFeature()
+
+        var beforeState = original
+        _ = reducer.reduce(
+            into: &beforeState,
+            action: .reorder(sourceID: tabA.id, targetID: tabB.id, placement: .before),
+        )
+        XCTAssertEqual(beforeState, original)
+
+        var afterState = original
+        _ = reducer.reduce(
+            into: &afterState,
+            action: .reorder(sourceID: tabB.id, targetID: tabA.id, placement: .after),
+        )
+        XCTAssertEqual(afterState, original)
+    }
+
+    /// CTM-001-reorder_content_tab: missing, same-ID, pinned source/target 입력은 완전 no-op임
+    /// 유효하지 않거나 pinned divider를 넘는 semantic reorder가 어떤 state field도 변경하지 않는지 검증한다.
+    /// - 검증 내용: missing source/target, same ID, pinned source, pinned target action 각각의 whole-state equality
+    /// - 사전 조건: raw `[U1, P1, U2]`와 P1 persistence metadata, pending/error state
+    /// - 기대 결과: 모든 거부 action에서 state가 원본과 정확히 동일하고 tab identity 중복/누락이 없음
+    func testReorderContentTab_invalidAndPinnedInputsAreCompleteNoOps() {
+        let unpinned1 = makeReorderDirectoryTab("U1", isPinned: false)
+        let pinned1 = makeReorderDirectoryTab("P1", isPinned: true)
+        let unpinned2 = makeReorderDirectoryTab("U2", isPinned: false)
+        let pinnedRecord = makePinnedRecord(pinned1, pinnedAt: 123)
+        let original = ContentTabState(
+            tabs: [unpinned1, pinned1, unpinned2],
+            activeTabID: unpinned2.id,
+            previousActiveTabID: unpinned1.id,
+            pinnedRecords: [pinned1.id: pinnedRecord],
+            pendingPinnedRecordIDs: [pinned1.id],
+            pinnedRecordPersistenceError: "existing_error",
+        )
+        let missingID = ContentTabID(rawValue: "missing")
+        let actions: [ContentTabAction] = [
+            .reorder(sourceID: missingID, targetID: unpinned1.id, placement: .before),
+            .reorder(sourceID: unpinned1.id, targetID: missingID, placement: .after),
+            .reorder(sourceID: unpinned1.id, targetID: unpinned1.id, placement: .before),
+            .reorder(sourceID: pinned1.id, targetID: unpinned1.id, placement: .before),
+            .reorder(sourceID: unpinned1.id, targetID: pinned1.id, placement: .after),
+        ]
+        let reducer = ContentTabFeature()
+
+        for action in actions {
+            var state = original
+            _ = reducer.reduce(into: &state, action: action)
+            XCTAssertEqual(state, original)
+            XCTAssertEqual(state.tabs.map(\.id), [unpinned1.id, pinned1.id, unpinned2.id])
+        }
+    }
+
+    /// CTM-001-reorder_content_tab: raw interleaving에서 unpinned 표시 순서만 semantic하게 변경함
+    /// pinned-first 정규화 없이 U3를 U1 앞으로 이동하면서 pinned subsequence와 persistence state를 보존하는지 검증한다.
+    /// - 검증 내용: raw `[U1, P1, U2, P2, U3]`에서 `U3 before U1` 후 pinned와 unpinned subsequence 검증
+    /// - 사전 조건: P1/P2가 interleaved된 raw tabs와 두 pinned record, active/previous/recentlyClosed state
+    /// - 기대 결과: raw `[U3, U1, P1, U2, P2]`, pinned `[P1, P2]`, unpinned `[U3, U1, U2]`이며 나머지 state 불변
+    func testReorderContentTab_interleavedRawOrderPreservesPinnedSubsequenceAndPersistence() {
+        let unpinned1 = makeReorderDirectoryTab("U1", isPinned: false)
+        let pinned1 = makeReorderDirectoryTab("P1", isPinned: true)
+        let unpinned2 = makeReorderDirectoryTab("U2", isPinned: false)
+        let pinned2 = makeReorderDirectoryTab("P2", isPinned: true)
+        let unpinned3 = makeReorderDirectoryTab("U3", isPinned: false)
+        let pinnedRecords = [
+            pinned1.id: makePinnedRecord(pinned1, pinnedAt: 1),
+            pinned2.id: makePinnedRecord(pinned2, pinnedAt: 2),
+        ]
+        let recentlyClosed = ClosedContentTabSnapshot(
+            page: .home,
+            anchor: .homeDefault,
+            wasPinned: false,
+            closedAt: Date(timeIntervalSince1970: 3),
+            title: "Closed Home",
+            iconName: "house",
+        )
+        let original = ContentTabState(
+            tabs: [unpinned1, pinned1, unpinned2, pinned2, unpinned3],
+            activeTabID: unpinned2.id,
+            previousActiveTabID: unpinned1.id,
+            recentlyClosed: recentlyClosed,
+            pinnedRecords: pinnedRecords,
+            pendingPinnedRecordIDs: [pinned2.id],
+            pinnedRecordPersistenceError: "existing_error",
+        )
+        var state = original
+        var expected = original
+        expected.tabs = [unpinned3, unpinned1, pinned1, unpinned2, pinned2]
+
+        _ = ContentTabFeature().reduce(
+            into: &state,
+            action: .reorder(sourceID: unpinned3.id, targetID: unpinned1.id, placement: .before),
+        )
+
+        XCTAssertEqual(state, expected)
+        XCTAssertEqual(state.tabs.filter(\.isPinned).map(\.id), [pinned1.id, pinned2.id])
+        XCTAssertEqual(state.tabs.filter { !$0.isPinned }.map(\.id), [unpinned3.id, unpinned1.id, unpinned2.id])
     }
 
     // MARK: - CTM-001-handle_content_tab_invariants

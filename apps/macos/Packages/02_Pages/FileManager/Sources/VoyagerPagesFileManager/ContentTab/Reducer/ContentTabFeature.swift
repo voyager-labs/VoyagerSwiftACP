@@ -44,6 +44,9 @@ public struct ContentTabFeature {
             case let .duplicate(sourceID, duplicateID):
                 return duplicate(sourceID: sourceID, duplicateID: duplicateID, state: &state)
 
+            case let .reorder(sourceID, targetID, placement):
+                return reorder(sourceID: sourceID, targetID: targetID, placement: placement, state: &state)
+
             case let .pin(id):
                 return pin(id: id, state: &state)
 
@@ -231,6 +234,41 @@ extension ContentTabFeature {
             state.activeTabID = duplicateID
         }
 
+        return .none
+    }
+
+    private func reorder(
+        sourceID: ContentTabID,
+        targetID: ContentTabID,
+        placement: ContentTabReorderPlacement,
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
+        guard sourceID != targetID,
+              let source = state.tabs[id: sourceID],
+              let target = state.tabs[id: targetID],
+              !source.isPinned,
+              !target.isPinned
+        else {
+            return .none
+        }
+
+        let originalIDs = state.tabs.ids
+        var reorderedTabs = state.tabs
+        reorderedTabs.remove(id: sourceID)
+
+        guard let targetIndex = reorderedTabs.index(id: targetID) else {
+            return .none
+        }
+
+        let proposedIndex = placement == .before ? targetIndex : targetIndex + 1
+        let insertionIndex = min(max(proposedIndex, reorderedTabs.startIndex), reorderedTabs.endIndex)
+        reorderedTabs.insert(source, at: insertionIndex)
+
+        guard reorderedTabs.ids != originalIDs else {
+            return .none
+        }
+
+        state.tabs = reorderedTabs
         return .none
     }
 
