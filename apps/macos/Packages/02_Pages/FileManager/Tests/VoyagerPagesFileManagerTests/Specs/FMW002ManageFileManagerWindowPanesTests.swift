@@ -649,6 +649,23 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
         XCTAssertNotEqual(FileManagerWindowSplitObservationInput(state: widthChanged), baseline)
     }
 
+    func testWindowObservationInputsIgnoreContentTabSelectionState() {
+        let fixture = makeMainContainerObservationFixture()
+        let state = fixture.state
+        let mainBaseline = FileManagerWindowMainContainerObservationInput(state: state)
+        let splitBaseline = FileManagerWindowSplitObservationInput(state: state)
+
+        var selectedSetChanged = state
+        selectedSetChanged.contentTabs.selectedTabIDs = [fixture.secondTab.id]
+        XCTAssertEqual(FileManagerWindowMainContainerObservationInput(state: selectedSetChanged), mainBaseline)
+        XCTAssertEqual(FileManagerWindowSplitObservationInput(state: selectedSetChanged), splitBaseline)
+
+        var anchorChanged = state
+        anchorChanged.contentTabs.selectionAnchorID = fixture.secondTab.id
+        XCTAssertEqual(FileManagerWindowMainContainerObservationInput(state: anchorChanged), mainBaseline)
+        XCTAssertEqual(FileManagerWindowSplitObservationInput(state: anchorChanged), splitBaseline)
+    }
+
     func testMainContainerObservationInputIgnoresContentTabReorderProjection() {
         var fixture = makeMainContainerObservationFixture()
         let baseline = FileManagerWindowMainContainerObservationInput(state: fixture.state)
