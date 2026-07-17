@@ -78,11 +78,15 @@ struct WindowManagerFeature {
                     return .send(.file(.newWindow(path: nil)))
                 }
 
-                guard let reopenWindowID = state.focusedWindowID ?? state.windows.first?.id else {
+                guard let reopenWindowID = state.focusedWindowID
+                    ?? state.lastUsedWindowIDs.first(where: { state.windows[id: $0] != nil })
+                    ?? state.windows.first?.id
+                else {
                     return .none
                 }
 
                 state.focusedWindowID = reopenWindowID
+                state.moveWindowToMRUFront(reopenWindowID)
                 return .run { [fileManagerWindowClient, reopenWindowID] _ in
                     await fileManagerWindowClient.open(reopenWindowID)
                 }
@@ -203,7 +207,9 @@ struct WindowManagerFeature {
                 return sendCommandToFocusedWindow(state, .copyURLs)
 
             case let .event(.windowBecameKey(id)):
+                guard state.windows[id: id] != nil else { return .none }
                 state.focusedWindowID = id
+                state.moveWindowToMRUFront(id)
                 return .none
 
             case let .event(.windowResignedKey(id)):
@@ -215,9 +221,11 @@ struct WindowManagerFeature {
             case let .event(.windowClosed(id)):
                 let wasFocused = state.focusedWindowID == id
                 state.windows.remove(id: id)
+                state.lastUsedWindowIDs.removeAll { $0 == id }
                 state.defaultWindowBootstrapWindowIDs.remove(id)
+                state.externalWindowBatchIDs[id] = nil
                 if wasFocused {
-                    state.focusedWindowID = state.windows.first?.id
+                    state.focusedWindowID = state.lastUsedWindowIDs.first(where: { state.windows[id: $0] != nil })
                 }
                 guard state.defaultWindowBootstrapWindowIDs.isEmpty,
                       state.defaultWindowBootstrapRequestID != nil
@@ -228,6 +236,45 @@ struct WindowManagerFeature {
             case let .event(.focusWindow(path)):
                 return .run { _ in
                     await fileManagerWindowClient.focusPath(path)
+                }
+
+            case let .placement(.plan(request)):
+                return .send(.delegate(.externalOpenPlacementCompleted(.init(
+                    batchID: request.batchID,
+                    result: ExternalOpenPlacementPlanner.make(request, state: state, generateUUID: uuid()),
+                ))))
+
+            case let .placement(.apply(plan, reservationsByItemID)):
+                return applyExternalOpenPlacement(
+                    plan,
+                    reservationsByItemID: reservationsByItemID,
+                    state: &state,
+                )
+
+            case let .placement(.activate(plan)):
+                return startExternalOpenActivation(
+                    plan: plan,
+                    excluding: [],
+                    state: &state,
+                )
+
+            case let .externalOpenActivationResult(attempt, result):
+                guard state.externalOpenActivationAttempt == attempt else { return .none }
+                switch result {
+                case .discarded:
+                    return retryExternalOpenActivation(after: attempt, state: &state)
+
+                case .becameKey:
+                    let survivingWindowID = ExternalOpenPlacementApplication.lastSurvivingWindowID(
+                        for: attempt.plan,
+                        state: state,
+                        excluding: attempt.excludedWindowIDs,
+                    )
+                    guard survivingWindowID == attempt.windowID else {
+                        return retryExternalOpenActivation(after: attempt, state: &state)
+                    }
+                    state.externalOpenActivationAttempt = nil
+                    return .send(.delegate(.externalOpenActivationCompleted(batchID: attempt.batchID)))
                 }
 
             case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewWindow(path))))):
@@ -265,6 +312,7 @@ struct WindowManagerFeature {
                 state.defaultWindowBootstrapRequestID = nil
                 let targetWindowIDs = state.windows.ids.filter {
                     state.defaultWindowBootstrapWindowIDs.contains($0)
+                        && state.externalWindowBatchIDs[$0] == nil
                 }
                 state.defaultWindowBootstrapWindowIDs.removeAll()
                 return .merge(
@@ -300,8 +348,50 @@ struct WindowManagerFeature {
             WindowSessionFeature()
         }
     }
+}
 
-    private func handleWindowCommand(_ action: Action, state: inout State) -> Effect<Action> {
+private extension WindowManagerFeature {
+    func startExternalOpenActivation(
+        plan: ExternalOpenPlacementPlan,
+        excluding excludedWindowIDs: Set<State.WindowID>,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let windowID = ExternalOpenPlacementApplication.lastSurvivingWindowID(
+            for: plan,
+            state: state,
+            excluding: excludedWindowIDs,
+        ) else {
+            state.externalOpenActivationAttempt = nil
+            return .send(.delegate(.externalOpenActivationCompleted(batchID: plan.batchID)))
+        }
+
+        let attempt = ExternalOpenActivationAttempt(
+            batchID: plan.batchID,
+            plan: plan,
+            windowID: windowID,
+            excludedWindowIDs: excludedWindowIDs,
+        )
+        state.externalOpenActivationAttempt = attempt
+        return .run { [fileManagerWindowClient] send in
+            let result = await fileManagerWindowClient.activate(windowID)
+            await send(.externalOpenActivationResult(attempt: attempt, result: result))
+        }
+    }
+
+    func retryExternalOpenActivation(
+        after attempt: ExternalOpenActivationAttempt,
+        state: inout State,
+    ) -> Effect<Action> {
+        var excludedWindowIDs = attempt.excludedWindowIDs
+        excludedWindowIDs.insert(attempt.windowID)
+        return startExternalOpenActivation(
+            plan: attempt.plan,
+            excluding: excludedWindowIDs,
+            state: &state,
+        )
+    }
+
+    func handleWindowCommand(_ action: Action, state: inout State) -> Effect<Action> {
         switch action {
         case let .file(.newWindow(path, selectEntryID)):
             return openWindowSession(path: path, selectEntryID: selectEntryID, state: &state) { id in
@@ -323,8 +413,10 @@ struct WindowManagerFeature {
         case .window(.closeAllWindows):
             state.windows.removeAll()
             state.focusedWindowID = nil
+            state.lastUsedWindowIDs.removeAll()
             state.defaultWindowBootstrapRequestID = nil
             state.defaultWindowBootstrapWindowIDs.removeAll()
+            state.externalWindowBatchIDs.removeAll()
             return .merge(
                 .cancel(id: CancelID.defaultWindowBootstrap),
                 .run { _ in
@@ -350,6 +442,7 @@ struct WindowManagerFeature {
 
         state.windows.append(windowSession)
         state.focusedWindowID = windowSession.id
+        state.moveWindowToMRUFront(windowSession.id)
 
         let bootstrapEffect: Effect<Action> = if path == nil {
             defaultWindowBootstrapEffectIfNeeded(for: windowSession.id, state: &state)
@@ -375,6 +468,7 @@ struct WindowManagerFeature {
 
         state.windows.append(windowSession)
         state.focusedWindowID = windowSession.id
+        state.moveWindowToMRUFront(windowSession.id)
         let bootstrapEffect = defaultWindowBootstrapEffectIfNeeded(for: windowSession.id, state: &state)
 
         return .concatenate(
@@ -408,6 +502,52 @@ struct WindowManagerFeature {
         )))
     }
 
+    private func applyExternalOpenPlacement(
+        _ plan: ExternalOpenPlacementPlan,
+        reservationsByItemID: [UUID: ExternalContentTabReservation],
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let application = ExternalOpenPlacementApplication.apply(
+            plan,
+            reservationsByItemID: reservationsByItemID,
+            to: state.windows,
+        ) else {
+            return .send(.delegate(.externalOpenApplyCompleted(.init(
+                batchID: plan.batchID,
+                result: .failure(.validationFailed),
+            ))))
+        }
+
+        state.windows = application.windows
+        for windowID in application.newWindowIDs {
+            state.externalWindowBatchIDs[windowID] = plan.batchID
+        }
+        for windowID in plan.windows.map(\.windowID) {
+            state.defaultWindowBootstrapWindowIDs.remove(windowID)
+        }
+
+        var effects = application.newWindowIDs.flatMap { windowID in
+            [
+                windowIDChangedEffect(for: windowID),
+                appPreferencesEffect(for: windowID, preferences: state.appPreferences),
+                Effect.run { [fileManagerWindowClient] _ in
+                    await fileManagerWindowClient.open(windowID)
+                },
+            ]
+        }
+        if state.defaultWindowBootstrapWindowIDs.isEmpty,
+           state.defaultWindowBootstrapRequestID != nil
+        {
+            state.defaultWindowBootstrapRequestID = nil
+            effects.append(.cancel(id: CancelID.defaultWindowBootstrap))
+        }
+        effects.append(.send(.delegate(.externalOpenApplyCompleted(.init(
+            batchID: plan.batchID,
+            result: .success(plan),
+        )))))
+        return .concatenate(effects)
+    }
+
     private func sendCommandToFocusedWindow(
         _ state: State,
         _ command: FileManagerWindowAction.WindowCommand,
@@ -425,12 +565,14 @@ struct WindowManagerFeature {
                 isRestorableAnchor: { _ in true },
             )
             return .merge(
-                state.windows.ids.map { id in
-                    .send(.windows(.element(
-                        id: id,
-                        action: .window(.applyPinnedContentTabs(restoreResult.state)),
-                    )))
-                },
+                state.windows.ids
+                    .filter { state.externalWindowBatchIDs[$0] == nil }
+                    .map { id in
+                        .send(.windows(.element(
+                            id: id,
+                            action: .window(.applyPinnedContentTabs(restoreResult.state)),
+                        )))
+                    },
             )
         } catch {
             return .none
@@ -759,25 +901,6 @@ private enum DefaultWindowBootstrap {
             },
         )
         return RestoreResult(state: result.state, didCompact: result.didCompact)
-    }
-}
-
-@Reducer
-struct WindowSessionFeature {
-    typealias State = WindowSessionState
-    typealias Action = WindowSessionAction
-
-    var body: some Reducer<State, Action> {
-        Scope(state: \.window, action: \.window) {
-            FileManagerWindowFeature()
-        }
-
-        Reduce { _, action in
-            switch action {
-            case .window:
-                .none
-            }
-        }
     }
 }
 
