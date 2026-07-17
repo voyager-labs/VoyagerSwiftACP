@@ -8,6 +8,38 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
+struct FileManagerWindowMainContainerObservationInput: Equatable {
+    let activeTabID: ContentTabID?
+    let activePageAnchor: ContentTabPageAnchor
+    let navigationState: ContentPageNavigationRoute
+    let navigationTitlePath: String
+    let backHistory: [ContentPageNavigationHistorySnapshot]
+    let forwardHistory: [ContentPageNavigationHistorySnapshot]
+    let isComposerPresented: Bool
+    let isDiscardEnabled: Bool
+    let canSaveCollection: Bool
+    let isTemporaryCollection: Bool
+    let inspectorMount: InspectorMountViewState
+    let inspectorWidth: CGFloat
+
+    init(state: FileManagerWindowState) {
+        activeTabID = state.contentTabs.activeTabID
+        activePageAnchor = ContentTabProjection.activePageAnchor(from: state.contentTabs) ?? .homeDefault
+        navigationState = state.content.navigation.navigationState
+        navigationTitlePath = state.content.navigation.titlePath
+        backHistory = state.content.navigation.backHistory
+        forwardHistory = state.content.navigation.forwardHistory
+        isComposerPresented = state.content.composer.isPresented
+        isDiscardEnabled = state.content.isCollectionMode
+            && state.content.collection.collectionSession.metadata.baseline != nil
+            && state.content.isOpenedCollectionDirty
+        canSaveCollection = state.content.canSaveCollection
+        isTemporaryCollection = !state.content.openedCollectionURLExists
+        inspectorMount = InspectorMountViewState(state: state)
+        inspectorWidth = state.inspector.inspectorWidth
+    }
+}
+
 @MainActor
 final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate {
     private enum Constants {
@@ -132,19 +164,14 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
     }
 
     private func observeStore() {
-        Publishers.CombineLatest(
-            Publishers.CombineLatest3(
-                store.publisher.map(\.sidebar).removeDuplicates(),
-                store.publisher.map(\.content),
-                store.publisher.map(InspectorMountViewState.init).removeDuplicates(),
-            ),
-            store.publisher.map(\.contentTabs).removeDuplicates(),
-        )
-        .sink { [weak self] _ in
-            guard let self else { return }
-            render(state: store.state)
-        }
-        .store(in: &cancellables)
+        store.publisher
+            .map(FileManagerWindowMainContainerObservationInput.init)
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                render(state: store.state)
+            }
+            .store(in: &cancellables)
     }
 
     private func render(state: FileManagerWindowState) {
