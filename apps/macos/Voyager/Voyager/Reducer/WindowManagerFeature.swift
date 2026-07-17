@@ -538,6 +538,10 @@ private extension WindowManagerFeature {
                 Effect.run { [fileManagerWindowClient] _ in
                     await fileManagerWindowClient.open(windowID)
                 },
+                Effect.send(.windows(.element(
+                    id: windowID,
+                    action: .window(.resyncActiveCollectionNavigation),
+                ))),
             ]
         })
         if state.defaultWindowBootstrapWindowIDs.isEmpty,

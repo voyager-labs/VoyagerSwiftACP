@@ -2578,6 +2578,95 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
     }
 
+    /// 새 external no-Home window의 active Collection은 canonical open을 정확히 한 번 시작한다.
+    /// Collection load가 장기 실행 중이어도 apply terminal은 load 완료를 기다리지 않는 경계를 검증한다.
+    /// - 검증 내용: active Collection load 1회, suspended load 전 terminal 1회, 모든 tab의 window context 보존이다.
+    /// - 사전 조건: Directory와 active Collection reservation으로 구성된 새 window 하나다.
+    /// - 기대 결과: Collection open이 시작되고 terminal은 load gate가 닫힌 동안 도착한다.
+    func testPlacementApplicationStartsNewWindowCollectionOpenWithoutAwaitingLoad() async throws {
+        enum TestError: Error {
+            case loadFailed
+        }
+
+        let batchID = UUID()
+        let windowID = UUID()
+        let directoryItemID = UUID()
+        let collectionItemID = UUID()
+        let directoryTabID = ContentTabID(rawValue: "new-window-directory")
+        let collectionTabID = ContentTabID(rawValue: "new-window-collection")
+        let collectionURL = URL(fileURLWithPath: "/tmp/new-window-active.voycoll")
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: true,
+                    items: [
+                        .init(itemID: directoryItemID, tabID: directoryTabID),
+                        .init(itemID: collectionItemID, tabID: collectionTabID),
+                    ],
+                ),
+            ],
+        )
+        let loadGate = WindowBootstrapSuspensionGate()
+        let loadStarted = expectation(description: "collection load started")
+        let terminalReceived = expectation(description: "apply terminal received")
+        let openedURLs = LockIsolated<[URL]>([])
+        let terminalCount = LockIsolated(0)
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.externalOpenApplyCompleted(.init(
+                        batchID: batchID,
+                        result: .success(plan),
+                    ))) = action {
+                        terminalCount.withValue { $0 += 1 }
+                        terminalReceived.fulfill()
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.collectionFileClient.load = { url in
+                openedURLs.withValue { $0.append(url) }
+                loadStarted.fulfill()
+                await loadGate.wait()
+                throw TestError.loadFailed
+            }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: child Collection action보다 새 window commit/open/terminal 경계를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.apply(
+            plan: plan,
+            reservationsByItemID: [
+                directoryItemID: .init(id: directoryTabID, anchor: .directory(path: "/tmp")),
+                collectionItemID: .init(id: collectionTabID, anchor: .collectionFile(url: collectionURL)),
+            ],
+        )))
+        await fulfillment(of: [loadStarted, terminalReceived], timeout: 1)
+        await store.skipReceivedActions()
+
+        let committedWindow = try XCTUnwrap(store.state.windows[id: windowID]?.window)
+        XCTAssertEqual(committedWindow.contentTabs.tabs.map(\.id), [directoryTabID, collectionTabID])
+        XCTAssertEqual(committedWindow.contentTabs.activeTabID, collectionTabID)
+        XCTAssertEqual(committedWindow.contentTabs.previousActiveTabID, directoryTabID)
+        XCTAssertTrue(committedWindow.tabContentStates.values.allSatisfy { content in
+            content.entryViewLayout.entryOperations.windowID == windowID
+                && content.composer.cancellationOwnerID == windowID
+        })
+        XCTAssertEqual(openedURLs.value, [collectionURL])
+        XCTAssertEqual(terminalCount.value, 1)
+
+        await loadGate.open()
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
     /// external placement 적용은 reservation 첫 항목부터 overflow window를 만들고 bootstrap 대상으로 등록하지 않는다.
     func testPlacementApplicationCreatesNoHomeOverflowWindowsOutsideBootstrap() async {
         let batchID = UUID()
