@@ -88,6 +88,14 @@ extension AppRootFeature {
             state.isInitialWindowFallbackPending = true
             state.isExternalURLRouteInFlightWithoutWindow = true
         }
+        if requiresFallback,
+           state.lifecycle.didFinishLaunching,
+           state.lifecycle.accessGatePhase == .recoveryRequired,
+           !state.isExternalURLFlushDelegateScheduled
+        {
+            state.isExternalURLFlushDelegateScheduled = true
+            return .send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
+        }
         return startNextExternalOpenBatchIfPossible(state: &state)
     }
 

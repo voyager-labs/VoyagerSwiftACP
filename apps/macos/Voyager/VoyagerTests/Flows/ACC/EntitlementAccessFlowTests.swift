@@ -407,6 +407,49 @@ final class EntitlementAccessFlowTests: XCTestCase {
         await store.finish()
     }
 
+    /// ACC-002-check_entitlement_status: 이미 복구 단계인 앱은 새 외부 파일 batch를 보존하며 복구 창을 연다.
+    /// lifecycle 전이 이후 도착한 시스템 열기 요청도 account 복구 UI 진입점을 잃지 않는지 검증한다.
+    /// - 검증 내용: direct external-open ingress가 초기 창 delegate를 예약하고 queue를 소비하지 않는지 확인한다.
+    /// - 사전 조건: launch가 끝났고 access gate는 recoveryRequired이며 열린 File Manager 창이 없다.
+    /// - 기대 결과: 초기 창 요청은 한 번 전달되고 외부 파일 batch는 inactive queue에 그대로 남는다.
+    func testExternalBatchIngressOpensRecoveryWindowWhenAlreadyRecoveryRequired() async throws {
+        let url = try XCTUnwrap(URL(string: "file:///tmp/recovery-direct-item"))
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.accessGatePhase = .recoveryRequired
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.continuousClock = ImmediateClock()
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: recovery 창 생성 mechanics는 WindowManager owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.receiveExternalFileBatch(
+            [url],
+            source: .systemOpenEvent,
+            mode: .open,
+        ))
+
+        XCTAssertEqual(store.state.externalOpenBatchQueue.count, 1)
+        XCTAssertEqual(store.state.externalOpenBatchQueue[0].request.items.map(\.url), [url])
+        XCTAssertNil(store.state.activeExternalOpenBatch)
+        XCTAssertTrue(store.state.isExternalURLFlushDelegateScheduled)
+
+        await store.receive(\.lifecycle.delegate.openInitialWindowIfNeeded)
+        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
+
+        XCTAssertEqual(store.state.externalOpenBatchQueue.count, 1)
+        XCTAssertNil(store.state.activeExternalOpenBatch)
+        await store.finish()
+    }
+
     func testOpenInitialWindowDefersPendingExternalRoutesWhenSignedOut() async throws {
         let deepLink = try XCTUnwrap(URL(string: "voyager://open"))
         var initialState = AppRootFeature.State()
