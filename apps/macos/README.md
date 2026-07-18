@@ -160,33 +160,25 @@ log stream --predicate 'subsystem == "com.voyager.app"'
 - **swiftui-introspect** : SwiftUI에서 AppKit 접근
 - **swift-dotenv** : 환경변수 관리 (.env 파일 지원)
 - **Inject** : SwiftUI 핫 리로딩
-- **InjectionNext** : 고급 코드 인젝션
 - **swift-identified-collections** : 식별 가능한 컬렉션
 - **swift-dependencies** : 의존성 주입 프레임워크
 
 ### InjectionNext 사용법
 
-#### 필요한 설정 - 완료
+InjectionNext는 `FileManagerHost` 전용 Debug 개발 도구입니다. `Voyager`와 `VoyagerHelper`는 이를 링크하거나 런타임에 로드하지 않으며, 일반 `Voyager-Dev` Debug와 모든 Release 빌드는 interposable linker flag를 사용하지 않습니다.
 
-- **Other Linker Flags**: `-Xlinker -interposable` (Debug 빌드에만 적용)
-- **Swift Package**: InjectionNext 의존성
-- **Scheme Environment Variables**: `INJECTION_PROJECT_ROOT = $(SRCROOT)`
+1. [InjectionNext releases](https://github.com/johnno1962/InjectionNext/releases)에서 앱을 설치합니다.
+2. InjectionNext 앱에서 **Launch Xcode**를 선택합니다.
+3. Xcode에서 `apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj`를 열고 `FileManagerHost-Dev` scheme을 Debug로 실행합니다.
 
-#### 사용 방법
+터미널이나 IDE task에서는 아래 전용 task가 InjectionNext.app 실행, Debug 전용 linker 환경, `apps/macos` 감시 경로, FileManagerHost 실행을 함께 처리합니다.
 
-1. **InjectionNext 앱 다운로드 및 설치**:
+```bash
+mise run macos-filemanager-injection
+```
 
-    ```bash
-    # https://github.com/johnno1962/InjectionNext/releases 에서 다운로드
-    # Applications 폴더로 이동
-    ```
+Zed와 VSCode에서는 `FileManagerHost Dev: Launch with Injection (Debug)` task를 선택합니다. 기존 FileManagerHost Debug/Release task는 Injection 없는 일반 실행으로 유지됩니다.
 
-2. **InjectionNext 앱에서 "Launch Xcode" 실행**
+`INJECTION_PROJECT_ROOT`는 `apps/macos`를 가리키므로 Host와 `Packages` 소스를 함께 감시합니다. Content Tab sidebar row는 HotSwiftUI를 통해 재그리기되며, InjectionNext 전용 Xcode/task 환경에서만 FileManager 패키지가 `-Xlinker -interposable`을 추가합니다.
 
-3. **코드 변경 후 저장하면 자동으로 함수 레벨 인젝션 적용**
-
-#### 제한사항
-
-- 함수 본문만 변경 가능
-- 프로퍼티 추가/삭제 불가
-- 메서드 시그니처 변경 불가
+함수 본문 변경은 저장 후 주입할 수 있지만, 프로퍼티·타입·메서드 시그니처·패키지/프로젝트 설정 같은 구조 변경은 주입 대상이 아닙니다. 이런 변경 뒤에는 FileManagerHost를 일반적으로 다시 빌드하고 실행해야 합니다.
