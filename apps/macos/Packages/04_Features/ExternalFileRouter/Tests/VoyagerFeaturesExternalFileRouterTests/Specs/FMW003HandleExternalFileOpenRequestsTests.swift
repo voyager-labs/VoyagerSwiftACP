@@ -49,6 +49,78 @@ extension FMW003HandleExternalFileOpenRequestsTests {
         await store.finish()
     }
 
+    /// 추적된 singleton 폴더 요청은 route delegate 뒤에 occurrence terminal을 방출한다.
+    func test_trackedFolderURL_completesAfterRouteDelegate() async throws {
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000901"))
+        let deepLink = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2FUsers%2Ftest"))
+        let fileURL = try XCTUnwrap(URL(string: "file:///Users/test"))
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
+        } withDependencies: {
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: true, isDirectory: true)
+            }
+        }
+
+        await store.send(.receiveTracked(deepLink, requestID: requestID)) {
+            $0.activeTrackedRequestID = requestID
+            $0.currentStatus = .pathReceived
+            $0.currentRequest = ExternalFileRouterRequest(
+                originalURL: fileURL,
+                source: .deepLink,
+                mode: .open,
+            )
+        }
+        await store.receive(\.normalizeCompleted) {
+            $0.currentStatus = .windowRouted
+            $0.currentRequest?.resolvedPath = "/Users/test"
+            $0.currentRequest?.isDirectory = true
+        }
+        await store.receive { action in
+            guard case let .delegate(.openFolder(path, trackedRequestID)) = action else { return false }
+            return path == "/Users/test" && trackedRequestID == requestID
+        }
+        await store.send(.singletonRequestCompleted(requestID)) {
+            $0.activeTrackedRequestID = nil
+        }
+        await store.finish()
+    }
+
+    /// 추적된 singleton 실패는 오류 delegate 뒤에 occurrence terminal을 방출한다.
+    func test_trackedInvalidPath_completesAfterErrorDelegate() async throws {
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000902"))
+        let deepLink = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2FUsers%2Fmissing"))
+        let fileURL = try XCTUnwrap(URL(string: "file:///Users/missing"))
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
+        } withDependencies: {
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: false, isDirectory: false)
+            }
+        }
+
+        await store.send(.receiveTracked(deepLink, requestID: requestID)) {
+            $0.activeTrackedRequestID = requestID
+            $0.currentStatus = .pathReceived
+            $0.currentRequest = ExternalFileRouterRequest(
+                originalURL: fileURL,
+                source: .deepLink,
+                mode: .open,
+            )
+        }
+        await store.receive(\.failed) {
+            $0.currentStatus = .invalidPathError
+        }
+        await store.receive { action in
+            guard case let .delegate(.showInvalidPathError(path, trackedRequestID)) = action else { return false }
+            return path == "/Users/missing" && trackedRequestID == requestID
+        }
+        await store.send(.singletonRequestCompleted(requestID)) {
+            $0.activeTrackedRequestID = nil
+        }
+        await store.finish()
+    }
+
     /// mode=reveal 폴더 → 폴더 열기 (select focus 불필요)
     ///
     /// 폴더는 mode와 관계없이 windowRouted + openFolder로 동일하게 처리된다.
@@ -483,8 +555,8 @@ extension FMW003HandleExternalFileOpenRequestsTests {
         }
 
         await store.receive { action in
-            guard case let .delegate(.openFolder(path)) = action else { return false }
-            return path == "/Users/test/folder1"
+            guard case let .delegate(.openFolder(path, trackedRequestID)) = action else { return false }
+            return path == "/Users/test/folder1" && trackedRequestID == nil
         }
 
         await store.finish()
@@ -527,5 +599,188 @@ extension FMW003HandleExternalFileOpenRequestsTests {
         await store.receive(\.delegate.showPermissionDeniedError)
 
         await store.finish()
+    }
+}
+
+// MARK: - FMW-003-open_external_path
+
+extension FMW003HandleExternalFileOpenRequestsTests {
+    /// FMW-003-open_external_path: 지연된 probe와 실패가 섞여도 callback 입력 순서의 결과를 한 번 반환한다.
+    /// 시스템 open callback의 모든 occurrence가 완료된 뒤 하나의 ordered normalization 결과가 생성되는지 검증한다.
+    /// - 검증 내용: batch identity, item identity/index, duplicate occurrence, 실패 위치, destination 분류를 확인한다.
+    /// - 사전 조건: directory probe는 뒤 항목이 먼저 완료될 때까지 대기하고 invalid/permission/file/`.voycoll` 입력이 섞여 있다.
+    /// - 기대 결과: beginning/middle/end 실패를 포함한 7개 결과가 원래 순서로 한 번만 delegate된다.
+    func testSystemOpenBatchPreservesOrderFailuresDuplicatesAndClassification() async throws {
+        let batchID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000100"))
+        let itemIDs = try (0 ..< 7).map { offset in
+            try XCTUnwrap(UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", offset + 1)))
+        }
+        let urls = [
+            URL(fileURLWithPath: "/tmp/missing"),
+            URL(fileURLWithPath: "/tmp/folder"),
+            URL(fileURLWithPath: "/tmp/document.txt"),
+            URL(fileURLWithPath: "/tmp/restricted"),
+            URL(fileURLWithPath: "/tmp/list.voycoll"),
+            URL(fileURLWithPath: "/tmp/document.txt"),
+            URL(fileURLWithPath: "/tmp/missing"),
+        ]
+        let batch = makeBatchRequest(batchID: batchID, itemIDs: itemIDs, urls: urls)
+        let expected = makeBatchResult(batchID: batchID, itemIDs: itemIDs, urls: urls)
+
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
+        } withDependencies: {
+            $0.pathProbeClient.probeExistence = probeBatchPath
+        }
+
+        await store.send(.receiveBatch(batch)) {
+            $0.activeBatchID = batchID
+        }
+        await store.receive(\.batchNormalizationCompleted, expected) {
+            $0.activeBatchID = nil
+        }
+        await store.receive(\.delegate.batchNormalized, expected)
+        // store.finish() 불필요: 모든 effect가 receive로 소비됨
+    }
+
+    /// FMW-003-open_external_path: 취소되거나 현재 batch와 다른 completion은 결과를 위임하지 않는다.
+    /// lifecycle gate가 batch를 취소한 뒤 늦게 도착한 completion이 라우팅을 재개하지 않는지 검증한다.
+    /// - 검증 내용: matching cancel이 active identity를 지우고 late/stale completion의 state/delegate mutation이 없는지 확인한다.
+    /// - 사전 조건: active batch identity와 취소 후 도착한 동일 batch 및 다른 batchID의 synthetic completion이 있다.
+    /// - 기대 결과: cancellation 이후 active batch는 nil이며 batchNormalized delegate는 0회다.
+    func testCancelledAndStaleBatchCompletionDoesNotMutateOrDelegate() async throws {
+        let batchID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000200"))
+        let staleBatchID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000201"))
+        var state = ExternalFileRouterState()
+        state.activeBatchID = batchID
+        let cancelledResult = ExternalFileRouterBatchResult(batchID: batchID, items: [])
+        let staleResult = ExternalFileRouterBatchResult(batchID: staleBatchID, items: [])
+
+        let store = TestStore(initialState: state) {
+            ExternalFileRouterFeature()
+        }
+
+        await store.send(.cancelBatch(batchID)) {
+            $0.activeBatchID = nil
+        }
+        await store.send(.batchNormalizationCompleted(cancelledResult))
+        await store.send(.batchNormalizationCompleted(staleResult))
+        await store.finish()
+    }
+
+    /// tracked request cancellation은 request identity의 probe만 취소하고 late delegate를 만들지 않는다.
+    func testTrackedRequestCancellationRejectsLateProbeCompletion() async throws {
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000903"))
+        let fileURL = URL(fileURLWithPath: "/tmp/cancelled")
+        var initialState = ExternalFileRouterState()
+        initialState.activeTrackedRequestID = requestID
+        let store = TestStore(initialState: initialState) {
+            ExternalFileRouterFeature()
+        }
+
+        await store.send(.cancelTrackedRequest(requestID)) {
+            $0.activeTrackedRequestID = nil
+        }
+        await store.send(.normalizeCompleted(.init(
+            path: fileURL.path,
+            isDirectory: true,
+            context: .init(
+                requestID: fileURL,
+                source: .deepLink,
+                mode: .open,
+                trackedRequestID: requestID,
+            ),
+        )))
+        await store.finish()
+    }
+
+    /// tracked parser validation failure는 WindowManager 없이 self-terminal로 종료한다.
+    func testTrackedParserValidationFailureSelfCompletes() async throws {
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000904"))
+        let invalidURL = try XCTUnwrap(URL(string: "voyager://open?url=https%3A%2F%2Fexample.com"))
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
+        }
+
+        await store.send(.receiveTracked(invalidURL, requestID: requestID)) {
+            $0.activeTrackedRequestID = requestID
+        }
+        await store.receive(\.failed) {
+            $0.currentStatus = .urlValidationError
+            $0.currentRequest = .init(
+                originalURL: invalidURL,
+                source: .deepLink,
+                mode: .open,
+            )
+        }
+        await store.receive(\.singletonRequestCompleted, requestID) {
+            $0.activeTrackedRequestID = nil
+        }
+        await store.finish()
+    }
+}
+
+private func makeBatchRequest(
+    batchID: UUID,
+    itemIDs: [UUID],
+    urls: [URL],
+) -> ExternalFileRouterBatchRequest {
+    ExternalFileRouterBatchRequest(
+        batchID: batchID,
+        items: zip(itemIDs, urls).enumerated().map { index, pair in
+            .init(
+                itemID: pair.0,
+                index: index,
+                url: pair.1,
+                source: .systemOpenEvent,
+                mode: .open,
+            )
+        },
+    )
+}
+
+private func makeBatchResult(
+    batchID: UUID,
+    itemIDs: [UUID],
+    urls: [URL],
+) -> ExternalFileRouterBatchResult {
+    let outcomes: [ExternalFileRouterBatchOutcome] = [
+        .failure(.invalidPath("/tmp/missing")),
+        .success(.directory(path: "/tmp/folder", revealPath: nil)),
+        .success(.directory(path: "/tmp", revealPath: "/tmp/document.txt")),
+        .failure(.permissionDenied("/tmp/restricted")),
+        .success(.collection(path: "/tmp/list.voycoll")),
+        .success(.directory(path: "/tmp", revealPath: "/tmp/document.txt")),
+        .failure(.invalidPath("/tmp/missing")),
+    ]
+    let items = zip(urls, outcomes).enumerated().map { index, pair in
+        ExternalFileRouterBatchItemResult(
+            itemID: itemIDs[index],
+            index: index,
+            url: pair.0,
+            source: .systemOpenEvent,
+            mode: .open,
+            outcome: pair.1,
+        )
+    }
+    return ExternalFileRouterBatchResult(batchID: batchID, items: items)
+}
+
+private func probeBatchPath(_ path: String) -> PathProbeResult {
+    switch path {
+    case "/tmp/folder":
+        Thread.sleep(forTimeInterval: 0.05)
+        return PathProbeResult(exists: true, isDirectory: true)
+    case "/tmp/missing":
+        return PathProbeResult(exists: false, isDirectory: false)
+    case "/tmp/document.txt":
+        return PathProbeResult(exists: true, isDirectory: false)
+    case "/tmp/list.voycoll":
+        return PathProbeResult(exists: true, isDirectory: true)
+    case "/tmp/restricted":
+        return PathProbeResult(exists: false, isDirectory: false, permissionDenied: true)
+    default:
+        XCTFail("예상하지 못한 probe path: \(path)")
+        return PathProbeResult(exists: false, isDirectory: false)
     }
 }

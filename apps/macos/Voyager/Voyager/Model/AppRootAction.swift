@@ -4,6 +4,11 @@ import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesSettings
 
+struct ExternalOpenAlertCompletion: Equatable {
+    var batchID: UUID
+    var failureIndex: Int
+}
+
 @CasePathable
 enum AppRootAction: CasePathable {
     case lifecycle(AppLifecycleFeature.Action)
@@ -13,10 +18,16 @@ enum AppRootAction: CasePathable {
     case receiveExternalURL(URL)
     /// ACC-001 소유 인증 callback 수신. FMW 라우터가 소유하지 않는 route를 명시적으로 분리한다.
     case receiveAuthCallbackURL(URL)
+    /// legacy tracked Router auth handoff. AppDelegate production ingress는 receiveAuthCallbackURL을 직접 사용한다.
+    case receiveTrackedAuthCallbackURL(URL, requestID: UUID)
     /// 외부 file:// URL 수신 (System Open Event, NSServices)
     case receiveExternalFileURL(URL, source: RouteSource, mode: DeepLinkMode)
-    /// 외부 `.voycoll` 문서 열기 수신. RCL collection open 경로로 분리한다.
+    /// callback 한 번의 ordered file URL batch 수신
+    case receiveExternalFileBatch([URL], source: RouteSource, mode: DeepLinkMode)
+    /// 외부 `.voycoll` 문서 열기 수신. legacy ingress를 batch queue에 연결한다.
     case receiveCollectionFileURL(URL)
+    case externalOpenAlertCompleted(ExternalOpenAlertCompletion)
+    case externalOpenAdvanceToNextBatch(batchID: UUID)
     case appPreferences(AppPreferencesFeature.Action)
     case windowManager(WindowManagerFeature.Action)
     case updater(UpdaterFeature.Action)

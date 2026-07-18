@@ -48,9 +48,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_: NSApplication, open urls: [URL]) {
-        withAppRootStore {
+        withAppRootStore { store in
+            let fileURLs = urls.filter(\.isFileURL)
+            var didRouteFileBatch = false
             for url in urls {
-                routeOpenedURL(url, to: $0)
+                if url.isFileURL {
+                    guard !didRouteFileBatch else { continue }
+                    didRouteFileBatch = true
+                    routeSystemOpenFileURLs(fileURLs, to: store)
+                } else {
+                    routeOpenedURL(url, to: store)
+                }
             }
         }
     }
@@ -63,7 +71,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
         routeSystemOpenFileURLs(filenames.map(URL.init(fileURLWithPath:)))
-        sender.reply(toOpenOrPrint: .success)
+        reply(toOpenOrPrint: .success, sender: sender)
+    }
+
+    func reply(toOpenOrPrint reply: NSApplication.DelegateReply, sender: NSApplication) {
+        sender.reply(toOpenOrPrint: reply)
     }
 
     /// NSServices "Voyager로 열기" 핸들러
@@ -86,10 +98,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func routeSystemOpenFileURLs(_ urls: [URL]) {
         withAppRootStore {
-            for url in urls {
-                routeFileURL(url, source: .systemOpenEvent, mode: .open, to: $0)
-            }
+            routeSystemOpenFileURLs(urls, to: $0)
         }
+    }
+
+    private func routeSystemOpenFileURLs(_ urls: [URL], to store: StoreOf<AppRootFeature>) {
+        guard !urls.isEmpty else { return }
+        store.send(.receiveExternalFileBatch(
+            urls,
+            source: .systemOpenEvent,
+            mode: .open,
+        ))
     }
 
     private func routeOpenedURL(_ url: URL, to store: StoreOf<AppRootFeature>) {
@@ -100,8 +119,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 store.send(.receiveExternalURL(url))
             }
-        case "file":
-            routeFileURL(url, source: .systemOpenEvent, mode: .open, to: store)
         default:
             break
         }

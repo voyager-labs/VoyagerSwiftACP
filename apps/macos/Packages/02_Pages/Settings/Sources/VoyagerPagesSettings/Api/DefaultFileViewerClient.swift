@@ -6,10 +6,20 @@ import UniformTypeIdentifiers
 import VoyagerEntitiesEntry
 
 public struct DefaultFileViewerClient: Sendable {
-    /// 이 클라이언트가 "기본 뷰어"로 다루어야 할 앱의 bundle ID.
-    /// 호스트 셸(`SettingsHost` 등)이 자신의 bundle ID로 오염되는 것을 막기 위해
-    /// 기본값은 실제 Voyager 앱 bundle ID로 고정한다.
+    /// 이 클라이언트가 기본 fallback으로 사용하는 배포 앱 bundle ID.
     public static let voyagerBundleID = "fm.voyager.Voyager"
+    static let voyagerDevBundleID = "fm.voyager.Voyager.dev"
+
+    static func resolveVoyagerBundleID(mainBundleID: String?) -> String {
+        switch mainBundleID {
+        case voyagerDevBundleID:
+            voyagerDevBundleID
+        case voyagerBundleID:
+            voyagerBundleID
+        default:
+            voyagerBundleID
+        }
+    }
 
     public var appBundleID: String
     public var diagnose: @Sendable () async -> DefaultFileViewerStatus
@@ -31,8 +41,8 @@ public struct DefaultFileViewerClient: Sendable {
 
 extension DefaultFileViewerClient: DependencyKey {
     nonisolated public static var liveValue: DefaultFileViewerClient {
-        // ponytail: 호스트 셸 Bundle.main은 SettingsHost일 수 있어 실제 앱 ID를 고정.
-        let appBundleID = Self.voyagerBundleID
+        // SettingsHost에서는 배포 앱으로 fallback하고, 실제 앱에서는 Dev/Prod 신원을 보존한다.
+        let appBundleID = Self.resolveVoyagerBundleID(mainBundleID: Bundle.main.bundleIdentifier)
         // ponytail: Settings Reducer는 EntryOpenClient를 직접 모르게.
         // folder default-app LS 작업은 EntryOpenClient.liveValue에 위임.
         let entryOpenClient = EntryOpenClient.liveValue

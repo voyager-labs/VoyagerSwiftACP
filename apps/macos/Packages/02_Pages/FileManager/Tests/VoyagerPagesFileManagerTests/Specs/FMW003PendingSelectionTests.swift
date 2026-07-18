@@ -208,6 +208,63 @@ final class FMW003PendingSelectionTests: XCTestCase {
         // pendingSelectEntryID가 nil이므로 coordinator가 즉시 .none 반환
         await store.finish()
     }
+
+    // MARK: - FMW-003-handle_external_file_open_requests
+
+    /// FMW-003-handle_external_file_open_requests: regular-file reservation은 첫 itemsLoaded 전에 pending selection을 저장한다.
+    /// 시스템 open으로 parent Directory tab을 만든 뒤 파일 entry를 reveal하는 기존 pending-selection seam을 검증한다.
+    /// - 검증 내용: external initial snapshot의 pending ID가 itemsLoaded에서 소비되어 selection state로 전환된다.
+    /// - 사전 조건: caller tab ID, parent Directory anchor, regular-file full path를 가진 reservation 하나다.
+    /// - 기대 결과: load 전 pending ID가 존재하고 load 후 clear되며 해당 entry가 선택되고 scroll 요청이 설정된다.
+    func testExternalReservation_pendingSelectionExistsBeforeRegularFileLoad() async throws {
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/98.txt",
+        )
+        defer { sandbox.cleanup() }
+        let tabID = ContentTabID(rawValue: "external-regular-file")
+        let directoryPath = sandbox.fileURL.deletingLastPathComponent().path
+        let filePath = sandbox.fileURL.path
+        let loadedEntry = Self.makeEntry(fullPath: filePath)
+        let loadPaths = LockIsolated<[String]>([])
+        let store = TestStore(initialState: FileManagerWindowState.makeInitial(path: "/seed")) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { url, _ in
+                loadPaths.withValue { $0.append(url.path) }
+                return [loadedEntry]
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { $0.finish() }
+            }
+        }
+        // store.exhaustivity = .off: canonical handoff의 부수 action보다 load 후 pending reveal 소비를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.reserveExternalContentTabs([
+            ExternalContentTabReservation(
+                id: tabID,
+                anchor: .directory(path: directoryPath),
+                pendingSelectEntryID: filePath,
+            ),
+        ]))
+        XCTAssertEqual(store.state.tabContentStates[tabID]?.pendingSelectEntryID, filePath)
+        await store.receive(\.contentTabs.setCurrent, tabID)
+        await store.receive(\.content.internal.applyNavigationState, .folder(directoryPath))
+        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.delegate(.selectionChanged))) = action else { return false }
+            return true
+        }
+        await store.finish()
+
+        XCTAssertEqual(loadPaths.value, [directoryPath])
+        XCTAssertNil(store.state.content.pendingSelectEntryID)
+        XCTAssertEqual(store.state.content.entryViewLayout.selectedIds, [filePath])
+        XCTAssertTrue(store.state.content.entryViewLayout.shouldScrollToSelection)
+    }
 }
 
 /// EVM001FileManagerNavigationTests.LifecycleBridgeHarness와 동일한 패턴.
