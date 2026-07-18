@@ -311,7 +311,6 @@ extension AppRootFeature {
         }
         state.activeExternalOpenBatch = nil
         if !state.pendingExternalURLs.isEmpty,
-           !state.windowManager.windows.isEmpty,
            canFlushPendingExternalRoutes(state)
         {
             return flushPendingExternalRoutes(state: &state)

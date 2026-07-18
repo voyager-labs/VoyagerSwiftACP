@@ -1271,6 +1271,67 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertTrue(state.externalOpenBatchQueue.isEmpty)
     }
 
+    /// 창이 없는 all-invalid batch 종료도 pending singleton을 먼저 admit하고 terminal 뒤 queued batch를 재개한다.
+    func testColdAllInvalidBatchPrioritizesPendingURLBeforeQueuedBatch() throws {
+        let activeBatchID = UUID(685)
+        let queuedBatchID = UUID(686)
+        let pendingURL = try XCTUnwrap(URL(string: "voyager://open?url=https%3A%2F%2Fexample.com"))
+        let queuedURL = URL(fileURLWithPath: "/tmp/cold-queued")
+        let activeRequest = ExternalFileRouterBatchRequest(batchID: activeBatchID, items: [])
+        let queuedRequest = ExternalFileRouterBatchRequest(
+            batchID: queuedBatchID,
+            items: [
+                .init(
+                    itemID: UUID(687),
+                    index: 0,
+                    url: queuedURL,
+                    source: .systemOpenEvent,
+                    mode: .open,
+                ),
+            ],
+        )
+        var active = AppRootActiveExternalOpenBatch(
+            batch: .init(request: activeRequest, requiresInitialWindowFallback: true),
+            preferredWindowIDs: [],
+        )
+        active.phase = .advancing
+        var state = AppRootFeature.State()
+        state.lifecycle.accessGatePhase = .granted
+        state.activeExternalOpenBatch = active
+        state.pendingExternalURLs = [pendingURL]
+        state.externalOpenBatchQueue = [
+            .init(request: queuedRequest, requiresInitialWindowFallback: true),
+        ]
+        state.isInitialWindowFallbackPending = true
+        state.isExternalURLRouteInFlightWithoutWindow = true
+        let feature = AppRootFeature()
+
+        withDependencies {
+            $0.uuid = .incrementing
+            $0.onboardingWindowClient.isRequired = { false }
+        } operation: {
+            _ = feature.advanceExternalOpenBatch(batchID: activeBatchID, state: &state)
+        }
+
+        XCTAssertTrue(state.windowManager.windows.isEmpty)
+        XCTAssertNil(state.activeExternalOpenBatch)
+        XCTAssertEqual(state.activePendingExternalURL, .init(requestID: UUID(0), url: pendingURL))
+        XCTAssertTrue(state.pendingExternalURLs.isEmpty)
+        XCTAssertEqual(state.externalOpenBatchQueue.map(\.request.batchID), [queuedBatchID])
+        XCTAssertTrue(state.isInitialWindowFallbackPending)
+
+        withDependencies {
+            $0.onboardingWindowClient.isRequired = { false }
+        } operation: {
+            _ = feature.consumePendingExternalURLCompletion(requestID: UUID(0), state: &state)
+        }
+
+        XCTAssertNil(state.activePendingExternalURL)
+        XCTAssertEqual(state.activeExternalOpenBatch?.batch.request.batchID, queuedBatchID)
+        XCTAssertTrue(state.externalOpenBatchQueue.isEmpty)
+        XCTAssertTrue(state.isInitialWindowFallbackPending)
+    }
+
     /// 첫 external window가 열려도 active batch terminal 전에는 pending URL을 flush하지 않는다.
     func testFirstExternalWindowDefersPendingURLFlushUntilBatchAdvance() async throws {
         let batchID = UUID(690)
