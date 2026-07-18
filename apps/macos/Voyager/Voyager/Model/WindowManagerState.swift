@@ -7,6 +7,11 @@ struct WindowManagerTrackedSingletonWindow: Equatable {
     var windowID: UUID
 }
 
+struct WindowManagerRetainedExternalOpenPlacementOwnership: Equatable {
+    var batchID: UUID
+    var newWindowIDs: [UUID]
+}
+
 @ObservableState
 struct WindowManagerState: Equatable {
     typealias WindowID = WindowSessionState.ID
@@ -18,6 +23,7 @@ struct WindowManagerState: Equatable {
     var defaultWindowBootstrapRequestID: UUID?
     var defaultWindowBootstrapWindowIDs: Set<WindowID> = []
     var externalWindowBatchIDs: [WindowID: UUID] = [:]
+    var retainedExternalOpenPlacementOwnership: WindowManagerRetainedExternalOpenPlacementOwnership?
     var authorizedExternalOpenBatchID: UUID?
     var authorizedTrackedSingletonRequestID: UUID?
     var trackedSingletonWindow: WindowManagerTrackedSingletonWindow?
