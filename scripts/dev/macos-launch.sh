@@ -15,6 +15,7 @@
 #     --configuration Debug \
 #     [--workspace <path>]   \
 #     [--derived-data <path>] \
+#     [--injection-next] \
 #     [--no-launch] \
 #     [--env KEY=VAL ...]
 #
@@ -36,6 +37,7 @@ SOURCE_PACKAGES="build/dev/SourcePackages"
 CONFIGURATION="Debug"
 SCHEME=""
 LAUNCH=1
+INJECTION_NEXT=0
 ENV_VARS=()
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,6 +54,8 @@ while [[ $# -gt 0 ]]; do
       WORKSPACE="$2"; shift 2 ;;
     --derived-data)
       DERIVED_DATA="$2"; shift 2 ;;
+    --injection-next)
+      INJECTION_NEXT=1; shift ;;
     --no-launch)
       LAUNCH=0; shift ;;
     --env)
@@ -68,6 +72,30 @@ done
 if [[ -z "$SCHEME" ]]; then
   echo "오류: --scheme 이 필요합니다." >&2
   exit 1
+fi
+
+if [[ "$INJECTION_NEXT" -eq 1 ]]; then
+  if [[ "$SCHEME" != "FileManagerHost-Dev" || "$CONFIGURATION" != "Debug" ]]; then
+    echo "오류: --injection-next는 FileManagerHost-Dev Debug에서만 사용할 수 있습니다." >&2
+    exit 1
+  fi
+
+  INJECTION_NEXT_APP="${INJECTION_NEXT_APP:-/Applications/InjectionNext.app}"
+  if [[ ! -d "$INJECTION_NEXT_APP" ]]; then
+    echo "오류: InjectionNext.app을 찾을 수 없습니다: $INJECTION_NEXT_APP" >&2
+    exit 1
+  fi
+
+  INJECTION_PROJECT_ROOT="$(cd apps/macos && pwd)"
+  export RUNNING_VIA_INJECTION_NEXT=1
+  export INJECTION_PROJECT_ROOT
+  ENV_VARS+=(
+    "RUNNING_VIA_INJECTION_NEXT=1"
+    "INJECTION_PROJECT_ROOT=$INJECTION_PROJECT_ROOT"
+  )
+
+  echo "💉 InjectionNext.app 실행"
+  open "$INJECTION_NEXT_APP"
 fi
 
 WORKSPACE_ABS="$(cd "$(dirname "$WORKSPACE")" && pwd)/$(basename "$WORKSPACE")"
@@ -88,7 +116,7 @@ echo "   derivedDataPath: $DERIVED_DATA"
 
 # mise.toml [tasks.macos-build] 와 동일한 플래그 세트
 # + sweetpad.build.args (clonedSourcePackagesDirPath, skip validation)
-BUILD_ARGS=(
+  BUILD_ARGS=(
   -workspace "$WORKSPACE"
   -scheme "$SCHEME"
   -configuration "$CONFIGURATION"
@@ -97,8 +125,15 @@ BUILD_ARGS=(
   -skipPackagePluginValidation
   -skipMacroValidation
   COMPILER_INDEX_STORE_ENABLE=NO
-  build
-)
+    build
+  )
+
+  if [[ "$INJECTION_NEXT" -eq 1 ]]; then
+    BUILD_ARGS+=(
+      EMIT_FRONTEND_COMMAND_LINES=YES
+      SWIFT_COMPILATION_MODE=incremental
+    )
+  fi
 
 # xcbeautify 사용 가능하면 파이프, 아니면 원본 출력
 if command -v xcbeautify &>/dev/null || mise exec -- xcbeautify --version &>/dev/null 2>&1; then
