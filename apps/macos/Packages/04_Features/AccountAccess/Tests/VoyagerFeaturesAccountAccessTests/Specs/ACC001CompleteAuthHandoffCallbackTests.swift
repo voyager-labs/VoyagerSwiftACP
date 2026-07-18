@@ -15,9 +15,12 @@ import XCTest
 private let activeAccessStatusResponse = AccessStatusResponse(
     hasAccess: true,
     status: "active",
+    ownershipStatus: "owned",
+    updateStatus: "active",
     reason: "active_entitlement",
     productKey: "core",
     source: "polar",
+    updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
 )
 
 @MainActor
@@ -292,6 +295,8 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "core",
                         source: "polar",
@@ -348,6 +353,9 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                 deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true
@@ -385,6 +393,8 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "core",
                         source: "polar",
@@ -476,6 +486,9 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                 deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true
@@ -616,6 +629,8 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "core",
                         source: "polar",
@@ -697,6 +712,9 @@ extension ACC001CompleteAuthHandoffCallbackTests {
                 deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true
@@ -777,6 +795,9 @@ extension ACC001CompleteAuthHandoffCallbackTests {
                 deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true
@@ -878,6 +899,9 @@ extension ACC001CompleteAuthHandoffCallbackTests {
                 deviceID: "test-device-id",
                 sessionExpiresAt: state.sessionExpiresAt,
                 deviceBindingVerifiedAt: self.referenceDate,
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true
@@ -913,6 +937,8 @@ extension ACC001CompleteAuthHandoffCallbackTests {
                     AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "core",
                         source: "polar",
@@ -970,6 +996,9 @@ extension ACC001CompleteAuthHandoffCallbackTests {
                 deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true

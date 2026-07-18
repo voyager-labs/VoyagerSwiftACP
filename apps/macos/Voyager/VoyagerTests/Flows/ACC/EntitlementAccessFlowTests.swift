@@ -308,6 +308,35 @@ final class EntitlementAccessFlowTests: XCTestCase {
         await store.finish()
     }
 
+    func testUpdateEligibilityRecoveryReusesGateAndBlocksExternalRouteFlush() async {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: now,
+            updatesThrough: now.addingTimeInterval(-1),
+        )
+        let store = TestStore(initialState: AppLifecycleFeature.State()) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { false }
+        }
+
+        await store.send(.accountAccess(.delegate(.recoveryRequired(.updateEligibility(
+            snapshot: snapshot,
+            failure: .buildReleasedAfterUpdatesThrough(
+                releasedAt: now,
+                updatesThrough: now.addingTimeInterval(-1),
+            ),
+        ))))) {
+            $0.accessGatePhase = .recoveryRequired
+        }
+        await store.receive(\.delegate.openInitialWindowIfNeeded)
+
+        XCTAssertFalse(store.state.didStartHelper)
+        XCTAssertFalse(store.state.isExternalRouteFlushAllowed)
+        await store.finish()
+    }
+
     func testPresentedAccountAccessNilOutsideGuardPhases() {
         let phases: [AppLifecycleAccessGatePhase] = [
             .unresolved,

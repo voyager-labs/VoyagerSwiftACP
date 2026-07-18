@@ -10,6 +10,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release-identity:
+    name: Prepare release identity
+    runs-on: ubuntu-latest
+    outputs:
+      released_at: ${{ steps.identity.outputs.released_at }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Capture immutable release timestamp
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          VOYAGER_RELEASED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+            bash ./scripts/ci/prepare-release-identity.sh "${RUNNER_TEMP}/release-identity.env"
+          # shellcheck source=/dev/null
+          source "${RUNNER_TEMP}/release-identity.env"
+          echo "released_at=${VOYAGER_RELEASED_AT}" >> "${GITHUB_OUTPUT}"
+
   fetch-sparkle-baseline:
     name: Fetch Sparkle baseline (prod)
     runs-on: ubuntu-latest
@@ -87,7 +108,7 @@ jobs:
 
   build-notarize:
     name: Build, notarize (prod)
-    needs: fetch-sparkle-baseline
+    needs: [fetch-sparkle-baseline, release-identity]
     runs-on: ${{ fromJSON(vars.RELEASE_MACOS_RUNS_ON || '["self-hosted","macOS","ARM64"]') }}
     environment: production
     outputs:
@@ -106,6 +127,7 @@ jobs:
       SPARKLE_APPCAST_KEY: releases/appcast.xml
       DOWNLOADS_BASE_URL: ${{ vars.DOWNLOADS_BASE_URL }}
       SPARKLE_BASELINE_COUNT: 2
+      VOYAGER_RELEASED_AT: ${{ needs.release-identity.outputs.released_at }}
 
     steps:
       - name: Checkout
@@ -159,10 +181,11 @@ jobs:
             ${{ env.BUILD_DIR }}/Voyager.dmg
             ${{ env.BUILD_DIR }}/Voyager-${{ steps.version.outputs.version }}.zip
             ${{ env.BUILD_DIR }}/appcast.xml
+            ${{ env.BUILD_DIR }}/release-manifest-v1.json
 
   upload-release:
     name: Upload release artifacts (prod)
-    needs: build-notarize
+    needs: [build-notarize, release-identity]
     runs-on: ubuntu-latest
     environment: production
 
@@ -173,6 +196,7 @@ jobs:
       SPARKLE_APPCAST_KEY: releases/appcast.xml
       VERSION: ${{ needs.build-notarize.outputs.version }}
       BUILD_DIR: ${{ github.workspace }}/build/ci
+      VOYAGER_RELEASED_AT: ${{ needs.release-identity.outputs.released_at }}
 
     steps:
       - name: Checkout
@@ -200,5 +224,6 @@ jobs:
             r2 object put ${{ env.R2_BUCKET }}/${{ env.VERSION_PREFIX }}/${{ env.VERSION }}/Voyager.dmg --file ${{ env.BUILD_DIR }}/Voyager.dmg
             r2 object put ${{ env.R2_BUCKET }}/${{ env.RELEASES_PREFIX }}/Voyager.dmg --file ${{ env.BUILD_DIR }}/Voyager.dmg
             r2 object put ${{ env.R2_BUCKET }}/${{ env.RELEASES_PREFIX }}/latest.json --file ${{ env.BUILD_DIR }}/latest.json
+            r2 object put ${{ env.R2_BUCKET }}/${{ env.VERSION_PREFIX }}/${{ env.VERSION }}/release-manifest-v1.json --file ${{ env.BUILD_DIR }}/release-manifest-v1.json
             r2 object put ${{ env.R2_BUCKET }}/${{ env.VERSION_PREFIX }}/${{ env.VERSION }}/Voyager-${{ env.VERSION }}.zip --file ${{ env.BUILD_DIR }}/Voyager-${{ env.VERSION }}.zip
             r2 object put ${{ env.R2_BUCKET }}/${{ env.SPARKLE_APPCAST_KEY }} --file ${{ env.BUILD_DIR }}/appcast.xml

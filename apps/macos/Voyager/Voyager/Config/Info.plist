@@ -8,6 +8,8 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>VOYAGER_RELEASED_AT</key>
+	<string>$(VOYAGER_RELEASED_AT)</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

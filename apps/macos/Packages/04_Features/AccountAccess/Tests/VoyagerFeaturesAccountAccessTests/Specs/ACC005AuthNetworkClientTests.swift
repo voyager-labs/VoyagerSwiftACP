@@ -239,6 +239,8 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         let expectedResponse = AccessStatusResponse(
             hasAccess: true,
             status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
             reason: "active_entitlement",
             productKey: "core",
             currentPeriodEnd: expectedDate,

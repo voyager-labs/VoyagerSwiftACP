@@ -174,6 +174,7 @@ extension AccountAccessFeature {
             return .none
         }
 
+        state.updateEligibilityFailure = nil
         state.syncGeneration += 1
         state.inFlightSyncReason = reason
         state.isSubmitting = true
@@ -266,6 +267,9 @@ extension AccountAccessFeature {
             currentPeriodEnd: result.accessStatus.currentPeriodEnd,
             sessionExpiresAt: state.sessionExpiresAt,
             fetchedAt: syncedAt,
+            ownershipStatus: result.accessStatus.ownershipStatus,
+            updateStatus: result.accessStatus.updateStatus,
+            updatesThrough: result.accessStatus.updatesThrough,
         )
 
         state.isSubmitting = false
@@ -342,11 +346,18 @@ extension AccountAccessFeature {
                 gatewayBinding: Self.gatewayEnvironment.binding,
                 deviceID: deviceID,
                 deviceBindingVerifiedAt: syncedAt,
+                ownershipStatus: snapshot.ownershipStatus,
+                updateStatus: snapshot.updateStatus,
+                updatesThrough: snapshot.updatesThrough,
             )
+            if let failure = updateEligibilityFailure(for: verifiedSnapshot, now: syncedAt) {
+                return handleUpdateEligibilityFailure(&state, snapshot: verifiedSnapshot, failure: failure)
+            }
             state.snapshot = verifiedSnapshot
             state.deviceBindingRetryCount = 0
             state.isComplete = verifiedSnapshot.hasSession
             state.errorMessage = nil
+            state.updateEligibilityFailure = nil
             return saveVerifiedSnapshot(
                 verifiedSnapshot,
                 binding: state.sessionBindingID,
@@ -440,7 +451,7 @@ extension AccountAccessFeature {
         switch error {
         case .invalidCredential:
             .unauthorized
-        case .storageFailure, .capabilityMiss:
+        case .storageFailure, .capabilityMiss, .invalidResponse:
             .notConfigured
         case .upstream:
             .networkFailure
@@ -521,9 +532,57 @@ extension AccountAccessFeature {
         state.status = snapshot.status
         state.snapshot = snapshot
         state.trialExpiresAt = snapshot.currentPeriodEnd
+        if let failure = updateEligibilityFailure(for: snapshot, now: now) {
+            return handleUpdateEligibilityFailure(&state, snapshot: snapshot, failure: failure)
+        }
         state.isComplete = true
         state.errorMessage = "일시적인 네트워크 오류"
+        state.updateEligibilityFailure = nil
         return .send(.delegate(.unlocked(snapshot)))
+    }
+
+    private func updateEligibilityFailure(
+        for snapshot: AccessStatusSnapshot,
+        now: Date,
+    ) -> UpdateEligibilityFailure? {
+        UpdateEligibilityEvaluator.evaluate(
+            releaseIdentity: releaseIdentityClient.resolve(now),
+            hasAccess: snapshot.status.isActive,
+            ownershipStatus: snapshot.ownershipStatus,
+            updateStatus: snapshot.updateStatus,
+            updatesThrough: snapshot.updatesThrough,
+        )
+    }
+
+    private func handleUpdateEligibilityFailure(
+        _ state: inout State,
+        snapshot: AccessStatusSnapshot,
+        failure: UpdateEligibilityFailure,
+    ) -> Effect<Action> {
+        state.snapshot = snapshot
+        state.isComplete = false
+        state.deviceBindingFailure = nil
+        state.deviceBindingRetryCount = 0
+        state.updateEligibilityFailure = failure
+        state.errorMessage = updateEligibilityMessage(for: failure)
+        return .merge(
+            removeTrustedSnapshot(
+                binding: state.sessionBindingID,
+                generation: Int(state.syncGeneration),
+            ),
+            .send(.delegate(.recoveryRequired(.updateEligibility(snapshot: snapshot, failure: failure)))),
+        )
+    }
+
+    private func updateEligibilityMessage(for failure: UpdateEligibilityFailure) -> String {
+        switch failure {
+        case .missingReleaseIdentity, .invalidReleaseIdentity:
+            "This Voyager build cannot verify its release identity. Download an eligible version to continue."
+        case .missingUpdatesThrough, .invalidUpdatesThrough, .invalidAccessTuple:
+            "Your account did not return valid update eligibility. Retry or check your account."
+        case .buildReleasedAfterUpdatesThrough:
+            "This Voyager version is newer than your update eligibility. Download an eligible version to continue."
+        }
     }
 
     func errorMessage(for error: AccessError) -> String {

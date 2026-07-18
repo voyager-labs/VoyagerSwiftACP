@@ -27,4 +27,5 @@ nonisolated public enum AccessUnlockPrimaryCTA: Equatable, Sendable {
     case retry
     case next
     case pending
+    case eligibleDownload
 }
