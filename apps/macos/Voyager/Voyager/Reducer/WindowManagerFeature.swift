@@ -21,6 +21,7 @@ struct WindowManagerFeature {
 
     nonisolated private enum CancelID: Hashable {
         case defaultWindowBootstrap
+        case trackedSingletonNativeOpen(UUID)
     }
 
     let pickAttachments: @Sendable () async -> [URL]
@@ -238,6 +239,17 @@ struct WindowManagerFeature {
                     await fileManagerWindowClient.focusPath(path)
                 }
 
+            case let .trackedSingleton(command):
+                return handleTrackedSingletonCommand(command, state: &state)
+
+            case let .trackedSingletonNativeOpenCompleted(requestID):
+                guard state.authorizedTrackedSingletonRequestID == requestID else { return .none }
+                state.authorizedTrackedSingletonRequestID = nil
+                if state.trackedSingletonWindow?.requestID == requestID {
+                    state.trackedSingletonWindow = nil
+                }
+                return trackedSingletonCompletionEffect(requestID)
+
             case let .placement(.plan(request)):
                 return .send(.delegate(.externalOpenPlacementCompleted(.init(
                     batchID: request.batchID,
@@ -397,6 +409,51 @@ private extension WindowManagerFeature {
         )
     }
 
+    func handleTrackedSingletonCommand(
+        _ command: Action.TrackedSingletonCommand,
+        state: inout State,
+    ) -> Effect<Action> {
+        if case let .revoke(requestID) = command {
+            return revokeTrackedSingleton(requestID: requestID, state: &state)
+        }
+        let requestID: UUID = switch command {
+        case let .openInitialWindow(id):
+            id
+        case let .openWindow(id, _, _):
+            id
+        case let .revoke(id):
+            id
+        }
+        guard state.authorizedTrackedSingletonRequestID == requestID else {
+            return trackedSingletonCompletionEffect(requestID)
+        }
+
+        switch command {
+        case .revoke:
+            return .none
+
+        case .openInitialWindow:
+            guard state.windows.isEmpty else {
+                state.authorizedTrackedSingletonRequestID = nil
+                return trackedSingletonCompletionEffect(requestID)
+            }
+            return openTrackedWindowSession(
+                requestID: requestID,
+                path: nil,
+                selectEntryID: nil,
+                state: &state,
+            )
+
+        case let .openWindow(_, path, selectEntryID):
+            return openTrackedWindowSession(
+                requestID: requestID,
+                path: path,
+                selectEntryID: selectEntryID,
+                state: &state,
+            )
+        }
+    }
+
     func handleWindowCommand(_ action: Action, state: inout State) -> Effect<Action> {
         switch action {
         case let .file(.newWindow(path, selectEntryID)):
@@ -433,6 +490,87 @@ private extension WindowManagerFeature {
         default:
             return .none
         }
+    }
+
+    private func openTrackedWindowSession(
+        requestID: UUID,
+        path: String?,
+        selectEntryID: String?,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.authorizedTrackedSingletonRequestID == requestID else {
+            return trackedSingletonCompletionEffect(requestID)
+        }
+        guard !onboardingWindowClient.showIfNeeded() else {
+            state.authorizedTrackedSingletonRequestID = nil
+            return trackedSingletonCompletionEffect(requestID)
+        }
+
+        let windowSession = makeWindowSession(path: path, selectEntryID: selectEntryID)
+        state.windows.append(windowSession)
+        state.focusedWindowID = windowSession.id
+        state.moveWindowToMRUFront(windowSession.id)
+        state.trackedSingletonWindow = .init(requestID: requestID, windowID: windowSession.id)
+
+        let bootstrapEffect: Effect<Action> = if path == nil {
+            defaultWindowBootstrapEffectIfNeeded(for: windowSession.id, state: &state)
+        } else {
+            .none
+        }
+
+        return .concatenate(
+            windowIDChangedEffect(for: windowSession.id),
+            appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
+            .run { [fileManagerWindowClient, id = windowSession.id] send in
+                await fileManagerWindowClient.open(id)
+                await send(.trackedSingletonNativeOpenCompleted(requestID: requestID))
+            }
+            .cancellable(id: CancelID.trackedSingletonNativeOpen(requestID), cancelInFlight: true),
+            bootstrapEffect,
+        )
+    }
+
+    private func revokeTrackedSingleton(
+        requestID: UUID,
+        state: inout State,
+    ) -> Effect<Action> {
+        if state.authorizedTrackedSingletonRequestID == requestID {
+            state.authorizedTrackedSingletonRequestID = nil
+        }
+        guard let trackedWindow = state.trackedSingletonWindow,
+              trackedWindow.requestID == requestID
+        else {
+            return .cancel(id: CancelID.trackedSingletonNativeOpen(requestID))
+        }
+
+        let windowID = trackedWindow.windowID
+        let wasFocused = state.focusedWindowID == windowID
+        state.trackedSingletonWindow = nil
+        state.windows.remove(id: windowID)
+        state.lastUsedWindowIDs.removeAll { $0 == windowID }
+        state.defaultWindowBootstrapWindowIDs.remove(windowID)
+        state.externalWindowBatchIDs[windowID] = nil
+        if wasFocused {
+            state.focusedWindowID = state.lastUsedWindowIDs.first { state.windows[id: $0] != nil }
+        }
+
+        var effects: [Effect<Action>] = [
+            .cancel(id: CancelID.trackedSingletonNativeOpen(requestID)),
+        ]
+        if state.defaultWindowBootstrapWindowIDs.isEmpty,
+           state.defaultWindowBootstrapRequestID != nil
+        {
+            state.defaultWindowBootstrapRequestID = nil
+            effects.append(.cancel(id: CancelID.defaultWindowBootstrap))
+        }
+        effects.append(.run { [fileManagerWindowClient] _ in
+            await fileManagerWindowClient.close(windowID)
+        })
+        return .concatenate(effects)
+    }
+
+    private func trackedSingletonCompletionEffect(_ requestID: UUID) -> Effect<Action> {
+        .send(.delegate(.trackedSingletonCompleted(requestID: requestID)))
     }
 
     private func openWindowSession(

@@ -305,6 +305,8 @@ enum WindowManagerAction: CasePathable {
     case edit(EditCommand)
     case event(WindowEvent)
     case placement(PlacementCommand)
+    case trackedSingleton(TrackedSingletonCommand)
+    case trackedSingletonNativeOpenCompleted(requestID: UUID)
     case pinnedContentTabsStoreChanged
     case defaultWindowBootstrapCompleted(requestID: UUID, contentTabs: ContentTabState)
     case defaultWindowBootstrapFailed(requestID: UUID)
@@ -320,6 +322,14 @@ enum WindowManagerAction: CasePathable {
         case externalOpenPlacementCompleted(ExternalOpenPlacementCompletion)
         case externalOpenApplyCompleted(ExternalOpenPlacementApplicationCompletion)
         case externalOpenActivationCompleted(batchID: UUID)
+        case trackedSingletonCompleted(requestID: UUID)
+    }
+
+    @CasePathable
+    enum TrackedSingletonCommand: CasePathable {
+        case openInitialWindow(requestID: UUID)
+        case openWindow(requestID: UUID, path: String, selectEntryID: String?)
+        case revoke(requestID: UUID)
     }
 
     @CasePathable

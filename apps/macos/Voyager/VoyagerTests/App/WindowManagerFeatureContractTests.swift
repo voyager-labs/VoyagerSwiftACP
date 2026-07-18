@@ -3388,6 +3388,146 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(terminalCount.value, 0)
     }
 
+    /// tracked folder command는 실제 native open이 반환된 뒤에만 terminal을 보낸다.
+    func testTrackedFolderCompletesOnlyAfterNativeOpenReturns() async {
+        await assertTrackedNativeOpenCompletion(
+            command: .openWindow(requestID: UUID(900), path: "/tmp/folder", selectEntryID: nil),
+            requestID: UUID(900),
+        )
+    }
+
+    /// tracked fallback command는 default bootstrap과 무관하게 실제 native open 직후 terminal을 보낸다.
+    func testTrackedFallbackCompletesOnlyAfterNativeOpenReturns() async {
+        await assertTrackedNativeOpenCompletion(
+            command: .openInitialWindow(requestID: UUID(901)),
+            requestID: UUID(901),
+        )
+    }
+
+    /// gate revocation 뒤 queue에 남은 tracked command는 window를 만들지 않고 stale terminal 하나로 종료한다.
+    func testRevokedTrackedSingletonCommandIsNoOpAndTerminates() async {
+        let requestID = UUID(902)
+        let openedIDs = LockIsolated<[UUID]>([])
+        let terminalCount = LockIsolated(0)
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.trackedSingletonCompleted(requestID: requestID)) = action {
+                        terminalCount.withValue { $0 += 1 }
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.fileManagerWindowClient.open = { id in openedIDs.withValue { $0.append(id) } }
+        }
+        // store.exhaustivity = .off: revoked command의 no-mutation과 정확히 한 terminal만 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.trackedSingleton(.openWindow(
+            requestID: requestID,
+            path: "/tmp/revoked",
+            selectEntryID: nil,
+        )))
+        await store.receive(\.delegate.trackedSingletonCompleted, requestID)
+        await store.finish()
+
+        XCTAssertTrue(store.state.windows.isEmpty)
+        XCTAssertTrue(openedIDs.value.isEmpty)
+        XCTAssertEqual(terminalCount.value, 1)
+    }
+
+    /// onboarding block은 tracked command를 mutate하지 않고 terminal 하나로 종료한다.
+    func testTrackedSingletonBlockedByOnboardingTerminatesWithoutWindow() async {
+        let requestID = UUID(904)
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedTrackedSingletonRequestID = requestID
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { true }
+        }
+
+        await store.send(.trackedSingleton(.openWindow(
+            requestID: requestID,
+            path: "/tmp/onboarding-blocked",
+            selectEntryID: nil,
+        ))) {
+            $0.authorizedTrackedSingletonRequestID = nil
+        }
+        await store.receive(\.delegate.trackedSingletonCompleted, requestID)
+        XCTAssertTrue(store.state.windows.isEmpty)
+    }
+
+    /// existing fallback window는 새 창을 만들지 않고 tracked terminal 하나로 종료한다.
+    func testTrackedFallbackWithExistingWindowTerminatesWithoutDuplicate() async {
+        let requestID = UUID(905)
+        let windowID = UUID(906)
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [.init(id: windowID, window: .makeInitial(path: "/existing"))]
+        initialState.authorizedTrackedSingletonRequestID = requestID
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        }
+
+        await store.send(.trackedSingleton(.openInitialWindow(requestID: requestID))) {
+            $0.authorizedTrackedSingletonRequestID = nil
+        }
+        await store.receive(\.delegate.trackedSingletonCompleted, requestID)
+        XCTAssertEqual(Array(store.state.windows.ids), [windowID])
+    }
+
+    private func assertTrackedNativeOpenCompletion(
+        command: WindowManagerAction.TrackedSingletonCommand,
+        requestID: UUID,
+    ) async {
+        let windowID = UUID(903)
+        let openStarted = expectation(description: "native open started")
+        let terminalReceived = expectation(description: "tracked terminal received")
+        let openGate = AsyncStream<Void>.makeStream()
+        let terminalCount = LockIsolated(0)
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedTrackedSingletonRequestID = requestID
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.trackedSingletonCompleted(requestID: requestID)) = action {
+                        terminalCount.withValue { $0 += 1 }
+                        terminalReceived.fulfill()
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
+            $0.fileManagerWindowClient.open = { _ in
+                openStarted.fulfill()
+                for await _ in openGate.stream {
+                    break
+                }
+            }
+        }
+        // store.exhaustivity = .off: child 초기화 action보다 native open/terminal 순서만 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.trackedSingleton(command))
+        await fulfillment(of: [openStarted], timeout: 1)
+        XCTAssertEqual(terminalCount.value, 0)
+
+        openGate.continuation.yield(())
+        openGate.continuation.finish()
+        await fulfillment(of: [terminalReceived], timeout: 1)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(terminalCount.value, 1)
+    }
+
     private struct PlacementBoundaryScenario {
         let free: Int
         let valid: Int

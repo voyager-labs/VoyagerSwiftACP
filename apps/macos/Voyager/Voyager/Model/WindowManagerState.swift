@@ -2,6 +2,11 @@ import ComposableArchitecture
 import Foundation
 import VoyagerPagesFileManager
 
+struct WindowManagerTrackedSingletonWindow: Equatable {
+    var requestID: UUID
+    var windowID: UUID
+}
+
 @ObservableState
 struct WindowManagerState: Equatable {
     typealias WindowID = WindowSessionState.ID
@@ -14,6 +19,8 @@ struct WindowManagerState: Equatable {
     var defaultWindowBootstrapWindowIDs: Set<WindowID> = []
     var externalWindowBatchIDs: [WindowID: UUID] = [:]
     var authorizedExternalOpenBatchID: UUID?
+    var authorizedTrackedSingletonRequestID: UUID?
+    var trackedSingletonWindow: WindowManagerTrackedSingletonWindow?
     var externalOpenActivationAttempt: ExternalOpenActivationAttempt?
 
     mutating func moveWindowToMRUFront(_ id: WindowID) {
