@@ -49,6 +49,78 @@ extension FMW003HandleExternalFileOpenRequestsTests {
         await store.finish()
     }
 
+    /// 추적된 singleton 폴더 요청은 route delegate 뒤에 occurrence terminal을 방출한다.
+    func test_trackedFolderURL_completesAfterRouteDelegate() async throws {
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000901"))
+        let deepLink = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2FUsers%2Ftest"))
+        let fileURL = try XCTUnwrap(URL(string: "file:///Users/test"))
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
+        } withDependencies: {
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: true, isDirectory: true)
+            }
+        }
+
+        await store.send(.receiveTracked(deepLink, requestID: requestID)) {
+            $0.activeTrackedRequestID = requestID
+            $0.currentStatus = .pathReceived
+            $0.currentRequest = ExternalFileRouterRequest(
+                originalURL: fileURL,
+                source: .deepLink,
+                mode: .open,
+            )
+        }
+        await store.receive(\.normalizeCompleted) {
+            $0.currentStatus = .windowRouted
+            $0.currentRequest?.resolvedPath = "/Users/test"
+            $0.currentRequest?.isDirectory = true
+        }
+        await store.receive { action in
+            guard case let .delegate(.openFolder(path, trackedRequestID)) = action else { return false }
+            return path == "/Users/test" && trackedRequestID == requestID
+        }
+        await store.send(.singletonRequestCompleted(requestID)) {
+            $0.activeTrackedRequestID = nil
+        }
+        await store.finish()
+    }
+
+    /// 추적된 singleton 실패는 오류 delegate 뒤에 occurrence terminal을 방출한다.
+    func test_trackedInvalidPath_completesAfterErrorDelegate() async throws {
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000902"))
+        let deepLink = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2FUsers%2Fmissing"))
+        let fileURL = try XCTUnwrap(URL(string: "file:///Users/missing"))
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
+        } withDependencies: {
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: false, isDirectory: false)
+            }
+        }
+
+        await store.send(.receiveTracked(deepLink, requestID: requestID)) {
+            $0.activeTrackedRequestID = requestID
+            $0.currentStatus = .pathReceived
+            $0.currentRequest = ExternalFileRouterRequest(
+                originalURL: fileURL,
+                source: .deepLink,
+                mode: .open,
+            )
+        }
+        await store.receive(\.failed) {
+            $0.currentStatus = .invalidPathError
+        }
+        await store.receive { action in
+            guard case let .delegate(.showInvalidPathError(path, trackedRequestID)) = action else { return false }
+            return path == "/Users/missing" && trackedRequestID == requestID
+        }
+        await store.send(.singletonRequestCompleted(requestID)) {
+            $0.activeTrackedRequestID = nil
+        }
+        await store.finish()
+    }
+
     /// mode=reveal 폴더 → 폴더 열기 (select focus 불필요)
     ///
     /// 폴더는 mode와 관계없이 windowRouted + openFolder로 동일하게 처리된다.
@@ -483,8 +555,8 @@ extension FMW003HandleExternalFileOpenRequestsTests {
         }
 
         await store.receive { action in
-            guard case let .delegate(.openFolder(path)) = action else { return false }
-            return path == "/Users/test/folder1"
+            guard case let .delegate(.openFolder(path, trackedRequestID)) = action else { return false }
+            return path == "/Users/test/folder1" && trackedRequestID == nil
         }
 
         await store.finish()
@@ -593,6 +665,57 @@ extension FMW003HandleExternalFileOpenRequestsTests {
         }
         await store.send(.batchNormalizationCompleted(cancelledResult))
         await store.send(.batchNormalizationCompleted(staleResult))
+        await store.finish()
+    }
+
+    /// tracked request cancellation은 request identity의 probe만 취소하고 late delegate를 만들지 않는다.
+    func testTrackedRequestCancellationRejectsLateProbeCompletion() async throws {
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000903"))
+        let fileURL = URL(fileURLWithPath: "/tmp/cancelled")
+        var initialState = ExternalFileRouterState()
+        initialState.activeTrackedRequestID = requestID
+        let store = TestStore(initialState: initialState) {
+            ExternalFileRouterFeature()
+        }
+
+        await store.send(.cancelTrackedRequest(requestID)) {
+            $0.activeTrackedRequestID = nil
+        }
+        await store.send(.normalizeCompleted(.init(
+            path: fileURL.path,
+            isDirectory: true,
+            context: .init(
+                requestID: fileURL,
+                source: .deepLink,
+                mode: .open,
+                trackedRequestID: requestID,
+            ),
+        )))
+        await store.finish()
+    }
+
+    /// tracked parser validation failure는 WindowManager 없이 self-terminal로 종료한다.
+    func testTrackedParserValidationFailureSelfCompletes() async throws {
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000904"))
+        let invalidURL = try XCTUnwrap(URL(string: "voyager://open?url=https%3A%2F%2Fexample.com"))
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
+        }
+
+        await store.send(.receiveTracked(invalidURL, requestID: requestID)) {
+            $0.activeTrackedRequestID = requestID
+        }
+        await store.receive(\.failed) {
+            $0.currentStatus = .urlValidationError
+            $0.currentRequest = .init(
+                originalURL: invalidURL,
+                source: .deepLink,
+                mode: .open,
+            )
+        }
+        await store.receive(\.singletonRequestCompleted, requestID) {
+            $0.activeTrackedRequestID = nil
+        }
         await store.finish()
     }
 }
