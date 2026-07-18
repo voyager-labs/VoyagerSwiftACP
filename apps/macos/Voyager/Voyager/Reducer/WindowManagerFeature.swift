@@ -581,14 +581,12 @@ private extension WindowManagerFeature {
                 isRestorableAnchor: { _ in true },
             )
             return .merge(
-                state.windows.ids
-                    .filter { state.externalWindowBatchIDs[$0] == nil }
-                    .map { id in
-                        .send(.windows(.element(
-                            id: id,
-                            action: .window(.applyPinnedContentTabs(restoreResult.state)),
-                        )))
-                    },
+                state.windows.ids.map { id in
+                    .send(.windows(.element(
+                        id: id,
+                        action: .window(.applyPinnedContentTabs(restoreResult.state)),
+                    )))
+                },
             )
         } catch {
             return .none

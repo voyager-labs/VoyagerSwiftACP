@@ -555,11 +555,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
-    /// pinned 저장 성공 이벤트는 전역 pinned store를 다시 읽어 열린 모든 window로 fan-out한다.
-    /// pinned sidebar가 window마다 어긋나지 않도록 WindowManager 레벨 동기화 액션을 검증한다.
+    /// pinned 저장 성공 이벤트는 external marker 여부와 무관하게 열린 모든 window로 fan-out한다.
+    /// pinned sidebar가 window마다 어긋나지 않고 external unpinned tab이 보존되는지 검증한다.
     /// - 검증 내용: child pinnedRecordSaveSucceeded → pinnedContentTabsStoreChanged → 모든 window applyPinnedContentTabs
-    /// - 사전 조건: 열린 window 2개, global pinned store 1개
-    /// - 기대 결과: 두 window 모두 동일한 pinned tab 상태 수신
+    /// - 사전 조건: 일반 window와 active external marker window, global pinned store 1개
+    /// - 기대 결과: 두 window 모두 동일한 pinned tab을 받고 external window의 unpinned tab은 유지
     func testPinnedRecordSaveSucceededSyncsPinnedTabsAcrossOpenWindows() async {
         let firstID = UUID()
         let secondID = UUID()
@@ -578,6 +578,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             WindowSessionState(id: firstID, window: .makeInitial(path: "/Users/test/A")),
             WindowSessionState(id: secondID, window: .makeInitial(path: "/Users/test/B")),
         ]
+        initialState.externalWindowBatchIDs[secondID] = UUID()
 
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
@@ -623,6 +624,12 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         XCTAssertEqual(store.state.windows[id: firstID]?.window.contentTabs.tabs.first?.id.rawValue, "global-pin")
         XCTAssertEqual(store.state.windows[id: secondID]?.window.contentTabs.tabs.first?.id.rawValue, "global-pin")
+        XCTAssertEqual(
+            store.state.windows[id: secondID]?.window.contentTabs.tabs.contains {
+                !$0.isPinned && $0.anchor == .directory(path: "/Users/test/B")
+            },
+            true,
+        )
     }
 
     /// live sync는 bootstrap cleanup과 달리 파일 존재 검증으로 열린 pinned tab을 갑자기 제거하지 않는다.
