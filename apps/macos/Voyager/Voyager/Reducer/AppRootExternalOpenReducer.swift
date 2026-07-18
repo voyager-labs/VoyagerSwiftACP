@@ -34,19 +34,28 @@ extension AppRootFeature {
         }
     }
 
-    /// didOpenFirstWindow 분기에서 버퍼링된 외부 URL 큐를 소비하고 리셋
-    func flushPendingExternalURL(state: inout State) -> Effect<Action> {
-        let urls = state.pendingExternalURLs
-        guard !urls.isEmpty else { return .none }
-        state.pendingExternalURLs = []
-        // 버퍼링된 URL을 적재 순서대로 ExternalFileRouter에 전달
-        return .concatenate(urls.map { url in
-            .send(.externalFileRouter(.receive(url)))
-        })
+    /// pending deep-link occurrence 하나만 시작하고 Router terminal까지 다음 작업을 막는다.
+    func startNextPendingExternalURLIfPossible(state: inout State) -> Effect<Action> {
+        guard state.activePendingExternalURL == nil,
+              state.activeExternalOpenBatch == nil,
+              !state.pendingExternalURLs.isEmpty,
+              canFlushPendingExternalRoutes(state)
+        else { return .none }
+
+        let pending = AppRootPendingExternalURL(
+            requestID: uuid(),
+            url: state.pendingExternalURLs.removeFirst(),
+        )
+        state.activePendingExternalURL = pending
+        return .send(.externalFileRouter(.receiveTracked(
+            pending.url,
+            requestID: pending.requestID,
+        )))
     }
 
     func hasPendingExternalRoutes(_ state: State) -> Bool {
         !state.pendingExternalURLs.isEmpty
+            || state.activePendingExternalURL != nil
             || !state.externalOpenBatchQueue.isEmpty
             || state.activeExternalOpenBatch != nil
     }
@@ -56,10 +65,19 @@ extension AppRootFeature {
     }
 
     func flushPendingExternalRoutes(state: inout State) -> Effect<Action> {
-        .concatenate(
-            flushPendingExternalURL(state: &state),
-            startNextExternalOpenBatchIfPossible(state: &state),
-        )
+        if state.activePendingExternalURL != nil || !state.pendingExternalURLs.isEmpty {
+            return startNextPendingExternalURLIfPossible(state: &state)
+        }
+        return startNextExternalOpenBatchIfPossible(state: &state)
+    }
+
+    func consumePendingExternalURLCompletion(
+        requestID: UUID,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.activePendingExternalURL?.requestID == requestID else { return .none }
+        state.activePendingExternalURL = nil
+        return flushPendingExternalRoutes(state: &state)
     }
 
     func enqueueExternalOpenBatch(
@@ -101,6 +119,8 @@ extension AppRootFeature {
 
     func startNextExternalOpenBatchIfPossible(state: inout State) -> Effect<Action> {
         guard state.activeExternalOpenBatch == nil,
+              state.activePendingExternalURL == nil,
+              state.pendingExternalURLs.isEmpty,
               !state.externalOpenBatchQueue.isEmpty,
               state.lifecycle.isExternalRouteFlushAllowed,
               !onboardingWindowClient.isRequired()
@@ -112,6 +132,19 @@ extension AppRootFeature {
             preferredWindowIDs: state.windowManager.lastUsedWindowIDs,
         )
         return .send(.externalFileRouter(.receiveBatch(batch.request)))
+    }
+
+    func handleActivePendingExternalURLGateClosure(state: inout State) -> Effect<Action> {
+        guard let active = state.activePendingExternalURL else { return .none }
+        if state.windowManager.authorizedTrackedSingletonRequestID == active.requestID {
+            state.windowManager.authorizedTrackedSingletonRequestID = nil
+        }
+        state.activePendingExternalURL = nil
+        state.pendingExternalURLs.insert(active.url, at: 0)
+        return .concatenate(
+            .send(.windowManager(.trackedSingleton(.revoke(requestID: active.requestID)))),
+            .send(.externalFileRouter(.cancelTrackedRequest(active.requestID))),
+        )
     }
 
     func handleActiveExternalOpenBatchGateClosure(state: inout State) -> Effect<Action> {
@@ -152,17 +185,25 @@ extension AppRootFeature {
     ) -> Effect<Action> {
         switch action {
         case let .windowManager(.delegate(.externalOpenPlacementCompleted(completion))):
-            consumeExternalOpenPlacementCompletion(completion, state: &state)
+            return consumeExternalOpenPlacementCompletion(completion, state: &state)
         case let .windowManager(.delegate(.externalOpenApplyCompleted(completion))):
-            consumeExternalOpenPlacementApplicationCompletion(completion, state: &state)
+            return consumeExternalOpenPlacementApplicationCompletion(completion, state: &state)
         case let .externalOpenAlertCompleted(completion):
-            consumeExternalOpenAlertCompletion(completion, state: &state)
+            return consumeExternalOpenAlertCompletion(completion, state: &state)
         case let .windowManager(.delegate(.externalOpenActivationCompleted(batchID))):
-            consumeExternalOpenActivation(batchID: batchID, state: &state)
+            return consumeExternalOpenActivation(batchID: batchID, state: &state)
+        case let .windowManager(.delegate(.trackedSingletonCompleted(requestID))):
+            guard state.activePendingExternalURL?.requestID == requestID,
+                  canFlushPendingExternalRoutes(state)
+            else { return .none }
+            if state.windowManager.authorizedTrackedSingletonRequestID == requestID {
+                state.windowManager.authorizedTrackedSingletonRequestID = nil
+            }
+            return .send(.externalFileRouter(.singletonRequestCompleted(requestID)))
         case let .externalOpenAdvanceToNextBatch(batchID):
-            advanceExternalOpenBatch(batchID: batchID, state: &state)
+            return advanceExternalOpenBatch(batchID: batchID, state: &state)
         default:
-            .none
+            return .none
         }
     }
 
@@ -413,6 +454,109 @@ extension AppRootFeature {
             await send(.externalOpenAlertCompleted(.init(batchID: batchID, failureIndex: failureIndex)))
         } catch: { _, send in
             await send(.externalOpenAlertCompleted(.init(batchID: batchID, failureIndex: failureIndex)))
+        }
+    }
+}
+
+// MARK: - Tracked singleton route ownership
+
+extension AppRootFeature {
+    func routeExternalAppFallback(
+        requestID: UUID?,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let requestID else {
+            return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
+        }
+        guard authorizeTrackedPendingRequest(requestID, state: &state) else { return .none }
+        return .send(.windowManager(.trackedSingleton(.openInitialWindow(requestID: requestID))))
+    }
+
+    func routeExternalFolder(
+        path: String,
+        requestID: UUID?,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let requestID else { return .send(.windowManager(.file(.newWindow(path: path)))) }
+        guard authorizeTrackedPendingRequest(requestID, state: &state) else { return .none }
+        return .send(.windowManager(.trackedSingleton(.openWindow(
+            requestID: requestID,
+            path: path,
+            selectEntryID: nil,
+        ))))
+    }
+
+    func routeExternalParentFolder(
+        path: String,
+        selectEntryPath: String?,
+        requestID: UUID?,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let requestID else {
+            return .send(.windowManager(.file(.newWindow(path: path, selectEntryID: selectEntryPath))))
+        }
+        guard authorizeTrackedPendingRequest(requestID, state: &state) else { return .none }
+        return .send(.windowManager(.trackedSingleton(.openWindow(
+            requestID: requestID,
+            path: path,
+            selectEntryID: selectEntryPath,
+        ))))
+    }
+
+    func routeExternalAuthCallback(
+        url: URL,
+        requestID: UUID?,
+        state: inout State,
+    ) -> Effect<Action> {
+        state.isExternalURLRouteInFlightWithoutWindow = false
+        guard let requestID else { return .send(.receiveAuthCallbackURL(url)) }
+        guard isCurrentTrackedPendingRequest(requestID, state: state) else { return .none }
+        return .send(.receiveTrackedAuthCallbackURL(url, requestID: requestID))
+    }
+
+    func showExternalRouteError(
+        message: String,
+        requestID: UUID?,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard requestID.map({ isCurrentTrackedPendingRequest($0, state: state) }) ?? true else {
+            return .none
+        }
+        state.isExternalURLRouteInFlightWithoutWindow = false
+        return completeTrackedPendingURL(
+            after: showExternalFileOpenError(
+                title: "Voyager에서 위치를 열 수 없습니다",
+                message: message,
+            ),
+            requestID: requestID,
+        )
+    }
+
+    func isCurrentTrackedPendingRequest(_ requestID: UUID, state: State) -> Bool {
+        state.lifecycle.isExternalRouteFlushAllowed
+            && state.activePendingExternalURL?.requestID == requestID
+    }
+
+    func authorizeTrackedPendingRequest(_ requestID: UUID, state: inout State) -> Bool {
+        guard isCurrentTrackedPendingRequest(requestID, state: state) else { return false }
+        state.windowManager.authorizedTrackedSingletonRequestID = requestID
+        return true
+    }
+
+    func completeTrackedPendingURL(
+        after routeEffect: Effect<Action>,
+        requestID: UUID?,
+    ) -> Effect<Action> {
+        guard let requestID else { return routeEffect }
+        return .concatenate(
+            routeEffect,
+            .send(.externalFileRouter(.singletonRequestCompleted(requestID))),
+        )
+    }
+
+    func showExternalFileOpenError(title: String, message: String) -> Effect<Action> {
+        .run { [collectionAlertClient] _ in
+            await collectionAlertClient.showCollectionOpenErrorAlert(title, message)
         }
     }
 }

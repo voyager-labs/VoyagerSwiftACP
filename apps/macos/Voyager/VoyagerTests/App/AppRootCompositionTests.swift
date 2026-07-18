@@ -1114,6 +1114,79 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertEqual(store.state.activeExternalOpenBatch, active)
     }
 
+    /// pending singleton terminal 전에는 다음 queued batch를 active로 만들지 않는다.
+    func testPendingURLTerminalBlocksNextQueuedBatchAdmission() throws {
+        let activeBatchID = UUID(680)
+        let activeItemID = UUID(681)
+        let queuedBatchID = UUID(682)
+        let queuedItemID = UUID(683)
+        let windowID = UUID(684)
+        let tabID = ContentTabID(rawValue: "pending-terminal-window-tab")
+        let activeURL = try XCTUnwrap(URL(string: "file:///tmp/active"))
+        let pendingURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fpending"))
+        let queuedURL = try XCTUnwrap(URL(string: "file:///tmp/queued"))
+        let activeRequest = ExternalFileRouterBatchRequest(
+            batchID: activeBatchID,
+            items: [
+                .init(itemID: activeItemID, index: 0, url: activeURL, source: .systemOpenEvent, mode: .open),
+            ],
+        )
+        let queuedRequest = ExternalFileRouterBatchRequest(
+            batchID: queuedBatchID,
+            items: [
+                .init(itemID: queuedItemID, index: 0, url: queuedURL, source: .systemOpenEvent, mode: .open),
+            ],
+        )
+        let window = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(
+            reservations: [
+                .init(id: tabID, anchor: .directory(path: "/tmp")),
+            ],
+        ))
+        var active = AppRootActiveExternalOpenBatch(
+            batch: .init(request: activeRequest, requiresInitialWindowFallback: false),
+            preferredWindowIDs: [],
+        )
+        active.phase = .advancing
+        var state = AppRootFeature.State()
+        state.lifecycle.accessGatePhase = .granted
+        state.windowManager.windows = [.init(id: windowID, window: window)]
+        state.pendingExternalURLs = [pendingURL]
+        state.externalOpenBatchQueue = [
+            .init(request: queuedRequest, requiresInitialWindowFallback: false),
+        ]
+        state.activeExternalOpenBatch = active
+        let feature = AppRootFeature()
+
+        withDependencies {
+            $0.uuid = .incrementing
+            $0.onboardingWindowClient.isRequired = { false }
+        } operation: {
+            _ = feature.advanceExternalOpenBatch(batchID: activeBatchID, state: &state)
+        }
+
+        XCTAssertNil(state.activeExternalOpenBatch)
+        XCTAssertEqual(state.activePendingExternalURL, .init(requestID: UUID(0), url: pendingURL))
+        XCTAssertTrue(state.pendingExternalURLs.isEmpty)
+        XCTAssertEqual(state.externalOpenBatchQueue.map(\.request.batchID), [queuedBatchID])
+
+        withDependencies {
+            $0.onboardingWindowClient.isRequired = { false }
+        } operation: {
+            _ = feature.consumePendingExternalURLCompletion(requestID: UUID(999), state: &state)
+        }
+        XCTAssertNil(state.activeExternalOpenBatch)
+        XCTAssertEqual(state.externalOpenBatchQueue.map(\.request.batchID), [queuedBatchID])
+
+        withDependencies {
+            $0.onboardingWindowClient.isRequired = { false }
+        } operation: {
+            _ = feature.consumePendingExternalURLCompletion(requestID: UUID(0), state: &state)
+        }
+        XCTAssertNil(state.activePendingExternalURL)
+        XCTAssertEqual(state.activeExternalOpenBatch?.batch.request.batchID, queuedBatchID)
+        XCTAssertTrue(state.externalOpenBatchQueue.isEmpty)
+    }
+
     /// 첫 external window가 열려도 active batch terminal 전에는 pending URL을 flush하지 않는다.
     func testFirstExternalWindowDefersPendingURLFlushUntilBatchAdvance() async throws {
         let batchID = UUID(690)
@@ -1194,7 +1267,12 @@ final class AppRootCompositionTests: XCTestCase {
         activationGate.continuation.finish()
         await store.receive(\.windowManager.delegate.externalOpenActivationCompleted, batchID)
         await store.receive(\.externalOpenAdvanceToNextBatch, batchID)
-        await store.receive(\.externalFileRouter.receive, pendingURL)
+        await store.receive { action in
+            guard case let .externalFileRouter(.receiveTracked(url, requestID: _)) = action else {
+                return false
+            }
+            return url == pendingURL
+        }
 
         XCTAssertTrue(store.state.pendingExternalURLs.isEmpty)
         await store.finish()
@@ -1576,6 +1654,416 @@ final class AppRootCompositionTests: XCTestCase {
 
         XCTAssertEqual(store.state.activeExternalOpenBatch?.batch.request, activeRequest)
         XCTAssertEqual(store.state.externalOpenBatchQueue.flatMap { $0.request.items.map(\.url) }, [queuedURL])
+    }
+
+    /// tracked singleton이 active이면 새 batch는 queue에 남고 matching terminal 뒤에만 시작한다.
+    func testBatchArrivingWhileTrackedSingletonActiveWaitsForMatchingTerminal() throws {
+        let requestID = UUID(800)
+        let staleRequestID = UUID(801)
+        let pendingURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fpending"))
+        let batchURL = URL(fileURLWithPath: "/tmp/batch-after-singleton")
+        var state = AppRootFeature.State()
+        state.lifecycle.accessGatePhase = .granted
+        state.activePendingExternalURL = .init(requestID: requestID, url: pendingURL)
+        let feature = AppRootFeature()
+
+        withDependencies {
+            $0.uuid = .incrementing
+            $0.onboardingWindowClient.isRequired = { false }
+        } operation: {
+            _ = feature.enqueueExternalOpenBatch(
+                urls: [batchURL],
+                source: .systemOpenEvent,
+                mode: .open,
+                state: &state,
+            )
+        }
+        XCTAssertNil(state.activeExternalOpenBatch)
+        XCTAssertEqual(state.externalOpenBatchQueue.count, 1)
+
+        _ = feature.consumePendingExternalURLCompletion(requestID: staleRequestID, state: &state)
+        XCTAssertEqual(state.activePendingExternalURL?.requestID, requestID)
+        XCTAssertNil(state.activeExternalOpenBatch)
+
+        withDependencies {
+            $0.onboardingWindowClient.isRequired = { false }
+        } operation: {
+            _ = feature.consumePendingExternalURLCompletion(requestID: requestID, state: &state)
+        }
+        XCTAssertNil(state.activePendingExternalURL)
+        XCTAssertNotNil(state.activeExternalOpenBatch)
+        XCTAssertTrue(state.externalOpenBatchQueue.isEmpty)
+    }
+
+    /// active batch가 있으면 pending singleton은 시작되지 않는다.
+    func testPendingSingletonDoesNotStartWhileBatchActive() throws {
+        let pendingURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fpending-during-batch"))
+        let batchURL = URL(fileURLWithPath: "/tmp/active-batch")
+        let batch = ExternalFileRouterBatchRequest(
+            batchID: UUID(810),
+            items: [.init(itemID: UUID(811), index: 0, url: batchURL, source: .systemOpenEvent, mode: .open)],
+        )
+        var state = AppRootFeature.State()
+        state.lifecycle.accessGatePhase = .granted
+        state.pendingExternalURLs = [pendingURL]
+        state.activeExternalOpenBatch = .init(
+            batch: .init(request: batch, requiresInitialWindowFallback: false),
+            preferredWindowIDs: [],
+        )
+
+        withDependencies {
+            $0.uuid = .incrementing
+        } operation: {
+            _ = AppRootFeature().startNextPendingExternalURLIfPossible(state: &state)
+        }
+
+        XCTAssertNil(state.activePendingExternalURL)
+        XCTAssertEqual(state.pendingExternalURLs, [pendingURL])
+        XCTAssertEqual(state.activeExternalOpenBatch?.batch.request.batchID, batch.batchID)
+    }
+
+    /// warm window의 새 deep link는 active singleton을 우회하지 않고 pending FIFO에 합류한다.
+    func testWarmDeepLinkQueuesBehindActiveTrackedSingleton() async throws {
+        let requestID = UUID(807)
+        let windowID = UUID(808)
+        let activeURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Factive"))
+        let nextURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fnext"))
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.windowManager.windows = [.init(id: windowID, window: .makeInitial(path: "/existing"))]
+        initialState.activePendingExternalURL = .init(requestID: requestID, url: activeURL)
+        initialState.externalFileRouter.activeTrackedRequestID = requestID
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        }
+        await store.send(.receiveExternalURL(nextURL)) {
+            $0.pendingExternalURLs = [nextURL]
+        }
+        XCTAssertEqual(store.state.activePendingExternalURL?.requestID, requestID)
+        XCTAssertEqual(store.state.windowManager.windows.ids.count, 1)
+        await store.finish()
+    }
+
+    /// warm window의 새 deep link는 active batch terminal 전 Router singleton으로 진입하지 않는다.
+    func testWarmDeepLinkQueuesBehindActiveBatch() async throws {
+        let windowID = UUID(809)
+        let batchURL = URL(fileURLWithPath: "/tmp/active-batch")
+        let nextURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fnext-after-batch"))
+        let batch = ExternalFileRouterBatchRequest(
+            batchID: UUID(810),
+            items: [.init(itemID: UUID(811), index: 0, url: batchURL, source: .systemOpenEvent, mode: .open)],
+        )
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.windowManager.windows = [.init(id: windowID, window: .makeInitial(path: "/existing"))]
+        initialState.activeExternalOpenBatch = .init(
+            batch: .init(request: batch, requiresInitialWindowFallback: false),
+            preferredWindowIDs: [windowID],
+        )
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        }
+        await store.send(.receiveExternalURL(nextURL)) {
+            $0.pendingExternalURLs = [nextURL]
+        }
+        XCTAssertEqual(store.state.activeExternalOpenBatch?.batch.request.batchID, batch.batchID)
+        XCTAssertNil(store.state.activePendingExternalURL)
+        await store.finish()
+    }
+
+    /// gate closure는 active occurrence를 front에 보존하고 stale route를 거부하며 retry identity를 갱신한다.
+    func testGateClosureRequeuesTrackedSingletonWithFreshIdentityAndRejectsStaleRoute() async throws {
+        let oldRequestID = UUID(812)
+        let freshRequestID = UUID(813)
+        let duplicateURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fduplicate"))
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.activePendingExternalURL = .init(requestID: oldRequestID, url: duplicateURL)
+        initialState.pendingExternalURLs = [duplicateURL]
+        initialState.externalFileRouter.activeTrackedRequestID = oldRequestID
+        initialState.windowManager.authorizedTrackedSingletonRequestID = oldRequestID
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        }
+        // store.exhaustivity = .off: lifecycle presentation effect보다 singleton cancellation/requeue 경계를 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        XCTAssertNil(store.state.activePendingExternalURL)
+        XCTAssertEqual(store.state.pendingExternalURLs, [duplicateURL, duplicateURL])
+        XCTAssertNil(store.state.windowManager.authorizedTrackedSingletonRequestID)
+        await store.receive(\.externalFileRouter.cancelTrackedRequest, oldRequestID)
+        XCTAssertNil(store.state.externalFileRouter.activeTrackedRequestID)
+
+        await store.send(.externalFileRouter(.delegate(.openFolder(
+            path: "/tmp/stale",
+            trackedRequestID: oldRequestID,
+        ))))
+        XCTAssertTrue(store.state.windowManager.windows.isEmpty)
+        XCTAssertNil(store.state.windowManager.authorizedTrackedSingletonRequestID)
+
+        var retryState = store.state
+        retryState.lifecycle.accessGatePhase = .granted
+        withDependencies {
+            $0.uuid = .constant(freshRequestID)
+        } operation: {
+            _ = AppRootFeature().startNextPendingExternalURLIfPossible(state: &retryState)
+        }
+        XCTAssertEqual(
+            retryState.activePendingExternalURL,
+            .init(requestID: freshRequestID, url: duplicateURL),
+        )
+        XCTAssertEqual(retryState.pendingExternalURLs, [duplicateURL])
+        XCTAssertNotEqual(oldRequestID, retryState.activePendingExternalURL?.requestID)
+        await store.finish()
+    }
+
+    /// delayed native open 중 gate closure는 생성 session을 rollback하고 native window를 close한다.
+    func testGateClosureDuringDelayedTrackedNativeOpenRollsBackWindowAndRequeues() async throws {
+        let requestID = UUID(818)
+        let windowID = UUID(819)
+        let url = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fdelayed-gate"))
+        let openStarted = expectation(description: "tracked native open started")
+        let closeCompleted = expectation(description: "tracked native close completed")
+        let openGate = AsyncStream<Void>.makeStream()
+        let closedIDs = LockIsolated<[UUID]>([])
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.activePendingExternalURL = .init(requestID: requestID, url: url)
+        initialState.externalFileRouter.activeTrackedRequestID = requestID
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in
+                openStarted.fulfill()
+                for await _ in openGate.stream {
+                    break
+                }
+            }
+            $0.fileManagerWindowClient.close = { id in
+                closedIDs.withValue { $0.append(id) }
+                closeCompleted.fulfill()
+            }
+        }
+        // store.exhaustivity = .off: child 초기화 action보다 gate revoke의 rollback/close 경계를 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.externalFileRouter(.delegate(.openFolder(
+            path: "/tmp/delayed-gate",
+            trackedRequestID: requestID,
+        )))) {
+            $0.windowManager.authorizedTrackedSingletonRequestID = requestID
+        }
+        await store.receive(\.windowManager.trackedSingleton)
+        await fulfillment(of: [openStarted], timeout: 1)
+        XCTAssertEqual(
+            store.state.windowManager.trackedSingletonWindow,
+            .init(requestID: requestID, windowID: windowID),
+        )
+        XCTAssertEqual(store.state.windowManager.windows.ids.count, 1)
+
+        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await fulfillment(of: [closeCompleted], timeout: 1)
+        await store.skipReceivedActions()
+
+        XCTAssertNil(store.state.activePendingExternalURL)
+        XCTAssertEqual(store.state.pendingExternalURLs, [url])
+        XCTAssertNil(store.state.windowManager.authorizedTrackedSingletonRequestID)
+        XCTAssertNil(store.state.windowManager.trackedSingletonWindow)
+        XCTAssertTrue(store.state.windowManager.windows.isEmpty)
+        XCTAssertNil(store.state.externalFileRouter.activeTrackedRequestID)
+        XCTAssertEqual(closedIDs.value, [windowID])
+        openGate.continuation.finish()
+        await store.finish()
+    }
+
+    /// termination gate closure도 active singleton을 front에 되돌리고 Router request를 취소한다.
+    func testTerminationRequeuesAndCancelsActiveTrackedSingleton() async throws {
+        let requestID = UUID(814)
+        let url = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Ftermination"))
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.activePendingExternalURL = .init(requestID: requestID, url: url)
+        initialState.externalFileRouter.activeTrackedRequestID = requestID
+        initialState.windowManager.authorizedTrackedSingletonRequestID = requestID
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        }
+        // store.exhaustivity = .off: termination child fanout보다 singleton requeue/cancel 경계를 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.termination(.willTerminate)))
+        XCTAssertNil(store.state.activePendingExternalURL)
+        XCTAssertEqual(store.state.pendingExternalURLs, [url])
+        XCTAssertNil(store.state.windowManager.authorizedTrackedSingletonRequestID)
+        await store.receive(\.externalFileRouter.cancelTrackedRequest, requestID)
+        XCTAssertNil(store.state.externalFileRouter.activeTrackedRequestID)
+        await store.finish()
+    }
+
+    /// invalid/permission alert는 await가 끝난 뒤에만 tracked parent를 terminal 처리한다.
+    func testTrackedInvalidAlertCompletionWaitsForAlertBoundary() async throws {
+        try await assertTrackedAlertCompletionWaitsForBoundary(permissionDenied: false)
+    }
+
+    func testTrackedPermissionAlertCompletionWaitsForAlertBoundary() async throws {
+        try await assertTrackedAlertCompletionWaitsForBoundary(permissionDenied: true)
+    }
+
+    /// tracked auth compatibility는 identity/gate를 검증한 뒤 AccountAccess handoff 수락에서 종료한다.
+    func testTrackedAuthCompatibilityTerminatesAtAccountAccessHandoff() async throws {
+        let requestID = UUID(815)
+        let staleRequestID = UUID(816)
+        let pendingURL = try XCTUnwrap(URL(string: "voyager://auth/callback?code=tracked"))
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.activePendingExternalURL = .init(requestID: requestID, url: pendingURL)
+        initialState.externalFileRouter.activeTrackedRequestID = requestID
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        }
+        // store.exhaustivity = .off: AccountAccess network lifecycle은 별도 owner이고 handoff terminal만 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.externalFileRouter(.delegate(.routeToAuthCallback(
+            pendingURL,
+            trackedRequestID: staleRequestID,
+        ))))
+        XCTAssertEqual(store.state.activePendingExternalURL?.requestID, requestID)
+
+        await store.send(.externalFileRouter(.delegate(.routeToAuthCallback(
+            pendingURL,
+            trackedRequestID: requestID,
+        ))))
+        await store.receive(\.receiveTrackedAuthCallbackURL)
+        await store.receive(\.lifecycle.accountAccess.loginCallbackReceived)
+        await store.receive(\.externalFileRouter.singletonRequestCompleted, requestID)
+        XCTAssertNil(store.state.activePendingExternalURL)
+        await store.finish()
+    }
+
+    private func assertTrackedAlertCompletionWaitsForBoundary(permissionDenied: Bool) async throws {
+        let requestID = UUID(817)
+        let pendingURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Falert"))
+        let alertStarted = expectation(description: "tracked alert started")
+        let alertGate = AsyncStream<Void>.makeStream()
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.activePendingExternalURL = .init(requestID: requestID, url: pendingURL)
+        initialState.externalFileRouter.activeTrackedRequestID = requestID
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in
+                alertStarted.fulfill()
+                for await _ in alertGate.stream {
+                    break
+                }
+            }
+        }
+        // store.exhaustivity = .off: alert UI boundary와 parent terminal 순서만 검증함.
+        store.exhaustivity = .off
+
+        let delegate: ExternalFileRouterAction.Delegate = permissionDenied
+            ? .showPermissionDeniedError(path: "/tmp/alert", trackedRequestID: requestID)
+            : .showInvalidPathError(path: "/tmp/alert", trackedRequestID: requestID)
+        await store.send(.externalFileRouter(.delegate(delegate)))
+        await fulfillment(of: [alertStarted], timeout: 1)
+        XCTAssertEqual(store.state.activePendingExternalURL?.requestID, requestID)
+
+        alertGate.continuation.yield(())
+        alertGate.continuation.finish()
+        await store.receive(\.externalFileRouter.singletonRequestCompleted, requestID)
+        XCTAssertNil(store.state.activePendingExternalURL)
+        await store.finish()
+    }
+
+    /// folder tracked route는 native open 반환 전 다음 batch를 admit하지 않는다.
+    func testTrackedFolderNativeOpenBlocksNextBatchAdmission() async throws {
+        try await assertTrackedSingletonNativeOpenBlocksBatch(route: .folder)
+    }
+
+    /// app fallback tracked route는 native initial-window open 반환 전 다음 batch를 admit하지 않는다.
+    func testTrackedFallbackNativeOpenBlocksNextBatchAdmission() async throws {
+        try await assertTrackedSingletonNativeOpenBlocksBatch(route: .fallback)
+    }
+
+    /// reveal tracked route도 parent window native open 반환 전 다음 batch를 admit하지 않는다.
+    func testTrackedRevealNativeOpenBlocksNextBatchAdmission() async throws {
+        try await assertTrackedSingletonNativeOpenBlocksBatch(route: .reveal)
+    }
+
+    private enum TrackedRouteScenario {
+        case folder
+        case fallback
+        case reveal
+    }
+
+    private func assertTrackedSingletonNativeOpenBlocksBatch(route: TrackedRouteScenario) async throws {
+        let requestID = UUID(820)
+        let pendingURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Ftracked"))
+        let batchURL = URL(fileURLWithPath: "/tmp/batch-after-native-open")
+        let openStarted = expectation(description: "tracked native open started")
+        let openGate = AsyncStream<Void>.makeStream()
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.activePendingExternalURL = .init(requestID: requestID, url: pendingURL)
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
+            $0.fileManagerWindowClient.open = { _ in
+                openStarted.fulfill()
+                for await _ in openGate.stream {
+                    break
+                }
+            }
+            $0.pathProbeClient.probeExistence = { _ in PathProbeResult(exists: false, isDirectory: false) }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+        }
+        // store.exhaustivity = .off: child window 초기화보다 native open terminal과 scheduler admission을 검증함.
+        store.exhaustivity = .off
+
+        let delegate: ExternalFileRouterAction.Delegate = switch route {
+        case .folder:
+            .openFolder(path: "/tmp/tracked", trackedRequestID: requestID)
+        case .fallback:
+            .openAppFallback(trackedRequestID: requestID)
+        case .reveal:
+            .openParentFolder(
+                path: "/tmp",
+                selectEntryPath: "/tmp/tracked.txt",
+                trackedRequestID: requestID,
+            )
+        }
+        await store.send(.externalFileRouter(.delegate(delegate))) {
+            $0.windowManager.authorizedTrackedSingletonRequestID = requestID
+        }
+        await store.receive(\.windowManager.trackedSingleton)
+        await fulfillment(of: [openStarted], timeout: 1)
+
+        await store.send(.receiveExternalFileBatch([batchURL], source: .systemOpenEvent, mode: .open))
+        XCTAssertEqual(store.state.activePendingExternalURL?.requestID, requestID)
+        XCTAssertNil(store.state.activeExternalOpenBatch)
+        XCTAssertEqual(store.state.externalOpenBatchQueue.count, 1)
+
+        openGate.continuation.yield(())
+        openGate.continuation.finish()
+        await store.receive(\.windowManager.trackedSingletonNativeOpenCompleted, requestID)
+        await store.receive(\.windowManager.delegate.trackedSingletonCompleted, requestID)
+        await store.receive(\.externalFileRouter.singletonRequestCompleted, requestID)
+
+        XCTAssertNil(store.state.activePendingExternalURL)
+        XCTAssertNotNil(store.state.activeExternalOpenBatch)
+        XCTAssertTrue(store.state.externalOpenBatchQueue.isEmpty)
+        await store.finish()
     }
 }
 
