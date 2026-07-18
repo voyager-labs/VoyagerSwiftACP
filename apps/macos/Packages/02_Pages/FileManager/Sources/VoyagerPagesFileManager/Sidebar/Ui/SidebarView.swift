@@ -413,6 +413,8 @@ private struct FixedLocationButton: View {
     @Environment(\.colorScheme)
     private var colorScheme
 
+    @State private var resolvedIcon: NSImage?
+
     var body: some View {
         Button(action: onSelect) {
             icon
@@ -430,17 +432,32 @@ private struct FixedLocationButton: View {
         .help("\(item.title)\n\(item.path)")
         .accessibilityLabel(item.accessibilityLabel)
         .onHover(perform: onHover)
+        .task(id: item.path) {
+            resolvedIcon = nil
+            let icon = await workspaceClient.iconForFileAsync(item.path)
+            guard !Task.isCancelled else { return }
+            resolvedIcon = icon
+        }
     }
 
-    private var icon: some View {
-        Image(nsImage: workspaceClient.iconForFile(item.path))
-            .renderingMode(.original)
-            .resizable()
-            .interpolation(.high)
-            .antialiased(true)
-            .scaledToFit()
-            .frame(width: 20, height: 20)
-            .accessibilityHidden(true)
+    @ViewBuilder private var icon: some View {
+        if let resolvedIcon {
+            Image(nsImage: resolvedIcon)
+                .renderingMode(.original)
+                .resizable()
+                .interpolation(.high)
+                .antialiased(true)
+                .scaledToFit()
+                .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
+        } else {
+            Image(systemName: "folder")
+                .font(.system(size: 16, weight: .medium))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
+        }
     }
 
     private var backgroundColor: Color {
