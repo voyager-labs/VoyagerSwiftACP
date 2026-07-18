@@ -1678,6 +1678,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             Self.expectUnpinnedState(&$0, targetID: targetID)
         }
         await rollbackStore.receive(\.pinnedRecordSaveFailed) {
+            $0.tabs.move(fromOffsets: [1], toOffset: 0)
             $0.tabs[id: targetID]?.isPinned = true
             $0.pinnedRecords[targetID] = pinnedRecord
             $0.pinnedRecordPersistenceError = "pinned_record_save_failed"
