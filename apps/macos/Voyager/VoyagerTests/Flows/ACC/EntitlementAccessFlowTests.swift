@@ -534,7 +534,12 @@ final class EntitlementAccessFlowTests: XCTestCase {
         await store.send(.lifecycle(.accountAccess(.delegate(.unlocked(snapshot))))) {
             $0.lifecycle.accessGatePhase = .granted
         }
-        await store.receive(\.externalFileRouter.receive)
+        await store.receive { action in
+            guard case let .externalFileRouter(.receiveTracked(url, requestID: _)) = action else {
+                return false
+            }
+            return url == deepLink
+        }
 
         XCTAssertTrue(store.state.pendingExternalURLs.isEmpty)
         await store.finish()
