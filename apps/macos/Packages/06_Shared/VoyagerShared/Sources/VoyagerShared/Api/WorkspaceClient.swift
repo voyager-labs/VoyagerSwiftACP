@@ -63,6 +63,50 @@ public struct WorkspaceClient: Sendable {
 }
 
 extension WorkspaceClient: DependencyKey {
+    private static let googleDriveBundleIdentifier = "com.google.drivefs"
+
+    nonisolated private static func resolvedIcon(forFile path: String, workspace: NSWorkspace) -> NSImage {
+        let url = URL(fileURLWithPath: path)
+
+        if url.lastPathComponent == ".Trash",
+           let trashIcon = NSImage(named: NSImage.trashEmptyName)
+        {
+            return trashIcon
+        }
+
+        if isICloudDriveURL(url),
+           let iCloudIcon = NSImage(systemSymbolName: "icloud.fill", accessibilityDescription: nil)
+        {
+            return iCloudIcon
+        }
+
+        if isGoogleDriveURL(url),
+           let appURL = workspace.urlForApplication(withBundleIdentifier: googleDriveBundleIdentifier)
+        {
+            return workspace.icon(forFile: appURL.path)
+        }
+
+        if let resourceValues = try? url.resourceValues(forKeys: [.effectiveIconKey]),
+           let effectiveIcon = resourceValues.effectiveIcon as? NSImage,
+           effectiveIcon.size.width > 0,
+           effectiveIcon.size.height > 0
+        {
+            return effectiveIcon
+        }
+
+        return workspace.icon(forFile: path)
+    }
+
+    nonisolated private static func isICloudDriveURL(_ url: URL) -> Bool {
+        url.lastPathComponent == "com~apple~CloudDocs"
+            && url.deletingLastPathComponent().lastPathComponent == "Mobile Documents"
+    }
+
+    nonisolated private static func isGoogleDriveURL(_ url: URL) -> Bool {
+        url.deletingLastPathComponent().lastPathComponent == "CloudStorage"
+            && url.lastPathComponent.lowercased().hasPrefix("googledrive")
+    }
+
     nonisolated public static var liveValue: WorkspaceClient {
         nonisolated(unsafe) let workspace = NSWorkspace.shared
         return WorkspaceClient(
@@ -76,7 +120,7 @@ extension WorkspaceClient: DependencyKey {
                 workspace.urlsForApplications(toOpen: url)
             },
             iconForFile: { path in
-                workspace.icon(forFile: path)
+                resolvedIcon(forFile: path, workspace: workspace)
             },
             iconForType: { type in
                 workspace.icon(for: type)
