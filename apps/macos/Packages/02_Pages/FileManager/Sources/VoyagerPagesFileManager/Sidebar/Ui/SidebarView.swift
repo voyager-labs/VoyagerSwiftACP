@@ -432,30 +432,20 @@ private struct FixedLocationButton: View {
         .onHover(perform: onHover)
     }
 
-    @ViewBuilder private var icon: some View {
-        let nativeIcon = workspaceClient.iconForFile(item.path)
-
-        if isValidFixedLocationIcon(nativeIcon) {
-            Image(nsImage: nativeIcon)
-                .renderingMode(.original)
-                .resizable()
-                .interpolation(.high)
-                .antialiased(true)
-                .scaledToFit()
-                .frame(width: 20, height: 20)
-                .accessibilityHidden(true)
-        } else {
-            SidebarSymbolIcon(systemName: item.iconName, size: height, iconSize: 20)
-        }
+    private var icon: some View {
+        Image(nsImage: workspaceClient.iconForFile(item.path))
+            .renderingMode(.original)
+            .resizable()
+            .interpolation(.high)
+            .antialiased(true)
+            .scaledToFit()
+            .frame(width: 20, height: 20)
+            .accessibilityHidden(true)
     }
 
     private var backgroundColor: Color {
         isHovered ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : Color.primary.opacity(0.06)
     }
-}
-
-func isValidFixedLocationIcon(_ image: NSImage) -> Bool {
-    image.size.width > 0 && image.size.height > 0
 }
 
 private struct SidebarCloseButton: View {

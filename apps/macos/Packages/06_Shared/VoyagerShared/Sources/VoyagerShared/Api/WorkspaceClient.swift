@@ -64,6 +64,8 @@ public struct WorkspaceClient: Sendable {
 
 extension WorkspaceClient: DependencyKey {
     private static let googleDriveBundleIdentifier = "com.google.drivefs"
+    private static let iCloudDriveIconPath =
+        "/System/Library/PrivateFrameworks/iCloudDriveCore.framework/Versions/A/Resources/iCloudDrive.icns"
 
     nonisolated private static func resolvedIcon(forFile path: String, workspace: NSWorkspace) -> NSImage {
         let url = URL(fileURLWithPath: path)
@@ -74,10 +76,11 @@ extension WorkspaceClient: DependencyKey {
             return trashIcon
         }
 
-        if isICloudDriveURL(url),
-           let iCloudIcon = NSImage(systemSymbolName: "icloud.fill", accessibilityDescription: nil)
-        {
-            return iCloudIcon
+        if isICloudDriveURL(url) {
+            if let iCloudIcon = NSImage(contentsOfFile: iCloudDriveIconPath) {
+                iCloudIcon.isTemplate = false
+                return iCloudIcon
+            }
         }
 
         if isGoogleDriveURL(url),

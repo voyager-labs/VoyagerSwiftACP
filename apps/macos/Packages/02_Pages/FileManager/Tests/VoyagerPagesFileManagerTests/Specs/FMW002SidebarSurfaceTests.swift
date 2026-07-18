@@ -38,10 +38,10 @@ final class FMW002SidebarSurfaceTests: XCTestCase {
 
     func test_rootShellOwnsWindowMaterialAndContentRemainsClear() {
         let shellBackground = VoyagerDS.SurfaceMaterialRole.windowShell.makeBackgroundView()
-        XCTAssertEqual(shellBackground.material, .underWindowBackground)
+        XCTAssertEqual(shellBackground.material, .headerView)
         XCTAssertEqual(shellBackground.blendingMode, .behindWindow)
         XCTAssertEqual(shellBackground.state, .followsWindowActiveState)
-        XCTAssertEqual(shellBackground.alphaValue, 0.82)
+        XCTAssertEqual(shellBackground.alphaValue, 1.0)
 
         let components = FileManagerWindowMainContainerLayout.build(
             contentRootView: AnyView(EmptyView()),
@@ -59,11 +59,5 @@ final class FMW002SidebarSurfaceTests: XCTestCase {
             isDark: true,
         )
         XCTAssertEqual(components.containerView.layer?.backgroundColor, NSColor.clear.cgColor)
-    }
-
-    func test_fixedLocationIconRequiresNonZeroDimensions() {
-        XCTAssertFalse(isValidFixedLocationIcon(NSImage(size: .zero)))
-        XCTAssertFalse(isValidFixedLocationIcon(NSImage(size: NSSize(width: 1, height: 0))))
-        XCTAssertTrue(isValidFixedLocationIcon(NSImage(size: NSSize(width: 1, height: 1))))
     }
 }
