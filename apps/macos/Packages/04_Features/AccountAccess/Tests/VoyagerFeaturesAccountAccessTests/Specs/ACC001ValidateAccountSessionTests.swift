@@ -687,10 +687,12 @@ extension ACC001ValidateAccountSessionTests {
     }
 
     /// ACC-001-validate_account_session: retry exhaustion fallback은 만료된 snapshot session이면 unlock하지 않는다.
-    /// - 검증 내용: complete envelope와 active device proof, refresh credential이 있어도 snapshot session이 만료면 recovery로
-    /// 끝난다.
-    /// - 사전 조건: upstream failure가 반복되고 current binding의 trusted snapshot session은 정확히 현재 시각에 만료된다.
-    /// - 기대 결과: snapshot load는 한 번 수행되나 unlocked delegate 없이 network recovery를 전달한다.
+    /// - 검증 내용: stale update eligibility failure를 지운 뒤 complete envelope와 active device proof, refresh credential이 있어도
+    /// snapshot session이 만료면 network recovery가 CTA를 소유한다.
+    /// - 사전 조건: signed-in 상태에 `.missingReleaseIdentity`가 남아 있고 upstream failure가 반복되며 current binding의 trusted
+    /// snapshot session은 정확히 현재 시각에 만료된다.
+    /// - 기대 결과: snapshot load는 한 번 수행되고 unlocked delegate 없이 update eligibility failure를 비운 network recovery가
+    /// `.retry` CTA를 제공한다.
     func testValidateRetryExhaustionRejectsExpiredSnapshotSession() async {
         nonisolated(unsafe) var attempts = 0
         nonisolated(unsafe) var loadedSnapshots = 0
@@ -714,6 +716,7 @@ extension ACC001ValidateAccountSessionTests {
         )
         var state = sessionNearExpiryState()
         state.sessionBindingID = binding
+        state.updateEligibilityFailure = .missingReleaseIdentity
         let store = TestStore(initialState: state) {
             AccountAccessFeature()
         } withDependencies: {
@@ -751,6 +754,7 @@ extension ACC001ValidateAccountSessionTests {
             state.syncGeneration = 1
             state.inFlightSyncReason = .manual
             state.isSubmitting = true
+            state.updateEligibilityFailure = nil
         }
         await store.receive(\._sessionSyncActivationCompleted)
         for _ in 0 ..< 10 where attempts < 1 {
@@ -771,6 +775,8 @@ extension ACC001ValidateAccountSessionTests {
         XCTAssertEqual(loadedSnapshots, 1)
         XCTAssertFalse(store.state.isComplete)
         XCTAssertNil(store.state.snapshot)
+        XCTAssertNil(store.state.updateEligibilityFailure)
+        XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .retry)
         await store.finish()
     }
 

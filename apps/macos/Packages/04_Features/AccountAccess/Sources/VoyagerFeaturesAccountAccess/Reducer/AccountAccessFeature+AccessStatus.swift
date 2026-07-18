@@ -174,6 +174,7 @@ extension AccountAccessFeature {
             return .none
         }
 
+        state.updateEligibilityFailure = nil
         state.syncGeneration += 1
         state.inFlightSyncReason = reason
         state.isSubmitting = true

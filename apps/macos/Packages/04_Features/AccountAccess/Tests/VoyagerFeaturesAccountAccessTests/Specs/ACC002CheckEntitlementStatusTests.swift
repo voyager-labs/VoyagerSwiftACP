@@ -174,14 +174,22 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         XCTAssertTrue(store.state.isComplete)
     }
 
+    /// ACC-002-check_entitlement_status: seat capacity device binding failure가 stale update eligibility recovery를 덮는다.
+    /// - 검증 내용: signed-in state의 stale update eligibility failure를 새 sync가 지워 device binding recovery CTA를 도출한다.
+    /// - 사전 조건: active access 응답은 `.deviceLimitReached`이고 기존 state에는 `.missingReleaseIdentity`가 남아 있다.
+    /// - 기대 결과: device binding failure는 `.seatCapacityExceeded`로 유지되고 update eligibility failure는 nil이며 CTA는
+    /// `.account`다.
     func testActiveAccessDeviceBindingSeatCapacityDoesNotUnlock() async {
+        var state = signedInState()
+        state.updateEligibilityFailure = .missingReleaseIdentity
         let store = makeStore(
             result: .success(syncResult(access: response(), outcome: .deviceLimitReached)),
-            state: signedInState(),
+            state: state,
         )
         await sync(store)
         await store.receive(\.delegate.recoveryRequired)
         XCTAssertEqual(store.state.deviceBindingFailure, .seatCapacityExceeded)
+        XCTAssertNil(store.state.updateEligibilityFailure)
         XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .account)
         XCTAssertFalse(store.state.isComplete)
     }
