@@ -38,11 +38,37 @@ import base64
 print(base64.b64encode(bytes(range(32))).decode())
 PY
 )"
+wrong_private_key="$(python3 - <<'PY'
+import base64
+print(base64.b64encode(bytes(range(1, 33))).decode())
+PY
+)"
+cat > "${WORK_DIR}/derive-fixture-public-key.swift" <<'SWIFT'
+import CryptoKit
+import Foundation
+
+guard let encodedPrivateKey = ProcessInfo.processInfo.environment["SPARKLE_PRIVATE_KEY"],
+      let privateKeyData = Data(base64Encoded: encodedPrivateKey)
+else {
+    fatalError("Missing fixture private key")
+}
+
+let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: Data(privateKeyData.prefix(32)))
+print(privateKey.publicKey.rawRepresentation.base64EncodedString())
+SWIFT
+xcrun swiftc "${WORK_DIR}/derive-fixture-public-key.swift" -o "${WORK_DIR}/derive-fixture-public-key"
+fixture_public_key="$(SPARKLE_PRIVATE_KEY="${private_key}" "${WORK_DIR}/derive-fixture-public-key")"
 xcrun swiftc \
   "${CI_DIR}/../../apps/macos/Packages/06_Shared/VoyagerShared/Sources/VoyagerShared/Model/AppVersionInfo.swift" \
   "${CI_DIR}/../../apps/macos/Packages/06_Shared/VoyagerShared/Sources/VoyagerShared/Model/ReleaseManifest.swift" \
   "${CI_DIR}/release-manifest-verifier/main.swift" \
-  -o "${WORK_DIR}/verify-release-manifest"
+  -o "${WORK_DIR}/verify-release-manifest-production"
+xcrun swiftc \
+  -D RELEASE_MANIFEST_VERIFIER_TESTING \
+  "${CI_DIR}/../../apps/macos/Packages/06_Shared/VoyagerShared/Sources/VoyagerShared/Model/AppVersionInfo.swift" \
+  "${CI_DIR}/../../apps/macos/Packages/06_Shared/VoyagerShared/Sources/VoyagerShared/Model/ReleaseManifest.swift" \
+  "${CI_DIR}/release-manifest-verifier/main.swift" \
+  -o "${WORK_DIR}/verify-release-manifest-fixture"
 mkdir -p "${WORK_DIR}/Voyager.app/Contents"
 cat > "${WORK_DIR}/Voyager.app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -64,19 +90,38 @@ assert manifest["key_id"] == "sparkle-ed25519-v1"
 assert list(manifest) == sorted(manifest)
 assert len(manifest["signature"]) > 0
 PY
-SPARKLE_PRIVATE_KEY="${private_key}" "${WORK_DIR}/verify-release-manifest" \
+if SPARKLE_PRIVATE_KEY="${private_key}" RELEASE_MANIFEST_TEST_PUBLIC_KEY="${fixture_public_key}" \
+  "${WORK_DIR}/verify-release-manifest-production" \
+  "${WORK_DIR}/release-manifest-v1.json" "${zip_path}" "${WORK_DIR}/appcast.xml" "${artifact_url}" "${released_at}"
+then
+  echo "Expected production verifier to reject fixture key" >&2
+  exit 1
+fi
+
+if SPARKLE_PRIVATE_KEY="${wrong_private_key}" RELEASE_MANIFEST_TEST_PUBLIC_KEY="${fixture_public_key}" \
+  "${WORK_DIR}/verify-release-manifest-fixture" \
+  "${WORK_DIR}/release-manifest-v1.json" "${zip_path}" "${WORK_DIR}/appcast.xml" "${artifact_url}" "${released_at}"
+then
+  echo "Expected fixture verifier to reject mismatched signing key" >&2
+  exit 1
+fi
+
+SPARKLE_PRIVATE_KEY="${private_key}" RELEASE_MANIFEST_TEST_PUBLIC_KEY="${fixture_public_key}" \
+  "${WORK_DIR}/verify-release-manifest-fixture" \
   "${WORK_DIR}/release-manifest-v1.json" "${zip_path}" "${WORK_DIR}/appcast.xml" "${artifact_url}" "${released_at}"
 
 cp "${zip_path}" "${WORK_DIR}/checksum-mismatch.zip"
 printf 'x' >> "${WORK_DIR}/checksum-mismatch.zip"
-if SPARKLE_PRIVATE_KEY="${private_key}" "${WORK_DIR}/verify-release-manifest" \
+if SPARKLE_PRIVATE_KEY="${private_key}" RELEASE_MANIFEST_TEST_PUBLIC_KEY="${fixture_public_key}" \
+  "${WORK_DIR}/verify-release-manifest-fixture" \
   "${WORK_DIR}/release-manifest-v1.json" "${WORK_DIR}/checksum-mismatch.zip" "${WORK_DIR}/appcast.xml" "${artifact_url}" "${released_at}"
 then
   echo "Expected checksum mismatch to fail" >&2
   exit 1
 fi
 
-if SPARKLE_PRIVATE_KEY="${private_key}" "${WORK_DIR}/verify-release-manifest" \
+if SPARKLE_PRIVATE_KEY="${private_key}" RELEASE_MANIFEST_TEST_PUBLIC_KEY="${fixture_public_key}" \
+  "${WORK_DIR}/verify-release-manifest-fixture" \
   "${WORK_DIR}/release-manifest-v1.json" "${zip_path}" "${WORK_DIR}/appcast.xml" "${artifact_url}" "1970-01-01T00:00:00Z"
 then
   echo "Expected bundle timestamp mismatch to fail" >&2
@@ -93,7 +138,8 @@ with open(path) as source:
 with open(path, "w") as destination:
     destination.write(content.replace('edSignature="', 'edSignature="x', 1))
 PY
-if SPARKLE_PRIVATE_KEY="${private_key}" "${WORK_DIR}/verify-release-manifest" \
+if SPARKLE_PRIVATE_KEY="${private_key}" RELEASE_MANIFEST_TEST_PUBLIC_KEY="${fixture_public_key}" \
+  "${WORK_DIR}/verify-release-manifest-fixture" \
   "${WORK_DIR}/release-manifest-v1.json" "${zip_path}" "${WORK_DIR}/signature-mismatch-appcast.xml" "${artifact_url}" "${released_at}"
 then
   echo "Expected Sparkle signature mismatch to fail" >&2

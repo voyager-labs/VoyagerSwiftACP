@@ -4,6 +4,8 @@ import Foundation
 enum VerificationError: Error {
     case invalidArguments
     case missingFixturePrivateKey
+    case missingFixturePublicKey
+    case signingPrivateKeyDoesNotMatchVerificationPublicKey
     case invalidArtifactChecksum
     case invalidArtifactSize
     case invalidArtifactSignature
@@ -15,7 +17,7 @@ guard CommandLine.arguments.count == 6 else {
 }
 
 guard let encodedPrivateKey = ProcessInfo.processInfo.environment["SPARKLE_PRIVATE_KEY"],
-      let privateKeyData = Data(base64Encoded: encodedPrivateKey),
+      let privateKeyData = Data(base64Encoded: encodedPrivateKey.trimmingCharacters(in: .whitespacesAndNewlines)),
       privateKeyData.count == 32 || privateKeyData.count == 64
 else {
     throw VerificationError.missingFixturePrivateKey
@@ -29,13 +31,34 @@ let releasedAt = CommandLine.arguments[5]
 let manifestData = try Data(contentsOf: URL(fileURLWithPath: manifestPath))
 let manifest = try JSONDecoder().decode(ReleaseManifest.self, from: manifestData)
 let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: Data(privateKeyData.prefix(32)))
-let publicKey = privateKey.publicKey.rawRepresentation.base64EncodedString()
-_ = try manifest.verifiedReleaseIdentity(publicKey: publicKey)
+
+#if RELEASE_MANIFEST_VERIFIER_TESTING
+guard let fixturePublicKey = ProcessInfo.processInfo.environment["RELEASE_MANIFEST_TEST_PUBLIC_KEY"],
+      let verificationPublicKeyData = Data(base64Encoded: fixturePublicKey)
+else {
+    throw VerificationError.missingFixturePublicKey
+}
+#else
+guard let verificationPublicKeyData = Data(base64Encoded: ReleaseManifest.sparklePublicKey) else {
+    throw VerificationError.signingPrivateKeyDoesNotMatchVerificationPublicKey
+}
+#endif
+
+guard privateKey.publicKey.rawRepresentation == verificationPublicKeyData else {
+    throw VerificationError.signingPrivateKeyDoesNotMatchVerificationPublicKey
+}
+
+#if RELEASE_MANIFEST_VERIFIER_TESTING
+_ = try manifest.verifiedReleaseIdentity(publicKey: fixturePublicKey)
+#else
+_ = try manifest.verifiedReleaseIdentity()
+#endif
 
 let artifactData = try Data(contentsOf: URL(fileURLWithPath: zipPath))
 guard manifest.artifact.sha256 == SHA256.hash(data: artifactData).map({ String(format: "%02x", $0) }).joined() else {
     throw VerificationError.invalidArtifactChecksum
 }
+
 guard manifest.artifact.sizeBytes == artifactData.count else {
     throw VerificationError.invalidArtifactSize
 }
