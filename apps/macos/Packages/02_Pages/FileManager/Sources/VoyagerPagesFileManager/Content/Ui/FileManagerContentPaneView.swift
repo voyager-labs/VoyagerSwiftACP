@@ -63,8 +63,6 @@ struct FileManagerContentPaneView: View {
                 value: overlayProps.isComposerPresented,
             )
         }
-        .background(.thickMaterial)
-        .overlay(FileManagerContentMaterialTint())
         .ignoresSafeArea(.all, edges: .top)
         .enableInjection()
     }
@@ -148,22 +146,6 @@ extension ContentTabPageAnchor {
             "collection"
         case .aiChat:
             "aiChat"
-        }
-    }
-}
-
-private struct FileManagerContentMaterialTint: View {
-    @Environment(\.colorScheme)
-    private var colorScheme
-
-    var body: some View {
-        // 다크 모드에서만 머티리얼 대비를 살리는 얇은 틴트
-        if colorScheme == .dark {
-            Color.white.opacity(0.06)
-                .allowsHitTesting(false)
-        } else {
-            Color.clear
-                .allowsHitTesting(false)
         }
     }
 }

@@ -7,11 +7,15 @@ import VoyagerShared
 enum FileManagerWindowMainContainerLayout {
     struct Components {
         let containerView: NSView
+        let contentBackgroundEffectView: NSVisualEffectView
         let splitView: NSSplitView
         let contentHosting: NSHostingController<AnyView>
     }
 
-    static func build(contentRootView: AnyView) -> Components {
+    static func build(
+        contentRootView: AnyView,
+        materialOverride: FileManagerWindowMaterialOverride? = nil,
+    ) -> Components {
         let containerView = NSView()
         containerView.wantsLayer = true
         containerView.layer?.zPosition = 5
@@ -19,6 +23,9 @@ enum FileManagerWindowMainContainerLayout {
         containerView.layer?.masksToBounds = true
         containerView.layer?.backgroundColor = NSColor.clear.cgColor
 
+        let contentBackground = makeContentBackgroundEffectView(
+            materialOverride: materialOverride,
+        )
         let splitView = NSSplitView()
         splitView.translatesAutoresizingMaskIntoConstraints = false
         splitView.isVertical = true
@@ -36,8 +43,13 @@ enum FileManagerWindowMainContainerLayout {
         splitView.addArrangedSubview(contentHosting.view)
         splitView.setHoldingPriority(.defaultLow, forSubviewAt: 0)
 
+        containerView.addSubview(contentBackground)
         containerView.addSubview(splitView)
         NSLayoutConstraint.activate([
+            contentBackground.topAnchor.constraint(equalTo: containerView.topAnchor),
+            contentBackground.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
+            contentBackground.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            contentBackground.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
             splitView.topAnchor.constraint(equalTo: containerView.topAnchor),
             splitView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
             splitView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
@@ -46,6 +58,7 @@ enum FileManagerWindowMainContainerLayout {
 
         return Components(
             containerView: containerView,
+            contentBackgroundEffectView: contentBackground,
             splitView: splitView,
             contentHosting: contentHosting,
         )
@@ -66,7 +79,7 @@ enum FileManagerWindowMainContainerLayout {
 
     static func applyAppearance(
         splitView: NSSplitView?,
-        containerView: NSView?,
+        containerView _: NSView?,
         contentView: NSView?,
         inspectorView: NSView?,
         isDark: Bool,
@@ -74,7 +87,14 @@ enum FileManagerWindowMainContainerLayout {
         splitView?.layer?.backgroundColor = NSColor.clear.cgColor
         applyContentPaneStyle(contentView)
         applyInspectorPaneStyle(inspectorView, isDark: isDark)
-        containerView?.layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    static func updateMaterialOverride(
+        _ override: FileManagerWindowMaterialOverride?,
+        contentBackgroundEffectView: NSVisualEffectView?,
+    ) {
+        guard let contentBackgroundEffectView else { return }
+        applyMaterialOverride(override, to: contentBackgroundEffectView)
     }
 
     static func applyContentPaneStyle(_ view: NSView?) {
@@ -87,5 +107,26 @@ enum FileManagerWindowMainContainerLayout {
         view?.wantsLayer = true
         view?.layer?.zPosition = 10
         view?.layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    private static func makeContentBackgroundEffectView(
+        materialOverride: FileManagerWindowMaterialOverride?,
+    ) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.state = .followsWindowActiveState
+        applyMaterialOverride(materialOverride, to: view)
+        return view
+    }
+
+    private static func applyMaterialOverride(
+        _ override: FileManagerWindowMaterialOverride?,
+        to contentBackgroundEffectView: NSVisualEffectView,
+    ) {
+        if let override {
+            override.contentBackground.apply(to: contentBackgroundEffectView)
+        } else {
+            VoyagerDS.SurfaceMaterialRole.mainContentBackground.apply(to: contentBackgroundEffectView)
+        }
     }
 }
