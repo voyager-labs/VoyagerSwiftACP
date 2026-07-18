@@ -272,7 +272,7 @@ struct WindowManagerFeature {
                 )
 
             case let .placement(.cancel(batchID)):
-                return .cancel(id: CancelID.externalOpenBatch(batchID))
+                return cancelExternalOpenPlacement(batchID: batchID, state: &state)
 
             case let .externalOpenActivationResult(attempt, result):
                 guard state.authorizedExternalOpenBatchID == attempt.batchID,
@@ -410,6 +410,75 @@ private extension WindowManagerFeature {
             excluding: excludedWindowIDs,
             state: &state,
         )
+    }
+
+    func retainExternalOpenPlacementOwnership(
+        _ batchID: UUID,
+        _ newWindowIDs: [State.WindowID],
+        state: inout State,
+    ) {
+        if newWindowIDs.isEmpty {
+            if state.retainedExternalOpenPlacementOwnership?.batchID == batchID {
+                state.retainedExternalOpenPlacementOwnership = nil
+            }
+        } else {
+            state.retainedExternalOpenPlacementOwnership = .init(
+                batchID: batchID,
+                newWindowIDs: newWindowIDs,
+            )
+        }
+    }
+
+    func cancelExternalOpenPlacement(
+        batchID: UUID,
+        state: inout State,
+    ) -> Effect<Action> {
+        if state.authorizedExternalOpenBatchID == batchID {
+            state.authorizedExternalOpenBatchID = nil
+        }
+        if state.externalOpenActivationAttempt?.batchID == batchID {
+            state.externalOpenActivationAttempt = nil
+        }
+
+        var effects: [Effect<Action>] = [
+            .cancel(id: CancelID.externalOpenBatch(batchID)),
+        ]
+        guard let ownership = state.retainedExternalOpenPlacementOwnership,
+              ownership.batchID == batchID
+        else {
+            return .concatenate(effects)
+        }
+        state.retainedExternalOpenPlacementOwnership = nil
+
+        let ownedWindowIDs = ownership.newWindowIDs.filter {
+            state.externalWindowBatchIDs[$0] == batchID
+        }
+        let removedFocusedWindow = state.focusedWindowID.map(ownedWindowIDs.contains) ?? false
+        let removedBootstrapWindow = ownedWindowIDs.contains {
+            state.defaultWindowBootstrapWindowIDs.contains($0)
+        }
+        for windowID in ownedWindowIDs {
+            state.windows.remove(id: windowID)
+            state.lastUsedWindowIDs.removeAll { $0 == windowID }
+            state.defaultWindowBootstrapWindowIDs.remove(windowID)
+            state.externalWindowBatchIDs[windowID] = nil
+        }
+        if removedFocusedWindow {
+            state.focusedWindowID = state.lastUsedWindowIDs.first { state.windows[id: $0] != nil }
+        }
+        if removedBootstrapWindow,
+           state.defaultWindowBootstrapWindowIDs.isEmpty,
+           state.defaultWindowBootstrapRequestID != nil
+        {
+            state.defaultWindowBootstrapRequestID = nil
+            effects.append(.cancel(id: CancelID.defaultWindowBootstrap))
+        }
+        effects.append(contentsOf: ownedWindowIDs.map { windowID in
+            .run { [fileManagerWindowClient] _ in
+                await fileManagerWindowClient.close(windowID)
+            }
+        })
+        return .concatenate(effects)
     }
 
     func handleTrackedSingletonCommand(
@@ -658,6 +727,7 @@ private extension WindowManagerFeature {
         }
 
         state.windows = application.windows
+        retainExternalOpenPlacementOwnership(plan.batchID, application.newWindowIDs, state: &state)
         for windowID in application.newWindowIDs {
             state.externalWindowBatchIDs[windowID] = plan.batchID
         }

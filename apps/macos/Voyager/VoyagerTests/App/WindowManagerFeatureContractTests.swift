@@ -2842,6 +2842,120 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }) ?? true)
     }
 
+    /// matching cancel은 batch가 만든 새 window만 rollback하고 기존 reservation과 unrelated state는 보존한다.
+    /// 늦은 windowClosed callback과 stale cancel은 추가 native close나 state 변경을 만들지 않는다.
+    func testPlacementCancellationRollsBackOnlyOwnedNewWindows() async {
+        let batchID = UUID()
+        let otherBatchID = UUID()
+        let existingWindowID = UUID()
+        let newWindowID = UUID()
+        let unrelatedWindowID = UUID()
+        let existingItemID = UUID()
+        let newItemID = UUID()
+        let unrelatedBootstrapRequestID = UUID()
+        let existingTabID = ContentTabID(rawValue: "cancel-preserved-existing")
+        let newTabID = ContentTabID(rawValue: "cancel-removed-new")
+        let existingWindow = FileManagerWindowFeature.State.makeInitial(path: "/existing")
+        let unrelatedWindow = FileManagerWindowFeature.State.makeInitial(path: "/unrelated")
+        let originalExistingTabIDs = existingWindow.contentTabs.tabs.map(\.id)
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: existingWindowID,
+                    isNewWindow: false,
+                    items: [.init(itemID: existingItemID, tabID: existingTabID)],
+                ),
+                .init(
+                    windowID: newWindowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: newItemID, tabID: newTabID)],
+                ),
+            ],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            .init(id: existingWindowID, window: existingWindow),
+            .init(id: unrelatedWindowID, window: unrelatedWindow),
+        ]
+        initialState.focusedWindowID = unrelatedWindowID
+        initialState.lastUsedWindowIDs = [unrelatedWindowID, existingWindowID]
+        initialState.defaultWindowBootstrapRequestID = unrelatedBootstrapRequestID
+        initialState.defaultWindowBootstrapWindowIDs = [unrelatedWindowID]
+        initialState.externalWindowBatchIDs[unrelatedWindowID] = otherBatchID
+        initialState.authorizedExternalOpenBatchID = batchID
+
+        let openStarted = expectation(description: "owned native open started")
+        let openCancelled = expectation(description: "owned native open cancelled")
+        let nativeCloseCalled = expectation(description: "owned native window closed")
+        let openGate = AsyncStream<Void>.makeStream()
+        let closedWindowIDs = LockIsolated<[UUID]>([])
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.fileManagerWindowClient.open = { id in
+                XCTAssertEqual(id, newWindowID)
+                openStarted.fulfill()
+                await withTaskCancellationHandler {
+                    for await _ in openGate.stream {
+                        break
+                    }
+                } onCancel: {
+                    openCancelled.fulfill()
+                }
+            }
+            $0.fileManagerWindowClient.close = { id in
+                closedWindowIDs.withValue { $0.append(id) }
+                nativeCloseCalled.fulfill()
+            }
+        }
+        // store.exhaustivity = .off: child navigation보다 batch-owned rollback 경계와 native close를 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.apply(
+            plan: plan,
+            reservationsByItemID: [
+                existingItemID: .init(id: existingTabID, anchor: .directory(path: "/existing/reserved")),
+                newItemID: .init(id: newTabID, anchor: .directory(path: "/new")),
+            ],
+        )))
+        await fulfillment(of: [openStarted], timeout: 1)
+        XCTAssertEqual(
+            store.state.retainedExternalOpenPlacementOwnership,
+            .init(batchID: batchID, newWindowIDs: [newWindowID]),
+        )
+        await store.send(.event(.windowBecameKey(newWindowID)))
+
+        await store.send(.placement(.cancel(batchID: batchID)))
+        await fulfillment(of: [openCancelled, nativeCloseCalled], timeout: 1)
+
+        XCTAssertEqual(store.state.windows.map(\.id), [existingWindowID, unrelatedWindowID])
+        XCTAssertEqual(
+            store.state.windows[id: existingWindowID]?.window.contentTabs.tabs.map(\.id),
+            originalExistingTabIDs + [existingTabID],
+        )
+        XCTAssertEqual(store.state.windows[id: unrelatedWindowID]?.window, unrelatedWindow)
+        XCTAssertEqual(store.state.externalWindowBatchIDs, [unrelatedWindowID: otherBatchID])
+        XCTAssertNil(store.state.retainedExternalOpenPlacementOwnership)
+        XCTAssertEqual(store.state.defaultWindowBootstrapRequestID, unrelatedBootstrapRequestID)
+        XCTAssertEqual(store.state.defaultWindowBootstrapWindowIDs, [unrelatedWindowID])
+        XCTAssertEqual(store.state.focusedWindowID, unrelatedWindowID)
+        XCTAssertEqual(store.state.lastUsedWindowIDs, [unrelatedWindowID, existingWindowID])
+        XCTAssertNil(store.state.authorizedExternalOpenBatchID)
+        XCTAssertNil(store.state.externalOpenActivationAttempt)
+        XCTAssertEqual(closedWindowIDs.value, [newWindowID])
+
+        await store.send(.event(.windowClosed(newWindowID)))
+        await store.send(.placement(.cancel(batchID: batchID)))
+        await store.finish()
+
+        XCTAssertEqual(store.state.windows.map(\.id), [existingWindowID, unrelatedWindowID])
+        XCTAssertEqual(store.state.externalWindowBatchIDs, [unrelatedWindowID: otherBatchID])
+        XCTAssertEqual(closedWindowIDs.value, [newWindowID])
+        openGate.continuation.finish()
+    }
+
     /// authorization이 없는 stale activate는 native activation을 시작하지 않는다.
     func testUnauthorizedPlacementActivationDoesNotCallNativeClient() async throws {
         let batchID = UUID()
@@ -2908,6 +3022,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         var initialState = WindowManagerFeature.State()
         initialState.windows = [.init(id: windowID, window: window)]
         initialState.externalWindowBatchIDs = [windowID: batchID]
+        initialState.retainedExternalOpenPlacementOwnership = .init(
+            batchID: batchID,
+            newWindowIDs: [windowID],
+        )
         initialState.authorizedExternalOpenBatchID = batchID
         let activationStarted = expectation(description: "native activation started")
         let activationGate = AsyncStream<FileManagerWindowActivationResult>.makeStream()
@@ -2949,6 +3067,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         await store.receive(\.delegate.externalOpenActivationCompleted, batchID)
 
+        XCTAssertEqual(
+            store.state.retainedExternalOpenPlacementOwnership,
+            .init(batchID: batchID, newWindowIDs: [windowID]),
+        )
         XCTAssertEqual(completionCount.value, 1)
     }
 
