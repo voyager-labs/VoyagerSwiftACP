@@ -116,6 +116,13 @@ extension AppRootFeature {
 
     func handleActiveExternalOpenBatchGateClosure(state: inout State) -> Effect<Action> {
         guard let active = state.activeExternalOpenBatch else { return .none }
+        let batchID = active.batch.request.batchID
+        if state.windowManager.authorizedExternalOpenBatchID == batchID {
+            state.windowManager.authorizedExternalOpenBatchID = nil
+        }
+        if state.windowManager.externalOpenActivationAttempt?.batchID == batchID {
+            state.windowManager.externalOpenActivationAttempt = nil
+        }
         state.activeExternalOpenBatch = nil
 
         switch active.phase {
@@ -228,6 +235,9 @@ extension AppRootFeature {
               active.batch.request.batchID == batchID,
               active.phase == .advancing
         else { return .none }
+        if state.windowManager.authorizedExternalOpenBatchID == batchID {
+            state.windowManager.authorizedExternalOpenBatchID = nil
+        }
         state.activeExternalOpenBatch = nil
         if !state.externalOpenBatchQueue.isEmpty {
             return startNextExternalOpenBatchIfPossible(state: &state)
@@ -301,6 +311,7 @@ extension AppRootFeature {
             active.placementPlan = plan
             active.phase = .applying
             state.activeExternalOpenBatch = active
+            state.windowManager.authorizedExternalOpenBatchID = plan.batchID
             return .send(.windowManager(.placement(.apply(
                 plan: plan,
                 reservationsByItemID: reservations,

@@ -13,6 +13,7 @@ struct WindowManagerState: Equatable {
     var defaultWindowBootstrapRequestID: UUID?
     var defaultWindowBootstrapWindowIDs: Set<WindowID> = []
     var externalWindowBatchIDs: [WindowID: UUID] = [:]
+    var authorizedExternalOpenBatchID: UUID?
     var externalOpenActivationAttempt: ExternalOpenActivationAttempt?
 
     mutating func moveWindowToMRUFront(_ id: WindowID) {

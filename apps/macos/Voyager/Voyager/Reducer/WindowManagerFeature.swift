@@ -245,6 +245,7 @@ struct WindowManagerFeature {
                 ))))
 
             case let .placement(.apply(plan, reservationsByItemID)):
+                guard state.authorizedExternalOpenBatchID == plan.batchID else { return .none }
                 return applyExternalOpenPlacement(
                     plan,
                     reservationsByItemID: reservationsByItemID,
@@ -252,6 +253,7 @@ struct WindowManagerFeature {
                 )
 
             case let .placement(.activate(plan)):
+                guard state.authorizedExternalOpenBatchID == plan.batchID else { return .none }
                 return startExternalOpenActivation(
                     plan: plan,
                     excluding: [],
@@ -259,7 +261,9 @@ struct WindowManagerFeature {
                 )
 
             case let .externalOpenActivationResult(attempt, result):
-                guard state.externalOpenActivationAttempt == attempt else { return .none }
+                guard state.authorizedExternalOpenBatchID == attempt.batchID,
+                      state.externalOpenActivationAttempt == attempt
+                else { return .none }
                 switch result {
                 case .discarded:
                     return retryExternalOpenActivation(after: attempt, state: &state)
@@ -273,6 +277,7 @@ struct WindowManagerFeature {
                     guard survivingWindowID == attempt.windowID else {
                         return retryExternalOpenActivation(after: attempt, state: &state)
                     }
+                    state.authorizedExternalOpenBatchID = nil
                     state.externalOpenActivationAttempt = nil
                     return .send(.delegate(.externalOpenActivationCompleted(batchID: attempt.batchID)))
                 }
@@ -361,6 +366,7 @@ private extension WindowManagerFeature {
             state: state,
             excluding: excludedWindowIDs,
         ) else {
+            state.authorizedExternalOpenBatchID = nil
             state.externalOpenActivationAttempt = nil
             return .send(.delegate(.externalOpenActivationCompleted(batchID: plan.batchID)))
         }
@@ -512,6 +518,7 @@ private extension WindowManagerFeature {
             reservationsByItemID: reservationsByItemID,
             to: state.windows,
         ) else {
+            state.authorizedExternalOpenBatchID = nil
             return .send(.delegate(.externalOpenApplyCompleted(.init(
                 batchID: plan.batchID,
                 result: .failure(.validationFailed),

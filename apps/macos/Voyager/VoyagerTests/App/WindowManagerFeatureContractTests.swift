@@ -2461,6 +2461,46 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
     }
 
+    /// authorization이 없는 stale apply는 window state와 native open을 변경하지 않는다.
+    func testUnauthorizedPlacementApplicationDoesNotMutateOrOpenWindow() async {
+        let batchID = UUID()
+        let itemID = UUID()
+        let windowID = UUID()
+        let tabID = ContentTabID(rawValue: "unauthorized-apply")
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: itemID, tabID: tabID)],
+                ),
+            ],
+        )
+        let openedWindowIDs = LockIsolated<[UUID]>([])
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.fileManagerWindowClient.open = { id in
+                openedWindowIDs.withValue { $0.append(id) }
+            }
+        }
+        // store.exhaustivity = .off: unauthorized command가 child effect를 전혀 만들지 않는 경계만 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.apply(
+            plan: plan,
+            reservationsByItemID: [
+                itemID: .init(id: tabID, anchor: .directory(path: "/tmp/unauthorized-apply")),
+            ],
+        )))
+        await store.finish()
+
+        XCTAssertTrue(store.state.windows.isEmpty)
+        XCTAssertTrue(store.state.externalWindowBatchIDs.isEmpty)
+        XCTAssertTrue(openedWindowIDs.value.isEmpty)
+    }
+
     /// reservation tab identity가 commit 전에 달라지면 mutation 없이 batch-scoped failure를 보낸다.
     func testPlacementApplicationValidationFailureEmitsBatchScopedTerminal() async {
         let batchID = UUID()
@@ -2476,7 +2516,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 ),
             ],
         )
-        let initialState = WindowManagerFeature.State()
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedExternalOpenBatchID = batchID
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
         }
@@ -2489,12 +2530,15 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                     anchor: .directory(path: "/tmp/race"),
                 ),
             ],
-        )))
+        ))) {
+            $0.authorizedExternalOpenBatchID = nil
+        }
         await store.receive(
             \.delegate.externalOpenApplyCompleted,
             .init(batchID: batchID, result: .failure(.validationFailed)),
         )
 
+        initialState.authorizedExternalOpenBatchID = nil
         XCTAssertEqual(store.state, initialState)
     }
 
@@ -2515,6 +2559,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let previousActiveID = try XCTUnwrap(existingWindow.contentTabs.activeTabID)
         var initialState = WindowManagerFeature.State()
         initialState.windows = [.init(id: windowID, window: existingWindow)]
+        initialState.authorizedExternalOpenBatchID = batchID
         let plan = ExternalOpenPlacementPlan(
             batchID: batchID,
             windows: [
@@ -2613,7 +2658,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let terminalReceived = expectation(description: "apply terminal received")
         let openedURLs = LockIsolated<[URL]>([])
         let terminalCount = LockIsolated(0)
-        let store = TestStore(initialState: WindowManagerFeature.State()) {
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedExternalOpenBatchID = batchID
+        let store = TestStore(initialState: initialState) {
             CombineReducers {
                 WindowManagerFeature()
                 Reduce { _, action in
@@ -2703,7 +2750,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             },
         )
         let openedIDs = LockIsolated<[UUID]>([])
-        let store = TestStore(initialState: WindowManagerFeature.State()) {
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedExternalOpenBatchID = batchID
+        let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
@@ -2786,6 +2835,45 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }) ?? true)
     }
 
+    /// authorization이 없는 stale activate는 native activation을 시작하지 않는다.
+    func testUnauthorizedPlacementActivationDoesNotCallNativeClient() async throws {
+        let batchID = UUID()
+        let windowID = UUID()
+        let tabID = ContentTabID(rawValue: "unauthorized-activation")
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: false,
+                    items: [.init(itemID: UUID(), tabID: tabID)],
+                ),
+            ],
+        )
+        let window = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(reservations: [
+            .init(id: tabID, anchor: .directory(path: "/tmp/unauthorized-activation")),
+        ]))
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [.init(id: windowID, window: window)]
+        let activatedWindowIDs = LockIsolated<[UUID]>([])
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.fileManagerWindowClient.activate = { id in
+                activatedWindowIDs.withValue { $0.append(id) }
+                return .becameKey
+            }
+        }
+        // store.exhaustivity = .off: unauthorized command의 native boundary no-op만 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.activate(plan)))
+        await store.finish()
+
+        XCTAssertNil(store.state.externalOpenActivationAttempt)
+        XCTAssertTrue(activatedWindowIDs.value.isEmpty)
+    }
+
     /// native activation이 becameKey를 반환하기 전에는 batch terminal delegate를 보내지 않는다.
     func testPlacementActivationCompletesOnlyAfterBecameKeyResult() async throws {
         let batchID = UUID()
@@ -2813,6 +2901,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         var initialState = WindowManagerFeature.State()
         initialState.windows = [.init(id: windowID, window: window)]
         initialState.externalWindowBatchIDs = [windowID: batchID]
+        initialState.authorizedExternalOpenBatchID = batchID
         let activationStarted = expectation(description: "native activation started")
         let activationGate = AsyncStream<FileManagerWindowActivationResult>.makeStream()
         let completionCount = LockIsolated(0)
@@ -2848,6 +2937,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.receive { action in
             action.isActivationResult(attempt, .becameKey)
         } assert: {
+            $0.authorizedExternalOpenBatchID = nil
             $0.externalOpenActivationAttempt = nil
         }
         await store.receive(\.delegate.externalOpenActivationCompleted, batchID)
@@ -2894,6 +2984,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .init(id: firstWindowID, window: firstWindow),
             .init(id: finalWindowID, window: finalWindow),
         ]
+        initialState.authorizedExternalOpenBatchID = batchID
         initialState.externalOpenActivationAttempt = attempt
         let keyEventCount = LockIsolated(0)
         let store = TestStore(initialState: initialState) {
@@ -2921,6 +3012,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
 
         await store.send(.externalOpenActivationResult(attempt: attempt, result: .becameKey)) {
+            $0.authorizedExternalOpenBatchID = nil
             $0.externalOpenActivationAttempt = nil
         }
         await store.receive(\.delegate.externalOpenActivationCompleted, batchID)
@@ -2977,6 +3069,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .init(id: finalWindowID, window: finalWindow),
         ]
         initialState.externalWindowBatchIDs = [firstWindowID: batchID, finalWindowID: batchID]
+        initialState.authorizedExternalOpenBatchID = batchID
         let tracker = FileManagerWindowActivationTracker()
         let finalRequestGate = WindowBootstrapSuspensionGate()
         let activatedIDs = LockIsolated<[UUID]>([])
@@ -3029,6 +3122,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.receive { action in
             action.isActivationResult(firstAttempt, .becameKey)
         } assert: {
+            $0.authorizedExternalOpenBatchID = nil
             $0.externalOpenActivationAttempt = nil
         }
         await store.receive(\.delegate.externalOpenActivationCompleted, batchID)
@@ -3084,6 +3178,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .init(id: finalWindowID, window: finalWindow),
         ]
         initialState.externalWindowBatchIDs = [firstWindowID: batchID, finalWindowID: batchID]
+        initialState.authorizedExternalOpenBatchID = batchID
         let finalStarted = expectation(description: "vanishing target activation started")
         let finalGate = AsyncStream<FileManagerWindowActivationResult>.makeStream()
         let store = TestStore(initialState: initialState) {
@@ -3117,6 +3212,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.receive { action in
             action.isActivationResult(firstAttempt, .becameKey)
         } assert: {
+            $0.authorizedExternalOpenBatchID = nil
             $0.externalOpenActivationAttempt = nil
         }
         await store.receive(\.delegate.externalOpenActivationCompleted, batchID)
@@ -3163,6 +3259,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .init(id: finalWindowID, window: survivingFinalWindow),
         ]
         initialState.externalWindowBatchIDs = [firstWindowID: batchID, finalWindowID: batchID]
+        initialState.authorizedExternalOpenBatchID = batchID
         let activatedIDs = LockIsolated<[UUID]>([])
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
@@ -3179,6 +3276,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.receive { action in
             action.isActivationResult(attempt, .becameKey)
         } assert: {
+            $0.authorizedExternalOpenBatchID = nil
             $0.externalOpenActivationAttempt = nil
         }
         await store.receive(\.delegate.externalOpenActivationCompleted, batchID)
@@ -3203,7 +3301,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let activatedIDs = LockIsolated<[UUID]>([])
         let terminalCount = LockIsolated(0)
         let keyEventCount = LockIsolated(0)
-        let store = TestStore(initialState: WindowManagerFeature.State()) {
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedExternalOpenBatchID = plan.batchID
+        let store = TestStore(initialState: initialState) {
             CombineReducers {
                 WindowManagerFeature()
                 Reduce { _, action in
@@ -3228,7 +3328,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             }
         }
 
-        await store.send(.placement(.activate(plan)))
+        await store.send(.placement(.activate(plan))) {
+            $0.authorizedExternalOpenBatchID = nil
+        }
         await store.receive(\.delegate.externalOpenActivationCompleted, plan.batchID)
         await store.finish()
 
@@ -3257,6 +3359,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             excludedWindowIDs: [],
         )
         var initialState = WindowManagerFeature.State()
+        initialState.authorizedExternalOpenBatchID = batchID
         initialState.externalOpenActivationAttempt = currentAttempt
         let terminalCount = LockIsolated(0)
         let store = TestStore(initialState: initialState) {

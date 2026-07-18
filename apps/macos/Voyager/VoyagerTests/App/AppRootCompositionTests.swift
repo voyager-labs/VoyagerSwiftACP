@@ -733,6 +733,95 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request.batchID), [retryBatchID, laterRequest.batchID])
     }
 
+    /// placement completion 직후 gate가 닫히면 이미 예약된 apply가 window를 변경하지 않고 다음 batch를 동결한다.
+    func testGateClosureRevokesQueuedPlacementApplication() async throws {
+        let batchID = UUID(217)
+        let itemID = UUID(218)
+        let windowID = UUID(219)
+        let nextBatchID = UUID(220)
+        let tabID = ContentTabID(rawValue: "revoked-queued-apply")
+        let url = try XCTUnwrap(URL(string: "file:///tmp/revoked-queued-apply"))
+        let request = ExternalFileRouterBatchRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: itemID, index: 0, url: url, source: .systemOpenEvent, mode: .open),
+            ],
+        )
+        let nextRequest = ExternalFileRouterBatchRequest(
+            batchID: nextBatchID,
+            items: [
+                .init(
+                    itemID: UUID(221),
+                    index: 0,
+                    url: URL(fileURLWithPath: "/tmp/frozen-next"),
+                    source: .systemOpenEvent,
+                    mode: .open,
+                ),
+            ],
+        )
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: itemID, tabID: tabID)],
+                ),
+            ],
+        )
+        var active = AppRootActiveExternalOpenBatch(
+            batch: .init(request: request, requiresInitialWindowFallback: true),
+            preferredWindowIDs: [],
+        )
+        active.normalizedItems = [
+            .init(
+                itemID: itemID,
+                index: 0,
+                url: url,
+                source: .systemOpenEvent,
+                mode: .open,
+                outcome: .success(.directory(path: url.path, revealPath: nil)),
+            ),
+        ]
+        active.placementPlan = plan
+        active.phase = .applying
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.windowManager.authorizedExternalOpenBatchID = batchID
+        initialState.activeExternalOpenBatch = active
+        initialState.externalOpenBatchQueue = [
+            .init(request: nextRequest, requiresInitialWindowFallback: true),
+        ]
+        initialState.isInitialWindowFallbackPending = true
+        initialState.isExternalURLRouteInFlightWithoutWindow = true
+        let openedWindowIDs = LockIsolated<[UUID]>([])
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.fileManagerWindowClient.open = { id in
+                openedWindowIDs.withValue { $0.append(id) }
+            }
+        }
+        // store.exhaustivity = .off: gate action을 queued apply보다 먼저 보내는 composition race만 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        XCTAssertNil(store.state.activeExternalOpenBatch)
+        XCTAssertNil(store.state.windowManager.authorizedExternalOpenBatchID)
+
+        await store.send(.windowManager(.placement(.apply(
+            plan: plan,
+            reservationsByItemID: [
+                itemID: .init(id: tabID, anchor: .directory(path: url.path)),
+            ],
+        ))))
+        await store.finish()
+
+        XCTAssertTrue(store.state.windowManager.windows.isEmpty)
+        XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request.batchID), [nextBatchID])
+        XCTAssertTrue(openedWindowIDs.value.isEmpty)
+    }
+
     /// applying 중 gate가 닫히면 committed batch를 재큐하지 않고 old completion을 무시하며 다음 FIFO를 동결한다.
     func testGateClosureDropsApplyingBatchAndFreezesNextQueue() async throws {
         let batchID = UUID(220)
@@ -778,6 +867,7 @@ final class AppRootCompositionTests: XCTestCase {
 
         await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
         XCTAssertNil(store.state.activeExternalOpenBatch)
+        XCTAssertNil(store.state.windowManager.authorizedExternalOpenBatchID)
         XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request), [nextRequest])
         XCTAssertTrue(store.state.isInitialWindowFallbackPending)
         XCTAssertTrue(store.state.isExternalURLRouteInFlightWithoutWindow)
@@ -811,6 +901,7 @@ final class AppRootCompositionTests: XCTestCase {
         active.phase = .applying
         var initialState = AppRootFeature.State()
         initialState.lifecycle.accessGatePhase = .granted
+        initialState.windowManager.authorizedExternalOpenBatchID = batchID
         initialState.activeExternalOpenBatch = active
         initialState.isInitialWindowFallbackPending = true
         initialState.isExternalURLRouteInFlightWithoutWindow = true
@@ -825,6 +916,7 @@ final class AppRootCompositionTests: XCTestCase {
         await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
 
         XCTAssertNil(store.state.activeExternalOpenBatch)
+        XCTAssertNil(store.state.windowManager.authorizedExternalOpenBatchID)
         XCTAssertTrue(store.state.externalOpenBatchQueue.isEmpty)
         XCTAssertFalse(store.state.isInitialWindowFallbackPending)
         XCTAssertFalse(store.state.isExternalURLRouteInFlightWithoutWindow)
@@ -919,6 +1011,7 @@ final class AppRootCompositionTests: XCTestCase {
         active.phase = .planning
         var initialState = AppRootFeature.State()
         initialState.lifecycle.accessGatePhase = .granted
+        initialState.windowManager.authorizedExternalOpenBatchID = currentBatchID
         initialState.activeExternalOpenBatch = active
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
@@ -961,6 +1054,7 @@ final class AppRootCompositionTests: XCTestCase {
         active.phase = .applying
         var initialState = AppRootFeature.State()
         initialState.lifecycle.accessGatePhase = .granted
+        initialState.windowManager.authorizedExternalOpenBatchID = firstBatchID
         initialState.activeExternalOpenBatch = active
         initialState.externalOpenBatchQueue = [
             .init(request: secondRequest, requiresInitialWindowFallback: false),
@@ -1078,6 +1172,7 @@ final class AppRootCompositionTests: XCTestCase {
         var initialState = AppRootFeature.State()
         initialState.lifecycle.accessGatePhase = .granted
         initialState.windowManager.windows = [.init(id: windowID, window: window)]
+        initialState.windowManager.authorizedExternalOpenBatchID = firstBatchID
         initialState.activeExternalOpenBatch = active
         initialState.externalOpenBatchQueue = [
             .init(request: secondRequest, requiresInitialWindowFallback: false),
@@ -1183,6 +1278,7 @@ final class AppRootCompositionTests: XCTestCase {
         var initialState = AppRootFeature.State()
         initialState.lifecycle.accessGatePhase = .granted
         initialState.windowManager.windows = [.init(id: windowID, window: window)]
+        initialState.windowManager.authorizedExternalOpenBatchID = batchID
         initialState.activeExternalOpenBatch = active
         initialState.externalOpenBatchQueue = [
             .init(request: nextRequest, requiresInitialWindowFallback: false),
@@ -1212,6 +1308,7 @@ final class AppRootCompositionTests: XCTestCase {
         }
         await store.receive(\.windowManager.placement.activate, plan)
         await fulfillment(of: [activationStarted], timeout: 1)
+        let activationAttempt = try XCTUnwrap(store.state.windowManager.externalOpenActivationAttempt)
 
         await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
         XCTAssertNil(store.state.activeExternalOpenBatch)
@@ -1219,9 +1316,16 @@ final class AppRootCompositionTests: XCTestCase {
 
         activationGate.continuation.yield(())
         activationGate.continuation.finish()
-        await store.receive(\.windowManager.delegate.externalOpenActivationCompleted, batchID)
+        await store.receive { action in
+            guard case let .windowManager(.externalOpenActivationResult(attempt, result)) = action else {
+                return false
+            }
+            return attempt == activationAttempt && result == .becameKey
+        }
 
         XCTAssertNil(store.state.activeExternalOpenBatch)
+        XCTAssertNil(store.state.windowManager.authorizedExternalOpenBatchID)
+        XCTAssertNil(store.state.windowManager.externalOpenActivationAttempt)
         XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request.batchID), [nextBatchID])
         await store.finish()
     }
