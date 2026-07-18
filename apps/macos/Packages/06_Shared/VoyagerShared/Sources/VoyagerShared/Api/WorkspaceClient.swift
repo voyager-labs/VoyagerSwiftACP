@@ -62,6 +62,19 @@ public struct WorkspaceClient: Sendable {
     }
 }
 
+private struct SendableWorkspaceImage: @unchecked Sendable {
+    let value: NSImage
+}
+
+public extension WorkspaceClient {
+    func iconForFileAsync(_ path: String) async -> NSImage {
+        let image = await Task.detached(priority: .userInitiated) {
+            SendableWorkspaceImage(value: iconForFile(path))
+        }.value
+        return image.value
+    }
+}
+
 extension WorkspaceClient: DependencyKey {
     private static let iCloudDriveIconPath =
         "/System/Library/PrivateFrameworks/iCloudDriveCore.framework/Versions/A/Resources/iCloudDrive.icns"
