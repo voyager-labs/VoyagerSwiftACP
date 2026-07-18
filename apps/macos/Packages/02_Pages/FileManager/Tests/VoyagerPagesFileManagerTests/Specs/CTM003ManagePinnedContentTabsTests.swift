@@ -94,6 +94,21 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         )
     }
 
+    private static func pinnedItem(
+        id: ContentTabID,
+        anchor: ContentTabPageAnchor,
+        title: String,
+    ) -> ContentTabItem {
+        ContentTabItem(
+            id: id,
+            page: .directory,
+            anchor: anchor,
+            isPinned: true,
+            title: title,
+            iconName: "folder",
+        )
+    }
+
     func testPinnedRecordClient_invalidPersistedDataFallsBackToEmptyStore() throws {
         let invalidDefaults = UserDefaultsClient(
             bool: { _ in false },
@@ -683,6 +698,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 tabID: activeID,
                 previousIsPinned: false,
                 previousPinnedRecord: nil,
+                previousTabIndex: nil,
             ),
         )
         XCTAssertEqual(state.previousActiveTabID, previousID)
@@ -1668,6 +1684,66 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         }
         await rollbackStore.finish()
         Self.assertSelection(rollbackStore.state, targetID: targetID, anchorID: anchorID)
+    }
+
+    /// CTM-003-unpin_content_tab_s: persistence 실패 rollback은 원래 pinned 상대 순서를 복원함
+    /// unpin optimistic 이동이 실패한 뒤 range 선택 기준이 변경되는 회귀를 방지한다.
+    /// - 검증 내용: 중간 pinned tab unpin 실패 → raw/pinned-first 순서 복원 → 원래 구간 range 선택
+    /// - 사전 조건: pinned tab 3개, 첫 tab이 anchor, 중간 tab 저장 실패
+    /// - 기대 결과: 마지막 pinned tab을 포함하지 않고 첫 tab부터 중간 tab까지만 선택
+    func testUnpin_persistenceFailureThenSelectRangeUsesOriginalPinnedRelativeOrder() async {
+        struct SaveError: Error {}
+
+        let firstPinnedID = ContentTabID(rawValue: "first-pinned")
+        let rollbackTargetID = ContentTabID(rawValue: "rollback-target")
+        let trailingPinnedID = ContentTabID(rawValue: "trailing-pinned")
+        let firstAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/First")
+        let targetAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Target")
+        let trailingAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Trailing")
+        let targetRecord = Self.pinnedRecord(id: rollbackTargetID, anchor: targetAnchor, title: "Target")
+        var initialState = ContentTabState(
+            tabs: [
+                Self.pinnedItem(id: firstPinnedID, anchor: firstAnchor, title: "First"),
+                Self.pinnedItem(id: rollbackTargetID, anchor: targetAnchor, title: "Target"),
+                Self.pinnedItem(id: trailingPinnedID, anchor: trailingAnchor, title: "Trailing"),
+            ],
+            activeTabID: firstPinnedID,
+            pinnedRecords: [
+                firstPinnedID: Self.pinnedRecord(id: firstPinnedID, anchor: firstAnchor, title: "First"),
+                rollbackTargetID: targetRecord,
+                trailingPinnedID: Self.pinnedRecord(
+                    id: trailingPinnedID,
+                    anchor: trailingAnchor,
+                    title: "Trailing",
+                ),
+            ],
+        )
+        initialState.selectedTabIDs = [firstPinnedID]
+        initialState.selectionAnchorID = firstPinnedID
+        let store = TestStore(initialState: initialState) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
+        }
+
+        await store.send(.unpin(rollbackTargetID)) {
+            $0.tabs[id: rollbackTargetID]?.isPinned = false
+            $0.tabs.move(fromOffsets: [1], toOffset: 3)
+            $0.pinnedRecords.removeValue(forKey: rollbackTargetID)
+        }
+        await store.receive(\.pinnedRecordSaveFailed) {
+            $0.tabs.move(fromOffsets: [2], toOffset: 1)
+            $0.tabs[id: rollbackTargetID]?.isPinned = true
+            $0.pinnedRecords[rollbackTargetID] = targetRecord
+            $0.pinnedRecordPersistenceError = "pinned_record_save_failed"
+        }
+
+        XCTAssertEqual(store.state.selectionOrderedTabIDs, [firstPinnedID, rollbackTargetID, trailingPinnedID])
+
+        await store.send(.selectRange(to: rollbackTargetID)) {
+            $0.selectedTabIDs = [firstPinnedID, rollbackTargetID]
+        }
+        await store.finish()
     }
 
     // MARK: - CTM-003-go_to_anchored_path_of_pinned_tab

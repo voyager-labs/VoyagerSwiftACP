@@ -38,5 +38,6 @@ public enum ContentTabAction: Sendable {
         tabID: ContentTabID,
         previousIsPinned: Bool,
         previousPinnedRecord: ContentTabPinnedRecord?,
+        previousTabIndex: Int?,
     )
 }

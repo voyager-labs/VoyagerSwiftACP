@@ -69,7 +69,11 @@ public struct ContentTabFeature {
                 state.pinnedRecordPersistenceError = nil
                 return .none
 
-            case let .pinnedRecordSaveFailed(tabID, previousIsPinned, previousPinnedRecord):
+            case let .pinnedRecordSaveFailed(tabID, previousIsPinned, previousPinnedRecord, previousTabIndex):
+                if let previousTabIndex, let tab = state.tabs[id: tabID] {
+                    state.tabs.remove(id: tabID)
+                    state.tabs.insert(tab, at: min(previousTabIndex, state.tabs.endIndex))
+                }
                 state.tabs[id: tabID]?.isPinned = previousIsPinned
                 if let record = previousPinnedRecord {
                     state.pinnedRecords[tabID] = record
@@ -399,7 +403,12 @@ extension ContentTabFeature {
             } catch is CancellationError {
                 return
             } catch {
-                await send(.pinnedRecordSaveFailed(tabID: id, previousIsPinned: false, previousPinnedRecord: nil))
+                await send(.pinnedRecordSaveFailed(
+                    tabID: id,
+                    previousIsPinned: false,
+                    previousPinnedRecord: nil,
+                    previousTabIndex: nil,
+                ))
             }
         }
         .cancellable(id: PinnedRecordPersistenceCancelID(tabID: id), cancelInFlight: true)
@@ -407,7 +416,9 @@ extension ContentTabFeature {
 
     private func unpin(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {
         state.previousActiveTabID = nil
-        guard let tab = state.tabs[id: id], tab.isPinned else { return .none }
+        guard let tab = state.tabs[id: id], tab.isPinned,
+              let previousTabIndex = state.tabs.index(id: id)
+        else { return .none }
 
         let previousPinnedRecord = state.pinnedRecords[id]
 
@@ -438,6 +449,7 @@ extension ContentTabFeature {
                     tabID: id,
                     previousIsPinned: true,
                     previousPinnedRecord: previousPinnedRecord,
+                    previousTabIndex: previousTabIndex,
                 ))
             }
         }
@@ -492,6 +504,7 @@ extension ContentTabFeature {
                     tabID: id,
                     previousIsPinned: true,
                     previousPinnedRecord: previousPinnedRecord,
+                    previousTabIndex: nil,
                 ))
             }
         }
