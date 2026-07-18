@@ -13,6 +13,11 @@ enum AppRootExternalOpenPhase: Equatable {
     case advancing
 }
 
+struct AppRootPendingExternalURL: Equatable {
+    var requestID: UUID
+    var url: URL
+}
+
 struct AppRootExternalOpenBatch: Equatable {
     var request: ExternalFileRouterBatchRequest
     var requiresInitialWindowFallback: Bool
@@ -41,6 +46,8 @@ struct AppRootState: Equatable {
     var windowPresenceBeforeWindowManagerAction: Bool?
     /// Cold state에서 첫 창 오픈까지 버퍼링된 외부 URL (Deep Link) 큐
     var pendingExternalURLs: [URL] = []
+    /// Router terminal을 기다리는 단일 pending deep-link occurrence
+    var activePendingExternalURL: AppRootPendingExternalURL?
     /// no-window 외부 URL flush delegate 중복 예약을 막는다.
     var isExternalURLFlushDelegateScheduled = false
     /// no-window 외부 URL 처리 중 빈 initial-window fallback을 막는다.

@@ -18,6 +18,8 @@ enum AppRootAction: CasePathable {
     case receiveExternalURL(URL)
     /// ACC-001 소유 인증 callback 수신. FMW 라우터가 소유하지 않는 route를 명시적으로 분리한다.
     case receiveAuthCallbackURL(URL)
+    /// legacy tracked Router auth handoff. AppDelegate production ingress는 receiveAuthCallbackURL을 직접 사용한다.
+    case receiveTrackedAuthCallbackURL(URL, requestID: UUID)
     /// 외부 file:// URL 수신 (System Open Event, NSServices)
     case receiveExternalFileURL(URL, source: RouteSource, mode: DeepLinkMode)
     /// callback 한 번의 ordered file URL batch 수신
