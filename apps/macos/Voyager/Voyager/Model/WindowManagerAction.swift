@@ -398,6 +398,7 @@ enum WindowManagerAction: CasePathable {
             reservationsByItemID: [UUID: ExternalContentTabReservation],
         )
         case activate(ExternalOpenPlacementPlan)
+        case cancel(batchID: UUID)
     }
 
     @CasePathable

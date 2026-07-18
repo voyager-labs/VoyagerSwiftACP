@@ -822,6 +822,90 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertTrue(openedWindowIDs.value.isEmpty)
     }
 
+    /// apply가 commit한 새 window의 native open은 gate 종료 시 batch cancellation으로 중단된다.
+    func testGateClosureCancelsDelayedPlacementNativeOpen() async {
+        let batchID = UUID(222)
+        let itemID = UUID(223)
+        let windowID = UUID(224)
+        let tabID = ContentTabID(rawValue: "cancelled-placement-open")
+        let url = URL(fileURLWithPath: "/tmp/cancelled-placement-open")
+        let request = ExternalFileRouterBatchRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: itemID, index: 0, url: url, source: .systemOpenEvent, mode: .open),
+            ],
+        )
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: itemID, tabID: tabID)],
+                ),
+            ],
+        )
+        var active = AppRootActiveExternalOpenBatch(
+            batch: .init(request: request, requiresInitialWindowFallback: true),
+            preferredWindowIDs: [],
+        )
+        active.normalizedItems = [
+            .init(
+                itemID: itemID,
+                index: 0,
+                url: url,
+                source: .systemOpenEvent,
+                mode: .open,
+                outcome: .success(.directory(path: url.path, revealPath: nil)),
+            ),
+        ]
+        active.placementPlan = plan
+        active.phase = .applying
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.windowManager.authorizedExternalOpenBatchID = batchID
+        initialState.activeExternalOpenBatch = active
+        let openStarted = expectation(description: "placement native open started")
+        let openCancelled = expectation(description: "placement native open cancelled")
+        let openGate = AsyncStream<Void>.makeStream()
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.fileManagerWindowClient.open = { id in
+                XCTAssertEqual(id, windowID)
+                openStarted.fulfill()
+                await withTaskCancellationHandler {
+                    for await _ in openGate.stream {
+                        break
+                    }
+                } onCancel: {
+                    openCancelled.fulfill()
+                }
+            }
+        }
+        // store.exhaustivity = .off: child 초기화보다 batch-scoped native open cancellation 경계를 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.windowManager(.placement(.apply(
+            plan: plan,
+            reservationsByItemID: [
+                itemID: .init(id: tabID, anchor: .directory(path: url.path)),
+            ],
+        ))))
+        await fulfillment(of: [openStarted], timeout: 1)
+
+        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await fulfillment(of: [openCancelled], timeout: 1)
+        await store.skipReceivedActions()
+
+        XCTAssertNil(store.state.activeExternalOpenBatch)
+        XCTAssertNil(store.state.windowManager.authorizedExternalOpenBatchID)
+        XCTAssertNil(store.state.windowManager.externalOpenActivationAttempt)
+        openGate.continuation.finish()
+        await store.finish()
+    }
+
     /// applying 중 gate가 닫히면 committed batch를 재큐하지 않고 old completion을 무시하며 다음 FIFO를 동결한다.
     func testGateClosureDropsApplyingBatchAndFreezesNextQueue() async throws {
         let batchID = UUID(220)
@@ -1449,14 +1533,19 @@ final class AppRootCompositionTests: XCTestCase {
         ]
 
         let activationStarted = expectation(description: "gate closure activation started")
+        let activationCancelled = expectation(description: "gate closure activation cancelled")
         let activationGate = AsyncStream<Void>.makeStream()
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
         } withDependencies: {
             $0.fileManagerWindowClient.activate = { _ in
                 activationStarted.fulfill()
-                for await _ in activationGate.stream {
-                    break
+                await withTaskCancellationHandler {
+                    for await _ in activationGate.stream {
+                        break
+                    }
+                } onCancel: {
+                    activationCancelled.fulfill()
                 }
                 return .becameKey
             }
@@ -1472,25 +1561,115 @@ final class AppRootCompositionTests: XCTestCase {
         }
         await store.receive(\.windowManager.placement.activate, plan)
         await fulfillment(of: [activationStarted], timeout: 1)
-        let activationAttempt = try XCTUnwrap(store.state.windowManager.externalOpenActivationAttempt)
+        XCTAssertNotNil(store.state.windowManager.externalOpenActivationAttempt)
 
         await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await fulfillment(of: [activationCancelled], timeout: 1)
+        await store.skipReceivedActions()
         XCTAssertNil(store.state.activeExternalOpenBatch)
         XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request.batchID), [nextBatchID])
 
-        activationGate.continuation.yield(())
         activationGate.continuation.finish()
-        await store.receive { action in
-            guard case let .windowManager(.externalOpenActivationResult(attempt, result)) = action else {
-                return false
-            }
-            return attempt == activationAttempt && result == .becameKey
-        }
-
         XCTAssertNil(store.state.activeExternalOpenBatch)
         XCTAssertNil(store.state.windowManager.authorizedExternalOpenBatchID)
         XCTAssertNil(store.state.windowManager.externalOpenActivationAttempt)
         XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request.batchID), [nextBatchID])
+        await store.finish()
+    }
+
+    /// final target discard 뒤 시작한 retry activation도 gate 종료 시 같은 batch cancellation으로 중단된다.
+    func testGateClosureCancelsDelayedRetryActivation() async throws {
+        let batchID = UUID(715)
+        let firstWindowID = UUID(716)
+        let finalWindowID = UUID(717)
+        let firstTabID = ContentTabID(rawValue: "retry-cancel-first")
+        let finalTabID = ContentTabID(rawValue: "retry-cancel-final")
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: firstWindowID,
+                    isNewWindow: false,
+                    items: [.init(itemID: UUID(718), tabID: firstTabID)],
+                ),
+                .init(
+                    windowID: finalWindowID,
+                    isNewWindow: false,
+                    items: [.init(itemID: UUID(719), tabID: finalTabID)],
+                ),
+            ],
+        )
+        let firstWindow = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(reservations: [
+            .init(id: firstTabID, anchor: .directory(path: "/tmp/retry-cancel-first")),
+        ]))
+        let finalWindow = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(reservations: [
+            .init(id: finalTabID, anchor: .directory(path: "/tmp/retry-cancel-final")),
+        ]))
+        let request = ExternalFileRouterBatchRequest(
+            batchID: batchID,
+            items: [
+                .init(
+                    itemID: UUID(720),
+                    index: 0,
+                    url: URL(fileURLWithPath: "/tmp/retry-cancel"),
+                    source: .systemOpenEvent,
+                    mode: .open,
+                ),
+            ],
+        )
+        var active = AppRootActiveExternalOpenBatch(
+            batch: .init(request: request, requiresInitialWindowFallback: false),
+            preferredWindowIDs: [],
+        )
+        active.placementPlan = plan
+        active.phase = .activating
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.windowManager.windows = [
+            .init(id: firstWindowID, window: firstWindow),
+            .init(id: finalWindowID, window: finalWindow),
+        ]
+        initialState.windowManager.authorizedExternalOpenBatchID = batchID
+        initialState.activeExternalOpenBatch = active
+        let retryStarted = expectation(description: "retry activation started")
+        let retryCancelled = expectation(description: "retry activation cancelled")
+        let retryGate = AsyncStream<Void>.makeStream()
+        let activatedWindowIDs = LockIsolated<[UUID]>([])
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.fileManagerWindowClient.activate = { windowID in
+                activatedWindowIDs.withValue { $0.append(windowID) }
+                if windowID == finalWindowID {
+                    return .discarded
+                }
+                XCTAssertEqual(windowID, firstWindowID)
+                retryStarted.fulfill()
+                await withTaskCancellationHandler {
+                    for await _ in retryGate.stream {
+                        break
+                    }
+                } onCancel: {
+                    retryCancelled.fulfill()
+                }
+                return .becameKey
+            }
+        }
+        // store.exhaustivity = .off: retry attempt action보다 batch-scoped cancellation 전파를 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.windowManager(.placement(.activate(plan))))
+        await fulfillment(of: [retryStarted], timeout: 1)
+        XCTAssertEqual(activatedWindowIDs.value, [finalWindowID, firstWindowID])
+
+        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await fulfillment(of: [retryCancelled], timeout: 1)
+        await store.skipReceivedActions()
+
+        XCTAssertNil(store.state.activeExternalOpenBatch)
+        XCTAssertNil(store.state.windowManager.authorizedExternalOpenBatchID)
+        XCTAssertNil(store.state.windowManager.externalOpenActivationAttempt)
+        retryGate.continuation.finish()
         await store.finish()
     }
 

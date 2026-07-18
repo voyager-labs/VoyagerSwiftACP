@@ -21,6 +21,7 @@ struct WindowManagerFeature {
 
     nonisolated private enum CancelID: Hashable {
         case defaultWindowBootstrap
+        case externalOpenBatch(UUID)
         case trackedSingletonNativeOpen(UUID)
     }
 
@@ -260,6 +261,7 @@ struct WindowManagerFeature {
                     reservationsByItemID: reservationsByItemID,
                     state: &state,
                 )
+                .cancellable(id: CancelID.externalOpenBatch(plan.batchID), cancelInFlight: true)
 
             case let .placement(.activate(plan)):
                 guard state.authorizedExternalOpenBatchID == plan.batchID else { return .none }
@@ -268,6 +270,9 @@ struct WindowManagerFeature {
                     excluding: [],
                     state: &state,
                 )
+
+            case let .placement(.cancel(batchID)):
+                return .cancel(id: CancelID.externalOpenBatch(batchID))
 
             case let .externalOpenActivationResult(attempt, result):
                 guard state.authorizedExternalOpenBatchID == attempt.batchID,
@@ -391,6 +396,7 @@ private extension WindowManagerFeature {
             let result = await fileManagerWindowClient.activate(windowID)
             await send(.externalOpenActivationResult(attempt: attempt, result: result))
         }
+        .cancellable(id: CancelID.externalOpenBatch(plan.batchID), cancelInFlight: false)
     }
 
     func retryExternalOpenActivation(

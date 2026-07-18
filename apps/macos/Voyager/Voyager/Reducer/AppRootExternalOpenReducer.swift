@@ -171,6 +171,9 @@ extension AppRootFeature {
         }
         state.activeExternalOpenBatch = nil
 
+        var effects: [Effect<Action>] = [
+            .send(.windowManager(.placement(.cancel(batchID: batchID)))),
+        ]
         switch active.phase {
         case .normalizing, .planning:
             var retryBatch = active.batch
@@ -179,8 +182,9 @@ extension AppRootFeature {
                 items: active.batch.request.items,
             )
             state.externalOpenBatchQueue.insert(retryBatch, at: 0)
-            guard active.phase == .normalizing else { return .none }
-            return .send(.externalFileRouter(.cancelBatch(active.batch.request.batchID)))
+            if active.phase == .normalizing {
+                effects.append(.send(.externalFileRouter(.cancelBatch(active.batch.request.batchID))))
+            }
 
         case .applying, .alerting, .activating, .advancing:
             if !hasPendingExternalRoutes(state) {
@@ -188,8 +192,8 @@ extension AppRootFeature {
                 state.isExternalURLRouteInFlightWithoutWindow = false
                 state.isExternalURLFlushDelegateScheduled = false
             }
-            return .none
         }
+        return .merge(effects)
     }
 
     func reduceExternalOpenBatch(
