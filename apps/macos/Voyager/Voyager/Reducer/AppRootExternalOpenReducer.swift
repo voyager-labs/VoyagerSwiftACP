@@ -293,6 +293,9 @@ extension AppRootFeature {
               active.batch.request.batchID == batchID,
               active.phase == .activating
         else { return .none }
+        if state.windowManager.retainedExternalOpenPlacementOwnership?.batchID == batchID {
+            state.windowManager.retainedExternalOpenPlacementOwnership = nil
+        }
         active.phase = .advancing
         state.activeExternalOpenBatch = active
         return .send(.externalOpenAdvanceToNextBatch(batchID: batchID))

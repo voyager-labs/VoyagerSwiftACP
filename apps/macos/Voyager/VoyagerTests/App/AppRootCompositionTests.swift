@@ -867,6 +867,8 @@ final class AppRootCompositionTests: XCTestCase {
         initialState.activeExternalOpenBatch = active
         let openStarted = expectation(description: "placement native open started")
         let openCancelled = expectation(description: "placement native open cancelled")
+        let nativeCloseCalled = expectation(description: "placement native window closed")
+        let closedWindowIDs = LockIsolated<[UUID]>([])
         let openGate = AsyncStream<Void>.makeStream()
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
@@ -883,6 +885,10 @@ final class AppRootCompositionTests: XCTestCase {
                     openCancelled.fulfill()
                 }
             }
+            $0.fileManagerWindowClient.close = { id in
+                closedWindowIDs.withValue { $0.append(id) }
+                nativeCloseCalled.fulfill()
+            }
         }
         // store.exhaustivity = .off: child 초기화보다 batch-scoped native open cancellation 경계를 검증함.
         store.exhaustivity = .off
@@ -896,12 +902,16 @@ final class AppRootCompositionTests: XCTestCase {
         await fulfillment(of: [openStarted], timeout: 1)
 
         await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
-        await fulfillment(of: [openCancelled], timeout: 1)
+        await fulfillment(of: [openCancelled, nativeCloseCalled], timeout: 1)
         await store.skipReceivedActions()
 
         XCTAssertNil(store.state.activeExternalOpenBatch)
         XCTAssertNil(store.state.windowManager.authorizedExternalOpenBatchID)
         XCTAssertNil(store.state.windowManager.externalOpenActivationAttempt)
+        XCTAssertNil(store.state.windowManager.retainedExternalOpenPlacementOwnership)
+        XCTAssertTrue(store.state.windowManager.windows.isEmpty)
+        XCTAssertTrue(store.state.windowManager.externalWindowBatchIDs.isEmpty)
+        XCTAssertEqual(closedWindowIDs.value, [windowID])
         openGate.continuation.finish()
         await store.finish()
     }
@@ -1421,6 +1431,72 @@ final class AppRootCompositionTests: XCTestCase {
 
         XCTAssertTrue(store.state.pendingExternalURLs.isEmpty)
         await store.finish()
+    }
+
+    /// AppRoot가 matching activation terminal을 수락할 때 ownership을 release한 뒤 batch를 advance한다.
+    /// 이후 같은 batch의 stale cancel은 성공한 window나 persistent marker를 제거하지 않는다.
+    func testActivationTerminalAcceptanceReleasesPlacementOwnershipBeforeAdvance() async throws {
+        let batchID = UUID()
+        let itemID = UUID()
+        let windowID = UUID()
+        let tabID = ContentTabID(rawValue: "terminal-retained-window")
+        let url = URL(fileURLWithPath: "/tmp/terminal-retained-window")
+        let request = ExternalFileRouterBatchRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: itemID, index: 0, url: url, source: .systemOpenEvent, mode: .open),
+            ],
+        )
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: itemID, tabID: tabID)],
+                ),
+            ],
+        )
+        let window = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(reservations: [
+            .init(id: tabID, anchor: .directory(path: url.path)),
+        ]))
+        var active = AppRootActiveExternalOpenBatch(
+            batch: .init(request: request, requiresInitialWindowFallback: false),
+            preferredWindowIDs: [],
+        )
+        active.placementPlan = plan
+        active.phase = .activating
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.activeExternalOpenBatch = active
+        initialState.windowManager.windows = [.init(id: windowID, window: window)]
+        initialState.windowManager.externalWindowBatchIDs = [windowID: batchID]
+        initialState.windowManager.retainedExternalOpenPlacementOwnership = .init(
+            batchID: batchID,
+            newWindowIDs: [windowID],
+        )
+        let closedWindowIDs = LockIsolated<[UUID]>([])
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.fileManagerWindowClient.close = { id in
+                closedWindowIDs.withValue { $0.append(id) }
+            }
+        }
+        // store.exhaustivity = .off: AppRoot terminal acceptance와 stale cancel 경계만 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.windowManager(.delegate(.externalOpenActivationCompleted(batchID: batchID)))) {
+            $0.windowManager.retainedExternalOpenPlacementOwnership = nil
+            $0.activeExternalOpenBatch?.phase = .advancing
+        }
+        await store.receive(\.externalOpenAdvanceToNextBatch, batchID)
+        await store.send(.windowManager(.placement(.cancel(batchID: batchID))))
+        await store.finish()
+
+        XCTAssertEqual(store.state.windowManager.windows.map(\.id), [windowID])
+        XCTAssertEqual(store.state.windowManager.externalWindowBatchIDs, [windowID: batchID])
+        XCTAssertTrue(closedWindowIDs.value.isEmpty)
     }
 
     /// native activation이 끝나기 전에는 다음 batch를 시작하지 않는다.
