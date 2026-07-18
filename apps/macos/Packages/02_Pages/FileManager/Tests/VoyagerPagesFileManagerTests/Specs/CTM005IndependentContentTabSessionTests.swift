@@ -359,6 +359,46 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    func testOpeningNewContentTabDuringPendingCloseReconcilesSelectionAfterRollback() async {
+        let pendingTabID = ContentTabID(rawValue: "pending-close-tab")
+        let staleSelectionID = ContentTabID(rawValue: "stale-selection")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pendingTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: pendingTabID,
+        )
+        state.pendingContentTabClose = PendingContentTabClose(tabID: pendingTabID)
+        state.contentTabs.selectedTabIDs = [pendingTabID, staleSelectionID]
+        state.contentTabs.selectionAnchorID = staleSelectionID
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.open(.homeDefault)))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.map(\.id), [pendingTabID])
+        XCTAssertEqual(store.state.contentTabs.activeTabID, pendingTabID)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [pendingTabID])
+        XCTAssertNil(store.state.contentTabs.selectionAnchorID)
+        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, pendingTabID)
+        await store.finish()
+    }
+
     func testOpeningNewContentTabAppliesWindowContextToFreshContent() async {
         let homeID = ContentTabID()
         let windowID = UUID()

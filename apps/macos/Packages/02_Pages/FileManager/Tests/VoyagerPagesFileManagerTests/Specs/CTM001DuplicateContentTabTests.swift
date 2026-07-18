@@ -38,6 +38,54 @@ final class CTM001DuplicateContentTabTests: XCTestCase {
         XCTAssertEqual(state.previousActiveTabID, sourceID)
     }
 
+    /// CTM-001-duplicate_unpinned_source: selected source 복제는 source selection/anchor만 유지함
+    /// - 검증 내용: duplicate가 새 identity를 만들고 활성화해도 selected membership과 anchor를 복사하지 않음
+    /// - 사전 조건: selected/anchored unpinned Directory source와 선택되지 않은 sibling tab
+    /// - 기대 결과: source selection/anchor는 유지되고 duplicate ID는 unselected이며 나머지 runtime metadata도 보존됨
+    func testDuplicate_selectedSourcePreservesSelectionAndLeavesDuplicateUnselected() {
+        let sourceID = ContentTabID(rawValue: "source")
+        let siblingID = ContentTabID(rawValue: "sibling")
+        let duplicateID = ContentTabID(rawValue: "duplicate")
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: sourceID,
+                    page: .directory,
+                    anchor: .directory(path: "/source"),
+                    isPinned: false,
+                    title: "Source",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: siblingID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: siblingID,
+            previousActiveTabID: sourceID,
+            pinnedRecordPersistenceError: "sentinel",
+        )
+        state.selectedTabIDs = [sourceID]
+        state.selectionAnchorID = sourceID
+        let pinnedErrorBefore = state.pinnedRecordPersistenceError
+
+        _ = ContentTabFeature().reduce(
+            into: &state,
+            action: .duplicate(sourceID: sourceID, duplicateID: duplicateID),
+        )
+
+        XCTAssertEqual(state.selectedTabIDs, [sourceID])
+        XCTAssertEqual(state.selectionAnchorID, sourceID)
+        XCTAssertFalse(state.selectedTabIDs.contains(duplicateID))
+        XCTAssertEqual(state.activeTabID, duplicateID)
+        XCTAssertEqual(state.previousActiveTabID, siblingID)
+        XCTAssertEqual(state.pinnedRecordPersistenceError, pinnedErrorBefore)
+    }
+
     /// CTM-001-duplicate_unpinned_source: Inactive unpinned tab을 복제해도 같은 삽입/활성화 동작
     /// - 검증 내용: 중간 위치 tab 복제 시 sourceIndex+1에 삽입, 활성화
     /// - 사전 조건: 3개 tab 중 2번째가 inactive unpinned Directory
@@ -493,6 +541,8 @@ extension CTM001DuplicateContentTabTests {
             tabID: pendingTabID,
             previousActiveTabID: activeBeforePendingID,
         )
+        state.contentTabs.selectedTabIDs = [sourceID, duplicateID]
+        state.contentTabs.selectionAnchorID = duplicateID
         state.syncContentTabSidebarItems()
 
         let store = TestStore(initialState: state) {
@@ -516,6 +566,8 @@ extension CTM001DuplicateContentTabTests {
         XCTAssertNil(store.state.contentTabs.tabs[id: duplicateID])
         XCTAssertNil(store.state.tabContentStates[duplicateID])
         XCTAssertNil(store.state.tabInspectorStates[duplicateID])
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [sourceID])
+        XCTAssertNil(store.state.contentTabs.selectionAnchorID)
 
         // Source/target row 유지
         XCTAssertNotNil(store.state.contentTabs.tabs[id: sourceID])

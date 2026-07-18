@@ -383,6 +383,14 @@ struct FileManagerWindowRoutingReducer {
                 state.syncContentTabSidebarItems()
                 return .none
 
+            // MARK: - CTM-001-select_content_tabs
+
+            // Child selection mutation은 보존하고 unrelated Window projection/cleanup은 실행하지 않는다.
+            case .contentTabs(.toggleSelection),
+                 .contentTabs(.selectRange),
+                 .contentTabs(.clearSelection):
+                return .none
+
             case .contentTabs:
                 cleanPendingDirectoryReloadTabIDs(state: &state)
                 syncDashboardProjections(state: &state)
@@ -958,6 +966,7 @@ private extension FileManagerWindowRoutingReducer {
         }
         if let activeTabID = state.contentTabs.activeTabID, activeTabID != pendingClose.tabID {
             state.contentTabs.tabs.remove(id: activeTabID)
+            state.contentTabs.reconcileSelection()
             state.removeContentState(for: activeTabID)
             state.removeInspectorState(for: activeTabID)
         }
@@ -995,6 +1004,7 @@ private extension FileManagerWindowRoutingReducer {
         // Exact duplicateID row/cache 제거
         let wasActive = state.contentTabs.activeTabID == duplicateID
         state.contentTabs.tabs.remove(id: duplicateID)
+        state.contentTabs.reconcileSelection()
         state.removeContentState(for: duplicateID)
         state.removeInspectorState(for: duplicateID)
         // Duplicate가 active였으면(unpinned source) pendingClose에 보관된 원본 ID로 복원

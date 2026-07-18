@@ -94,6 +94,21 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         )
     }
 
+    private static func pinnedItem(
+        id: ContentTabID,
+        anchor: ContentTabPageAnchor,
+        title: String,
+    ) -> ContentTabItem {
+        ContentTabItem(
+            id: id,
+            page: .directory,
+            anchor: anchor,
+            isPinned: true,
+            title: title,
+            iconName: "folder",
+        )
+    }
+
     func testPinnedRecordClient_invalidPersistedDataFallsBackToEmptyStore() throws {
         let invalidDefaults = UserDefaultsClient(
             bool: { _ in false },
@@ -683,6 +698,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 tabID: activeID,
                 previousIsPinned: false,
                 previousPinnedRecord: nil,
+                previousTabIndex: nil,
             ),
         )
         XCTAssertEqual(state.previousActiveTabID, previousID)
@@ -1319,6 +1335,55 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-003-pin_content_tab_s: pin 성공과 persistence rollback은 selection/anchor를 보존함
+    /// identity를 유지하는 pin lifecycle이 runtime selection intent를 변경하지 않는지 검증한다.
+    /// - 검증 내용: pin save 성공 및 실패 rollback 전후 selected IDs와 valid-unselected anchor exact equality
+    /// - 사전 조건: selected pin target과 anchor-only sibling을 가진 동일한 두 초기 상태
+    /// - 기대 결과: pin 상태는 성공/rollback 정책대로 변하지만 selection은 target, anchor는 sibling으로 유지됨
+    func testPin_successAndPersistenceRollbackPreserveSelectionAndAnchor() async {
+        struct SaveError: Error {}
+
+        let targetID = ContentTabID(rawValue: "pin-target")
+        let anchorID = ContentTabID(rawValue: "pin-anchor")
+        let targetAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/PinTarget")
+        let initialState = Self.selectionPreservationState(
+            targetID: targetID,
+            anchorID: anchorID,
+            targetAnchor: targetAnchor,
+            targetTitle: "Pin Target",
+        )
+
+        let successStore = TestStore(initialState: initialState) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
+            $0.contentTabPinnedRecordClient.updateStore = { _, transform in
+                _ = try transform(ContentTabPinnedRecordStore())
+            }
+        }
+        await successStore.send(.pin(targetID)) {
+            Self.expectPinnedState(&$0, targetID: targetID, targetAnchor: targetAnchor)
+        }
+        await successStore.receive(\.pinnedRecordSaveSucceeded)
+        await successStore.finish()
+        Self.assertSelection(successStore.state, targetID: targetID, anchorID: anchorID)
+
+        let rollbackStore = TestStore(initialState: initialState) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
+        }
+        await rollbackStore.send(.pin(targetID)) {
+            Self.expectPinnedState(&$0, targetID: targetID, targetAnchor: targetAnchor)
+        }
+        await rollbackStore.receive(\.pinnedRecordSaveFailed) {
+            Self.expectPinRollbackState(&$0, targetID: targetID)
+        }
+        await rollbackStore.finish()
+        Self.assertSelection(rollbackStore.state, targetID: targetID, anchorID: anchorID)
+    }
+
     // MARK: - CTM-003-unpin_content_tab_s
 
     /// CTM-003-unpin_content_tab_s: pinned tab unpin 시 persistence에서 제거
@@ -1568,6 +1633,120 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-003-unpin_content_tab_s: unpin 성공과 persistence rollback은 selection/anchor를 보존함
+    /// 같은 ID를 재배치하는 unpin lifecycle이 runtime selection intent를 변경하지 않는지 검증한다.
+    /// - 검증 내용: unpin save 성공 및 실패 rollback 전후 selected IDs와 valid-unselected anchor exact equality
+    /// - 사전 조건: selected pinned target과 anchor-only sibling, target pinned record를 가진 동일한 두 초기 상태
+    /// - 기대 결과: unpin 상태는 성공/rollback 정책대로 변하지만 selection은 target, anchor는 sibling으로 유지됨
+    func testUnpin_successAndPersistenceRollbackPreserveSelectionAndAnchor() async {
+        struct SaveError: Error {}
+
+        let targetID = ContentTabID(rawValue: "unpin-target")
+        let anchorID = ContentTabID(rawValue: "unpin-anchor")
+        let targetAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/UnpinTarget")
+        let pinnedRecord = Self.pinnedRecord(id: targetID, anchor: targetAnchor, title: "Unpin Target")
+        let initialState = Self.selectionPreservationState(
+            targetID: targetID,
+            anchorID: anchorID,
+            targetAnchor: targetAnchor,
+            targetTitle: "Unpin Target",
+            isPinned: true,
+            previousActiveTabID: anchorID,
+            pinnedRecord: pinnedRecord,
+        )
+
+        let successStore = TestStore(initialState: initialState) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.updateStore = { _, transform in
+                _ = try transform(ContentTabPinnedRecordStore(records: [pinnedRecord]))
+            }
+        }
+        await successStore.send(.unpin(targetID)) {
+            Self.expectUnpinnedState(&$0, targetID: targetID)
+        }
+        await successStore.receive(\.pinnedRecordSaveSucceeded)
+        await successStore.finish()
+        Self.assertSelection(successStore.state, targetID: targetID, anchorID: anchorID)
+
+        let rollbackStore = TestStore(initialState: initialState) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
+        }
+        await rollbackStore.send(.unpin(targetID)) {
+            Self.expectUnpinnedState(&$0, targetID: targetID)
+        }
+        await rollbackStore.receive(\.pinnedRecordSaveFailed) {
+            $0.tabs.move(fromOffsets: [1], toOffset: 0)
+            $0.tabs[id: targetID]?.isPinned = true
+            $0.pinnedRecords[targetID] = pinnedRecord
+            $0.pinnedRecordPersistenceError = "pinned_record_save_failed"
+        }
+        await rollbackStore.finish()
+        Self.assertSelection(rollbackStore.state, targetID: targetID, anchorID: anchorID)
+    }
+
+    /// CTM-003-unpin_content_tab_s: persistence 실패 rollback은 원래 pinned 상대 순서를 복원함
+    /// unpin optimistic 이동이 실패한 뒤 range 선택 기준이 변경되는 회귀를 방지한다.
+    /// - 검증 내용: 중간 pinned tab unpin 실패 → raw/pinned-first 순서 복원 → 원래 구간 range 선택
+    /// - 사전 조건: pinned tab 3개, 첫 tab이 anchor, 중간 tab 저장 실패
+    /// - 기대 결과: 마지막 pinned tab을 포함하지 않고 첫 tab부터 중간 tab까지만 선택
+    func testUnpin_persistenceFailureThenSelectRangeUsesOriginalPinnedRelativeOrder() async {
+        struct SaveError: Error {}
+
+        let firstPinnedID = ContentTabID(rawValue: "first-pinned")
+        let rollbackTargetID = ContentTabID(rawValue: "rollback-target")
+        let trailingPinnedID = ContentTabID(rawValue: "trailing-pinned")
+        let firstAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/First")
+        let targetAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Target")
+        let trailingAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Trailing")
+        let targetRecord = Self.pinnedRecord(id: rollbackTargetID, anchor: targetAnchor, title: "Target")
+        var initialState = ContentTabState(
+            tabs: [
+                Self.pinnedItem(id: firstPinnedID, anchor: firstAnchor, title: "First"),
+                Self.pinnedItem(id: rollbackTargetID, anchor: targetAnchor, title: "Target"),
+                Self.pinnedItem(id: trailingPinnedID, anchor: trailingAnchor, title: "Trailing"),
+            ],
+            activeTabID: firstPinnedID,
+            pinnedRecords: [
+                firstPinnedID: Self.pinnedRecord(id: firstPinnedID, anchor: firstAnchor, title: "First"),
+                rollbackTargetID: targetRecord,
+                trailingPinnedID: Self.pinnedRecord(
+                    id: trailingPinnedID,
+                    anchor: trailingAnchor,
+                    title: "Trailing",
+                ),
+            ],
+        )
+        initialState.selectedTabIDs = [firstPinnedID]
+        initialState.selectionAnchorID = firstPinnedID
+        let store = TestStore(initialState: initialState) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
+        }
+
+        await store.send(.unpin(rollbackTargetID)) {
+            $0.tabs[id: rollbackTargetID]?.isPinned = false
+            $0.tabs.move(fromOffsets: [1], toOffset: 3)
+            $0.pinnedRecords.removeValue(forKey: rollbackTargetID)
+        }
+        await store.receive(\.pinnedRecordSaveFailed) {
+            $0.tabs.move(fromOffsets: [2], toOffset: 1)
+            $0.tabs[id: rollbackTargetID]?.isPinned = true
+            $0.pinnedRecords[rollbackTargetID] = targetRecord
+            $0.pinnedRecordPersistenceError = "pinned_record_save_failed"
+        }
+
+        XCTAssertEqual(store.state.selectionOrderedTabIDs, [firstPinnedID, rollbackTargetID, trailingPinnedID])
+
+        await store.send(.selectRange(to: rollbackTargetID)) {
+            $0.selectedTabIDs = [firstPinnedID, rollbackTargetID]
+        }
+        await store.finish()
+    }
+
     // MARK: - CTM-003-go_to_anchored_path_of_pinned_tab
 
     /// CTM-003-go_to_anchored_path_of_pinned_tab: 전역 pinned 동기화는 unpinned tab을 보존하고 pinned 순서를 store 기준으로 교체
@@ -1654,6 +1833,127 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(state.contentTabs.activeTabID, unpinnedID)
         XCTAssertNil(state.tabContentStates[stalePinnedID])
         XCTAssertEqual(Set(state.contentTabs.pinnedRecords.keys), Set([firstPinnedID, secondPinnedID]))
+    }
+
+    func testApplyPinnedContentTabsReconcilesSelectionAfterFinalMerge() {
+        let survivingPinnedID = ContentTabID(rawValue: "surviving-pin")
+        let removedPinnedID = ContentTabID(rawValue: "removed-pin")
+        let survivingUnpinnedID = ContentTabID(rawValue: "working-tab")
+        let restoredPinnedID = ContentTabID(rawValue: "restored-pin")
+        let survivingAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Surviving")
+        var state = Self.pinnedMergeSelectionState(
+            survivingPinnedID: survivingPinnedID,
+            removedPinnedID: removedPinnedID,
+            survivingUnpinnedID: survivingUnpinnedID,
+            survivingAnchor: survivingAnchor,
+        )
+        let restoredState = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: survivingPinnedID,
+                    page: .directory,
+                    anchor: survivingAnchor,
+                    isPinned: true,
+                    title: "Surviving",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: restoredPinnedID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Restored"),
+                    isPinned: true,
+                    title: "Restored",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: restoredPinnedID,
+        )
+
+        state.applyPinnedContentTabs(restoredState)
+
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, [survivingPinnedID, survivingUnpinnedID])
+        XCTAssertEqual(state.contentTabs.selectionAnchorID, survivingPinnedID)
+        XCTAssertFalse(state.contentTabs.selectedTabIDs.contains(restoredPinnedID))
+    }
+
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: final merge에서 제거된 pinned identity anchor 정리
+    /// - 검증 내용: surviving unpinned selection은 유지하고 removed pinned anchor만 nil 처리
+    /// - 사전 조건: 선택된 unpinned tab과 anchor인 pinned tab이 있고 restore 결과에서 pinned tab 제거
+    /// - 기대 결과: surviving selection 유지, selectionAnchorID == nil
+    func testApplyPinnedContentTabsClearsAnchorForRemovedPinnedIdentity() {
+        let removedPinnedID = ContentTabID(rawValue: "removed-anchor-pin")
+        let survivingUnpinnedID = ContentTabID(rawValue: "surviving-unpinned")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: removedPinnedID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Removed"),
+                    isPinned: true,
+                    title: "Removed",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: survivingUnpinnedID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: survivingUnpinnedID,
+        )
+        state.contentTabs.selectedTabIDs = [survivingUnpinnedID]
+        state.contentTabs.selectionAnchorID = removedPinnedID
+
+        state.applyPinnedContentTabs(ContentTabState())
+
+        XCTAssertEqual(state.contentTabs.tabs.map(\.id), [survivingUnpinnedID])
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, [survivingUnpinnedID])
+        XCTAssertNil(state.contentTabs.selectionAnchorID)
+    }
+
+    func testApplyPinnedContentTabsPreservesSelectionForSameIDAnchorReplacement() {
+        let pinnedID = ContentTabID(rawValue: "same-id-pin")
+        let oldAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Old")
+        let newAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/New")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .directory,
+                    anchor: oldAnchor,
+                    isPinned: true,
+                    title: "Old",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: pinnedID,
+        )
+        state.contentTabs.selectedTabIDs = [pinnedID]
+        state.contentTabs.selectionAnchorID = pinnedID
+        let restoredState = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .directory,
+                    anchor: newAnchor,
+                    isPinned: true,
+                    title: "New",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: pinnedID,
+        )
+
+        state.applyPinnedContentTabs(restoredState)
+
+        XCTAssertEqual(state.contentTabs.tabs[id: pinnedID]?.anchor, newAnchor)
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, [pinnedID])
+        XCTAssertEqual(state.contentTabs.selectionAnchorID, pinnedID)
     }
 
     /// CTM-003-go_to_anchored_path_of_pinned_tab: sync 중 같은 id의 optimistic unpinned tab 중복 제거
@@ -2052,7 +2352,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertNil(state.tabContentStates[pinnedID])
     }
 
-    func testApplyPinnedContentTabsRestoresHomeContentWhenActivePinnedTabRemoved() throws {
+    func testApplyPinnedContentTabs_createsHomeFallbackWhenNoTabsRemain() throws {
         let pinnedID = ContentTabID(rawValue: "removed-pin")
         let oldAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Removed")
         var state = FileManagerFeature.State()
@@ -2074,6 +2374,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         )
         state.content.navigation.seedInitialFolderPath("/Users/test/Removed")
         state.syncActiveTabContentState()
+        state.contentTabs.selectedTabIDs = [pinnedID]
+        state.contentTabs.selectionAnchorID = pinnedID
         let restoredState = ContentTabState(tabs: [], activeTabID: nil, pinnedRecords: [:])
 
         state.applyPinnedContentTabs(restoredState)
@@ -2083,6 +2385,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(state.contentTabs.tabs[id: activeTabID]?.page, .home)
         XCTAssertFalse(state.contentTabs.tabs[id: activeTabID]?.isPinned ?? true)
         XCTAssertEqual(state.content.navigation.currentPath, "Home")
+        XCTAssertTrue(state.contentTabs.selectedTabIDs.isEmpty)
+        XCTAssertNil(state.contentTabs.selectionAnchorID)
         XCTAssertNil(state.tabContentStates[pinnedID])
         XCTAssertEqual(state.tabContentStates[activeTabID]?.navigation.currentPath, "Home")
     }
@@ -2766,5 +3070,138 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let ids = recorder.stores().last?.records.map(\.id) ?? []
         XCTAssertFalse(ids.contains("orig-dir-1"), "unpin한 record ID가 persistence에 남아 있으면 안 됨")
         XCTAssertTrue(ids.contains("orig-dir-2"), "unpin하지 않은 record ID는 persistence에 유지되어야 함")
+    }
+
+    private static func selectionPreservationState(
+        targetID: ContentTabID,
+        anchorID: ContentTabID,
+        targetAnchor: ContentTabPageAnchor,
+        targetTitle: String,
+        isPinned: Bool = false,
+        previousActiveTabID: ContentTabID? = nil,
+        pinnedRecord: ContentTabPinnedRecord? = nil,
+    ) -> ContentTabState {
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: targetID,
+                    page: .directory,
+                    anchor: targetAnchor,
+                    isPinned: isPinned,
+                    title: targetTitle,
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: anchorID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: targetID,
+            previousActiveTabID: previousActiveTabID,
+        )
+        if let pinnedRecord {
+            state.pinnedRecords[targetID] = pinnedRecord
+        }
+        state.selectedTabIDs = [targetID]
+        state.selectionAnchorID = anchorID
+        return state
+    }
+
+    private static func expectPinnedState(
+        _ state: inout ContentTabState,
+        targetID: ContentTabID,
+        targetAnchor: ContentTabPageAnchor,
+    ) {
+        state.tabs[id: targetID]?.isPinned = true
+        state.pinnedRecords[targetID] = pinnedRecord(
+            id: targetID,
+            anchor: targetAnchor,
+            title: "Pin Target",
+            iconName: "folder",
+        )
+        state.pendingPinnedRecordIDs.insert(targetID)
+    }
+
+    private static func expectPinRollbackState(
+        _ state: inout ContentTabState,
+        targetID: ContentTabID,
+    ) {
+        state.tabs[id: targetID]?.isPinned = false
+        state.pinnedRecords.removeAll()
+        state.pendingPinnedRecordIDs.remove(targetID)
+        state.pinnedRecordPersistenceError = "pinned_record_save_failed"
+    }
+
+    private static func expectUnpinnedState(
+        _ state: inout ContentTabState,
+        targetID: ContentTabID,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        guard var unpinnedTab = state.tabs[id: targetID] else {
+            XCTFail("Expected target tab before unpin", file: file, line: line)
+            return
+        }
+        state.previousActiveTabID = nil
+        unpinnedTab.isPinned = false
+        state.tabs.remove(id: targetID)
+        state.tabs.append(unpinnedTab)
+        state.pinnedRecords.removeAll()
+    }
+
+    private static func assertSelection(
+        _ state: ContentTabState,
+        targetID: ContentTabID,
+        anchorID: ContentTabID,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertEqual(state.selectedTabIDs, [targetID], file: file, line: line)
+        XCTAssertEqual(state.selectionAnchorID, anchorID, file: file, line: line)
+    }
+
+    private static func pinnedMergeSelectionState(
+        survivingPinnedID: ContentTabID,
+        removedPinnedID: ContentTabID,
+        survivingUnpinnedID: ContentTabID,
+        survivingAnchor: ContentTabPageAnchor,
+    ) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: survivingPinnedID,
+                    page: .directory,
+                    anchor: survivingAnchor,
+                    isPinned: true,
+                    title: "Surviving",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: removedPinnedID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Removed"),
+                    isPinned: true,
+                    title: "Removed",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: survivingUnpinnedID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: survivingUnpinnedID,
+        )
+        state.contentTabs.selectedTabIDs = [survivingPinnedID, removedPinnedID, survivingUnpinnedID]
+        state.contentTabs.selectionAnchorID = survivingPinnedID
+        return state
     }
 }

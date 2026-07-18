@@ -35,9 +35,10 @@ final class CTM002SetCurrentContentTabTests: XCTestCase {
                 iconName: nil,
             ),
         ]
-        let store = TestStore(
-            initialState: ContentTabState(tabs: tabs, activeTabID: homeID, recentlyClosed: nil),
-        ) {
+        var state = ContentTabState(tabs: tabs, activeTabID: homeID, recentlyClosed: nil)
+        state.selectedTabIDs = [homeID, collectionID]
+        state.selectionAnchorID = directoryID
+        let store = TestStore(initialState: state) {
             ContentTabFeature()
         }
 
@@ -49,6 +50,9 @@ final class CTM002SetCurrentContentTabTests: XCTestCase {
             $0.previousActiveTabID = collectionID
             $0.activeTabID = directoryID
         }
+
+        XCTAssertEqual(store.state.selectedTabIDs, [homeID, collectionID])
+        XCTAssertEqual(store.state.selectionAnchorID, directoryID)
         await store.finish()
     }
 }

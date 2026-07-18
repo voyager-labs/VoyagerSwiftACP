@@ -496,6 +496,7 @@ extension FileManagerWindowState {
         }
 
         contentTabs.recentlyClosed = recentlyClosed
+        contentTabs.reconcileSelection()
         syncContentTabSidebarItems()
     }
 
