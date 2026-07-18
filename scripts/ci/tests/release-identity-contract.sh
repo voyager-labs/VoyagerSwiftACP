@@ -11,7 +11,7 @@ import datetime as dt
 print((dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"))
 PY
 )"
-identity_path="${WORK_DIR}/release-identity.env"
+identity_path="${WORK_DIR}/release-artifacts/identity/release-identity.env"
 VOYAGER_RELEASED_AT="${released_at}" bash "${CI_DIR}/prepare-release-identity.sh" "${identity_path}"
 # shellcheck source=/dev/null
 source "${identity_path}"

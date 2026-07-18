@@ -9,6 +9,8 @@ fi
 
 : "${VOYAGER_RELEASED_AT:?Missing env: VOYAGER_RELEASED_AT}"
 
+mkdir -p "$(dirname "${OUT_PATH}")"
+
 python3 - "${VOYAGER_RELEASED_AT}" <<'PY' > "${OUT_PATH}"
 import datetime as dt
 import re
