@@ -1,12 +1,15 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
 
 @MainActor
 enum FileManagerWindowSplitLayout {
     struct Components {
         let rootView: NSVisualEffectView
+        let rootShellEffectView: NSVisualEffectView
         let splitView: NSSplitView
+        let sidebarSurface: NSView
         let sidebarHosting: NSHostingController<AnyView>
         let mainContainerHosting: NSHostingController<FileManagerWindowMainContainerView>
         let mainContainerView: NSView
@@ -15,15 +18,19 @@ enum FileManagerWindowSplitLayout {
 
     static func build(
         store: StoreOf<FileManagerFeature>,
+        workspaceClient: WorkspaceClient,
         keyCommandFocusCoordinator: FileManagerKeyCommandFocusCoordinator,
         mainContainerRootView: FileManagerWindowMainContainerView,
+        materialOverride: FileManagerWindowMaterialOverride?,
         contentVerticalMargin: CGFloat,
         isSidebarVisible: Bool,
     ) -> Components {
-        let backgroundEffect = makeBackgroundEffectView()
+        let rootShell = VoyagerDS.SurfaceMaterialRole.windowShell.makeBackgroundView()
+        applyMaterialOverride(materialOverride, to: rootShell)
         let splitView = makeSplitView()
         let sidebarHosting = makeSidebarHosting(
             store: store,
+            workspaceClient: workspaceClient,
             keyCommandFocusCoordinator: keyCommandFocusCoordinator,
             in: splitView,
         )
@@ -33,11 +40,13 @@ enum FileManagerWindowSplitLayout {
             contentVerticalMargin: contentVerticalMargin,
             isSidebarVisible: isSidebarVisible,
         )
-        embed(splitView: splitView, in: backgroundEffect)
+        embed(splitView: splitView, in: rootShell)
 
         return Components(
-            rootView: backgroundEffect,
+            rootView: rootShell,
+            rootShellEffectView: rootShell,
             splitView: splitView,
+            sidebarSurface: sidebarHosting.view,
             sidebarHosting: sidebarHosting,
             mainContainerHosting: mainContainerHosting,
             mainContainerView: mainContainerHosting.view,
@@ -49,6 +58,14 @@ enum FileManagerWindowSplitLayout {
         splitView?.layer?.backgroundColor = NSColor.clear.cgColor
     }
 
+    static func updateMaterialOverride(
+        _ override: FileManagerWindowMaterialOverride?,
+        rootShellEffectView: NSVisualEffectView?,
+    ) {
+        guard let rootShellEffectView else { return }
+        applyMaterialOverride(override, to: rootShellEffectView)
+    }
+
     static func updateMainContainerLeading(
         _ constraint: NSLayoutConstraint?,
         isSidebarVisible: Bool,
@@ -57,13 +74,15 @@ enum FileManagerWindowSplitLayout {
         constraint?.constant = isSidebarVisible ? 0 : contentVerticalMargin
     }
 
-    private static func makeBackgroundEffectView() -> NSVisualEffectView {
-        let backgroundEffect = NSVisualEffectView()
-        backgroundEffect.material = .sidebar
-        backgroundEffect.blendingMode = .behindWindow
-        backgroundEffect.state = .active
-        backgroundEffect.wantsLayer = true
-        return backgroundEffect
+    private static func applyMaterialOverride(
+        _ override: FileManagerWindowMaterialOverride?,
+        to rootShellEffectView: NSVisualEffectView,
+    ) {
+        if let override {
+            override.windowShell.apply(to: rootShellEffectView)
+        } else {
+            VoyagerDS.SurfaceMaterialRole.windowShell.apply(to: rootShellEffectView)
+        }
     }
 
     private static func makeSplitView() -> NSSplitView {
@@ -78,12 +97,16 @@ enum FileManagerWindowSplitLayout {
 
     private static func makeSidebarHosting(
         store: StoreOf<FileManagerFeature>,
+        workspaceClient: WorkspaceClient,
         keyCommandFocusCoordinator: FileManagerKeyCommandFocusCoordinator,
         in splitView: NSSplitView,
     ) -> NSHostingController<AnyView> {
         let rootView = AnyView(
-            SidebarView(store: store.scope(state: \.sidebar, action: \.sidebar))
-                .environment(\.fileManagerKeyCommandFocusCoordinator, keyCommandFocusCoordinator),
+            SidebarView(
+                store: store.scope(state: \.sidebar, action: \.sidebar),
+                workspaceClient: workspaceClient,
+            )
+            .environment(\.fileManagerKeyCommandFocusCoordinator, keyCommandFocusCoordinator),
         )
         let sidebarHosting = NSHostingController(rootView: rootView)
         if #available(macOS 13.3, *) {
@@ -144,14 +167,14 @@ enum FileManagerWindowSplitLayout {
         return (mainContainerHosting, mainContainerLeading)
     }
 
-    private static func embed(splitView: NSSplitView, in backgroundEffect: NSVisualEffectView) {
+    private static func embed(splitView: NSSplitView, in rootShell: NSView) {
         splitView.translatesAutoresizingMaskIntoConstraints = false
-        backgroundEffect.addSubview(splitView)
+        rootShell.addSubview(splitView)
         NSLayoutConstraint.activate([
-            splitView.topAnchor.constraint(equalTo: backgroundEffect.topAnchor),
-            splitView.bottomAnchor.constraint(equalTo: backgroundEffect.bottomAnchor),
-            splitView.leadingAnchor.constraint(equalTo: backgroundEffect.leadingAnchor),
-            splitView.trailingAnchor.constraint(equalTo: backgroundEffect.trailingAnchor),
+            splitView.topAnchor.constraint(equalTo: rootShell.topAnchor),
+            splitView.bottomAnchor.constraint(equalTo: rootShell.bottomAnchor),
+            splitView.leadingAnchor.constraint(equalTo: rootShell.leadingAnchor),
+            splitView.trailingAnchor.constraint(equalTo: rootShell.trailingAnchor),
         ])
     }
 }

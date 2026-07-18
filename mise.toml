@@ -90,6 +90,18 @@ fi
 scripts/dev/macos-launch.sh "$@"
 """
 
+[tasks.macos-filemanager-injection]
+description = "FileManagerHost Debug를 InjectionNext와 함께 빌드 후 실행"
+run = """
+scripts/dev/macos-launch.sh \
+  --workspace apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj/project.xcworkspace \
+  --scheme FileManagerHost-Dev \
+  --configuration Debug \
+  --injection-next \
+  --env "VOYAGER_PROJECT_ROOT=$PWD" \
+  "$@"
+"""
+
 # macOS 개발 앱 테스트 (worktree 내부 DerivedData 사용, xcbeautify 필터링)
 [tasks.macos-test]
 description = "macOS 개발 앱 테스트 (xcbeautify 필터링)"

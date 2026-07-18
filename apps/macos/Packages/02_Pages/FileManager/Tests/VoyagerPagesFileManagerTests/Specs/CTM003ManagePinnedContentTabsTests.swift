@@ -746,7 +746,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                         anchor: aiChatAnchor,
                         isPinned: false,
                         title: "AI Chat",
-                        iconName: "sparkles",
+                        iconName: "bubble.right",
                     ),
                 ],
                 activeTabID: tabID,
@@ -2883,7 +2883,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 page: .aiChat,
                 anchor: .aiChat(sessionID: "chat-1"),
                 title: "AI Chat",
-                iconName: "sparkles",
+                iconName: "bubble.right",
                 pinnedAt: pinnedAt,
             ),
             ContentTabPinnedRecord(
@@ -3030,7 +3030,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 page: .aiChat,
                 anchor: .aiChat(sessionID: "chat-1"),
                 title: "AI Chat",
-                iconName: "sparkles",
+                iconName: "bubble.right",
                 pinnedAt: pinnedAt,
             ),
         ])

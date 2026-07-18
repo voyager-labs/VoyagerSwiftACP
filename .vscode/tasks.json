@@ -194,6 +194,17 @@
       }
     },
     {
+      "type": "shell",
+      "label": "FileManagerHost Dev: Launch with Injection (Debug)",
+      "detail": "Open InjectionNext, build FileManagerHost with interposable symbols, and launch with project watching",
+      "command": "mise",
+      "args": ["run", "macos-filemanager-injection"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
       "type": "sweetpad",
       "action": "launch",
       "problemMatcher": [

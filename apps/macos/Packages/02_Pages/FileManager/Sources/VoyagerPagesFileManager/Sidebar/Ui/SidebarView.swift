@@ -1,11 +1,13 @@
 import AppKit
 import ComposableArchitecture
+import HotSwiftUI
 import SwiftUI
 import VoyagerEntitiesTag
 import VoyagerShared
 
 struct SidebarView: View {
     let store: StoreOf<FileManagerSidebarFeature>
+    let workspaceClient: WorkspaceClient
 
     @Environment(\.colorScheme)
     private var colorScheme
@@ -81,6 +83,7 @@ struct SidebarView: View {
                     ForEach(store.fixedLocationItems) { item in
                         FixedLocationButton(
                             item: item,
+                            workspaceClient: workspaceClient,
                             width: metrics.cellWidth,
                             height: fixedLocationCellHeight,
                             isHovered: fixedLocationHoveredItemID == item.id,
@@ -272,11 +275,13 @@ private struct ContentTabSidebarRow: View {
     @Environment(\.fileManagerKeyCommandFocusCoordinator)
     private var keyCommandFocusCoordinator
 
+    @ObserveInjection private var injection
+
     var body: some View {
         HStack(spacing: 8) {
             leadingIcon
             Text(item.title ?? "Untitled")
-                .foregroundColor(.primary)
+                .foregroundColor(item.isActive ? .primary : VoyagerDS.SystemColor.secondaryLabel)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer()
@@ -308,6 +313,7 @@ private struct ContentTabSidebarRow: View {
             keyCommandFocusCoordinator?.requestFocus()
         }
         .onHover(perform: onHover)
+        .enableInjection()
     }
 
     @ViewBuilder
@@ -317,7 +323,13 @@ private struct ContentTabSidebarRow: View {
                 .frame(width: 16)
                 .accessibilityHidden(true)
         } else {
-            SidebarSymbolIcon(systemName: item.iconName ?? "doc", size: 16, iconSize: 16)
+            SidebarSymbolIcon(
+                systemName: item.iconName ?? "doc",
+                size: 16,
+                iconSize: 12,
+                foregroundColor: item.isActive ? .accentColor : VoyagerDS.SystemColor.tertiaryLabel,
+            )
+            .symbolVariant(.fill)
         }
     }
 
@@ -355,6 +367,7 @@ private struct SidebarSymbolIcon: View {
     let systemName: String
     let size: CGFloat
     let iconSize: CGFloat
+    var foregroundColor: Color = .accentColor
 
     var body: some View {
         Group {
@@ -374,7 +387,7 @@ private struct SidebarSymbolIcon: View {
                     .accessibilityHidden(true)
             }
         }
-        .foregroundColor(.accentColor)
+        .foregroundColor(foregroundColor)
         .frame(width: size, height: size)
         .accessibilityHidden(true)
     }
@@ -390,6 +403,7 @@ private struct SidebarSymbolIcon: View {
 
 private struct FixedLocationButton: View {
     let item: FileManagerFixedLocationItem
+    let workspaceClient: WorkspaceClient
     let width: CGFloat
     let height: CGFloat
     let isHovered: Bool
@@ -399,9 +413,11 @@ private struct FixedLocationButton: View {
     @Environment(\.colorScheme)
     private var colorScheme
 
+    @State private var resolvedIcon: NSImage?
+
     var body: some View {
         Button(action: onSelect) {
-            SidebarSymbolIcon(systemName: item.iconName, size: height, iconSize: 20)
+            icon
                 .frame(width: width, height: height)
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -413,9 +429,35 @@ private struct FixedLocationButton: View {
                 )
         }
         .buttonStyle(.plain)
-        .help(item.accessibilityLabel)
+        .help("\(item.title)\n\(item.path)")
         .accessibilityLabel(item.accessibilityLabel)
         .onHover(perform: onHover)
+        .task(id: item.path) {
+            resolvedIcon = nil
+            let icon = await workspaceClient.iconForFileAsync(item.path)
+            guard !Task.isCancelled else { return }
+            resolvedIcon = icon
+        }
+    }
+
+    @ViewBuilder private var icon: some View {
+        if let resolvedIcon {
+            Image(nsImage: resolvedIcon)
+                .renderingMode(.original)
+                .resizable()
+                .interpolation(.high)
+                .antialiased(true)
+                .scaledToFit()
+                .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
+        } else {
+            Image(systemName: "folder")
+                .font(.system(size: 16, weight: .medium))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
+        }
     }
 
     private var backgroundColor: Color {
