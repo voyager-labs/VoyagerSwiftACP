@@ -1114,6 +1114,92 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertEqual(store.state.activeExternalOpenBatch, active)
     }
 
+    /// 첫 external window가 열려도 active batch terminal 전에는 pending URL을 flush하지 않는다.
+    func testFirstExternalWindowDefersPendingURLFlushUntilBatchAdvance() async throws {
+        let batchID = UUID(690)
+        let itemID = UUID(691)
+        let windowID = UUID(692)
+        let tabID = ContentTabID(rawValue: "pending-url-order-tab")
+        let fileURL = try XCTUnwrap(URL(string: "file:///tmp/pending-url-order"))
+        let pendingURL = try XCTUnwrap(URL(string: "voyager://pending-after-batch"))
+        let request = ExternalFileRouterBatchRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: itemID, index: 0, url: fileURL, source: .systemOpenEvent, mode: .open),
+            ],
+        )
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: itemID, tabID: tabID)],
+                ),
+            ],
+        )
+        var active = AppRootActiveExternalOpenBatch(
+            batch: .init(request: request, requiresInitialWindowFallback: true),
+            preferredWindowIDs: [],
+        )
+        active.normalizedItems = [
+            .init(
+                itemID: itemID,
+                index: 0,
+                url: fileURL,
+                source: .systemOpenEvent,
+                mode: .open,
+                outcome: .success(.directory(path: fileURL.path, revealPath: nil)),
+            ),
+        ]
+        active.placementPlan = plan
+        active.phase = .applying
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.pendingExternalURLs = [pendingURL]
+        initialState.windowManager.authorizedExternalOpenBatchID = batchID
+        initialState.activeExternalOpenBatch = active
+
+        let activationStarted = expectation(description: "native activation started")
+        let activationGate = AsyncStream<Void>.makeStream()
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerWindowClient.activate = { _ in
+                activationStarted.fulfill()
+                for await _ in activationGate.stream {
+                    break
+                }
+                return .becameKey
+            }
+        }
+        // store.exhaustivity = .off: child window mechanics를 건너뛰고 pending route ordering만 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.windowManager(.placement(.apply(
+            plan: plan,
+            reservationsByItemID: [
+                itemID: .init(id: tabID, anchor: .directory(path: fileURL.path)),
+            ],
+        ))))
+        await fulfillment(of: [activationStarted], timeout: 1)
+
+        XCTAssertEqual(store.state.pendingExternalURLs, [pendingURL])
+
+        activationGate.continuation.yield(())
+        activationGate.continuation.finish()
+        await store.receive(\.windowManager.delegate.externalOpenActivationCompleted, batchID)
+        await store.receive(\.externalOpenAdvanceToNextBatch, batchID)
+        await store.receive(\.externalFileRouter.receive, pendingURL)
+
+        XCTAssertTrue(store.state.pendingExternalURLs.isEmpty)
+        await store.finish()
+    }
+
     /// native activation이 끝나기 전에는 다음 batch를 시작하지 않는다.
     func testDelayedNativeActivationBlocksNextBatchStart() async throws {
         let firstBatchID = UUID(700)

@@ -353,7 +353,10 @@ struct AppRootFeature {
         if hasWindowsAfterAction {
             state.isExternalURLRouteInFlightWithoutWindow = false
         }
-        guard didOpenFirstWindow, canFlushPendingExternalRoutes(state) else { return .none }
+        guard didOpenFirstWindow,
+              state.activeExternalOpenBatch == nil,
+              canFlushPendingExternalRoutes(state)
+        else { return .none }
         return flushPendingExternalRoutes(state: &state)
     }
 
