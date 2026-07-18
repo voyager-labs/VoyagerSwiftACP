@@ -211,6 +211,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
         initialState.isComplete = true
         initialState.snapshot = staleSnapshot
         initialState.trialExpiresAt = referenceDate
+        initialState.updateEligibilityFailure = .missingReleaseIdentity
 
         let store = makeTestStore(initialState: initialState)
         // exhaustivity=.off: reducer가 다수 필드를 갱신하나 검증 대상은 regression 스펙 필드만.
@@ -225,6 +226,8 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
         XCTAssertNil(store.state.snapshot)
         XCTAssertNil(store.state.trialExpiresAt)
         XCTAssertFalse(store.state.isComplete)
+        XCTAssertNil(store.state.updateEligibilityFailure)
+        XCTAssertTrue(store.state.canStartLogin)
         XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .login)
         await store.finish()
     }

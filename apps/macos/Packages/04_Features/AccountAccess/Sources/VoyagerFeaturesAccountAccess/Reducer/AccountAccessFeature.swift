@@ -676,6 +676,7 @@ extension AccountAccessFeature {
         state.isSubmitting = false
         state.isComplete = false
         state.errorMessage = nil
+        state.updateEligibilityFailure = nil
     }
 
     private func clearStaleSignInState(_ state: inout State) {

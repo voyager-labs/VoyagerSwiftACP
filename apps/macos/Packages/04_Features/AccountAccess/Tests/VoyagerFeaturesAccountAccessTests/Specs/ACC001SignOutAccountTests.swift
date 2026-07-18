@@ -308,6 +308,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
         state.trialExpiresAt = referenceDate
         state.isComplete = true
         state.errorMessage = "stale error"
+        state.updateEligibilityFailure = .missingReleaseIdentity
 
         let store = makeTestStore(initialState: state)
 
@@ -319,6 +320,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.trialExpiresAt = nil
             state.isComplete = false
             state.errorMessage = nil
+            state.updateEligibilityFailure = nil
             state.isSessionExpired = true
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
@@ -328,6 +330,9 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.refreshDeadlineGeneration = 1
         }
 
+        XCTAssertNil(store.state.updateEligibilityFailure)
+        XCTAssertTrue(store.state.canStartLogin)
+        XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .login)
         await store.receive(\.delegate.signedOut)
         await store.finish()
     }
