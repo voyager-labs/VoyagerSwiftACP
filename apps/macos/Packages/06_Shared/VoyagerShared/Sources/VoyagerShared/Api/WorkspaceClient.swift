@@ -63,11 +63,14 @@ public struct WorkspaceClient: Sendable {
 }
 
 extension WorkspaceClient: DependencyKey {
-    private static let googleDriveBundleIdentifier = "com.google.drivefs"
     private static let iCloudDriveIconPath =
         "/System/Library/PrivateFrameworks/iCloudDriveCore.framework/Versions/A/Resources/iCloudDrive.icns"
 
-    nonisolated private static func resolvedIcon(forFile path: String, workspace: NSWorkspace) -> NSImage {
+    nonisolated private static func resolvedIcon(
+        forFile path: String,
+        workspace: NSWorkspace,
+        cloudStorageIconIndex: CloudStorageApplicationIconIndex,
+    ) -> NSImage {
         let url = URL(fileURLWithPath: path)
 
         if url.lastPathComponent == ".Trash",
@@ -83,10 +86,8 @@ extension WorkspaceClient: DependencyKey {
             }
         }
 
-        if isGoogleDriveURL(url),
-           let appURL = workspace.urlForApplication(withBundleIdentifier: googleDriveBundleIdentifier)
-        {
-            return workspace.icon(forFile: appURL.path)
+        if let cloudStorageIcon = cloudStorageIconIndex.icon(forProviderRoot: url) {
+            return cloudStorageIcon
         }
 
         if let resourceValues = try? url.resourceValues(forKeys: [.effectiveIconKey]),
@@ -105,13 +106,12 @@ extension WorkspaceClient: DependencyKey {
             && url.deletingLastPathComponent().lastPathComponent == "Mobile Documents"
     }
 
-    nonisolated private static func isGoogleDriveURL(_ url: URL) -> Bool {
-        url.deletingLastPathComponent().lastPathComponent == "CloudStorage"
-            && url.lastPathComponent.lowercased().hasPrefix("googledrive")
-    }
-
     nonisolated public static var liveValue: WorkspaceClient {
         nonisolated(unsafe) let workspace = NSWorkspace.shared
+        let cloudStorageIconIndex = CloudStorageApplicationIconIndex(
+            fileManager: FileManager.default,
+            workspace: workspace,
+        )
         return WorkspaceClient(
             urlForApplication: { bundleID in
                 workspace.urlForApplication(withBundleIdentifier: bundleID)
@@ -123,7 +123,11 @@ extension WorkspaceClient: DependencyKey {
                 workspace.urlsForApplications(toOpen: url)
             },
             iconForFile: { path in
-                resolvedIcon(forFile: path, workspace: workspace)
+                resolvedIcon(
+                    forFile: path,
+                    workspace: workspace,
+                    cloudStorageIconIndex: cloudStorageIconIndex,
+                )
             },
             iconForType: { type in
                 workspace.icon(for: type)
