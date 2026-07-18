@@ -335,27 +335,10 @@ struct AppRootFeature {
     ) -> Effect<Action> {
         switch action {
         case let .receiveExternalURL(url):
-            let shouldSchedule = state.windowManager.windows.isEmpty
-                || hasPendingExternalRoutes(state)
-                || !canFlushPendingExternalRoutes(state)
-            guard shouldSchedule else {
-                // idle warm-window untracked behavior는 기존 AppDelegate/menu route와 호환되게 유지한다.
-                return .send(.externalFileRouter(.receive(url)))
-            }
-
-            state.pendingExternalURLs.append(url)
-            guard state.windowManager.windows.isEmpty else {
-                return flushPendingExternalRoutes(state: &state)
-            }
-            state.isExternalURLRouteInFlightWithoutWindow = true
-            guard state.lifecycle.didFinishLaunching,
-                  !state.isExternalURLFlushDelegateScheduled
-            else { return .none }
-            state.isExternalURLFlushDelegateScheduled = true
-            return .send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
+            enqueueExternalURL(url, state: &state)
 
         default:
-            return .none
+            .none
         }
     }
 

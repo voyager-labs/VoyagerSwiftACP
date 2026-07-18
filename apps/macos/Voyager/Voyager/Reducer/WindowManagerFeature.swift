@@ -245,9 +245,6 @@ struct WindowManagerFeature {
             case let .trackedSingletonNativeOpenCompleted(requestID):
                 guard state.authorizedTrackedSingletonRequestID == requestID else { return .none }
                 state.authorizedTrackedSingletonRequestID = nil
-                if state.trackedSingletonWindow?.requestID == requestID {
-                    state.trackedSingletonWindow = nil
-                }
                 return trackedSingletonCompletionEffect(requestID)
 
             case let .placement(.plan(request)):
@@ -413,26 +410,14 @@ private extension WindowManagerFeature {
         _ command: Action.TrackedSingletonCommand,
         state: inout State,
     ) -> Effect<Action> {
-        if case let .revoke(requestID) = command {
-            return revokeTrackedSingleton(requestID: requestID, state: &state)
-        }
-        let requestID: UUID = switch command {
-        case let .openInitialWindow(id):
-            id
-        case let .openWindow(id, _, _):
-            id
-        case let .revoke(id):
-            id
-        }
-        guard state.authorizedTrackedSingletonRequestID == requestID else {
-            return trackedSingletonCompletionEffect(requestID)
-        }
-
         switch command {
-        case .revoke:
-            return .none
+        case let .revoke(requestID):
+            return revokeTrackedSingleton(requestID: requestID, state: &state)
 
-        case .openInitialWindow:
+        case let .openInitialWindow(requestID):
+            guard state.authorizedTrackedSingletonRequestID == requestID else {
+                return trackedSingletonCompletionEffect(requestID)
+            }
             guard state.windows.isEmpty else {
                 state.authorizedTrackedSingletonRequestID = nil
                 return trackedSingletonCompletionEffect(requestID)
@@ -444,7 +429,10 @@ private extension WindowManagerFeature {
                 state: &state,
             )
 
-        case let .openWindow(_, path, selectEntryID):
+        case let .openWindow(requestID, path, selectEntryID):
+            guard state.authorizedTrackedSingletonRequestID == requestID else {
+                return trackedSingletonCompletionEffect(requestID)
+            }
             return openTrackedWindowSession(
                 requestID: requestID,
                 path: path,
@@ -524,10 +512,10 @@ private extension WindowManagerFeature {
             .run { [fileManagerWindowClient, id = windowSession.id] send in
                 await fileManagerWindowClient.open(id)
                 await send(.trackedSingletonNativeOpenCompleted(requestID: requestID))
-            }
-            .cancellable(id: CancelID.trackedSingletonNativeOpen(requestID), cancelInFlight: true),
+            },
             bootstrapEffect,
         )
+        .cancellable(id: CancelID.trackedSingletonNativeOpen(requestID), cancelInFlight: true)
     }
 
     private func revokeTrackedSingleton(

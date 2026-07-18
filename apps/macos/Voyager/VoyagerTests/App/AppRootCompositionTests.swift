@@ -1722,6 +1722,27 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertEqual(state.activeExternalOpenBatch?.batch.request.batchID, batch.batchID)
     }
 
+    /// idle warm 첫 deep link도 tracked scheduler를 시작해 뒤이은 URL을 직렬화한다.
+    func testIdleWarmDeepLinksEnterTrackedSchedulerInFIFOOrder() throws {
+        let windowID = UUID(805)
+        let firstURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fwarm-first"))
+        let secondURL = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fwarm-second"))
+        var state = AppRootFeature.State()
+        state.lifecycle.accessGatePhase = .granted
+        state.windowManager.windows = [.init(id: windowID, window: .makeInitial(path: "/existing"))]
+        let feature = AppRootFeature()
+
+        withDependencies {
+            $0.uuid = .incrementing
+        } operation: {
+            _ = feature.enqueueExternalURL(firstURL, state: &state)
+            _ = feature.enqueueExternalURL(secondURL, state: &state)
+        }
+
+        XCTAssertEqual(state.activePendingExternalURL, .init(requestID: UUID(0), url: firstURL))
+        XCTAssertEqual(state.pendingExternalURLs, [secondURL])
+    }
+
     /// warm window의 새 deep link는 active singleton을 우회하지 않고 pending FIFO에 합류한다.
     func testWarmDeepLinkQueuesBehindActiveTrackedSingleton() async throws {
         let requestID = UUID(807)
@@ -1877,6 +1898,89 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertNil(store.state.externalFileRouter.activeTrackedRequestID)
         XCTAssertEqual(closedIDs.value, [windowID])
         openGate.continuation.finish()
+        await store.finish()
+    }
+
+    /// delayed fallback revoke는 native open뿐 아니라 후속 default bootstrap도 취소한다.
+    func testGateClosureDuringDelayedTrackedFallbackCancelsBootstrapAndRollsBack() async throws {
+        let requestID = UUID(820)
+        let windowID = UUID(821)
+        let url = try XCTUnwrap(URL(string: "voyager://open"))
+        let openStarted = expectation(description: "tracked fallback native open started")
+        let closeCompleted = expectation(description: "tracked fallback native close completed")
+        let openGate = AsyncStream<Void>.makeStream()
+        let ensureCount = LockIsolated(0)
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.activePendingExternalURL = .init(requestID: requestID, url: url)
+        initialState.externalFileRouter.activeTrackedRequestID = requestID
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerBuiltInCollectionClient.ensureAll = {
+                ensureCount.withValue { $0 += 1 }
+                return .init(recents: .failed, allTags: .failed)
+            }
+            $0.fileManagerWindowClient.open = { _ in
+                openStarted.fulfill()
+                for await _ in openGate.stream {
+                    break
+                }
+            }
+            $0.fileManagerWindowClient.close = { _ in closeCompleted.fulfill() }
+        }
+        // store.exhaustivity = .off: fallback revoke가 native open 이후 bootstrap까지 취소하는 경계를 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.externalFileRouter(.delegate(.openAppFallback(trackedRequestID: requestID)))) {
+            $0.windowManager.authorizedTrackedSingletonRequestID = requestID
+        }
+        await store.receive(\.windowManager.trackedSingleton)
+        await fulfillment(of: [openStarted], timeout: 1)
+        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await fulfillment(of: [closeCompleted], timeout: 1)
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(ensureCount.value, 0)
+        XCTAssertTrue(store.state.windowManager.windows.isEmpty)
+        XCTAssertEqual(store.state.pendingExternalURLs, [url])
+        openGate.continuation.finish()
+        await store.finish()
+    }
+
+    /// native open completion 뒤 parent terminal 전 gate closure도 retained ownership으로 rollback한다.
+    func testGateClosureAfterNativeOpenBeforeParentTerminalRollsBackWindow() async throws {
+        let requestID = UUID(822)
+        let windowID = UUID(823)
+        let url = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fterminal-gap"))
+        let closeCompleted = expectation(description: "terminal-gap native close completed")
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .granted
+        initialState.activePendingExternalURL = .init(requestID: requestID, url: url)
+        initialState.externalFileRouter.activeTrackedRequestID = requestID
+        initialState.windowManager.windows = [.init(id: windowID, window: .makeInitial(path: "/tmp/terminal-gap"))]
+        initialState.windowManager.trackedSingletonWindow = .init(requestID: requestID, windowID: windowID)
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.fileManagerWindowClient.close = { id in
+                XCTAssertEqual(id, windowID)
+                closeCompleted.fulfill()
+            }
+        }
+        // store.exhaustivity = .off: native completion과 queued parent terminal 사이 revoke ownership만 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.accountAccess(.delegate(.signedOut))))
+        await fulfillment(of: [closeCompleted], timeout: 1)
+        await store.skipReceivedActions()
+
+        XCTAssertTrue(store.state.windowManager.windows.isEmpty)
+        XCTAssertNil(store.state.windowManager.trackedSingletonWindow)
+        XCTAssertEqual(store.state.pendingExternalURLs, [url])
         await store.finish()
     }
 
@@ -2058,7 +2162,12 @@ final class AppRootCompositionTests: XCTestCase {
         openGate.continuation.finish()
         await store.receive(\.windowManager.trackedSingletonNativeOpenCompleted, requestID)
         await store.receive(\.windowManager.delegate.trackedSingletonCompleted, requestID)
-        await store.receive(\.externalFileRouter.singletonRequestCompleted, requestID)
+        XCTAssertNil(store.state.activePendingExternalURL)
+        XCTAssertNil(store.state.externalFileRouter.activeTrackedRequestID)
+        XCTAssertNil(store.state.windowManager.trackedSingletonWindow)
+        XCTAssertNotNil(store.state.activeExternalOpenBatch)
+        XCTAssertTrue(store.state.externalOpenBatchQueue.isEmpty)
+        await store.receive(\.externalFileRouter.receiveBatch)
 
         XCTAssertNil(store.state.activePendingExternalURL)
         XCTAssertNotNil(store.state.activeExternalOpenBatch)

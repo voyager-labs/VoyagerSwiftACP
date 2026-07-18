@@ -34,6 +34,19 @@ extension AppRootFeature {
         }
     }
 
+    func enqueueExternalURL(_ url: URL, state: inout State) -> Effect<Action> {
+        state.pendingExternalURLs.append(url)
+        guard state.windowManager.windows.isEmpty else {
+            return flushPendingExternalRoutes(state: &state)
+        }
+        state.isExternalURLRouteInFlightWithoutWindow = true
+        guard state.lifecycle.didFinishLaunching,
+              !state.isExternalURLFlushDelegateScheduled
+        else { return .none }
+        state.isExternalURLFlushDelegateScheduled = true
+        return .send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
+    }
+
     /// pending deep-link occurrence 하나만 시작하고 Router terminal까지 다음 작업을 막는다.
     func startNextPendingExternalURLIfPossible(state: inout State) -> Effect<Action> {
         guard state.activePendingExternalURL == nil,
@@ -185,26 +198,39 @@ extension AppRootFeature {
     ) -> Effect<Action> {
         switch action {
         case let .windowManager(.delegate(.externalOpenPlacementCompleted(completion))):
-            return consumeExternalOpenPlacementCompletion(completion, state: &state)
+            consumeExternalOpenPlacementCompletion(completion, state: &state)
         case let .windowManager(.delegate(.externalOpenApplyCompleted(completion))):
-            return consumeExternalOpenPlacementApplicationCompletion(completion, state: &state)
+            consumeExternalOpenPlacementApplicationCompletion(completion, state: &state)
         case let .externalOpenAlertCompleted(completion):
-            return consumeExternalOpenAlertCompletion(completion, state: &state)
+            consumeExternalOpenAlertCompletion(completion, state: &state)
         case let .windowManager(.delegate(.externalOpenActivationCompleted(batchID))):
-            return consumeExternalOpenActivation(batchID: batchID, state: &state)
+            consumeExternalOpenActivation(batchID: batchID, state: &state)
         case let .windowManager(.delegate(.trackedSingletonCompleted(requestID))):
-            guard state.activePendingExternalURL?.requestID == requestID,
-                  canFlushPendingExternalRoutes(state)
-            else { return .none }
-            if state.windowManager.authorizedTrackedSingletonRequestID == requestID {
-                state.windowManager.authorizedTrackedSingletonRequestID = nil
-            }
-            return .send(.externalFileRouter(.singletonRequestCompleted(requestID)))
+            consumeTrackedSingletonCompletion(requestID: requestID, state: &state)
         case let .externalOpenAdvanceToNextBatch(batchID):
-            return advanceExternalOpenBatch(batchID: batchID, state: &state)
+            advanceExternalOpenBatch(batchID: batchID, state: &state)
         default:
-            return .none
+            .none
         }
+    }
+
+    private func consumeTrackedSingletonCompletion(
+        requestID: UUID,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.activePendingExternalURL?.requestID == requestID,
+              canFlushPendingExternalRoutes(state)
+        else { return .none }
+        if state.windowManager.authorizedTrackedSingletonRequestID == requestID {
+            state.windowManager.authorizedTrackedSingletonRequestID = nil
+        }
+        if state.windowManager.trackedSingletonWindow?.requestID == requestID {
+            state.windowManager.trackedSingletonWindow = nil
+        }
+        if state.externalFileRouter.activeTrackedRequestID == requestID {
+            state.externalFileRouter.activeTrackedRequestID = nil
+        }
+        return consumePendingExternalURLCompletion(requestID: requestID, state: &state)
     }
 
     func consumeExternalOpenPlacementCompletion(
