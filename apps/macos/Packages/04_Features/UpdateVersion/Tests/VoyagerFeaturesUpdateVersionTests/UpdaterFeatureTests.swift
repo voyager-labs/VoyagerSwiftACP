@@ -44,6 +44,44 @@ final class UpdaterFeatureTests: XCTestCase {
         XCTAssertEqual(calls.value, ["eligibility:true", "configure", "automatic", "start"])
     }
 
+    func testRepeatedAccessGrantRefreshesEligibilityWithoutRestartingUpdater() async {
+        let calls = LockIsolated<[String]>([])
+        let refreshedUpdatesThrough = Date(timeIntervalSince1970: 1_700_000_000)
+        let store = TestStore(initialState: UpdaterState()) {
+            UpdaterFeature()
+        } withDependencies: {
+            $0.updaterClient.setAccessEligibility = { isEligible, _, _ in
+                calls.withValue { $0.append("eligibility:\(isEligible)") }
+            }
+            $0.updaterClient.configure = {
+                calls.withValue { $0.append("configure") }
+            }
+            $0.updaterClient.startAtLaunch = {
+                calls.withValue { $0.append("start") }
+            }
+            $0.updaterClient.setAutomaticUpdate = { _ in
+                calls.withValue { $0.append("automatic") }
+            }
+        }
+
+        await store.send(.accessGranted(updateStatus: "active", updatesThrough: nil)) {
+            $0.isAccessEligible = true
+            $0.updateStatus = "active"
+            $0.didConfigure = true
+            $0.didStartAtLaunch = true
+        }
+        await store.send(.accessGranted(updateStatus: "renewed", updatesThrough: refreshedUpdatesThrough)) {
+            $0.updateStatus = "renewed"
+            $0.updatesThrough = refreshedUpdatesThrough
+        }
+        await store.finish()
+
+        XCTAssertEqual(
+            calls.value,
+            ["eligibility:true", "configure", "automatic", "start", "eligibility:true"],
+        )
+    }
+
     func testIneligibleCandidateUsesStableRecoveryReason() throws {
         XCTAssertThrowsError(try SparkleUpdateEligibilityGate.require(false)) { error in
             let error = error as NSError

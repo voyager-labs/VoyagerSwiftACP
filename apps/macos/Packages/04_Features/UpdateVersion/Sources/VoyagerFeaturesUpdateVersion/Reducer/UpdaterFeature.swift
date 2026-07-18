@@ -19,18 +19,27 @@ public struct UpdaterFeature: Sendable {
         Reduce { state, action in
             switch action {
             case let .accessGranted(updateStatus, updatesThrough):
-                guard !state.isAccessEligible else { return .none }
+                let shouldConfigure = !state.didConfigure
+                let shouldStartAtLaunch = !state.didStartAtLaunch
                 state.isAccessEligible = true
                 state.updateStatus = updateStatus
                 state.updatesThrough = updatesThrough
-                state.didConfigure = true
-                state.didStartAtLaunch = true
+                if shouldConfigure {
+                    state.didConfigure = true
+                }
+                if shouldStartAtLaunch {
+                    state.didStartAtLaunch = true
+                }
                 return .run { _ in
                     await updaterClient.setAccessEligibility(true, updateStatus, updatesThrough)
-                    await updaterClient.configure()
-                    let enabled = userDefaultsClient.object(SettingsKeys.automaticUpdate) as? Bool ?? false
-                    await updaterClient.setAutomaticUpdate(enabled)
-                    await updaterClient.startAtLaunch()
+                    if shouldConfigure {
+                        await updaterClient.configure()
+                        let enabled = userDefaultsClient.object(SettingsKeys.automaticUpdate) as? Bool ?? false
+                        await updaterClient.setAutomaticUpdate(enabled)
+                    }
+                    if shouldStartAtLaunch {
+                        await updaterClient.startAtLaunch()
+                    }
                 }
             case .accessRevoked:
                 guard state.isAccessEligible else { return .none }
