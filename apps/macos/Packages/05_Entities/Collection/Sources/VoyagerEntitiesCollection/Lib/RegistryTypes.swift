@@ -148,7 +148,7 @@ public struct OperatorDefinition: Decodable, Equatable, Sendable {
     }
 }
 
-public enum ValueShape: String, Decodable, Sendable {
+public enum ValueShape: String, Decodable, Equatable, Sendable {
     case none
     case single
     case list
@@ -172,6 +172,17 @@ public enum ValueCount: Decodable, Equatable, Sendable {
         throw DecodingError.dataCorruptedError(
             in: container, debugDescription: "Unsupported value_count: \(text)",
         )
+    }
+}
+
+public struct RegistryContractValidationError: Error, CustomStringConvertible, Sendable {
+    public let propertyKey: String
+    public let operatorCode: String
+    public let type: SystemPropertyTypeKey
+    public let reason: String
+
+    public var description: String {
+        "Invalid condition registry contract for property \(propertyKey), operator \(operatorCode), type \(type.rawValue): \(reason)"
     }
 }
 

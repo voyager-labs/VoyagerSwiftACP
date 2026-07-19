@@ -743,17 +743,14 @@ private func makeSemanticCondition(
     propertyLabel: String,
     values: [String],
 ) -> Condition {
-    Condition(
+    ConditionFixture.make(
         propertyKey: propertyKey,
         propertyLabel: propertyLabel,
         propertyType: "string",
         operatorCode: "eq",
         operatorLabel: "Equals",
-        operatorValueArity: 1,
-        operatorValueUIKind: "singleText",
-        valueType: "string",
+        contract: .init(shape: .single, count: .fixed(1), input: .singleText),
         values: values,
-        isActive: true,
     )
 }
 
