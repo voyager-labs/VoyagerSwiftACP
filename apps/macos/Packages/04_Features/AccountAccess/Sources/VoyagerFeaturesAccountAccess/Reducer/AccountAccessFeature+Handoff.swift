@@ -11,7 +11,18 @@ extension AccountAccessFeature {
             return .none
         }
 
-        let transaction = AccountAccessHandoffTransaction(context: context, scope: scope)
+        let isReauthentication = state.canStartReauthentication
+        if isReauthentication {
+            state.isSubmitting = false
+            invalidateSessionSync(&state)
+            state.revalidationGeneration += 1
+        }
+
+        let transaction = AccountAccessHandoffTransaction(
+            context: context,
+            scope: scope,
+            startedWithAccountSession: isReauthentication,
+        )
         state.isSignInInProgress = true
         state.didSignInFail = false
         state.handoffGeneration &+= 1
@@ -19,6 +30,8 @@ extension AccountAccessFeature {
         let generation = state.handoffGeneration
 
         return .merge(
+            isReauthentication ? .cancel(id: CancelID.sessionSync) : .none,
+            isReauthentication ? .cancel(id: CancelID.sessionRevalidation) : .none,
             .cancel(id: CancelID.handoffCallbackTimeout(scope)),
             cancelHandoffClaimAndExchange(scope: scope),
             .run { [signInHandoffClient] send in
@@ -103,8 +116,9 @@ extension AccountAccessFeature {
     ) -> Effect<Action> {
         let scope = transaction.scope
         let expectedState = ownedHandoffState(state)
+        let preservesPriorSessionAuthority = preservesPriorSessionAuthority(state, transaction: transaction)
         state.isSignInInProgress = false
-        state.didSignInFail = true
+        state.didSignInFail = !preservesPriorSessionAuthority
         state.errorMessage = errorMessage ?? state.errorMessage
         state.handoffPendingState = nil
         state.handoffExchangeState = nil
@@ -142,13 +156,16 @@ extension AccountAccessFeature {
         _ state: inout State,
         pendingState: String,
     ) -> Effect<Action> {
-        guard state.handoffPendingState == pendingState else {
+        guard let transaction = state.handoffTransaction,
+              state.handoffPendingState == pendingState
+        else {
             return .none
         }
 
         let scope = handoffScope(state)
+        let preservesPriorSessionAuthority = preservesPriorSessionAuthority(state, transaction: transaction)
         state.isSignInInProgress = false
-        state.didSignInFail = true
+        state.didSignInFail = !preservesPriorSessionAuthority
         state.handoffPendingState = nil
         state.handoffExchangeState = nil
         state.handoffTransaction = nil
@@ -214,10 +231,12 @@ extension AccountAccessFeature {
         generation: UInt64,
         result: Result<AccountAccessHandoffCompletion, AppHandoffExchangeError>,
     ) -> Effect<Action> {
-        guard state.handoffGeneration == generation,
+        guard let transaction = state.handoffTransaction,
+              state.handoffGeneration == generation,
               state.handoffExchangeState == pendingState
         else { return .none }
         let scope = handoffScope(state)
+        let preservesPriorSessionAuthority = preservesPriorSessionAuthority(state, transaction: transaction)
         state.handoffExchangeState = nil
         state.handoffTransaction = nil
 
@@ -243,8 +262,10 @@ extension AccountAccessFeature {
 
         case .failure:
             state.isSignInInProgress = false
-            state.didSignInFail = true
-            state.hasAccountSession = false
+            state.didSignInFail = !preservesPriorSessionAuthority
+            if !preservesPriorSessionAuthority {
+                state.hasAccountSession = false
+            }
             state.handoffPendingState = nil
             return .cancel(id: CancelID.handoffCallbackTimeout(scope))
         }
@@ -256,7 +277,8 @@ extension AccountAccessFeature {
         generation: UInt64,
         session: AccountSession,
     ) -> Effect<Action> {
-        guard state.handoffGeneration == generation,
+        guard state.handoffTransaction != nil,
+              state.handoffGeneration == generation,
               state.handoffExchangeState == pendingState
         else {
             return .none
@@ -278,6 +300,12 @@ extension AccountAccessFeature {
                     )),
                 ))
             } catch {
+                do {
+                    try await sessionClient.discardPersistedSession(session)
+                } catch {
+                    await send(._handoffPersistenceRollbackFailed(generation: generation))
+                    return
+                }
                 await send(._handoffExchangeCompleted(
                     state: pendingState,
                     generation: generation,
@@ -389,5 +417,12 @@ extension AccountAccessFeature {
 
     func handoffScope(_ state: State) -> AccountAccessHandoffScope {
         state.handoffTransaction?.scope ?? .onboarding
+    }
+
+    private func preservesPriorSessionAuthority(
+        _ state: State,
+        transaction: AccountAccessHandoffTransaction,
+    ) -> Bool {
+        transaction.startedWithAccountSession && state.hasAccountSession && !state.isSessionExpired
     }
 }

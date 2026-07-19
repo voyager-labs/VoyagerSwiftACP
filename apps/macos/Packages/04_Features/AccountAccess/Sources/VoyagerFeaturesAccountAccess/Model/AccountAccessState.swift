@@ -10,10 +10,17 @@ public enum AccountAccessHandoffScope: Hashable, Sendable {
 public struct AccountAccessHandoffTransaction: Equatable, Sendable {
     public let context: AppHandoffContext
     public let scope: AccountAccessHandoffScope
+    /// 재인증 실패 시 기존 session authority를 보존하기 위한 시작 시점의 고정 사실.
+    public let startedWithAccountSession: Bool
 
-    public init(context: AppHandoffContext, scope: AccountAccessHandoffScope) {
+    public init(
+        context: AppHandoffContext,
+        scope: AccountAccessHandoffScope,
+        startedWithAccountSession: Bool = false,
+    ) {
         self.context = context
         self.scope = scope
+        self.startedWithAccountSession = startedWithAccountSession
     }
 }
 
@@ -153,8 +160,14 @@ public struct AccountAccessState: Equatable {
 
     // MARK: - ONB-002 Affordances
 
+    var canStartReauthentication: Bool {
+        accountAccessAuthAxis == .signedIn && accessUnlockPrimaryCTA == .pending
+    }
+
     public var canStartLogin: Bool {
-        accountAccessAuthAxis == .signedOut || accountAccessAuthAxis == .signInFailed
+        accountAccessAuthAxis == .signedOut
+            || accountAccessAuthAxis == .signInFailed
+            || canStartReauthentication
     }
 
     public var canRefreshAccess: Bool {
