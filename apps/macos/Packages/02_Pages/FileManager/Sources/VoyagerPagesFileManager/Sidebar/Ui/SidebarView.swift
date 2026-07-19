@@ -59,7 +59,6 @@ struct SidebarView: View {
         .background(Color.clear)
         .navigationSplitViewColumnWidth(ideal: sidebarStore.sidebarWidth)
         .onDisappear {
-            contentTabReorderSessionStore.clear()
             activeContentTabReorderBoundaryID = nil
         }
     }
@@ -218,7 +217,7 @@ struct SidebarView: View {
         _ items: [ContentTabProjection.ContentTabSidebarItem],
     ) -> some View {
         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-            entryDroppableContentTabRow(item)
+            entryDroppableContentTabRow(item, reorderDragSource: nil)
 
             if index < items.count - 1 {
                 Spacer()
@@ -277,17 +276,16 @@ struct SidebarView: View {
     private func reorderableContentTabRow(
         _ item: ContentTabProjection.ContentTabSidebarItem,
     ) -> some View {
-        entryDroppableContentTabRow(item)
-            .onDrag {
-                let payload = ContentTabReorderDragPayload(
+        entryDroppableContentTabRow(
+            item,
+            reorderDragSource: ContentTabReorderDragSourceConfiguration(
+                payload: ContentTabReorderDragPayload(
                     sourceID: item.id,
                     dragScopeID: contentTabReorderDragScopeID,
-                )
-                return (try? ContentTabReorderItemProviderFactory.makeProvider(
-                    payload: payload,
-                    sessionStore: contentTabReorderSessionStore,
-                )) ?? NSItemProvider()
-            }
+                ),
+                sessionStore: contentTabReorderSessionStore,
+            ),
+        )
     }
 
     private func contentTabReorderDropSlot(
@@ -315,18 +313,23 @@ struct SidebarView: View {
     @ViewBuilder
     private func entryDroppableContentTabRow(
         _ item: ContentTabProjection.ContentTabSidebarItem,
+        reorderDragSource: ContentTabReorderDragSourceConfiguration?,
     ) -> some View {
         if let dropTarget = FileManagerSidebarEntryDropDelegate.target(for: item) {
-            contentTabSidebarRow(item)
+            contentTabSidebarRow(item, reorderDragSource: reorderDragSource)
                 .onDrop(of: [.fileURL], delegate: entryDropDelegate(for: dropTarget))
         } else {
-            contentTabSidebarRow(item)
+            contentTabSidebarRow(item, reorderDragSource: reorderDragSource)
         }
     }
 
-    private func contentTabSidebarRow(_ item: ContentTabProjection.ContentTabSidebarItem) -> some View {
+    private func contentTabSidebarRow(
+        _ item: ContentTabProjection.ContentTabSidebarItem,
+        reorderDragSource: ContentTabReorderDragSourceConfiguration?,
+    ) -> some View {
         ContentTabSidebarRow(
             item: item,
+            reorderDragSource: reorderDragSource,
             isHovered: contentTabHoveredItemID == item.id,
             isDropTarget: sidebarEntryDropTarget == .contentTab(item.id),
             isSelected: contentTabSelectionPresentation.isSelected(item.id),
@@ -393,6 +396,7 @@ struct SidebarView: View {
 
 private struct ContentTabSidebarRow: View {
     let item: ContentTabProjection.ContentTabSidebarItem
+    let reorderDragSource: ContentTabReorderDragSourceConfiguration?
     let isHovered: Bool
     let isDropTarget: Bool
     let isSelected: Bool
@@ -414,6 +418,7 @@ private struct ContentTabSidebarRow: View {
     var body: some View {
         ContentTabSidebarButtonHost(
             item: item,
+            reorderDragSource: reorderDragSource,
             backgroundColor: backgroundColor,
             accessibilityStateValue: accessibilityStateValue,
             onActivate: handlePrimaryAction,
@@ -486,6 +491,7 @@ private struct ContentTabSidebarRow: View {
 
 private struct ContentTabSidebarButtonHost: NSViewRepresentable {
     let item: ContentTabProjection.ContentTabSidebarItem
+    let reorderDragSource: ContentTabReorderDragSourceConfiguration?
     let backgroundColor: Color
     let accessibilityStateValue: String
     let onActivate: () -> Void
@@ -509,6 +515,10 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
         update(button)
     }
 
+    static func dismantleNSView(_ button: ContentTabSidebarButton, coordinator _: ()) {
+        button.dismantle()
+    }
+
     private func update(_ button: ContentTabSidebarButton) {
         button.update(
             rootView: AnyView(hostedRoot),
@@ -517,6 +527,7 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
             duplicateAccessibilityIdentifier: "duplicate-content-tab-\(item.id)",
             isPinned: item.isPinned,
             isEnabled: true,
+            reorderDragSource: reorderDragSource,
             onActivate: onActivate,
             onToggleSelection: onToggleSelection,
             onSelectRange: onSelectRange,
@@ -536,7 +547,7 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
 }
 
 @MainActor
-final class ContentTabSidebarButton: NSButton {
+final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     private enum PointerRoute {
         case activate
         case toggleSelection
@@ -544,8 +555,25 @@ final class ContentTabSidebarButton: NSButton {
         case contextMenu
     }
 
+    private struct PointerTracking {
+        let mouseDownEvent: NSEvent
+        let route: PointerRoute
+        let localOrigin: NSPoint
+        let dragSource: ContentTabReorderDragSourceConfiguration
+    }
+
+    private enum PointerState {
+        case idle
+        case tracking(PointerTracking)
+        case dragging(ContentTabReorderPasteboardWriter)
+    }
+
+    private static let reorderDragThreshold: CGFloat = 4
+
     private let presentationView = ContentTabSidebarPresentationHostingView(rootView: AnyView(EmptyView()))
+    private var pointerState = PointerState.idle
     private var pointerRoute: PointerRoute?
+    private var reorderDragSource: ContentTabReorderDragSourceConfiguration?
     private var onActivate: () -> Void = {}
     private var onToggleSelection: () -> Void = {}
     private var onSelectRange: () -> Void = {}
@@ -555,6 +583,8 @@ final class ContentTabSidebarButton: NSButton {
     private var onClose: () -> Void = {}
     private var duplicateAccessibilityIdentifier = ""
     private var isPinned = false
+
+    var dragSessionStartOverride: (([NSDraggingItem], NSEvent) -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -577,6 +607,7 @@ final class ContentTabSidebarButton: NSButton {
         duplicateAccessibilityIdentifier: String,
         isPinned: Bool,
         isEnabled: Bool,
+        reorderDragSource: ContentTabReorderDragSourceConfiguration?,
         onActivate: @escaping () -> Void,
         onToggleSelection: @escaping () -> Void,
         onSelectRange: @escaping () -> Void,
@@ -585,6 +616,7 @@ final class ContentTabSidebarButton: NSButton {
         onUnpin: @escaping () -> Void,
         onClose: @escaping () -> Void,
     ) {
+        self.reorderDragSource = reorderDragSource
         self.onActivate = onActivate
         self.onToggleSelection = onToggleSelection
         self.onSelectRange = onSelectRange
@@ -611,9 +643,63 @@ final class ContentTabSidebarButton: NSButton {
             return
         }
 
-        pointerRoute = route(for: event)
-        defer { pointerRoute = nil }
-        super.mouseDown(with: event)
+        let route = route(for: event)
+        if case .contextMenu = route {
+            pointerRoute = route
+            defer { pointerRoute = nil }
+            super.mouseDown(with: event)
+            return
+        }
+        guard isEnabled, let reorderDragSource else {
+            pointerRoute = route
+            defer { pointerRoute = nil }
+            super.mouseDown(with: event)
+            return
+        }
+
+        trackPointer(
+            from: PointerTracking(
+                mouseDownEvent: event,
+                route: route,
+                localOrigin: convert(event.locationInWindow, from: nil),
+                dragSource: reorderDragSource,
+            ),
+        )
+    }
+
+    func sourceOperationMask(for context: NSDraggingContext) -> NSDragOperation {
+        switch context {
+        case .withinApplication:
+            .move
+        case .outsideApplication:
+            []
+        @unknown default:
+            []
+        }
+    }
+
+    func draggingSession(
+        _: NSDraggingSession,
+        sourceOperationMaskFor context: NSDraggingContext,
+    ) -> NSDragOperation {
+        sourceOperationMask(for: context)
+    }
+
+    func draggingSession(
+        _: NSDraggingSession,
+        endedAt _: NSPoint,
+        operation _: NSDragOperation,
+    ) {
+        cleanupDragging()
+    }
+
+    func ignoreModifierKeys(for _: NSDraggingSession) -> Bool {
+        true
+    }
+
+    func dismantle() {
+        cleanupDragging()
+        cancelPointerTracking()
     }
 
     private func configureControl() {
@@ -638,6 +724,114 @@ final class ContentTabSidebarButton: NSButton {
             presentationView.topAnchor.constraint(equalTo: topAnchor),
             presentationView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+    }
+
+    private func trackPointer(from tracking: PointerTracking) {
+        pointerState = .tracking(tracking)
+        isHighlighted = true
+        guard let window else {
+            cancelPointerTracking()
+            return
+        }
+
+        let eventMask: NSEvent.EventTypeMask = [.leftMouseDragged, .leftMouseUp]
+        while case .tracking = pointerState {
+            guard let event = window.nextEvent(
+                matching: eventMask,
+                until: .distantFuture,
+                inMode: .eventTracking,
+                dequeue: true,
+            ) else {
+                cancelPointerTracking()
+                return
+            }
+
+            let localLocation = convert(event.locationInWindow, from: nil)
+            switch event.type {
+            case .leftMouseDragged:
+                isHighlighted = bounds.contains(localLocation)
+                if movement(from: tracking.localOrigin, to: localLocation)
+                    >= Self.reorderDragThreshold
+                {
+                    startDragging(from: tracking)
+                    return
+                }
+            case .leftMouseUp:
+                finishPointerTracking(tracking, mouseUpLocation: localLocation)
+                return
+            default:
+                break
+            }
+        }
+    }
+
+    private func finishPointerTracking(
+        _ tracking: PointerTracking,
+        mouseUpLocation: NSPoint,
+    ) {
+        pointerState = .idle
+        isHighlighted = false
+        guard isEnabled, bounds.contains(mouseUpLocation) else { return }
+
+        pointerRoute = tracking.route
+        defer { pointerRoute = nil }
+        if let action {
+            sendAction(action, to: target)
+        }
+    }
+
+    private func startDragging(from tracking: PointerTracking) {
+        do {
+            let writer = try ContentTabReorderPasteboardWriter(
+                payload: tracking.dragSource.payload,
+                sessionStore: tracking.dragSource.sessionStore,
+            )
+            let draggingItem = NSDraggingItem(pasteboardWriter: writer)
+            draggingItem.setDraggingFrame(bounds, contents: draggingImage())
+            pointerState = .dragging(writer)
+            isHighlighted = false
+
+            if let dragSessionStartOverride {
+                dragSessionStartOverride([draggingItem], tracking.mouseDownEvent)
+            } else {
+                beginDraggingSession(
+                    with: [draggingItem],
+                    event: tracking.mouseDownEvent,
+                    source: self,
+                )
+            }
+        } catch {
+            cancelPointerTracking()
+        }
+    }
+
+    private func draggingImage() -> NSImage {
+        let image = NSImage(size: bounds.size)
+        guard let representation = bitmapImageRepForCachingDisplay(in: bounds) else {
+            return image
+        }
+        cacheDisplay(in: bounds, to: representation)
+        image.addRepresentation(representation)
+        return image
+    }
+
+    private func movement(from origin: NSPoint, to location: NSPoint) -> CGFloat {
+        hypot(location.x - origin.x, location.y - origin.y)
+    }
+
+    private func cleanupDragging() {
+        guard case let .dragging(writer) = pointerState else { return }
+        writer.cleanupOwnedToken()
+        pointerState = .idle
+        isHighlighted = false
+    }
+
+    private func cancelPointerTracking() {
+        if case .tracking = pointerState {
+            pointerState = .idle
+        }
+        pointerRoute = nil
+        isHighlighted = false
     }
 
     private func route(for event: NSEvent) -> PointerRoute {

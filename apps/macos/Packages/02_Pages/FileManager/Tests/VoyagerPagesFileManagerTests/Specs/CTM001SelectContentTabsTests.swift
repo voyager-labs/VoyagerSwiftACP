@@ -89,17 +89,53 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         }
     }
 
-    /// CTM-001-select_content_tabs: native NSButton drag-out tracking cancellation 검증
-    /// modifier pointer가 native tracking boundary 밖에서 mouse-up되면 selection callback이 확정되지 않는지 확인함
-    /// - 검증 내용: queued mouseDragged/mouseUp 이후 activate/toggle/range callback 총합
-    /// - 사전 조건: 실제 window의 Command-primary down 뒤 button bounds 바깥으로 drag와 mouse-up을 post함
-    /// - 기대 결과: 모든 primary callback이 0회이며 outer drag owner가 이어받을 수 있음
-    func testContentTabButton_dragOutsideCancelsNativePrimaryAction() throws {
+    /// CTM-001-select_content_tabs: reorderable button의 sub-threshold drag-out 취소 검증
+    /// 4pt 미만 이동 뒤 bounds 밖 mouse-up은 click과 reorder drag 어느 쪽도 확정하지 않음을 확인함
+    /// - 검증 내용: queued mouseDragged/mouseUp 이후 primary callback과 drag-session start 총합
+    /// - 사전 조건: 실제 window button 우측 경계 안쪽 down에서 2pt 이동한 바깥 mouse-up event
+    /// - 기대 결과: activate/toggle/range와 drag-session start가 모두 0회임
+    func testContentTabButton_subthresholdDragOutsideCancelsPrimaryAction() throws {
         try withContentTabButtonFixture { fixture in
-            try dispatchPrimaryDragOutside(on: fixture.button, modifiers: .command)
+            try dispatchSubthresholdDragOutside(on: fixture.button, modifiers: .command)
 
             XCTAssertTrue(fixture.recorder.routes.isEmpty)
-            XCTAssertLessThanOrEqual(fixture.recorder.routes.count, 1)
+            XCTAssertTrue(fixture.recorder.draggingItems.isEmpty)
+        }
+    }
+
+    /// CTM-001-select_content_tabs: reorder threshold를 넘으면 drag만 정확히 한 번 시작함
+    /// 실제 mouse-down event를 보존한 source가 selection callback 없이 native writer를 시작하는지 확인함
+    /// - 검증 내용: above-threshold drag의 session start 수, down event identity, writer token, primary callback 총합
+    /// - 사전 조건: 실제 NSWindow의 unpinned button과 4pt 임계값을 넘는 leftMouseDragged event
+    /// - 기대 결과: drag-session은 1회, selection callback은 0회이고 dismantle은 writer-owned token만 제거함
+    func testContentTabButton_thresholdDragStartsOnceWithoutPrimaryAction() throws {
+        try withContentTabButtonFixture { fixture in
+            try dispatchThresholdDrag(on: fixture.button, modifiers: .shift)
+
+            XCTAssertTrue(fixture.recorder.routes.isEmpty)
+            XCTAssertEqual(fixture.recorder.draggingItems.count, 1)
+            XCTAssertEqual(fixture.recorder.dragStartEvents.map(\.type), [.leftMouseDown])
+            let draggingItem = try XCTUnwrap(fixture.recorder.draggingItems.first?.first)
+            let writer = try XCTUnwrap(draggingItem.item as? ContentTabReorderPasteboardWriter)
+            XCTAssertEqual(fixture.sessionStore.entry?.token, writer.token)
+
+            fixture.button.dismantle()
+            XCTAssertNil(fixture.sessionStore.entry)
+        }
+    }
+
+    /// CTM-001-select_content_tabs: pinned button은 reorder drag source를 시작하지 않음
+    /// non-reorderable row가 기존 NSButton tracking만 사용하고 drag seam에는 도달하지 않는지 확인함
+    /// - 검증 내용: threshold 초과 pointer sequence의 drag-session start와 primary callback 총합
+    /// - 사전 조건: drag-source configuration이 nil인 실제 pinned ContentTabSidebarButton
+    /// - 기대 결과: drag-session과 primary callback이 모두 0회임
+    func testContentTabButton_pinnedRowNeverStartsReorderDrag() throws {
+        try withContentTabButtonFixture(isPinned: true) { fixture in
+            try dispatchPrimaryDragOutside(on: fixture.button, modifiers: [])
+
+            XCTAssertTrue(fixture.recorder.draggingItems.isEmpty)
+            XCTAssertTrue(fixture.recorder.routes.isEmpty)
+            XCTAssertNil(fixture.sessionStore.entry)
         }
     }
 
@@ -125,20 +161,37 @@ final class CTM001SelectContentTabsTests: XCTestCase {
     func testContentTabButton_updateUsesNewestCallbacksAndControlState() throws {
         let oldRecorder = ContentTabButtonRecorder()
         let newRecorder = ContentTabButtonRecorder()
+        let updatedSessionStore = ContentTabReorderLocalSessionStore()
+        let updatedSourceID = ContentTabID(rawValue: "updated-source")
 
         try withContentTabButtonFixture(recorder: oldRecorder) { fixture in
             configure(
                 fixture.button,
                 recorder: newRecorder,
+                sessionStore: updatedSessionStore,
+                sourceID: updatedSourceID,
                 rootView: AnyView(Text("Updated")),
                 accessibilityValue: "Inactive, Selected",
                 isEnabled: true,
             )
+            fixture.button.dragSessionStartOverride = { items, event in
+                newRecorder.draggingItems.append(items)
+                newRecorder.dragStartEvents.append(event)
+                _ = fixture.window.nextEvent(
+                    matching: .leftMouseUp,
+                    until: .distantPast,
+                    inMode: .eventTracking,
+                    dequeue: true,
+                )
+            }
             try dispatchPrimaryClick(on: fixture.button, modifiers: .option)
+            try dispatchThresholdDrag(on: fixture.button, modifiers: [])
 
             XCTAssertTrue(oldRecorder.routes.isEmpty)
-            XCTAssertLessThanOrEqual(newRecorder.routes.count, 1)
+            XCTAssertNil(fixture.sessionStore.entry)
             XCTAssertEqual(newRecorder.routes, [.toggleSelection])
+            XCTAssertEqual(newRecorder.draggingItems.count, 1)
+            XCTAssertEqual(updatedSessionStore.entry?.payload.sourceID, updatedSourceID)
             XCTAssertEqual(fixture.button.accessibilityValue() as? String, "Inactive, Selected")
             XCTAssertTrue(fixture.button.isEnabled)
             XCTAssertEqual(fixture.button.contentHuggingPriority(for: .horizontal), .defaultLow)
@@ -181,7 +234,12 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             XCTAssertEqual(fixture.recorder.menuActions, [.duplicate, .pin, .close])
 
             fixture.recorder.menuActions.removeAll()
-            configure(fixture.button, recorder: fixture.recorder, isPinned: true)
+            configure(
+                fixture.button,
+                recorder: fixture.recorder,
+                sessionStore: fixture.sessionStore,
+                isPinned: true,
+            )
             let pinnedMenu = try XCTUnwrap(fixture.button.menu)
             XCTAssertEqual(pinnedMenu.items.map(\.title), ["Duplicate", "Unpin"])
             XCTAssertTrue(fixture.recorder.menuActions.isEmpty)
@@ -941,12 +999,15 @@ final class CTM001SelectContentTabsTests: XCTestCase {
     private final class ContentTabButtonRecorder {
         var routes: [ContentTabButtonRoute] = []
         var menuActions: [ContentTabMenuAction] = []
+        var draggingItems: [[NSDraggingItem]] = []
+        var dragStartEvents: [NSEvent] = []
     }
 
     private struct ContentTabButtonFixture {
         let window: NSWindow
         let button: ContentTabSidebarButton
         let recorder: ContentTabButtonRecorder
+        let sessionStore: ContentTabReorderLocalSessionStore
     }
 
     private var insideButtonLocation: NSPoint {
@@ -955,6 +1016,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
 
     private func withContentTabButtonFixture(
         recorder: ContentTabButtonRecorder = ContentTabButtonRecorder(),
+        isPinned: Bool = false,
         _ body: (ContentTabButtonFixture) throws -> Void,
     ) rethrows {
         _ = NSApplication.shared
@@ -966,14 +1028,36 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         )
         let contentView = NSView(frame: window.contentLayoutRect)
         let button = ContentTabSidebarButton(frame: NSRect(x: 20, y: 40, width: 240, height: 28))
-        configure(button, recorder: recorder)
+        let sessionStore = ContentTabReorderLocalSessionStore()
+        configure(
+            button,
+            recorder: recorder,
+            sessionStore: sessionStore,
+            isPinned: isPinned,
+        )
+        button.dragSessionStartOverride = { items, event in
+            recorder.draggingItems.append(items)
+            recorder.dragStartEvents.append(event)
+            _ = window.nextEvent(
+                matching: .leftMouseUp,
+                until: .distantPast,
+                inMode: .eventTracking,
+                dequeue: true,
+            )
+        }
         contentView.addSubview(button)
         window.contentView = contentView
         window.orderFrontRegardless()
         Self.retainedAppKitWindows.append(window)
-        let fixture = ContentTabButtonFixture(window: window, button: button, recorder: recorder)
+        let fixture = ContentTabButtonFixture(
+            window: window,
+            button: button,
+            recorder: recorder,
+            sessionStore: sessionStore,
+        )
 
         defer {
+            button.dismantle()
             window.orderOut(nil)
         }
         try body(fixture)
@@ -982,6 +1066,8 @@ final class CTM001SelectContentTabsTests: XCTestCase {
     private func configure(
         _ button: ContentTabSidebarButton,
         recorder: ContentTabButtonRecorder,
+        sessionStore: ContentTabReorderLocalSessionStore,
+        sourceID: ContentTabID = ContentTabID(rawValue: "source"),
         rootView: AnyView = AnyView(Color.clear.frame(height: 24)),
         accessibilityValue: String = "Active, Not Selected",
         isPinned: Bool = false,
@@ -994,6 +1080,10 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             duplicateAccessibilityIdentifier: "duplicate-content-tab-test",
             isPinned: isPinned,
             isEnabled: isEnabled,
+            reorderDragSource: isPinned ? nil : ContentTabReorderDragSourceConfiguration(
+                payload: .init(sourceID: sourceID, dragScopeID: ContentTabReorderDragScopeID()),
+                sessionStore: sessionStore,
+            ),
             onActivate: { recorder.routes.append(.activate) },
             onToggleSelection: { recorder.routes.append(.toggleSelection) },
             onSelectRange: { recorder.routes.append(.selectRange) },
@@ -1026,6 +1116,72 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         button.mouseDown(with: mouseDown)
     }
 
+    private func dispatchSubthresholdDragOutside(
+        on button: ContentTabSidebarButton,
+        modifiers: NSEvent.ModifierFlags,
+    ) throws {
+        let downLocation = NSPoint(x: button.bounds.maxX - 1, y: button.bounds.midY)
+        let outsideLocation = NSPoint(x: button.bounds.maxX + 1, y: button.bounds.midY)
+        let mouseDown = try mouseEvent(
+            .leftMouseDown,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: downLocation,
+            eventNumber: 1,
+        )
+        let mouseDragged = try mouseEvent(
+            .leftMouseDragged,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: outsideLocation,
+            eventNumber: 2,
+        )
+        let mouseUp = try mouseEvent(
+            .leftMouseUp,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: outsideLocation,
+            eventNumber: 3,
+        )
+        NSApp.postEvent(mouseDragged, atStart: true)
+        NSApp.postEvent(mouseUp, atStart: false)
+        button.mouseDown(with: mouseDown)
+    }
+
+    private func dispatchThresholdDrag(
+        on button: ContentTabSidebarButton,
+        modifiers: NSEvent.ModifierFlags,
+    ) throws {
+        let dragLocation = NSPoint(
+            x: insideButtonLocation.x + 12,
+            y: insideButtonLocation.y,
+        )
+        let mouseDown = try mouseEvent(
+            .leftMouseDown,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: insideButtonLocation,
+            eventNumber: 1,
+        )
+        let mouseDragged = try mouseEvent(
+            .leftMouseDragged,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: dragLocation,
+            eventNumber: 2,
+        )
+        let mouseUp = try mouseEvent(
+            .leftMouseUp,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: dragLocation,
+            eventNumber: 3,
+        )
+        NSApp.postEvent(mouseDragged, atStart: true)
+        NSApp.postEvent(mouseUp, atStart: false)
+        button.mouseDown(with: mouseDown)
+    }
+
     private func dispatchPrimaryDragOutside(
         on button: ContentTabSidebarButton,
         modifiers: NSEvent.ModifierFlags,
@@ -1052,8 +1208,8 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             locationInButton: outsideLocation,
             eventNumber: 3,
         )
-        NSApp.postEvent(mouseUp, atStart: true)
         NSApp.postEvent(mouseDragged, atStart: true)
+        NSApp.postEvent(mouseUp, atStart: false)
         button.mouseDown(with: mouseDown)
     }
 
