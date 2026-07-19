@@ -11,7 +11,10 @@ public struct AccountAccessHandoffTransaction: Equatable, Sendable {
     public let context: AppHandoffContext
     public let scope: AccountAccessHandoffScope
 
-    public init(context: AppHandoffContext, scope: AccountAccessHandoffScope) {
+    public init(
+        context: AppHandoffContext,
+        scope: AccountAccessHandoffScope,
+    ) {
         self.context = context
         self.scope = scope
     }
@@ -154,7 +157,8 @@ public struct AccountAccessState: Equatable {
     // MARK: - ONB-002 Affordances
 
     public var canStartLogin: Bool {
-        accountAccessAuthAxis == .signedOut || accountAccessAuthAxis == .signInFailed
+        accountAccessAuthAxis == .signedOut
+            || accountAccessAuthAxis == .signInFailed
     }
 
     public var canRefreshAccess: Bool {
