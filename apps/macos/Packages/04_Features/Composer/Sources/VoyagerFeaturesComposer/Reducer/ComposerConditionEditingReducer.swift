@@ -11,146 +11,44 @@ struct ComposerConditionEditingReducer {
     var searchClient
     @Dependency(\.registryClient)
     var registryClient
+    @Dependency(\.uuid)
+    var uuid
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .view(.addCondition(propertyKey: propertyKey)):
-                return handleAddCondition(state: &state, propertyKey: propertyKey, registryClient: registryClient)
+            case let .view(.addCondition(propertyKey)):
+                return addCondition(state: &state, propertyKey: propertyKey)
 
-            case let .view(.removeCondition(propertyKey: propertyKey)):
-                return handleRemoveCondition(
-                    state: &state,
-                    propertyKey: propertyKey,
-                    registryClient: registryClient,
-                    searchClient: searchClient,
-                )
-
-            case let .view(.setOperator(propertyKey: propertyKey, operatorCode: operatorCode)):
-                return handleSetOperator(
-                    state: &state,
-                    propertyKey: propertyKey,
-                    operatorCode: operatorCode,
-                    registryClient: registryClient,
-                    searchClient: searchClient,
-                )
-
-            case let .view(.replaceConditionProperty(originalKey: originalKey, propertyKey: propertyKey)):
-                return handleReplaceConditionProperty(
-                    state: &state,
-                    originalKey: originalKey,
-                    propertyKey: propertyKey,
-                    registryClient: registryClient,
-                )
-
-            case let .view(.setDisplayUnit(propertyKey: propertyKey, unitCode: unitCode)):
-                return handleSetDisplayUnit(
-                    state: &state,
-                    propertyKey: propertyKey,
-                    unitCode: unitCode,
-                    registryClient: registryClient,
-                    searchClient: searchClient,
-                )
-
-            case let .propertyPicker(.propertyTapped(property)):
-                if let editingKey = state.propertyPicker.editingConditionKey {
-                    return .send(.replaceConditionProperty(originalKey: editingKey, propertyKey: property))
-                }
-                return .send(.addCondition(propertyKey: property))
-
-            case let .propertyPicker(.setPresented(isPresented)):
-                if isPresented {
-                    state.propertyPicker.existingKeys = Set(state.conditions.map(\.propertyKey))
-                } else {
-                    state.propertyPicker.existingKeys = []
-                }
-                return .none
-
-            case let .propertyPicker(.startEditing(conditionKey)):
-                state.propertyPicker.existingKeys = Set(
-                    state.conditions
-                        .map(\.propertyKey)
-                        .filter { $0 != conditionKey },
-                )
-                return .none
-
-            case .propertyPicker:
-                return .none
-
-            case let .operatorPicker(.setPresented(isPresented)):
-                state.operatorPicker.isPresented = isPresented
-                if !isPresented {
-                    state.operatorPicker.propertyKey = nil
-                    state.operatorPicker.options = []
-                    state.operatorPicker.optionLabels = [:]
-                }
-                return .none
-
-            case let .operatorPicker(.prepare(propertyKey, options, _)):
-                guard !state.isLoadingSearch else { return .none }
-                let optionLabels = Dictionary(
-                    uniqueKeysWithValues: options.map { ($0, registryClient.operatorLabel(for: $0)) },
-                )
-                state.operatorPicker.propertyKey = propertyKey
-                state.operatorPicker.options = options
-                state.operatorPicker.optionLabels = optionLabels
-                state.operatorPicker.isPresented = true
-                return .none
-
-            case let .operatorPicker(.select(option)):
-                guard let propertyKey = state.operatorPicker.propertyKey else {
-                    return .none
-                }
-                return .send(.setOperator(propertyKey: propertyKey, operatorCode: option))
-
-            case .operatorPicker:
-                return .none
-
-            case let .valuePicker(.setPresented(isPresented)):
-                if isPresented {
-                    state.valuePicker.isPresented = true
-                } else {
-                    resetValuePicker(state: &state)
-                }
-                return .none
-
-            case .valuePicker(.commit):
-                return .none
-
-            case let .valuePicker(.commitResult(propertyKey, values, displayValues, selectedUnitCode)):
-                guard !state.isLoadingSearch else { return .none }
-                if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
-                    state.pushHistory()
-                    state.conditions[idx].values = values
-                    if selectedUnitCode != nil {
-                        state.conditionDisplayByKey[propertyKey] = .init(
-                            values: displayValues,
-                            unitValueState: state.valuePicker.unitValueState,
-                        )
-                    } else {
-                        resetConditionDisplayState(propertyKey: propertyKey, state: &state)
-                    }
-                    syncIncludeDirectoriesAfterConditionMutation(state: &state)
-                }
-                resetValuePicker(state: &state)
+            case let .view(.removeCondition(id)):
+                guard !state.isLoadingSearch, state.conditionEditors[id: id] != nil else { return .none }
+                state.pushHistory()
+                state.conditionEditors.remove(id: id)
+                synchronizeDerivedState(state: &state)
                 return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 
-            case .valuePicker:
+            case let .conditionEditor(.element(id: id, action: .delegate(delegate))):
+                return handleDelegate(state: &state, id: id, delegate: delegate)
+
+            case let .conditionEditor(.element(id: id, action: .view(.setPropertyPickerPresented(true)))):
+                let siblingKeys = Set(
+                    state.conditionEditors
+                        .filter { $0.id != id }
+                        .map(\.condition.property.key),
+                )
+                state.conditionEditors[id: id]?.propertyPicker.existingKeys = siblingKeys
                 return .none
 
-            case let .view(.setValue(propertyKey: propertyKey, values: values)):
-                guard !state.isLoadingSearch else { return .none }
-                if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
-                    state.pushHistory()
-                    state.conditions[idx].values = values
-                    syncConditionDisplayState(
-                        propertyKey: propertyKey,
-                        state: &state,
-                        registryClient: registryClient,
-                    )
-                    syncIncludeDirectoriesAfterConditionMutation(state: &state)
-                }
-                resetValuePicker(state: &state)
+            case let .propertyPicker(.propertyTapped(propertyKey)):
+                return addCondition(state: &state, propertyKey: propertyKey)
+
+            case let .propertyPicker(.setPresented(isPresented)):
+                state.propertyPicker.existingKeys = isPresented
+                    ? Set(state.conditions.map(\.property.key))
+                    : []
+                return .none
+
+            case .propertyPicker, .conditionEditor:
                 return .none
 
             default:
@@ -158,226 +56,163 @@ struct ComposerConditionEditingReducer {
             }
         }
     }
-}
 
-private func handleAddCondition(
-    state: inout ComposerFeature.State,
-    propertyKey: String,
-    registryClient: RegistryClient,
-) -> Effect<ComposerFeature.Action> {
-    guard !state.isLoadingSearch else { return .none }
-    let label = registryClient.labelForKey(propertyKey)
-    let propertyType = registryClient.propertyTypeString(for: propertyKey)
-    if state.conditions.contains(where: { $0.propertyKey == propertyKey }) {
-        state.propertyPicker.duplicateMessage = "\"\(label)\" is already added."
-        return .none
-    }
-
-    state.pushHistory()
-    let condition = Condition(
-        propertyKey: propertyKey,
-        propertyLabel: label,
-        propertyType: propertyType,
-        operatorCode: nil,
-        operatorLabel: nil,
-        operatorValueArity: nil,
-        operatorValueUIKind: nil,
-        valueType: SystemPropertyTypeKey.normalizedValueType(from: propertyType),
-        values: nil,
-    )
-    state.conditions.append(condition)
-    syncIncludeDirectoriesAfterConditionMutation(state: &state)
-    updateOperatorOptions(state: &state, registryClient: registryClient)
-    state.propertyPicker.duplicateMessage = nil
-    state.propertyPicker.isPresented = false
-    return .none
-}
-
-private func handleRemoveCondition(
-    state: inout ComposerFeature.State,
-    propertyKey: String,
-    registryClient: RegistryClient,
-    searchClient: SearchClient,
-) -> Effect<ComposerFeature.Action> {
-    guard !state.isLoadingSearch else { return .none }
-    if state.conditions.contains(where: { $0.propertyKey == propertyKey }) {
-        state.pushHistory()
-        state.conditions.removeAll { $0.propertyKey == propertyKey }
-        syncIncludeDirectoriesAfterConditionMutation(state: &state)
-        resetConditionDisplayState(propertyKey: propertyKey, state: &state)
-        updateOperatorOptions(state: &state, registryClient: registryClient)
-    }
-    return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
-}
-
-private func handleSetOperator(
-    state: inout ComposerFeature.State,
-    propertyKey: String,
-    operatorCode: String,
-    registryClient: RegistryClient,
-    searchClient: SearchClient,
-) -> Effect<ComposerFeature.Action> {
-    guard !state.isLoadingSearch else { return .none }
-    if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
-        state.pushHistory()
-        let propertyType = state.conditions[idx].propertyType
-        let typeKey = SystemPropertyTypeKey.operatorKey(from: propertyType)
-        let uiValueKind = registryClient.operatorUIKind(
-            for: operatorCode,
-            typeKey: typeKey,
-        )
-        state.conditions[idx].operatorCode = operatorCode
-        state.conditions[idx].operatorLabel = registryClient.operatorLabel(for: operatorCode)
-        let valueArity = registryClient.valueArity(for: uiValueKind)
-        state.conditions[idx].operatorValueArity = valueArity
-        state.conditions[idx].operatorValueUIKind = uiValueKind
-        state.conditions[idx].valueType = registryClient.valueType(for: uiValueKind)
-        state.conditions[idx].values = valueArity == 0 ? [] : nil
-        syncIncludeDirectoriesAfterConditionMutation(state: &state)
-        syncConditionDisplayState(
-            propertyKey: propertyKey,
-            state: &state,
-            registryClient: registryClient,
-        )
-
-        if state.valuePicker.propertyKey == propertyKey {
-            state.valuePicker.isPresented = false
-            state.valuePicker.propertyKey = nil
-            state.valuePicker.operatorCode = nil
-            state.valuePicker.valueUIKind = "singleText"
-            state.valuePicker.valueType = "string"
-            state.valuePicker.values = Array(
-                repeating: "",
-                count: registryClient.valueArity(for: uiValueKind),
+    private func addCondition(
+        state: inout State,
+        propertyKey: String,
+    ) -> Effect<Action> {
+        guard !state.isLoadingSearch else { return .none }
+        let condition: Condition
+        do {
+            condition = try registryClient.resolveCondition(
+                propertyKey: propertyKey,
+                operatorCode: nil,
+                values: nil,
+                sourcePayload: nil,
             )
-            state.valuePicker.errorMessage = nil
+        } catch {
+            return .none
         }
-
-        if valueArity == 0 {
-            return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+        guard !state.conditions.contains(where: { $0.property.key == condition.property.key }) else {
+            state.propertyPicker.duplicateMessage = "\"\(condition.property.label)\" is already added."
+            return .none
         }
-    }
-    return .none
-}
-
-private func handleReplaceConditionProperty(
-    state: inout ComposerFeature.State,
-    originalKey: String,
-    propertyKey: String,
-    registryClient: RegistryClient,
-) -> Effect<ComposerFeature.Action> {
-    guard !state.isLoadingSearch else { return .none }
-    guard let idx = state.conditions.firstIndex(where: { $0.propertyKey == originalKey }) else {
-        state.propertyPicker.editingConditionKey = nil
+        state.pushHistory()
+        state.conditionEditors.append(.init(id: uuid(), condition: condition))
+        state.propertyPicker.duplicateMessage = nil
         state.propertyPicker.isPresented = false
+        synchronizeDerivedState(state: &state)
         return .none
     }
 
-    let label = registryClient.labelForKey(propertyKey)
-    let propertyType = registryClient.propertyTypeString(for: propertyKey)
+    private func handleDelegate(
+        state: inout State,
+        id: UUID,
+        delegate: ConditionEditorAction.Delegate,
+    ) -> Effect<Action> {
+        guard !state.isLoadingSearch, let editor = state.conditionEditors[id: id] else { return .none }
+        switch delegate {
+        case let .replaceProperty(propertyKey):
+            return replaceProperty(state: &state, id: id, editor: editor, propertyKey: propertyKey)
 
-    if let dupIndex = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }), dupIndex != idx {
-        state.propertyPicker.duplicateMessage = "\"\(label)\" is already added."
-        return .none
+        case let .selectOperator(operatorCode):
+            return selectOperator(state: &state, id: id, editor: editor, operatorCode: operatorCode)
+
+        case let .commitValues(values, displayValues, selectedUnitCode):
+            return commitValues(
+                state: &state,
+                id: id,
+                editor: editor,
+                payload: .init(
+                    values: values,
+                    displayValues: displayValues,
+                    selectedUnitCode: selectedUnitCode,
+                ),
+            )
+
+        case let .setDisplayUnit(unitCode):
+            guard let unitContract = editor.condition.property.unitContract,
+                  ConditionUnitConverter.unitCodes(contract: unitContract).contains(unitCode)
+            else {
+                return .none
+            }
+            state.pushHistory()
+            var unitValueState = editor.displayState?.unitValueState
+                ?? .init(contract: unitContract, preferredUnitCode: unitCode)
+            unitValueState.selectedUnitCode = unitCode
+            state.conditionEditors[id: id] = .init(
+                id: editor.id,
+                condition: editor.condition,
+                displayState: .init(
+                    values: editor.displayState?.values ?? editor.condition.values ?? [],
+                    unitValueState: unitValueState,
+                ),
+            )
+            synchronizeDerivedState(state: &state)
+            return .none
+        }
     }
 
-    state.pushHistory()
-    state.conditions[idx].propertyKey = propertyKey
-    state.conditions[idx].propertyLabel = label
-    state.conditions[idx].propertyType = propertyType
-    state.conditions[idx].operatorCode = nil
-    state.conditions[idx].operatorLabel = nil
-    state.conditions[idx].operatorValueArity = nil
-    state.conditions[idx].operatorValueUIKind = nil
-    state.conditions[idx].valueType = SystemPropertyTypeKey.normalizedValueType(from: propertyType)
-    state.conditions[idx].values = nil
-    syncIncludeDirectoriesAfterConditionMutation(state: &state)
-    resetConditionDisplayState(propertyKey: originalKey, state: &state)
-    updateOperatorOptions(state: &state, registryClient: registryClient)
-    state.propertyPicker.editingConditionKey = nil
-    state.propertyPicker.isPresented = false
-    state.propertyPicker.duplicateMessage = nil
-    return .none
+    private func replaceProperty(
+        state: inout State,
+        id: UUID,
+        editor: ConditionEditorState,
+        propertyKey: String,
+    ) -> Effect<Action> {
+        guard editor.condition.property.key != propertyKey else { return .none }
+        guard let replacement = try? registryClient.resolveCondition(
+            propertyKey: propertyKey, operatorCode: nil, values: nil, sourcePayload: nil,
+        ) else { return .none }
+        guard !state.conditionEditors
+            .contains(where: { $0.id != id && $0.condition.property.key == replacement.property.key })
+        else {
+            state.conditionEditors[id: id]?.errorMessage = "\"\(replacement.property.label)\" is already added."
+            return .none
+        }
+        state.pushHistory()
+        state.conditionEditors[id: id] = .init(id: editor.id, condition: replacement)
+        synchronizeDerivedState(state: &state)
+        return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+    }
+
+    private func selectOperator(
+        state: inout State,
+        id: UUID,
+        editor: ConditionEditorState,
+        operatorCode: String,
+    ) -> Effect<Action> {
+        guard let replacement = try? registryClient.resolveCondition(
+            propertyKey: editor.condition.property.key, operatorCode: operatorCode, values: nil, sourcePayload: nil,
+        ) else { return .none }
+        state.pushHistory()
+        state.conditionEditors[id: id] = .init(id: editor.id, condition: replacement)
+        synchronizeDerivedState(state: &state)
+        return replacement.operation?.valueContract.count == .fixed(0)
+            ? applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+            : .none
+    }
+
+    private func commitValues(
+        state: inout State,
+        id: UUID,
+        editor: ConditionEditorState,
+        payload: ValueCommitPayload,
+    ) -> Effect<Action> {
+        guard let replacement = try? registryClient.resolveCondition(
+            propertyKey: editor.condition.property.key,
+            operatorCode: editor.condition.operation?.code,
+            values: payload.values,
+            sourcePayload: nil,
+        ) else { return .none }
+        state.pushHistory()
+        let displayState = payload.selectedUnitCode.flatMap { _ in
+            editor.displayState.map { ConditionDisplayState(
+                values: payload.displayValues,
+                unitValueState: $0.unitValueState,
+            )
+            }
+        }
+        state.conditionEditors[id: id] = .init(id: editor.id, condition: replacement, displayState: displayState)
+        synchronizeDerivedState(state: &state)
+        return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+    }
 }
 
-private func handleSetDisplayUnit(
-    state: inout ComposerFeature.State,
-    propertyKey: String,
-    unitCode: String,
-    registryClient: RegistryClient,
-    searchClient: SearchClient,
-) -> Effect<ComposerFeature.Action> {
-    guard !state.isLoadingSearch,
-          let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }),
-          let spec = UnitValueUtils.spec(for: propertyKey, registryClient: registryClient)
-    else {
-        return .none
-    }
-
-    guard UnitValueUtils.unitCodes(spec: spec).contains(unitCode) else { return .none }
-
-    let sourceDisplayValues = displayValues(for: state.conditions[idx], state: state)
-    let normalizedDisplayValues = UnitValueUtils.strippedDisplayValues(sourceDisplayValues, spec: spec)
-    guard let canonicalValues = UnitValueUtils.toCanonicalValues(
-        displayValues: normalizedDisplayValues,
-        from: unitCode,
-        spec: spec,
-    ) else {
-        return .none
-    }
-
-    state.pushHistory()
-    state.conditions[idx].values = canonicalValues
-    syncIncludeDirectoriesAfterConditionMutation(state: &state)
-    state.conditionDisplayByKey[propertyKey] = .init(
-        values: normalizedDisplayValues,
-        unitValueState: UnitValuePresentationUtils.makeState(spec: spec, preferredUnitCode: unitCode),
-    )
-    return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+private struct ValueCommitPayload {
+    let values: [String]
+    let displayValues: [String]
+    let selectedUnitCode: String?
 }
 
-private func syncIncludeDirectoriesAfterConditionMutation(
-    state: inout ComposerFeature.State,
-) {
-    guard state.includeDirectories else { return }
-    guard !state.conditions.contains(where: isFolderInclusiveTagCondition) else { return }
-    state.includeDirectories = false
+private func synchronizeDerivedState(state: inout ComposerState) {
+    if state.includeDirectories,
+       !state.conditions.contains(where: isFolderInclusiveTagCondition)
+    {
+        state.includeDirectories = false
+    }
 }
 
 private func isFolderInclusiveTagCondition(_ condition: Condition) -> Bool {
-    condition.isActive
-        && condition.propertyKey == "tag_names"
-        && condition.operatorCode == "any"
+    condition.isExecutionReady && condition.property.key == "tag_names" && condition.operation?.code == "any"
         && !(condition.values?.isEmpty ?? true)
-}
-
-private func resetConditionDisplayState(
-    propertyKey: String,
-    state: inout ComposerFeature.State,
-) {
-    state.conditionDisplayByKey.removeValue(forKey: propertyKey)
-}
-
-private func syncConditionDisplayState(
-    propertyKey: String,
-    state: inout ComposerFeature.State,
-    registryClient: RegistryClient,
-) {
-    guard let condition = state.conditions.first(where: { $0.propertyKey == propertyKey }),
-          let displayState = defaultDisplayState(for: condition, registryClient: registryClient)
-    else {
-        resetConditionDisplayState(propertyKey: propertyKey, state: &state)
-        return
-    }
-    state.conditionDisplayByKey[propertyKey] = displayState
-}
-
-private func displayValues(
-    for condition: Condition,
-    state: ComposerFeature.State,
-) -> [String] {
-    if let display = state.conditionDisplayByKey[condition.propertyKey]?.values {
-        return display
-    }
-    return condition.values ?? []
 }

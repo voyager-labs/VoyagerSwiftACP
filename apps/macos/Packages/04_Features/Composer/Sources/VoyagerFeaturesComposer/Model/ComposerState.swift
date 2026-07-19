@@ -5,36 +5,31 @@ import VoyagerShared
 
 public struct FilterSnapshot: Equatable {
     let scopeSelection: ComposerScopeSelection
-    public let conditions: [Condition]
-    public let conditionDisplayByKey: [String: ConditionDisplayState]
+    public let conditionEditors: IdentifiedArrayOf<ConditionEditorState>
     let includeSubfolders: Bool
     let includeDirectories: Bool
 
     init(
         scopeSelection: ComposerScopeSelection,
-        conditions: [Condition],
-        conditionDisplayByKey: [String: ConditionDisplayState],
+        conditionEditors: IdentifiedArrayOf<ConditionEditorState>,
         includeSubfolders: Bool,
         includeDirectories: Bool,
     ) {
         self.scopeSelection = scopeSelection
-        self.conditions = conditions
-        self.conditionDisplayByKey = conditionDisplayByKey
+        self.conditionEditors = conditionEditors
         self.includeSubfolders = includeSubfolders
         self.includeDirectories = includeDirectories
     }
 
     init(
         scopes: [String],
-        conditions: [Condition],
-        conditionDisplayByKey: [String: ConditionDisplayState],
+        conditionEditors: IdentifiedArrayOf<ConditionEditorState>,
         includeSubfolders: Bool = true,
         includeDirectories: Bool = false,
     ) {
         self.init(
             scopeSelection: ComposerScopeSelection.fromLegacyScopes(scopes),
-            conditions: conditions,
-            conditionDisplayByKey: conditionDisplayByKey,
+            conditionEditors: conditionEditors,
             includeSubfolders: includeSubfolders,
             includeDirectories: includeDirectories,
         )
@@ -54,7 +49,6 @@ public struct ConditionDisplayState: Equatable {
 @ObservableState
 public struct ComposerState: Equatable {
     public var propertyPicker: ConditionPropertyPickerFeature.State = .init()
-    public var operatorPicker: OperatorPickerFeature.State = .init()
     public var valuePicker: ValuePickerFeature.State = .init()
 
     public var scopeEditor: ComposerScopeEditorState = .init()
@@ -75,9 +69,23 @@ public struct ComposerState: Equatable {
         set { scopeEditor.selection = ComposerScopeSelection.fromLegacyScopes(newValue) }
     }
 
-    public var conditions: [Condition] = []
-    public var conditionDisplayByKey: [String: ConditionDisplayState] = [:]
-    public var operatorOptionsByKey: [String: [String]] = [:]
+    public var conditionEditors: IdentifiedArrayOf<ConditionEditorState> = []
+    public var conditions: [Condition] {
+        conditionEditors.map(\.condition)
+    }
+
+    public var conditionDisplayByKey: [String: ConditionDisplayState] {
+        Dictionary(uniqueKeysWithValues: conditionEditors.compactMap { editor in
+            editor.displayState.map { (editor.condition.property.key, $0) }
+        })
+    }
+
+    public var operatorOptionsByKey: [String: [String]] {
+        Dictionary(uniqueKeysWithValues: conditionEditors.map {
+            ($0.condition.property.key, $0.condition.property.operatorOptions.map(\.code))
+        })
+    }
+
     public var focusRequestID: Int = 0
 
     public var history: [FilterSnapshot] = []
@@ -133,7 +141,7 @@ public struct ComposerState: Equatable {
     public var shouldAutoApplyScopeChange: Bool {
         hasCommittedQuerySearch
             || hasCommittedScopeSearch
-            || conditions.contains(where: \.isSearchReady)
+            || conditions.contains(where: \.isExecutionReady)
     }
 
     public var hasCommittedQuerySearch: Bool {
@@ -186,8 +194,7 @@ public struct ComposerState: Equatable {
         history.append(
             FilterSnapshot(
                 scopeSelection: scopeEditor.selection,
-                conditions: conditions,
-                conditionDisplayByKey: conditionDisplayByKey,
+                conditionEditors: conditionEditors,
                 includeSubfolders: scopeEditor.includeSubfolders,
                 includeDirectories: includeDirectories,
             ),
@@ -218,7 +225,10 @@ public struct ComposerState: Equatable {
         }
     }
 
-    public mutating func applyCollectionDraftRestorePayload(_ payload: CollectionDraftRestorePayload) {
+    public mutating func applyCollectionDraftRestorePayload(
+        _ payload: CollectionDraftRestorePayload,
+        uuid: () -> UUID = UUID.init,
+    ) {
         let trimmedQuery = payload.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
         pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
         if payload.openedURL == nil {
@@ -234,14 +244,16 @@ public struct ComposerState: Equatable {
         scopeEditor.selection = selection
         scopeEditor.includeSubfolders = payload.context.includeSubfolders
         includeDirectories = payload.context.includeDirectories
-        conditions = payload.context.conditions
+        replaceConditions(payload.context.conditions, uuid: uuid)
         propertyPicker = ConditionPropertyPickerFeature.State()
-        operatorPicker = OperatorPickerFeature.State()
         valuePicker = ValuePickerFeature.State()
         clearHistory()
     }
 
-    public mutating func applyCollectionNavigationComposerPayload(_ payload: CollectionNavigationStatePayload) {
+    public mutating func applyCollectionNavigationComposerPayload(
+        _ payload: CollectionNavigationStatePayload,
+        uuid: () -> UUID = UUID.init,
+    ) {
         let trimmedQuery = payload.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
         text = payload.composerText
@@ -253,9 +265,8 @@ public struct ComposerState: Equatable {
         scopeEditor.selection = selection
         scopeEditor.includeSubfolders = payload.includeSubfolders
         includeDirectories = payload.includeDirectories
-        conditions = payload.conditions
+        replaceConditions(payload.conditions, uuid: uuid)
         propertyPicker = ConditionPropertyPickerFeature.State()
-        operatorPicker = OperatorPickerFeature.State()
         valuePicker = ValuePickerFeature.State()
         clearHistory()
     }
@@ -263,6 +274,7 @@ public struct ComposerState: Equatable {
     public mutating func applyCollectionOpenRestorationComposerPayload(
         _ payload: CollectionOpenRestorationPayload,
         registryClient: RegistryClient,
+        uuid: () -> UUID = UUID.init,
     ) {
         pendingSearchQuery = payload.context.query.isEmpty ? nil : payload.context.query
         text = payload.context.query
@@ -274,9 +286,8 @@ public struct ComposerState: Equatable {
         scopeEditor.selection = selection
         scopeEditor.includeSubfolders = payload.context.includeSubfolders
         includeDirectories = payload.context.includeDirectories
-        conditions = payload.context.conditions
+        replaceConditions(payload.context.conditions, uuid: uuid)
         propertyPicker = ConditionPropertyPickerFeature.State()
-        operatorPicker = OperatorPickerFeature.State()
         valuePicker = ValuePickerFeature.State()
         clearHistory()
         let filters = buildFilters(from: self)
@@ -289,9 +300,19 @@ public struct ComposerState: Equatable {
             ),
             state: &self,
             registryClient: registryClient,
+            uuid: uuid,
         )
         lastFiltersResponse = nil
         lastSearchResponse = nil
+    }
+
+    mutating func replaceConditions(_ conditions: [Condition], uuid: () -> UUID) {
+        conditionEditors = IdentifiedArray(uniqueElements: conditions.map { condition in
+            .init(
+                id: uuid(),
+                condition: condition,
+            )
+        })
     }
 
     public mutating func applyHydratedCollectionOpenComposerPayload(

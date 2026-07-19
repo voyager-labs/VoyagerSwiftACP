@@ -10,8 +10,8 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
     case `internal`(Internal)
 
     case propertyPicker(ConditionPropertyPickerFeature.Action)
-    case operatorPicker(OperatorPickerFeature.Action)
     case valuePicker(ValuePickerFeature.Action)
+    case conditionEditor(IdentifiedActionOf<ConditionEditorFeature>)
 
     @CasePathable
     public enum View: Sendable {
@@ -26,11 +26,7 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
         case currentScope(CurrentScope)
         case exceptionScope(ExceptionScope)
         case addCondition(propertyKey: String)
-        case removeCondition(propertyKey: String)
-        case replaceConditionProperty(originalKey: String, propertyKey: String)
-        case setOperator(propertyKey: String, operatorCode: String)
-        case setValue(propertyKey: String, values: [String])
-        case setDisplayUnit(propertyKey: String, unitCode: String)
+        case removeCondition(id: UUID)
         case clearAll
         case submit
         case applyFilters
@@ -165,24 +161,8 @@ public extension ComposerAction {
         .view(.addCondition(propertyKey: propertyKey))
     }
 
-    static func removeCondition(propertyKey: String) -> Self {
-        .view(.removeCondition(propertyKey: propertyKey))
-    }
-
-    static func replaceConditionProperty(originalKey: String, propertyKey: String) -> Self {
-        .view(.replaceConditionProperty(originalKey: originalKey, propertyKey: propertyKey))
-    }
-
-    static func setOperator(propertyKey: String, operatorCode: String) -> Self {
-        .view(.setOperator(propertyKey: propertyKey, operatorCode: operatorCode))
-    }
-
-    static func setValue(propertyKey: String, values: [String]) -> Self {
-        .view(.setValue(propertyKey: propertyKey, values: values))
-    }
-
-    static func setDisplayUnit(propertyKey: String, unitCode: String) -> Self {
-        .view(.setDisplayUnit(propertyKey: propertyKey, unitCode: unitCode))
+    static func removeCondition(id: UUID) -> Self {
+        .view(.removeCondition(id: id))
     }
 
     static var clearAll: Self {
