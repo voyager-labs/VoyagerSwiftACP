@@ -33,10 +33,13 @@ extension ACC002CheckEntitlementStatusTests {
             accessStatus: AccessStatusResponse(
                 hasAccess: true,
                 status: "active",
+                ownershipStatus: "owned",
+                updateStatus: "active",
                 reason: "active_entitlement",
                 productKey: "core",
                 currentPeriodEnd: periodEnd,
                 source: "polar",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             ),
             deviceBindingOutcome: .bound,
             connectedDeviceAvailability: .available,
@@ -50,6 +53,9 @@ extension ACC002CheckEntitlementStatusTests {
                 deviceID: "test-device-id",
                 sessionExpiresAt: sessionExpiry,
                 deviceBindingVerifiedAt: bindingCompletionDate,
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isComplete = true
             state.lastCompleteSyncAt = bindingCompletionDate
@@ -75,6 +81,9 @@ extension ACC002CheckEntitlementStatusTests {
             deviceID: "test-device-id",
             sessionExpiresAt: now.addingTimeInterval(3600),
             deviceBindingVerifiedAt: now,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
         )
         var state = AccountAccessFeature.State()
         state.hasAccountSession = true
@@ -177,6 +186,9 @@ extension ACC002CheckEntitlementStatusTests {
             deviceID: "test-device-id",
             sessionExpiresAt: now.addingTimeInterval(3600),
             deviceBindingVerifiedAt: now,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
         )
 
         await store.send(._sessionSyncCompleted(
@@ -185,7 +197,13 @@ extension ACC002CheckEntitlementStatusTests {
             result: .success(SessionSyncResult(
                 sessionStatus: .unchanged,
                 syncStatus: .complete,
-                accessStatus: AccessStatusResponse(hasAccess: true, status: "active"),
+                accessStatus: AccessStatusResponse(
+                    hasAccess: true,
+                    status: "active",
+                    ownershipStatus: "owned",
+                    updateStatus: "active",
+                    updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
+                ),
                 deviceBindingOutcome: .bound,
                 connectedDeviceAvailability: .available,
             )),
@@ -198,6 +216,30 @@ extension ACC002CheckEntitlementStatusTests {
         await store.receive(\.delegate.unlocked)
 
         XCTAssertEqual(savedSnapshots, [expectedSnapshot])
+    }
+
+    /// ACC-002-check_entitlement_status: near-expiry complete sync는 refresh 전에 verified snapshot을 저장하고 unlock한다.
+    /// - 검증 내용: gated snapshot save 완료 뒤 unlocked delegate가 먼저 전달되고 refresh request가 뒤따른다.
+    /// - 사전 조건: complete active sync, bound device, refresh deadline 경계 안의 session expiry.
+    /// - 기대 결과: persistence/unlock이 같은 session sync cancellation 범위의 refresh보다 먼저 완료된다.
+    func testNearExpiryCompleteSyncUnlocksBeforeRefreshRequest() async {
+        let fixture = NearExpiryCompleteSyncFixture()
+        let store = fixture.makeStore()
+
+        await store.send(fixture.completedAction) { fixture.assertCompleteState(&$0) }
+        await fixture.snapshotSaveGate.waitUntilSaving()
+        XCTAssertEqual(store.state.syncGeneration, 1)
+        XCTAssertNil(store.state.inFlightSyncReason)
+
+        await fixture.snapshotSaveGate.release()
+        await store.receive(\.delegate.unlocked)
+        await store.receive(\.sessionSyncRequested) { state in
+            state.isSubmitting = true
+            state.inFlightSyncReason = .refreshDeadline
+            state.syncGeneration = 2
+        }
+        await store.receive(\._sessionSyncActivationCompleted)
+        await store.skipInFlightEffects()
     }
 
     // MARK: - ACC-002-device_limit_snapshot_tombstone
@@ -519,6 +561,112 @@ private actor DeviceLimitSnapshotGate {
 
     func loadEnvelope() -> AccessStatusSnapshotEnvelope? {
         envelope
+    }
+}
+
+@MainActor
+private struct NearExpiryCompleteSyncFixture {
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+    let binding = UUID()
+    let clock = TestClock()
+    let snapshotSaveGate = SnapshotSaveGate()
+
+    var completedAction: AccountAccessFeature.Action {
+        ._sessionSyncCompleted(
+            generation: 1,
+            binding: binding,
+            result: .success(SessionSyncResult(
+                sessionStatus: .unchanged,
+                syncStatus: .complete,
+                accessStatus: activeAccessStatus,
+                deviceBindingOutcome: .bound,
+                connectedDeviceAvailability: .available,
+                sessionExpiresAt: nearExpiry,
+            )),
+        )
+    }
+
+    func makeStore() -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
+        var state = AccountAccessFeature.State()
+        state.hasAccountSession = true
+        state.sessionBindingID = binding
+        state.sessionExpiresAt = nearExpiry
+        state.syncGeneration = 1
+        return TestStore(initialState: state) {
+            AccountAccessFeature()
+        } withDependencies: {
+            $0.date = .constant(now)
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                activate: { _, _ in 0 },
+                load: { _, _ in nil },
+                save: { _, _, _, _ in await snapshotSaveGate.save() },
+                remove: { _, _, _ in },
+            )
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AppHandoffExchangeError.networkFailure },
+                fetchAccessStatus: { throw SessionSyncError.capabilityMiss },
+                refreshToken: { throw SessionSyncError.capabilityMiss },
+                syncSession: { _, _ in throw SessionSyncError.upstream(503) },
+            )
+            $0.continuousClock = clock
+        }
+    }
+
+    func assertCompleteState(_ state: inout AccountAccessFeature.State) {
+        state.status = .coreLicenseActive
+        state.snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: now,
+            sessionBindingID: binding,
+            gatewayBinding: GatewayEnvironment(rawValue: "").binding,
+            deviceID: "test-device-id",
+            sessionExpiresAt: nearExpiry,
+            deviceBindingVerifiedAt: now,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
+        )
+        state.isComplete = true
+        state.lastCompleteSyncAt = now
+        state.ttlTimerActive = true
+        state.refreshDeadlineGeneration = 1
+    }
+
+    private var activeAccessStatus: AccessStatusResponse {
+        AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
+        )
+    }
+
+    private var nearExpiry: Date {
+        now.addingTimeInterval(300)
+    }
+}
+
+private actor SnapshotSaveGate {
+    private var saveContinuation: CheckedContinuation<Void, Never>?
+    private var savingContinuation: CheckedContinuation<Void, Never>?
+
+    func save() async {
+        await withCheckedContinuation { continuation in
+            saveContinuation = continuation
+            savingContinuation?.resume()
+            savingContinuation = nil
+        }
+    }
+
+    func waitUntilSaving() async {
+        guard saveContinuation == nil else { return }
+        await withCheckedContinuation { savingContinuation = $0 }
+    }
+
+    func release() {
+        saveContinuation?.resume()
+        saveContinuation = nil
     }
 }
 

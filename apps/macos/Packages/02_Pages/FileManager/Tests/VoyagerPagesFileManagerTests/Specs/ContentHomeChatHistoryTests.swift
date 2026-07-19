@@ -200,7 +200,7 @@ extension ContentHomeChatHistoryTests {
             state.contentTabs.tabs[id: activeTabID]?.anchor = .aiChat(sessionID: sessionUUID.uuidString)
             state.contentTabs.tabs[id: activeTabID]?.page = .aiChat
             state.contentTabs.tabs[id: activeTabID]?.title = "AI Chat"
-            state.contentTabs.tabs[id: activeTabID]?.iconName = "sparkles"
+            state.contentTabs.tabs[id: activeTabID]?.iconName = "bubble.right"
         }
 
         await store.receive { action in

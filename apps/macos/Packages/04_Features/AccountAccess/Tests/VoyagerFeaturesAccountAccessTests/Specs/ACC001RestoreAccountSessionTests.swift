@@ -245,7 +245,13 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
                     return SessionSyncResult(
                         sessionStatus: .rotated,
                         syncStatus: .complete,
-                        accessStatus: AccessStatusResponse(hasAccess: true, status: "active"),
+                        accessStatus: AccessStatusResponse(
+                            hasAccess: true,
+                            status: "active",
+                            ownershipStatus: "owned",
+                            updateStatus: "active",
+                            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
+                        ),
                         deviceBindingOutcome: .bound,
                         connectedDeviceAvailability: .available,
                         sessionExpiresAt: rotatedExpiry,
@@ -259,6 +265,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         await store.send(.onAppear)
         await store.receive(\._onAppearSessionRestored)
         await store.receive(\.sessionSyncRequested)
+        await store.receive(\._sessionSyncActivationCompleted)
         await store.receive(\._sessionSyncCompleted)
         await store.receive(\.delegate.unlocked)
 
@@ -292,6 +299,8 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
                     return AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "core",
                         source: "polar",
@@ -556,6 +565,8 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         let activeResponse = AccessStatusResponse(
             hasAccess: true,
             status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
             reason: "active_entitlement",
             productKey: "core",
             source: "polar",
@@ -769,6 +780,8 @@ extension ACC001RestoreAccountSessionTests {
                     return AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "core",
                         source: "polar",

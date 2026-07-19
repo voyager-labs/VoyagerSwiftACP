@@ -145,6 +145,12 @@
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
+    "label": "FileManagerHost Dev: Launch with Injection (Debug)",
+    "command": "mise",
+    "args": ["run", "macos-filemanager-injection"],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
     "label": "FileManagerHost Dev: Launch (Release)",
     "command": "./scripts/dev/macos-launch.sh",
     "args": [

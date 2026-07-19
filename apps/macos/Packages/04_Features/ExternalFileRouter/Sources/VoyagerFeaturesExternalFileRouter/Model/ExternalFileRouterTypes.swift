@@ -70,11 +70,19 @@ public struct ExternalFileRouterRequestContext: Equatable, Sendable {
     public let requestID: URL
     public let source: RouteSource
     public let mode: DeepLinkMode
+    /// AppRoot가 pending deep-link occurrence를 직렬화할 때 사용하는 identity
+    public let trackedRequestID: UUID?
 
-    public init(requestID: URL, source: RouteSource, mode: DeepLinkMode) {
+    public init(
+        requestID: URL,
+        source: RouteSource,
+        mode: DeepLinkMode,
+        trackedRequestID: UUID? = nil,
+    ) {
         self.requestID = requestID
         self.source = source
         self.mode = mode
+        self.trackedRequestID = trackedRequestID
     }
 }
 
@@ -88,6 +96,84 @@ public struct ExternalFileRouterNormalizationResult: Equatable, Sendable {
         self.path = path
         self.isDirectory = isDirectory
         self.context = context
+    }
+}
+
+// MARK: - ExternalFileRouter Batch
+
+/// 시스템 open callback 한 번에서 전달된 ordered file URL 묶음
+public struct ExternalFileRouterBatchRequest: Equatable, Sendable {
+    public let batchID: UUID
+    public let items: [Item]
+
+    public init(batchID: UUID, items: [Item]) {
+        self.batchID = batchID
+        self.items = items
+    }
+
+    public struct Item: Equatable, Sendable {
+        public let itemID: UUID
+        public let index: Int
+        public let url: URL
+        public let source: RouteSource
+        public let mode: DeepLinkMode
+
+        public init(itemID: UUID, index: Int, url: URL, source: RouteSource, mode: DeepLinkMode) {
+            self.itemID = itemID
+            self.index = index
+            self.url = url
+            self.source = source
+            self.mode = mode
+        }
+    }
+}
+
+/// ordered batch 정규화의 항목별 성공 목적지
+public enum ExternalFileRouterBatchDestination: Equatable, Sendable {
+    case collection(path: String)
+    case directory(path: String, revealPath: String?)
+}
+
+/// ordered batch 정규화의 항목별 성공 또는 실패
+public enum ExternalFileRouterBatchOutcome: Equatable, Sendable {
+    case success(ExternalFileRouterBatchDestination)
+    case failure(ExternalFileRouterError)
+}
+
+/// 입력 항목 identity와 위치를 그대로 보존하는 batch 결과 항목
+public struct ExternalFileRouterBatchItemResult: Equatable, Sendable {
+    public let itemID: UUID
+    public let index: Int
+    public let url: URL
+    public let source: RouteSource
+    public let mode: DeepLinkMode
+    public let outcome: ExternalFileRouterBatchOutcome
+
+    public init(
+        itemID: UUID,
+        index: Int,
+        url: URL,
+        source: RouteSource,
+        mode: DeepLinkMode,
+        outcome: ExternalFileRouterBatchOutcome,
+    ) {
+        self.itemID = itemID
+        self.index = index
+        self.url = url
+        self.source = source
+        self.mode = mode
+        self.outcome = outcome
+    }
+}
+
+/// callback 입력 수와 순서가 동일한 batch 정규화 결과
+public struct ExternalFileRouterBatchResult: Equatable, Sendable {
+    public let batchID: UUID
+    public let items: [ExternalFileRouterBatchItemResult]
+
+    public init(batchID: UUID, items: [ExternalFileRouterBatchItemResult]) {
+        self.batchID = batchID
+        self.items = items
     }
 }
 
@@ -113,9 +199,21 @@ public enum ExternalFileRouterAction: CasePathable {
     case setExpectedScheme(String)
     /// 외부에서 경로 수신 (deep link URL, system open event, nsservices)
     case receive(URL)
+    /// AppRoot FIFO가 terminal까지 추적하는 deep-link occurrence 수신
+    case receiveTracked(URL, requestID: UUID)
     /// 외부 file:// URL 직접 수신 (system open event, NSServices).
     /// ExternalFileURLParser를 거치지 않고 직접 요청을 생성한다.
     case receiveFileURL(URL, source: RouteSource, mode: DeepLinkMode)
+    /// system-open callback의 ordered batch를 한 effect로 정규화
+    case receiveBatch(ExternalFileRouterBatchRequest)
+    /// ordered batch 정규화 완료
+    case batchNormalizationCompleted(ExternalFileRouterBatchResult)
+    /// 일치하는 active batch 정규화를 취소
+    case cancelBatch(UUID)
+    /// 추적 중인 singleton occurrence의 path probe를 identity 단위로 취소
+    case cancelTrackedRequest(UUID)
+    /// 추적 중인 singleton occurrence의 라우팅 terminal
+    case singletonRequestCompleted(UUID)
     /// URL 정규화 완료 (pathReceived → pathNormalized)
     /// 동시 요청 겹침 시 state pollution 방지를 위해 요청 context를 payload로 전달
     case normalizeCompleted(ExternalFileRouterNormalizationResult)
@@ -130,21 +228,23 @@ public enum ExternalFileRouterAction: CasePathable {
     @CasePathable
     public enum Delegate: CasePathable {
         /// 일반 앱 열기 fallback (`voyager://open`, url 파라미터 없음)
-        case openAppFallback
+        case openAppFallback(trackedRequestID: UUID?)
         /// windowManager로 폴더 열기 위임 (windowRouted)
-        case openFolder(path: String)
+        case openFolder(path: String, trackedRequestID: UUID?)
         /// 파일의 부모 폴더 열기 위임 (parentFolderOpened)
         /// selectEntryPath가 nil이 아니면 해당 파일을 선택 focus 한다.
-        case openParentFolder(path: String, selectEntryPath: String?)
+        case openParentFolder(path: String, selectEntryPath: String?, trackedRequestID: UUID?)
         /// ACC로 auth/callback 전달 (auth callback 우회)
-        case routeToAuthCallback(URL)
+        case routeToAuthCallback(URL, trackedRequestID: UUID?)
         /// mode=reveal에서 파일 선택 focus 완료 (entrySelected)
         case selectEntryCompleted(path: String)
         /// P1 fix: 오류 표시 delegate — 부모 reducer가 사용자에게 오류 알림을 띄울 수 있도록 위임
         /// 유효하지 않은 경로 오류를 부모 reducer에 위임 (invalidPathError)
-        case showInvalidPathError(path: String)
+        case showInvalidPathError(path: String, trackedRequestID: UUID?)
         /// 접근 권한 거부 오류를 부모 reducer에 위임 (permissionDeniedError)
-        case showPermissionDeniedError(path: String)
+        case showPermissionDeniedError(path: String, trackedRequestID: UUID?)
+        /// ordered batch의 1:1 정규화 결과를 부모 reducer에 한 번만 위임
+        case batchNormalized(ExternalFileRouterBatchResult)
     }
 }
 
@@ -156,16 +256,24 @@ public struct ExternalFileRouterState: Equatable {
     public var currentStatus: ExternalFileRouterStatus?
     /// 현재 처리 중인 요청 정보
     public var currentRequest: ExternalFileRouterRequest?
+    /// 현재 정규화 중인 tracked singleton identity
+    public var activeTrackedRequestID: UUID?
+    /// 현재 정규화 중인 system-open batch identity
+    public var activeBatchID: UUID?
     /// ExternalFileURLParser에서 수신할 URL scheme (기본값: "voyager")
     public var expectedScheme: String
 
     public init(
         currentStatus: ExternalFileRouterStatus? = nil,
         currentRequest: ExternalFileRouterRequest? = nil,
+        activeTrackedRequestID: UUID? = nil,
+        activeBatchID: UUID? = nil,
         expectedScheme: String = "voyager",
     ) {
         self.currentStatus = currentStatus
         self.currentRequest = currentRequest
+        self.activeTrackedRequestID = activeTrackedRequestID
+        self.activeBatchID = activeBatchID
         self.expectedScheme = expectedScheme
     }
 }

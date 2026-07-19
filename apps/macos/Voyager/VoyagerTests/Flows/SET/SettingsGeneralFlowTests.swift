@@ -53,7 +53,9 @@ final class SettingsGeneralFlowTests: XCTestCase {
     /// set.settings_general: check_for_updates_delegation
     func testCheckForUpdatesRoutesFromSettingsToRootUpdater() async {
         let checkForUpdatesCalls = LockIsolated(0)
-        let store = TestStore(initialState: AppRootFeature.State()) {
+        var initialState = AppRootFeature.State()
+        initialState.updater.isAccessEligible = true
+        let store = TestStore(initialState: initialState) {
             AppRootFeature()
         } withDependencies: {
             $0.updaterClient.checkForUpdates = {

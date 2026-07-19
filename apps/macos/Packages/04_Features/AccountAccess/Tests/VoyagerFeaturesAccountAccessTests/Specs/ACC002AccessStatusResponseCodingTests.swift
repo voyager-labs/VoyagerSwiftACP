@@ -4,7 +4,7 @@ import XCTest
 
 /// ACC-002: AccessStatusResponse backend wire-format 디코딩 및 toAccessStatus() 매핑 검증.
 ///
-/// Backend `GET /access/status`가 반환하는 camelCase JSON을 AccessStatusResponse가 올바르게 디코딩하고,
+/// Backend `GET /access/status`가 반환하는 canonical snake_case JSON을 AccessStatusResponse가 올바르게 디코딩하고,
 /// `toAccessStatus()`가 raw status + productKey 조합을 canonical AccessStatus로 변환하는지 검증한다.
 final class ACC002AccessStatusResponseCodingTests: XCTestCase {
     private var decoder: JSONDecoder = {
@@ -13,18 +13,21 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
         return jsonDecoder
     }()
 
-    // MARK: - Backend camelCase decode
+    // MARK: - Backend snake_case decode
 
-    /// Backend JSON(camelCase)이 AccessStatusResponse로 올바르게 디코딩된다.
-    func testBackendCamelCaseDecode() throws {
+    /// Backend JSON(snake_case)이 AccessStatusResponse로 올바르게 디코딩된다.
+    func testBackendSnakeCaseDecode() throws {
         let json = """
         {
-            "hasAccess": true,
+            "has_access": true,
             "status": "active",
             "reason": "active_entitlement",
-            "productKey": "trial",
-            "currentPeriodEnd": "2026-07-05T00:00:00Z",
-            "source": "polar"
+            "product_key": "trial",
+            "current_period_end": "2026-07-05T00:00:00Z",
+            "source": "polar",
+            "ownership_status": "trial",
+            "update_status": "active",
+            "updates_through": null
         }
         """
         let data = Data(json.utf8)
@@ -37,13 +40,53 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
         XCTAssertEqual(response.productKey, "trial")
         XCTAssertNotNil(response.currentPeriodEnd)
         XCTAssertEqual(response.source, "polar")
+        XCTAssertEqual(response.ownershipStatus, "trial")
+        XCTAssertEqual(response.updateStatus, "active")
+        XCTAssertNil(response.updatesThrough)
+    }
+
+    /// ACC-002-check_entitlement_status: 배포 중인 gateway camelCase access tuple도 canonical DTO로 복원한다.
+    /// - 검증 내용: camelCase access 필드와 snake_case eligibility tuple의 decode, canonical snake_case encode
+    /// - 사전 조건: gateway가 hasAccess, productKey, currentPeriodEnd를 camelCase로 반환한다.
+    /// - 기대 결과: 응답이 정상 decode되고 재인코딩은 canonical snake_case 키만 사용한다.
+    func testGatewayCamelCaseAccessFieldsDecodeWithSnakeCaseEligibilityTuple() throws {
+        let json = """
+        {
+            "hasAccess": true,
+            "status": "active",
+            "productKey": "core",
+            "currentPeriodEnd": "2026-07-05T00:00:00Z",
+            "ownership_status": "owned",
+            "update_status": "active",
+            "updates_through": "2026-12-31T00:00:00Z"
+        }
+        """
+
+        let response = try decoder.decode(AccessStatusResponse.self, from: Data(json.utf8))
+
+        XCTAssertTrue(response.hasAccess)
+        XCTAssertEqual(response.productKey, "core")
+        XCTAssertNotNil(response.currentPeriodEnd)
+        XCTAssertEqual(response.ownershipStatus, "owned")
+        XCTAssertEqual(response.updateStatus, "active")
+        XCTAssertNotNil(response.updatesThrough)
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let encoded = try XCTUnwrap(try JSONSerialization.jsonObject(with: encoder.encode(response)) as? [String: Any])
+        XCTAssertNotNil(encoded["has_access"])
+        XCTAssertNotNil(encoded["product_key"])
+        XCTAssertNotNil(encoded["current_period_end"])
+        XCTAssertNil(encoded["hasAccess"])
+        XCTAssertNil(encoded["productKey"])
+        XCTAssertNil(encoded["currentPeriodEnd"])
     }
 
     /// optional 필드가 누락된 JSON이 nil로 디코딩된다.
     func testMissingOptionalFieldsDecodeAsNil() throws {
         let json = """
         {
-            "hasAccess": false,
+            "has_access": false,
             "status": "none"
         }
         """
@@ -57,15 +100,18 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
         XCTAssertNil(response.productKey)
         XCTAssertNil(response.currentPeriodEnd)
         XCTAssertNil(response.source)
+        XCTAssertNil(response.ownershipStatus)
+        XCTAssertNil(response.updateStatus)
+        XCTAssertNil(response.updatesThrough)
     }
 
     /// currentPeriodEnd가 null인 JSON이 nil로 디코딩된다.
     func testNullCurrentPeriodEndDecodesAsNil() throws {
         let json = """
         {
-            "hasAccess": true,
+            "has_access": true,
             "status": "active",
-            "currentPeriodEnd": null
+            "current_period_end": null
         }
         """
         let data = Data(json.utf8)
@@ -83,6 +129,8 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
         let response = AccessStatusResponse(
             hasAccess: true,
             status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
             reason: "active_entitlement",
             productKey: "trial",
             source: "polar",
@@ -95,6 +143,8 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
         let response = AccessStatusResponse(
             hasAccess: true,
             status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
             reason: "active_entitlement",
             productKey: "core",
             source: "polar",
@@ -107,6 +157,8 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
         let response = AccessStatusResponse(
             hasAccess: true,
             status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
             productKey: "lifetime",
         )
         XCTAssertEqual(response.toAccessStatus(), .coreLicenseActive)
@@ -117,6 +169,8 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
         let response = AccessStatusResponse(
             hasAccess: true,
             status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
             productKey: nil,
         )
         XCTAssertEqual(response.toAccessStatus(), .coreLicenseActive)
@@ -218,6 +272,8 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
         let original = AccessStatusResponse(
             hasAccess: true,
             status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
             reason: "active_entitlement",
             productKey: "core",
             currentPeriodEnd: Date(timeIntervalSince1970: 1_800_000_000),
@@ -254,6 +310,8 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
         XCTAssertEqual(snapshot.status, .coreLicenseActive)
         XCTAssertEqual(snapshot.currentPeriodEnd, expiresAt)
         XCTAssertEqual(snapshot.fetchedAt, fetchedAt)
+        XCTAssertEqual(snapshot.schemaVersion, 0)
+        XCTAssertNil(snapshot.updatesThrough)
     }
 
     func testSnapshotStorePreservesSameBindingAndClearsReplacement() async {

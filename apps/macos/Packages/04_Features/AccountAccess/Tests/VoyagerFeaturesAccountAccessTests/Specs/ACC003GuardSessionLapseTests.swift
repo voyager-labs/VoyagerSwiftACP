@@ -134,6 +134,42 @@ final class ACC003GuardSessionLapseTests: XCTestCase {
         )
     }
 
+    /// ACC-003-guard_session_lapse: signed-in access 검증 대기 중에는 진행 상태 제목을 표시한다.
+    /// pending CTA가 로그인 안내가 아닌 검증 진행 상태로 투영되는지 검증한다.
+    /// - 검증 내용: pending CTA의 다이얼로그 제목
+    /// - 사전 조건: signed-in access validation이 pending
+    /// - 기대 결과: "Checking access..."가 표시된다
+    func testPendingAccessShowsCheckingTitle() {
+        XCTAssertEqual(
+            SessionLapseGuardView.dialogTitle(didSignInFail: false, accessUnlockPrimaryCTA: .pending),
+            "Checking access...",
+        )
+    }
+
+    /// ACC-003-guard_session_lapse: signed-in access 검증 대기 중에는 primary action을 만들지 않는다.
+    /// pending CTA가 inert 로그인 액션으로 변환되지 않는지 검증한다.
+    /// - 검증 내용: pending CTA의 primary action
+    /// - 사전 조건: signed-in access validation이 pending
+    /// - 기대 결과: primary action이 nil이다
+    func testPendingAccessHasNoPrimaryAction() {
+        XCTAssertNil(SessionLapseGuardView.primaryButtonAction(for: .pending))
+    }
+
+    /// ACC-003-guard_session_lapse: signed-in access 검증 대기 중에는 버튼 대신 진행 표시를 투영한다.
+    /// 로그인 진행 상태와 무관하게 pending CTA가 진행 표시를 유지하는지 검증한다.
+    /// - 검증 내용: pending CTA의 progress/button projection
+    /// - 사전 조건: isSignInInProgress==false, access validation이 pending
+    /// - 기대 결과: 진행 표시는 true이고 primary action은 nil이다
+    func testPendingAccessProjectsProgressWithoutButton() {
+        XCTAssertTrue(
+            SessionLapseGuardView.shouldShowProgress(
+                accessUnlockPrimaryCTA: .pending,
+                isSignInInProgress: false,
+            ),
+        )
+        XCTAssertNil(SessionLapseGuardView.primaryButtonAction(for: .pending))
+    }
+
     func testReauthCompleteDismissesOverlay() {
         var state = AccountAccessFeature.State()
         state.didSignInFail = true

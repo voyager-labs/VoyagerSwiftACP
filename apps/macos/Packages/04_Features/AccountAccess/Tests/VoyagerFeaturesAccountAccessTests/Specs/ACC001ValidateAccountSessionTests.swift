@@ -1,6 +1,7 @@
 import Clocks
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
+import VoyagerShared
 import XCTest
 
 /*
@@ -21,6 +22,16 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
     private let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
     private let nearExpiryDate = Date(timeIntervalSince1970: 1_700_000_100)
     private let newExpiryDate = Date(timeIntervalSince1970: 1_700_003_600)
+
+    private func waitUntil(_ condition: @escaping @Sendable () async -> Bool) async -> Bool {
+        for _ in 0 ..< 1000 {
+            if await condition() {
+                return true
+            }
+            await Task.yield()
+        }
+        return false
+    }
 
     // MARK: - ACC-001-validate_account_session
 
@@ -167,6 +178,9 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
             gatewayBinding: GatewayEnvironment(rawValue: "").binding,
             deviceID: "test-device-id",
             deviceBindingVerifiedAt: referenceDate,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
         )
         var initialState = sessionNearExpiryState()
         initialState.status = .coreLicenseActive
@@ -333,6 +347,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
                 refreshToken: { throw AccessError.notConfigured },
                 syncSession: { intent, _ in
                     intents.append(intent)
+                    continuation?.resume(throwing: CancellationError())
                     return try await withCheckedThrowingContinuation { continuation = $0 }
                 },
             ),
@@ -352,7 +367,7 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         await store.receive(\._persistedSessionRevalidated)
 
         XCTAssertNotNil(continuation)
-        XCTAssertEqual(intents, [.validate])
+        XCTAssertEqual(intents, [.validate, .validate])
 
         if let continuation {
             continuation.resume(returning: SessionSyncResult(
@@ -365,6 +380,127 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
             await Task.yield()
             await store.finish()
         }
+    }
+
+    /// ACC-001-validate_account_session: signed-in pending 상태의 Login 선택은 활성 session sync를 취소하지 않는다.
+    /// - 검증 내용: loginTapped 뒤에도 activation completion이 validate sync를 시작하고 완료 결과를 적용한다.
+    /// - 사전 조건: signed-in session의 manual validate sync activation이 보류되어 있다.
+    /// - 기대 결과: sync generation과 in-flight reason을 유지한 채 sync가 한 번 완료된다.
+    func testSignedInLoginTappedKeepsActiveSessionSyncRunning() async {
+        let binding = UUID()
+        let activationGate = ActivationGate()
+        let recorder = SyncRecorder()
+        var state = sessionNearExpiryState()
+        state.sessionBindingID = binding
+        let store = TestStore(initialState: state) {
+            AccountAccessFeature()
+        } withDependencies: {
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                activate: { _, _ in await activationGate.wait() },
+                load: { _, _ in nil },
+                save: { _, _, _, _ in },
+                remove: { _, _, _ in },
+            )
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in throw DeviceBindingError.notConfigured },
+                refreshToken: { throw AccessError.notConfigured },
+                syncSession: { _, _ in
+                    await recorder.recordSync()
+                    return Self.activeCompleteSyncResult
+                },
+            )
+            $0.date = .constant(referenceDate)
+        }
+        // store.exhaustivity = .off: active sync의 완료 상태보다 signed-in login no-op과 진행 중인 sync 연속성을 검증
+        store.exhaustivity = .off
+
+        await store.send(.sessionSyncRequested(intent: .validate, reason: .manual))
+        let activationWaiting = await waitUntil { await activationGate.isWaiting() }
+        XCTAssertTrue(activationWaiting)
+
+        await store.send(.loginTapped(context: .paywall, scope: .lifecycle))
+
+        XCTAssertEqual(store.state.syncGeneration, 1)
+        XCTAssertEqual(store.state.inFlightSyncReason, .manual)
+        XCTAssertTrue(store.state.isSubmitting)
+        await activationGate.resume(with: 1)
+        await store.receive(\._sessionSyncActivationCompleted)
+        await store.receive(\._sessionSyncCompleted)
+        await store.receive(\.delegate.unlocked)
+
+        let syncCallCount = await recorder.syncCallCount()
+        XCTAssertEqual(syncCallCount, 1)
+        await store.finish()
+    }
+
+    /// ACC-001-validate_account_session: signed-in pending 상태의 Login 선택은 persisted revalidation을 취소하지 않는다.
+    /// - 검증 내용: 보류된 persisted read가 loginTapped 뒤 valid completion과 foreground validate sync를 전달한다.
+    /// - 사전 조건: signed-in session의 foreground persisted revalidation이 storage read에서 대기한다.
+    /// - 기대 결과: revalidation generation을 유지하고 완료된 session은 foreground sync로 이어진다.
+    func testSignedInLoginTappedKeepsPersistedRevalidationRunning() async {
+        let session = Self.session(expiresAt: referenceDate.addingTimeInterval(3600))
+        let readGate = SessionReadGate()
+        let activationGate = ActivationGate()
+        var state = sessionNearExpiryState()
+        state.sessionExpiresAt = session.expiresAt
+        let store = TestStore(initialState: state) {
+            AccountAccessFeature()
+        } withDependencies: {
+            $0.accountSessionClient = AccountSessionClient(
+                read: { _ in await readGate.read() },
+                persist: { _ in },
+                delete: { _ in },
+            )
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                activate: { _, _ in await activationGate.wait() },
+                load: { _, _ in nil },
+                save: { _, _, _, _ in },
+                remove: { _, _, _ in },
+            )
+            $0.continuousClock = TestClock()
+            $0.date = .constant(referenceDate)
+        }
+        // store.exhaustivity = .off: persisted read 이후의 full sync projection보다 revalidation cancellation 부재를 검증
+        store.exhaustivity = .off
+
+        await store.send(.appDidBecomeActive) { state in
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
+        }
+        await store.receive(\.revalidatePersistedSession)
+        let readWaiting = await waitUntil { await readGate.isWaiting() }
+        XCTAssertTrue(readWaiting)
+
+        await store.send(.loginTapped(context: .paywall, scope: .lifecycle))
+
+        XCTAssertEqual(store.state.revalidationGeneration, 1)
+        XCTAssertEqual(store.state.refreshDeadlineGeneration, 1)
+        await readGate.resume(with: session)
+        await store.receive(\._persistedSessionRevalidated) { state in
+            state.refreshDeadlineGeneration = 2
+        }
+        await store.receive(sessionSyncRequestedCasePath(intent: .validate, reason: .foreground)) { state in
+            state.syncGeneration = 1
+            state.inFlightSyncReason = .foreground
+            state.isSubmitting = true
+        }
+        let activationWaiting = await waitUntil { await activationGate.isWaiting() }
+        XCTAssertTrue(activationWaiting)
+
+        await store.send(.appWillTerminate) { state in
+            state.fetchGeneration = 1
+            state.syncGeneration = 2
+            state.inFlightSyncReason = nil
+            state.revalidationGeneration = 2
+            state.isSubmitting = false
+            state.ttlTimerActive = false
+            state.handoffGeneration = 1
+            state.refreshDeadlineGeneration = 3
+        }
+        await activationGate.resume(with: 1)
+        await store.finish()
     }
 
     /// ACC-001-validate_account_session: refresh deadline은 unified refresh sync를 요청한다.
@@ -604,6 +740,7 @@ extension ACC001ValidateAccountSessionTests {
         let clock = TestClock()
         let binding = UUID()
         let sessionExpiry = newExpiryDate
+        let releaseIdentityNow = referenceDate
         let cachedSnapshot = AccessStatusSnapshot.fetchResult(
             status: .coreLicenseActive,
             currentPeriodEnd: nil,
@@ -613,6 +750,9 @@ extension ACC001ValidateAccountSessionTests {
             gatewayBinding: GatewayEnvironment(rawValue: "").binding,
             deviceID: "test-device-id",
             deviceBindingVerifiedAt: referenceDate,
+            ownershipStatus: "owned",
+            updateStatus: "active",
+            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
         )
         let cachedEnvelope = AccessStatusSnapshotEnvelope(
             sessionBindingID: binding,
@@ -653,6 +793,9 @@ extension ACC001ValidateAccountSessionTests {
             }, save: { _, _, _, _ in }, remove: { _, _, _ in })
             $0.continuousClock = clock
             $0.date = .constant(referenceDate)
+            $0.releaseIdentityClient = ReleaseIdentityClient(resolve: { _ in
+                try? ReleaseIdentity(releasedAt: "2023-11-14T22:13:20Z", now: releaseIdentityNow)
+            })
         }
         // store.exhaustivity = .off: retry 내부 호출 횟수와 최종 cache recovery 상태를 집중 검증
         store.exhaustivity = .off
@@ -675,10 +818,12 @@ extension ACC001ValidateAccountSessionTests {
     }
 
     /// ACC-001-validate_account_session: retry exhaustion fallback은 만료된 snapshot session이면 unlock하지 않는다.
-    /// - 검증 내용: complete envelope와 active device proof, refresh credential이 있어도 snapshot session이 만료면 recovery로
-    /// 끝난다.
-    /// - 사전 조건: upstream failure가 반복되고 current binding의 trusted snapshot session은 정확히 현재 시각에 만료된다.
-    /// - 기대 결과: snapshot load는 한 번 수행되나 unlocked delegate 없이 network recovery를 전달한다.
+    /// - 검증 내용: stale update eligibility failure를 지운 뒤 complete envelope와 active device proof, refresh credential이 있어도
+    /// snapshot session이 만료면 network recovery가 CTA를 소유한다.
+    /// - 사전 조건: signed-in 상태에 `.missingReleaseIdentity`가 남아 있고 upstream failure가 반복되며 current binding의 trusted
+    /// snapshot session은 정확히 현재 시각에 만료된다.
+    /// - 기대 결과: snapshot load는 한 번 수행되고 unlocked delegate 없이 update eligibility failure를 비운 network recovery가
+    /// `.retry` CTA를 제공한다.
     func testValidateRetryExhaustionRejectsExpiredSnapshotSession() async {
         nonisolated(unsafe) var attempts = 0
         nonisolated(unsafe) var loadedSnapshots = 0
@@ -702,6 +847,7 @@ extension ACC001ValidateAccountSessionTests {
         )
         var state = sessionNearExpiryState()
         state.sessionBindingID = binding
+        state.updateEligibilityFailure = .missingReleaseIdentity
         let store = TestStore(initialState: state) {
             AccountAccessFeature()
         } withDependencies: {
@@ -739,6 +885,7 @@ extension ACC001ValidateAccountSessionTests {
             state.syncGeneration = 1
             state.inFlightSyncReason = .manual
             state.isSubmitting = true
+            state.updateEligibilityFailure = nil
         }
         await store.receive(\._sessionSyncActivationCompleted)
         for _ in 0 ..< 10 where attempts < 1 {
@@ -759,6 +906,8 @@ extension ACC001ValidateAccountSessionTests {
         XCTAssertEqual(loadedSnapshots, 1)
         XCTAssertFalse(store.state.isComplete)
         XCTAssertNil(store.state.snapshot)
+        XCTAssertNil(store.state.updateEligibilityFailure)
+        XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .retry)
         await store.finish()
     }
 
@@ -1366,6 +1515,25 @@ private actor ActivationGate {
     }
 }
 
+private actor SessionReadGate {
+    private var continuation: CheckedContinuation<AccountSession, Never>?
+
+    func read() async -> AccountSession {
+        await withCheckedContinuation {
+            continuation = $0
+        }
+    }
+
+    func isWaiting() -> Bool {
+        continuation != nil
+    }
+
+    func resume(with session: AccountSession) {
+        continuation?.resume(returning: session)
+        continuation = nil
+    }
+}
+
 private actor SyncRecorder {
     private var callCount = 0
     private var savedGenerations: [Int] = []
@@ -1400,7 +1568,13 @@ private extension ACC001ValidateAccountSessionTests {
         SessionSyncResult(
             sessionStatus: .unchanged,
             syncStatus: .complete,
-            accessStatus: AccessStatusResponse(hasAccess: true, status: "active"),
+            accessStatus: AccessStatusResponse(
+                hasAccess: true,
+                status: "active",
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
+            ),
             deviceBindingOutcome: .bound,
             connectedDeviceAvailability: .available,
         )

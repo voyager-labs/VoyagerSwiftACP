@@ -11,7 +11,10 @@ extension AccountAccessFeature {
             return .none
         }
 
-        let transaction = AccountAccessHandoffTransaction(context: context, scope: scope)
+        let transaction = AccountAccessHandoffTransaction(
+            context: context,
+            scope: scope,
+        )
         state.isSignInInProgress = true
         state.didSignInFail = false
         state.handoffGeneration &+= 1
@@ -142,7 +145,9 @@ extension AccountAccessFeature {
         _ state: inout State,
         pendingState: String,
     ) -> Effect<Action> {
-        guard state.handoffPendingState == pendingState else {
+        guard state.handoffTransaction != nil,
+              state.handoffPendingState == pendingState
+        else {
             return .none
         }
 
@@ -214,7 +219,8 @@ extension AccountAccessFeature {
         generation: UInt64,
         result: Result<AccountAccessHandoffCompletion, AppHandoffExchangeError>,
     ) -> Effect<Action> {
-        guard state.handoffGeneration == generation,
+        guard state.handoffTransaction != nil,
+              state.handoffGeneration == generation,
               state.handoffExchangeState == pendingState
         else { return .none }
         let scope = handoffScope(state)
@@ -246,7 +252,9 @@ extension AccountAccessFeature {
             state.didSignInFail = true
             state.hasAccountSession = false
             state.handoffPendingState = nil
-            return .cancel(id: CancelID.handoffCallbackTimeout(scope))
+            return .merge(
+                .cancel(id: CancelID.handoffCallbackTimeout(scope)),
+            )
         }
     }
 
@@ -256,7 +264,8 @@ extension AccountAccessFeature {
         generation: UInt64,
         session: AccountSession,
     ) -> Effect<Action> {
-        guard state.handoffGeneration == generation,
+        guard state.handoffTransaction != nil,
+              state.handoffGeneration == generation,
               state.handoffExchangeState == pendingState
         else {
             return .none
@@ -278,6 +287,12 @@ extension AccountAccessFeature {
                     )),
                 ))
             } catch {
+                do {
+                    try await sessionClient.discardPersistedSession(session)
+                } catch {
+                    await send(._handoffPersistenceRollbackFailed(generation: generation))
+                    return
+                }
                 await send(._handoffExchangeCompleted(
                     state: pendingState,
                     generation: generation,

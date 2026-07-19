@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import IdentifiedCollections
+import VoyagerEntitiesCollection
 
 public struct ContentTabID: Hashable, Sendable, Codable {
     public let rawValue: String
@@ -207,5 +208,47 @@ public extension ContentTabState {
         )
 
         return (state: state, didCompact: didCompact, droppedCount: totalExcluded)
+    }
+}
+
+extension ContentTabItem {
+    static func makeExternalReservation(
+        id: ContentTabID,
+        anchor: ContentTabPageAnchor,
+    ) -> Self {
+        let page: ContentTabPage
+        let title: String
+        let iconName: String
+        switch anchor {
+        case let .directory(path):
+            page = .directory
+            let lastPathComponent = URL(fileURLWithPath: path).lastPathComponent
+            title = lastPathComponent.isEmpty ? path : lastPathComponent
+            iconName = "folder"
+        case let .collectionFile(url):
+            page = .collection
+            title = CollectionFileUtils.displayName(url, fallback: url.lastPathComponent)
+            iconName = "rectangle.stack"
+        case .homeDefault:
+            page = .home
+            title = "Home"
+            iconName = "house"
+        case let .virtualCollection(id):
+            page = .collection
+            title = id
+            iconName = "folder"
+        case .aiChat:
+            page = .aiChat
+            title = "AI Chat"
+            iconName = "sparkles"
+        }
+        return Self(
+            id: id,
+            page: page,
+            anchor: anchor,
+            isPinned: false,
+            title: title,
+            iconName: iconName,
+        )
     }
 }

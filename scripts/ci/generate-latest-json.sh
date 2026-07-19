@@ -30,7 +30,11 @@ path = sys.argv[1]
 print(os.path.getsize(path))
 PY
 )"
-PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+PUBLISHED_AT="${VOYAGER_RELEASED_AT:-}"
+if [[ -z "${PUBLISHED_AT}" ]]; then
+  echo "Missing env: VOYAGER_RELEASED_AT" >&2
+  exit 1
+fi
 
 mkdir -p "$(dirname "${OUT_PATH}")"
 

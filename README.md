@@ -90,6 +90,7 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
             - `OnboardingHost Dev: Launch (Debug)` / `OnboardingHost Dev: Launch (Release)`
             - `SettingsHost Dev: Launch (Debug)` / `SettingsHost Dev: Launch (Release)`
             - `FileManagerHost Dev: Launch (Debug)` / `FileManagerHost Dev: Launch (Release)`
+            - `FileManagerHost Dev: Launch with Injection (Debug)` - InjectionNext 앱 실행과 감시 환경을 포함한 전용 task
             - `Voyager Dev: Build Only (Debug)` - 빌드만 (런치 없음)
             - `Voyager Dev: Test` - Voyager-Dev 스킴 테스트
         - `Voyager Dev: Launch (Debug)` task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 바꾸면 진행 상태를 유지한 채 온보딩을 강제로 표시합니다. 이 값은 launch 환경이며 `.env` 설정이 아니고 Release/Prod에서는 지원하지 않습니다.

@@ -344,9 +344,7 @@ public extension AuthNetworkClient {
     ) async throws -> SessionSyncResult {
         let decoded: SessionSyncResponse
         do {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            decoded = try decoder.decode(SessionSyncResponse.self, from: data)
+            decoded = try gatewayJSONDecoder().decode(SessionSyncResponse.self, from: data)
         } catch {
             throw SessionSyncError.upstream(200)
         }
@@ -380,8 +378,12 @@ public extension AuthNetworkClient {
             nil
         case 401:
             .invalidCredential
-        default:
+        case 400, 413, 429:
+            .invalidResponse(statusCode)
+        case 500 ... 599:
             .upstream(statusCode)
+        default:
+            .invalidResponse(statusCode)
         }
     }
 
@@ -579,12 +581,43 @@ extension AuthNetworkClient {
 
     static func decodeAccessStatusResponse(_ data: Data) throws -> AccessStatusResponse {
         do {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return try decoder.decode(AccessStatusResponse.self, from: data)
+            return try gatewayJSONDecoder().decode(AccessStatusResponse.self, from: data)
         } catch {
             throw AccessError.decodingFailure
         }
+    }
+
+    static func gatewayJSONDecoder() -> JSONDecoder {
+        let fractionalFormatter = gatewayDateFormatter("yyyy-MM-dd'T'HH:mm:ss.SSSSSSSSS'Z'")
+        let wholeSecondFormatter = gatewayDateFormatter("yyyy-MM-dd'T'HH:mm:ss'Z'")
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let value = try container.decode(String.self)
+            guard value.range(
+                of: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$"#,
+                options: .regularExpression,
+            ) != nil,
+                let date = fractionalFormatter.date(from: value) ?? wholeSecondFormatter.date(from: value)
+            else {
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Gateway date must be a valid RFC3339 UTC timestamp.",
+                )
+            }
+            return date
+        }
+        return decoder
+    }
+
+    private static func gatewayDateFormatter(_ format: String) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = format
+        formatter.isLenient = false
+        return formatter
     }
 
     static func decodeRefreshSuccessResponse(_ data: Data) throws -> RefreshSuccessResponse {

@@ -19,6 +19,7 @@ struct OnboardingAccessProjection: Equatable {
     var primaryCTA: PrimaryCTA
     var snapshot: AccessStatusSnapshot?
     var entitlementState: EntitlementState
+    var updateEligibilityFailure: UpdateEligibilityFailure?
 
     init(
         hasAccountSession: Bool = false,
@@ -38,6 +39,7 @@ struct OnboardingAccessProjection: Equatable {
         primaryCTA: PrimaryCTA = .login,
         snapshot: AccessStatusSnapshot? = nil,
         entitlementState: EntitlementState = .unknown,
+        updateEligibilityFailure: UpdateEligibilityFailure? = nil,
     ) {
         self.hasAccountSession = hasAccountSession
         self.isSignInInProgress = isSignInInProgress
@@ -56,6 +58,7 @@ struct OnboardingAccessProjection: Equatable {
         self.primaryCTA = primaryCTA
         self.snapshot = snapshot
         self.entitlementState = entitlementState
+        self.updateEligibilityFailure = updateEligibilityFailure
     }
 
     init(accountAccess: AccountAccessFeature.State) {
@@ -77,6 +80,7 @@ struct OnboardingAccessProjection: Equatable {
             primaryCTA: PrimaryCTA(accountAccess.accessUnlockPrimaryCTA),
             snapshot: accountAccess.snapshot,
             entitlementState: EntitlementState(accountAccess.status),
+            updateEligibilityFailure: accountAccess.updateEligibilityFailure,
         )
     }
 
@@ -119,6 +123,7 @@ struct OnboardingAccessProjection: Equatable {
         case webPricing
         case next
         case pending
+        case eligibleDownload
 
         init(_ primaryCTA: AccessUnlockPrimaryCTA) {
             switch primaryCTA {
@@ -134,6 +139,8 @@ struct OnboardingAccessProjection: Equatable {
                 self = .next
             case .pending:
                 self = .pending
+            case .eligibleDownload:
+                self = .eligibleDownload
             }
         }
     }
@@ -147,6 +154,7 @@ enum OnboardingAccessIntent: Equatable {
     case openPricing
     case openAccount
     case openAccessHelp
+    case openEligibleDownload
 
     var accountAccessAction: AccountAccessAction {
         switch self {
@@ -164,6 +172,8 @@ enum OnboardingAccessIntent: Equatable {
             .openAccountTapped
         case .openAccessHelp:
             .openAccessHelpTapped
+        case .openEligibleDownload:
+            .openEligibleDownloadTapped
         }
     }
 }

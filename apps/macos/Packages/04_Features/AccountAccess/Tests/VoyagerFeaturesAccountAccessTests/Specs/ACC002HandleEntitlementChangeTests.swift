@@ -17,6 +17,8 @@ import XCTest
 final class ACC002HandleEntitlementChangeTests: XCTestCase {
     private let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
 
+    private let eligibleUpdatesThrough = Date(timeIntervalSince1970: 2_000_000_000)
+
     private static func session(expiresAt: Date) -> AccountSession {
         AccountSession(
             accessToken: "test-access-token",
@@ -39,26 +41,62 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             persist: { _ in },
             delete: { _ in },
         )
+        let clock = TestClock()
+        let currentAuthNetworkClient = currentSessionSyncClient(from: authNetworkClient)
         return TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
             $0.accountSessionClient = sessionClient
-            $0.authNetworkClient = authNetworkClient
+            $0.authNetworkClient = currentAuthNetworkClient
             $0.accessStatusSnapshotClient = snapshotClient
             $0.date = .constant(referenceDate)
+            $0.continuousClock = clock
         }
+    }
+
+    private func currentSessionSyncClient(from legacy: AuthNetworkClient) -> AuthNetworkClient {
+        AuthNetworkClient(
+            exchangeHandoff: legacy.exchangeHandoff,
+            fetchAccessStatus: legacy.fetchAccessStatus,
+            bindDevice: legacy.bindDevice,
+            refreshToken: legacy.refreshToken,
+            syncSession: { _, device in
+                let access = try await legacy.fetchAccessStatus()
+                let outcome: SessionSyncDeviceBindingOutcome
+                if access.toAccessStatus().isActive {
+                    do {
+                        _ = try await legacy.bindDevice(device)
+                        outcome = .bound
+                    } catch let error as DeviceBindingError {
+                        switch error {
+                        case .seatCapacityExceeded:
+                            outcome = .deviceLimitReached
+                        case .unauthorized:
+                            throw SessionSyncError.invalidCredential
+                        default:
+                            outcome = .notAttempted
+                        }
+                    }
+                } else {
+                    outcome = .notAttempted
+                }
+                return SessionSyncResult(
+                    sessionStatus: .unchanged,
+                    syncStatus: .complete,
+                    accessStatus: access,
+                    deviceBindingOutcome: outcome,
+                    connectedDeviceAvailability: .available,
+                )
+            },
+        )
     }
 
     private func receiveValidForegroundRevalidation(
         from store: TestStore<AccountAccessFeature.State, AccountAccessFeature.Action>,
-        sessionExpiry: Date,
-        fetchGeneration: Int,
+        sessionExpiry _: Date,
     ) async {
         await store.receive(\.revalidatePersistedSession)
-        await store.receive(\._persistedSessionRevalidated) { state in
-            state.sessionExpiresAt = sessionExpiry
-            state.fetchGeneration = fetchGeneration
-        }
+        await store.receive(\._persistedSessionRevalidated)
     }
 
     private func expectedSnapshot(status: AccessStatus, sessionExpiry: Date) -> AccessStatusSnapshot {
@@ -181,6 +219,8 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
                     return AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "core",
                         source: "polar",
@@ -191,8 +231,6 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             ),
             initialState: initialState,
         )
-        // store.exhaustivity = .off: appDidBecomeActive 이후 fetchAccessStatusEffect의 응답인
-        // accessStatusResponse는 검증 범위 밖 (fetchGeneration 증가만 확인)
         store.exhaustivity = .off
 
         XCTAssertEqual(store.state.fetchGeneration, 0)
@@ -201,11 +239,18 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
         await receiveValidForegroundRevalidation(
             from: store,
             sessionExpiry: referenceDate.addingTimeInterval(3600),
-            fetchGeneration: 1,
         )
 
-        XCTAssertEqual(store.state.fetchGeneration, 1)
+        await store.receive(\.sessionSyncRequested)
+        await store.receive(\._sessionSyncActivationCompleted)
+        await store.receive(\._sessionSyncCompleted)
+        await store.receive(\.delegate.unlocked)
+
+        XCTAssertEqual(store.state.fetchGeneration, 0)
+        XCTAssertEqual(store.state.syncGeneration, 1)
+        XCTAssertTrue(store.state.isComplete)
         XCTAssertTrue(fetchCalled)
+        await store.skipInFlightEffects()
     }
 
     /// ACC-002-handle_entitlement_change: hasAccountSession=false에서 appDidBecomeActive가 .none을 반환한다.
@@ -224,6 +269,8 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
                     return AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "core",
                         source: "polar",
@@ -235,7 +282,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
         )
 
         XCTAssertFalse(store.state.hasAccountSession)
-        XCTAssertEqual(store.state.fetchGeneration, 0)
+        XCTAssertEqual(store.state.revalidationGeneration, 0)
 
         await store.send(.appDidBecomeActive)
 
@@ -260,6 +307,8 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
                     AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "core",
                         source: "polar",
@@ -278,25 +327,28 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
         await receiveValidForegroundRevalidation(
             from: store,
             sessionExpiry: referenceDate.addingTimeInterval(3600),
-            fetchGeneration: 1,
         )
-        XCTAssertEqual(store.state.fetchGeneration, 1)
+        await store.receive(\.sessionSyncRequested)
+        await store.receive(\._sessionSyncActivationCompleted)
+        await store.receive(\._sessionSyncCompleted)
+        await store.receive(\.delegate.unlocked)
+        XCTAssertEqual(store.state.revalidationGeneration, 1)
 
         await store.send(.appDidBecomeActive)
         await receiveValidForegroundRevalidation(
             from: store,
             sessionExpiry: referenceDate.addingTimeInterval(3600),
-            fetchGeneration: 2,
         )
-        XCTAssertEqual(store.state.fetchGeneration, 2)
+        XCTAssertEqual(store.state.revalidationGeneration, 2)
 
         await store.send(.appDidBecomeActive)
         await receiveValidForegroundRevalidation(
             from: store,
             sessionExpiry: referenceDate.addingTimeInterval(3600),
-            fetchGeneration: 3,
         )
-        XCTAssertEqual(store.state.fetchGeneration, 3)
+        XCTAssertEqual(store.state.revalidationGeneration, 3)
+        XCTAssertEqual(store.state.syncGeneration, 1)
+        await store.skipInFlightEffects()
     }
 
     /// ACC-002-handle_entitlement_change: appDidBecomeActive 후 fetch 성공 시 status가 갱신된다.
@@ -316,6 +368,8 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
                     AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "trial",
                         source: "polar",
@@ -326,12 +380,12 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             ),
             initialState: initialState,
         )
+        store.exhaustivity = .off
 
         await store.send(.appDidBecomeActive)
         await receiveValidForegroundRevalidation(
             from: store,
             sessionExpiry: referenceDate.addingTimeInterval(3600),
-            fetchGeneration: 1,
         )
 
         let expectedSnapshot = AccessStatusSnapshot(
@@ -342,23 +396,15 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             deviceBindingVerifiedAt: referenceDate,
         )
 
-        await store.receive(\.accessStatusResponse) { state in
-            state.status = .trialActive
-            state.isSubmitting = true
-            state.isComplete = false
-            state.errorMessage = nil
-            state.fetchRetryCount = 0
-        }
-
-        await store.receive(\.deviceBindingResponse) { state in
-            state.snapshot = expectedSnapshot
-            state.isSubmitting = false
-            state.isComplete = true
-            state.errorMessage = nil
-        }
-
+        store.exhaustivity = .off
+        await store.receive(\.sessionSyncRequested)
+        await store.receive(\._sessionSyncActivationCompleted)
+        await store.receive(\._sessionSyncCompleted)
         await store.receive(\.delegate.unlocked)
-        await store.finish()
+        XCTAssertEqual(store.state.status, .trialActive)
+        XCTAssertEqual(store.state.snapshot?.status, expectedSnapshot.status)
+        XCTAssertTrue(store.state.isComplete)
+        await store.skipInFlightEffects()
     }
 
     // MARK: - Pattern C — Hydration (entitlement + session 축 통합 매핑)
@@ -419,6 +465,8 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
                     return AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "core",
                         source: "polar",
@@ -429,36 +477,26 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             ),
             initialState: initialState,
         )
+        store.exhaustivity = .off
 
         // Step 1: appDidBecomeActive → fetchGeneration 증가
         await store.send(.appDidBecomeActive)
         await receiveValidForegroundRevalidation(
             from: store,
             sessionExpiry: sessionExpiry,
-            fetchGeneration: 1,
         )
 
         // Step 2: fetchAccessStatus 성공 응답 → status/snapshot 갱신
         let expectedSnapshot = expectedSnapshot(status: .coreLicenseActive, sessionExpiry: sessionExpiry)
-        await store.receive(\.accessStatusResponse) { state in
-            state.status = .coreLicenseActive
-            state.isSubmitting = true
-            state.isComplete = false
-            state.errorMessage = nil
-            state.fetchRetryCount = 0
-        }
-
-        // Step 3: device binding 성공 → status/snapshot 갱신
-        await store.receive(\.deviceBindingResponse) { state in
-            state.snapshot = expectedSnapshot
-            state.isSubmitting = false
-            state.isComplete = true
-            state.errorMessage = nil
-        }
-
-        // Step 4: delegate(.unlocked) 전달
+        store.exhaustivity = .off
+        await store.receive(\.sessionSyncRequested)
+        await store.receive(\._sessionSyncActivationCompleted)
+        await store.receive(\._sessionSyncCompleted)
         await store.receive(\.delegate.unlocked)
-        await store.finish()
+        XCTAssertEqual(store.state.status, .coreLicenseActive)
+        XCTAssertEqual(store.state.snapshot?.status, expectedSnapshot.status)
+        XCTAssertTrue(store.state.isComplete)
+        await store.skipInFlightEffects()
 
         XCTAssertEqual(fetchCallCount, 1, "fetchAccessStatus는 정확히 1회 호출되어야 함")
     }

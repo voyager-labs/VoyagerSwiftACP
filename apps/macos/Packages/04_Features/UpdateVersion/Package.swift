@@ -31,5 +31,12 @@ let kPackage = Package(
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
         ),
+        .testTarget(
+            name: "VoyagerFeaturesUpdateVersionTests",
+            dependencies: [
+                "VoyagerFeaturesUpdateVersion",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+            ],
+        ),
     ],
 )

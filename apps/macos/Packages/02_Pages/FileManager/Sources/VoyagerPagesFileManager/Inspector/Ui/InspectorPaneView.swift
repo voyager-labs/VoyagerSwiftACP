@@ -6,9 +6,6 @@ import VoyagerFeaturesAiChat
 struct InspectorPaneView: View {
     let store: StoreOf<FileManagerInspectorFeature>
 
-    @Environment(\.colorScheme)
-    private var colorScheme
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -20,8 +17,6 @@ struct InspectorPaneView: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .background(.thickMaterial)
-        .overlay(inspectorMaterialTint)
     }
 
     private var header: some View {
@@ -122,15 +117,5 @@ struct InspectorPaneView: View {
             isEnabled: true,
             font: nil,
         )
-    }
-
-    @ViewBuilder private var inspectorMaterialTint: some View {
-        if colorScheme == .dark {
-            Color.white.opacity(0.06)
-                .allowsHitTesting(false)
-        } else {
-            Color.clear
-                .allowsHitTesting(false)
-        }
     }
 }

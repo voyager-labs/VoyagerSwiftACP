@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import HotSwiftUI
 import SwiftUI
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
@@ -6,6 +7,8 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 
 struct FileManagerContentPaneView: View {
+    @ObserveInjection private var injection
+
     let store: StoreOf<FileManagerContentFeature>
     let chromeProps: FileManagerContentChromeProps
     let overlayProps: FileManagerContentOverlayProps
@@ -60,9 +63,8 @@ struct FileManagerContentPaneView: View {
                 value: overlayProps.isComposerPresented,
             )
         }
-        .background(.thickMaterial)
-        .overlay(FileManagerContentMaterialTint())
         .ignoresSafeArea(.all, edges: .top)
+        .enableInjection()
     }
 
     private var contentBody: some View {
@@ -144,22 +146,6 @@ extension ContentTabPageAnchor {
             "collection"
         case .aiChat:
             "aiChat"
-        }
-    }
-}
-
-private struct FileManagerContentMaterialTint: View {
-    @Environment(\.colorScheme)
-    private var colorScheme
-
-    var body: some View {
-        // 다크 모드에서만 머티리얼 대비를 살리는 얇은 틴트
-        if colorScheme == .dark {
-            Color.white.opacity(0.06)
-                .allowsHitTesting(false)
-        } else {
-            Color.clear
-                .allowsHitTesting(false)
         }
     }
 }

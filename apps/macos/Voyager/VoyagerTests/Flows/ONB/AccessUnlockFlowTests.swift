@@ -35,6 +35,8 @@ final class AccessUnlockFlowTests: XCTestCase {
             accessStatus: AccessStatusResponse(
                 hasAccess: true,
                 status: AccessStatus.coreLicenseActive.rawValue,
+                ownershipStatus: "owned",
+                updateStatus: "active",
                 productKey: "core",
             ),
             deviceBindingOutcome: .bound,
@@ -67,14 +69,22 @@ final class AccessUnlockFlowTests: XCTestCase {
             }
         }
 
+        // access 완료 projection이 저장될 때까지 기다린다.
+        let projectionDelivered = expectation(description: "Onboarding access projection completes")
         var onboardingState = OnboardingFeature.State()
         onboardingState.currentStep = .accessUnlock
+        onboardingState.didBootstrapProgress = true
         let onboardingStore = Store(initialState: onboardingState) {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = OnboardingProgressClient(
                 load: { .empty },
-                save: { _ in .success },
+                save: { snapshot in
+                    if snapshot.stepState.accessUnlockComplete {
+                        projectionDelivered.fulfill()
+                    }
+                    return .success
+                },
                 reset: {},
             )
             $0.onboardingWindowClient = OnboardingWindowClient(
@@ -98,11 +108,7 @@ final class AccessUnlockFlowTests: XCTestCase {
         onboardingController.window?.contentViewController = nil
 
         wait(for: [sessionSynced], timeout: 1)
-        let observerDelivered = expectation(description: "Onboarding observer delivery completes")
-        DispatchQueue.main.async {
-            observerDelivered.fulfill()
-        }
-        wait(for: [observerDelivered], timeout: 1)
+        wait(for: [projectionDelivered], timeout: 1)
 
         XCTAssertTrue(accountAccessStore.withState(\.isComplete))
         XCTAssertTrue(onboardingStore.withState(\.access.isComplete))
@@ -382,7 +388,11 @@ final class AccessUnlockFlowTests: XCTestCase {
             sessionStatus: .unchanged,
             syncStatus: .complete,
             accessStatus: AccessStatusResponse(
-                hasAccess: true, status: AccessStatus.coreLicenseActive.rawValue, productKey: "core",
+                hasAccess: true,
+                status: AccessStatus.coreLicenseActive.rawValue,
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                productKey: "core",
             ),
             deviceBindingOutcome: .bound,
             connectedDeviceAvailability: .available,

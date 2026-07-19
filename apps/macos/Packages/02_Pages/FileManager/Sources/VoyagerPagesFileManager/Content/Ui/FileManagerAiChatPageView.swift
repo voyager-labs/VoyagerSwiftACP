@@ -184,7 +184,7 @@ private struct AiChatPageHeaderView: View {
                 canGoBack: viewState.canGoBack,
                 canGoForward: viewState.canGoForward,
                 canGoToEnclosingDirectory: true,
-                enclosingDirectorySystemName: viewState.mode == .sessions ? "bubble.left" : "clock.arrow.circlepath",
+                enclosingDirectorySystemName: viewState.mode == .sessions ? "bubble.right" : "clock.arrow.circlepath",
                 enclosingDirectoryHelp: viewState.mode == .sessions ? "Return to chat" : "View chat history",
                 enclosingDirectoryAction: aiChatToggleAction,
             )

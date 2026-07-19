@@ -239,6 +239,8 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         let expectedResponse = AccessStatusResponse(
             hasAccess: true,
             status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
             reason: "active_entitlement",
             productKey: "core",
             currentPeriodEnd: expectedDate,
@@ -559,6 +561,82 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
 }
 
 extension ACC005AuthNetworkClientTests {
+    /// ACC-005-fetch_access_status: gateway access status date는 fractional 유무와 무관하게 RFC3339로 decode한다.
+    /// - 검증 내용: `2027-06-12T01:28:47.687Z`와 초 단위 RFC3339가 currentPeriodEnd로 decode된다.
+    /// - 사전 조건: gateway가 canonical snake_case access status와 두 가지 ISO8601 date shape를 반환한다.
+    /// - 기대 결과: legacy `/access/status` decoding이 두 date shape 모두에서 성공한다.
+    func testAccessStatusDecodesFractionalAndWholeSecondGatewayDates() throws {
+        for gatewayDate in ["2027-06-12T01:28:47.687Z", "2027-06-12T01:28:47Z"] {
+            let data = Data("""
+            {
+                "has_access": true,
+                "status": "active",
+                "current_period_end": "\(gatewayDate)"
+            }
+            """.utf8)
+
+            let response = try AuthNetworkClient.decodeAccessStatusResponse(data)
+
+            XCTAssertTrue(response.hasAccess)
+            XCTAssertNotNil(response.currentPeriodEnd)
+        }
+    }
+
+    /// ACC-005-fetch_access_status: malformed RFC3339 date는 legacy와 session-sync 경로 모두에서 fail closed한다.
+    func testGatewayDateDecodingRejectsTrailingJunkAndImpossibleDates() async throws {
+        for gatewayDate in [
+            "2027-06-12T01:28:47Zjunk",
+            "2027-02-30T01:28:47Z",
+            "2027-6-2T1:2:3Z",
+            " 2027-06-12T01:28:47Z",
+            "2027-06-12T01:28:47Z ",
+        ] {
+            XCTAssertThrowsError(
+                try AuthNetworkClient.decodeAccessStatusResponse(accessStatusResponseData(date: gatewayDate)),
+            ) { error in
+                XCTAssertEqual(error as? AccessError, .decodingFailure)
+            }
+
+            let fixture = try TemporaryHomeFixture()
+            let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+            do {
+                _ = try await AuthNetworkClient.sessionSyncResult(
+                    data: capturedSessionSyncResponseData(currentPeriodEnd: gatewayDate),
+                    intent: .refresh,
+                    source: gatewayDateTestSource,
+                    store: store,
+                )
+                XCTFail("Malformed gateway date must fail session sync decoding")
+            } catch {
+                XCTAssertEqual(error as? SessionSyncError, .upstream(200))
+            }
+        }
+    }
+
+    private func accessStatusResponseData(date: String) -> Data {
+        Data("""
+        {
+            "has_access": true,
+            "status": "active",
+            "current_period_end": "\(date)"
+        }
+        """.utf8)
+    }
+
+    private var gatewayDateTestSource: AccountTokensFile {
+        AccountTokensFile(
+            updatedAtMs: 1,
+            accessToken: "gateway-date-source-access",
+            accessTokenExpiresAtMs: 1_700_000_000_000,
+            accessTokenExpiresIn: 900_000,
+            refreshToken: "gateway-date-source-refresh",
+            refreshTokenExpiresAtMs: 1_702_592_000_000,
+            sessionBindingID: UUID(),
+        )
+    }
+}
+
+extension ACC005AuthNetworkClientTests {
     // MARK: - ACC-005-auth_network_client
 
     /// ACC-005-auth_network_client: rotated token persistence는 기존 session binding을 유지한다.
@@ -645,6 +723,49 @@ extension ACC005AuthNetworkClientTests {
         XCTAssertEqual(persisted, current)
     }
 
+    /// ACC-005-auth_network_client: captured session-sync gateway JSON은 rotated credential과 access eligibility를 함께
+    /// 보존한다.
+    /// - 검증 내용: raw wire decode, rotated session status, camelCase access tuple, snake_case eligibility, CAS
+    /// persistence.
+    /// - 사전 조건: 기존 persisted source token과 gateway의 200 session-sync JSON fixture.
+    /// - 기대 결과: rotated credentials가 CAS로 교체되고 access eligibility가 SessionSyncResult에 유지된다.
+    func testCapturedSessionSyncWireFixtureDecodesAndPersistsRotatedCredentials() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let binding = UUID()
+        let source = AccountTokensFile(
+            updatedAtMs: 1,
+            accessToken: "fixture-source-access",
+            accessTokenExpiresAtMs: 1_700_000_000_000,
+            accessTokenExpiresIn: 900_000,
+            refreshToken: "fixture-source-refresh",
+            refreshTokenExpiresAtMs: 1_702_592_000_000,
+            sessionBindingID: binding,
+        )
+        try await store.write(source)
+
+        let result = try await AuthNetworkClient.sessionSyncResult(
+            data: capturedSessionSyncResponseData(),
+            intent: .refresh,
+            source: source,
+            store: store,
+        )
+
+        let storedValue = try await store.read()
+        let persisted = try XCTUnwrap(storedValue)
+        XCTAssertEqual(result.syncStatus, .complete)
+        XCTAssertEqual(result.sessionStatus, .rotated)
+        XCTAssertTrue(result.accessStatus.hasAccess)
+        XCTAssertEqual(result.accessStatus.productKey, "core")
+        XCTAssertEqual(result.accessStatus.ownershipStatus, "owned")
+        XCTAssertEqual(result.accessStatus.updateStatus, "active")
+        XCTAssertNotNil(result.accessStatus.currentPeriodEnd)
+        XCTAssertNotNil(result.accessStatus.updatesThrough)
+        XCTAssertEqual(persisted.accessToken, "fixture-rotated-access")
+        XCTAssertEqual(persisted.refreshToken, "fixture-rotated-refresh")
+        XCTAssertEqual(persisted.sessionBindingID, binding)
+    }
+
     private func rotatedSessionSyncResponseData() throws -> Data {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -662,6 +783,37 @@ extension ACC005AuthNetworkClientTests {
             device: .init(outcome: .bound, connectedDeviceAvailability: .available),
             partial: nil,
         ))
+    }
+
+    private func capturedSessionSyncResponseData(
+        currentPeriodEnd: String = "2027-06-12T01:28:47.687Z",
+    ) -> Data {
+        Data("""
+        {
+            "sync_status": "complete",
+            "session": {
+                "status": "rotated",
+                "access_token": "fixture-rotated-access",
+                "refresh_token": "fixture-rotated-refresh",
+                "expires_at": 1700003600,
+                "expires_in": 3600000,
+                "refresh_token_expires_at": 1702592000
+            },
+            "access": {
+                "hasAccess": true,
+                "status": "active",
+                "productKey": "core",
+                "currentPeriodEnd": "\(currentPeriodEnd)",
+                "ownership_status": "owned",
+                "update_status": "active",
+                "updates_through": "2027-06-12T01:28:47Z"
+            },
+            "device": {
+                "outcome": "bound",
+                "connected_device_availability": "available"
+            }
+        }
+        """.utf8)
     }
 }
 

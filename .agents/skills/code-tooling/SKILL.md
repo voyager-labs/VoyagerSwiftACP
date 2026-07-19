@@ -111,6 +111,18 @@ Load `references/ast-grep.md` for pattern syntax, examples, and custom rules.
 
 This matrix owns executor selection and applies to interactive agents, while repository `mise` tasks remain valid human and CI paths.
 
+#### UI automation guardrail
+
+- Do not run unsolicited `osascript`, AppleScript, or equivalent UI-click automation during verification.
+- Prefer source inspection, focused tests, builds, runtime logs, process state, and supported XcodeBuildMCP inspection.
+- Use UI automation only when the user explicitly requests an interaction flow or manual UI verification; otherwise report that visual interaction was not automated.
+
+#### Verification proportionality
+
+- Match verification depth to the change: use the smallest relevant check for a narrow edit, and expand to broader tests only when the change crosses module or runtime boundaries.
+- Do not repeat full build, full test, lint, and diff checks after every intermediate edit when a focused check provides sufficient evidence.
+- Treat Oracle as an escalation path for architecture decisions, hard debugging, repeated verification failure, security/performance risk, or significant post-implementation review—not as a default step for every request.
+
 | Required outcome                                      | Preferred executor                                                                      | Supported scope                                                              | Existing fallback                                                                                  | Stop condition                                                                                                       |
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Package-local build or focused package tests          | `xcrun swift build` / `xcrun swift test --package-path <path>`                          | Local SwiftPM package compilation and tests                                  | Unfiltered `xcrun swift test` for the same package when a focused filter is unavailable            | Package path, toolchain, or test suite cannot be identified                                                          |
