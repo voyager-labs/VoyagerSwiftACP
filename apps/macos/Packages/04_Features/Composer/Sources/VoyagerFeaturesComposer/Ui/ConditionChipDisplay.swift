@@ -2,10 +2,9 @@ import Foundation
 import VoyagerEntitiesCollection
 import VoyagerShared
 
-enum ConditionChipDisplayUtils {
+enum ConditionChipDisplay {
     /// date picker 상태 캡슐화
     struct DatePickerState: Equatable {
-        var propertyKey: String?
         var presented: Bool
         var values: [String]
         var dateValueState: DateValueState?
@@ -15,7 +14,7 @@ enum ConditionChipDisplayUtils {
         let values = displayValues ?? condition.values
         guard let values, !values.isEmpty else { return "Value" }
 
-        if condition.valueType == "date" || condition.valueType == "datetime" {
+        if condition.property.type.rawValue == "date" || condition.property.type.rawValue == "datetime" {
             if values.count >= 2 {
                 let first = absoluteDateText(values[0])
                 let second = absoluteDateText(values[1])
@@ -49,10 +48,9 @@ enum ConditionChipDisplayUtils {
 
     static func displayedValuesForDate(
         conditionValues: [String]?,
-        conditionPropertyKey: String,
         pickerState: DatePickerState,
     ) -> [String]? {
-        if pickerState.presented, pickerState.propertyKey == conditionPropertyKey {
+        if pickerState.presented {
             if let dateValueState = pickerState.dateValueState, pickerState.values.count <= 1 {
                 return [dateValueState.displayText()]
             }
@@ -81,7 +79,7 @@ enum ConditionChipDisplayUtils {
             return literal.displayText()
         }
 
-        guard let date = ValueNormalizerUtils.parseDate(trimmed) else {
+        guard let date = ConditionValueNormalizer.parseDate(trimmed) else {
             return trimmed
         }
 
@@ -93,6 +91,6 @@ enum ConditionChipDisplayUtils {
     }
 
     private static func absoluteDateText(_ value: String) -> String {
-        ValueNormalizerUtils.formatDateOnlyString(value) ?? value.trimmingCharacters(in: .whitespacesAndNewlines)
+        ConditionValueNormalizer.formatDateOnlyString(value) ?? value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

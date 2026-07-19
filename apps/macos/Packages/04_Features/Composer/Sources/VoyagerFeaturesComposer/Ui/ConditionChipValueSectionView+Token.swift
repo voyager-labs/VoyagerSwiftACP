@@ -7,16 +7,12 @@ import VoyagerShared
 
 extension ConditionChipValueSectionView {
     func tokenValueButton(
-        operatorCode: String,
-        valueUIKind: String,
-        valueArity: Int,
+        contract _: Condition.ValueContract,
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
         let popoverBinding = Binding<Bool>(
             get: {
                 valueViewStore.isPresented &&
-                    valueViewStore.propertyKey == condition.propertyKey &&
-                    valueViewStore.valueUIKind == valueUIKind &&
                     valueViewStore.editingIndex == nil
             },
             set: { show in
@@ -25,48 +21,53 @@ extension ConditionChipValueSectionView {
             },
         )
 
-        return Button {
-            sendPrepare(
-                operatorCode: operatorCode,
-                valueUIKind: valueUIKind,
-                valueArity: valueArity,
-                editingIndex: nil,
-                includeDisplayState: false,
+        return Group {
+            if ComposerPickerHostPolicy.host(for: .token) == .anchoredDropdown {
+                ComposerAnchoredDropdown(
+                    isPresented: popoverBinding,
+                    dropdownAccessibilityIdentifier: "composer.token.dropdown",
+                ) {
+                    Button {
+                        prepare(editingIndex: nil, includeDisplayState: false)
+                    } label: {
+                        tokenButtonLabel()
+                    }
+                    .contentShape(Rectangle())
+                    .frame(minWidth: 32, minHeight: 22, alignment: .center)
+                    .buttonStyle(.plain)
+                    .onHover { hovering in
+                        isValueHovering = hovering
+                    }
+                } content: {
+                    tokenPopoverContent(valueViewStore: valueViewStore)
+                }
+            }
+        }
+    }
+
+    private func tokenButtonLabel() -> some View {
+        Text(ConditionTokenPresentation.buttonText(values: condition.values ?? []))
+            .font(.system(size: 11, weight: .medium))
+            .foregroundColor((condition.values?.isEmpty ?? true) ? .secondary.opacity(0.7) : .primary)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(
+                        isValueHovering
+                            ?
+                            (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black.opacity(hoverFillOpacity))
+                            : Color.white.opacity(0.0001),
+                    ),
             )
-        } label: {
-            Text(ValuePickerTokenUtils.tokenButtonText(values: condition.values ?? []))
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor((condition.values?.isEmpty ?? true) ? .secondary.opacity(0.7) : .primary)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(
-                            isValueHovering
-                                ?
-                                (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black
-                                    .opacity(hoverFillOpacity))
-                                : Color.white.opacity(0.0001),
-                        ),
-                )
-        }
-        .contentShape(Rectangle())
-        .frame(minWidth: 32, minHeight: 22, alignment: .center)
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            isValueHovering = hovering
-        }
-        .popover(isPresented: popoverBinding, arrowEdge: .bottom) {
-            tokenPopoverContent(valueViewStore: valueViewStore)
-        }
     }
 
     func tokenPopoverContent(
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
-        let tokens = ValueNormalizerUtils.deduplicatedTokenValues(valueViewStore.values)
+        let tokens = ConditionValueNormalizer.deduplicatedTokenValues(valueViewStore.values)
         let finderTagOptions = valueViewStore.finderTagListState?.options ?? []
-        let filteredFinderTags = ValuePickerTokenUtils.filteredFinderTags(
+        let filteredFinderTags = ConditionTagSuggestions.filteredFinderTags(
             selectedTokens: tokens,
             finderTagOptions: finderTagOptions,
             query: valueViewStore.tokenInput,
@@ -123,6 +124,7 @@ extension ConditionChipValueSectionView {
                 .textFieldStyle(.plain)
                 .font(.system(size: 11))
                 .foregroundColor(.primary)
+                .accessibilityIdentifier("composer.token.input")
                 .frame(minWidth: 70, alignment: .leading)
                 .onSubmit {
                     handleTokenSubmit(valueViewStore)

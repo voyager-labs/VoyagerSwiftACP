@@ -3,68 +3,38 @@ import SwiftUI
 import VoyagerEntitiesCollection
 
 extension ConditionChipValueSectionView {
-    @ViewBuilder
-    func displayRangeUnitSelector() -> some View {
-        if let selector = displayUnitSelector(
-            unitValueState: currentUnitValueState(),
-            onSelect: { unitCode in
-                onDisplayUnitChange(condition.propertyKey, unitCode)
-            },
-        ) {
-            selector
-        }
-    }
-
     func editUnitSelector(
-        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+        valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> AnyView? {
-        guard let unitValueState = valueViewStore.unitValueState,
-              condition.valueType == "number"
-        else {
-            return nil
-        }
-
-        return AnyView(
-            UnitSelectorView(
-                availableUnitCodes: unitValueState.availableUnitCodes,
-                selectedUnitCode: unitValueState.selectedUnitCode,
-                selectedUnitLabel: UnitValuePresentationUtils.label(
-                    for: unitValueState.selectedUnitCode,
-                    state: unitValueState,
-                ),
-                labelForUnit: { UnitValuePresentationUtils.label(for: $0, state: unitValueState) },
-                onSelect: { valuePickerStore.send(.selectUnit($0)) },
-            ),
-        )
+        guard let state = valueStore.unitValueState else { return nil }
+        return AnyView(unitSelector(state: state) {
+            valuePickerStore.send(.selectUnit($0))
+        })
     }
 
-    func displayUnitSelector(
-        unitValueState: UnitValueState?,
-        onSelect: @escaping (String) -> Void,
-    ) -> AnyView? {
-        guard let unitValueState else {
-            return nil
-        }
+    func displayUnitSelector(unitValueState: UnitValueState?) -> AnyView? {
+        guard let state = unitValueState else { return nil }
+        return AnyView(unitSelector(state: state) {
+            store.send(.view(.setDisplayUnit($0)))
+        })
+    }
 
-        return AnyView(
-            UnitSelectorView(
-                availableUnitCodes: unitValueState.availableUnitCodes,
-                selectedUnitCode: unitValueState.selectedUnitCode,
-                selectedUnitLabel: UnitValuePresentationUtils.label(
-                    for: unitValueState.selectedUnitCode,
-                    state: unitValueState,
-                ),
-                labelForUnit: { UnitValuePresentationUtils.label(for: $0, state: unitValueState) },
-                onSelect: onSelect,
-            ),
+    private func unitSelector(
+        state: UnitValueState,
+        onSelect: @escaping (String) -> Void,
+    ) -> UnitSelectorView {
+        UnitSelectorView(
+            availableUnitCodes: state.availableUnitCodes,
+            selectedUnitCode: state.selectedUnitCode,
+            selectedUnitLabel: state.label(for: state.selectedUnitCode),
+            labelForUnit: { state.label(for: $0) },
+            onSelect: onSelect,
         )
     }
 
     func updateInlineValueFocus(shouldFocus: Bool, targetIndex: Int?) {
         let nextFocus = shouldFocus ? targetIndex : nil
         guard focusedValueIndex != nextFocus else { return }
-        DispatchQueue.main.async {
-            focusedValueIndex = nextFocus
-        }
+        DispatchQueue.main.async { focusedValueIndex = nextFocus }
     }
 }

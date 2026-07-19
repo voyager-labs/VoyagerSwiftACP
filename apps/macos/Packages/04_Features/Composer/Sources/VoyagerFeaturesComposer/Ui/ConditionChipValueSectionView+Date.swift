@@ -9,16 +9,12 @@ private struct ConditionChipDateValueButtonConfig {
     let currentText: String
     let hasError: Bool
     let index: Int
-    let operatorCode: String
-    let valueUIKind: String
-    let valueArity: Int
+    let contract: Condition.ValueContract
 }
 
 private struct ConditionChipDateButtonContext {
     let displayedValues: [String]?
-    let operatorCode: String
-    let valueUIKind: String
-    let valueArity: Int
+    let contract: Condition.ValueContract
     let hasError: Bool
 }
 
@@ -86,17 +82,13 @@ private struct ConditionChipDateButtonLabelView: View {
 extension ConditionChipValueSectionView {
     @ViewBuilder
     func dateValueSection(
-        operatorCode: String,
-        valueUIKind: String,
-        valueArity: Int,
+        contract: Condition.ValueContract,
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
         let hasError = valueViewStore.errorMessage != nil
-        let displayedValues = ConditionChipDisplayUtils.displayedValuesForDate(
+        let displayedValues = ConditionChipDisplay.displayedValuesForDate(
             conditionValues: condition.values,
-            conditionPropertyKey: condition.propertyKey,
             pickerState: .init(
-                propertyKey: valueViewStore.propertyKey,
                 presented: valueViewStore.isPresented,
                 values: valueViewStore.values,
                 dateValueState: valueViewStore.dateValueState,
@@ -104,9 +96,7 @@ extension ConditionChipValueSectionView {
         )
         let context = ConditionChipDateButtonContext(
             displayedValues: displayedValues,
-            operatorCode: operatorCode,
-            valueUIKind: valueUIKind,
-            valueArity: valueArity,
+            contract: contract,
             hasError: hasError,
         )
         let fromConfig = makeDateButtonConfig(
@@ -125,7 +115,7 @@ extension ConditionChipValueSectionView {
             context: context,
         )
 
-        if valueArity >= 2 {
+        if valueCount(contract) >= 2 {
             HStack(spacing: 6) {
                 dateValueButton(config: fromConfig, valueViewStore: valueViewStore)
                 Text(rangeSep)
@@ -152,9 +142,7 @@ extension ConditionChipValueSectionView {
             currentText: currentText,
             hasError: context.hasError,
             index: index,
-            operatorCode: context.operatorCode,
-            valueUIKind: context.valueUIKind,
-            valueArity: context.valueArity,
+            contract: context.contract,
         )
     }
 
@@ -168,25 +156,42 @@ extension ConditionChipValueSectionView {
                 if !show { datePopoverIndex = nil }
             },
         )
-        let currentValues: [String]? = {
-            if valueViewStore.propertyKey == condition.propertyKey {
-                return valueViewStore.values
-            }
-            return condition.values
-        }()
+        let currentValues = valueViewStore.isPresented ? valueViewStore.values : condition.values
         let isHovering = dateHoverIndex == config.index
 
-        return Button {
-            sendPrepare(
-                operatorCode: config.operatorCode,
-                valueUIKind: config.valueUIKind,
-                valueArity: config.valueArity,
+        return Group {
+            if ComposerPickerHostPolicy.host(for: .date) == .anchoredDropdown {
+                ComposerAnchoredDropdown(
+                    isPresented: isPresented,
+                    dropdownAccessibilityIdentifier: "composer.date.dropdown",
+                ) {
+                    dateValueButtonTrigger(
+                        config: config,
+                        currentValues: currentValues,
+                        isHovering: isHovering,
+                        valueViewStore: valueViewStore,
+                    )
+                } content: {
+                    datePopoverContent(config: config, valueViewStore: valueViewStore)
+                }
+            }
+        }
+    }
+
+    private func dateValueButtonTrigger(
+        config: ConditionChipDateValueButtonConfig,
+        currentValues: [String]?,
+        isHovering: Bool,
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+    ) -> some View {
+        Button {
+            prepare(
                 editingIndex: config.index,
                 valueStore: valueViewStore,
                 existingValues: currentValues,
                 includeDisplayState: false,
             )
-            tempDate = ValueNormalizerUtils.parseDate(config.currentText) ?? Date()
+            tempDate = ConditionValueNormalizer.parseDate(config.currentText) ?? Date()
             datePopoverIndex = config.index
         } label: {
             ConditionChipDateButtonLabelView(
@@ -205,9 +210,6 @@ extension ConditionChipValueSectionView {
                 dateHoverIndex = nil
             }
         }
-        .popover(isPresented: isPresented, arrowEdge: .bottom) {
-            datePopoverContent(config: config, valueViewStore: valueViewStore)
-        }
     }
 
     private func datePopoverContent(
@@ -219,7 +221,7 @@ extension ConditionChipValueSectionView {
         return VStack(alignment: .center, spacing: 12) {
             let applySelection = makeDateApplySelection(valueViewStore: valueViewStore)
 
-            if config.valueArity == 1, valueViewStore.dateValueState != nil {
+            if valueCount(config.contract) == 1, valueViewStore.dateValueState != nil {
                 let isRelativePreview = bindings.dateModeTab.wrappedValue == .relative
 
                 semanticDatePopoverFields(
@@ -237,6 +239,13 @@ extension ConditionChipValueSectionView {
                 )
             } else {
                 calendarPicker(selection: bindings.rawDateSelection, onCommit: applySelection)
+            }
+
+            if let error = valueViewStore.errorMessage {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundColor(.red)
+                    .accessibilityIdentifier("composer.date.error")
             }
 
             dateApplyButton(action: applySelection)
@@ -269,7 +278,10 @@ extension ConditionChipValueSectionView {
                 get: { tempDate },
                 set: { date in
                     tempDate = date
-                    valueViewStore.send(.setValue(index: config.index, text: ValueNormalizerUtils.formatDateOnly(date)))
+                    valueViewStore.send(.setValue(
+                        index: config.index,
+                        text: ConditionValueNormalizer.formatDateOnly(date),
+                    ))
                 },
             ),
         )
@@ -440,8 +452,16 @@ extension ConditionChipValueSectionView {
                 action()
             }
             .keyboardShortcut(.defaultAction)
+            .accessibilityIdentifier("composer.date.apply")
         }
         .frame(width: kDatePopoverContentWidth)
         .padding(.top, 4)
+    }
+
+    private func valueCount(_ contract: Condition.ValueContract) -> Int {
+        switch contract.count {
+        case let .fixed(count): count
+        case .multiple: 1
+        }
     }
 }

@@ -71,8 +71,6 @@ private extension ComposerBottomRowView {
             conditionSection(
                 rows: layout.conditionRows,
                 pickerStore: pickerStore,
-                conditionDisplayByKey: viewStore.conditionDisplayByKey,
-                operatorOptionsByKey: viewStore.operatorOptionsByKey,
             )
         }
         .allowsHitTesting(!isLocked)
@@ -115,15 +113,11 @@ private extension ComposerBottomRowView {
     private func conditionSection(
         rows: [[ChipItemType]],
         pickerStore: StoreOf<ConditionPropertyPickerFeature>,
-        conditionDisplayByKey: [String: ConditionDisplayState],
-        operatorOptionsByKey: [String: [String]],
     ) -> some View {
         ComposerBottomConditionRowView(
             store: store,
             pickerStore: pickerStore,
             rows: rows,
-            conditionDisplayByKey: conditionDisplayByKey,
-            operatorOptionsByKey: operatorOptionsByKey,
             colorScheme: colorScheme,
             chipSpacing: chipSpacing,
             rowHeight: conditionRowHeight,
@@ -152,7 +146,7 @@ private extension ComposerBottomRowView {
         availableWidth: CGFloat,
     ) -> RowLayoutInput {
         let scopeChips = scopeChipItems(for: viewStore.scopeEditor.selection)
-        let conditionChips: [ChipItemType] = viewStore.conditions.map { .condition($0) } + [.conditionAdd]
+        let conditionChips: [ChipItemType] = viewStore.conditionEditors.map { .condition(id: $0.id) } + [.conditionAdd]
         let scopeRowWidth = max(0, availableWidth - scopeEditButtonWidth)
         let conditionRowWidth = availableWidth
 
@@ -269,6 +263,7 @@ private extension ComposerBottomRowView {
             isScopeEditButtonHovering = hovering
         }
         .accessibilityLabel("Edit scopes")
+        .accessibilityIdentifier("composer.scope.trigger")
     }
 
     private func scopeChipItems(for selection: ComposerScopeSelection) -> [ChipItemType] {

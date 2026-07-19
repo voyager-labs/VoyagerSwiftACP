@@ -221,6 +221,7 @@ private extension ComposerTopRowView {
                 },
             )
             .font(.system(size: 13))
+            .accessibilityIdentifier("composer.query.input")
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .padding(.trailing, 28)

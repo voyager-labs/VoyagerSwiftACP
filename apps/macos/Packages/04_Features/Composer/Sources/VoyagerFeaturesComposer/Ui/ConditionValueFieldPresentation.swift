@@ -1,6 +1,6 @@
 import Foundation
 
-enum ValuePickerDisplayUtils {
+enum ConditionValueFieldPresentation {
     static func fieldTitle(for valueType: String, index: Int? = nil) -> String {
         let base = switch valueType {
         case "string":
