@@ -35,7 +35,6 @@ final class AuthSessionFlowTests: XCTestCase {
         initialState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
             context: .paywall,
             scope: .lifecycle,
-            startedWithAccountSession: false,
         )
         let store = AccountAccessFlowTestSupport.makeRootStore(
             initialState: initialState,
@@ -70,7 +69,6 @@ final class AuthSessionFlowTests: XCTestCase {
         initialState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
             context: .onboarding,
             scope: .onboarding,
-            startedWithAccountSession: false,
         )
         let store = AccountAccessFlowTestSupport.makeRootStore(initialState: initialState)
         // store.exhaustivity = .off: root, lifecycle, and AccountAccess effect chain is the flow boundary.
@@ -168,7 +166,6 @@ final class AuthSessionFlowTests: XCTestCase {
         reauthenticationState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
             context: .paywall,
             scope: .lifecycle,
-            startedWithAccountSession: false,
         )
         let reauthenticationStore = AccountAccessFlowTestSupport.makeRootStore(initialState: reauthenticationState)
         reauthenticationStore.exhaustivity = .off
@@ -218,7 +215,6 @@ final class AuthSessionFlowTests: XCTestCase {
         initialState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
             context: .onboarding,
             scope: .onboarding,
-            startedWithAccountSession: false,
         )
         let store = AccountAccessFlowTestSupport.makeRootStore(initialState: initialState)
         // store.exhaustivity = .off: handoff failure의 Settings projection은 flow assertion 범위 밖임.
@@ -248,7 +244,6 @@ final class AuthSessionFlowTests: XCTestCase {
         initialState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
             context: .paywall,
             scope: .lifecycle,
-            startedWithAccountSession: false,
         )
         let store = AccountAccessFlowTestSupport.makeRootStore(initialState: initialState)
         store.exhaustivity = .off
@@ -265,7 +260,6 @@ final class AuthSessionFlowTests: XCTestCase {
         acceptedState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
             context: .paywall,
             scope: .lifecycle,
-            startedWithAccountSession: false,
         )
         let acceptedStore = AccountAccessFlowTestSupport.makeRootStore(initialState: acceptedState)
         acceptedStore.exhaustivity = .off

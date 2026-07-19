@@ -126,50 +126,6 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         return state
     }
 
-    private func assertSignedInPendingReauthentication(
-        initialState: AccountAccessFeature.State,
-        pendingState: String,
-    ) async {
-        nonisolated(unsafe) var handoffCallCount = 0
-        let store = makeTestStore(
-            signInHandoffClient: SignInHandoffClient { _ in
-                handoffCallCount += 1
-                return .awaitingCallback(state: pendingState)
-            },
-            initialState: initialState,
-        )
-
-        XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .pending)
-        XCTAssertTrue(store.state.canStartLogin)
-        await store.send(.loginTapped(context: .paywall, scope: .lifecycle)) { state in
-            state.isSubmitting = false
-            state.isSignInInProgress = true
-            state.didSignInFail = false
-            state.handoffTransaction = AccountAccessHandoffTransaction(
-                context: .paywall,
-                scope: .lifecycle,
-                startedWithAccountSession: true,
-            )
-            state.handoffGeneration = 1
-            state.syncGeneration = 8
-            state.revalidationGeneration = 4
-        }
-        await store.receive(\.signInHandoffCompleted) { state in
-            state.handoffPendingState = pendingState
-        }
-
-        XCTAssertTrue(store.state.hasAccountSession)
-        XCTAssertEqual(handoffCallCount, 1)
-        await store.send(.cancelSignIn) { state in
-            state.isSignInInProgress = false
-            state.handoffPendingState = nil
-            state.handoffTransaction = nil
-            state.refreshDeadlineGeneration = 9
-        }
-        await store.skipInFlightEffects()
-        await store.finish()
-    }
-
     // MARK: - ACC-001-start_account_sign_in
 
     /// ACC-001-start_account_sign_in: Voyager에서 시작한 로그인 URL은 Voyager 대상임을 포함한다.
@@ -314,99 +270,38 @@ final class ACC001StartAccountSignInTests: XCTestCase {
 }
 
 extension ACC001StartAccountSignInTests {
-    /// ACC-001-start_account_sign_in: signed-in pending recovery에서 Sign in CTA는 새 handoff를 정확히 한 번 시작한다.
-    /// - 검증 내용: submitting sync를 무효화하고 handoff를 한 번 시작하며 persisted session 상태를 유지한다.
-    /// - 사전 조건: hasAccountSession=true, isSubmitting=true인 signed-in pending recovery 상태.
-    /// - 기대 결과: isSubmitting=false, sync/revalidation generation 증가, handoff client 1회 호출.
-    func testSignedInPendingLoginCTAStartsReauthenticationOnce() async {
+    /// ACC-001-start_account_sign_in: signed-in pending 상태의 Login 선택은 진행 중인 세션 검증을 바꾸지 않고 무시한다.
+    /// - 검증 내용: handoff를 시작하지 않고 sync, persisted revalidation, refresh deadline generation을 유지한다.
+    /// - 사전 조건: access status 검증이 pending인 signed-in session.
+    /// - 기대 결과: loginTapped는 상태와 effect를 변경하지 않는다.
+    func testSignedInPendingLoginTappedIsNoOp() async {
+        nonisolated(unsafe) var handoffCallCount = 0
         var initialState = AccountAccessFeature.State()
         initialState.hasAccountSession = true
         initialState.isSubmitting = true
         initialState.syncGeneration = 7
         initialState.revalidationGeneration = 3
-
-        await assertSignedInPendingReauthentication(
-            initialState: initialState,
-            pendingState: "reauth-state-123",
-        )
-    }
-
-    /// ACC-001-start_account_sign_in: 재인증 시작은 이전 refresh deadline을 무효화한다.
-    /// - 검증 내용: reauthentication이 refresh deadline generation을 증가시켜 stale deadline이 persisted session 재검증을 시작하지 않는다.
-    /// - 사전 조건: signed-in pending recovery 상태와 generation 7의 활성 refresh deadline.
-    /// - 기대 결과: handoff 시작 후 generation은 8이고, generation 7 deadline은 revalidatePersistedSession action을 만들지 않는다.
-    func testSignedInPendingLoginCTACancelsActiveRefreshDeadline() async {
-        var initialState = AccountAccessFeature.State()
-        initialState.hasAccountSession = true
-        initialState.refreshDeadlineGeneration = 7
-        initialState.ttlTimerActive = true
+        initialState.refreshDeadlineGeneration = 8
         initialState.sessionExpiresAt = referenceDate.addingTimeInterval(600)
-
+        initialState.ttlTimerActive = true
         let store = makeTestStore(
             signInHandoffClient: SignInHandoffClient { _ in
-                .awaitingCallback(state: "refresh-deadline-reauth-state")
+                handoffCallCount += 1
+                return .awaitingCallback(state: "unexpected-handoff")
             },
             initialState: initialState,
         )
 
-        await store.send(.loginTapped(context: .paywall, scope: .lifecycle)) { state in
-            state.isSignInInProgress = true
-            state.didSignInFail = false
-            state.handoffTransaction = AccountAccessHandoffTransaction(
-                context: .paywall,
-                scope: .lifecycle,
-                startedWithAccountSession: true,
-            )
-            state.handoffGeneration = 1
-            state.syncGeneration = 1
-            state.revalidationGeneration = 1
-            state.refreshDeadlineGeneration = 8
-        }
-        await store.receive(\.signInHandoffCompleted) { state in
-            state.handoffPendingState = "refresh-deadline-reauth-state"
-        }
+        XCTAssertFalse(store.state.canStartLogin)
+        await store.send(.loginTapped(context: .paywall, scope: .lifecycle))
 
-        await store.send(._refreshDeadlineReached(generation: 7))
-
-        await store.send(.cancelSignIn) { state in
-            state.isSignInInProgress = false
-            state.handoffPendingState = nil
-            state.handoffTransaction = nil
-        }
+        XCTAssertEqual(handoffCallCount, 0)
+        XCTAssertTrue(store.state.hasAccountSession)
+        XCTAssertTrue(store.state.isSubmitting)
+        XCTAssertEqual(store.state.syncGeneration, 7)
+        XCTAssertEqual(store.state.revalidationGeneration, 3)
+        XCTAssertEqual(store.state.refreshDeadlineGeneration, 8)
         await store.finish()
-    }
-
-    /// ACC-001-start_account_sign_in: access status가 아직 확정되지 않은 signed-in pending recovery도 재인증을 시작한다.
-    /// - 검증 내용: nil status의 pending CTA가 sync/revalidation generation을 무효화하고 handoff를 시작한다.
-    /// - 사전 조건: hasAccountSession=true, status=nil, errorMessage=nil, isSubmitting=false.
-    /// - 기대 결과: persisted session을 유지한 채 handoff client가 한 번 호출된다.
-    func testSignedInUnknownPendingLoginCTAStartsReauthentication() async {
-        var initialState = AccountAccessFeature.State()
-        initialState.hasAccountSession = true
-        initialState.syncGeneration = 7
-        initialState.revalidationGeneration = 3
-
-        await assertSignedInPendingReauthentication(
-            initialState: initialState,
-            pendingState: "unknown-reauth-state-123",
-        )
-    }
-
-    /// ACC-001-start_account_sign_in: active access가 아직 complete가 아닌 signed-in pending recovery도 재인증을 시작한다.
-    /// - 검증 내용: active-but-incomplete pending CTA가 sync/revalidation generation을 무효화하고 handoff를 시작한다.
-    /// - 사전 조건: hasAccountSession=true, status=coreLicenseActive, isComplete=false, isSubmitting=false.
-    /// - 기대 결과: persisted session을 유지한 채 handoff client가 한 번 호출된다.
-    func testSignedInActiveIncompletePendingLoginCTAStartsReauthentication() async {
-        var initialState = AccountAccessFeature.State()
-        initialState.hasAccountSession = true
-        initialState.status = .coreLicenseActive
-        initialState.syncGeneration = 7
-        initialState.revalidationGeneration = 3
-
-        await assertSignedInPendingReauthentication(
-            initialState: initialState,
-            pendingState: "active-reauth-state-123",
-        )
     }
 
     /// ACC-001-start_account_sign_in: 인증 흐름 시작 후 callback/token 교환 전까지 auth_state가 변경되지 않는다.
@@ -583,15 +478,10 @@ extension ACC001StartAccountSignInTests {
     func testAwaitingCallbackTimeoutResetsSignInStateAt120Seconds() async {
         let clock = TestClock()
         var initialState = AccountAccessFeature.State()
-        initialState.hasAccountSession = true
-        initialState.sessionExpiresAt = referenceDate.addingTimeInterval(600)
-        initialState.ttlTimerActive = true
-        initialState.refreshDeadlineGeneration = 8
         initialState.isSignInInProgress = true
         initialState.handoffTransaction = AccountAccessHandoffTransaction(
             context: .onboarding,
             scope: .onboarding,
-            startedWithAccountSession: true,
         )
         let store = TestStore(initialState: initialState) {
             AccountAccessFeature()
@@ -604,7 +494,6 @@ extension ACC001StartAccountSignInTests {
             transaction: AccountAccessHandoffTransaction(
                 context: .onboarding,
                 scope: .onboarding,
-                startedWithAccountSession: true,
             ),
             generation: 0,
         )) { state in
@@ -619,61 +508,11 @@ extension ACC001StartAccountSignInTests {
         await clock.advance(by: .seconds(1))
         await store.receive(\._handoffCallbackTimedOut) { state in
             state.isSignInInProgress = false
-            state.didSignInFail = false
+            state.didSignInFail = true
             state.handoffPendingState = nil
             state.handoffTransaction = nil
-            state.refreshDeadlineGeneration = 9
         }
-        await store.skipInFlightEffects()
         await store.finish()
-    }
-
-    /// ACC-001-start_account_sign_in: 재인증 시작 결과가 거절·실패·취소로 끝나면 기존 refresh deadline을 복구한다.
-    /// 기존 session authority를 유지한 terminal begin 결과가 deadline generation을 다시 예약하는지 검증한다.
-    /// - 검증 내용: 세 begin terminal 결과마다 refresh deadline generation이 취소 후 다시 증가한다.
-    /// - 사전 조건: 유효한 expiry를 가진 signed-in reauthentication 상태.
-    /// - 기대 결과: 기존 session은 유지되고 replacement deadline effect가 정리된다.
-    func testReauthenticationBeginTerminalResultsRestoreRefreshDeadline() async {
-        for result in [SignInHandoffResult.rejected, .failure, .cancelled] {
-            var initialState = AccountAccessFeature.State()
-            initialState.hasAccountSession = true
-            initialState.sessionExpiresAt = referenceDate.addingTimeInterval(600)
-            initialState.ttlTimerActive = true
-            initialState.refreshDeadlineGeneration = 7
-
-            let store = makeTestStore(
-                signInHandoffClient: SignInHandoffClient { _ in result },
-                initialState: initialState,
-                continuousClock: TestClock(),
-            )
-
-            await store.send(.loginTapped(context: .paywall, scope: .lifecycle)) { state in
-                state.isSignInInProgress = true
-                state.didSignInFail = false
-                state.handoffTransaction = AccountAccessHandoffTransaction(
-                    context: .paywall,
-                    scope: .lifecycle,
-                    startedWithAccountSession: true,
-                )
-                state.handoffGeneration = 1
-                state.syncGeneration = 1
-                state.revalidationGeneration = 1
-                state.refreshDeadlineGeneration = 8
-            }
-            await store.receive(\.signInHandoffCompleted) { state in
-                state.isSignInInProgress = false
-                state.handoffTransaction = nil
-                state.refreshDeadlineGeneration = 9
-                if result == .failure {
-                    state.errorMessage = "Check your network connection and try again."
-                }
-            }
-
-            XCTAssertTrue(store.state.hasAccountSession)
-            XCTAssertFalse(store.state.didSignInFail)
-            await store.skipInFlightEffects()
-            await store.finish()
-        }
     }
 
     func testCancelSignInClearsPendingHandoffState() async {

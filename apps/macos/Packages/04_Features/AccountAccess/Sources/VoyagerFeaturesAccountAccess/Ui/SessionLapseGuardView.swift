@@ -167,14 +167,19 @@ public struct SessionLapseGuardView: View {
                                     .multilineTextAlignment(.center)
                             }
 
-                            Button(Self.primaryButtonTitle(for: accessUnlockPrimaryCTA)) {
-                                viewStore.send(Self.primaryButtonAction(for: accessUnlockPrimaryCTA))
+                            if let primaryButtonAction = Self.primaryButtonAction(for: accessUnlockPrimaryCTA) {
+                                Button(Self.primaryButtonTitle(for: accessUnlockPrimaryCTA)) {
+                                    viewStore.send(primaryButtonAction)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.large)
+                                .disabled(isSignInInProgress)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                            .disabled(isSignInInProgress)
 
-                            if isSignInInProgress {
+                            if Self.shouldShowProgress(
+                                accessUnlockPrimaryCTA: accessUnlockPrimaryCTA,
+                                isSignInInProgress: isSignInInProgress,
+                            ) {
                                 ProgressView()
                                     .controlSize(.small)
                             }
@@ -209,7 +214,9 @@ public struct SessionLapseGuardView: View {
             return "Could not verify access."
         case .eligibleDownload:
             return "Download an eligible version to continue."
-        case .login, .next, .pending:
+        case .pending:
+            return "Checking access..."
+        case .login, .next:
             break
         }
         if didSignInFail {
@@ -233,7 +240,7 @@ public struct SessionLapseGuardView: View {
         }
     }
 
-    static func primaryButtonAction(for accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA) -> AccountAccessAction {
+    static func primaryButtonAction(for accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA) -> AccountAccessAction? {
         switch accessUnlockPrimaryCTA {
         case .account:
             .openAccountTapped
@@ -243,9 +250,18 @@ public struct SessionLapseGuardView: View {
             .openPricingTapped
         case .eligibleDownload:
             .openEligibleDownloadTapped
-        case .login, .next, .pending:
+        case .login, .next:
             .loginTapped(context: .paywall, scope: .lifecycle)
+        case .pending:
+            nil
         }
+    }
+
+    static func shouldShowProgress(
+        accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA,
+        isSignInInProgress: Bool,
+    ) -> Bool {
+        accessUnlockPrimaryCTA == .pending || isSignInInProgress
     }
 
     public static func shouldShow(

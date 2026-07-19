@@ -14,13 +14,6 @@ import XCTest
 @MainActor
 final class ACC001ExchangeHandoffTokenTests: XCTestCase {
     private struct TerminalCommitFailure: Error {}
-    private struct ReauthenticationCommitFailureFixture {
-        let temporaryHome: TemporaryHomeFixture
-        let tokenStore: AccountTokenFileStore
-        let sessionClient: AccountSessionClient
-        let priorToken: AccountTokensFile
-        let candidateExpiry: Date
-    }
 
     private let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -213,79 +206,6 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         return state
     }
 
-    private func reauthenticationPendingState(sessionBindingID: UUID = UUID()) -> AccountAccessFeature.State {
-        var state = AccountAccessFeature.State()
-        state.hasAccountSession = true
-        state.isSubmitting = true
-        state.status = .coreLicenseActive
-        state.sessionExpiresAt = referenceDate.addingTimeInterval(3600)
-        state.sessionBindingID = sessionBindingID
-        return state
-    }
-
-    private func reauthenticationCommitFailureFixture() async throws -> ReauthenticationCommitFailureFixture {
-        let fixture = try TemporaryHomeFixture()
-        let tokenStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
-        let priorBinding = UUID()
-        let priorToken = AccountTokensFile(
-            updatedAtMs: 1,
-            accessToken: "prior-access-fixture",
-            accessTokenExpiresAtMs: 1_700_003_600_000,
-            accessTokenExpiresIn: 3_600_000,
-            refreshToken: "prior-refresh-fixture",
-            refreshTokenExpiresAtMs: 1_702_592_000_000,
-            sessionBindingID: priorBinding,
-        )
-        try await tokenStore.write(priorToken)
-        let liveClient = AccountSessionClient.live(store: tokenStore)
-        let sessionClient = AccountSessionClient(
-            read: liveClient.read,
-            persist: liveClient.persist,
-            prepareHandoffPersistence: liveClient.prepareHandoffPersistence,
-            commitHandoffPersistence: { _ in throw TerminalCommitFailure() },
-            delete: liveClient.delete,
-            discardPersistedSession: liveClient.discardPersistedSession,
-        )
-        return ReauthenticationCommitFailureFixture(
-            temporaryHome: fixture,
-            tokenStore: tokenStore,
-            sessionClient: sessionClient,
-            priorToken: priorToken,
-            candidateExpiry: referenceDate.addingTimeInterval(7200),
-        )
-    }
-
-    private func driveReauthenticationToTerminalFailure(
-        _ store: TestStore<AccountAccessFeature.State, AccountAccessFeature.Action>,
-    ) async {
-        await store.send(.loginTapped(context: .onboarding, scope: .onboarding)) { state in
-            state.isSubmitting = false
-            state.isSignInInProgress = true
-            state.handoffTransaction = AccountAccessHandoffTransaction(
-                context: .onboarding,
-                scope: .onboarding,
-                startedWithAccountSession: true,
-            )
-            state.syncGeneration = 1
-            state.revalidationGeneration = 1
-            state.handoffGeneration = 1
-        }
-        await store.receive(\.signInHandoffCompleted) { state in
-            state.handoffPendingState = Self.validState
-        }
-        await store.send(claimedHandoffAction(generation: 1)) { state in
-            state.handoffPendingState = nil
-            state.handoffExchangeState = Self.validState
-        }
-        await store.receive(\._handoffCommitAuthorized) { state in
-            state.isSignInInProgress = false
-        }
-        await store.receive(\._handoffExchangeCompleted) { state in
-            state.handoffExchangeState = nil
-            state.handoffTransaction = nil
-        }
-    }
-
     private func terminalCommitSessionClient(
         probe: PersistenceCancellationProbe,
         session: AccountSession,
@@ -298,6 +218,36 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
             delete: { _ in },
             discardPersistedSession: { _ in await probe.discard() },
         )
+    }
+
+    private func ordinaryHandoffCommitFailureFixture() async throws -> (
+        temporaryHome: TemporaryHomeFixture,
+        tokenStore: AccountTokenFileStore,
+        sessionClient: AccountSessionClient,
+        canonicalToken: AccountTokensFile,
+    ) {
+        let temporaryHome = try TemporaryHomeFixture()
+        let tokenStore = AccountTokenFileStore.withCustomHome(homeURL: temporaryHome.homeURL)
+        let canonicalToken = AccountTokensFile(
+            updatedAtMs: 1,
+            accessToken: "canonical-access-token",
+            accessTokenExpiresAtMs: 1_700_003_600_000,
+            accessTokenExpiresIn: 3_600_000,
+            refreshToken: "canonical-refresh-token",
+            refreshTokenExpiresAtMs: 1_702_592_000_000,
+            sessionBindingID: UUID(),
+        )
+        try await tokenStore.write(canonicalToken)
+        let liveClient = AccountSessionClient.live(store: tokenStore)
+        let sessionClient = AccountSessionClient(
+            read: liveClient.read,
+            persist: liveClient.persist,
+            prepareHandoffPersistence: liveClient.prepareHandoffPersistence,
+            commitHandoffPersistence: { _ in throw TerminalCommitFailure() },
+            delete: liveClient.delete,
+            discardPersistedSession: liveClient.discardPersistedSession,
+        )
+        return (temporaryHome, tokenStore, sessionClient, canonicalToken)
     }
 
     private func claimedHandoffAction(
@@ -715,106 +665,52 @@ extension ACC001ExchangeHandoffTokenTests {
 }
 
 extension ACC001ExchangeHandoffTokenTests {
-    /// ACC-001-exchange_handoff_token: 재인증 exchange 실패는 기존 signed-in authority를 보존한다.
-    /// - 검증 내용: handoff exchange failure 뒤 hasAccountSession, session binding, expiry가 유지된다.
-    /// - 사전 조건: 기존 credential authority가 있는 signed-in handoff가 network failure를 받는다.
-    /// - 기대 결과: sign-in transient state만 종료되고 기존 session authority는 signed-in으로 복원된다.
-    func testReauthenticationExchangeFailurePreservesExistingSessionAuthority() async {
-        var initialState = reauthenticationPendingState()
-        let existingExpiry = initialState.sessionExpiresAt
-        let existingBinding = initialState.sessionBindingID
-        initialState.ttlTimerActive = true
-        initialState.refreshDeadlineGeneration = 7
-        let pendingState = Self.validState
-        let store = makeTestStore(
-            authNetworkClient: AuthNetworkClient(
-                exchangeHandoff: { _, _, _ in throw AppHandoffExchangeError.networkFailure },
-                fetchAccessStatus: { throw AccessError.notConfigured },
-                bindDevice: { _ in DeviceBindingResponse(ok: true) },
-                refreshToken: { throw AccessError.notConfigured },
-            ),
-            signInHandoffClient: SignInHandoffClient { _ in .awaitingCallback(state: pendingState) },
-            initialState: initialState,
-        )
-
-        await store.send(.loginTapped(context: .onboarding, scope: .onboarding)) { state in
-            state.isSubmitting = false
-            state.isSignInInProgress = true
-            state.handoffTransaction = AccountAccessHandoffTransaction(
-                context: .onboarding,
-                scope: .onboarding,
-                startedWithAccountSession: true,
-            )
-            state.syncGeneration = 1
-            state.revalidationGeneration = 1
-            state.handoffGeneration = 1
-            state.refreshDeadlineGeneration = 8
-        }
-        await store.receive(\.signInHandoffCompleted) { state in
-            state.handoffPendingState = Self.validState
-        }
-        await store.send(claimedHandoffAction(generation: 1)) { state in
-            state.handoffPendingState = nil
-            state.handoffExchangeState = Self.validState
-        }
-        await store.receive(\._handoffExchangeCompleted) { state in
-            state.isSignInInProgress = false
-            state.handoffExchangeState = nil
-            state.handoffTransaction = nil
-            state.refreshDeadlineGeneration = 9
-        }
-
-        XCTAssertTrue(store.state.hasAccountSession)
-        XCTAssertFalse(store.state.didSignInFail)
-        XCTAssertEqual(store.state.sessionExpiresAt, existingExpiry)
-        XCTAssertEqual(store.state.sessionBindingID, existingBinding)
-        XCTAssertTrue(store.state.ttlTimerActive)
-        await store.skipInFlightEffects()
-        await store.finish()
-    }
-
-    /// ACC-001-exchange_handoff_token: 재인증 terminal commit 실패는 staging을 rollback해 기존 credential을 다시 읽게 한다.
-    /// - 검증 내용: commit failure 뒤 discard boundary가 marker/staging을 제거하고 prior canonical token을 보존한다.
-    /// - 사전 조건: 읽을 수 있는 기존 token file과 commitHandoffPersistence가 실패하는 reauthentication handoff.
-    /// - 기대 결과: reducer는 signed-in authority를 유지하고 token store는 기존 canonical credential을 반환한다.
-    func testReauthenticationCommitFailureRollsBackStagingAndPreservesPriorCredential() async throws {
-        let fixture = try await reauthenticationCommitFailureFixture()
-        let pendingState = Self.validState
-        let candidateExpiry = fixture.candidateExpiry
-        let candidateBinding = fixture.priorToken.sessionBindingID ?? UUID()
-        let initialState = reauthenticationPendingState(
-            sessionBindingID: fixture.priorToken.sessionBindingID ?? UUID(),
+    /// ACC-001-exchange_handoff_token: ordinary handoff terminal commit 실패는 staging을 rollback하고 canonical credential을
+    /// 보존한다.
+    /// - 검증 내용: authorization 뒤 commit failure가 signed-out/sign-in-failed 상태와 staging/marker 정리로 끝난다.
+    /// - 사전 조건: callback 대기 중 ordinary handoff와 기존 canonical token, 실패하는 commitHandoffPersistence.
+    /// - 기대 결과: 새 candidate는 저장되지 않고 기존 canonical token은 그대로 읽힌다.
+    func testOrdinaryHandoffCommitFailureRollsBackStagingAndPreservesCanonicalCredential() async throws {
+        let fixture = try await ordinaryHandoffCommitFailureFixture()
+        let candidateSession = AccountSession(
+            accessToken: "candidate-access-token",
+            status: .coreLicenseActive,
+            refreshToken: "candidate-refresh-token",
+            expiresAt: referenceDate.addingTimeInterval(7200),
+            sessionBindingID: UUID(),
         )
         let store = makeTestStore(
             accountSessionClient: fixture.sessionClient,
             authNetworkClient: AuthNetworkClient(
-                exchangeHandoff: { _, _, _ in
-                    AccountSession(
-                        accessToken: "candidate-access-fixture",
-                        status: .coreLicenseActive,
-                        refreshToken: "candidate-refresh-fixture",
-                        expiresAt: candidateExpiry,
-                        sessionBindingID: candidateBinding,
-                    )
-                },
+                exchangeHandoff: { _, _, _ in candidateSession },
                 fetchAccessStatus: { throw AccessError.notConfigured },
                 bindDevice: { _ in DeviceBindingResponse(ok: true) },
                 refreshToken: { throw AccessError.notConfigured },
             ),
-            signInHandoffClient: SignInHandoffClient { _ in .awaitingCallback(state: pendingState) },
-            initialState: initialState,
+            initialState: awaitingCallbackState(),
         )
 
-        await driveReauthenticationToTerminalFailure(store)
+        await store.send(claimedHandoffAction()) { state in
+            state.handoffPendingState = nil
+            state.handoffExchangeState = Self.validState
+        }
+        await store.receive(\._handoffCommitAuthorized) { state in
+            state.isSignInInProgress = false
+        }
+        await store.receive(\._handoffExchangeCompleted) { state in
+            state.didSignInFail = true
+            state.handoffExchangeState = nil
+            state.handoffTransaction = nil
+        }
 
-        XCTAssertTrue(store.state.hasAccountSession)
-        XCTAssertFalse(store.state.didSignInFail)
+        XCTAssertFalse(store.state.hasAccountSession)
+        XCTAssertTrue(store.state.didSignInFail)
         let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: fixture.temporaryHome.homeURL)
         let markerURL = AccountTokenFSLocation.rollbackMarkerFileURL(homeDirectoryURL: fixture.temporaryHome.homeURL)
         XCTAssertFalse(fixture.temporaryHome.snapshotFile(at: stagingURL).exists)
         XCTAssertFalse(fixture.temporaryHome.snapshotFile(at: markerURL).exists)
-        let restoredToken = try await fixture.tokenStore.read()
-        XCTAssertEqual(restoredToken, fixture.priorToken)
+        let canonicalToken = try await fixture.tokenStore.read()
+        XCTAssertEqual(canonicalToken, fixture.canonicalToken)
         await store.finish()
     }
 

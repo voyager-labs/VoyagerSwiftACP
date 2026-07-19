@@ -197,7 +197,6 @@ final class EntitlementAccessFlowTests: XCTestCase {
         initialState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
             context: .onboarding,
             scope: .onboarding,
-            startedWithAccountSession: false,
         )
         let store = AccountAccessFlowTestSupport.makeRootStore(initialState: initialState)
         // store.exhaustivity = .off: login completion은 refresh deadline과 canonical Settings projection을 함께 생성함.
