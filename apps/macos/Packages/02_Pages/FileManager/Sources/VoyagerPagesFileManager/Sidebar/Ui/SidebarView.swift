@@ -23,17 +23,19 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if !store.allFixedLocationItems.isEmpty {
+                fixedLocationsGrid
+                    .padding(.top, 50)
+            }
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    if !store.allFixedLocationItems.isEmpty {
-                        fixedLocationsGrid
-                            .padding(.top, store.fixedLocationItems.isEmpty ? 0 : 50)
-                    }
-
                     if !store.contentTabSidebarItems.isEmpty {
                         contentTabRows(pinnedContentTabSidebarItems)
 
-                        if !pinnedContentTabSidebarItems.isEmpty {
+                        if !pinnedContentTabSidebarItems.isEmpty,
+                           !unpinnedContentTabSidebarItems.isEmpty
+                        {
                             contentTabSectionDivider
                         }
 
