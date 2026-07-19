@@ -701,10 +701,18 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 }
             }
         }
+        // store.exhaustivity = .off: Home tab handoff의 파생 action보다 dashboard projection 최종 상태를 검증한다.
         store.exhaustivity = .off
 
         await store.send(.sidebar(.delegate(.openContentTab)))
-        await store.receive(\.contentTabs)
+        await store.receive { action in
+            guard case .contentTabs(.clearSelection) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .contentTabs(.open(.homeDefault)) = action else { return false }
+            return true
+        }
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
         XCTAssertEqual(store.state.contentTabs.tabs.last?.anchor, .homeDefault)
@@ -755,10 +763,18 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 }
             }
         }
+        // store.exhaustivity = .off: Home tab handoff의 파생 action보다 fixed Locations 재조회 여부를 검증한다.
         store.exhaustivity = .off
 
         await store.send(.sidebar(.delegate(.openContentTab)))
-        await store.receive(\.contentTabs)
+        await store.receive { action in
+            guard case .contentTabs(.clearSelection) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .contentTabs(.open(.homeDefault)) = action else { return false }
+            return true
+        }
 
         XCTAssertEqual(locationsLoadCount.value, 0, "tab lifecycle에서는 fixed Locations를 재조회하지 않아야 함")
         XCTAssertEqual(store.state.content.homeLocationItems.map(\.title), [
@@ -822,17 +838,32 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 }
             }
         }
+        // store.exhaustivity = .off: active session handoff의 파생 action보다 tab별 session swap 최종 상태를 검증한다.
         store.exhaustivity = .off
 
         await store.send(.sidebar(.delegate(.selectContentTab(directoryID))))
-        await store.receive(\.contentTabs)
+        await store.receive { action in
+            guard case .contentTabs(.clearSelection) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case let .contentTabs(.setCurrent(id)) = action else { return false }
+            return id == directoryID
+        }
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, directoryID, "active tab must switch to Directory")
         XCTAssertEqual(store.state.content.navigation.currentPath, directoryPath)
         XCTAssertEqual(store.state.tabContentStates[homeID]?.navigation.currentPath, homeSessionPath)
 
         await store.send(.sidebar(.delegate(.selectContentTab(homeID))))
-        await store.receive(\.contentTabs)
+        await store.receive { action in
+            guard case .contentTabs(.clearSelection) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case let .contentTabs(.setCurrent(id)) = action else { return false }
+            return id == homeID
+        }
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, homeID, "active tab must switch back to Home")
         XCTAssertEqual(ContentTabProjection.activePageAnchor(from: store.state.contentTabs), .homeDefault)
