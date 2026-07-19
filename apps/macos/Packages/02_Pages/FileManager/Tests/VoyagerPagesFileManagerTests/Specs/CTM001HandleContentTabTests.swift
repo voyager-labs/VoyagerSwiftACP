@@ -1520,25 +1520,32 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
     // MARK: - CTM-001-open_new_content_tab_routing
 
-    /// CTM-001-open_new_content_tab_routing: WindowCommand.openNewContentTab 라우팅이 Home tab을 append하고 active로 설정함
-    /// - 검증 내용: .request(.openNewContentTab) 전송 후 tabs.count +1, last.anchor == .homeDefault, activeTabID == last.id
-    /// - 사전 조건: 기본 Home tab 하나가 있는 FileManagerFeature.State
-    /// - 기대 결과: 새 Home tab이 list 끝에 추가되고 active가 됨
+    /// CTM-001-open_new_content_tab_routing: WindowCommand.openNewContentTab 라우팅이 선택을 해제하고 Home tab을 활성화함
+    /// - 검증 내용: .request(.openNewContentTab)이 clearSelection 후 open(.homeDefault)을 순서대로 방출함
+    /// - 사전 조건: 선택 및 anchor가 설정된 기본 Home tab 하나가 있는 FileManagerFeature.State
+    /// - 기대 결과: 선택과 anchor가 비워지고 새 Home tab이 list 끝에 추가되어 active가 됨
     func testOpenNewContentTab_commandRouting_createsHomeTabAppendedActive() async throws {
-        let store = TestStore(initialState: FileManagerFeature.State()) {
+        var initialState = FileManagerFeature.State()
+        let selectedID = try XCTUnwrap(initialState.contentTabs.activeTabID)
+        initialState.contentTabs.selectedTabIDs = [selectedID]
+        initialState.contentTabs.selectionAnchorID = selectedID
+        let store = TestStore(initialState: initialState) {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action 방출하므로
-        // routing layer의 최종 상태 검증에 집중한다.
+        // routing layer의 명령 순서와 최종 상태 검증에 집중한다.
         store.exhaustivity = .off
 
         let beforeCount = store.state.contentTabs.tabs.count
         let beforeActiveID = store.state.contentTabs.activeTabID
 
         await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs)
+        await store.receive(\.contentTabs.clearSelection)
+        XCTAssertTrue(store.state.contentTabs.selectedTabIDs.isEmpty)
+        XCTAssertNil(store.state.contentTabs.selectionAnchorID)
+        await store.receive(\.contentTabs.open, .homeDefault)
 
         let afterCount = store.state.contentTabs.tabs.count
         XCTAssertEqual(afterCount, beforeCount + 1, "tabs count must increment by 1")
@@ -1568,7 +1575,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs)
+        await store.receive(\.contentTabs.clearSelection)
+        await store.receive(\.contentTabs.open, .homeDefault)
 
         let lastTab = try XCTUnwrap(store.state.contentTabs.tabs.last)
         XCTAssertEqual(lastTab.anchor, .homeDefault, "new tab must NOT clone existing Directory anchor")
@@ -1593,7 +1601,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let previousActiveID = try XCTUnwrap(store.state.contentTabs.activeTabID)
 
         await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs)
+        await store.receive(\.contentTabs.clearSelection)
+        await store.receive(\.contentTabs.open, .homeDefault)
 
         let newActiveID = try XCTUnwrap(store.state.contentTabs.activeTabID)
         XCTAssertNotNil(
@@ -1623,7 +1632,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let beforeCount = ContentTabProjection.sidebarItems(from: store.state.contentTabs).count
 
         await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs)
+        await store.receive(\.contentTabs.clearSelection)
+        await store.receive(\.contentTabs.open, .homeDefault)
 
         let sidebarItems = ContentTabProjection.sidebarItems(from: store.state.contentTabs)
         XCTAssertEqual(sidebarItems.count, beforeCount + 1, "projection must reflect new tab count")
@@ -1631,11 +1641,11 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(lastItem.pageType, .home, "last projection item pageType must be home")
     }
 
-    /// CTM-001-open_new_content_tab_invariants: maxTabs 상태에서 openNewContentTab은 no-op으로 기존 상태를 보존함
+    /// CTM-001-open_new_content_tab_invariants: maxTabs 상태에서 openNewContentTab은 전체 Content Tab 상태를 보존함
     /// VOY-447 AC4 failure 정책을 검증한다.
-    /// - 검증 내용: maxTabs 도달 후 .request(.openNewContentTab) 전송 시 tabs.count와 activeTabID 불변
-    /// - 사전 조건: ContentTabConstants.maxTabs만큼 채워진 tab list
-    /// - 기대 결과: tabs.count와 activeTabID가 변경되지 않음
+    /// - 검증 내용: maxTabs 도달 후 command가 selection, anchor, active identity, previous identity, tabs를 변경하지 않음
+    /// - 사전 조건: 선택 및 anchor가 설정되고 ContentTabConstants.maxTabs만큼 채워진 tab list
+    /// - 기대 결과: command-level guard가 cleanup과 open을 모두 차단하여 contentTabs 전체가 불변임
     func testOpenNewContentTab_maxTabsNoOp_preservesState() async {
         var tabs = IdentifiedArrayOf<ContentTabItem>()
         for _ in 0 ..< ContentTabConstants.maxTabs {
@@ -1649,25 +1659,29 @@ final class CTM001HandleContentTabTests: XCTestCase {
             ))
         }
         let firstID = tabs[0].id
+        let lastID = tabs[tabs.count - 1].id
         var state = FileManagerFeature.State()
         state.contentTabs.tabs = tabs
         state.contentTabs.activeTabID = firstID
+        state.contentTabs.previousActiveTabID = lastID
+        state.contentTabs.selectedTabIDs = [firstID, lastID]
+        state.contentTabs.selectionAnchorID = lastID
         state.content.entryViewLayout.entryOperations.isLoading = true
         state.content.entryViewLayout.entryOperations.isReloading = true
         state.content.composer.isLoadingSearch = true
+        let originalContentTabs = state.contentTabs
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
-        // 비포괄적: maxTabs guard로 인해 contentTabs action이 상태를 변경하지 않으므로 불변 검증에 집중한다.
+        // 비포괄적: maxTabs guard의 whole-state no-op과 unrelated loading 상태 불변 검증에 집중한다.
         store.exhaustivity = .off
 
         await store.send(.request(.openNewContentTab))
 
-        XCTAssertEqual(store.state.contentTabs.tabs.count, ContentTabConstants.maxTabs)
-        XCTAssertEqual(store.state.contentTabs.activeTabID, firstID)
+        XCTAssertEqual(store.state.contentTabs, originalContentTabs)
         XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.isLoading)
         XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.isReloading)
         XCTAssertTrue(store.state.content.composer.isLoadingSearch)
@@ -1688,10 +1702,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs)
+        await store.receive(\.contentTabs.clearSelection)
+        await store.receive(\.contentTabs.open, .homeDefault)
 
         await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs)
+        await store.receive(\.contentTabs.clearSelection)
+        await store.receive(\.contentTabs.open, .homeDefault)
 
         let allIDs = store.state.contentTabs.tabs.map(\.id)
         let uniqueIDs = Set(allIDs)
