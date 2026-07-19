@@ -178,6 +178,10 @@ ALLOWED_PROCESS_INFO_LITERAL_KEYS: dict[str, set[str]] = {
     "apps/macos/Hosts/FileManagerHost/FileManagerHostApp.swift": {
         "FILE_MANAGER_HOST_SMOKE",
     },
+    "apps/macos/Hosts/ComposerHost/ComposerHostApp.swift": {
+        "COMPOSER_HOST_PRESET",
+        "COMPOSER_HOST_SMOKE",
+    },
     "apps/macos/Hosts/OnboardingHost/OnboardingHostApp.swift": {
         "ONBOARDING_HOST_EXPECT_REQUIRED_AFTER_COMPLETED",
         "ONBOARDING_HOST_RESET_PROGRESS",
@@ -185,6 +189,7 @@ ALLOWED_PROCESS_INFO_LITERAL_KEYS: dict[str, set[str]] = {
     },
 }
 ALLOWED_PROCESS_INFO_SNAPSHOT_FILES: set[str] = {
+    "apps/macos/Hosts/ComposerHost/ComposerHostFixtureCore.swift",
     "apps/macos/Voyager/Voyager/Api/HelperAppClient.swift",
     "apps/macos/Packages/06_Shared/VoyagerShared/Sources/VoyagerShared/Lib/EnvironmentLoader.swift",
     "apps/macos/Packages/05_Entities/Ai/Sources/VoyagerEntitiesAi/Lib/AiConnectionRootResolver.swift",
