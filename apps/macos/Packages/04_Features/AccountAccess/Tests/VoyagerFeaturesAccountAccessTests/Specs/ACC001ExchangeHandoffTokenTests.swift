@@ -720,9 +720,11 @@ extension ACC001ExchangeHandoffTokenTests {
     /// - 사전 조건: 기존 credential authority가 있는 signed-in handoff가 network failure를 받는다.
     /// - 기대 결과: sign-in transient state만 종료되고 기존 session authority는 signed-in으로 복원된다.
     func testReauthenticationExchangeFailurePreservesExistingSessionAuthority() async {
-        let initialState = reauthenticationPendingState()
+        var initialState = reauthenticationPendingState()
         let existingExpiry = initialState.sessionExpiresAt
         let existingBinding = initialState.sessionBindingID
+        initialState.ttlTimerActive = true
+        initialState.refreshDeadlineGeneration = 7
         let pendingState = Self.validState
         let store = makeTestStore(
             authNetworkClient: AuthNetworkClient(
@@ -746,6 +748,7 @@ extension ACC001ExchangeHandoffTokenTests {
             state.syncGeneration = 1
             state.revalidationGeneration = 1
             state.handoffGeneration = 1
+            state.refreshDeadlineGeneration = 8
         }
         await store.receive(\.signInHandoffCompleted) { state in
             state.handoffPendingState = Self.validState
@@ -758,12 +761,15 @@ extension ACC001ExchangeHandoffTokenTests {
             state.isSignInInProgress = false
             state.handoffExchangeState = nil
             state.handoffTransaction = nil
+            state.refreshDeadlineGeneration = 9
         }
 
         XCTAssertTrue(store.state.hasAccountSession)
         XCTAssertFalse(store.state.didSignInFail)
         XCTAssertEqual(store.state.sessionExpiresAt, existingExpiry)
         XCTAssertEqual(store.state.sessionBindingID, existingBinding)
+        XCTAssertTrue(store.state.ttlTimerActive)
+        await store.skipInFlightEffects()
         await store.finish()
     }
 

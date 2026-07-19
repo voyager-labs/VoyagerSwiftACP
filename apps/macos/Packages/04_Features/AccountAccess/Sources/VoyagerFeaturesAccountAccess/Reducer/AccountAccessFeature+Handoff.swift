@@ -50,6 +50,7 @@ extension AccountAccessFeature {
 
         let scope = handoffScope(state)
         let expectedState = ownedHandoffState(state)
+        let transaction = state.handoffTransaction
         state.isSignInInProgress = false
         state.didSignInFail = false
         state.handoffPendingState = nil
@@ -61,6 +62,7 @@ extension AccountAccessFeature {
             .cancel(id: CancelID.handoffCallbackTimeout(scope)),
             cancelHandoffClaimAndExchange(scope: scope),
             clearStoredHandoff(expectedState: expectedState, owner: scope),
+            restoreRefreshDeadlineAfterTerminatingReauthentication(&state, transaction: transaction),
         )
     }
 
@@ -96,6 +98,7 @@ extension AccountAccessFeature {
             return .merge(
                 .cancel(id: CancelID.handoffCallbackTimeout(scope)),
                 cancelHandoffClaimAndExchange(scope: scope),
+                restoreRefreshDeadlineAfterTerminatingReauthentication(&state, transaction: transaction),
             )
 
         case .failure:
@@ -128,6 +131,7 @@ extension AccountAccessFeature {
             .cancel(id: CancelID.handoffCallbackTimeout(scope)),
             cancelHandoffClaimAndExchange(scope: scope),
             clearStoredHandoff(expectedState: expectedState, owner: scope),
+            restoreRefreshDeadlineAfterTerminatingReauthentication(&state, transaction: transaction),
         )
     }
 
@@ -136,6 +140,20 @@ extension AccountAccessFeature {
             .cancel(id: CancelID.handoffExchange(scope)),
             .cancel(id: CancelID.handoffClaim(scope)),
         )
+    }
+
+    private func restoreRefreshDeadlineAfterTerminatingReauthentication(
+        _ state: inout State,
+        transaction: AccountAccessHandoffTransaction?,
+    ) -> Effect<Action> {
+        guard transaction?.startedWithAccountSession == true,
+              state.hasAccountSession,
+              !state.isSessionExpired
+        else {
+            return .none
+        }
+
+        return scheduleRefreshDeadline(&state)
     }
 
     func startHandoffCallbackTimeout(
@@ -176,6 +194,7 @@ extension AccountAccessFeature {
             ),
             cancelHandoffClaimAndExchange(scope: scope),
             clearStoredHandoff(expectedState: pendingState, owner: scope),
+            restoreRefreshDeadlineAfterTerminatingReauthentication(&state, transaction: transaction),
         )
     }
 
@@ -268,7 +287,10 @@ extension AccountAccessFeature {
                 state.hasAccountSession = false
             }
             state.handoffPendingState = nil
-            return .cancel(id: CancelID.handoffCallbackTimeout(scope))
+            return .merge(
+                .cancel(id: CancelID.handoffCallbackTimeout(scope)),
+                restoreRefreshDeadlineAfterTerminatingReauthentication(&state, transaction: transaction),
+            )
         }
     }
 

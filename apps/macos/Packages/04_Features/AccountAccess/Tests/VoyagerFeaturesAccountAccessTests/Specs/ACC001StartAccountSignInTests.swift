@@ -164,7 +164,9 @@ final class ACC001StartAccountSignInTests: XCTestCase {
             state.isSignInInProgress = false
             state.handoffPendingState = nil
             state.handoffTransaction = nil
+            state.refreshDeadlineGeneration = 9
         }
+        await store.skipInFlightEffects()
         await store.finish()
     }
 
@@ -581,8 +583,16 @@ extension ACC001StartAccountSignInTests {
     func testAwaitingCallbackTimeoutResetsSignInStateAt120Seconds() async {
         let clock = TestClock()
         var initialState = AccountAccessFeature.State()
+        initialState.hasAccountSession = true
+        initialState.sessionExpiresAt = referenceDate.addingTimeInterval(600)
+        initialState.ttlTimerActive = true
+        initialState.refreshDeadlineGeneration = 8
         initialState.isSignInInProgress = true
-        initialState.handoffTransaction = AccountAccessHandoffTransaction(context: .onboarding, scope: .onboarding)
+        initialState.handoffTransaction = AccountAccessHandoffTransaction(
+            context: .onboarding,
+            scope: .onboarding,
+            startedWithAccountSession: true,
+        )
         let store = TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
@@ -591,7 +601,11 @@ extension ACC001StartAccountSignInTests {
 
         await store.send(.signInHandoffCompleted(
             .awaitingCallback(state: "pending-state"),
-            transaction: AccountAccessHandoffTransaction(context: .onboarding, scope: .onboarding),
+            transaction: AccountAccessHandoffTransaction(
+                context: .onboarding,
+                scope: .onboarding,
+                startedWithAccountSession: true,
+            ),
             generation: 0,
         )) { state in
             state.handoffPendingState = "pending-state"
@@ -605,11 +619,61 @@ extension ACC001StartAccountSignInTests {
         await clock.advance(by: .seconds(1))
         await store.receive(\._handoffCallbackTimedOut) { state in
             state.isSignInInProgress = false
-            state.didSignInFail = true
+            state.didSignInFail = false
             state.handoffPendingState = nil
             state.handoffTransaction = nil
+            state.refreshDeadlineGeneration = 9
         }
+        await store.skipInFlightEffects()
         await store.finish()
+    }
+
+    /// ACC-001-start_account_sign_in: 재인증 시작 결과가 거절·실패·취소로 끝나면 기존 refresh deadline을 복구한다.
+    /// 기존 session authority를 유지한 terminal begin 결과가 deadline generation을 다시 예약하는지 검증한다.
+    /// - 검증 내용: 세 begin terminal 결과마다 refresh deadline generation이 취소 후 다시 증가한다.
+    /// - 사전 조건: 유효한 expiry를 가진 signed-in reauthentication 상태.
+    /// - 기대 결과: 기존 session은 유지되고 replacement deadline effect가 정리된다.
+    func testReauthenticationBeginTerminalResultsRestoreRefreshDeadline() async {
+        for result in [SignInHandoffResult.rejected, .failure, .cancelled] {
+            var initialState = AccountAccessFeature.State()
+            initialState.hasAccountSession = true
+            initialState.sessionExpiresAt = referenceDate.addingTimeInterval(600)
+            initialState.ttlTimerActive = true
+            initialState.refreshDeadlineGeneration = 7
+
+            let store = makeTestStore(
+                signInHandoffClient: SignInHandoffClient { _ in result },
+                initialState: initialState,
+                continuousClock: TestClock(),
+            )
+
+            await store.send(.loginTapped(context: .paywall, scope: .lifecycle)) { state in
+                state.isSignInInProgress = true
+                state.didSignInFail = false
+                state.handoffTransaction = AccountAccessHandoffTransaction(
+                    context: .paywall,
+                    scope: .lifecycle,
+                    startedWithAccountSession: true,
+                )
+                state.handoffGeneration = 1
+                state.syncGeneration = 1
+                state.revalidationGeneration = 1
+                state.refreshDeadlineGeneration = 8
+            }
+            await store.receive(\.signInHandoffCompleted) { state in
+                state.isSignInInProgress = false
+                state.handoffTransaction = nil
+                state.refreshDeadlineGeneration = 9
+                if result == .failure {
+                    state.errorMessage = "Check your network connection and try again."
+                }
+            }
+
+            XCTAssertTrue(store.state.hasAccountSession)
+            XCTAssertFalse(store.state.didSignInFail)
+            await store.skipInFlightEffects()
+            await store.finish()
+        }
     }
 
     func testCancelSignInClearsPendingHandoffState() async {
