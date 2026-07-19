@@ -45,6 +45,43 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
         XCTAssertNil(response.updatesThrough)
     }
 
+    /// ACC-002-check_entitlement_status: 배포 중인 gateway camelCase access tuple도 canonical DTO로 복원한다.
+    /// - 검증 내용: camelCase access 필드와 snake_case eligibility tuple의 decode, canonical snake_case encode
+    /// - 사전 조건: gateway가 hasAccess, productKey, currentPeriodEnd를 camelCase로 반환한다.
+    /// - 기대 결과: 응답이 정상 decode되고 재인코딩은 canonical snake_case 키만 사용한다.
+    func testGatewayCamelCaseAccessFieldsDecodeWithSnakeCaseEligibilityTuple() throws {
+        let json = """
+        {
+            "hasAccess": true,
+            "status": "active",
+            "productKey": "core",
+            "currentPeriodEnd": "2026-07-05T00:00:00Z",
+            "ownership_status": "owned",
+            "update_status": "active",
+            "updates_through": "2026-12-31T00:00:00Z"
+        }
+        """
+
+        let response = try decoder.decode(AccessStatusResponse.self, from: Data(json.utf8))
+
+        XCTAssertTrue(response.hasAccess)
+        XCTAssertEqual(response.productKey, "core")
+        XCTAssertNotNil(response.currentPeriodEnd)
+        XCTAssertEqual(response.ownershipStatus, "owned")
+        XCTAssertEqual(response.updateStatus, "active")
+        XCTAssertNotNil(response.updatesThrough)
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let encoded = try XCTUnwrap(try JSONSerialization.jsonObject(with: encoder.encode(response)) as? [String: Any])
+        XCTAssertNotNil(encoded["has_access"])
+        XCTAssertNotNil(encoded["product_key"])
+        XCTAssertNotNil(encoded["current_period_end"])
+        XCTAssertNil(encoded["hasAccess"])
+        XCTAssertNil(encoded["productKey"])
+        XCTAssertNil(encoded["currentPeriodEnd"])
+    }
+
     /// optional 필드가 누락된 JSON이 nil로 디코딩된다.
     func testMissingOptionalFieldsDecodeAsNil() throws {
         let json = """

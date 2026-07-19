@@ -47,6 +47,39 @@ public struct AccessStatusResponse: Equatable, Sendable, Codable {
         case updatesThrough = "updates_through"
     }
 
+    private enum GatewayAliasCodingKeys: String, CodingKey {
+        case hasAccess
+        case productKey
+        case currentPeriodEnd
+    }
+
+    public init(from decoder: Decoder) throws {
+        let canonical = try decoder.container(keyedBy: CodingKeys.self)
+        let aliases = try decoder.container(keyedBy: GatewayAliasCodingKeys.self)
+
+        if canonical.contains(.hasAccess) {
+            hasAccess = try canonical.decode(Bool.self, forKey: .hasAccess)
+        } else {
+            hasAccess = try aliases.decode(Bool.self, forKey: .hasAccess)
+        }
+        status = try canonical.decode(String.self, forKey: .status)
+        reason = try canonical.decodeIfPresent(String.self, forKey: .reason)
+        if canonical.contains(.productKey) {
+            productKey = try canonical.decodeIfPresent(String.self, forKey: .productKey)
+        } else {
+            productKey = try aliases.decodeIfPresent(String.self, forKey: .productKey)
+        }
+        if canonical.contains(.currentPeriodEnd) {
+            currentPeriodEnd = try canonical.decodeIfPresent(Date.self, forKey: .currentPeriodEnd)
+        } else {
+            currentPeriodEnd = try aliases.decodeIfPresent(Date.self, forKey: .currentPeriodEnd)
+        }
+        source = try canonical.decodeIfPresent(String.self, forKey: .source)
+        ownershipStatus = try canonical.decodeIfPresent(String.self, forKey: .ownershipStatus)
+        updateStatus = try canonical.decodeIfPresent(String.self, forKey: .updateStatus)
+        updatesThrough = try canonical.decodeIfPresent(Date.self, forKey: .updatesThrough)
+    }
+
     /// Backend raw status + productKey → canonical AccessStatus 변환.
     /// - hasAccess=true + productKey="trial" → .trialActive
     /// - hasAccess=true + 그 외 productKey → .coreLicenseActive (core/lifetime/renewal/extra_mac/null 모두 license로 취급)
