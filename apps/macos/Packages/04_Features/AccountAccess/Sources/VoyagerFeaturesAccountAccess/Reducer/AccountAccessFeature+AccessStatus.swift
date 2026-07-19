@@ -306,7 +306,7 @@ extension AccountAccessFeature {
             syncedAt: syncedAt,
             deviceBindingOutcome: result.deviceBindingOutcome,
         )
-        return .merge(completion, refreshDeadline)
+        return .concatenate(completion, refreshDeadline)
     }
 
     private func handleCompleteSessionSync(

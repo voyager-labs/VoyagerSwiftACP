@@ -126,6 +126,48 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         return state
     }
 
+    private func assertSignedInPendingReauthentication(
+        initialState: AccountAccessFeature.State,
+        pendingState: String,
+    ) async {
+        nonisolated(unsafe) var handoffCallCount = 0
+        let store = makeTestStore(
+            signInHandoffClient: SignInHandoffClient { _ in
+                handoffCallCount += 1
+                return .awaitingCallback(state: pendingState)
+            },
+            initialState: initialState,
+        )
+
+        XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .pending)
+        XCTAssertTrue(store.state.canStartLogin)
+        await store.send(.loginTapped(context: .paywall, scope: .lifecycle)) { state in
+            state.isSubmitting = false
+            state.isSignInInProgress = true
+            state.didSignInFail = false
+            state.handoffTransaction = AccountAccessHandoffTransaction(
+                context: .paywall,
+                scope: .lifecycle,
+                startedWithAccountSession: true,
+            )
+            state.handoffGeneration = 1
+            state.syncGeneration = 8
+            state.revalidationGeneration = 4
+        }
+        await store.receive(\.signInHandoffCompleted) { state in
+            state.handoffPendingState = pendingState
+        }
+
+        XCTAssertTrue(store.state.hasAccountSession)
+        XCTAssertEqual(handoffCallCount, 1)
+        await store.send(.cancelSignIn) { state in
+            state.isSignInInProgress = false
+            state.handoffPendingState = nil
+            state.handoffTransaction = nil
+        }
+        await store.finish()
+    }
+
     // MARK: - ACC-001-start_account_sign_in
 
     /// ACC-001-start_account_sign_in: Voyager에서 시작한 로그인 URL은 Voyager 대상임을 포함한다.
@@ -266,6 +308,58 @@ final class ACC001StartAccountSignInTests: XCTestCase {
             state.handoffTransaction = nil
         }
         await store.finish()
+    }
+}
+
+extension ACC001StartAccountSignInTests {
+    /// ACC-001-start_account_sign_in: signed-in pending recovery에서 Sign in CTA는 새 handoff를 정확히 한 번 시작한다.
+    /// - 검증 내용: submitting sync를 무효화하고 handoff를 한 번 시작하며 persisted session 상태를 유지한다.
+    /// - 사전 조건: hasAccountSession=true, isSubmitting=true인 signed-in pending recovery 상태.
+    /// - 기대 결과: isSubmitting=false, sync/revalidation generation 증가, handoff client 1회 호출.
+    func testSignedInPendingLoginCTAStartsReauthenticationOnce() async {
+        var initialState = AccountAccessFeature.State()
+        initialState.hasAccountSession = true
+        initialState.isSubmitting = true
+        initialState.syncGeneration = 7
+        initialState.revalidationGeneration = 3
+
+        await assertSignedInPendingReauthentication(
+            initialState: initialState,
+            pendingState: "reauth-state-123",
+        )
+    }
+
+    /// ACC-001-start_account_sign_in: access status가 아직 확정되지 않은 signed-in pending recovery도 재인증을 시작한다.
+    /// - 검증 내용: nil status의 pending CTA가 sync/revalidation generation을 무효화하고 handoff를 시작한다.
+    /// - 사전 조건: hasAccountSession=true, status=nil, errorMessage=nil, isSubmitting=false.
+    /// - 기대 결과: persisted session을 유지한 채 handoff client가 한 번 호출된다.
+    func testSignedInUnknownPendingLoginCTAStartsReauthentication() async {
+        var initialState = AccountAccessFeature.State()
+        initialState.hasAccountSession = true
+        initialState.syncGeneration = 7
+        initialState.revalidationGeneration = 3
+
+        await assertSignedInPendingReauthentication(
+            initialState: initialState,
+            pendingState: "unknown-reauth-state-123",
+        )
+    }
+
+    /// ACC-001-start_account_sign_in: active access가 아직 complete가 아닌 signed-in pending recovery도 재인증을 시작한다.
+    /// - 검증 내용: active-but-incomplete pending CTA가 sync/revalidation generation을 무효화하고 handoff를 시작한다.
+    /// - 사전 조건: hasAccountSession=true, status=coreLicenseActive, isComplete=false, isSubmitting=false.
+    /// - 기대 결과: persisted session을 유지한 채 handoff client가 한 번 호출된다.
+    func testSignedInActiveIncompletePendingLoginCTAStartsReauthentication() async {
+        var initialState = AccountAccessFeature.State()
+        initialState.hasAccountSession = true
+        initialState.status = .coreLicenseActive
+        initialState.syncGeneration = 7
+        initialState.revalidationGeneration = 3
+
+        await assertSignedInPendingReauthentication(
+            initialState: initialState,
+            pendingState: "active-reauth-state-123",
+        )
     }
 
     /// ACC-001-start_account_sign_in: 인증 흐름 시작 후 callback/token 교환 전까지 auth_state가 변경되지 않는다.
