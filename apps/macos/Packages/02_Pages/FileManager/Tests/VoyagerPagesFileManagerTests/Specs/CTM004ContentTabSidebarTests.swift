@@ -958,40 +958,49 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
     // MARK: - CTM-004-content_tab_reorder_drop_contract
 
-    /// CTM-004-content_tab_reorder_drop_contract: provider copy는 base와 local marker 두 type만 보존함
-    /// SwiftUI drag source가 만드는 provider의 serialized payload와 own-process token shape를 검증한다.
-    /// - 검증 내용: provider/pasteboard exact type set, base JSON round trip, canonical UUID marker bytes
-    /// - 사전 조건: 고정 source/scope/token과 Sidebar-local session store
-    /// - 기대 결과: copied item은 `{base, local}`만 가지며 marker에는 token 외 데이터가 없음
-    func testContentTabReorderProviderCopyPreservesExactBaseAndLocalShapes() async throws {
+    /// CTM-004-content_tab_reorder_drop_contract: native writer는 base와 local marker 두 type을 즉시 기록함
+    /// AppKit drag source writer의 serialized payload와 opaque local token shape를 실제 pasteboard로 검증한다.
+    /// - 검증 내용: exact writable type set, immediate writing option, base JSON round trip, canonical UUID marker bytes
+    /// - 사전 조건: 고정 source/scope/token과 Sidebar-local session store 및 isolated named pasteboard
+    /// - 기대 결과: written item은 `{base, local}`만 가지며 source operation은 app 내부 move, 외부 empty임
+    func testContentTabReorderNativeWriterPreservesExactSynchronousShapeAndSourceOperation() throws {
         let token = try makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
         let payload = ContentTabReorderDragPayload(
             sourceID: ContentTabID(rawValue: "source"),
             dragScopeID: contentTabReorderScopeID,
         )
         let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
-        let provider = try ContentTabReorderItemProviderFactory.makeProvider(
+        let writer = try ContentTabReorderPasteboardWriter(
             payload: payload,
             sessionStore: sessionStore,
             token: token,
         )
+        let pasteboard = makeContentTabReorderPasteboard(items: [NSPasteboardItem]())
+        defer {
+            writer.cleanupOwnedToken()
+            pasteboard.clearContents()
+        }
 
-        XCTAssertEqual(Set(provider.registeredTypeIdentifiers), [
-            UTType.contentTabReorder.identifier,
-            UTType.contentTabReorderLocal.identifier,
+        XCTAssertEqual(Set(writer.writableTypes(for: pasteboard)), [
+            .contentTabReorder,
+            .contentTabReorderLocal,
         ])
-        XCTAssertEqual(provider.registeredTypeIdentifiers.count, 2)
-        XCTAssertFalse(provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier))
+        XCTAssertTrue(writer.writingOptions(forType: .contentTabReorder, pasteboard: pasteboard).isEmpty)
+        XCTAssertTrue(writer.writingOptions(forType: .contentTabReorderLocal, pasteboard: pasteboard).isEmpty)
+        XCTAssertTrue(pasteboard.writeObjects([writer]))
 
-        let pasteboard = try await copyContentTabReorderProviderToNamedPasteboard(provider)
-        defer { pasteboard.clearContents() }
         let item = try XCTUnwrap(pasteboard.pasteboardItems?.first)
         XCTAssertEqual(Set(item.types), [.contentTabReorder, .contentTabReorderLocal])
         XCTAssertEqual(item.data(forType: .contentTabReorderLocal), token.data)
         let baseData = try XCTUnwrap(item.data(forType: .contentTabReorder))
         XCTAssertEqual(try JSONDecoder().decode(ContentTabReorderDragPayload.self, from: baseData), payload)
+        XCTAssertEqual(sessionStore.entry?.payload, payload)
         XCTAssertEqual(ContentTabReorderLocalToken(data: token.data), token)
         XCTAssertNil(ContentTabReorderLocalToken(data: Data(token.rawValue.uuidString.lowercased().utf8)))
+
+        let button = ContentTabSidebarButton(frame: .zero)
+        XCTAssertEqual(button.sourceOperationMask(for: .withinApplication), .move)
+        XCTAssertEqual(button.sourceOperationMask(for: .outsideApplication), [])
     }
 
     /// CTM-004-content_tab_reorder_drop_contract: local store는 최신 drag 한 건만 유지하고 exact token을 한 번만 소비함
@@ -1040,6 +1049,42 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertNil(store.entry)
     }
 
+    /// CTM-004-content_tab_reorder_drop_contract: writer cleanup은 자신이 발급한 token만 제거함
+    /// 취소된 이전 drag의 teardown이 capacity-one store의 더 최신 session을 지우지 않는지 검증한다.
+    /// - 검증 내용: old writer cleanup, current writer cleanup, consumed writer cleanup의 identity semantics
+    /// - 사전 조건: 동일 store에 순서대로 발급된 서로 다른 writer token과 성공 consume된 token
+    /// - 기대 결과: old cleanup은 newer entry를 보존하고 current cleanup만 제거하며 consume 뒤 cleanup은 no-op임
+    func testContentTabReorderWriterCleanupPreservesNewerAndConsumedSessions() throws {
+        let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+        let firstToken = try makeContentTabReorderToken("11111111-1111-1111-1111-111111111111")
+        let secondToken = try makeContentTabReorderToken("22222222-2222-2222-2222-222222222222")
+        let thirdToken = try makeContentTabReorderToken("33333333-3333-3333-3333-333333333333")
+        let firstWriter = try ContentTabReorderPasteboardWriter(
+            payload: .init(sourceID: .init(rawValue: "first"), dragScopeID: contentTabReorderScopeID),
+            sessionStore: sessionStore,
+            token: firstToken,
+        )
+        let secondWriter = try ContentTabReorderPasteboardWriter(
+            payload: .init(sourceID: .init(rawValue: "second"), dragScopeID: contentTabReorderScopeID),
+            sessionStore: sessionStore,
+            token: secondToken,
+        )
+
+        firstWriter.cleanupOwnedToken()
+        XCTAssertEqual(sessionStore.entry?.token, secondToken)
+        secondWriter.cleanupOwnedToken()
+        XCTAssertNil(sessionStore.entry)
+
+        let thirdWriter = try ContentTabReorderPasteboardWriter(
+            payload: .init(sourceID: .init(rawValue: "third"), dragScopeID: contentTabReorderScopeID),
+            sessionStore: sessionStore,
+            token: thirdToken,
+        )
+        XCTAssertNotNil(sessionStore.consume(token: thirdToken))
+        thirdWriter.cleanupOwnedToken()
+        XCTAssertNil(sessionStore.entry)
+    }
+
     /// CTM-004-content_tab_reorder_drop_contract: AppKit preflight는 exact local runtime과 base-only shape만 허용함
     /// entered/updated hot path가 payload나 token을 읽지 않고 승인 상태와 owned boundary만 사용하는지 검증한다.
     /// - 검증 내용: 두 exact shape의 move proposal, data query 0회, update 중 Binding write 0회, pinned target 거부
@@ -1055,6 +1100,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             token: token,
         )
         let exactShapes: [Set<NSPasteboard.PasteboardType>] = [
+            [.contentTabReorder, .contentTabReorderLocal],
             Set(contentTabReorderRuntimeAuxiliaryTypes + [.contentTabReorder, .contentTabReorderLocal]),
             [.contentTabReorder],
         ]
@@ -1155,17 +1201,21 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     /// - 검증 내용: perform true, reorder/validation callback 각 1회, store consume, owned cleanup
     /// - 사전 조건: factory provider를 isolated named pasteboard로 복사한 same-scope local drag
     /// - 기대 결과: performDrop 반환 직후 fixed target/placement invocation과 validation true가 이미 기록됨
-    func testContentTabReorderLocalMarkerCommitsSynchronouslyBeforePerformReturns() async throws {
+    func testContentTabReorderLocalMarkerCommitsSynchronouslyBeforePerformReturns() throws {
         let sourceID = ContentTabID(rawValue: "source")
         let targetID = ContentTabID(rawValue: "target")
         let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
-        let provider = try makeContentTabReorderProvider(
-            sourceID: sourceID.rawValue,
+        let writer = try ContentTabReorderPasteboardWriter(
+            payload: .init(sourceID: sourceID, dragScopeID: contentTabReorderScopeID),
             sessionStore: sessionStore,
             token: makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"),
         )
-        let pasteboard = try await copyContentTabReorderProviderToRuntimePasteboard(provider)
-        defer { pasteboard.clearContents() }
+        let pasteboard = makeContentTabReorderPasteboard(items: [NSPasteboardItem]())
+        XCTAssertTrue(pasteboard.writeObjects([writer]))
+        defer {
+            writer.cleanupOwnedToken()
+            pasteboard.clearContents()
+        }
         let activeBoundary = ContentTabReorderActiveBoundaryBox(2)
         var invocations: [ContentTabReorderInvocation] = []
         var validationResults: [Bool] = []
@@ -1342,12 +1392,17 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         let token = try makeContentTabReorderToken("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
         let payload = ContentTabReorderDragPayload(sourceID: sourceID, dragScopeID: contentTabReorderScopeID)
         let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
-        sessionStore.begin(payload: payload, token: token)
-        let pasteboard = try makeContentTabReorderRuntimePasteboard(
-            baseData: JSONEncoder().encode(payload),
-            markerData: token.data,
+        let writer = try ContentTabReorderPasteboardWriter(
+            payload: payload,
+            sessionStore: sessionStore,
+            token: token,
         )
-        defer { pasteboard.clearContents() }
+        let pasteboard = makeContentTabReorderPasteboard(items: [NSPasteboardItem]())
+        XCTAssertTrue(pasteboard.writeObjects([writer]))
+        defer {
+            writer.cleanupOwnedToken()
+            pasteboard.clearContents()
+        }
         let activeBoundary = ContentTabReorderActiveBoundaryBox(2)
         var reorderCount = 0
         var validationResults: [Bool] = []
@@ -1704,29 +1759,38 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             .init("NSFilenamesPboardType"),
         ]
         for semanticType in semanticTypes {
-            let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
-            sessionStore.begin(payload: payload, token: token)
-            var reorderCount = 0
-            var validationResults: [Bool] = []
-            let view = makeContentTabReorderDestinationView(
-                targetID: targetID,
-                activeBoundary: ContentTabReorderActiveBoundaryBox(2),
-                sessionStore: sessionStore,
-                boundaryID: 2,
-                onReorder: { _, _, _ in reorderCount += 1 },
-                onValidationCompleted: { validationResults.append($0) },
-            )
-            let semanticItem = makeContentTabReorderRuntimePasteboardItem(
-                baseData: payloadData,
-                markerData: token.data,
-                additionalTypes: [semanticType],
-            )
+            let transportTypeSets: [Set<NSPasteboard.PasteboardType>] = [
+                [.contentTabReorder, .contentTabReorderLocal, semanticType],
+                Set(contentTabReorderRuntimeAuxiliaryTypes
+                    + [.contentTabReorder, .contentTabReorderLocal, semanticType]),
+            ]
+            for types in transportTypeSets {
+                let sessionStore = ContentTabReorderLocalSessionStore(nowNanoseconds: { 100 })
+                sessionStore.begin(payload: payload, token: token)
+                var reorderCount = 0
+                var validationResults: [Bool] = []
+                let view = makeContentTabReorderDestinationView(
+                    targetID: targetID,
+                    activeBoundary: ContentTabReorderActiveBoundaryBox(2),
+                    sessionStore: sessionStore,
+                    boundaryID: 2,
+                    onReorder: { _, _, _ in reorderCount += 1 },
+                    onValidationCompleted: { validationResults.append($0) },
+                )
+                let representations: [NSPasteboard.PasteboardType: Data] = [
+                    .contentTabReorder: payloadData,
+                    .contentTabReorderLocal: token.data,
+                ]
+                let semanticItem = ContentTabReorderPasteboardItem(
+                    types: types,
+                    dataForType: { representations[$0] ?? Data() },
+                )
 
-            XCTAssertTrue(semanticItem.types.contains(semanticType), semanticType.rawValue)
-            XCTAssertFalse(view.performDrop(pasteboardItems: [semanticItem]), semanticType.rawValue)
-            XCTAssertEqual(reorderCount, 0, semanticType.rawValue)
-            XCTAssertEqual(validationResults, [false], semanticType.rawValue)
-            XCTAssertEqual(sessionStore.entry?.token, token, semanticType.rawValue)
+                XCTAssertFalse(view.performDrop(pasteboardItems: [semanticItem]), semanticType.rawValue)
+                XCTAssertEqual(reorderCount, 0, semanticType.rawValue)
+                XCTAssertEqual(validationResults, [false], semanticType.rawValue)
+                XCTAssertEqual(sessionStore.entry?.token, token, semanticType.rawValue)
+            }
         }
     }
 
