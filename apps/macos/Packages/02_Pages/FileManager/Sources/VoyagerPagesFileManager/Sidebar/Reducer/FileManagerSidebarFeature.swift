@@ -8,6 +8,7 @@ public struct FileManagerSidebarFeature {
     public var body: some Reducer<State, Action> {
         FileManagerSidebarPreferenceReducer()
         FileManagerSidebarContentTabSyncReducer()
+        FileManagerSidebarContentTabSelectionRoutingReducer()
         FileManagerSidebarEntryDropRoutingReducer()
         FileManagerSidebarContentTabReorderRoutingReducer()
     }
@@ -26,6 +27,27 @@ struct FileManagerSidebarContentTabSyncReducer {
                 return .none
             default:
                 return .none
+            }
+        }
+    }
+}
+
+@Reducer
+struct FileManagerSidebarContentTabSelectionRoutingReducer {
+    typealias State = FileManagerSidebarState
+    typealias Action = FileManagerSidebarAction
+
+    var body: some Reducer<State, Action> {
+        Reduce { _, action in
+            switch action {
+            case let .view(.toggleContentTabSelection(id)):
+                .send(.delegate(.toggleContentTabSelection(id)))
+
+            case let .view(.selectContentTabRange(to: id)):
+                .send(.delegate(.selectContentTabRange(to: id)))
+
+            default:
+                .none
             }
         }
     }
