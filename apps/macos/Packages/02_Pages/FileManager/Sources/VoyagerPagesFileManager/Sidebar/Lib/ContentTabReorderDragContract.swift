@@ -20,6 +20,11 @@ struct ContentTabReorderDragPayload: Codable, Equatable {
     let dragScopeID: ContentTabReorderDragScopeID
 }
 
+struct ContentTabReorderDragSourceConfiguration {
+    let payload: ContentTabReorderDragPayload
+    let sessionStore: ContentTabReorderLocalSessionStore
+}
+
 extension UTType {
     static let contentTabReorder = UTType(
         exportedAs: "fm.voyager.content-tab-reorder",
@@ -112,8 +117,59 @@ final class ContentTabReorderLocalSessionStore {
         return entry.payload
     }
 
+    func clear(token: ContentTabReorderLocalToken) {
+        guard entry?.token == token else { return }
+        entry = nil
+    }
+
     func clear() {
         entry = nil
+    }
+}
+
+final class ContentTabReorderPasteboardWriter: NSObject, NSPasteboardWriting {
+    let token: ContentTabReorderLocalToken
+
+    private let payloadData: Data
+    private let sessionStore: ContentTabReorderLocalSessionStore
+
+    @MainActor
+    init(
+        payload: ContentTabReorderDragPayload,
+        sessionStore: ContentTabReorderLocalSessionStore,
+        token: ContentTabReorderLocalToken = ContentTabReorderLocalToken(rawValue: UUID()),
+    ) throws {
+        payloadData = try JSONEncoder().encode(payload)
+        self.sessionStore = sessionStore
+        self.token = sessionStore.begin(payload: payload, token: token)
+        super.init()
+    }
+
+    func writableTypes(for _: NSPasteboard) -> [NSPasteboard.PasteboardType] {
+        [.contentTabReorder, .contentTabReorderLocal]
+    }
+
+    func writingOptions(
+        forType _: NSPasteboard.PasteboardType,
+        pasteboard _: NSPasteboard,
+    ) -> NSPasteboard.WritingOptions {
+        []
+    }
+
+    func pasteboardPropertyList(forType type: NSPasteboard.PasteboardType) -> Any? {
+        switch type {
+        case .contentTabReorder:
+            payloadData
+        case .contentTabReorderLocal:
+            token.data
+        default:
+            nil
+        }
+    }
+
+    @MainActor
+    func cleanupOwnedToken() {
+        sessionStore.clear(token: token)
     }
 }
 

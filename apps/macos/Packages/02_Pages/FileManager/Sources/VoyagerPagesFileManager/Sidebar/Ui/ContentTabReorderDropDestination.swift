@@ -232,7 +232,7 @@ final class ContentTabReorderDropDestinationView: NSView {
             guard types.isDisjoint(with: Self.competingSemanticTypes) else {
                 return nil
             }
-            guard types == Self.localRuntimePasteboardTypes else {
+            guard Self.localPasteboardTypes.contains(types) else {
                 return nil
             }
             guard let payload = configuration.sessionStore.consume(token: token) else {
@@ -262,6 +262,16 @@ final class ContentTabReorderDropDestinationView: NSView {
         .init("dyn.ah62d4rv4gu8yc6durvwwa3xmrvw1gkdusm1044pxqyuha2pxsvw0e55bsmwca7d3sbwu"),
     ]
 
+    private static let nativePasteboardTypes: Set<NSPasteboard.PasteboardType> = [
+        .contentTabReorder,
+        .contentTabReorderLocal,
+    ]
+
+    private static let localPasteboardTypes: Set<Set<NSPasteboard.PasteboardType>> = [
+        nativePasteboardTypes,
+        localRuntimePasteboardTypes,
+    ]
+
     private static let competingSemanticTypes: Set<NSPasteboard.PasteboardType> = [
         .fileURL,
         .URL,
@@ -272,7 +282,7 @@ final class ContentTabReorderDropDestinationView: NSView {
 
     private static func acceptsAdvertisedShape(_ items: [ContentTabReorderPasteboardItem]) -> Bool {
         guard items.count == 1, let item = items.first else { return false }
-        return item.types == localRuntimePasteboardTypes || item.types == [.contentTabReorder]
+        return localPasteboardTypes.contains(item.types) || item.types == [.contentTabReorder]
     }
 
     private func updateCandidateState(

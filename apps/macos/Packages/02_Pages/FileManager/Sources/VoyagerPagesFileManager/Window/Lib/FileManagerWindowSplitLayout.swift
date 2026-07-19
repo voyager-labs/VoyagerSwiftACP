@@ -82,8 +82,11 @@ enum FileManagerWindowSplitLayout {
         in splitView: NSSplitView,
     ) -> NSHostingController<AnyView> {
         let rootView = AnyView(
-            SidebarView(store: store.scope(state: \.sidebar, action: \.sidebar))
-                .environment(\.fileManagerKeyCommandFocusCoordinator, keyCommandFocusCoordinator),
+            SidebarView(
+                sidebarStore: store.scope(state: \.sidebar, action: \.sidebar),
+                contentTabStore: store.scope(state: \.contentTabs, action: \.contentTabs),
+            )
+            .environment(\.fileManagerKeyCommandFocusCoordinator, keyCommandFocusCoordinator),
         )
         let sidebarHosting = NSHostingController(rootView: rootView)
         if #available(macOS 13.3, *) {

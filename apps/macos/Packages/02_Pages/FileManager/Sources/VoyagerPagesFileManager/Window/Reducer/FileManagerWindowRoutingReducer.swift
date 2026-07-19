@@ -80,7 +80,10 @@ struct FileManagerWindowRoutingReducer {
             switch action {
             case let .sidebar(.delegate(.selectContentTab(tabID))):
                 return .merge(
-                    .send(.contentTabs(.setCurrent(tabID))),
+                    .concatenate(
+                        .send(.contentTabs(.clearSelection)),
+                        .send(.contentTabs(.setCurrent(tabID))),
+                    ),
                     brokenPinnedTabFeedbackEffect(tabID: tabID, state: state),
                 )
 
@@ -103,10 +106,20 @@ struct FileManagerWindowRoutingReducer {
                 return .send(.contentTabs(.unpin(tabID)))
 
             case .sidebar(.delegate(.openContentTab)):
-                return .send(.contentTabs(.open(.homeDefault)))
+                guard state.contentTabs.tabs.count < ContentTabConstants.maxTabs else { return .none }
+                return .concatenate(
+                    .send(.contentTabs(.clearSelection)),
+                    .send(.contentTabs(.open(.homeDefault))),
+                )
 
             case let .sidebar(.delegate(.duplicateContentTab(sourceID))):
                 return .send(.request(.duplicateContentTab(sourceID)))
+
+            case let .sidebar(.delegate(.toggleContentTabSelection(id))):
+                return .send(.contentTabs(.toggleSelection(id)))
+
+            case let .sidebar(.delegate(.selectContentTabRange(to: id))):
+                return .send(.contentTabs(.selectRange(to: id)))
 
             case let .sidebar(.delegate(.contentTabReorderRequested(sourceID, targetID, placement))):
                 return .send(.contentTabs(.reorder(

@@ -1,11 +1,256 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
+import SwiftUI
 @testable import VoyagerPagesFileManager
+import VoyagerShared
 import XCTest
 
 @MainActor
 final class CTM001SelectContentTabsTests: XCTestCase {
+    private static var retainedAppKitWindows: [NSWindow] = []
+
     // MARK: - CTM-001-select_content_tabs
+
+    /// CTM-001-select_content_tabs: Content Tab primary 입력 modifier 전체 조합 분류 검증
+    /// modifier-only 선택 계약에서 Shift 우선순위와 Command/Option toggle을 확인함
+    /// - 검증 내용: Command, Shift, Option의 8개 truth table과 classifier 결과
+    /// - 사전 조건: Control/right-click은 UI에서 우선 소비되며 classifier 호출 대상이 아님
+    /// - 기대 결과: Shift 포함은 range, 그 외 Command 또는 Option 포함은 toggle, plain은 activate를 반환함
+    func testContentTabSelectionInputClassifier_coversCompleteModifierTruthTable() {
+        let truthTable: [(KeyModifiers, ContentTabRowPrimaryIntent)] = [
+            ([], .activate),
+            (.option, .toggleSelection),
+            (.command, .toggleSelection),
+            ([.command, .option], .toggleSelection),
+            (.shift, .selectRange),
+            ([.shift, .option], .selectRange),
+            ([.command, .shift], .selectRange),
+            ([.command, .shift, .option], .selectRange),
+        ]
+
+        for (modifiers, expected) in truthTable {
+            XCTAssertEqual(
+                ContentTabSelectionInputClassifier.classify(modifiers),
+                expected,
+                "modifier rawValue \(modifiers.rawValue) 분류가 일치해야 함",
+            )
+        }
+    }
+
+    /// CTM-001-select_content_tabs: actual NSButton primary pointer route의 상호배제 검증
+    /// 실제 window event queue를 통과한 click이 modifier 우선순위에 맞는 callback 하나만 호출하는지 확인함
+    /// - 검증 내용: Command/Shift/Option 8개 조합의 callback route와 총 호출 수
+    /// - 사전 조건: 실제 NSWindow에 설치된 ContentTabSidebarButton과 valid windowNumber의 down/up event
+    /// - 기대 결과: plain은 activate, Command/Option은 toggle, Shift 조합은 range를 정확히 한 번 호출함
+    func testContentTabButton_primaryPointerRoutesAreMutuallyExclusive() throws {
+        let cases: [(NSEvent.ModifierFlags, ContentTabButtonRoute)] = [
+            ([], .activate),
+            (.command, .toggleSelection),
+            (.option, .toggleSelection),
+            ([.command, .option], .toggleSelection),
+            (.shift, .selectRange),
+            ([.command, .shift], .selectRange),
+            ([.option, .shift], .selectRange),
+            ([.command, .option, .shift], .selectRange),
+        ]
+
+        for (modifiers, expectedRoute) in cases {
+            try withContentTabButtonFixture { fixture in
+                try dispatchPrimaryClick(on: fixture.button, modifiers: modifiers)
+
+                XCTAssertLessThanOrEqual(fixture.recorder.routes.count, 1)
+                XCTAssertEqual(fixture.recorder.routes, [expectedRoute])
+            }
+        }
+    }
+
+    /// CTM-001-select_content_tabs: Control-primary와 right-click context menu 소유권 검증
+    /// context 입력이 activation/selection callback 없이 기존 per-tab menu만 해석하는지 확인함
+    /// - 검증 내용: Control-primary callback 합계, right event의 menu title, menu 구성의 side-effect 부재
+    /// - 사전 조건: 실제 NSWindow button과 Control left click 및 valid rightMouseDown event
+    /// - 기대 결과: callback은 0회이고 unpinned menu는 Duplicate/Pin/Close를 그대로 제공함
+    func testContentTabButton_contextInputsExposeMenuWithoutPrimaryAction() throws {
+        try withContentTabButtonFixture { fixture in
+            try dispatchPrimaryClick(on: fixture.button, modifiers: .control)
+            let rightMouseDown = try mouseEvent(
+                .rightMouseDown,
+                on: fixture.button,
+                modifiers: [],
+                locationInButton: insideButtonLocation,
+                eventNumber: 1,
+            )
+            let menu = try XCTUnwrap(fixture.button.menu(for: rightMouseDown))
+
+            XCTAssertTrue(fixture.recorder.routes.isEmpty)
+            XCTAssertLessThanOrEqual(fixture.recorder.routes.count, 1)
+            XCTAssertEqual(menu.items.map(\.title), ["Duplicate", "Pin", "Close"])
+            XCTAssertTrue(fixture.recorder.menuActions.isEmpty)
+        }
+    }
+
+    /// CTM-001-select_content_tabs: reorderable button의 sub-threshold drag-out 취소 검증
+    /// 4pt 미만 이동 뒤 bounds 밖 mouse-up은 click과 reorder drag 어느 쪽도 확정하지 않음을 확인함
+    /// - 검증 내용: queued mouseDragged/mouseUp 이후 primary callback과 drag-session start 총합
+    /// - 사전 조건: 실제 window button 우측 경계 안쪽 down에서 2pt 이동한 바깥 mouse-up event
+    /// - 기대 결과: activate/toggle/range와 drag-session start가 모두 0회임
+    func testContentTabButton_subthresholdDragOutsideCancelsPrimaryAction() throws {
+        try withContentTabButtonFixture { fixture in
+            try dispatchSubthresholdDragOutside(on: fixture.button, modifiers: .command)
+
+            XCTAssertTrue(fixture.recorder.routes.isEmpty)
+            XCTAssertTrue(fixture.recorder.draggingItems.isEmpty)
+        }
+    }
+
+    /// CTM-001-select_content_tabs: reorder threshold를 넘으면 drag만 정확히 한 번 시작함
+    /// 실제 mouse-down event를 보존한 source가 selection callback 없이 native writer를 시작하는지 확인함
+    /// - 검증 내용: above-threshold drag의 session start 수, down event identity, writer token, primary callback 총합
+    /// - 사전 조건: 실제 NSWindow의 unpinned button과 4pt 임계값을 넘는 leftMouseDragged event
+    /// - 기대 결과: drag-session은 1회, selection callback은 0회이고 dismantle은 writer-owned token만 제거함
+    func testContentTabButton_thresholdDragStartsOnceWithoutPrimaryAction() throws {
+        try withContentTabButtonFixture { fixture in
+            try dispatchThresholdDrag(on: fixture.button, modifiers: .shift)
+
+            XCTAssertTrue(fixture.recorder.routes.isEmpty)
+            XCTAssertEqual(fixture.recorder.draggingItems.count, 1)
+            XCTAssertEqual(fixture.recorder.dragStartEvents.map(\.type), [.leftMouseDown])
+            let draggingItem = try XCTUnwrap(fixture.recorder.draggingItems.first?.first)
+            let writer = try XCTUnwrap(draggingItem.item as? ContentTabReorderPasteboardWriter)
+            XCTAssertEqual(fixture.sessionStore.entry?.token, writer.token)
+
+            fixture.button.dismantle()
+            XCTAssertNil(fixture.sessionStore.entry)
+        }
+    }
+
+    /// CTM-001-select_content_tabs: pinned button은 reorder drag source를 시작하지 않음
+    /// non-reorderable row가 기존 NSButton tracking만 사용하고 drag seam에는 도달하지 않는지 확인함
+    /// - 검증 내용: threshold 초과 pointer sequence의 drag-session start와 primary callback 총합
+    /// - 사전 조건: drag-source configuration이 nil인 실제 pinned ContentTabSidebarButton
+    /// - 기대 결과: drag-session과 primary callback이 모두 0회임
+    func testContentTabButton_pinnedRowNeverStartsReorderDrag() throws {
+        try withContentTabButtonFixture(isPinned: true) { fixture in
+            try dispatchPrimaryDragOutside(on: fixture.button, modifiers: [])
+
+            XCTAssertTrue(fixture.recorder.draggingItems.isEmpty)
+            XCTAssertTrue(fixture.recorder.routes.isEmpty)
+            XCTAssertNil(fixture.sessionStore.entry)
+        }
+    }
+
+    /// CTM-001-select_content_tabs: programmatic press의 plain activation 검증
+    /// keyboard와 accessibility press가 stale pointer modifier 없이 plain target/action을 사용하는지 확인함
+    /// - 검증 내용: NSButton.performClick의 callback route와 총 호출 수
+    /// - 사전 조건: 실제 NSWindow에 설치됐지만 pointer tracking 중이 아닌 ContentTabSidebarButton
+    /// - 기대 결과: activate callback만 정확히 한 번 호출되고 selection callback은 호출되지 않음
+    func testContentTabButton_performClickUsesPlainActivation() {
+        withContentTabButtonFixture { fixture in
+            fixture.button.performClick(nil)
+
+            XCTAssertLessThanOrEqual(fixture.recorder.routes.count, 1)
+            XCTAssertEqual(fixture.recorder.routes, [.activate])
+        }
+    }
+
+    /// CTM-001-select_content_tabs: representable update 이후 최신 callback과 control 상태 검증
+    /// SwiftUI identity/action 갱신이 old closure를 보존하지 않고 presentation/accessibility/enabled 값을 함께 교체하는지 확인함
+    /// - 검증 내용: update 후 Option click receiver, accessibility 값, enabled 상태, horizontal sizing priority
+    /// - 사전 조건: old callback으로 설치된 실제 window button을 new callback과 새 root로 update함
+    /// - 기대 결과: old callback은 0회, new toggle은 1회이며 최신 control metadata와 sizing policy가 반영됨
+    func testContentTabButton_updateUsesNewestCallbacksAndControlState() throws {
+        let oldRecorder = ContentTabButtonRecorder()
+        let newRecorder = ContentTabButtonRecorder()
+        let updatedSessionStore = ContentTabReorderLocalSessionStore()
+        let updatedSourceID = ContentTabID(rawValue: "updated-source")
+
+        try withContentTabButtonFixture(recorder: oldRecorder) { fixture in
+            configure(
+                fixture.button,
+                recorder: newRecorder,
+                sessionStore: updatedSessionStore,
+                sourceID: updatedSourceID,
+                rootView: AnyView(Text("Updated")),
+                accessibilityValue: "Inactive, Selected",
+                isEnabled: true,
+            )
+            fixture.button.dragSessionStartOverride = { items, event in
+                newRecorder.draggingItems.append(items)
+                newRecorder.dragStartEvents.append(event)
+                _ = fixture.window.nextEvent(
+                    matching: .leftMouseUp,
+                    until: .distantPast,
+                    inMode: .eventTracking,
+                    dequeue: true,
+                )
+            }
+            try dispatchPrimaryClick(on: fixture.button, modifiers: .option)
+            try dispatchThresholdDrag(on: fixture.button, modifiers: [])
+
+            XCTAssertTrue(oldRecorder.routes.isEmpty)
+            XCTAssertNil(fixture.sessionStore.entry)
+            XCTAssertEqual(newRecorder.routes, [.toggleSelection])
+            XCTAssertEqual(newRecorder.draggingItems.count, 1)
+            XCTAssertEqual(updatedSessionStore.entry?.payload.sourceID, updatedSourceID)
+            XCTAssertEqual(fixture.button.accessibilityValue() as? String, "Inactive, Selected")
+            XCTAssertTrue(fixture.button.isEnabled)
+            XCTAssertEqual(fixture.button.contentHuggingPriority(for: .horizontal), .defaultLow)
+            XCTAssertEqual(fixture.button.contentCompressionResistancePriority(for: .horizontal), .defaultLow)
+        }
+    }
+
+    /// CTM-001-select_content_tabs: hosted presentation의 pointer 투명성과 NSButton hit owner 검증
+    /// full padded/background presentation이 보이되 pointer와 accessibility owner는 concrete NSButton 하나인지 확인함
+    /// - 검증 내용: button center hitTest identity, hosted child hitTest, accessibility label/value
+    /// - 사전 조건: 실제 NSWindow에서 full row frame을 가진 ContentTabSidebarButton
+    /// - 기대 결과: center hit은 button으로 해석되고 hosted child는 hit target이 아니며 button이 four-state 값을 노출함
+    func testContentTabButton_hitTestResolvesToSingleButtonOwner() throws {
+        try withContentTabButtonFixture { fixture in
+            let buttonHitLocation = NSPoint(x: fixture.button.frame.midX, y: fixture.button.frame.midY)
+            let presentationHitLocation = NSPoint(x: fixture.button.bounds.midX, y: fixture.button.bounds.midY)
+            let presentationView = try XCTUnwrap(fixture.button.subviews.first)
+
+            XCTAssertTrue(fixture.button.hitTest(buttonHitLocation) === fixture.button)
+            XCTAssertNil(presentationView.hitTest(presentationHitLocation))
+            XCTAssertEqual(fixture.button.accessibilityLabel(), "Content Tab")
+            XCTAssertEqual(fixture.button.accessibilityValue() as? String, "Active, Not Selected")
+        }
+    }
+
+    /// CTM-001-select_content_tabs: native NSMenu command callback 보존 검증
+    /// menu 생성은 side effect가 없고 각 기존 command가 대응 callback 하나만 dispatch하는지 확인함
+    /// - 검증 내용: unpinned Duplicate/Pin/Close와 pinned Duplicate/Unpin target/action route
+    /// - 사전 조건: 실제 button의 current menu를 NSApplication target/action으로 실행함
+    /// - 기대 결과: menu 구성 시 callback 0회, 각 item 실행 시 동일 이름의 기존 callback이 순서대로 1회씩 호출됨
+    func testContentTabButton_contextMenuCommandsPreserveExistingActions() throws {
+        try withContentTabButtonFixture { fixture in
+            let unpinnedMenu = try XCTUnwrap(fixture.button.menu)
+            XCTAssertTrue(fixture.recorder.menuActions.isEmpty)
+
+            for item in unpinnedMenu.items {
+                let action = try XCTUnwrap(item.action)
+                XCTAssertTrue(NSApp.sendAction(action, to: item.target, from: item))
+            }
+            XCTAssertEqual(fixture.recorder.menuActions, [.duplicate, .pin, .close])
+
+            fixture.recorder.menuActions.removeAll()
+            configure(
+                fixture.button,
+                recorder: fixture.recorder,
+                sessionStore: fixture.sessionStore,
+                isPinned: true,
+            )
+            let pinnedMenu = try XCTUnwrap(fixture.button.menu)
+            XCTAssertEqual(pinnedMenu.items.map(\.title), ["Duplicate", "Unpin"])
+            XCTAssertTrue(fixture.recorder.menuActions.isEmpty)
+
+            for item in pinnedMenu.items {
+                let action = try XCTUnwrap(item.action)
+                XCTAssertTrue(NSApp.sendAction(action, to: item.target, from: item))
+            }
+            XCTAssertEqual(fixture.recorder.menuActions, [.duplicate, .unpin])
+        }
+    }
 
     /// CTM-001-select_content_tabs: 기본 선택 상태와 selector 및 생성 경로의 runtime 초기값 검증
     /// - 검증 내용: 직접 초기화와 기존 factory가 빈 선택/anchor 및 정확한 computed selector를 제공함
@@ -34,6 +279,344 @@ final class CTM001SelectContentTabsTests: XCTestCase {
 
         XCTAssertEqual(state.selectedTabCount, 2)
         XCTAssertTrue(state.isBulkActionEnabled)
+    }
+
+    /// CTM-001-select_content_tabs: Sidebar selection presentation의 membership 검증
+    /// canonical selected IDs를 별도 observable state 없이 순수 값으로 전달하는지 확인함
+    /// - 검증 내용: 렌더링 여부와 무관한 선택 ID membership
+    /// - 사전 조건: A와 Sidebar에 없는 missing ID가 선택된 presentation
+    /// - 기대 결과: A와 missing만 selected이며 원본 selected ID 집합이 보존됨
+    func testContentTabSelectionPresentation_preservesMembership() {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let missingTab = ContentTabID(rawValue: "missing")
+        let presentation = ContentTabSelectionPresentation(selectedTabIDs: [tabA, missingTab])
+
+        XCTAssertTrue(presentation.isSelected(tabA))
+        XCTAssertFalse(presentation.isSelected(tabB))
+        XCTAssertTrue(presentation.isSelected(missingTab))
+        XCTAssertEqual(presentation.selectedTabIDs, [tabA, missingTab])
+    }
+
+    /// CTM-001-select_content_tabs: active와 selected의 독립 Boolean 조합 검증
+    /// 기존 Sidebar item active projection과 별도 selection membership이 서로를 덮어쓰지 않는지 확인함
+    /// - 검증 내용: active/selected의 네 가지 truth table
+    /// - 사전 조건: 동일 tab ID에 각 Boolean 조합을 적용한 item과 presentation
+    /// - 기대 결과: item.isActive와 presentation.isSelected가 각 입력을 독립적으로 보존함
+    func testContentTabSelectionPresentation_keepsActiveAndSelectedIndependent() {
+        let tabID = ContentTabID(rawValue: "truth-table")
+        let combinations = [
+            (isActive: false, isSelected: false),
+            (isActive: false, isSelected: true),
+            (isActive: true, isSelected: false),
+            (isActive: true, isSelected: true),
+        ]
+
+        for combination in combinations {
+            let item = ContentTabProjection.ContentTabSidebarItem(
+                id: tabID,
+                title: "Truth Table",
+                iconName: "doc",
+                targetURL: nil,
+                tagColorCode: nil,
+                pageType: .directory,
+                isActive: combination.isActive,
+                isPinned: false,
+            )
+            let presentation = ContentTabSelectionPresentation(
+                selectedTabIDs: combination.isSelected ? [tabID] : [],
+            )
+
+            XCTAssertEqual(item.isActive, combination.isActive)
+            XCTAssertEqual(presentation.isSelected(tabID), combination.isSelected)
+        }
+    }
+
+    /// CTM-001-select_content_tabs: Sidebar selection View action의 Delegate relay 검증
+    /// Sidebar leaf reducer가 toggle/range 요청을 상태 변경 없이 정확히 한 번 relay하는지 확인함
+    /// - 검증 내용: toggle/range View→Delegate 순서와 payload
+    /// - 사전 조건: 기본 Sidebar 상태와 고정 A/B Content Tab ID
+    /// - 기대 결과: Sidebar 상태는 불변이며 각 요청이 대응 Delegate로 한 번씩 전송됨
+    func testSidebarSelectionRouting_relaysToggleAndRangeWithoutLocalState() async {
+        let tabA = ContentTabID(rawValue: "leaf-A")
+        let tabB = ContentTabID(rawValue: "leaf-B")
+        let store = TestStore(initialState: FileManagerSidebarState()) {
+            FileManagerSidebarFeature()
+        }
+
+        await store.send(.view(.toggleContentTabSelection(tabA)))
+        await store.receive { action in
+            guard case let .delegate(.toggleContentTabSelection(id)) = action else { return false }
+            return id == tabA
+        }
+        await store.send(.view(.selectContentTabRange(to: tabB)))
+        await store.receive { action in
+            guard case let .delegate(.selectContentTabRange(to: id)) = action else { return false }
+            return id == tabB
+        }
+        // store.finish() 불필요: 모든 effect가 receive로 소비됨
+    }
+
+    /// CTM-001-select_content_tabs: Window Sidebar selection Delegate routing 검증
+    /// Window boundary가 toggle/range만 기존 ContentTab action으로 변환하는지 확인함
+    /// - 검증 내용: toggle/range Delegate→ContentTab action 순서와 payload
+    /// - 사전 조건: 기본 Window 상태와 고정 A/B Content Tab ID
+    /// - 기대 결과: Window 상태는 불변이며 각 Delegate가 대응 canonical action을 한 번씩 전송함
+    func testWindowSelectionDelegates_routeToggleAndRangeToExistingActions() async {
+        let tabA = ContentTabID(rawValue: "router-A")
+        let tabB = ContentTabID(rawValue: "router-B")
+        let state = FileManagerFeature.State()
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.sidebar(.delegate(.toggleContentTabSelection(tabA))))
+        await store.receive { action in
+            guard case let .contentTabs(.toggleSelection(id)) = action else { return false }
+            return id == tabA
+        }
+        await store.send(.sidebar(.delegate(.selectContentTabRange(to: tabB))))
+        await store.receive { action in
+            guard case let .contentTabs(.selectRange(to: id)) = action else { return false }
+            return id == tabB
+        }
+
+        XCTAssertEqual(store.state, state)
+        // store.finish() 불필요: 모든 effect가 receive로 소비됨
+    }
+
+    /// CTM-001-select_content_tabs: 다른 Content Tab plain click의 selection context cleanup 검증
+    /// Sidebar plain activation이 selection과 anchor를 먼저 비운 뒤 다른 tab으로 전환하는지 확인함
+    /// - 검증 내용: clearSelection → setCurrent 순서, selected IDs/anchor cleanup과 active identity
+    /// - 사전 조건: A active, A/B selected, anchor B인 두 Content Tab Window 상태
+    /// - 기대 결과: selection context가 먼저 비고 최종 active tab이 B로 전환됨
+    func testPlainClickDifferentTab_clearsSelectionBeforeChangingActiveTab() async {
+        let tabA = ContentTabID(rawValue: "plain-different-A")
+        let tabB = ContentTabID(rawValue: "plain-different-B")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [tab(id: tabA, isPinned: false), tab(id: tabB, isPinned: false)],
+            activeTabID: tabA,
+        )
+        state.contentTabs.selectedTabIDs = [tabA, tabB]
+        state.contentTabs.selectionAnchorID = tabB
+        state.tabContentStates = [tabA: state.content, tabB: state.content]
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerFeature.State, FileManagerFeature.Action> { state, action in
+                if case let .contentTabs(contentTabAction) = action {
+                    return ContentTabFeature()
+                        .reduce(into: &state.contentTabs, action: contentTabAction)
+                        .map { .contentTabs($0) }
+                }
+                return FileManagerWindowRoutingReducer().reduce(into: &state, action: action)
+            }
+        }
+        await store.send(.sidebar(.delegate(.selectContentTab(tabB))))
+        await store.receive { action in
+            guard case .contentTabs(.clearSelection) = action else { return false }
+            return true
+        } assert: {
+            $0.contentTabs.selectedTabIDs = []
+            $0.contentTabs.selectionAnchorID = nil
+        }
+        await store.receive { action in
+            guard case let .contentTabs(.setCurrent(id)) = action else { return false }
+            return id == tabB
+        } assert: {
+            $0.contentTabs.activeTabID = tabB
+            $0.contentTabs.previousActiveTabID = tabA
+        }
+
+        XCTAssertTrue(store.state.contentTabs.selectedTabIDs.isEmpty)
+        XCTAssertNil(store.state.contentTabs.selectionAnchorID)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabB)
+    }
+
+    /// CTM-001-select_content_tabs: 현재 active Content Tab plain click의 selection context cleanup 검증
+    /// 이미 active인 row의 재활성화도 canonical selection과 anchor를 먼저 비우는지 확인함
+    /// - 검증 내용: clearSelection → setCurrent 순서, selected IDs/anchor cleanup과 active identity
+    /// - 사전 조건: A active, A/B selected, anchor B인 두 Content Tab Window 상태
+    /// - 기대 결과: selection context가 먼저 비고 active tab identity는 A로 유지됨
+    func testPlainClickActiveTab_clearsSelectionAndKeepsActiveIdentity() async {
+        let tabA = ContentTabID(rawValue: "plain-active-A")
+        let tabB = ContentTabID(rawValue: "plain-active-B")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [tab(id: tabA, isPinned: false), tab(id: tabB, isPinned: false)],
+            activeTabID: tabA,
+        )
+        state.contentTabs.selectedTabIDs = [tabA, tabB]
+        state.contentTabs.selectionAnchorID = tabB
+        state.tabContentStates = [tabA: state.content, tabB: state.content]
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerFeature.State, FileManagerFeature.Action> { state, action in
+                if case let .contentTabs(contentTabAction) = action {
+                    return ContentTabFeature()
+                        .reduce(into: &state.contentTabs, action: contentTabAction)
+                        .map { .contentTabs($0) }
+                }
+                return FileManagerWindowRoutingReducer().reduce(into: &state, action: action)
+            }
+        }
+        await store.send(.sidebar(.delegate(.selectContentTab(tabA))))
+        await store.receive { action in
+            guard case .contentTabs(.clearSelection) = action else { return false }
+            return true
+        } assert: {
+            $0.contentTabs.selectedTabIDs = []
+            $0.contentTabs.selectionAnchorID = nil
+        }
+        await store.receive { action in
+            guard case let .contentTabs(.setCurrent(id)) = action else { return false }
+            return id == tabA
+        }
+
+        XCTAssertTrue(store.state.contentTabs.selectedTabIDs.isEmpty)
+        XCTAssertNil(store.state.contentTabs.selectionAnchorID)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabA)
+    }
+
+    /// CTM-001-select_content_tabs: Sidebar New Tab 성공 시 selection context cleanup 전체 chain 검증
+    /// Window route와 canonical ContentTab reducer가 cleanup 뒤 새 Home tab 생성·활성화를 순서대로 수행하는지 확인함
+    /// - 검증 내용: clearSelection → open(.homeDefault) action 순서, selected IDs/anchor cleanup, 새 active Home tab
+    /// - 사전 조건: 기존 active tab이 선택되어 있고 selection anchor가 존재하며 max-tab limit 미만인 Window 상태
+    /// - 기대 결과: selection context가 먼저 비고 새 Home tab이 마지막에 추가되어 active로 전환됨
+    func testOpenContentTab_clearsSelectionBeforeOpeningAndActivatingHomeTab() async throws {
+        let existingTabID = ContentTabID(rawValue: "new-tab-existing")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [tab(id: existingTabID, isPinned: false)],
+            activeTabID: existingTabID,
+        )
+        state.contentTabs.selectedTabIDs = [existingTabID]
+        state.contentTabs.selectionAnchorID = existingTabID
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerFeature.State, FileManagerFeature.Action> { state, action in
+                if case let .contentTabs(contentTabAction) = action {
+                    return ContentTabFeature()
+                        .reduce(into: &state.contentTabs, action: contentTabAction)
+                        .map { .contentTabs($0) }
+                }
+                return FileManagerWindowRoutingReducer().reduce(into: &state, action: action)
+            }
+        }
+        // store.exhaustivity = .off: open이 생성하는 무작위 ContentTabID는 최종 canonical state로 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.openContentTab)))
+        await store.receive { action in
+            guard case .contentTabs(.clearSelection) = action else { return false }
+            return true
+        } assert: {
+            $0.contentTabs.selectedTabIDs = []
+            $0.contentTabs.selectionAnchorID = nil
+        }
+        await store.receive { action in
+            guard case .contentTabs(.open(.homeDefault)) = action else { return false }
+            return true
+        }
+
+        let openedTab = try XCTUnwrap(store.state.contentTabs.tabs.last)
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
+        XCTAssertEqual(openedTab.anchor, .homeDefault)
+        XCTAssertEqual(openedTab.page, .home)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, openedTab.id)
+        XCTAssertEqual(store.state.contentTabs.previousActiveTabID, existingTabID)
+        XCTAssertTrue(store.state.contentTabs.selectedTabIDs.isEmpty)
+        XCTAssertNil(store.state.contentTabs.selectionAnchorID)
+    }
+
+    /// CTM-001-select_content_tabs: Sidebar New Tab max-tab 제한 시 selection context 보존 검증
+    /// Window route가 cleanup 전에 max-tab guard를 적용해 active transition 없는 요청을 완전한 no-op으로 유지하는지 확인함
+    /// - 검증 내용: routed ContentTab action 부재, tab count와 selected IDs/anchor/active identity 불변
+    /// - 사전 조건: maxTabs 개수의 tab, 첫 tab active, 첫/마지막 tab selected, 마지막 tab anchor인 Window 상태
+    /// - 기대 결과: 새 tab과 cleanup action이 없고 전체 canonical ContentTab state가 그대로 유지됨
+    func testOpenContentTab_atMaxTabsPreservesSelectionAnchorAndActiveIdentity() async {
+        let tabIDs = (0 ..< ContentTabConstants.maxTabs).map {
+            ContentTabID(rawValue: "new-tab-max-\($0)")
+        }
+        let activeTabID = tabIDs[0]
+        let anchorTabID = tabIDs[tabIDs.count - 1]
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: .init(uniqueElements: tabIDs.map { tab(id: $0, isPinned: false) }),
+            activeTabID: activeTabID,
+        )
+        state.contentTabs.selectedTabIDs = [activeTabID, anchorTabID]
+        state.contentTabs.selectionAnchorID = anchorTabID
+        let originalContentTabs = state.contentTabs
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerFeature.State, FileManagerFeature.Action> { state, action in
+                if case let .contentTabs(contentTabAction) = action {
+                    return ContentTabFeature()
+                        .reduce(into: &state.contentTabs, action: contentTabAction)
+                        .map { .contentTabs($0) }
+                }
+                return FileManagerWindowRoutingReducer().reduce(into: &state, action: action)
+            }
+        }
+
+        await store.send(.sidebar(.delegate(.openContentTab)))
+
+        XCTAssertEqual(store.state.contentTabs, originalContentTabs)
+        XCTAssertEqual(store.state.contentTabs.tabs.count, ContentTabConstants.maxTabs)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [activeTabID, anchorTabID])
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, anchorTabID)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeTabID)
+    }
+
+    /// CTM-001-select_content_tabs: Sidebar toggle/range 전체 reducer chain 및 projection 격리 검증
+    /// View부터 canonical ContentTab reducer까지 이어지면서 active와 broad projection이 유지되는지 확인함
+    /// - 검증 내용: View→Delegate→ContentTab 순서, selected IDs/anchor, Sidebar/Home/pending sentinel
+    /// - 사전 조건: A active, pinned B previous이며 projection sentinel이 source와 의도적으로 어긋난 Window 상태
+    /// - 기대 결과: toggle B와 range A가 selection만 변경하고 active 및 broad projection sentinel은 보존함
+    func testSidebarSelectionToggleAndRange_fullChainPreservesBroadProjectionSentinels() async {
+        let tabA = ContentTabID(rawValue: "chain-A")
+        let tabB = ContentTabID(rawValue: "chain-B")
+        let stalePendingTab = ContentTabID(rawValue: "chain-stale")
+        let state = makeWindowSelectionSentinelState(
+            tabA: tabA,
+            tabB: tabB,
+            stalePendingTab: stalePendingTab,
+        )
+        let pendingSentinel = state.pendingDirectoryReloadTabIDs
+        let sidebarProjectionSentinel = state.sidebar.contentTabSidebarItems
+        let homeLocationSentinel = state.content.homeLocationItems
+        let homeFavoriteSentinel = state.content.homeFavoriteItems
+        let store = TestStore(initialState: state) { FileManagerFeature() }
+
+        await store.send(.sidebar(.view(.toggleContentTabSelection(tabB))))
+        await store.receive { action in
+            guard case let .sidebar(.delegate(.toggleContentTabSelection(id))) = action else { return false }
+            return id == tabB
+        }
+        await store.receive { action in
+            guard case let .contentTabs(.toggleSelection(id)) = action else { return false }
+            return id == tabB
+        } assert: {
+            $0.contentTabs.selectedTabIDs = [tabB]
+            $0.contentTabs.selectionAnchorID = tabB
+        }
+        await store.send(.sidebar(.view(.selectContentTabRange(to: tabA))))
+        await store.receive { action in
+            guard case let .sidebar(.delegate(.selectContentTabRange(to: id))) = action else { return false }
+            return id == tabA
+        }
+        await store.receive { action in
+            guard case let .contentTabs(.selectRange(to: id)) = action else { return false }
+            return id == tabA
+        } assert: {
+            $0.contentTabs.selectedTabIDs = [tabA, tabB]
+        }
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabA)
+        XCTAssertEqual(store.state.contentTabs.previousActiveTabID, tabB)
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, tabB)
+        XCTAssertEqual(store.state.pendingDirectoryReloadTabIDs, pendingSentinel)
+        XCTAssertEqual(store.state.sidebar.contentTabSidebarItems, sidebarProjectionSentinel)
+        XCTAssertEqual(store.state.content.homeLocationItems, homeLocationSentinel)
+        XCTAssertEqual(store.state.content.homeFavoriteItems, homeFavoriteSentinel)
+        // store.finish() 불필요: 모든 effect가 receive로 소비됨
     }
 
     /// CTM-001-select_content_tabs: interleaved raw tabs의 selection 전용 pinned-first ordering 검증
@@ -398,6 +981,257 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         XCTAssertEqual(store.state, validSelectionState)
         await store.send(.contentTabs(.selectRange(to: invalidTab)))
         XCTAssertEqual(store.state, validSelectionState)
+    }
+
+    private enum ContentTabButtonRoute: Equatable {
+        case activate
+        case toggleSelection
+        case selectRange
+    }
+
+    private enum ContentTabMenuAction: Equatable {
+        case duplicate
+        case pin
+        case unpin
+        case close
+    }
+
+    private final class ContentTabButtonRecorder {
+        var routes: [ContentTabButtonRoute] = []
+        var menuActions: [ContentTabMenuAction] = []
+        var draggingItems: [[NSDraggingItem]] = []
+        var dragStartEvents: [NSEvent] = []
+    }
+
+    private struct ContentTabButtonFixture {
+        let window: NSWindow
+        let button: ContentTabSidebarButton
+        let recorder: ContentTabButtonRecorder
+        let sessionStore: ContentTabReorderLocalSessionStore
+    }
+
+    private var insideButtonLocation: NSPoint {
+        NSPoint(x: 24, y: 12)
+    }
+
+    private func withContentTabButtonFixture(
+        recorder: ContentTabButtonRecorder = ContentTabButtonRecorder(),
+        isPinned: Bool = false,
+        _ body: (ContentTabButtonFixture) throws -> Void,
+    ) rethrows {
+        _ = NSApplication.shared
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 120),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false,
+        )
+        let contentView = NSView(frame: window.contentLayoutRect)
+        let button = ContentTabSidebarButton(frame: NSRect(x: 20, y: 40, width: 240, height: 28))
+        let sessionStore = ContentTabReorderLocalSessionStore()
+        configure(
+            button,
+            recorder: recorder,
+            sessionStore: sessionStore,
+            isPinned: isPinned,
+        )
+        button.dragSessionStartOverride = { items, event in
+            recorder.draggingItems.append(items)
+            recorder.dragStartEvents.append(event)
+            _ = window.nextEvent(
+                matching: .leftMouseUp,
+                until: .distantPast,
+                inMode: .eventTracking,
+                dequeue: true,
+            )
+        }
+        contentView.addSubview(button)
+        window.contentView = contentView
+        window.orderFrontRegardless()
+        Self.retainedAppKitWindows.append(window)
+        let fixture = ContentTabButtonFixture(
+            window: window,
+            button: button,
+            recorder: recorder,
+            sessionStore: sessionStore,
+        )
+
+        defer {
+            button.dismantle()
+            window.orderOut(nil)
+        }
+        try body(fixture)
+    }
+
+    private func configure(
+        _ button: ContentTabSidebarButton,
+        recorder: ContentTabButtonRecorder,
+        sessionStore: ContentTabReorderLocalSessionStore,
+        sourceID: ContentTabID = ContentTabID(rawValue: "source"),
+        rootView: AnyView = AnyView(Color.clear.frame(height: 24)),
+        accessibilityValue: String = "Active, Not Selected",
+        isPinned: Bool = false,
+        isEnabled: Bool = true,
+    ) {
+        button.update(
+            rootView: rootView,
+            accessibilityLabel: "Content Tab",
+            accessibilityValue: accessibilityValue,
+            duplicateAccessibilityIdentifier: "duplicate-content-tab-test",
+            isPinned: isPinned,
+            isEnabled: isEnabled,
+            reorderDragSource: isPinned ? nil : ContentTabReorderDragSourceConfiguration(
+                payload: .init(sourceID: sourceID, dragScopeID: ContentTabReorderDragScopeID()),
+                sessionStore: sessionStore,
+            ),
+            onActivate: { recorder.routes.append(.activate) },
+            onToggleSelection: { recorder.routes.append(.toggleSelection) },
+            onSelectRange: { recorder.routes.append(.selectRange) },
+            onDuplicate: { recorder.menuActions.append(.duplicate) },
+            onPin: { recorder.menuActions.append(.pin) },
+            onUnpin: { recorder.menuActions.append(.unpin) },
+            onClose: { recorder.menuActions.append(.close) },
+        )
+    }
+
+    private func dispatchPrimaryClick(
+        on button: ContentTabSidebarButton,
+        modifiers: NSEvent.ModifierFlags,
+    ) throws {
+        let mouseDown = try mouseEvent(
+            .leftMouseDown,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: insideButtonLocation,
+            eventNumber: 1,
+        )
+        let mouseUp = try mouseEvent(
+            .leftMouseUp,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: insideButtonLocation,
+            eventNumber: 2,
+        )
+        NSApp.postEvent(mouseUp, atStart: true)
+        button.mouseDown(with: mouseDown)
+    }
+
+    private func dispatchSubthresholdDragOutside(
+        on button: ContentTabSidebarButton,
+        modifiers: NSEvent.ModifierFlags,
+    ) throws {
+        let downLocation = NSPoint(x: button.bounds.maxX - 1, y: button.bounds.midY)
+        let outsideLocation = NSPoint(x: button.bounds.maxX + 1, y: button.bounds.midY)
+        let mouseDown = try mouseEvent(
+            .leftMouseDown,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: downLocation,
+            eventNumber: 1,
+        )
+        let mouseDragged = try mouseEvent(
+            .leftMouseDragged,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: outsideLocation,
+            eventNumber: 2,
+        )
+        let mouseUp = try mouseEvent(
+            .leftMouseUp,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: outsideLocation,
+            eventNumber: 3,
+        )
+        NSApp.postEvent(mouseDragged, atStart: true)
+        NSApp.postEvent(mouseUp, atStart: false)
+        button.mouseDown(with: mouseDown)
+    }
+
+    private func dispatchThresholdDrag(
+        on button: ContentTabSidebarButton,
+        modifiers: NSEvent.ModifierFlags,
+    ) throws {
+        let dragLocation = NSPoint(
+            x: insideButtonLocation.x + 12,
+            y: insideButtonLocation.y,
+        )
+        let mouseDown = try mouseEvent(
+            .leftMouseDown,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: insideButtonLocation,
+            eventNumber: 1,
+        )
+        let mouseDragged = try mouseEvent(
+            .leftMouseDragged,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: dragLocation,
+            eventNumber: 2,
+        )
+        let mouseUp = try mouseEvent(
+            .leftMouseUp,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: dragLocation,
+            eventNumber: 3,
+        )
+        NSApp.postEvent(mouseDragged, atStart: true)
+        NSApp.postEvent(mouseUp, atStart: false)
+        button.mouseDown(with: mouseDown)
+    }
+
+    private func dispatchPrimaryDragOutside(
+        on button: ContentTabSidebarButton,
+        modifiers: NSEvent.ModifierFlags,
+    ) throws {
+        let outsideLocation = NSPoint(x: button.bounds.maxX + 40, y: button.bounds.maxY + 40)
+        let mouseDown = try mouseEvent(
+            .leftMouseDown,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: insideButtonLocation,
+            eventNumber: 1,
+        )
+        let mouseDragged = try mouseEvent(
+            .leftMouseDragged,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: outsideLocation,
+            eventNumber: 2,
+        )
+        let mouseUp = try mouseEvent(
+            .leftMouseUp,
+            on: button,
+            modifiers: modifiers,
+            locationInButton: outsideLocation,
+            eventNumber: 3,
+        )
+        NSApp.postEvent(mouseDragged, atStart: true)
+        NSApp.postEvent(mouseUp, atStart: false)
+        button.mouseDown(with: mouseDown)
+    }
+
+    private func mouseEvent(
+        _ type: NSEvent.EventType,
+        on button: ContentTabSidebarButton,
+        modifiers: NSEvent.ModifierFlags,
+        locationInButton: NSPoint,
+        eventNumber: Int,
+    ) throws -> NSEvent {
+        let window = try XCTUnwrap(button.window)
+        return try XCTUnwrap(NSEvent.mouseEvent(
+            with: type,
+            location: button.convert(locationInButton, to: nil),
+            modifierFlags: modifiers,
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: eventNumber,
+            clickCount: 1,
+            pressure: 1,
+        ))
     }
 
     private func makeWindowSelectionSentinelState(

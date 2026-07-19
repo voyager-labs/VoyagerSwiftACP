@@ -401,7 +401,11 @@ struct FileManagerWindowCommandRoutingReducer {
     private func handleRequestedCommand(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
         switch command {
         case .openNewContentTab:
-            return Effect<Action>.send(.contentTabs(.open(.homeDefault)))
+            guard state.contentTabs.tabs.count < ContentTabConstants.maxTabs else { return .none }
+            return .concatenate(
+                .send(.contentTabs(.clearSelection)),
+                .send(.contentTabs(.open(.homeDefault))),
+            )
 
         case .closeActiveContentTab:
             return state.contentTabs.activeTabID
