@@ -6,7 +6,8 @@ import VoyagerEntitiesTag
 import VoyagerShared
 
 struct SidebarView: View {
-    let store: StoreOf<FileManagerSidebarFeature>
+    let sidebarStore: StoreOf<FileManagerSidebarFeature>
+    let contentTabStore: StoreOf<ContentTabFeature>
 
     @Environment(\.colorScheme)
     private var colorScheme
@@ -27,12 +28,12 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    if !store.allFixedLocationItems.isEmpty {
+                    if !sidebarStore.allFixedLocationItems.isEmpty {
                         fixedLocationsGrid
-                            .padding(.top, store.fixedLocationItems.isEmpty ? 0 : 50)
+                            .padding(.top, sidebarStore.fixedLocationItems.isEmpty ? 0 : 50)
                     }
 
-                    if !store.contentTabSidebarItems.isEmpty {
+                    if !sidebarStore.contentTabSidebarItems.isEmpty {
                         contentTabRows(pinnedContentTabSidebarItems)
 
                         if !pinnedContentTabSidebarItems.isEmpty {
@@ -56,7 +57,7 @@ struct SidebarView: View {
             .clipped()
         }
         .background(Color.clear)
-        .navigationSplitViewColumnWidth(ideal: store.sidebarWidth)
+        .navigationSplitViewColumnWidth(ideal: sidebarStore.sidebarWidth)
         .onDisappear {
             contentTabReorderSessionStore.clear()
             activeContentTabReorderBoundaryID = nil
@@ -64,15 +65,19 @@ struct SidebarView: View {
     }
 
     private var pinnedContentTabSidebarItems: [ContentTabProjection.ContentTabSidebarItem] {
-        store.contentTabSidebarItems.filter(\.isPinned)
+        sidebarStore.contentTabSidebarItems.filter(\.isPinned)
     }
 
     private var unpinnedContentTabSidebarItems: [ContentTabProjection.ContentTabSidebarItem] {
-        store.contentTabSidebarItems.filter { !$0.isPinned }
+        sidebarStore.contentTabSidebarItems.filter { !$0.isPinned }
+    }
+
+    private var contentTabSelectionPresentation: ContentTabSelectionPresentation {
+        ContentTabSelectionPresentation(selectedTabIDs: contentTabStore.selectedTabIDs)
     }
 
     @ViewBuilder private var fixedLocationsGrid: some View {
-        if store.fixedLocationItems.isEmpty {
+        if sidebarStore.fixedLocationItems.isEmpty {
             Color.clear
                 .frame(height: fixedLocationGridHeight(for: 1))
                 .contentShape(Rectangle())
@@ -85,7 +90,7 @@ struct SidebarView: View {
                 let metrics = fixedLocationGridMetrics(for: proxy.size.width)
 
                 LazyVGrid(columns: metrics.columns, alignment: .leading, spacing: fixedLocationGridGap) {
-                    ForEach(store.fixedLocationItems) { item in
+                    ForEach(sidebarStore.fixedLocationItems) { item in
                         let dropTarget = FileManagerSidebarEntryDropTarget.fixedLocation(item.id)
                         FixedLocationButton(
                             item: item,
@@ -94,7 +99,7 @@ struct SidebarView: View {
                             isHovered: fixedLocationHoveredItemID == item.id,
                             isDropTarget: sidebarEntryDropTarget == dropTarget,
                             onSelect: {
-                                store.send(.delegate(.selectFixedLocation(item.id)))
+                                sidebarStore.send(.delegate(.selectFixedLocation(item.id)))
                             },
                             onHover: { isHovered in
                                 fixedLocationHoveredItemID = isHovered ? item.id : nil
@@ -109,7 +114,7 @@ struct SidebarView: View {
                 .padding(.horizontal, fixedLocationGridHorizontalPadding)
                 .padding(.vertical, fixedLocationGridVerticalPadding)
             }
-            .frame(height: fixedLocationGridHeight(for: store.fixedLocationItems.count))
+            .frame(height: fixedLocationGridHeight(for: sidebarStore.fixedLocationItems.count))
             .padding(.bottom, fixedLocationGridBottomSpacing)
             .contentShape(Rectangle())
             .contextMenu { fixedLocationsVisibilityMenu }
@@ -117,23 +122,23 @@ struct SidebarView: View {
     }
 
     @ViewBuilder private var fixedLocationsVisibilityMenu: some View {
-        if !store.allFixedLocationItems.isEmpty {
+        if !sidebarStore.allFixedLocationItems.isEmpty {
             Section("Locations") {
                 Button("Show All") {
-                    store.send(.view(.setAllFixedLocationVisibility(true)))
+                    sidebarStore.send(.view(.setAllFixedLocationVisibility(true)))
                 }
                 Button("Hide All") {
-                    store.send(.view(.setAllFixedLocationVisibility(false)))
+                    sidebarStore.send(.view(.setAllFixedLocationVisibility(false)))
                 }
 
                 Divider()
 
-                ForEach(store.allFixedLocationItems) { item in
+                ForEach(sidebarStore.allFixedLocationItems) { item in
                     Toggle(
                         isOn: Binding(
-                            get: { !store.hiddenFixedLocationItemIDs.contains(item.id) },
+                            get: { !sidebarStore.hiddenFixedLocationItemIDs.contains(item.id) },
                             set: { isVisible in
-                                store.send(.view(.setFixedLocationVisibility(item.id, isVisible)))
+                                sidebarStore.send(.view(.setFixedLocationVisibility(item.id, isVisible)))
                             },
                         ),
                     ) {
@@ -190,7 +195,7 @@ struct SidebarView: View {
     }
 
     private func fixedLocationGridHeight(for itemCount: Int) -> CGFloat {
-        let width = max(0, store.sidebarWidth - fixedLocationGridHorizontalPadding * 2)
+        let width = max(0, sidebarStore.sidebarWidth - fixedLocationGridHorizontalPadding * 2)
         let columnCount = max(
             1,
             Int((width + fixedLocationGridGap) / (fixedLocationMinimumCellWidth + fixedLocationGridGap)),
@@ -265,7 +270,7 @@ struct SidebarView: View {
         .contentShape(Rectangle())
         .onHover { isNewTabHovered = $0 }
         .onTapGesture {
-            store.send(.delegate(.openContentTab))
+            sidebarStore.send(.delegate(.openContentTab))
         }
     }
 
@@ -324,18 +329,25 @@ struct SidebarView: View {
             item: item,
             isHovered: contentTabHoveredItemID == item.id,
             isDropTarget: sidebarEntryDropTarget == .contentTab(item.id),
-            onSelect: {
-                store.send(.delegate(.selectContentTab(item.id)))
+            isSelected: contentTabSelectionPresentation.isSelected(item.id),
+            onActivate: {
+                sidebarStore.send(.delegate(.selectContentTab(item.id)))
             },
-            onDuplicate: { store.send(.delegate(.duplicateContentTab(item.id))) },
+            onToggleSelection: {
+                sidebarStore.send(.view(.toggleContentTabSelection(item.id)))
+            },
+            onSelectRange: {
+                sidebarStore.send(.view(.selectContentTabRange(to: item.id)))
+            },
+            onDuplicate: { sidebarStore.send(.delegate(.duplicateContentTab(item.id))) },
             onPin: {
-                store.send(.delegate(.pinContentTab(item.id)))
+                sidebarStore.send(.delegate(.pinContentTab(item.id)))
             },
             onUnpin: {
-                store.send(.delegate(.unpinContentTab(item.id)))
+                sidebarStore.send(.delegate(.unpinContentTab(item.id)))
             },
             onClose: {
-                store.send(.delegate(.closeContentTab(item.id)))
+                sidebarStore.send(.delegate(.closeContentTab(item.id)))
             },
             onHover: { isHovered in
                 contentTabHoveredItemID = isHovered ? item.id : nil
@@ -352,10 +364,10 @@ struct SidebarView: View {
             dragScopeID: contentTabReorderDragScopeID,
             sessionStore: contentTabReorderSessionStore,
             pinState: { id in
-                store.contentTabSidebarItems.first(where: { $0.id == id })?.isPinned
+                sidebarStore.contentTabSidebarItems.first(where: { $0.id == id })?.isPinned
             },
             onReorder: { sourceID, targetID, placement in
-                store.send(.view(.contentTabReorderRequested(
+                sidebarStore.send(.view(.contentTabReorderRequested(
                     sourceID: sourceID,
                     targetID: targetID,
                     placement: placement,
@@ -373,7 +385,7 @@ struct SidebarView: View {
             target: target,
             allowsCopy: allowsCopy,
             onDrop: { request in
-                store.send(.view(.entryDropRequested(request)))
+                sidebarStore.send(.view(.entryDropRequested(request)))
             },
         )
     }
@@ -383,7 +395,10 @@ private struct ContentTabSidebarRow: View {
     let item: ContentTabProjection.ContentTabSidebarItem
     let isHovered: Bool
     let isDropTarget: Bool
-    let onSelect: () -> Void
+    let isSelected: Bool
+    let onActivate: () -> Void
+    let onToggleSelection: () -> Void
+    let onSelectRange: () -> Void
     let onDuplicate: (() -> Void)?
     let onPin: () -> Void
     let onUnpin: () -> Void
@@ -397,6 +412,308 @@ private struct ContentTabSidebarRow: View {
     private var keyCommandFocusCoordinator
 
     var body: some View {
+        ContentTabSidebarButtonHost(
+            item: item,
+            backgroundColor: backgroundColor,
+            accessibilityStateValue: accessibilityStateValue,
+            onActivate: handlePrimaryAction,
+            onToggleSelection: handleToggleSelection,
+            onSelectRange: handleSelectRange,
+            onDuplicate: onDuplicate,
+            onPin: onPin,
+            onUnpin: onUnpin,
+            onClose: onClose,
+        )
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 8)
+        .overlay(alignment: .trailing) {
+            if isHovered {
+                SidebarCloseButton(systemName: item.isPinned ? "minus" : "xmark", action: onClose)
+                    .padding(.trailing, 14)
+            }
+        }
+        .onHover(perform: onHover)
+    }
+
+    private var accessibilityStateValue: String {
+        switch (item.isActive, isSelected) {
+        case (true, true):
+            "Active, Selected"
+        case (true, false):
+            "Active, Not Selected"
+        case (false, true):
+            "Inactive, Selected"
+        case (false, false):
+            "Inactive, Not Selected"
+        }
+    }
+
+    private func handlePrimaryAction() {
+        onActivate()
+        keyCommandFocusCoordinator?.requestFocus()
+    }
+
+    private func handleToggleSelection() {
+        onToggleSelection()
+        keyCommandFocusCoordinator?.requestFocus()
+    }
+
+    private func handleSelectRange() {
+        onSelectRange()
+        keyCommandFocusCoordinator?.requestFocus()
+    }
+
+    private var backgroundColor: Color {
+        if isDropTarget {
+            VoyagerDS.Interaction.hoverFill(for: colorScheme)
+        } else if item.isActive, isSelected {
+            adaptiveNeutralBackground(opacity: 0.16)
+        } else if isSelected {
+            adaptiveNeutralBackground(opacity: 0.04)
+        } else if item.isActive {
+            VoyagerDS.Surface.sidebarSelectionBackground(for: colorScheme)
+        } else if isHovered {
+            VoyagerDS.Interaction.hoverFill(for: colorScheme)
+        } else {
+            Color.clear
+        }
+    }
+
+    private func adaptiveNeutralBackground(opacity: Double) -> Color {
+        (colorScheme == .dark ? Color.white : Color.black).opacity(opacity)
+    }
+}
+
+private struct ContentTabSidebarButtonHost: NSViewRepresentable {
+    let item: ContentTabProjection.ContentTabSidebarItem
+    let backgroundColor: Color
+    let accessibilityStateValue: String
+    let onActivate: () -> Void
+    let onToggleSelection: () -> Void
+    let onSelectRange: () -> Void
+    let onDuplicate: (() -> Void)?
+    let onPin: () -> Void
+    let onUnpin: () -> Void
+    let onClose: () -> Void
+
+    func makeNSView(context _: Context) -> ContentTabSidebarButton {
+        let button = ContentTabSidebarButton(frame: .zero)
+        update(button)
+        return button
+    }
+
+    func updateNSView(
+        _ button: ContentTabSidebarButton,
+        context _: Context,
+    ) {
+        update(button)
+    }
+
+    private func update(_ button: ContentTabSidebarButton) {
+        button.update(
+            rootView: AnyView(hostedRoot),
+            accessibilityLabel: item.title ?? "Untitled",
+            accessibilityValue: accessibilityStateValue,
+            duplicateAccessibilityIdentifier: "duplicate-content-tab-\(item.id)",
+            isPinned: item.isPinned,
+            isEnabled: true,
+            onActivate: onActivate,
+            onToggleSelection: onToggleSelection,
+            onSelectRange: onSelectRange,
+            onDuplicate: onDuplicate,
+            onPin: onPin,
+            onUnpin: onUnpin,
+            onClose: onClose,
+        )
+    }
+
+    private var hostedRoot: ContentTabSidebarButtonRoot {
+        ContentTabSidebarButtonRoot(
+            item: item,
+            backgroundColor: backgroundColor,
+        )
+    }
+}
+
+@MainActor
+final class ContentTabSidebarButton: NSButton {
+    private enum PointerRoute {
+        case activate
+        case toggleSelection
+        case selectRange
+        case contextMenu
+    }
+
+    private let presentationView = ContentTabSidebarPresentationHostingView(rootView: AnyView(EmptyView()))
+    private var pointerRoute: PointerRoute?
+    private var onActivate: () -> Void = {}
+    private var onToggleSelection: () -> Void = {}
+    private var onSelectRange: () -> Void = {}
+    private var onDuplicate: (() -> Void)?
+    private var onPin: () -> Void = {}
+    private var onUnpin: () -> Void = {}
+    private var onClose: () -> Void = {}
+    private var duplicateAccessibilityIdentifier = ""
+    private var isPinned = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configureControl()
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: presentationView.fittingSize.height)
+    }
+
+    func update(
+        rootView: AnyView,
+        accessibilityLabel: String,
+        accessibilityValue: String,
+        duplicateAccessibilityIdentifier: String,
+        isPinned: Bool,
+        isEnabled: Bool,
+        onActivate: @escaping () -> Void,
+        onToggleSelection: @escaping () -> Void,
+        onSelectRange: @escaping () -> Void,
+        onDuplicate: (() -> Void)?,
+        onPin: @escaping () -> Void,
+        onUnpin: @escaping () -> Void,
+        onClose: @escaping () -> Void,
+    ) {
+        self.onActivate = onActivate
+        self.onToggleSelection = onToggleSelection
+        self.onSelectRange = onSelectRange
+        self.onDuplicate = onDuplicate
+        self.onPin = onPin
+        self.onUnpin = onUnpin
+        self.onClose = onClose
+        self.duplicateAccessibilityIdentifier = duplicateAccessibilityIdentifier
+        self.isPinned = isPinned
+        self.isEnabled = isEnabled
+        presentationView.rootView = rootView
+        setAccessibilityLabel(accessibilityLabel)
+        setAccessibilityValue(accessibilityValue)
+        menu = makeContextMenu()
+        presentationView.invalidateIntrinsicContentSize()
+        invalidateIntrinsicContentSize()
+        presentationView.needsLayout = true
+        needsLayout = true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 0 else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        pointerRoute = route(for: event)
+        defer { pointerRoute = nil }
+        super.mouseDown(with: event)
+    }
+
+    private func configureControl() {
+        title = ""
+        isBordered = false
+        setButtonType(.momentaryPushIn)
+        focusRingType = .none
+        target = self
+        action = #selector(handlePrimaryAction)
+        sendAction(on: .leftMouseUp)
+        setAccessibilityElement(true)
+        setContentHuggingPriority(.defaultLow, for: .horizontal)
+        setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        presentationView.translatesAutoresizingMaskIntoConstraints = false
+        presentationView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        presentationView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        addSubview(presentationView)
+        NSLayoutConstraint.activate([
+            presentationView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            presentationView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            presentationView.topAnchor.constraint(equalTo: topAnchor),
+            presentationView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    private func route(for event: NSEvent) -> PointerRoute {
+        let modifierFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifierFlags.contains(.control) {
+            return .contextMenu
+        }
+
+        switch ContentTabSelectionInputClassifier.classify(KeyModifiers(modifierFlags)) {
+        case .activate:
+            return .activate
+        case .toggleSelection:
+            return .toggleSelection
+        case .selectRange:
+            return .selectRange
+        }
+    }
+
+    @objc private func handlePrimaryAction() {
+        let route = pointerRoute ?? .activate
+        pointerRoute = nil
+
+        switch route {
+        case .activate:
+            onActivate()
+        case .toggleSelection:
+            onToggleSelection()
+        case .selectRange:
+            onSelectRange()
+        case .contextMenu:
+            break
+        }
+    }
+
+    private func makeContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        let duplicateItem = menuItem(title: "Duplicate", action: #selector(duplicate))
+        duplicateItem.identifier = NSUserInterfaceItemIdentifier(duplicateAccessibilityIdentifier)
+        menu.addItem(duplicateItem)
+        if isPinned {
+            menu.addItem(menuItem(title: "Unpin", action: #selector(unpin)))
+        } else {
+            menu.addItem(menuItem(title: "Pin", action: #selector(pin)))
+            menu.addItem(menuItem(title: "Close", action: #selector(close)))
+        }
+        return menu
+    }
+
+    private func menuItem(title: String, action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
+    @objc private func duplicate() {
+        onDuplicate?()
+    }
+
+    @objc private func pin() {
+        onPin()
+    }
+
+    @objc private func unpin() {
+        onUnpin()
+    }
+
+    @objc private func close() {
+        onClose()
+    }
+}
+
+private struct ContentTabSidebarButtonRoot: View {
+    let item: ContentTabProjection.ContentTabSidebarItem
+    let backgroundColor: Color
+
+    var body: some View {
         HStack(spacing: 8) {
             leadingIcon
             Text(item.title ?? "Untitled")
@@ -405,35 +722,16 @@ private struct ContentTabSidebarRow: View {
                 .truncationMode(.tail)
             Spacer()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
         .background(
             RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
                 .fill(backgroundColor),
         )
-        .padding(.horizontal, 8)
         .contentShape(Rectangle())
-        .contextMenu {
-            Button("Duplicate") { onDuplicate?() }
-                .accessibilityIdentifier("duplicate-content-tab-\(item.id)")
-            if item.isPinned {
-                Button("Unpin", action: onUnpin)
-            } else {
-                Button("Pin", action: onPin)
-                Button("Close", action: onClose)
-            }
-        }
-        .overlay(alignment: .trailing) {
-            if isHovered {
-                SidebarCloseButton(systemName: item.isPinned ? "minus" : "xmark", action: onClose)
-                    .padding(.trailing, 14)
-            }
-        }
-        .onTapGesture {
-            onSelect()
-            keyCommandFocusCoordinator?.requestFocus()
-        }
-        .onHover(perform: onHover)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder private var leadingIcon: some View {
@@ -445,17 +743,12 @@ private struct ContentTabSidebarRow: View {
             SidebarSymbolIcon(systemName: item.iconName ?? "doc", size: 16, iconSize: 16)
         }
     }
+}
 
-    private var backgroundColor: Color {
-        if isDropTarget {
-            VoyagerDS.Interaction.hoverFill(for: colorScheme)
-        } else if item.isActive {
-            VoyagerDS.Surface.sidebarSelectionBackground(for: colorScheme)
-        } else if isHovered {
-            VoyagerDS.Interaction.hoverFill(for: colorScheme)
-        } else {
-            Color.clear
-        }
+@MainActor
+private final class ContentTabSidebarPresentationHostingView: NSHostingView<AnyView> {
+    override func hitTest(_: NSPoint) -> NSView? {
+        nil
     }
 }
 
