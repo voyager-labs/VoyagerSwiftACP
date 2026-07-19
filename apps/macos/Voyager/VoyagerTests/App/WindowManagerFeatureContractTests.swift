@@ -3,7 +3,8 @@ import Foundation
 @testable import Voyager
 import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
-import VoyagerEntitiesCollection
+@_spi(Testing)
+@testable import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerFeaturesAiChat
@@ -4955,15 +4956,39 @@ private enum WindowManagerBuiltInCollectionTestRegistry {
         propertyUnitSpec: { _ in nil },
         operatorCodes: { _ in ["any", "gt", "neq"] },
         operatorDefinition: { OperatorDefinition(uiLabel: $0, uiValueKind: nil) },
-        operatorValueUIKind: { code, typeKey in
-            switch (code, typeKey) {
-            case ("any", "categorical"): "listText"
-            case ("gt", "date"): "singleDate"
-            case ("neq", "string"): "singleText"
-            default: "singleText"
-            }
-        },
         resolvePropertyKey: { .canonical($0) },
+        resolveCondition: { propertyKey, operatorCode, values, sourcePayload in
+            let contract: Condition.ValueContract
+            let type: SystemPropertyTypeKey
+            switch propertyKey {
+            case "tag_names":
+                contract = .init(shape: .list, count: .multiple, input: .listText)
+                type = .categorical
+            case "last_used_date":
+                contract = .init(shape: .single, count: .fixed(1), input: .singleDate)
+                type = .date
+            default:
+                contract = .init(shape: .single, count: .fixed(1), input: .singleText)
+                type = .string
+            }
+            return Condition(
+                property: .init(
+                    key: propertyKey,
+                    label: propertyKey,
+                    type: type,
+                    unitContract: nil,
+                    operatorOptions: ["any", "gt", "neq"].map {
+                        .init(code: $0, label: $0)
+                    },
+                ),
+                operation: operatorCode.map {
+                    .init(code: $0, label: $0, valueContract: contract)
+                },
+                values: values,
+                availability: .available,
+                opaqueSource: sourcePayload,
+            )
+        },
     )
 }
 

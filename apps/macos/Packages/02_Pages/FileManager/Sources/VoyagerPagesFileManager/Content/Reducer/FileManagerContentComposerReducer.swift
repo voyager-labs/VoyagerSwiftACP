@@ -74,7 +74,7 @@ struct FileManagerContentComposerReducer {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         if trimmedQuery.isEmpty {
-            let hasSearchReadyCondition = collectionContext.conditions.contains(where: \.isSearchReady)
+            let hasSearchReadyCondition = collectionContext.conditions.contains(where: \.isExecutionReady)
             if hasSearchReadyCondition {
                 state.composer.applyCollectionDraftRestorePayload(.init(
                     context: collectionContext,
