@@ -32,6 +32,7 @@ extension AccountAccessFeature {
         return .merge(
             isReauthentication ? .cancel(id: CancelID.sessionSync) : .none,
             isReauthentication ? .cancel(id: CancelID.sessionRevalidation) : .none,
+            isReauthentication ? cancelRefreshDeadline(&state) : .none,
             .cancel(id: CancelID.handoffCallbackTimeout(scope)),
             cancelHandoffClaimAndExchange(scope: scope),
             .run { [signInHandoffClient] send in

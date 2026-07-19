@@ -329,6 +329,51 @@ extension ACC001StartAccountSignInTests {
         )
     }
 
+    /// ACC-001-start_account_sign_in: 재인증 시작은 이전 refresh deadline을 무효화한다.
+    /// - 검증 내용: reauthentication이 refresh deadline generation을 증가시켜 stale deadline이 persisted session 재검증을 시작하지 않는다.
+    /// - 사전 조건: signed-in pending recovery 상태와 generation 7의 활성 refresh deadline.
+    /// - 기대 결과: handoff 시작 후 generation은 8이고, generation 7 deadline은 revalidatePersistedSession action을 만들지 않는다.
+    func testSignedInPendingLoginCTACancelsActiveRefreshDeadline() async {
+        var initialState = AccountAccessFeature.State()
+        initialState.hasAccountSession = true
+        initialState.refreshDeadlineGeneration = 7
+        initialState.ttlTimerActive = true
+        initialState.sessionExpiresAt = referenceDate.addingTimeInterval(600)
+
+        let store = makeTestStore(
+            signInHandoffClient: SignInHandoffClient { _ in
+                .awaitingCallback(state: "refresh-deadline-reauth-state")
+            },
+            initialState: initialState,
+        )
+
+        await store.send(.loginTapped(context: .paywall, scope: .lifecycle)) { state in
+            state.isSignInInProgress = true
+            state.didSignInFail = false
+            state.handoffTransaction = AccountAccessHandoffTransaction(
+                context: .paywall,
+                scope: .lifecycle,
+                startedWithAccountSession: true,
+            )
+            state.handoffGeneration = 1
+            state.syncGeneration = 1
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 8
+        }
+        await store.receive(\.signInHandoffCompleted) { state in
+            state.handoffPendingState = "refresh-deadline-reauth-state"
+        }
+
+        await store.send(._refreshDeadlineReached(generation: 7))
+
+        await store.send(.cancelSignIn) { state in
+            state.isSignInInProgress = false
+            state.handoffPendingState = nil
+            state.handoffTransaction = nil
+        }
+        await store.finish()
+    }
+
     /// ACC-001-start_account_sign_in: access status가 아직 확정되지 않은 signed-in pending recovery도 재인증을 시작한다.
     /// - 검증 내용: nil status의 pending CTA가 sync/revalidation generation을 무효화하고 handoff를 시작한다.
     /// - 사전 조건: hasAccountSession=true, status=nil, errorMessage=nil, isSubmitting=false.

@@ -524,7 +524,7 @@ extension AccountAccessFeature {
         .cancellable(id: CancelID.refreshDeadline, cancelInFlight: true)
     }
 
-    private func cancelRefreshDeadline(_ state: inout State) -> Effect<Action> {
+    func cancelRefreshDeadline(_ state: inout State) -> Effect<Action> {
         state.refreshDeadlineGeneration += 1
         return .cancel(id: CancelID.refreshDeadline)
     }
