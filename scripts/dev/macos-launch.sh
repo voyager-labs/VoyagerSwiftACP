@@ -30,10 +30,8 @@
 set -euo pipefail
 
 # ─── 기본값 ────────────────────────────────────────────────
-# Sweetpad 설정(.vscode/settings.json)과 동일한 경로를 기본값으로 사용
 WORKSPACE="apps/macos/Voyager/Voyager.xcworkspace"
-DERIVED_DATA="build/dev/DerivedData"
-SOURCE_PACKAGES="build/dev/SourcePackages"
+DERIVED_DATA=""
 CONFIGURATION="Debug"
 SCHEME=""
 LAUNCH=1
@@ -112,21 +110,21 @@ LOG_FILE="$LOG_DIR/xcodebuild-${SCHEME}-${CONFIGURATION}.log"
 # ─── 1단계: 빌드 ───────────────────────────────────────────
 echo "🔨 Building $SCHEME ($CONFIGURATION)..."
 echo "   workspace: $WORKSPACE"
-echo "   derivedDataPath: $DERIVED_DATA"
+if [[ -n "$DERIVED_DATA" ]]; then
+  echo "   derivedDataPath: $DERIVED_DATA"
+fi
 
-# mise.toml [tasks.macos-build] 와 동일한 플래그 세트
-# + sweetpad.build.args (clonedSourcePackagesDirPath, skip validation)
-  BUILD_ARGS=(
-  -workspace "$WORKSPACE"
-  -scheme "$SCHEME"
-  -configuration "$CONFIGURATION"
-  -derivedDataPath "$DERIVED_DATA"
-  -clonedSourcePackagesDirPath "$SOURCE_PACKAGES"
-  -skipPackagePluginValidation
-  -skipMacroValidation
-  COMPILER_INDEX_STORE_ENABLE=NO
-    build
-  )
+BUILD_ARGS=()
+BUILD_ARGS+=( -workspace "$WORKSPACE" )
+BUILD_ARGS+=( -scheme "$SCHEME" )
+BUILD_ARGS+=( -configuration "$CONFIGURATION" )
+if [[ -n "$DERIVED_DATA" ]]; then
+  BUILD_ARGS+=( -derivedDataPath "$DERIVED_DATA" )
+fi
+BUILD_ARGS+=( -skipPackagePluginValidation )
+BUILD_ARGS+=( -skipMacroValidation )
+BUILD_ARGS+=( COMPILER_INDEX_STORE_ENABLE=NO )
+BUILD_ARGS+=( build )
 
   if [[ "$INJECTION_NEXT" -eq 1 ]]; then
     BUILD_ARGS+=(
@@ -163,12 +161,15 @@ fi
 # ─── 2단계: .app 경로 해석 ─────────────────────────────────
 echo "🔍 빌드 산출물 경로 확인 중..."
 
-SETTINGS_JSON=$("$XCODEBUILD_CMD" \
-  -workspace "$WORKSPACE" \
-  -scheme "$SCHEME" \
-  -configuration "$CONFIGURATION" \
-  -derivedDataPath "$DERIVED_DATA" \
-  -showBuildSettings -json 2>/dev/null)
+SETTINGS_ARGS=()
+SETTINGS_ARGS+=( -workspace "$WORKSPACE" )
+SETTINGS_ARGS+=( -scheme "$SCHEME" )
+SETTINGS_ARGS+=( -configuration "$CONFIGURATION" )
+if [[ -n "$DERIVED_DATA" ]]; then
+  SETTINGS_ARGS+=( -derivedDataPath "$DERIVED_DATA" )
+fi
+SETTINGS_ARGS+=( -showBuildSettings -json )
+SETTINGS_JSON=$("$XCODEBUILD_CMD" "${SETTINGS_ARGS[@]}" 2>/dev/null)
 
 # TARGET_BUILD_DIR / WRAPPER_NAME / EXECUTABLE_NAME 추출
 APP_DIR=$(printf '%s' "$SETTINGS_JSON" | python3 -c \

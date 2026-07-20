@@ -5,19 +5,19 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+XCODEBUILD_CMD="${XCODEBUILD_CMD:-"$SCRIPT_DIR/xcodebuild-branch-product.sh"}"
 
 if [[ "${1:-}" == "--dry-run" ]]; then
     shift
-    echo "NSUnbufferedIO=YES xcodebuild test \\"
-    echo "  -project apps/macos/Voyager/Voyager.xcodeproj \\"
-    echo "  -scheme Voyager-Dev \\"
-    echo "  -configuration Debug \\"
-    echo "  -derivedDataPath build/dev/DerivedData \\"
-    echo "  -clonedSourcePackagesDirPath build/dev/SourcePackages \\"
-    echo "  -skipPackagePluginValidation \\"
-    echo "  -skipMacroValidation \\"
-    echo "  COMPILER_INDEX_STORE_ENABLE=NO \\"
-    echo "  CODE_SIGNING_ALLOWED=NO \\"
+    printf '%s\n' \
+        'NSUnbufferedIO=YES scripts/dev/xcodebuild-branch-product.sh test \' \
+        '  -project apps/macos/Voyager/Voyager.xcodeproj \' \
+        '  -scheme Voyager-Dev \' \
+        '  -configuration Debug \' \
+        '  -skipPackagePluginValidation \' \
+        '  -skipMacroValidation \' \
+        '  COMPILER_INDEX_STORE_ENABLE=NO \' \
+        '  CODE_SIGNING_ALLOWED=NO \'
     if [[ $# -gt 0 ]]; then
         printf '  '
         printf '%q ' "$@"
@@ -29,12 +29,10 @@ fi
 
 mkdir -p "$REPO_ROOT/build/dev/reports"
 
-NSUnbufferedIO=YES xcodebuild test \
+NSUnbufferedIO=YES "$XCODEBUILD_CMD" test \
     -project "$REPO_ROOT/apps/macos/Voyager/Voyager.xcodeproj" \
     -scheme Voyager-Dev \
     -configuration Debug \
-    -derivedDataPath "$REPO_ROOT/build/dev/DerivedData" \
-    -clonedSourcePackagesDirPath "$REPO_ROOT/build/dev/SourcePackages" \
     -skipPackagePluginValidation \
     -skipMacroValidation \
     COMPILER_INDEX_STORE_ENABLE=NO \
