@@ -42,6 +42,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: sourcePath))
         XCTAssertTrue(FileManager.default.fileExists(atPath: trashPath))
         XCTAssertEqual(store.state.undoRecords.count, 1)
+        XCTAssertTrue(store.state.restorableTrashPaths.contains(trashPath))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
@@ -173,6 +174,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: trashPath.path))
         XCTAssertEqual(store.state.pendingEmptyTrashItemCount, 0)
         XCTAssertEqual(store.state.emptyTrashCompletedCount, 0)
+        XCTAssertTrue(store.state.restorableTrashPaths.isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
@@ -691,6 +693,72 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
     }
 }
 
+extension EOP003ManageEntryLifecycleTests {
+    // MARK: - EOP-003-load_entry_items
+
+    /// EOP-003-load_entry_items: 모든 loaded list는 Trash metadata projection을 새로 읽는다.
+    /// - 검증 내용: itemsLoaded 후 저장된 trash path가 restorableTrashPaths로 투영된다.
+    /// - 사전 조건: metadata store에 하나의 Trash record가 있고 loaded item 목록은 비어 있다.
+    /// - 기대 결과: lifecycle load completion이 해당 Trash path만 state에 저장한다.
+    func testItemsLoadedRefreshesRestorableTrashPaths() async {
+        let trashPath = "/tmp/.Trash/entry.txt"
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init())
+        await store.dependencies.trashMetadataStoreClient.save(TrashMetadata(
+            trashPath: trashPath,
+            originalPath: "/tmp/entry.txt",
+            deletedDate: .distantPast,
+        ))
+        // RED: itemsLoaded never refreshed the menu eligibility projection.
+        await store.send(.loading(.itemsLoaded([])))
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded) {
+            $0.restorableTrashPaths = [trashPath]
+        }
+        // GREEN: every successful list load refreshes the restorable Trash-path projection.
+        XCTAssertEqual(store.state.restorableTrashPaths, [trashPath])
+    }
+
+    // MARK: - EOP-003-move_entries_to_trash
+
+    /// EOP-003-move_entries_to_trash: 성공한 Put Back은 metadata와 capability projection을 함께 제거한다.
+    /// - 검증 내용: putBack 성공 뒤 restorableTrashPaths와 metadata store가 비어 있다.
+    /// - 사전 조건: fake Trash의 실제 파일과 일치하는 metadata 및 restorable path가 있다.
+    /// - 기대 결과: 원래 경로로 파일이 돌아오고 metadata와 eligibility가 제거된다.
+    func testPutBackSuccessRemovesRestorableMetadata() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let recorder = FileOpsRecorder()
+        let trashRoot = sandbox.root.appendingPathComponent(".Trash")
+        let sourcePath = sandbox.fileURL.path
+        let record = try prepareTrashRecord(sourceURL: sandbox.fileURL, trashRoot: trashRoot)
+        guard let trashPath = record.targets.first?.afterPath else {
+            XCTFail("Expected a Trash path")
+            return
+        }
+        var initialState = EntryOperationsState()
+        initialState.restorableTrashPaths = [trashPath]
+        let store = EntryOperationsTestSupport.makeStore(initialState: initialState) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder, trashRoot: trashRoot)
+        }
+        await store.dependencies.trashMetadataStoreClient.save(TrashMetadata(
+            trashPath: trashPath,
+            originalPath: sourcePath,
+            deletedDate: .distantPast,
+        ))
+        // RED: a successful restore left the metadata eligibility path stale.
+        // store.exhaustivity = .off: put-back emits per-path lifecycle actions before the final action record.
+        store.exhaustivity = .off
+        await store.send(.trash(.putBackFromTrash(paths: [trashPath])))
+        await store.finish()
+        await store.skipReceivedActions()
+        // GREEN: reducer removal and lifecycle projection removal agree after restore.
+        let remainingMetadata = await store.dependencies.trashMetadataStoreClient.find(trashPath)
+        XCTAssertNil(remainingMetadata)
+        XCTAssertFalse(store.state.restorableTrashPaths.contains(trashPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sourcePath))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: trashPath))
+    }
+}
+
 private extension EOP003ManageEntryLifecycleTests {
     func verifyLoadFailureRetry() async {
         let staleEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/stale.txt", name: "stale.txt")
@@ -721,78 +789,6 @@ private extension EOP003ManageEntryLifecycleTests {
         await store.receive(\.loading.itemsLoaded, []) {
             $0.isLoading = false
         }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
     }
-}
-
-private func makeFailingDeleteClient(error: FileOpError) -> EntryFileOpsClient {
-    let live = EntryFileOpsClient.liveValue
-    return EntryFileOpsClient(
-        createFolder: { parentURL, folderName in try await live.createFolder(parentURL, folderName) },
-        pasteFile: { sourceURL, destinationURL in try await live.pasteFile(sourceURL, destinationURL) },
-        moveFile: { sourceURL, destinationURL in try await live.moveFile(sourceURL, destinationURL) },
-        renameFile: { sourceURL, destinationURL in try await live.renameFile(sourceURL, destinationURL) },
-        createAlias: { sourceURL, aliasURL in try await live.createAlias(sourceURL, aliasURL) },
-        moveToTrashAndReturnURL: { url in try await live.moveToTrashAndReturnURL(url) },
-        deleteImmediately: { _ in throw error },
-        putBackFromTrash: { trashURL, originalPath in try await live.putBackFromTrash(trashURL, originalPath) },
-        compressItems: { urls in try await live.compressItems(urls) },
-        extractCompressedFile: { url in try await live.extractCompressedFile(url) },
-        getTags: { url in try await live.getTags(url) },
-        setTags: { url, tags in try await live.setTags(url, tags) },
-        toggleTag: { url, tag in try await live.toggleTag(url, tag) },
-        fileExists: { path in live.fileExists(path) },
-        saveDragPaths: { _ in },
-        loadDragPaths: { [] },
-        saveDragWithOption: { _ in },
-        loadDragWithOption: { false },
-        clipboardChangeCount: { 0 },
-        loadClipboardCutSessionId: { nil },
-        saveClipboardCutSessionId: { _ in },
-        loadClipboardPaths: { ([], .copy) },
-        postFileSystemChanged: { _ in },
-    )
-}
-
-private func makeFailingTrashClient(recorder: FileOpsRecorder) -> EntryFileOpsClient {
-    let live = EntryFileOpsClient.liveValue
-    return EntryFileOpsClient(
-        createFolder: { parentURL, folderName in try await live.createFolder(parentURL, folderName) },
-        pasteFile: { sourceURL, destinationURL in try await live.pasteFile(sourceURL, destinationURL) },
-        moveFile: { sourceURL, destinationURL in try await live.moveFile(sourceURL, destinationURL) },
-        renameFile: { sourceURL, destinationURL in try await live.renameFile(sourceURL, destinationURL) },
-        createAlias: { sourceURL, aliasURL in try await live.createAlias(sourceURL, aliasURL) },
-        moveToTrashAndReturnURL: { _ in
-            throw FileOpError.system(message: "trash unavailable")
-        },
-        deleteImmediately: { url in
-            try await live.deleteImmediately(url)
-            recorder.recordDelete(path: url)
-        },
-        putBackFromTrash: { trashURL, originalPath in try await live.putBackFromTrash(trashURL, originalPath) },
-        compressItems: { urls in try await live.compressItems(urls) },
-        extractCompressedFile: { url in try await live.extractCompressedFile(url) },
-        getTags: { url in try await live.getTags(url) },
-        setTags: { url, tags in try await live.setTags(url, tags) },
-        toggleTag: { url, tag in try await live.toggleTag(url, tag) },
-        fileExists: { path in live.fileExists(path) },
-        saveDragPaths: { _ in },
-        loadDragPaths: { [] },
-        saveDragWithOption: { _ in },
-        loadDragWithOption: { false },
-        clipboardChangeCount: { 0 },
-        loadClipboardCutSessionId: { nil },
-        saveClipboardCutSessionId: { _ in },
-        loadClipboardPaths: { ([], .copy) },
-        postFileSystemChanged: { _ in },
-    )
-}
-
-private func prepareTrashRecord(sourceURL: URL, trashRoot: URL) throws -> EntryActionRecord {
-    try FileManager.default.createDirectory(at: trashRoot, withIntermediateDirectories: true)
-    let trashURL = trashRoot.appendingPathComponent(sourceURL.lastPathComponent)
-    try FileManager.default.moveItem(at: sourceURL, to: trashURL)
-    return EntryActionRecord(
-        operationKind: .moveToTrash,
-        targets: [.init(beforePath: sourceURL.path, afterPath: trashURL.path)],
-    )
 }

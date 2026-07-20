@@ -23,6 +23,7 @@ public struct EntryOperationsState: Equatable {
     public var cutClearSession: EntryOperationsCutClearHeuristic.CutSession?
     public var pendingEmptyTrashItemCount: Int = 0
     public var emptyTrashCompletedCount: Int = 0
+    public var restorableTrashPaths: Set<String> = []
     public var applicationsForItems: [String: [ApplicationInfo]] = [:]
     public var commonApplicationsForSelectedFiles: [ApplicationInfo] = []
     public var dropValidationResult: EntryDropValidationResult = .empty
@@ -46,6 +47,7 @@ public struct EntryOperationsState: Equatable {
         cutClearSession = nil
         pendingEmptyTrashItemCount = 0
         emptyTrashCompletedCount = 0
+        restorableTrashPaths = []
         applicationsForItems = [:]
         commonApplicationsForSelectedFiles = []
         dropValidationResult = .empty

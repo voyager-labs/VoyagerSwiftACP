@@ -10,31 +10,56 @@ enum ContentPaneContextMenuBuilder {
         let sortKey: SortKey
         let sortOrder: VoyagerShared.SortOrder
         let groupKey: GroupKey
+        let canPaste: Bool
+        let itemCount: Int
+        let canPerformEntryCommands: Bool
+
+        var canChangeSort: Bool {
+            groupKey == .none && canPerformEntryCommands
+        }
+
+        var canChangeGroup: Bool {
+            canPerformEntryCommands
+        }
+
+        var canPasteItems: Bool {
+            canPaste && canPerformEntryCommands
+        }
+
+        var canSelectAll: Bool {
+            itemCount > 0 && canPerformEntryCommands
+        }
     }
 
     static func makeMenu(
         configuration: Configuration,
-        target: ContentPaneContextMenuCoordinator,
+        target: AnyObject,
     ) -> NSMenu {
-        let menu = NSMenu()
+        let menu = makeMenuContainer()
 
-        if configuration.isTrashFolder {
-            menu.addItem(menuItem(
-                title: "Empty Trash",
-                action: #selector(ContentPaneContextMenuCoordinator.contextMenuEmptyTrash),
-                target: target,
-            ))
-        } else {
-            let newFolder = menuItem(
-                title: "New Folder",
-                action: #selector(ContentPaneContextMenuCoordinator.contextMenuCreateNewFolder),
-                target: target,
-            )
-            newFolder.keyEquivalent = "n"
-            newFolder.keyEquivalentModifierMask = [.command, .shift]
-            menu.addItem(newFolder)
-        }
+        menu.addItem(makePrimaryMenuItem(configuration: configuration, target: target))
 
+        menu.addItem(.separator())
+
+        let paste = menuItem(
+            title: "Paste",
+            action: #selector(ContentPaneContextMenuCoordinator.contextMenuPaste),
+            target: target,
+        )
+        paste.keyEquivalent = "v"
+        paste.keyEquivalentModifierMask = .command
+        paste.isEnabled = configuration.canPasteItems
+        menu.addItem(paste)
+
+        let selectAll = menuItem(
+            title: "Select All",
+            action: #selector(ContentPaneContextMenuCoordinator.contextMenuSelectAll),
+            target: target,
+        )
+        selectAll.keyEquivalent = "a"
+        selectAll.keyEquivalentModifierMask = .command
+        selectAll.isEnabled = configuration.canSelectAll
+        menu.addItem(selectAll)
         menu.addItem(.separator())
 
         let viewMenu = NSMenuItem(title: "View", action: nil, keyEquivalent: "")
@@ -43,20 +68,53 @@ enum ContentPaneContextMenuBuilder {
 
         let sortMenu = NSMenuItem(title: "Sort By", action: nil, keyEquivalent: "")
         sortMenu.submenu = makeSortMenu(configuration: configuration, target: target)
+        sortMenu.isEnabled = configuration.canChangeSort
         menu.addItem(sortMenu)
 
         let groupMenu = NSMenuItem(title: "Group By", action: nil, keyEquivalent: "")
         groupMenu.submenu = makeGroupMenu(configuration: configuration, target: target)
+        groupMenu.isEnabled = configuration.canChangeGroup
         menu.addItem(groupMenu)
 
         return menu
     }
 
+    static func makeMenuContainer() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    static func makePrimaryMenuItem(
+        configuration: Configuration,
+        target: AnyObject,
+    ) -> NSMenuItem {
+        if configuration.isTrashFolder {
+            let emptyTrash = menuItem(
+                title: "Empty Trash",
+                action: #selector(ContentPaneContextMenuCoordinator.contextMenuEmptyTrash),
+                target: target,
+            )
+            emptyTrash.isEnabled = configuration.canPerformEntryCommands
+            return emptyTrash
+        }
+
+        let newFolder = menuItem(
+            title: "New Folder",
+            action: #selector(ContentPaneContextMenuCoordinator.contextMenuCreateNewFolder),
+            target: target,
+        )
+        newFolder.isEnabled = configuration.canPerformEntryCommands
+        newFolder.keyEquivalent = "n"
+        newFolder.keyEquivalentModifierMask = [.command, .shift]
+        return newFolder
+    }
+
     private static func makeViewMenu(
         configuration: Configuration,
-        target: ContentPaneContextMenuCoordinator,
+        target: AnyObject,
     ) -> NSMenu {
-        let menu = NSMenu()
+        let menu = makeMenuContainer()
         let list = menuItem(
             title: "as List",
             action: #selector(ContentPaneContextMenuCoordinator.contextMenuSetLayout(_:)),
@@ -79,9 +137,9 @@ enum ContentPaneContextMenuBuilder {
 
     private static func makeSortMenu(
         configuration: Configuration,
-        target: ContentPaneContextMenuCoordinator,
+        target: AnyObject,
     ) -> NSMenu {
-        let menu = NSMenu()
+        let menu = makeMenuContainer()
         for item in EntryArrangementMenuItems.sortItems {
             let menuItem = menuItem(
                 title: item.title,
@@ -90,6 +148,7 @@ enum ContentPaneContextMenuBuilder {
             )
             menuItem.representedObject = item.key.rawValue
             menuItem.state = configuration.sortKey == item.key ? .on : .off
+            menuItem.isEnabled = configuration.canChangeSort
             menu.addItem(menuItem)
         }
         menu.addItem(.separator())
@@ -101,6 +160,7 @@ enum ContentPaneContextMenuBuilder {
         )
         ascending.representedObject = VoyagerShared.SortOrder.ascending.rawValue
         ascending.state = configuration.sortOrder == .ascending ? .on : .off
+        ascending.isEnabled = configuration.canChangeSort
         menu.addItem(ascending)
 
         let descending = menuItem(
@@ -110,6 +170,7 @@ enum ContentPaneContextMenuBuilder {
         )
         descending.representedObject = VoyagerShared.SortOrder.descending.rawValue
         descending.state = configuration.sortOrder == .descending ? .on : .off
+        descending.isEnabled = configuration.canChangeSort
         menu.addItem(descending)
 
         return menu
@@ -117,9 +178,9 @@ enum ContentPaneContextMenuBuilder {
 
     private static func makeGroupMenu(
         configuration: Configuration,
-        target: ContentPaneContextMenuCoordinator,
+        target: AnyObject,
     ) -> NSMenu {
-        let menu = NSMenu()
+        let menu = makeMenuContainer()
         let none = menuItem(
             title: "None",
             action: #selector(ContentPaneContextMenuCoordinator.contextMenuSetGroupKey(_:)),
@@ -127,6 +188,7 @@ enum ContentPaneContextMenuBuilder {
         )
         none.representedObject = GroupKey.none.rawValue
         none.state = configuration.groupKey == .none ? .on : .off
+        none.isEnabled = configuration.canChangeGroup
         menu.addItem(none)
 
         menu.addItem(.separator())
@@ -138,6 +200,7 @@ enum ContentPaneContextMenuBuilder {
             )
             menuItem.representedObject = item.key.rawValue
             menuItem.state = configuration.groupKey == item.key ? .on : .off
+            menuItem.isEnabled = configuration.canChangeGroup
             menu.addItem(menuItem)
         }
         return menu
@@ -146,7 +209,7 @@ enum ContentPaneContextMenuBuilder {
     private static func menuItem(
         title: String,
         action: Selector,
-        target: ContentPaneContextMenuCoordinator,
+        target: AnyObject,
     ) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = target

@@ -4,44 +4,69 @@ import CoreGraphics
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 
-final class EntryContextMenuCoordinator: NSObject {
+@MainActor
+final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDelegate {
     private let store: StoreOf<EntryViewLayoutFeature>
-    private let rowEntry: EntryModel?
+    private let target: EntryContextMenuTarget
+    private weak var anchorView: NSView?
+    private let anchorScreenPoint: CGPoint?
+    private var popover: NSPopover?
+    private var popoverController: EntryTagsPopoverViewController?
+    private var pendingTagSpecs: [EntryContextMenuTagSpec]?
 
-    init(store: StoreOf<EntryViewLayoutFeature>, rowEntry: EntryModel? = nil) {
+    init(
+        store: StoreOf<EntryViewLayoutFeature>,
+        target: EntryContextMenuTarget,
+        anchorView: NSView?,
+        anchorScreenPoint: CGPoint? = nil,
+    ) {
         self.store = store
-        self.rowEntry = rowEntry
+        self.target = target
+        self.anchorView = anchorView
+        self.anchorScreenPoint = anchorScreenPoint
     }
 
-    private func selectRowEntryIfNeeded() {
-        guard let rowEntry, !store.state.selectedIds.contains(rowEntry.id) else { return }
-        store.send(.internal(.setSelectionState(
-            ids: [rowEntry.id],
-            lastSelectedId: rowEntry.id,
-            rangeAnchorId: rowEntry.id,
-            shouldScrollToSelection: false,
-        )))
-    }
-
-    private func executeCommand(_ command: EntryOperationsCommand) {
-        selectRowEntryIfNeeded()
+    @discardableResult
+    private func executeCommand(_ command: EntryOperationsCommand) -> Bool {
+        guard canPerformTargetBoundCommand else { return false }
         store.send(.delegate(.executeCommand(command)))
+        return true
     }
 
-    private func startRename(_ item: EntryModel) {
-        selectRowEntryIfNeeded()
-        store.send(.delegate(.startRename(item: item, text: item.name)))
+    private var canPerformTargetBoundCommand: Bool {
+        target.isCurrent(
+            displayEntries: store.state.entries,
+            selectedIds: store.state.selectedIds,
+        )
+            && (!store.state.entryOperations.isLoading || store.state.isCollectionMode)
+            && !target.containsBusyEntry(itemStates: store.state.entryOperations.itemStates)
+    }
+
+    private var canPaste: Bool {
+        (!store.state.entryOperations.isLoading || store.state.isCollectionMode)
+            && !store.state.entryOperations.clipboardItems.isEmpty
+    }
+
+    private var canSelectAll: Bool {
+        (!store.state.entryOperations.isLoading || store.state.isCollectionMode)
+            && !store.state.entries.isEmpty
     }
 
     @objc
     func contextMenuOpenSelectedItem() {
+        guard canPerformTargetBoundCommand else { return }
         store.send(.delegate(.saveScrollOffset(.zero, forPath: store.state.currentPath)))
-        executeCommand(.navigation(.openSelectedItem))
+        store.send(.delegate(.executeCommand(.navigation(.openSelectedItem))))
     }
 
     @objc
     func contextMenuOpenSelectedItemInNewWindow(_ sender: NSMenuItem) {
-        guard let path = sender.representedObject as? String else { return }
+        guard let path = sender.representedObject as? String,
+              canPerformTargetBoundCommand,
+              target.entries.contains(where: { $0.fullPath == path && $0.isFolder })
+        else {
+            return
+        }
         store.send(.delegate(.openPathInNewWindow(path)))
     }
 
@@ -52,7 +77,20 @@ final class EntryContextMenuCoordinator: NSObject {
 
     @objc
     func contextMenuGetInfoForSelectedItems() {
+        if target.entries.isEmpty {
+            let currentPath = store.state.currentPath
+            guard !currentPath.isEmpty,
+                  canPerformCurrentPathCommand
+            else { return }
+            store.send(.delegate(.executeCommand(.navigation(.getInfoForPath(currentPath)))))
+            return
+        }
         executeCommand(.navigation(.getInfoForSelectedItems))
+    }
+
+    private var canPerformCurrentPathCommand: Bool {
+        (!store.state.entryOperations.isLoading || store.state.isCollectionMode)
+            && store.state.entryOperations.itemStates[store.state.currentPath]?.isBusy != true
     }
 
     @objc
@@ -87,18 +125,22 @@ final class EntryContextMenuCoordinator: NSObject {
 
     @objc
     func contextMenuPasteItems() {
+        guard canPaste else { return }
         store.send(.delegate(.executeCommand(.clipboard(.pasteItems(destinationPath: store.state.currentPath)))))
     }
 
     @objc
-    func contextMenuStartRename() {
-        if let rowEntry {
-            startRename(rowEntry)
-            return
-        }
+    func contextMenuSelectAll() {
+        guard canSelectAll else { return }
+        store.send(.internal(.applySelectAll(orderedItemIds: store.state.displayOrderItems.map(\.id))))
+    }
 
-        let selectedEntries = store.state.entries.filter { store.state.selectedIds.contains($0.id) }
-        guard selectedEntries.count == 1, let item = selectedEntries.first else { return }
+    @objc
+    func contextMenuStartRename() {
+        guard canPerformTargetBoundCommand,
+              target.entries.count == 1,
+              let item = target.entries.first
+        else { return }
         store.send(.delegate(.startRename(item: item, text: item.name)))
     }
 
@@ -139,6 +181,7 @@ final class EntryContextMenuCoordinator: NSObject {
 
     @objc
     func contextMenuEmptyTrash() {
+        guard canPerformTargetBoundCommand else { return }
         store.send(.delegate(.executeCommand(.mutation(.emptyTrash))))
     }
 
@@ -164,23 +207,92 @@ final class EntryContextMenuCoordinator: NSObject {
         guard let tagName = sender.representedObject as? String else { return }
         executeCommand(.mutation(.toggleTagForSelectedItem(tag: tagName)))
     }
+
+    func performTagMutation(name: String, mode: TagMutationRequest.Mode) {
+        guard canPerformTargetBoundCommand else { return }
+        executeCommand(.mutation(.setTagForSelectedItems(tag: name, mode: mode)))
+    }
+
+    @objc
+    @MainActor
+    func contextMenuShowTags(_ sender: NSMenuItem) {
+        guard let tagSpecs = sender.representedObject as? [EntryContextMenuTagSpec],
+              canPerformTargetBoundCommand
+        else {
+            return
+        }
+        pendingTagSpecs = tagSpecs
+    }
+
+    func menuDidClose(_: NSMenu) {
+        DispatchQueue.main.async { [weak self] in
+            self?.presentPendingTagsPopover()
+        }
+    }
+
+    @MainActor
+    private func presentPendingTagsPopover() {
+        guard let tagSpecs = pendingTagSpecs,
+              let anchorView,
+              let window = anchorView.window,
+              let anchorScreenPoint,
+              canPerformTargetBoundCommand
+        else {
+            pendingTagSpecs = nil
+            return
+        }
+        pendingTagSpecs = nil
+        let title = target.entries.count == 1
+            ? "Assign tags to “\(target.entries[0].name)”"
+            : "Assign tags to \(target.entries.count) items"
+        let controller = EntryTagsPopoverViewController(
+            title: title,
+            tags: tagSpecs,
+            onSelect: { [weak self] name, selection in
+                guard let self else { return }
+                let mode: TagMutationRequest.Mode = selection == .on ? .remove : .add
+                performTagMutation(name: name, mode: mode)
+            },
+            onClose: { [weak self] in self?.popover?.performClose(nil) },
+        )
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = controller
+        popover.delegate = self
+        self.popover = popover
+        popoverController = controller
+        let anchorInWindow = window.convertPoint(fromScreen: anchorScreenPoint)
+        let anchorRect = anchorView.convert(
+            NSRect(origin: anchorInWindow, size: NSSize(width: 1, height: 1)),
+            from: nil,
+        )
+        popover.show(relativeTo: anchorRect, of: anchorView, preferredEdge: .maxY)
+    }
+
+    func popoverDidClose(_: Notification) {
+        pendingTagSpecs = nil
+        popover = nil
+        popoverController = nil
+    }
 }
 
 extension EntryContextMenuCoordinator {
-    static func sendWithSelection(
+    nonisolated static func sendWithSelection(
         _ item: EntryModel,
         selectedIds: Set<EntryModel.ID>,
         entryViewLayoutStore: StoreOf<EntryViewLayoutFeature>,
-        action: @escaping () -> Void,
+        action: @escaping @MainActor () -> Void,
     ) {
-        if !selectedIds.contains(item.id) {
-            entryViewLayoutStore.send(.internal(.setSelectionState(
-                ids: [item.id],
-                lastSelectedId: item.id,
-                rangeAnchorId: item.id,
-                shouldScrollToSelection: false,
-            )))
+        MainActor.assumeIsolated {
+            if !selectedIds.contains(item.id) {
+                entryViewLayoutStore.send(.internal(.setSelectionState(
+                    ids: [item.id],
+                    lastSelectedId: item.id,
+                    rangeAnchorId: item.id,
+                    shouldScrollToSelection: false,
+                )))
+            }
+            action()
         }
-        action()
     }
 }

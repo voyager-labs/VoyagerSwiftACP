@@ -129,4 +129,18 @@ enum EntryOperationsAlertPresenter {
         let response = alert.runModal()
         return response == .alertFirstButtonReturn
     }
+
+    @MainActor
+    static func showTagMutationFailureAlert(failures: [TagMutationFailure]) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = failures.count == 1
+            ? "Couldn't update the tag for \"\(failures[0].fileName)\"."
+            : "Couldn't update the tag for \(failures.count) items."
+        alert.informativeText = failures
+            .map { "\($0.fileName): \($0.reason)" }
+            .joined(separator: "\n")
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
 }

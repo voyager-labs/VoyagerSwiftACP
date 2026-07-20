@@ -49,6 +49,53 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
     // MARK: - VOY-578-entry_commands
 
+    // MARK: - VOY-150-context_menu_loading_capability
+
+    /// VOY-150-context_menu_loading_capability: AppKit 빈 영역 메뉴는 loading capability를 New Folder와 Empty Trash에 적용한다.
+    /// 일반 Directory loading 중 stale 메뉴 command가 실행되지 않도록 두 항목의 실제 AppKit enablement가 projection과 일치해야 한다.
+    /// - 검증 내용: normal/loading 및 Trash/non-Trash configuration에서 메뉴 항목의 isEnabled 상태.
+    /// - 사전 조건: ContentPaneContextMenuBuilder에 ordinary Directory와 Trash의 loading capability configuration을 각각 전달한다.
+    /// - 기대 결과: ordinary Directory loading만 New Folder와 Empty Trash가 비활성화되고, normal 상태는 활성 상태를 유지한다.
+    func testAppKitBlankAreaMenuAppliesLoadingCapabilityToNewFolderAndEmptyTrash() {
+        assertPrimaryMenuItem(title: "New Folder", isTrashFolder: false, canPerformEntryCommands: true, isEnabled: true)
+        assertPrimaryMenuItem(title: "Empty Trash", isTrashFolder: true, canPerformEntryCommands: true, isEnabled: true)
+        assertPrimaryMenuItem(
+            title: "New Folder",
+            isTrashFolder: false,
+            canPerformEntryCommands: false,
+            isEnabled: false,
+        )
+        assertPrimaryMenuItem(
+            title: "Empty Trash",
+            isTrashFolder: true,
+            canPerformEntryCommands: false,
+            isEnabled: false,
+        )
+    }
+
+    /// FMW-001-entry_commands: 빈 영역 메뉴는 loading 중 Paste와 Select All을 비활성화한다.
+    /// 빈 영역 메뉴도 app menu 및 키 입력과 같은 capability projection을 사용해 stale clipboard나 selection 동작을 노출하지 않아야 한다.
+    /// - 검증 내용: context menu configuration의 capability와 item count가 Paste, Select All, Sort, Group 활성 정책에 반영된다.
+    /// - 사전 조건: 일반 Directory loading 중이고 clipboard에는 항목이 있으나 표시 항목은 없다.
+    /// - 기대 결과: Paste, Select All, Sort, Group mutation은 모두 비활성화된다.
+    func testEmptyAreaMenuUsesLoadingCapabilityForPasteAndSelectAll() {
+        let configuration = ContentPaneContextMenuBuilder.Configuration(
+            isTrashFolder: false,
+            viewLayout: .list,
+            sortKey: .name,
+            sortOrder: .ascending,
+            groupKey: .none,
+            canPaste: true,
+            itemCount: 0,
+            canPerformEntryCommands: false,
+        )
+
+        XCTAssertFalse(configuration.canPasteItems)
+        XCTAssertFalse(configuration.canSelectAll)
+        XCTAssertFalse(configuration.canChangeSort)
+        XCTAssertFalse(configuration.canChangeGroup)
+    }
+
     /// VOY-578-entry_commands: 일반 Directory loading 중 모든 전역 entry 명령 차단
     /// stale 선택이 유지되어도 menu capability와 최종 routing이 함께 명령 실행을 막는지 검증한다.
     /// - 검증 내용: capability false 및 11개 entry command의 하위 action 미방출
@@ -537,6 +584,28 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         await store.finish()
     }
 
+    private func assertPrimaryMenuItem(
+        title: String,
+        isTrashFolder: Bool,
+        canPerformEntryCommands: Bool,
+        isEnabled: Bool,
+    ) {
+        let configuration = ContentPaneContextMenuBuilder.Configuration(
+            isTrashFolder: isTrashFolder,
+            viewLayout: .list,
+            sortKey: .name,
+            sortOrder: .ascending,
+            groupKey: .none,
+            canPaste: true,
+            itemCount: 1,
+            canPerformEntryCommands: canPerformEntryCommands,
+        )
+        let item = ContentPaneContextMenuBuilder.makePrimaryMenuItem(configuration: configuration, target: self)
+
+        XCTAssertEqual(item.title, title)
+        XCTAssertEqual(item.isEnabled, isEnabled)
+    }
+
     private func matchesEntryCommandAction(
         _ command: FileManagerWindowAction.WindowCommand,
         _ action: FileManagerWindowAction,
@@ -609,5 +678,22 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         XCTAssertEqual(window.frame.width, 1240, accuracy: 0.5)
         XCTAssertEqual(window.frame.height, 760, accuracy: 0.5)
+    }
+}
+
+extension FMW001FileManagerWindowTests {
+    // MARK: - FMW-001-entry_commands
+
+    /// FMW-001-entry_commands: blank-area AppKit menu container disables automatic item validation.
+    /// loading capability가 false인 item을 responder chain이 다시 활성화하면 stale callback guard가 우회될 수 있다.
+    /// - 검증 내용: root와 nested builder가 공유하는 container의 autoenablesItems 상태.
+    /// - 사전 조건: menu item registry resource를 초기화하지 않는 bare menu container다.
+    /// - 기대 결과: container가 false를 반환해 명시적 capability를 보존한다.
+    func testBlankAreaMenuContainerDisablesAutomaticValidation() {
+        // RED: menu containers inherited AppKit auto-enablement.
+        let menu = ContentPaneContextMenuBuilder.makeMenuContainer()
+
+        // GREEN: root and nested builders share an explicit non-auto-enabling container.
+        XCTAssertFalse(menu.autoenablesItems)
     }
 }

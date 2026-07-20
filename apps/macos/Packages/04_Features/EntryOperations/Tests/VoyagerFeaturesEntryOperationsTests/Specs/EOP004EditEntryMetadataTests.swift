@@ -196,6 +196,7 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
             $0.isLoading = false
             $0.isReloading = false
         }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
 
         await store.finish()
 
@@ -426,13 +427,100 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
 
     // MARK: - EOP-004-edit_entry_tags
 
-    /// EOP-004-edit_entry_tags: 엔트리 태그 편집 미구현 AC 추적
-    /// 해당 인터랙션의 AC가 아직 구현되지 않았다.
-    /// - 검증 내용: 해당 인터랙션의 AC가 아직 구현되지 않았다.
-    /// - 사전 조건: 인터랙션 스펙 문서 status가 "planned"이다.
-    /// - 기대 결과: 구현 시 이 XCTSkip을 실제 테스트로 교체한다.
-    func testEditEntryTags_pendingImplementation() throws {
-        throw XCTSkip("AC not yet implemented: edit_entry_tags (status: planned)")
+    /// EOP-004-edit_entry_tags: mixed 태그를 선택하면 모든 현재 대상에 추가한다.
+    /// 컨텍스트 메뉴의 태그 선택은 파일별 toggle이 아니라 스냅샷 대상 전체에 동일한 add/remove 의미를 전달해야 한다.
+    /// - 검증 내용: collective add 명령이 display 순서의 선택 경로와 `.add` mode를 가진 tag mutation 하나로 계획된다.
+    /// - 사전 조건: display entries 두 개가 선택되어 있고 첫 항목에만 `Red` 태그가 존재한다.
+    /// - 기대 결과: 계획된 요청은 두 경로를 순서대로 포함하며 `.add` mode를 사용한다.
+    func testEditEntryTagsPlansCollectiveAddForMixedSelection() {
+        let first = EntryModelFixtures.makeFileEntry(
+            id: "/tmp/first.txt",
+            name: "first.txt",
+            fileExtension: "txt",
+        )
+        let second = EntryModelFixtures.makeFileEntry(
+            id: "/tmp/second.txt",
+            name: "second.txt",
+            fileExtension: "txt",
+        )
+        let context = EntryOperationsCommandContext(
+            selectedIds: [first.id, second.id],
+            displayItems: [first, second],
+            currentPath: "/tmp",
+        )
+
+        let outputs = EntryOperationsCommandPlanner.plan(
+            command: .mutation(.setTagForSelectedItems(tag: "Red", mode: .add)),
+            context: context,
+        )
+
+        guard case let .entryOperations(.tagging(.requestTagMutation(request)))? = outputs.first else {
+            XCTFail("Expected one tag mutation request")
+            return
+        }
+        XCTAssertEqual(outputs.count, 1)
+        XCTAssertEqual(request.mode, .add)
+        XCTAssertEqual(request.tagName, "Red")
+        XCTAssertEqual(request.paths, [first.fullPath, second.fullPath])
+    }
+
+    /// EOP-004-edit_entry_tags: 태그 변경 요청은 effect 실행 전에 모든 고유 경로를 busy로 예약한다.
+    /// 진행 중인 요청과 하나라도 겹치는 후속 요청은 기존 read-modify-write를 대체하거나 추가로 시작하면 안 된다.
+    /// - 검증 내용: 중복 경로를 제외한 최초 요청 대상은 동기적으로 busy가 되고, 겹치는 후속 요청은 새 대상까지 포함해 거부된다.
+    /// - 사전 조건: 첫 번째 태그 조회가 제어 가능한 gate에서 대기 중이고, 두 요청은 `secondPath`를 공유한다.
+    /// - 기대 결과: 최초 요청만 tag write와 undo record를 만들며, 후속 요청의 고유 경로는 busy가 되지 않는다.
+    func testEditEntryTagsSynchronouslyReservesPathsAndRejectsOverlap() async {
+        let firstPath = "/tmp/first.txt"
+        let secondPath = "/tmp/second.txt"
+        let rejectedPath = "/tmp/rejected.txt"
+        let gate = TagMutationGate()
+        let recorder = TagMutationRecorder()
+        var entryFileOpsClient = EntryFileOpsClient.previewValue
+        entryFileOpsClient.getTags = { url in
+            if url.path == firstPath {
+                return await gate.wait()
+            }
+            return []
+        }
+        entryFileOpsClient.setTags = { url, _ in
+            await recorder.recordWrite(path: url.path)
+        }
+
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient = entryFileOpsClient
+        }
+        // store.exhaustivity = .off: entryActionCompleted가 UUID/시간을 포함한 undo record를 즉시 추가하므로
+        // 동기 busy 예약과 최종 undo target을 검증하는 이 통합 흐름에서는 내부 record 전체를 복제하지 않는다.
+        store.exhaustivity = .off
+        let initialRequest = TagMutationRequest(
+            mode: .add,
+            tagName: "Red",
+            paths: [firstPath, firstPath, secondPath],
+        )
+
+        await store.send(.tagging(.requestTagMutation(request: initialRequest))) {
+            $0.itemStates[firstPath] = ItemOperationState(isBusy: true, lastError: nil)
+            $0.itemStates[secondPath] = ItemOperationState(isBusy: true, lastError: nil)
+        }
+        await gate.waitUntilWaiting()
+
+        await store.send(.tagging(.requestTagMutation(request: .init(
+            mode: .add,
+            tagName: "Blue",
+            paths: [secondPath, rejectedPath],
+        ))))
+        XCTAssertNil(store.state.itemStates[rejectedPath])
+
+        await gate.resume(with: [])
+        await store.finish()
+        await store.skipReceivedActions()
+
+        let writtenPaths = await recorder.writtenPaths()
+        XCTAssertEqual(writtenPaths, [firstPath, secondPath])
+        XCTAssertNotEqual(store.state.itemStates[firstPath]?.isBusy, true)
+        XCTAssertNotEqual(store.state.itemStates[secondPath]?.isBusy, true)
+        XCTAssertEqual(store.state.undoRecords.count, 1)
+        XCTAssertEqual(store.state.undoRecords.first?.targets.map(\.beforePath), [firstPath, secondPath])
     }
 
     // MARK: - EOP-004-change_entry_permissions
@@ -458,6 +546,60 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
     }
 }
 
+extension EOP004EditEntryMetadataTests {
+    /// EOP-004-edit_entry_tags: 일부 태그 저장이 실패해도 성공 대상만 undo에 남기고 실패를 한 번에 알린다.
+    /// 각 경로의 lifecycle 결과는 독립적으로 유지되어 실패 경로의 오류와 성공 경로의 변경 기록이 섞이지 않아야 한다.
+    /// - 검증 내용: 성공한 첫 경로만 undo record에 포함되고, 실패한 두 번째 경로의 reason을 가진 alert payload가 한 번 전달된다.
+    /// - 사전 조건: 두 경로 모두 기존 태그가 없고 두 번째 경로의 `setTags`만 `FileOpError.system`을 던진다.
+    /// - 기대 결과: 성공 경로는 busy/error가 정리되고, 실패 경로는 lastError를 보존하며, 단일 집계 alert가 호출된다.
+    func testEditEntryTagsAggregatesPartialFailuresAndRecordsSuccessfulTargetsOnly() async {
+        let successfulPath = "/tmp/success.txt"
+        let failedPath = "/tmp/failed.txt"
+        let recorder = TagMutationRecorder()
+        var entryFileOpsClient = EntryFileOpsClient.previewValue
+        entryFileOpsClient.getTags = { _ in [] }
+        entryFileOpsClient.setTags = { url, _ in
+            if url.path == failedPath {
+                throw FileOpError.system(message: "Tag write failed")
+            }
+            await recorder.recordWrite(path: url.path)
+        }
+
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient = entryFileOpsClient
+            $0.entryOperationsAlertClient.showTagMutationFailureAlert = { failures in
+                await recorder.recordAlert(failures)
+            }
+        }
+        // store.exhaustivity = .off: 성공 record의 UUID/시간은 비결정적이므로 lifecycle 내부값 대신
+        // 최종 lastError, undo target, 단일 alert payload를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.tagging(.requestTagMutation(request: .init(
+            mode: .add,
+            tagName: "Red",
+            paths: [successfulPath, failedPath],
+        )))) {
+            $0.itemStates[successfulPath] = ItemOperationState(isBusy: true, lastError: nil)
+            $0.itemStates[failedPath] = ItemOperationState(isBusy: true, lastError: nil)
+        }
+        await store.finish()
+        await store.skipReceivedActions()
+
+        let writtenPaths = await recorder.writtenPaths()
+        let alerts = await recorder.alerts()
+        XCTAssertEqual(writtenPaths, [successfulPath])
+        XCTAssertNotEqual(store.state.itemStates[successfulPath]?.isBusy, true)
+        XCTAssertNotEqual(store.state.itemStates[failedPath]?.isBusy, true)
+        XCTAssertEqual(alerts, [
+            [TagMutationFailure(fileName: "failed.txt", reason: "Tag write failed")],
+        ])
+        XCTAssertEqual(store.state.undoRecords.count, 1)
+        XCTAssertEqual(store.state.undoRecords.first?.targets.map(\.beforePath), [successfulPath])
+        XCTAssertEqual(store.state.itemStates[failedPath]?.lastError?.message, "Tag write failed")
+    }
+}
+
 private final class FileInfoCapture: @unchecked Sendable {
     private let lock = NSLock()
     private var _url: URL?
@@ -480,5 +622,51 @@ private final class FileInfoCapture: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return _resourceValues
+    }
+}
+
+private actor TagMutationGate {
+    private var continuation: CheckedContinuation<[String], Never>?
+    private var waiter: CheckedContinuation<Void, Never>?
+
+    func wait() async -> [String] {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            waiter?.resume()
+            waiter = nil
+        }
+    }
+
+    func waitUntilWaiting() async {
+        guard continuation == nil else { return }
+        await withCheckedContinuation { continuation in
+            waiter = continuation
+        }
+    }
+
+    func resume(with tags: [String]) {
+        continuation?.resume(returning: tags)
+        continuation = nil
+    }
+}
+
+private actor TagMutationRecorder {
+    private var writes: [String] = []
+    private var alertPayloads: [[TagMutationFailure]] = []
+
+    func recordWrite(path: String) {
+        writes.append(path)
+    }
+
+    func recordAlert(_ failures: [TagMutationFailure]) {
+        alertPayloads.append(failures)
+    }
+
+    func writtenPaths() -> [String] {
+        writes
+    }
+
+    func alerts() -> [[TagMutationFailure]] {
+        alertPayloads
     }
 }
