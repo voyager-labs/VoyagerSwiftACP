@@ -23,6 +23,18 @@ struct ContentPaneContextMenu: View {
         return path == trashPath || path.hasPrefix(trashPath + "/")
     }
 
+    private var canPerformEntryCommands: Bool {
+        !store.entryViewLayout.entryOperations.isLoading || store.entryViewLayout.isCollectionMode
+    }
+
+    private var canPaste: Bool {
+        canPerformEntryCommands && !store.entryViewLayout.entryOperations.clipboardItems.isEmpty
+    }
+
+    private var canSelectAll: Bool {
+        canPerformEntryCommands && !store.entryViewLayout.entries.isEmpty
+    }
+
     var body: some View {
         if isTrashFolder {
             Button("Empty Trash") {
@@ -30,6 +42,7 @@ struct ContentPaneContextMenu: View {
                     .send(.entryViewLayout(.entryOperations(.trash(.emptyTrash(paths: store.entryViewLayout.entries
                             .map(\.fullPath))))))
             }
+            .disabled(!canPerformEntryCommands)
         } else {
             Button("New Folder") {
                 store.send(.entryViewLayout(.entryOperations(.edit(.createNewFolder(
@@ -38,7 +51,24 @@ struct ContentPaneContextMenu: View {
                 )))))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
+            .disabled(!canPerformEntryCommands)
         }
+
+        Divider()
+
+        Button("Paste") {
+            store.send(.entryViewLayout(.delegate(.executeCommand(.clipboard(
+                .pasteItems(destinationPath: store.navigation.currentPath),
+            )))))
+        }
+        .keyboardShortcut("v", modifiers: .command)
+        .disabled(!canPaste)
+
+        Button("Select All") {
+            store.send(.view(.selectAllEntries))
+        }
+        .keyboardShortcut("a", modifiers: .command)
+        .disabled(!canSelectAll)
 
         Divider()
 
@@ -57,6 +87,7 @@ struct ContentPaneContextMenu: View {
             sortOrderToggle("Ascending", order: .ascending)
             sortOrderToggle("Descending", order: .descending)
         }
+        .disabled(store.entryViewLayout.entryArrangements.groupKey != .none || !canPerformEntryCommands)
 
         Menu("Group By") {
             groupKeyToggle("None", key: .none)
@@ -67,6 +98,7 @@ struct ContentPaneContextMenu: View {
                 groupKeyToggle(item.title, key: item.key)
             }
         }
+        .disabled(!canPerformEntryCommands)
     }
 
     private func viewLayoutToggle(_ title: String, layout: EntryViewLayoutState.Mode) -> some View {
