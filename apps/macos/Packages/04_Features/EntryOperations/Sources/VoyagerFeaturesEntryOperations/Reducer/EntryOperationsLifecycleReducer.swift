@@ -73,6 +73,12 @@ struct EntryOperationsLifecycleReducer {
                             await alertClient.showGetInfoFailureAlert(error.message, error.suggestion)
                         }
                     }
+
+                    if case .revealInFinder = kind {
+                        return .run { [alertClient] _ in
+                            await alertClient.showGetInfoFailureAlert(error.message, error.suggestion)
+                        }
+                    }
                 }
 
                 return .none
