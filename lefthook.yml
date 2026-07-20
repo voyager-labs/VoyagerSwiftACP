@@ -38,12 +38,16 @@ pre-commit:
   commands:
     sisyphus-artifacts-guard:
       run: |
-        staged=$(git diff --cached --name-only)
-        if echo "$staged" | grep -qE '^\.sisyphus/'; then
-          echo "ERROR: .sisyphus/ paths are staged for commit. These are local-only agent harness artifacts." >&2
-          echo "Run: git reset HEAD -- .sisyphus/" >&2
+        staged=$(git diff --cached --name-only --diff-filter=ACMR)
+        if echo "$staged" | grep -qE '^(\.sisyphus|\.omx)/'; then
+          echo "ERROR: .sisyphus/ or .omx/ paths are staged for commit. These are local-only agent harness artifacts." >&2
+          echo "Run: git reset HEAD -- .sisyphus/ .omx/" >&2
           exit 1
         fi
+    agent-harness:
+      run: |
+        python3 -m scripts.validate_harness --staged
+        python3 -m scripts.verify_plan --staged
     ast-grep:
       glob: "apps/macos/**/*.swift"
       run: |
@@ -59,13 +63,13 @@ pre-commit:
         # Model & Reducer rules: non-Ui staged files
         if [ -n "$swift_files" ]; then
           for rule in .ast-grep/rules/model/*.yaml .ast-grep/rules/reducer/*.yaml; do
-            mise exec -- ast-grep scan --rule "$rule" $swift_files 2>&1
+              mise exec "github:ast-grep/ast-grep" -- ast-grep scan --rule "$rule" $swift_files 2>&1
           done
         fi
         # Ui rules: only Ui/ staged files
         if [ -n "$ui_files" ]; then
           for rule in .ast-grep/rules/ui/*.yaml; do
-            mise exec -- ast-grep scan --rule "$rule" $ui_files 2>&1
+              mise exec "github:ast-grep/ast-grep" -- ast-grep scan --rule "$rule" $ui_files 2>&1
           done
         fi
     swiftformat:

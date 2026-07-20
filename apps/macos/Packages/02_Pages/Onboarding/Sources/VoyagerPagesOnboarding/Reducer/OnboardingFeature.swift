@@ -1,6 +1,4 @@
 import ComposableArchitecture
-import Foundation
-import VoyagerFeaturesBetaAccess
 
 @Reducer
 struct OnboardingFeature {
@@ -17,9 +15,6 @@ struct OnboardingFeature {
         Scope(state: \.welcome, action: \.welcome) {
             WelcomeFeature()
         }
-        Scope(state: \.betaAccess, action: \.betaAccess) {
-            BetaAccessFeature()
-        }
         Scope(state: \.permissions, action: \.permissions) {
             PermissionsFeature()
         }
@@ -31,84 +26,160 @@ struct OnboardingFeature {
         }
 
         Reduce { state, action in
-            let progressClient = onboardingProgressClient
-
-            switch action {
-            case .onAppear:
-                switch progressClient.load() {
-                case .empty:
-                    state = State()
-                    let snapshot = state.progressSnapshot
-                    return Self.saveEffect(snapshot, progressClient: progressClient)
-
-                case .resetRequired:
-                    state = State()
-                    let snapshot = state.progressSnapshot
-                    return .run { _ in
-                        progressClient.reset()
-                        _ = progressClient.save(snapshot)
-                    }
-
-                case let .success(snapshot):
-                    state.applyStepState(snapshot.stepState)
-                    state.currentStep = state.lastValidStep(from: snapshot.currentStep)
-                    let updatedSnapshot = state.progressSnapshot
-                    return Self.saveEffect(updatedSnapshot, progressClient: progressClient)
-                }
-
-            case .backTapped:
-                guard let previous = state.currentStep.previous else { return .none }
-                state.currentStep = previous
-                let snapshot = state.progressSnapshot
-                return Self.saveEffect(snapshot, progressClient: progressClient)
-
-            case .nextTapped:
-                guard state.canGoNext, let next = state.currentStep.next else { return .none }
-                state.currentStep = next
-                let snapshot = state.progressSnapshot
-                return Self.saveEffect(snapshot, progressClient: progressClient)
-
-            case .complete(.startUsingTapped), .complete(.retryTapped):
-                let snapshot = state.progressSnapshot
-                return .run { send in
-                    _ = progressClient.save(snapshot)
-                    let opened = await onboardingWindowClient.openMainWindow(.defaultTabPath)
-                    await send(.complete(.openWindowResponse(opened)))
-                }
-
-            case .complete(.openWindowResponse(true)):
-                return .run { _ in
-                    await onboardingWindowClient.closeWindow()
-                }
-
-            case .complete(.openWindowResponse(false)):
-                return .none
-
-            case .aiProviderSetup(.setUpLaterTapped):
-                var skippedSetup = state.aiProviderSetup
-                skippedSetup.choice = .setUpLater
-                skippedSetup.loadError = nil
-                skippedSetup.refreshStatus()
-
-                var snapshotState = state
-                snapshotState.aiProviderSetup = skippedSetup
-                let snapshot = snapshotState.progressSnapshot
-
-                switch progressClient.save(snapshot) {
-                case .success:
-                    state.aiProviderSetup = skippedSetup
-                case .failure:
-                    state.aiProviderSetup.choice = .none
-                    state.aiProviderSetup.loadError = "Failed to save onboarding progress."
-                    state.aiProviderSetup.refreshStatus()
-                }
-                return .none
-
-            case .welcome, .betaAccess, .permissions, .aiProviderSetup, .complete:
-                let snapshot = state.progressSnapshot
-                return Self.saveEffect(snapshot, progressClient: progressClient)
-            }
+            progressReduce(state: &state, action: action)
         }
+    }
+
+    private func progressReduce(
+        state: inout State,
+        action: Action,
+    ) -> Effect<Action> {
+        let progressClient = onboardingProgressClient
+
+        switch action {
+        case .onAppear:
+            return handleOnAppear(state: &state, progressClient: progressClient)
+
+        case .backTapped:
+            return handleBackTapped(state: &state, progressClient: progressClient)
+
+        case .nextTapped:
+            return handleNextTapped(state: &state, progressClient: progressClient)
+
+        case let .accessProjectionUpdated(projection):
+            return handleAccessProjectionUpdated(projection, state: &state, progressClient: progressClient)
+
+        case .complete(.startUsingTapped), .complete(.retryTapped):
+            return handleCompleteStart(state: &state, progressClient: progressClient)
+
+        case .complete(.openWindowResponse(true)):
+            return .run { _ in
+                await onboardingWindowClient.closeWindow()
+            }
+
+        case .complete(.openWindowResponse(false)):
+            return .none
+
+        case .aiProviderSetup(.setUpLaterTapped):
+            return handleSetUpLaterTapped(state: &state, progressClient: progressClient)
+
+        case .welcome, .permissions, .aiProviderSetup, .complete:
+            let snapshot = state.progressSnapshot
+            return Self.saveEffect(snapshot, progressClient: progressClient)
+        }
+    }
+
+    private func handleOnAppear(
+        state: inout State,
+        progressClient: OnboardingProgressClient,
+    ) -> Effect<Action> {
+        guard !state.didBootstrapProgress else { return .none }
+        state.didBootstrapProgress = true
+
+        switch progressClient.load() {
+        case .empty:
+            let access = state.access
+            state = State()
+            state.access = access
+            state.didBootstrapProgress = true
+            return Self.saveEffect(state.progressSnapshot, progressClient: progressClient)
+
+        case .resetRequired:
+            let access = state.access
+            state = State()
+            state.access = access
+            state.didBootstrapProgress = true
+            let snapshot = state.progressSnapshot
+            return .run { _ in
+                progressClient.reset()
+                _ = progressClient.save(snapshot)
+            }
+
+        case let .success(snapshot):
+            return handleLoadedProgress(snapshot, state: &state, progressClient: progressClient)
+        }
+    }
+
+    private func handleLoadedProgress(
+        _ snapshot: OnboardingProgressSnapshot,
+        state: inout State,
+        progressClient: OnboardingProgressClient,
+    ) -> Effect<Action> {
+        state.applyStepState(snapshot.stepState)
+        state.currentStep = state.lastValidStep(from: snapshot.currentStep)
+        let reconciledSnapshot = state.progressSnapshot
+        guard reconciledSnapshot != snapshot else { return .none }
+        return Self.saveEffect(reconciledSnapshot, progressClient: progressClient)
+    }
+
+    private func handleNextTapped(
+        state: inout State,
+        progressClient: OnboardingProgressClient,
+    ) -> Effect<Action> {
+        guard state.canGoNext, let next = state.currentStep.next else { return .none }
+        state.currentStep = next
+        return Self.saveEffect(state.progressSnapshot, progressClient: progressClient)
+    }
+
+    private func handleCompleteStart(
+        state: inout State,
+        progressClient: OnboardingProgressClient,
+    ) -> Effect<Action> {
+        let snapshot = state.progressSnapshot
+        return .run { send in
+            _ = progressClient.save(snapshot)
+            let opened = await onboardingWindowClient.openMainWindow(.defaultTabPath)
+            await send(.complete(.openWindowResponse(opened)))
+        }
+    }
+
+    private func handleSetUpLaterTapped(
+        state: inout State,
+        progressClient: OnboardingProgressClient,
+    ) -> Effect<Action> {
+        var skippedSetup = state.aiProviderSetup
+        skippedSetup.choice = .setUpLater
+        skippedSetup.loadError = nil
+        skippedSetup.refreshStatus()
+
+        var snapshotState = state
+        snapshotState.aiProviderSetup = skippedSetup
+        let snapshot = snapshotState.progressSnapshot
+
+        switch progressClient.save(snapshot) {
+        case .success:
+            state.aiProviderSetup = skippedSetup
+        case .failure:
+            state.aiProviderSetup.choice = .none
+            state.aiProviderSetup.loadError = "Failed to save onboarding progress."
+            state.aiProviderSetup.refreshStatus()
+        }
+        return .none
+    }
+
+    private func handleAccessProjectionUpdated(
+        _ projection: OnboardingAccessProjection,
+        state: inout State,
+        progressClient: OnboardingProgressClient,
+    ) -> Effect<Action> {
+        guard state.access != projection else { return .none }
+        state.access = projection
+        if !state.isStepComplete(.accessUnlock),
+           state.currentStep.index > OnboardingStep.accessUnlock.index
+        {
+            state.currentStep = .accessUnlock
+        }
+        guard state.didBootstrapProgress else { return .none }
+        return Self.saveEffect(state.progressSnapshot, progressClient: progressClient)
+    }
+
+    private func handleBackTapped(
+        state: inout State,
+        progressClient: OnboardingProgressClient,
+    ) -> Effect<Action> {
+        guard let previous = state.currentStep.previous else { return .none }
+        state.currentStep = previous
+        return Self.saveEffect(state.progressSnapshot, progressClient: progressClient)
     }
 
     private static func saveEffect(

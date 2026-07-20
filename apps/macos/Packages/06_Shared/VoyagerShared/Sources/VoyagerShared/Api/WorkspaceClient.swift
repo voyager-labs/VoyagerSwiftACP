@@ -62,9 +62,69 @@ public struct WorkspaceClient: Sendable {
     }
 }
 
+private struct SendableWorkspaceImage: @unchecked Sendable {
+    let value: NSImage
+}
+
+public extension WorkspaceClient {
+    func iconForFileAsync(_ path: String) async -> NSImage {
+        let image = await Task.detached(priority: .userInitiated) {
+            SendableWorkspaceImage(value: iconForFile(path))
+        }.value
+        return image.value
+    }
+}
+
 extension WorkspaceClient: DependencyKey {
+    private static let iCloudDriveIconPath =
+        "/System/Library/PrivateFrameworks/iCloudDriveCore.framework/Versions/A/Resources/iCloudDrive.icns"
+
+    nonisolated private static func resolvedIcon(
+        forFile path: String,
+        workspace: NSWorkspace,
+        cloudStorageIconIndex: CloudStorageApplicationIconIndex,
+    ) -> NSImage {
+        let url = URL(fileURLWithPath: path)
+
+        if url.lastPathComponent == ".Trash",
+           let trashIcon = NSImage(named: NSImage.trashEmptyName)
+        {
+            return trashIcon
+        }
+
+        if isICloudDriveURL(url) {
+            if let iCloudIcon = NSImage(contentsOfFile: iCloudDriveIconPath) {
+                iCloudIcon.isTemplate = false
+                return iCloudIcon
+            }
+        }
+
+        if let cloudStorageIcon = cloudStorageIconIndex.icon(forProviderRoot: url) {
+            return cloudStorageIcon
+        }
+
+        if let resourceValues = try? url.resourceValues(forKeys: [.effectiveIconKey]),
+           let effectiveIcon = resourceValues.effectiveIcon as? NSImage,
+           effectiveIcon.size.width > 0,
+           effectiveIcon.size.height > 0
+        {
+            return effectiveIcon
+        }
+
+        return workspace.icon(forFile: path)
+    }
+
+    nonisolated private static func isICloudDriveURL(_ url: URL) -> Bool {
+        url.lastPathComponent == "com~apple~CloudDocs"
+            && url.deletingLastPathComponent().lastPathComponent == "Mobile Documents"
+    }
+
     nonisolated public static var liveValue: WorkspaceClient {
         nonisolated(unsafe) let workspace = NSWorkspace.shared
+        let cloudStorageIconIndex = CloudStorageApplicationIconIndex(
+            fileManager: FileManager.default,
+            workspace: workspace,
+        )
         return WorkspaceClient(
             urlForApplication: { bundleID in
                 workspace.urlForApplication(withBundleIdentifier: bundleID)
@@ -76,7 +136,11 @@ extension WorkspaceClient: DependencyKey {
                 workspace.urlsForApplications(toOpen: url)
             },
             iconForFile: { path in
-                workspace.icon(forFile: path)
+                resolvedIcon(
+                    forFile: path,
+                    workspace: workspace,
+                    cloudStorageIconIndex: cloudStorageIconIndex,
+                )
             },
             iconForType: { type in
                 workspace.icon(for: type)

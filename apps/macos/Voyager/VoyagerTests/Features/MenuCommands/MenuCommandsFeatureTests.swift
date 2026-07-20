@@ -1,8 +1,10 @@
 import ComposableArchitecture
 @testable import Voyager
 import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesEntryOperations
 import VoyagerFeaturesUpdateVersion
 @testable import VoyagerPagesFileManager
+import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 /// 메뉴 명령 기능 — 앱/보기/편집/작업 명령의 델리게이트 라우팅을 검증.
@@ -100,6 +102,57 @@ final class MenuCommandsFeatureTests: XCTestCase {
             return true
         }
         await store.finish()
+    }
+
+    // MARK: - VOY-578-entry_commands
+
+    /// VOY-578-entry_commands: focused window의 entry command capability 투영
+    /// focused window 유무와 ordinary Directory/Collection loading 정책이 app menu state에 반영되는지 검증한다.
+    /// - 검증 내용: no-focus false, normal Directory true, loading Directory false, loading Collection true
+    /// - 사전 조건: 동일한 stale 선택을 가진 FileManager window 상태
+    /// - 기대 결과: ordinary Directory loading에서만 capability false
+    func testEntryCommandCapabilityReflectsFocusedWindowLoadingPolicy() {
+        let focusedID = makeUUID("00000000-0000-0000-0000-000000000057")
+        var appState = AppRootState()
+        XCTAssertFalse(MenuCommandsState(state: appState).canPerformEntryCommands)
+
+        var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        focusedWindow.content.entryViewLayout.selectedIds = ["stale-entry"]
+        appState.windowManager.windows = [
+            WindowSessionState(id: focusedID, window: focusedWindow),
+        ]
+        appState.windowManager.focusedWindowID = focusedID
+        XCTAssertTrue(MenuCommandsState(state: appState).canPerformEntryCommands)
+
+        appState.windowManager.windows[id: focusedID]?.window.content.entryViewLayout.entryOperations.isLoading = true
+        let loadingDirectoryMenuState = MenuCommandsState(state: appState)
+        XCTAssertFalse(loadingDirectoryMenuState.canPerformEntryCommands)
+        XCTAssertFalse(loadingDirectoryMenuState.canOpen)
+        XCTAssertFalse(loadingDirectoryMenuState.canQuickLook)
+        XCTAssertEqual(loadingDirectoryMenuState.selectedItemCount, 1)
+
+        appState.windowManager.windows[id: focusedID]?.window.content.entryViewLayout.isCollectionMode = true
+        XCTAssertTrue(MenuCommandsState(state: appState).canPerformEntryCommands)
+    }
+
+    /// VOY-578-entry_commands: text responder 편집 명령 우선권 유지
+    /// FileManager entry command가 차단되어도 NSText responder가 처리할 수 있는 편집 명령은 활성화되는지 검증한다.
+    /// - 검증 내용: responder 가능/불가능과 entry capability 조합별 활성화 정책
+    /// - 사전 조건: ordinary Directory loading capability false를 포함한 순수 정책 입력
+    /// - 기대 결과: responder 또는 FileManager fallback 중 하나가 가능하면 활성화
+    func testTextResponderEditingRemainsEnabledWhenEntryCommandsAreBlocked() {
+        XCTAssertTrue(EditMenuCommands.canPerformTextOrEntryCommand(
+            canHandleByTextResponder: true,
+            canPerformEntryCommands: false,
+        ))
+        XCTAssertTrue(EditMenuCommands.canPerformTextOrEntryCommand(
+            canHandleByTextResponder: false,
+            canPerformEntryCommands: true,
+        ))
+        XCTAssertFalse(EditMenuCommands.canPerformTextOrEntryCommand(
+            canHandleByTextResponder: false,
+            canPerformEntryCommands: false,
+        ))
     }
 
     func testMenuCommandStateReflectsFocusedWindowContextualAiChatPresentation() {

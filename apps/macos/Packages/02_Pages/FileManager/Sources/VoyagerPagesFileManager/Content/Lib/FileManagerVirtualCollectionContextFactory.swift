@@ -6,25 +6,62 @@ import VoyagerShared
 enum FileManagerVirtualCollectionContextFactory {
     static let recentsSinceAnyOpenedLiteral = AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral
     private static let allIndexedScopes: [String] = []
-    private static let rootScopePath = "/"
 
     static func collectionContext(
         for route: ContentPageNavigationRoute,
         registryClient: RegistryClient,
     ) -> CollectionContext? {
-        let conditionPayloads: [SearchConditionPayload] = switch route {
+        switch route {
         case let .tags(tagName):
-            [makeTagConditionPayload(tagName: tagName)]
+            makeCollectionContext(
+                conditionPayloads: [makeTagConditionPayload(tagNames: [tagName])],
+                includeDirectories: true,
+                registryClient: registryClient,
+            )
         case .recents:
-            makeRecentsConditionPayloads()
+            recentsCollectionContext(registryClient: registryClient)
         case .home, .folder, .computer, .collection, .aiChat, .aiChatSessions:
-            []
+            nil
         }
+    }
 
-        guard conditionPayloads.isEmpty == false else {
-            return nil
-        }
+    static func recentsCollectionContext(
+        registryClient: RegistryClient,
+    ) -> CollectionContext {
+        makeCollectionContext(
+            conditionPayloads: makeRecentsConditionPayloads(),
+            includeDirectories: false,
+            registryClient: registryClient,
+        )
+    }
 
+    static func allTagsCollectionContext(
+        tagNames: [String],
+        registryClient: RegistryClient,
+    ) -> CollectionContext {
+        makeCollectionContext(
+            conditionPayloads: [makeTagConditionPayload(tagNames: normalizeTagNames(tagNames))],
+            includeDirectories: true,
+            registryClient: registryClient,
+        )
+    }
+
+    static func normalizeTagNames(_ tagNames: [String]) -> [String] {
+        let normalizedNames = tagNames
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return Array(Set(normalizedNames)).sorted()
+    }
+
+    static func isVirtualRouteSeedConditionSet(_ conditions: [Condition]) -> Bool {
+        isRecentsVirtualRouteSeedConditionSet(conditions) || isTagVirtualRouteSeedConditionSet(conditions)
+    }
+
+    private static func makeCollectionContext(
+        conditionPayloads: [SearchConditionPayload],
+        includeDirectories: Bool,
+        registryClient: RegistryClient,
+    ) -> CollectionContext {
         let appliedFilters = AppliedFiltersPayload(
             scopes: allIndexedScopes,
             excludedScopes: [],
@@ -43,20 +80,16 @@ enum FileManagerVirtualCollectionContextFactory {
             scopes: resolved.scopes,
             excludedScopes: resolved.excludedScopes,
             includeSubfolders: appliedFilters.includeSubfolders ?? true,
-            includeDirectories: route.includesDirectoriesInVirtualCollection,
+            includeDirectories: includeDirectories,
             conditions: resolved.conditions,
         )
     }
 
-    static func isVirtualRouteSeedConditionSet(_ conditions: [Condition]) -> Bool {
-        isRecentsVirtualRouteSeedConditionSet(conditions) || isTagVirtualRouteSeedConditionSet(conditions)
-    }
-
-    private static func makeTagConditionPayload(tagName: String) -> SearchConditionPayload {
+    private static func makeTagConditionPayload(tagNames: [String]) -> SearchConditionPayload {
         SearchConditionPayload(
             propertyKey: "tag_names",
             operator: "any",
-            value: .array([.string(tagName)]),
+            value: .array(tagNames.map(JSONValue.string)),
         )
     }
 
@@ -90,14 +123,5 @@ enum FileManagerVirtualCollectionContextFactory {
                 value: .string("public.folder"),
             ),
         ]
-    }
-}
-
-private extension ContentPageNavigationRoute {
-    var includesDirectoriesInVirtualCollection: Bool {
-        if case .tags = self {
-            return true
-        }
-        return false
     }
 }

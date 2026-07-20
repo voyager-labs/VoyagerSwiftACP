@@ -2,6 +2,58 @@ import AppKit
 import SwiftUI
 
 public enum VoyagerDS {
+    public enum SurfaceMaterialRole {
+        case windowShell
+        case mainContentBackground
+
+        public var material: NSVisualEffectView.Material {
+            appKitConfiguration.material
+        }
+
+        public var blendingMode: NSVisualEffectView.BlendingMode {
+            appKitConfiguration.blendingMode
+        }
+
+        public var alphaValue: CGFloat {
+            appKitConfiguration.opacity
+        }
+
+        var appKitConfiguration: AppKitMaterialConfiguration {
+            switch self {
+            case .windowShell:
+                AppKitMaterialConfiguration(
+                    material: .headerView,
+                    blendingMode: .behindWindow,
+                    state: .followsWindowActiveState,
+                    opacity: 1.0,
+                )
+            case .mainContentBackground:
+                AppKitMaterialConfiguration(
+                    material: .sidebar,
+                    blendingMode: .behindWindow,
+                    state: .followsWindowActiveState,
+                    opacity: 0.8,
+                )
+            }
+        }
+
+        @MainActor
+        public func apply(to view: NSVisualEffectView) {
+            let configuration = appKitConfiguration
+            view.material = configuration.material
+            view.blendingMode = configuration.blendingMode
+            view.state = configuration.state
+            view.alphaValue = configuration.opacity
+        }
+
+        @MainActor
+        public func makeBackgroundView() -> NSVisualEffectView {
+            let view = NSVisualEffectView()
+            apply(to: view)
+            return view
+        }
+    }
+
     public enum BrandPrimaryColor {
         public static let c900 = Color(hex: 0x754006)
         public static let c800 = Color(hex: 0xA55A09)
@@ -276,4 +328,11 @@ public enum VoyagerDS {
     // 피그마 Materials → AppKit NSVisualEffectView.Material 매핑:
     // - thin-dark → .hudWindow (가장 유사)
     // - ultrathick → 직접 매핑 없음, 반투명 색상으로 대체
+}
+
+struct AppKitMaterialConfiguration {
+    let material: NSVisualEffectView.Material
+    let blendingMode: NSVisualEffectView.BlendingMode
+    let state: NSVisualEffectView.State
+    let opacity: CGFloat
 }

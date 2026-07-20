@@ -1,6 +1,6 @@
 import Foundation
 
-public nonisolated struct CollectionSearchAISettingsPayload: Codable, Equatable, Sendable {
+nonisolated public struct CollectionSearchAISettingsPayload: Codable, Equatable, Sendable {
     public let provider: CollectionSearchAIProviderPreferencePayload
     public let model: CollectionSearchAIModelPreferencePayload
     public let thinking: CollectionSearchAIThinkingPreferencePayload
@@ -16,7 +16,7 @@ public nonisolated struct CollectionSearchAISettingsPayload: Codable, Equatable,
     }
 }
 
-public nonisolated enum CollectionSearchAIProviderPreferencePayload: Equatable, Hashable, Sendable, Codable {
+nonisolated public enum CollectionSearchAIProviderPreferencePayload: Equatable, Hashable, Sendable, Codable {
     case auto
     case specific(String)
 
@@ -61,7 +61,7 @@ public nonisolated enum CollectionSearchAIProviderPreferencePayload: Equatable, 
     }
 }
 
-public nonisolated enum CollectionSearchAIModelPreferencePayload: Equatable, Hashable, Sendable, Codable {
+nonisolated public enum CollectionSearchAIModelPreferencePayload: Equatable, Hashable, Sendable, Codable {
     case auto
     case specific(provider: String, model: String)
 
@@ -120,7 +120,7 @@ public nonisolated enum CollectionSearchAIModelPreferencePayload: Equatable, Has
     }
 }
 
-public nonisolated enum CollectionSearchAIThinkingPreferencePayload: Equatable, Hashable, Sendable, Codable {
+nonisolated public enum CollectionSearchAIThinkingPreferencePayload: Equatable, Hashable, Sendable, Codable {
     case providerDefault
     case none
     case effort(String)

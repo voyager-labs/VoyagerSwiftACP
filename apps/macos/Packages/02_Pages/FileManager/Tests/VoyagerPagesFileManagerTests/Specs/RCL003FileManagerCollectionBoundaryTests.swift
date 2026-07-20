@@ -164,6 +164,30 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
         XCTAssertFalse(isToolbarRefreshButtonEnabled(dirtyStatus))
     }
 
+    /// Collection 탭 전환 직후에는 파일 로드 완료 전에도 탭 앵커로 Collection 아이콘을 표시한다.
+    func testCollectionTitleIcon_collectionAnchorShowsBeforeCollectionLoadCompletes() {
+        let collectionAnchor = ContentTabPageAnchor.collectionFile(
+            url: URL(fileURLWithPath: "/VoyagerFixtures/Recents.voycoll"),
+        )
+
+        XCTAssertTrue(showsCollectionTitleIcon(
+            isCollectionMode: false,
+            isOpeningCollectionFile: false,
+            openedCollectionName: nil,
+            activePageAnchor: collectionAnchor,
+        ))
+    }
+
+    /// 일반 폴더 탭은 Collection 세션 상태가 없을 때 기존 폴더 아이콘을 유지한다.
+    func testCollectionTitleIcon_directoryAnchorKeepsFolderIcon() {
+        XCTAssertFalse(showsCollectionTitleIcon(
+            isCollectionMode: false,
+            isOpeningCollectionFile: false,
+            openedCollectionName: nil,
+            activePageAnchor: .directory(path: "/VoyagerFixtures/Documents"),
+        ))
+    }
+
     // MARK: - RCL-003-mark_open_collection_as_stale_on_external_change
 
     /// RCL-003-mark_open_collection_as_stale_on_external_change: 외부 파일 변경은 collection stale reducer로 라우팅됨
@@ -226,6 +250,71 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
         await store.receive(\.collection.refreshRequested)
         await store.receive(\.composer.view.applyFilters)
         await store.finish()
+    }
+
+    /// Definition-only Collection 재열기 검색은 snapshot refresh로 오인하지 않아야 한다.
+    /// - 검증 내용: 일반 filters response 이후 refresh feedback과 write-back 상태가 생성되지 않음
+    /// - 사전 조건: canonical built-in과 동일한 definition-only compatibility로 열린 ready Collection
+    /// - 기대 결과: 검색 결과는 수락되지만 저장 실패 feedback 없이 ready 상태를 유지함
+    func testReopenDefinitionOnlyCollection_withFiltersResponse_doesNotPresentWriteBackFeedback() async {
+        let requestID = UUID()
+        var state = makeReadyContentState()
+        state.collection.collectionSession.document?.compatibility = makeDefinitionOnlyCompatibility()
+        state.composer.activeFiltersRequestID = requestID
+        state.composer.isLoadingFilters = true
+        state.composer.isFilteringInFlight = true
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.continuousClock = ImmediateClock()
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.registryClient = .testValue
+        }
+        store.exhaustivity = .off
+
+        await store.send(.composer(.filtersResponse(
+            requestID,
+            .success(SearchResponsePayload(itemCount: 0)),
+        )))
+        await store.finish()
+
+        XCTAssertNil(store.state.composer.transientFeedback)
+        XCTAssertEqual(
+            store.state.collection.collectionSession.phase,
+            .opened(kind: .definition, base: .ready, inflight: .none),
+        )
+    }
+
+    /// Definition-only Collection의 명시적 refresh는 snapshot 저장 생략을 실패로 표시하지 않아야 한다.
+    /// - 검증 내용: refresh 종료 후 compatibility 차단 feedback이 생성되지 않음
+    /// - 사전 조건: write-back 비대상 definition-only Collection이 stale refresh 중임
+    /// - 기대 결과: refresh는 정상 종료되고 저장 실패 feedback은 표시되지 않음
+    func testRefreshDefinitionOnlyCollection_withSuccessfulResponse_doesNotPresentWriteBackFeedback() async {
+        var state = makeReadyContentState()
+        state.collection.collectionSession.document?.compatibility = makeDefinitionOnlyCompatibility()
+        state.collection.collectionSession.phase = .opened(
+            kind: .definition,
+            base: .stale,
+            inflight: .refreshingHydratedSnapshot,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.continuousClock = ImmediateClock()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.collection(.refreshResponseReceived(
+            SearchResponsePayload(itemCount: 0),
+            wasDirtyBeforeApplyingResponse: false,
+        )))
+        await store.finish()
+
+        XCTAssertNil(store.state.composer.transientFeedback)
+        XCTAssertEqual(
+            store.state.collection.collectionSession.phase,
+            .opened(kind: .definition, base: .stale, inflight: .none),
+        )
     }
 
     // MARK: - RCL-003-retrieve_entries_with_filters
@@ -339,6 +428,17 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
             warnings: [],
             usedDefinitionFallback: false,
             writeBackAllowed: true,
+            writeBackReason: .allowed,
+        )
+    }
+
+    private func makeDefinitionOnlyCompatibility() -> CollectionFileCompatibilityMetadata {
+        .init(
+            sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
+            migrationPath: [.definitionOnlyV1],
+            warnings: [],
+            usedDefinitionFallback: false,
+            writeBackAllowed: false,
             writeBackReason: .allowed,
         )
     }

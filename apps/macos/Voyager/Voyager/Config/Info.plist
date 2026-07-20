@@ -8,6 +8,8 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>VOYAGER_RELEASED_AT</key>
+	<string>$(VOYAGER_RELEASED_AT)</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -50,7 +52,7 @@
 			<string>com.voyager.deeplink</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>voyager</string>
+				<string>$(VOYAGER_CALLBACK_SCHEME)</string>
 			</array>
 		</dict>
 	</array>
@@ -121,13 +123,11 @@
 			<string>fm.voyager.content-tab-reorder.local</string>
 		</dict>
 	</array>
-	<key>SUEnableAutomaticChecks</key>
-	<true/>
 	<key>SUScheduledCheckInterval</key>
 	<integer>21600</integer>
 	<key>SUFeedURL</key>
     <string>https://downloads.voyager.fm/releases/appcast.xml</string>
-    <key>SUPublicEDKey</key>
+	<key>SUPublicEDKey</key>
     <string>NomZB47jirICFt7N3J9K+ONptIwZig9UdpEnAiC1JJI=</string>
 </dict>
 </plist>

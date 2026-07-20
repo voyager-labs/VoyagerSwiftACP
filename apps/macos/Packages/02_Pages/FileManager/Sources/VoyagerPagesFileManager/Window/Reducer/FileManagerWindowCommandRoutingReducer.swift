@@ -17,15 +17,15 @@ struct HomeAiChatOpenCancelID: Hashable {
 
 @Reducer
 struct FileManagerWindowCommandRoutingReducer {
+    typealias State = FileManagerWindowState
+    typealias Action = FileManagerWindowAction
+
     nonisolated private enum CancelID: Hashable {
         case contextualAiChatOpen
         case loadFixedLocations
         case loadHomeFavorites
         case undoManagerEvents
     }
-
-    typealias State = FileManagerWindowState
-    typealias Action = FileManagerWindowAction
 
     @Dependency(\.aiConnectionsFileClient)
     private var aiConnectionsFileClient
@@ -428,7 +428,6 @@ struct FileManagerWindowCommandRoutingReducer {
         case .newFolder,
              .openSelectedItem,
              .quickLookSelectedItem,
-             .toggleShowHiddenFiles,
              .cut,
              .copy,
              .paste,
@@ -437,6 +436,9 @@ struct FileManagerWindowCommandRoutingReducer {
              .selectAll,
              .copyAbsolutePaths,
              .copyURLs:
+            return handleEntryRequestIfAllowed(command, state: &state)
+
+        case .toggleShowHiddenFiles:
             return handleEntryRequest(command, state: &state)
 
         case .saveCollection,
@@ -466,6 +468,14 @@ struct FileManagerWindowCommandRoutingReducer {
              .requestRedo:
             return handleUndoRedoRequest(command, state: &state)
         }
+    }
+
+    private func handleEntryRequestIfAllowed(
+        _ command: Action.WindowCommand,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard !state.content.isOrdinaryDirectoryLoading else { return .none }
+        return handleEntryRequest(command, state: &state)
     }
 
     private func toggleActiveContentTabPin(state: State) -> Effect<Action> {
@@ -547,11 +557,15 @@ struct FileManagerWindowCommandRoutingReducer {
     private func handleEntryRequestSelection(_ command: Action.WindowCommand, state: State) -> Effect<Action>? {
         switch command {
         case .openSelectedItem:
-            guard !state.content.entryViewLayout.selectedIds.isEmpty else { return .none }
+            guard !state.content.isOrdinaryDirectoryLoading,
+                  !state.content.entryViewLayout.selectedIds.isEmpty
+            else { return .none }
             return .send(.content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))))
 
         case .quickLookSelectedItem:
-            guard !state.content.entryViewLayout.selectedIds.isEmpty else { return .none }
+            guard !state.content.isOrdinaryDirectoryLoading,
+                  !state.content.entryViewLayout.selectedIds.isEmpty
+            else { return .none }
             return .send(.content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))))
 
         case .selectAll:
@@ -677,7 +691,8 @@ struct FileManagerWindowCommandRoutingReducer {
         let content = state.content
         // Entry opens the inspector with seeded context only so AiChat starts on Sessions.
         // Session creation/restoration stays inside AiChat via New Chat or explicit restoreSessionID.
-        let setup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: content)
+        var setup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: content)
+        setup.mode = .sessions
         return .run { [aiConnectionsFileClient, setup] send in
             let connectionsFile: AIConnectionsFile
             do {

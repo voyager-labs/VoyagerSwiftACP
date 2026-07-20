@@ -129,6 +129,7 @@ extension FileManagerContentComposerCoordinator {
         guard state.composer.lastAcceptedFiltersRequestID == requestID else {
             return .none
         }
+        let isInflightRefresh = state.collection.collectionSession.phase.isInflightRefresh
         let wasDirtyBeforeApplyingResponse = state.isOpenedCollectionDirty
         let shouldWriteBackAfterRefresh = state.collection.shouldWriteBackAfterRefresh(
             wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse,
@@ -143,10 +144,12 @@ extension FileManagerContentComposerCoordinator {
         )
         return .concatenate(
             .send(.composer(.updateLastFiltersResponse(response))),
-            .send(.collection(.refreshResponseReceived(
-                response,
-                wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse,
-            ))),
+            isInflightRefresh
+                ? .send(.collection(.refreshResponseReceived(
+                    response,
+                    wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse,
+                )))
+                : .none,
             searchEffect,
             .send(.composer(.syncCollectionState(
                 context: nextContext,

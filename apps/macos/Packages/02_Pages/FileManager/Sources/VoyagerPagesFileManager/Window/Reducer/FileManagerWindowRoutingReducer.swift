@@ -78,6 +78,18 @@ struct FileManagerWindowRoutingReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case let .reserveExternalContentTabs(reservations):
+                guard let activeReservation = reservations.last,
+                      state.reserveExternalContentTabs(reservations)
+                else { return .none }
+                return .send(.contentTabs(.setCurrent(activeReservation.id)))
+
+            case .resyncActiveCollectionNavigation:
+                guard let activeTabID = state.contentTabs.activeTabID,
+                      case .collectionFile = state.contentTabs.tabs[id: activeTabID]?.anchor
+                else { return .none }
+                return resyncContentNavigationEffect(state: state)
+
             case let .sidebar(.delegate(.selectContentTab(tabID))):
                 return .merge(
                     .concatenate(
@@ -1443,12 +1455,15 @@ private func activeTabHandoffEffect(
     guard shouldResyncContentNavigation else {
         return .none
     }
-    return .merge(
+    let navigationEffect = resyncContentNavigationEffect(state: state)
+    return .concatenate(
         cancelInFlightContentEffectsOnTabSwitch(state: state, skipAiChatCancel: skipAiChatCancel),
-        resyncContentNavigationEffect(state: state),
-        restartAiChatProviderLoadOnTabRestoreEffect(
-            state: state,
-            aiConnectionsFileClient: aiConnectionsFileClient,
+        .merge(
+            navigationEffect,
+            restartAiChatProviderLoadOnTabRestoreEffect(
+                state: state,
+                aiConnectionsFileClient: aiConnectionsFileClient,
+            ),
         ),
     )
 }

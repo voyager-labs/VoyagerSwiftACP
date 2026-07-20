@@ -354,7 +354,7 @@ private struct AiChatAssistantCard: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.primary.opacity(0.07))
-                Image(systemName: "sparkles")
+                Image(systemName: "bubble.right")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.primary)
                     .accessibilityHidden(true)

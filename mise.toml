@@ -90,13 +90,27 @@ fi
 scripts/dev/macos-launch.sh "$@"
 """
 
+[tasks.macos-filemanager-injection]
+description = "FileManagerHost Debug를 InjectionNext와 함께 빌드 후 실행"
+run = """
+scripts/dev/macos-launch.sh \
+  --workspace apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj/project.xcworkspace \
+  --scheme FileManagerHost-Dev \
+  --configuration Debug \
+  --injection-next \
+  --env "VOYAGER_PROJECT_ROOT=$PWD" \
+  "$@"
+"""
+
 # macOS 개발 앱 테스트 (worktree 내부 DerivedData 사용, xcbeautify 필터링)
 [tasks.macos-test]
 description = "macOS 개발 앱 테스트 (xcbeautify 필터링)"
-run = """
-set -o pipefail
-NSUnbufferedIO=YES xcodebuild test -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug -derivedDataPath build/dev/DerivedData -clonedSourcePackagesDirPath build/dev/SourcePackages -skipPackagePluginValidation -skipMacroValidation COMPILER_INDEX_STORE_ENABLE=NO CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/dev/xcodebuild-test.log | mise exec -- xcbeautify --quiet --is-ci --report junit --report-path build/dev/reports
-"""
+run = "scripts/dev/macos-test.sh \"$@\""
+
+# macOS 개발 앱 flow 테스트 (focused PRODUCT flow 실행)
+[tasks.macos-test-flow]
+description = "macOS PRODUCT flow 테스트 (focused 실행)"
+run = "python3 scripts/dev/macos_test_flow.py \"$@\""
 
 # Xcode 툴체인의 Swift 버전 확인
 [tasks.swift-version]
@@ -107,6 +121,14 @@ run = "python3 scripts/dev/check_swift_version.py"
 [tasks.reinstall-hooks]
 description = "Git hooks 재설치 (강제)"
 run = "lefthook install --force"
+
+[tasks.validate-harness]
+description = "에이전트 하네스 구조 검증"
+run = "python3 -m scripts.validate_harness"
+
+[tasks.verify-plan]
+description = "계획 Markdown 구조 검증"
+run = "python3 -m scripts.verify_plan"
 
 # ── CodeGraph ─────────────────────────────────────────────────
 

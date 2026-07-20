@@ -121,6 +121,82 @@ public struct FileManagerWindowState: Equatable {
         state.syncContentTabSidebarItems()
         return state
     }
+
+    public static func makeExternalInitial(
+        reservations: [ExternalContentTabReservation],
+        windowID: UUID? = nil,
+    ) -> Self? {
+        guard canReserveExternalContentTabs(
+            reservations,
+            existingIDs: [],
+            existingCount: 0,
+        ) else { return nil }
+
+        var windowContext = FileManagerContentFeature.State()
+        if let windowID {
+            windowContext.applyWindowContext(windowID: windowID)
+        }
+        let snapshots = externalSnapshots(
+            for: reservations,
+            inheritingWindowContextFrom: windowContext,
+        )
+        guard let activeReservation = reservations.last,
+              let activeContent = snapshots.content[activeReservation.id]
+        else { return nil }
+
+        var tabs = ContentTabState().tabs
+        for reservation in reservations {
+            tabs.append(ContentTabItem.makeExternalReservation(
+                id: reservation.id,
+                anchor: reservation.anchor,
+            ))
+        }
+        let previousActiveTabID = reservations.dropLast().last?.id
+        var state = Self(
+            externalContent: activeContent,
+            externalContentStates: snapshots.content,
+            externalInspectorStates: snapshots.inspector,
+            externalContentTabs: ContentTabState(
+                tabs: tabs,
+                activeTabID: activeReservation.id,
+                previousActiveTabID: previousActiveTabID,
+            ),
+            externalInspector: snapshots.inspector[activeReservation.id] ?? .init(),
+            windowID: windowID,
+        )
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    private init(
+        externalContent: FileManagerContentFeature.State,
+        externalContentStates: [ContentTabID: FileManagerContentFeature.State],
+        externalInspectorStates: [ContentTabID: FileManagerInspectorFeature.State],
+        externalContentTabs: ContentTabState,
+        externalInspector: FileManagerInspectorFeature.State,
+        windowID initialWindowID: UUID?,
+    ) {
+        content = externalContent
+        tabContentStates = externalContentStates
+        tabInspectorStates = externalInspectorStates
+        backgroundAiChatStates = [:]
+        backgroundInspectorAiChatStates = [:]
+        sidebar = .init()
+        inspector = externalInspector
+        contentTabs = externalContentTabs
+        recentlyClosedNavigationRoute = nil
+        pendingContentTabClose = nil
+        pendingContentTabTeardown = nil
+        pendingDirectoryReloadTabIDs = []
+        windowID = initialWindowID
+        undoManagerAvailability = .init()
+        undoRedoPhase = .idle
+        var sidebarEntryDropOperations = EntryOperationsState()
+        sidebarEntryDropOperations.windowID = initialWindowID
+        self.sidebarEntryDropOperations = sidebarEntryDropOperations
+        fixedLocationsLoadPhase = .idle
+        homeFavoriteItems = []
+    }
 }
 
 public struct PendingContentTabTeardown: Equatable, Sendable {
@@ -708,6 +784,11 @@ extension FileManagerContentFeature.State {
         }
 
         return content
+    }
+
+    mutating func applyWindowContext(windowID: UUID) {
+        entryViewLayout.entryOperations.windowID = windowID
+        composer.cancellationOwnerID = windowID
     }
 
     mutating func applyWindowContext(from source: Self) {

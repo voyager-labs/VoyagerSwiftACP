@@ -25,25 +25,68 @@ public struct ExternalFileRouterFeature {
 
     private enum CancelID: Hashable {
         case pathProbe(URL)
+        case trackedPathProbe(UUID)
+        case batchNormalization
     }
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case let .setExpectedScheme(scheme):
+                state.expectedScheme = scheme
+                return .none
+
             case let .receive(url):
-                return handleReceive(url: url, state: &state)
+                return handleReceive(url: url, trackedRequestID: nil, state: &state)
+
+            case let .receiveTracked(url, requestID):
+                state.activeTrackedRequestID = requestID
+                return handleReceive(url: url, trackedRequestID: requestID, state: &state)
 
             case let .receiveFileURL(url, source, mode):
                 return handleReceiveFileURL(url: url, source: source, mode: mode, state: &state)
 
             case let .normalizeCompleted(result):
+                if let trackedRequestID = result.context.trackedRequestID,
+                   state.activeTrackedRequestID != trackedRequestID
+                {
+                    return .none
+                }
                 return handleNormalizeCompleted(result: result, state: &state)
+
+            case let .receiveBatch(batch):
+                return handleReceiveBatch(batch, state: &state)
+
+            case let .batchNormalizationCompleted(result):
+                guard state.activeBatchID == result.batchID else { return .none }
+                state.activeBatchID = nil
+                return .send(.delegate(.batchNormalized(result)))
+
+            case let .cancelBatch(batchID):
+                guard state.activeBatchID == batchID else { return .none }
+                state.activeBatchID = nil
+                return .cancel(id: CancelID.batchNormalization)
+
+            case let .cancelTrackedRequest(requestID):
+                guard state.activeTrackedRequestID == requestID else { return .none }
+                state.activeTrackedRequestID = nil
+                return .cancel(id: CancelID.trackedPathProbe(requestID))
+
+            case let .singletonRequestCompleted(requestID):
+                guard state.activeTrackedRequestID == requestID else { return .none }
+                state.activeTrackedRequestID = nil
+                return .none
 
             case let .routeCompleted(status):
                 state.currentStatus = status
                 return .none
 
             case let .failed(error, context):
+                if let trackedRequestID = context?.trackedRequestID,
+                   state.activeTrackedRequestID != trackedRequestID
+                {
+                    return .none
+                }
                 return handleFailed(error: error, context: context, state: &state)
 
             case .delegate:
@@ -62,21 +105,27 @@ private extension ExternalFileRouterFeature {
     /// 2. auth/callback → delegate로 우회 (FMW-003 비간섭)
     /// 3. 파싱 오류 → urlValidationError로 전환
     /// 4. 정상 요청 → pathReceived 상태로 전환 + path 정규화/존재 확인 effect 발행
-    func handleReceive(url: URL, state: inout State) -> Effect<Action> {
-        let result = ExternalFileURLParser.parse(url)
+    func handleReceive(
+        url: URL,
+        trackedRequestID: UUID?,
+        state: inout State,
+    ) -> Effect<Action> {
+        let result = ExternalFileURLParser.parse(url, expectedScheme: state.expectedScheme)
 
         switch result {
         case .openAppFallback:
             // WEBSITE/Auth의 Return to Voyager fallback: 파일 라우팅 오류가 아니라 기본 앱 열기로 위임
-            return .send(.delegate(.openAppFallback))
+            return .send(.delegate(.openAppFallback(trackedRequestID: trackedRequestID)))
 
         case .authCallback:
             // ACC-001 소유의 OAuth callback route, FMW-003가 가로채지 않음
-            return .send(.delegate(.routeToAuthCallback(url)))
+            return .send(.delegate(.routeToAuthCallback(
+                url,
+                trackedRequestID: trackedRequestID,
+            )))
 
         case .error:
-            // 모든 파싱 오류는 urlValidationError terminal로 전환
-            return .send(.failed(.urlValidationError(url)))
+            return handleValidationFailure(url: url, trackedRequestID: trackedRequestID)
 
         case let .request(request):
             state.currentStatus = .pathReceived
@@ -94,6 +143,7 @@ private extension ExternalFileRouterFeature {
                     requestID: fileURL,
                     source: .deepLink,
                     mode: request.mode,
+                    trackedRequestID: trackedRequestID,
                 )
                 let result = pathProbeClient.probeExistence(normalizedPath)
                 if result.permissionDenied {
@@ -108,8 +158,26 @@ private extension ExternalFileRouterFeature {
                     await send(.failed(.invalidPath(normalizedPath), context: context))
                 }
             }
-            .cancellable(id: CancelID.pathProbe(fileURL), cancelInFlight: false)
+            .cancellable(
+                id: trackedRequestID.map(CancelID.trackedPathProbe) ?? CancelID.pathProbe(fileURL),
+                cancelInFlight: false,
+            )
         }
+    }
+
+    func handleValidationFailure(url: URL, trackedRequestID: UUID?) -> Effect<Action> {
+        let context = trackedRequestID.map {
+            ExternalFileRouterRequestContext(
+                requestID: url,
+                source: .deepLink,
+                mode: .open,
+                trackedRequestID: $0,
+            )
+        }
+        return .concatenate(
+            .send(.failed(.urlValidationError(url), context: context)),
+            trackedRequestCompletionEffect(trackedRequestID),
+        )
     }
 
     /// 외부 file:// URL을 직접 수신하여 처리한다.
@@ -150,6 +218,87 @@ private extension ExternalFileRouterFeature {
         .cancellable(id: CancelID.pathProbe(url), cancelInFlight: false)
     }
 
+    /// system-open callback batch를 하나의 cancellation boundary에서 정규화한다.
+    func handleReceiveBatch(_ batch: ExternalFileRouterBatchRequest, state: inout State) -> Effect<Action> {
+        state.activeBatchID = batch.batchID
+
+        return .run { [pathProbeClient, batch] send in
+            let completed = await withTaskGroup(
+                of: IndexedBatchResult.self,
+                returning: [IndexedBatchResult].self,
+            ) { group in
+                for (offset, item) in batch.items.enumerated() {
+                    group.addTask { [pathProbeClient, item] in
+                        IndexedBatchResult(
+                            offset: offset,
+                            result: Self.normalizeBatchItem(item, pathProbeClient: pathProbeClient),
+                        )
+                    }
+                }
+
+                var results: [IndexedBatchResult] = []
+                results.reserveCapacity(batch.items.count)
+                for await result in group {
+                    results.append(result)
+                }
+                return results
+            }
+
+            guard !Task.isCancelled else { return }
+            let orderedItems = completed
+                .sorted { $0.offset < $1.offset }
+                .map(\.result)
+            await send(.batchNormalizationCompleted(.init(batchID: batch.batchID, items: orderedItems)))
+        }
+        .cancellable(id: CancelID.batchNormalization, cancelInFlight: true)
+    }
+
+    static func normalizeBatchItem(
+        _ item: ExternalFileRouterBatchRequest.Item,
+        pathProbeClient: PathProbeClient,
+    ) -> ExternalFileRouterBatchItemResult {
+        guard item.url.isFileURL else {
+            return makeBatchItemResult(item, outcome: .failure(.urlValidationError(item.url)))
+        }
+
+        let path = FilePathNormalizer.normalize(item.url.path)
+        let probe = pathProbeClient.probeExistence(path)
+        let outcome: ExternalFileRouterBatchOutcome = if probe.permissionDenied {
+            .failure(.permissionDenied(path))
+        } else if !probe.exists {
+            .failure(.invalidPath(path))
+        } else if item.url.pathExtension.lowercased() == "voycoll" {
+            .success(.collection(path: path))
+        } else if probe.isDirectory {
+            .success(.directory(path: path, revealPath: nil))
+        } else {
+            .success(.directory(
+                path: (path as NSString).deletingLastPathComponent,
+                revealPath: path,
+            ))
+        }
+        return makeBatchItemResult(item, outcome: outcome)
+    }
+
+    func trackedRequestCompletionEffect(_ requestID: UUID?) -> Effect<Action> {
+        guard let requestID else { return .none }
+        return .send(.singletonRequestCompleted(requestID))
+    }
+
+    static func makeBatchItemResult(
+        _ item: ExternalFileRouterBatchRequest.Item,
+        outcome: ExternalFileRouterBatchOutcome,
+    ) -> ExternalFileRouterBatchItemResult {
+        ExternalFileRouterBatchItemResult(
+            itemID: item.itemID,
+            index: item.index,
+            url: item.url,
+            source: item.source,
+            mode: item.mode,
+            outcome: outcome,
+        )
+    }
+
     /// path 정규화 완료 후 라우팅을 결정한다.
     ///
     /// path_normalized 상태로 전환 후:
@@ -174,18 +323,29 @@ private extension ExternalFileRouterFeature {
 
         if isDirectory {
             state.currentStatus = .windowRouted
-            return .send(.delegate(.openFolder(path: path)))
+            return .send(.delegate(.openFolder(
+                path: path,
+                trackedRequestID: context.trackedRequestID,
+            )))
         } else {
             let parentPath = (path as NSString).deletingLastPathComponent
             if context.mode == .reveal {
                 state.currentStatus = .parentFolderOpened
                 return .concatenate(
-                    .send(.delegate(.openParentFolder(path: parentPath, selectEntryPath: path))),
+                    .send(.delegate(.openParentFolder(
+                        path: parentPath,
+                        selectEntryPath: path,
+                        trackedRequestID: context.trackedRequestID,
+                    ))),
                     .send(.routeCompleted(.entrySelected)),
                 )
             } else {
                 state.currentStatus = .parentFolderOpened
-                return .send(.delegate(.openParentFolder(path: parentPath, selectEntryPath: nil)))
+                return .send(.delegate(.openParentFolder(
+                    path: parentPath,
+                    selectEntryPath: nil,
+                    trackedRequestID: context.trackedRequestID,
+                )))
             }
         }
     }
@@ -212,10 +372,16 @@ private extension ExternalFileRouterFeature {
         switch error {
         case let .invalidPath(path):
             state.currentStatus = .invalidPathError
-            return .send(.delegate(.showInvalidPathError(path: path)))
+            return .send(.delegate(.showInvalidPathError(
+                path: path,
+                trackedRequestID: context?.trackedRequestID,
+            )))
         case let .permissionDenied(path):
             state.currentStatus = .permissionDeniedError
-            return .send(.delegate(.showPermissionDeniedError(path: path)))
+            return .send(.delegate(.showPermissionDeniedError(
+                path: path,
+                trackedRequestID: context?.trackedRequestID,
+            )))
         case .urlValidationError:
             state.currentStatus = .urlValidationError
             return .none
@@ -224,4 +390,9 @@ private extension ExternalFileRouterFeature {
             return .none
         }
     }
+}
+
+private struct IndexedBatchResult {
+    let offset: Int
+    let result: ExternalFileRouterBatchItemResult
 }

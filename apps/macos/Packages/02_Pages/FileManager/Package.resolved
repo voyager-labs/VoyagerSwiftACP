@@ -1,5 +1,5 @@
 {
-  "originHash" : "172a8ea0cb63aa9a60798cb1bdfe66b3afd0396813f0596e290934d32fb10860",
+  "originHash" : "0e1c22adca6ab05799643503864d4e84a63083224955f47f98fda1a28a06f6f9",
   "pins" : [
     {
       "identity" : "combine-schedulers",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "dcccb979a2183b8df3334237e3dc1ae2b4116a86",
         "version" : "1.2.0"
+      }
+    },
+    {
+      "identity" : "hotswiftui",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/johnno1962/HotSwiftUI",
+      "state" : {
+        "revision" : "868e889cf8d79e1641bdd9bc3816d0a245a145bc",
+        "version" : "1.2.5"
       }
     },
     {

@@ -22,6 +22,9 @@ public struct CollectionSavePipelineReducer {
     @Dependency(\.collectionMetricClient)
     var collectionMetricClient
 
+    @Dependency(\.fileManagerClient)
+    var fileManagerClient
+
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -40,6 +43,7 @@ public struct CollectionSavePipelineReducer {
                     url: url,
                     clients: SavePipelineClients(
                         file: collectionFileClient,
+                        fileManager: fileManagerClient,
                         staleness: collectionStalenessClient,
                         metric: collectionMetricClient,
                     ),
@@ -49,9 +53,12 @@ public struct CollectionSavePipelineReducer {
                 handleSavePanelResponse(
                     state: &state,
                     selectedURL: url,
-                    collectionFileClient: collectionFileClient,
-                    collectionStalenessClient: collectionStalenessClient,
-                    collectionMetricClient: collectionMetricClient,
+                    clients: SavePipelineClients(
+                        file: collectionFileClient,
+                        fileManager: fileManagerClient,
+                        staleness: collectionStalenessClient,
+                        metric: collectionMetricClient,
+                    ),
                 )
 
             case let .saveCompleted(result):
@@ -311,8 +318,16 @@ private func handleSaveRequested(
 /// 저장 파이프라인 클라이언트 모음
 private struct SavePipelineClients {
     var file: CollectionFileClient
+    var fileManager: FileManagerClient
     var staleness: CollectionStalenessClient
     var metric: CollectionMetricClient
+}
+
+private struct SavePipelineOperation {
+    var snapshot: CollectionSaveSnapshot
+    var savedContext: CollectionContext
+    var url: URL
+    var source: String
 }
 
 private func handleSaveToExisting(
@@ -348,13 +363,14 @@ private func handleSaveToExisting(
     case let .success(result):
         state.isSaving = true
         return performSave(
-            snapshot: result.snapshot,
-            savedContext: result.context,
-            url: url,
-            collectionFileClient: clients.file,
-            collectionStalenessClient: clients.staleness,
-            collectionMetricClient: clients.metric,
-            source: source,
+            state: &state,
+            operation: SavePipelineOperation(
+                snapshot: result.snapshot,
+                savedContext: result.context,
+                url: url,
+                source: source,
+            ),
+            clients: clients,
         )
     }
 }
@@ -362,9 +378,7 @@ private func handleSaveToExisting(
 private func handleSavePanelResponse(
     state: inout CollectionState,
     selectedURL: URL?,
-    collectionFileClient: CollectionFileClient,
-    collectionStalenessClient: CollectionStalenessClient,
-    collectionMetricClient: CollectionMetricClient,
+    clients: SavePipelineClients,
 ) -> Effect<CollectionAction> {
     guard let selectedURL,
           let snapshot = state.pendingSave,
@@ -376,7 +390,7 @@ private func handleSavePanelResponse(
                 reason: "none",
                 source: "save_new",
                 snapshot: pendingSave,
-                collectionMetricClient: collectionMetricClient,
+                collectionMetricClient: clients.metric,
             )
         }
         resetPendingSave(&state)
@@ -384,13 +398,14 @@ private func handleSavePanelResponse(
     }
 
     return performSave(
-        snapshot: snapshot,
-        savedContext: savedContext,
-        url: selectedURL,
-        collectionFileClient: collectionFileClient,
-        collectionStalenessClient: collectionStalenessClient,
-        collectionMetricClient: collectionMetricClient,
-        source: "save_new",
+        state: &state,
+        operation: SavePipelineOperation(
+            snapshot: snapshot,
+            savedContext: savedContext,
+            url: selectedURL,
+            source: "save_new",
+        ),
+        clients: clients,
     )
 }
 
@@ -438,31 +453,52 @@ private func showSaveError(_ failure: CollectionSaveFailure) -> Effect<Collectio
     .send(.delegate(.saveFeedback(failure.feedback)))
 }
 
-// swiftlint:disable:next function_parameter_count
 private func performSave(
-    snapshot: CollectionSaveSnapshot,
-    savedContext: CollectionContext,
-    url: URL,
-    collectionFileClient: CollectionFileClient,
-    collectionStalenessClient: CollectionStalenessClient,
-    collectionMetricClient: CollectionMetricClient,
-    source: String,
+    state: inout CollectionState,
+    operation: SavePipelineOperation,
+    clients: SavePipelineClients,
 ) -> Effect<CollectionAction> {
     let request = buildSaveRequest(
-        snapshot: snapshot,
-        destinationURL: url,
+        snapshot: operation.snapshot,
+        destinationURL: operation.url,
     )
 
-    collectionStalenessClient.suppressPaths([
+    if BuiltInCollectionManagedPathPolicy.isCanonicalDestination(
+        request.url,
+        fileManagerClient: clients.fileManager,
+    ) {
+        resetPendingSave(&state)
+        if state.collectionSession.phase.isInflightWriteBack {
+            state.collectionSession.failRefreshOrWriteBack()
+        }
+        logCollectionSaveResult(
+            outcome: "save_blocked",
+            reason: "built_in_read_only",
+            source: operation.source,
+            snapshot: operation.snapshot,
+            collectionMetricClient: clients.metric,
+            level: .warn,
+        )
+        return .send(.delegate(.saveFeedback(.init(
+            stage: .saveBlocked,
+            category: .futureMinorReadOnly,
+            title: "Built-In Collection Is Read-Only",
+            message: "Voyager manages this built-in Collection automatically.",
+            recoveryHint: "Choose Save As to create an editable copy.",
+            isRetryable: false,
+        ))))
+    }
+
+    clients.staleness.suppressPaths([
         request.url.path,
         request.url.deletingLastPathComponent().path,
     ])
 
     return executeSave(
         request: request,
-        source: source,
-        snapshot: snapshot,
-        savedContext: savedContext,
-        clients: (file: collectionFileClient, metric: collectionMetricClient),
+        source: operation.source,
+        snapshot: operation.snapshot,
+        savedContext: operation.savedContext,
+        clients: (file: clients.file, metric: clients.metric),
     )
 }

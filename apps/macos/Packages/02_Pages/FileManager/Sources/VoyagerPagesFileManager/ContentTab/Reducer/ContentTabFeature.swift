@@ -540,7 +540,7 @@ extension ContentTabFeature {
         case let .virtualCollection(id):
             id == "Recents" ? "clock" : "folder"
         case .aiChat:
-            "sparkles"
+            "bubble.right"
         }
     }
 

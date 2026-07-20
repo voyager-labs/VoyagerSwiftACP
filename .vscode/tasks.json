@@ -16,7 +16,8 @@
       "scheme": "Voyager-Dev",
       "configuration": "Debug",
       "launchEnv": {
-        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
+        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}",
+        "VOYAGER_SCHEME_FORCE_ONBOARDING": "0"
       }
     },
     {
@@ -193,6 +194,17 @@
       }
     },
     {
+      "type": "shell",
+      "label": "FileManagerHost Dev: Launch with Injection (Debug)",
+      "detail": "Open InjectionNext, build FileManagerHost with interposable symbols, and launch with project watching",
+      "command": "mise",
+      "args": ["run", "macos-filemanager-injection"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
       "type": "sweetpad",
       "action": "launch",
       "problemMatcher": [
@@ -208,7 +220,6 @@
       "launchEnv": {
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
       }
-    },
-
+    }
   ]
 }

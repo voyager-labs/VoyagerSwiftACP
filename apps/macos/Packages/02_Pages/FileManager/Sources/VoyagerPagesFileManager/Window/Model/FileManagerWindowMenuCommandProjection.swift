@@ -4,6 +4,7 @@ import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
 public struct FileManagerWindowMenuCommandProjection: Equatable, Sendable {
+    public let canPerformEntryCommands: Bool
     public let canOpen: Bool
     public let canQuickLook: Bool
     public let canGoBack: Bool
@@ -30,10 +31,12 @@ public extension FileManagerWindowState {
     var menuCommandProjection: FileManagerWindowMenuCommandProjection {
         let selectedIds = content.entryViewLayout.selectedIds
         let activeContentTab = contentTabs.activeTabID.flatMap { contentTabs.tabs[id: $0] }
+        let canPerformEntryCommands = !content.isOrdinaryDirectoryLoading
 
         return FileManagerWindowMenuCommandProjection(
-            canOpen: !selectedIds.isEmpty,
-            canQuickLook: !selectedIds.isEmpty,
+            canPerformEntryCommands: canPerformEntryCommands,
+            canOpen: !selectedIds.isEmpty && canPerformEntryCommands,
+            canQuickLook: !selectedIds.isEmpty && canPerformEntryCommands,
             canGoBack: content.navigation.canGoBack,
             canGoForward: content.navigation.canGoForward,
             canGoToEnclosingDirectory: content.navigation.canGoToEnclosingDirectory,

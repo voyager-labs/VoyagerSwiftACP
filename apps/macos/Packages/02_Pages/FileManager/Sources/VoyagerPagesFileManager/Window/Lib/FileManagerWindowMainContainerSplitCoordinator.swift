@@ -58,6 +58,7 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
     private var hasTornDown = false
     private var currentInspectorVisible: Bool?
     private var currentIsDark: Bool
+    private var materialOverride: FileManagerWindowMaterialOverride?
     private var currentContentChromeProps: FileManagerContentChromeProps?
     private var currentContentOverlayProps: FileManagerContentOverlayProps?
     private var pendingInspectorMountRetry = false
@@ -66,14 +67,17 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
     private var contentHosting: NSHostingController<AnyView>?
     private weak var mainSplitView: NSSplitView?
     private weak var containerView: NSView?
+    private weak var contentBackgroundEffectView: NSVisualEffectView?
 
     init(
         store: StoreOf<FileManagerFeature>,
         isDark: Bool,
+        materialOverride: FileManagerWindowMaterialOverride?,
         keyCommandFocusCoordinator: FileManagerKeyCommandFocusCoordinator,
     ) {
         self.store = store
         currentIsDark = isDark
+        self.materialOverride = materialOverride
         self.keyCommandFocusCoordinator = keyCommandFocusCoordinator
         super.init(nibName: nil, bundle: nil)
     }
@@ -100,11 +104,13 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
                 overlayProps: overlayProps,
                 activePageAnchor: chromeProps.activePageAnchor,
             ),
+            materialOverride: materialOverride,
         )
         components.splitView.delegate = self
 
         mainSplitView = components.splitView
         containerView = components.containerView
+        contentBackgroundEffectView = components.contentBackgroundEffectView
         contentHosting = components.contentHosting
 
         addChild(components.contentHosting)
@@ -141,6 +147,14 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
             contentView: contentHosting?.view,
             inspectorView: inspectorHosting?.view,
             isDark: currentIsDark,
+        )
+    }
+
+    func updateMaterialOverride(_ override: FileManagerWindowMaterialOverride?) {
+        materialOverride = override
+        FileManagerWindowMainContainerLayout.updateMaterialOverride(
+            override,
+            contentBackgroundEffectView: contentBackgroundEffectView,
         )
     }
 

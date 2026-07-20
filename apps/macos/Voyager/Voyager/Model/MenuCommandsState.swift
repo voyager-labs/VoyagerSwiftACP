@@ -10,6 +10,7 @@ import VoyagerWidgetsEntryViewLayout
 struct MenuCommandsState: Equatable {
     var hasFocusedWindow: Bool
 
+    var canPerformEntryCommands: Bool
     var canOpen: Bool
     var canQuickLook: Bool
 
@@ -50,6 +51,7 @@ struct MenuCommandsState: Equatable {
 
     init() {
         hasFocusedWindow = false
+        canPerformEntryCommands = false
         canOpen = false
         canQuickLook = false
         canGoBack = false
@@ -85,6 +87,7 @@ struct MenuCommandsState: Equatable {
 
         hasFocusedWindow = true
         let projection = windowState.menuCommandProjection
+        canPerformEntryCommands = projection.canPerformEntryCommands
         canOpen = projection.canOpen
         canQuickLook = projection.canQuickLook
         canGoBack = projection.canGoBack

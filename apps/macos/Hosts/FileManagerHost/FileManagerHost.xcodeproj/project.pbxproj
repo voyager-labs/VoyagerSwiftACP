@@ -10,6 +10,7 @@
 		B20000000000000000000016 /* VoyagerPagesFileManager in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000018 /* VoyagerPagesFileManager */; };
 		B20000000000000000000021 /* system_property_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000023 /* system_property_registry.json */; };
 		B20000000000000000000022 /* property_condition_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000024 /* property_condition_registry.json */; };
+		B20000000000000000000025 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000027 /* InjectionNext */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +33,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B20000000000000000000016 /* VoyagerPagesFileManager in Frameworks */,
+				B20000000000000000000025 /* InjectionNext in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -77,6 +79,7 @@
 			name = FileManagerHost;
 			packageProductDependencies = (
 				B20000000000000000000018 /* VoyagerPagesFileManager */,
+				B20000000000000000000027 /* InjectionNext */,
 			);
 			productName = FileManagerHost;
 			productReference = B20000000000000000000004 /* FileManagerHost.app */;
@@ -108,6 +111,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				B20000000000000000000020 /* XCLocalSwiftPackageReference "VoyagerPagesFileManager" */,
+				B20000000000000000000026 /* XCRemoteSwiftPackageReference "InjectionNext" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B20000000000000000000003 /* Products */;
@@ -284,6 +288,10 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "FileManager Host (Debug)";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				"OTHER_LDFLAGS[arch=*]" = (
+					"-Xlinker",
+					"-interposable",
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -366,7 +374,23 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		B20000000000000000000026 /* XCRemoteSwiftPackageReference "InjectionNext" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/johnno1962/InjectionNext";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
+		B20000000000000000000027 /* InjectionNext */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B20000000000000000000026 /* XCRemoteSwiftPackageReference "InjectionNext" */;
+			productName = InjectionNext;
+		};
 		B20000000000000000000018 /* VoyagerPagesFileManager */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = B20000000000000000000020 /* XCLocalSwiftPackageReference "VoyagerPagesFileManager" */;

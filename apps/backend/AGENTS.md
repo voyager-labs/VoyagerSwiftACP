@@ -2,8 +2,16 @@
 
 Scope: `apps/backend/**`
 
-- Load core rules first: `../../.agents/rules/00-core/00-execution-contract.md`
-- Always follow backend rules: `../../.agents/rules/20-backend/00-backend-rules.md`
-- For API/schema changes: `../../.agents/rules/20-backend/01-api-and-schemas.md`
-- For DB/config changes: `../../.agents/rules/20-backend/02-migrations-and-config.md`
-- Required verification: `cd apps/backend && uv run pytest`
+## Implementation boundaries
+
+- Keep route handlers thin; put business logic in services or domain modules.
+- Keep persistence and provider integrations out of route handlers.
+- For search API changes, preserve the current top-level `SearchResponse`, convert-only behavior, and `error` field contract documented in `README.md`.
+- Do not expose raw tracebacks, filesystem paths, provider payloads, or internal exception details in API responses.
+- Treat `src/app/config.py` as the configuration source of truth and preserve process-environment precedence.
+
+## Verification
+
+- `cd apps/backend && uv run pytest`
+- `cd apps/backend && uv run pyright`
+- `cd apps/backend && uv run ruff check`

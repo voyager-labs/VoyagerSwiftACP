@@ -37,7 +37,7 @@ open apps/macos/Voyager/Voyager.xcworkspace
 
 2. **Scheme 설정**:
     - Run schemes:
-        - Voyager-Dev (개발 실행)
+        - Voyager-Dev (유일한 개발 실행 scheme)
         - Voyager-Prod (배포/Archive)
     - Helper schemes:
         - VoyagerHelper-Dev (개발용 헬퍼)
@@ -58,12 +58,17 @@ Terminal, Zed, VSCode/Sweetpad task는 같은 build flag와 DerivedData 경로�
 # 기본 개발 앱 빌드 후 실행
 mise run macos-launch
 
+# 저장된 진행 상태를 유지한 채 온보딩 강제 표시(Debug 전용, 일회성)
+mise run macos-launch -- --scheme Voyager-Dev --configuration Debug --env VOYAGER_SCHEME_FORCE_ONBOARDING=1
+
 # 특정 scheme/configuration 빌드 후 실행
 mise run macos-launch -- --scheme SettingsHost-Dev --configuration Debug
 
 # 빌드만 확인
 mise run macos-launch -- --scheme Voyager-Dev --configuration Debug --no-launch
 ```
+
+`Voyager-Dev`가 유일한 개발 실행 scheme입니다. Debug 실행의 `VOYAGER_SCHEME_FORCE_ONBOARDING` launch 환경변수가 `0`이거나 없으면 저장된 진행 상태에 따라 동작하고, 정확히 `1`이면 저장된 진행 상태를 지우지 않은 채 온보딩을 강제로 표시합니다. 이 값은 `.env` 설정이 아니며 Release/Prod에서는 지원하지 않습니다.
 
 기본 build flag는 다음 경로로 고정됩니다.
 
@@ -73,15 +78,38 @@ mise run macos-launch -- --scheme Voyager-Dev --configuration Debug --no-launch
 - `-skipMacroValidation`
 - `COMPILER_INDEX_STORE_ENABLE=NO`
 
-### IDE별 실행 경로
+### IDE별 실행 경로와 온보딩 표시 토글
 
-- Xcode: `apps/macos/Voyager/Voyager.xcworkspace`를 열고 scheme 선택 후 실행
-- Zed: `.zed/tasks.json`의 `Voyager Dev: Launch (Debug)` 등 launch task 실행
-- VSCode/Sweetpad: `.vscode/tasks.json`의 Sweetpad task 실행. Sweetpad build는 `.vscode/settings.json`의 shared xcodebuild wrapper를 사용합니다.
+- Xcode: `apps/macos/Voyager/Voyager.xcworkspace`를 열고 `Voyager-Dev` scheme을 선택합니다. Debug Run 환경변수 `VOYAGER_SCHEME_FORCE_ONBOARDING`을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 설정하면 진행 상태를 유지한 채 온보딩을 강제로 표시합니다.
+- Zed: `.zed/tasks.json`의 `Voyager Dev: Launch (Debug)` task를 실행합니다. task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 바꾸면 온보딩을 강제로 표시합니다.
+- VSCode/Sweetpad: `.vscode/tasks.json`의 `Voyager Dev: Launch (Debug)` task를 실행합니다. task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 Zed와 같이 설정합니다. Sweetpad build는 `.vscode/settings.json`의 shared xcodebuild wrapper를 사용합니다.
+
+이 토글은 launch 환경이며 `.env` 파일에 설정하지 않습니다. Debug 전용 동작이므로 Release/Prod에서는 지원하지 않습니다.
 
 ## 테스트
 
-### 테스트 실행
+### 테스트 실행 (mise 권장)
+
+```bash
+# 전체 Voyager-Dev 테스트 (광범위, human/CI용)
+mise run macos-test
+
+# 특정 PRODUCT flow 테스트 (focused)
+mise run macos-test-flow -- --flow onb.access_unlock
+
+# 카테고리별 flow 테스트
+mise run macos-test-flow -- --category onb
+
+# 매핑된 flow suite 목록 확인
+mise run macos-test-flow -- --list
+
+# 구조 무결성 검사
+mise run macos-test-flow -- --check
+```
+
+`mise run macos-test`는 광범위한 전체 테스트를 실행하고, `mise run macos-test-flow`는 canonical PRODUCT flow 문서에 매핑된 flow suite만 focused로 실행합니다.
+
+### 테스트 실행 (xcodebuild 직접)
 
 ```bash
 # 모든 테스트 실행(개발)
@@ -90,11 +118,8 @@ xcodebuild test -project Voyager.xcodeproj -scheme Voyager-Dev
 # 단위 테스트 실행
 xcodebuild test -project Voyager.xcodeproj -scheme Voyager-Dev -only-testing:VoyagerTests
 
-# UI 테스트 실행
-xcodebuild test -project Voyager.xcodeproj -scheme Voyager-Dev -only-testing:VoyagerUITests
-
-# 헬퍼 앱 테스트 실행
-xcodebuild test -project Voyager.xcodeproj -scheme VoyagerHelper-Dev
+# 특정 suite 실행
+xcodebuild test -project Voyager.xcodeproj -scheme Voyager-Dev -only-testing:VoyagerTests/AccessUnlockFlowTests
 ```
 
 ### 로그 확인
@@ -135,33 +160,25 @@ log stream --predicate 'subsystem == "com.voyager.app"'
 - **swiftui-introspect** : SwiftUI에서 AppKit 접근
 - **swift-dotenv** : 환경변수 관리 (.env 파일 지원)
 - **Inject** : SwiftUI 핫 리로딩
-- **InjectionNext** : 고급 코드 인젝션
 - **swift-identified-collections** : 식별 가능한 컬렉션
 - **swift-dependencies** : 의존성 주입 프레임워크
 
 ### InjectionNext 사용법
 
-#### 필요한 설정 - 완료
+InjectionNext는 `FileManagerHost` 전용 Debug 개발 도구입니다. `Voyager`와 `VoyagerHelper`는 이를 링크하거나 런타임에 로드하지 않으며, 일반 `Voyager-Dev` Debug와 모든 Release 빌드는 interposable linker flag를 사용하지 않습니다.
 
-- **Other Linker Flags**: `-Xlinker -interposable` (Debug 빌드에만 적용)
-- **Swift Package**: InjectionNext 의존성
-- **Scheme Environment Variables**: `INJECTION_PROJECT_ROOT = $(SRCROOT)`
+1. [InjectionNext releases](https://github.com/johnno1962/InjectionNext/releases)에서 앱을 설치합니다.
+2. InjectionNext 앱에서 **Launch Xcode**를 선택합니다.
+3. Xcode에서 `apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj`를 열고 `FileManagerHost-Dev` scheme을 Debug로 실행합니다.
 
-#### 사용 방법
+터미널이나 IDE task에서는 아래 전용 task가 InjectionNext.app 실행, Debug 전용 linker 환경, `apps/macos` 감시 경로, FileManagerHost 실행을 함께 처리합니다.
 
-1. **InjectionNext 앱 다운로드 및 설치**:
+```bash
+mise run macos-filemanager-injection
+```
 
-    ```bash
-    # https://github.com/johnno1962/InjectionNext/releases 에서 다운로드
-    # Applications 폴더로 이동
-    ```
+Zed와 VSCode에서는 `FileManagerHost Dev: Launch with Injection (Debug)` task를 선택합니다. 기존 FileManagerHost Debug/Release task는 Injection 없는 일반 실행으로 유지됩니다.
 
-2. **InjectionNext 앱에서 "Launch Xcode" 실행**
+`INJECTION_PROJECT_ROOT`는 `apps/macos`를 가리키므로 Host와 `Packages` 소스를 함께 감시합니다. Content Tab sidebar row는 HotSwiftUI를 통해 재그리기되며, InjectionNext 전용 Xcode/task 환경에서만 FileManager 패키지가 `-Xlinker -interposable`을 추가합니다.
 
-3. **코드 변경 후 저장하면 자동으로 함수 레벨 인젝션 적용**
-
-#### 제한사항
-
-- 함수 본문만 변경 가능
-- 프로퍼티 추가/삭제 불가
-- 메서드 시그니처 변경 불가
+함수 본문 변경은 저장 후 주입할 수 있지만, 프로퍼티·타입·메서드 시그니처·패키지/프로젝트 설정 같은 구조 변경은 주입 대상이 아닙니다. 이런 변경 뒤에는 FileManagerHost를 일반적으로 다시 빌드하고 실행해야 합니다.

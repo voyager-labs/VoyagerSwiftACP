@@ -58,10 +58,13 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
     - (대안) Xcode 프로젝트: `xed apps/macos/Voyager/Voyager.xcodeproj`
     - Terminal/Agent에서 실행:
         - 기본 개발 앱 실행: `mise run macos-launch`
+        - 온보딩 표시 토글(Debug 전용): `Voyager-Dev`가 유일한 개발 scheme입니다. `VOYAGER_SCHEME_FORCE_ONBOARDING` launch 환경변수가 `0`이거나 없으면 저장된 진행 상태에 따라 동작하고, 정확히 `1`이면 저장된 진행 상태를 지우지 않은 채 온보딩을 강제로 표시합니다. 이 값은 `.env` 설정이 아니며 Release/Prod에서는 지원하지 않습니다.
+        - 일회성 강제 표시: `mise run macos-launch -- --scheme Voyager-Dev --configuration Debug --env VOYAGER_SCHEME_FORCE_ONBOARDING=1`
         - 다른 scheme 실행: `mise run macos-launch -- --scheme SettingsHost-Dev --configuration Debug`
         - 빌드만 확인: `mise run macos-launch -- --scheme Voyager-Dev --configuration Debug --no-launch`
-    - Zed에서 실행:
-        - Command Palette에서 `task: spawn` 실행 후 `Voyager Dev: Launch (Debug)` 등 `.zed/tasks.json`의 launch task 선택
+    - Xcode에서 실행:
+        - `Voyager-Dev` scheme의 Debug Run 환경변수 `VOYAGER_SCHEME_FORCE_ONBOARDING`을 `0` 또는 제거하면 저장된 진행 상태를 사용합니다.
+        - 같은 환경변수를 정확히 `1`로 설정하면 진행 상태를 유지한 채 온보딩을 강제로 표시합니다.
     - VSCode 류 IDE(Sweetpad Extension)에서 실행:
         - Xcode 프로젝트 열기: Sweetpad로 `apps/macos/Voyager/Voyager.xcodeproj` 오픈
         - 태스크로 실행 (권장):
@@ -75,10 +78,27 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
                 - `OnboardingHost Dev: Launch (Release)` - 온보딩 호스트 Release 모드로 빌드 및 실행
                 - `SettingsHost Dev: Launch (Debug)` - 설정 호스트 Debug 모드로 빌드 및 실행
                 - `SettingsHost Dev: Launch (Release)` - 설정 호스트 Release 모드로 빌드 및 실행
+            - `Voyager Dev: Launch (Debug)` task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 바꾸면 진행 상태를 유지한 채 온보딩을 강제로 표시합니다. 이 값은 launch 환경이며 `.env` 설정이 아니고 Release/Prod에서는 지원하지 않습니다.
             - 참고: Sweetpad는 `.vscode/settings.json`의 shared xcodebuild wrapper를 사용합니다. 버튼을 통한 직접 실행은 xcscheme의 환경변수가 제대로 주입되지 않을 수 있어 태스크 실행을 권장합니다.
+    - Zed 에디터에서 실행 (`.zed/tasks.json`):
+        - 태스크 실행: `task: spawn` (단축키 `opt-shift-t`)으로 태스크 선택 모달 열기
+        - 재실행: `task: rerun` (단축키 `opt-t`)
+        - 사용 가능한 태스크 (VSCode Sweetpad와 동일):
+            - `Voyager Dev: Launch (Debug)` / `Voyager Dev: Launch (Release)`
+            - `Voyager Prod: Launch (Debug)` / `Voyager Prod: Launch (Release)`
+            - `VoyagerHelper Dev: Launch (Debug)` / `VoyagerHelper Dev: Launch (Release)`
+            - `OnboardingHost Dev: Launch (Debug)` / `OnboardingHost Dev: Launch (Release)`
+            - `SettingsHost Dev: Launch (Debug)` / `SettingsHost Dev: Launch (Release)`
+            - `FileManagerHost Dev: Launch (Debug)` / `FileManagerHost Dev: Launch (Release)`
+            - `FileManagerHost Dev: Launch with Injection (Debug)` - InjectionNext 앱 실행과 감시 환경을 포함한 전용 task
+            - `Voyager Dev: Build Only (Debug)` - 빌드만 (런치 없음)
+            - `Voyager Dev: Test` - Voyager-Dev 스킴 테스트
+        - `Voyager Dev: Launch (Debug)` task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 바꾸면 진행 상태를 유지한 채 온보딩을 강제로 표시합니다. 이 값은 launch 환경이며 `.env` 설정이 아니고 Release/Prod에서는 지원하지 않습니다.
+        - 내부 동작: `scripts/dev/macos-launch.sh`가 xcodebuild 빌드 → `.app` 산출물 해석 → 태스크별 launch 환경변수 주입 후 실행파일 직접 실행
+        - Zed 태스크의 환경변수는 `.zed/tasks.json`에서 명시적으로 전달합니다. 런타임 `.env` 표준화는 별도 이슈(VOY-432)에서 다룹니다.
     - Build (CLI): `mise run macos-build`
     - Prod build/archive (CLI): `mise run macos-launch -- --scheme Voyager-Prod --configuration Release --no-launch`
-    - Tests (CLI): `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj`
+    - Tests (CLI): `mise run macos-test`
     - OnboardingHost Build (CLI): `mise run macos-launch -- --scheme OnboardingHost-Dev --configuration Debug --no-launch`
     - SettingsHost Build (CLI): `mise run macos-launch -- --scheme SettingsHost-Dev --configuration Debug --no-launch`
 
@@ -213,11 +233,10 @@ mise install cupertino
 - 진입점: `docs/index.md`
 - Active engineering 문서: `docs/canonical/ENGINEERING/index.md`
 - Canonical product/docs SSOT: `docs/canonical/README.md`
-- Legacy app 문서: `docs/legacy/index.md`
-- Legacy architecture quick refs (이관 대기):
-    - `docs/legacy/architecture/coding-standards.md`
-    - `docs/legacy/architecture/tech-stack.md`
-    - `docs/legacy/architecture/source-tree.md`
+- Engineering quick refs:
+    - `docs/canonical/ENGINEERING/common/coding-standards.md`
+    - `docs/canonical/ENGINEERING/common/tech-stack.md`
+    - `docs/canonical/ENGINEERING/app/topology/source-tree.md`
 
 ## Back to Docs
 

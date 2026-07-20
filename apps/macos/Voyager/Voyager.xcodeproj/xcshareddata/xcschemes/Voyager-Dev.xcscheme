@@ -90,13 +90,18 @@
       </BuildableProductRunnable>
       <EnvironmentVariables>
          <EnvironmentVariable
-            key = "INJECTION_PROJECT_ROOT"
-            value = "$(SRCROOT)"
+            key = "VOYAGER_PROJECT_ROOT"
+            value = "$(SRCROOT)/../../.."
             isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
-            key = "VOYAGER_PROJECT_ROOT"
-            value = "$(SRCROOT)/../../.."
+            key = "VOYAGER_SCHEME_FORCE_ONBOARDING"
+            value = "0"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VOYAGER_SCHEME_FORCE_FDA_GRANTED"
+            value = "0"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>

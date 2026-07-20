@@ -13,12 +13,15 @@ extension ProviderAwareQueryConverter {
             guard let provider = AiProvider(rawValue: providerRawValue) else {
                 return explicitProviderUnavailable(providerRawValue: providerRawValue, reason: "invalidProvider")
             }
-            return await resolveExplicitProviderSelection(
+            let context = ProviderAwareQueryConversionContext(
                 query: query,
                 existingFilters: existingFilters,
-                provider: provider,
-                requestedThinking: settings.thinking.selection,
                 file: file,
+                requestedThinking: settings.thinking.selection,
+            )
+            return await resolveExplicitProviderSelection(
+                context: context,
+                provider: provider,
             )
         case .auto:
             return await resolveAutoSelection(query: query, existingFilters: existingFilters, file: file)
@@ -51,20 +54,17 @@ extension ProviderAwareQueryConverter {
     }
 
     func resolveExplicitProviderSelection(
-        query: String,
-        existingFilters: SearchFiltersPayload,
+        context: ProviderAwareQueryConversionContext,
         provider: AiProvider,
-        requestedThinking: AiThinkingSelection?,
-        file: AIConnectionsFile,
     ) async -> QueryConversionResult {
-        switch AIProviderQuerySelection.select(provider: provider, from: file) {
+        switch AIProviderQuerySelection.select(provider: provider, from: context.file) {
         case let .success(selection):
             await convertExplicitProvider(
-                query: query,
-                existingFilters: existingFilters,
+                query: context.query,
+                existingFilters: context.existingFilters,
                 selection: selection,
-                requestedThinking: requestedThinking,
-                file: file,
+                requestedThinking: context.requestedThinking,
+                file: context.file,
             )
         case let .failure(error):
             mappedExplicitProviderFailure(error, provider: provider)
@@ -72,44 +72,32 @@ extension ProviderAwareQueryConverter {
     }
 
     func resolveExplicitModelSelection(
-        query: String,
-        existingFilters: SearchFiltersPayload,
+        context: ProviderAwareQueryConversionContext,
         providerRawValue: String,
         modelRawValue: String,
-        requestedThinking: AiThinkingSelection?,
-        file: AIConnectionsFile,
     ) async -> QueryConversionResult {
         guard let provider = AiProvider(rawValue: providerRawValue) else {
             return explicitProviderUnavailable(providerRawValue: providerRawValue, reason: "invalidProvider")
         }
         return await resolveExplicitModelSelection(
-            query: query,
-            existingFilters: existingFilters,
+            context: context,
             provider: provider,
             modelRawValue: modelRawValue,
-            requestedThinking: requestedThinking,
-            file: file,
         )
     }
 
     func resolveExplicitModelSelection(
-        query: String,
-        existingFilters: SearchFiltersPayload,
+        context: ProviderAwareQueryConversionContext,
         provider: AiProvider,
         modelRawValue: String,
-        requestedThinking: AiThinkingSelection?,
-        file: AIConnectionsFile,
     ) async -> QueryConversionResult {
         let modelHandle = AiModelHandle(provider: provider, rawValue: modelRawValue)
-        switch AIProviderQuerySelection.select(provider: provider, from: file) {
+        switch AIProviderQuerySelection.select(provider: provider, from: context.file) {
         case let .success(selection):
             return await convertExplicitModel(
-                query: query,
-                existingFilters: existingFilters,
+                context: context,
                 selection: selection,
                 modelHandle: modelHandle,
-                requestedThinking: requestedThinking,
-                file: file,
             )
         case let .failure(error):
             return mappedExplicitProviderFailure(error, provider: provider)

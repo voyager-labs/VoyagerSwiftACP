@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import HotSwiftUI
 import SwiftUI
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
@@ -6,6 +7,8 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 
 struct FileManagerContentPaneView: View {
+    @ObserveInjection private var injection
+
     let store: StoreOf<FileManagerContentFeature>
     let chromeProps: FileManagerContentChromeProps
     let overlayProps: FileManagerContentOverlayProps
@@ -16,7 +19,6 @@ struct FileManagerContentPaneView: View {
     var body: some View {
         ZStack(alignment: .top) {
             contentBody
-                .id(chromeProps.renderIdentity)
                 .transaction { transaction in
                     transaction.animation = nil
                 }
@@ -61,9 +63,8 @@ struct FileManagerContentPaneView: View {
                 value: overlayProps.isComposerPresented,
             )
         }
-        .background(.thickMaterial)
-        .overlay(FileManagerContentMaterialTint())
         .ignoresSafeArea(.all, edges: .top)
+        .enableInjection()
     }
 
     private var contentBody: some View {
@@ -108,6 +109,13 @@ struct FileManagerContentChromeProps: Equatable {
     let activePageAnchor: ContentTabPageAnchor
 
     var renderIdentity: String {
+        Self.renderIdentity(activeTabID: activeTabID, activePageAnchor: activePageAnchor)
+    }
+
+    static func renderIdentity(
+        activeTabID: ContentTabID?,
+        activePageAnchor: ContentTabPageAnchor,
+    ) -> String {
         let tabIdentity = activeTabID?.rawValue ?? "no-active-tab"
         return "\(tabIdentity)::\(activePageAnchor.renderIdentity)"
     }
@@ -122,7 +130,7 @@ struct FileManagerContentOverlayProps: Equatable {
     let isTemporaryCollection: Bool
 }
 
-private extension ContentTabPageAnchor {
+extension ContentTabPageAnchor {
     /// AI Chat 페이지 앵커 여부 (연관값 무관)
     var isAiChat: Bool {
         if case .aiChat = self { true } else { false }
@@ -132,30 +140,12 @@ private extension ContentTabPageAnchor {
         switch self {
         case .homeDefault:
             "home"
-        case let .directory(path):
-            "directory:\(path)"
-        case let .collectionFile(url):
-            "collectionFile:\(url.absoluteString)"
-        case let .virtualCollection(id):
-            "virtualCollection:\(id)"
-        case let .aiChat(sessionID):
-            "aiChat:\(sessionID)"
-        }
-    }
-}
-
-private struct FileManagerContentMaterialTint: View {
-    @Environment(\.colorScheme)
-    private var colorScheme
-
-    var body: some View {
-        // 다크 모드에서만 머티리얼 대비를 살리는 얇은 틴트
-        if colorScheme == .dark {
-            Color.white.opacity(0.06)
-                .allowsHitTesting(false)
-        } else {
-            Color.clear
-                .allowsHitTesting(false)
+        case .directory:
+            "directory"
+        case .collectionFile, .virtualCollection:
+            "collection"
+        case .aiChat:
+            "aiChat"
         }
     }
 }

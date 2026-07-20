@@ -201,7 +201,8 @@ extension FileManagerContentFeature {
         state: inout State,
     ) -> Effect<Action> {
         let shouldSuppressFeedback = state.suppressAutomaticRefreshFeedback
-        let writeBackAllowed = state.collection.collectionSession.document?.compatibility?.writeBackAllowed != false
+        let compatibility = state.collection.collectionSession.document?.compatibility
+        let writeBackAllowed = compatibility?.writeBackAllowed != false
         let shouldWaitForWriteBack = shouldSuppressFeedback && !wasDirtyBeforeApplyingResponse && writeBackAllowed
         if shouldWaitForWriteBack {
             return .none
@@ -210,14 +211,16 @@ extension FileManagerContentFeature {
         state.suppressAutomaticRefreshFeedback = false
         guard !shouldSuppressFeedback,
               !wasDirtyBeforeApplyingResponse,
-              !writeBackAllowed
+              !writeBackAllowed,
+              let writeBackReason = compatibility?.writeBackReason,
+              writeBackReason != .allowed
         else {
             return .none
         }
         return presentCollectionRefreshFeedback(
             kind: .info,
             message: compatibilityBlockedRefreshMessage(
-                reason: state.collection.collectionSession.document?.compatibility?.writeBackReason,
+                reason: writeBackReason,
             ),
             recoveryHint: "Save as a new collection to keep refreshed results.",
             stage: .save,

@@ -1,5 +1,6 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerEntitiesAi
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesEntryOperations
@@ -18,15 +19,42 @@ final class FileManagerWindowAiChatAttachmentPickerRoutingTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
         }
+        let expectedReference = AiChatContextReference(
+            kind: .reference,
+            identifier: "/Users/test/Documents",
+            title: "Documents",
+            subtitle: "/Users/test/Documents",
+            metadata: [
+                "folderStructureMode": "currentFolderOnly",
+                "path": "/Users/test/Documents",
+                "route": "folder",
+            ],
+        )
+        let expectedCurrentContext = AiChatCurrentContextSnapshot(
+            summary: "Documents",
+            references: [expectedReference],
+        )
+        let expectedFolderStructureKey = AiChatCurrentContextFolderStructureKey(
+            source: .reference,
+            canonicalPath: "/Users/test/Documents",
+        )
 
         await store.send(.inspector(.aiChat(.delegate(.clearCurrentContextSelection))))
         await store.receive(\.inspector.delegate.clearCurrentContextSelection)
-        await store.receive(\.content.entryViewLayout.delegate.selectionChanged) {
+        await store.receive(\.content.entryViewLayout.internal.applyClearSelection) {
             $0.content.entryViewLayout.selectedIds = []
         }
+        await store.receive(\.content.entryViewLayout.delegate.selectionChanged)
+        await store.receive(\.content.entryViewLayout.entryOperations.lifecycle.syncSelectedEntryIDs)
         await store.receive { action in
             guard case .content(.delegate(.currentContextChanged)) = action else { return false }
             return true
+        }
+        await store.receive(\.inspector.aiChat.currentContextChanged) {
+            $0.inspector.aiChat.currentContext = expectedCurrentContext
+            $0.inspector.aiChat.currentContextFolderStructureModes = [
+                expectedFolderStructureKey: .currentFolderOnly,
+            ]
         }
     }
 

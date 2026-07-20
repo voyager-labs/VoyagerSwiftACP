@@ -230,4 +230,145 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         XCTAssertEqual(total, 2)
         XCTAssertEqual(selected, 0, "selectedIds.count == 0 → statusText should be '\(total) items'")
     }
+
+    // MARK: - VOY-578-render_identity
+
+    /// VOY-578-render_identity: 같은 탭의 Directory 경로 변경은 렌더 identity를 유지한다.
+    /// 사용자가 동일 탭에서 폴더 A에서 폴더 B로 이동해도 content root를 재마운트하지 않는 시나리오를 검증한다.
+    /// - 검증 내용: 같은 active tab ID와 같은 Directory page kind의 최종 render identity 비교
+    /// - 사전 조건: 동일한 active tab ID, 서로 다른 Directory 경로 `/directory-a`, `/directory-b`
+    /// - 기대 결과: 두 최종 render identity가 동일하다.
+    func testSameTabDirectoryPathChangeKeepsRenderIdentity() {
+        let tabID = ContentTabID(rawValue: "tab-a")
+
+        let directoryAIdentity = FileManagerContentChromeProps.renderIdentity(
+            activeTabID: tabID,
+            activePageAnchor: .directory(path: "/directory-a"),
+        )
+        let directoryBIdentity = FileManagerContentChromeProps.renderIdentity(
+            activeTabID: tabID,
+            activePageAnchor: .directory(path: "/directory-b"),
+        )
+
+        XCTAssertEqual(directoryAIdentity, directoryBIdentity)
+    }
+
+    /// VOY-578-render_identity: 탭 변경은 같은 Directory page kind도 새 렌더 identity를 만든다.
+    /// 사용자가 다른 탭으로 전환하면 같은 종류의 페이지라도 content root가 재마운트되는 시나리오를 검증한다.
+    /// - 검증 내용: 서로 다른 active tab ID와 같은 Directory page kind의 최종 render identity 비교
+    /// - 사전 조건: `tab-a`, `tab-b`가 각각 Directory 페이지를 표시한다.
+    /// - 기대 결과: 두 최종 render identity가 다르다.
+    func testDifferentTabsUseDifferentRenderIdentities() {
+        let firstIdentity = FileManagerContentChromeProps.renderIdentity(
+            activeTabID: ContentTabID(rawValue: "tab-a"),
+            activePageAnchor: .directory(path: "/shared"),
+        )
+        let secondIdentity = FileManagerContentChromeProps.renderIdentity(
+            activeTabID: ContentTabID(rawValue: "tab-b"),
+            activePageAnchor: .directory(path: "/shared"),
+        )
+
+        XCTAssertNotEqual(firstIdentity, secondIdentity)
+    }
+
+    /// VOY-578-render_identity: page kind 변경은 같은 탭에서도 새 렌더 identity를 만든다.
+    /// 사용자가 같은 탭에서 Home, Directory, Collection, AI Chat 사이를 전환하는 remount 경계를 검증한다.
+    /// - 검증 내용: 네 page kind의 anchor identity 값과 최종 render identity 상호 구분
+    /// - 사전 조건: 동일한 active tab ID와 각 page kind의 대표 anchor
+    /// - 기대 결과: anchor identity가 page kind별 고유 값이고 서로 다른 kind의 최종 identity가 다르다.
+    func testPageKindsUseStableDistinctRenderIdentities() {
+        let tabID = ContentTabID(rawValue: "tab-a")
+        let anchors: [ContentTabPageAnchor] = [
+            .homeDefault,
+            .directory(path: "/directory"),
+            .collectionFile(url: URL(fileURLWithPath: "/collection.voycoll")),
+            .aiChat(sessionID: "session"),
+        ]
+
+        XCTAssertEqual(anchors.map(\.renderIdentity), ["home", "directory", "collection", "aiChat"])
+
+        let identities = anchors.map {
+            FileManagerContentChromeProps.renderIdentity(activeTabID: tabID, activePageAnchor: $0)
+        }
+        for firstIndex in identities.indices {
+            for secondIndex in identities.indices where firstIndex < secondIndex {
+                XCTAssertNotEqual(identities[firstIndex], identities[secondIndex])
+            }
+        }
+    }
+
+    /// VOY-578-render_identity: Collection anchor 전환은 같은 page kind identity를 유지한다.
+    /// 저장 Collection과 virtual Collection 사이 전환이 content root를 재마운트하지 않는 시나리오를 검증한다.
+    /// - 검증 내용: 같은 active tab ID의 Collection file 및 virtual Collection 최종 identity 비교
+    /// - 사전 조건: 동일한 active tab ID와 서로 다른 Collection anchor 종류
+    /// - 기대 결과: 두 anchor와 최종 render identity가 모두 동일한 Collection kind를 나타낸다.
+    func testSameTabCollectionAnchorChangeKeepsRenderIdentity() {
+        let tabID = ContentTabID(rawValue: "tab-a")
+        let collectionFile = ContentTabPageAnchor.collectionFile(
+            url: URL(fileURLWithPath: "/collection.voycoll"),
+        )
+        let virtualCollection = ContentTabPageAnchor.virtualCollection(id: "virtual-collection")
+
+        XCTAssertEqual(collectionFile.renderIdentity, "collection")
+        XCTAssertEqual(virtualCollection.renderIdentity, "collection")
+        XCTAssertEqual(
+            FileManagerContentChromeProps.renderIdentity(activeTabID: tabID, activePageAnchor: collectionFile),
+            FileManagerContentChromeProps.renderIdentity(activeTabID: tabID, activePageAnchor: virtualCollection),
+        )
+    }
+
+    // MARK: - VOY-578-ordinary_directory_loading
+
+    /// VOY-578-ordinary_directory_loading: 일반 Directory 로딩은 엔트리를 유지하고 투명 input blocker로 입력을 차단한다.
+    /// 새 경로 로딩 중 기존 list/grid를 시각적으로 그대로 유지하면서 stale entry 조작을 막는 시나리오를 검증한다.
+    /// - 검증 내용: ordinary loading presentation의 retained entries, loading indicator, input blocker, pointer, keyboard 정책
+    /// - 사전 조건: entryOperations.isLoading == true, isCollectionMode == false, Collection 로딩 상태 아님
+    /// - 기대 결과: replacement와 ProgressView indicator는 없고 투명 blocker가 있으며 pointer와 keyboard dispatch가 차단된다.
+    func testOrdinaryDirectoryLoadingRetainsEntriesWithoutIndicatorAndBlocksInput() {
+        let policy = ContentPagePresentationPolicy.resolve(
+            isCollectionSearching: false,
+            isCollectionContentLoading: false,
+            isEntryLoading: true,
+            isCollectionMode: false,
+        )
+
+        XCTAssertEqual(policy, .ordinaryDirectoryLoadingOverlay)
+        XCTAssertFalse(policy.replacesEntriesWithLoading, "ordinary loading must not show the replacement ProgressView")
+        XCTAssertTrue(policy.showsInputBlocker)
+        XCTAssertFalse(policy.allowsEntryInteraction)
+        XCTAssertTrue(policy.hidesEntriesFromAccessibility)
+        XCTAssertTrue(policy.requiresKeyCommandFocus)
+        XCTAssertFalse(policy.allowsKeyboardCommandDispatch)
+    }
+
+    /// VOY-578-ordinary_directory_loading: Collection 로딩은 기존 spinner replacement 정책을 유지한다.
+    /// Collection 검색과 content 로딩이 일반 Directory input blocker 정책으로 바뀌지 않는 회귀 방지 시나리오를 검증한다.
+    /// - 검증 내용: 기존 두 Collection 로딩 신호의 ProgressView replacement 및 입력 정책
+    /// - 사전 조건: isCollectionSearching 또는 isCollectionContentLoading 중 하나가 true
+    /// - 기대 결과: 엔트리는 spinner로 교체되고 ordinary input blocker는 없으며 기존 keyboard dispatch 정책은 유지된다.
+    func testCollectionLoadingKeepsReplacementPolicy() {
+        let policies = [
+            ContentPagePresentationPolicy.resolve(
+                isCollectionSearching: true,
+                isCollectionContentLoading: false,
+                isEntryLoading: true,
+                isCollectionMode: true,
+            ),
+            ContentPagePresentationPolicy.resolve(
+                isCollectionSearching: false,
+                isCollectionContentLoading: true,
+                isEntryLoading: true,
+                isCollectionMode: true,
+            ),
+        ]
+
+        for policy in policies {
+            XCTAssertEqual(policy, .collectionReplacementLoading)
+            XCTAssertTrue(policy.replacesEntriesWithLoading)
+            XCTAssertFalse(policy.showsInputBlocker)
+            XCTAssertFalse(policy.hidesEntriesFromAccessibility)
+            XCTAssertFalse(policy.requiresKeyCommandFocus)
+            XCTAssertTrue(policy.allowsKeyboardCommandDispatch)
+        }
+    }
 }

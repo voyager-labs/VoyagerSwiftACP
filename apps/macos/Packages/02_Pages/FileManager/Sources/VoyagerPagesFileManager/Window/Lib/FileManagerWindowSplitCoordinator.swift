@@ -1,7 +1,10 @@
 import AppKit
 import Combine
 import ComposableArchitecture
+import SwiftNavigation
 import SwiftUI
+import VoyagerFeaturesAccountAccess
+import VoyagerShared
 
 struct FileManagerWindowSplitObservationInput: Equatable {
     let sidebarVisible: Bool
@@ -20,9 +23,13 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     }
 
     let store: StoreOf<FileManagerFeature>
+    let workspaceClient: WorkspaceClient
     let keyCommandFocusCoordinator = FileManagerKeyCommandFocusCoordinator()
+    let sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>?
+    let sessionLapseGuardState: (@MainActor () -> AccountAccessFeature.State?)?
 
     private var cancellables: Set<AnyCancellable> = []
+    private var observationTokens: Set<ObserveToken> = []
     private var hasStarted = false
     private var hasTornDown = false
     private var isApplyingSidebarLayout = false
@@ -30,19 +37,34 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
 
     private var sidebarSync: FileManagerSidebarSync
     private var currentIsDark: Bool
+    private var materialOverride: FileManagerWindowMaterialOverride?
 
     private var sidebarHosting: NSHostingController<AnyView>?
     private var mainContainerHosting: NSHostingController<FileManagerWindowMainContainerView>?
+    private var sessionLapseGuardHosting: NSHostingController<AnyView>?
 
     private weak var windowSplitView: NSSplitView?
+    private weak var sidebarSurface: NSView?
     private weak var mainContainerView: NSView?
+    private weak var rootShellEffectView: NSVisualEffectView?
 
     private var mainContainerLeading: NSLayoutConstraint?
 
-    init(store: StoreOf<FileManagerFeature>, isDark: Bool) {
+    init(
+        store: StoreOf<FileManagerFeature>,
+        isDark: Bool,
+        workspaceClient: WorkspaceClient = .liveValue,
+        sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>? = nil,
+        sessionLapseGuardState: (@MainActor () -> AccountAccessFeature.State?)? = nil,
+        materialOverride: FileManagerWindowMaterialOverride? = nil,
+    ) {
         self.store = store
+        self.workspaceClient = workspaceClient
+        self.sessionLapseGuardStore = sessionLapseGuardStore
+        self.sessionLapseGuardState = sessionLapseGuardState
         sidebarSync = FileManagerSidebarSync(storeSidebarWidth: store.sidebar.sidebarWidth)
         currentIsDark = isDark
+        self.materialOverride = materialOverride
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -54,14 +76,18 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     override func loadView() {
         let components = FileManagerWindowSplitLayout.build(
             store: store,
+            workspaceClient: workspaceClient,
             keyCommandFocusCoordinator: keyCommandFocusCoordinator,
             mainContainerRootView: makeMainContainerRootView(),
+            materialOverride: materialOverride,
             contentVerticalMargin: Constants.contentVerticalMargin,
             isSidebarVisible: store.sidebar.sidebarVisible,
         )
 
         windowSplitView = components.splitView
         windowSplitView?.delegate = self
+        sidebarSurface = components.sidebarSurface
+        rootShellEffectView = components.rootShellEffectView
 
         sidebarHosting = components.sidebarHosting
         mainContainerHosting = components.mainContainerHosting
@@ -72,6 +98,55 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         addChild(components.mainContainerHosting)
 
         view = components.rootView
+
+        mountSessionLapseGuardOverlayIfNeeded()
+    }
+
+    /// ACC-003-guard_session_lapse: 윈도우 전체를 덮는 오버레이. state가 nil이면 AppKit hit-test에서 제외한다.
+    private static func isSessionLapseGuardHidden(_ state: AccountAccessFeature.State?) -> Bool {
+        guard let state else { return true }
+        return !SessionLapseGuardView.shouldShow(
+            accountAccessStepState: state.accountAccessStepState,
+            isSignInInProgress: state.isSignInInProgress,
+        )
+    }
+
+    private func mountSessionLapseGuardOverlayIfNeeded() {
+        guard let sessionLapseGuardStore else { return }
+
+        let overlayRoot = AnyView(
+            IfLetStore(sessionLapseGuardStore) { store in
+                SessionLapseGuardView(store: store)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity),
+        )
+
+        let overlayController = NSHostingController(rootView: overlayRoot)
+        if #available(macOS 13.3, *) {
+            overlayController.safeAreaRegions = []
+        }
+        overlayController.view.translatesAutoresizingMaskIntoConstraints = false
+        overlayController.view.wantsLayer = true
+
+        sessionLapseGuardHosting = overlayController
+        addChild(overlayController)
+
+        let overlayView = overlayController.view
+        let resolveGuardState = sessionLapseGuardState ?? {
+            sessionLapseGuardStore.withState(\.self)
+        }
+        SwiftNavigation.observe { [weak overlayView] in
+            overlayView?.isHidden = Self.isSessionLapseGuardHidden(resolveGuardState())
+        }
+        .store(in: &observationTokens)
+
+        view.addSubview(overlayView)
+        NSLayoutConstraint.activate([
+            overlayView.topAnchor.constraint(equalTo: view.topAnchor),
+            overlayView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            overlayView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            overlayView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
     }
 
     override func viewDidLoad() {
@@ -123,19 +198,32 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         mainContainerHosting?.rootView = makeMainContainerRootView()
     }
 
+    func updateMaterialOverride(_ override: FileManagerWindowMaterialOverride?) {
+        materialOverride = override
+        FileManagerWindowSplitLayout.updateMaterialOverride(
+            override,
+            rootShellEffectView: rootShellEffectView,
+        )
+        mainContainerHosting?.rootView = makeMainContainerRootView()
+    }
+
     func tearDown() {
         guard !hasTornDown else { return }
         hasTornDown = true
         cancellables.removeAll()
+        observationTokens.removeAll()
         isTrackingUserSidebarDividerResize = false
 
         windowSplitView?.delegate = nil
 
         sidebarHosting?.removeFromParent()
         mainContainerHosting?.removeFromParent()
+        sessionLapseGuardHosting?.removeFromParent()
 
         sidebarHosting = nil
+        sidebarSurface = nil
         mainContainerHosting = nil
+        sessionLapseGuardHosting = nil
         store.send(.onDisappear)
     }
 
@@ -169,6 +257,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         FileManagerWindowMainContainerView(
             store: store,
             isDark: currentIsDark,
+            materialOverride: materialOverride,
             keyCommandFocusCoordinator: keyCommandFocusCoordinator,
         )
     }
@@ -228,7 +317,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     func splitViewWillResizeSubviews(_ notification: Notification) {
         guard let splitView = notification.object as? NSSplitView,
               splitView === windowSplitView,
-              let sidebarView = sidebarHosting?.view
+              let sidebarView = sidebarSurface
         else { return }
 
         if isCurrentEventOnSidebarDivider(splitView: splitView, sidebarView: sidebarView) {
@@ -240,7 +329,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         guard !isApplyingSidebarLayout else { return }
         guard let splitView = notification.object as? NSSplitView,
               splitView === windowSplitView,
-              let sidebarView = sidebarHosting?.view
+              let sidebarView = sidebarSurface
         else { return }
 
         let isUserInitiatedCollapse = isCurrentEventOnSidebarDivider(
@@ -286,7 +375,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     private func makeSidebarSyncLayout() -> FileManagerSidebarSync.Layout {
         FileManagerSidebarSync.Layout(
             splitView: windowSplitView,
-            sidebarView: sidebarHosting?.view,
+            sidebarView: sidebarSurface,
             mainContainerLeading: mainContainerLeading,
             contentVerticalMargin: Constants.contentVerticalMargin,
         )
@@ -330,7 +419,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
 
     private func reconcileSidebarChromeWithActualLayout() {
         guard let splitView = windowSplitView,
-              let sidebarView = sidebarHosting?.view,
+              let sidebarView = sidebarSurface,
               splitView.bounds.width > 0
         else { return }
 
@@ -361,6 +450,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     }
 }
 
+@MainActor
 private func isCurrentEventOnSidebarDivider(
     splitView: NSSplitView,
     sidebarView: NSView,
@@ -384,6 +474,7 @@ private func isCurrentEventOnSidebarDivider(
     return abs(location.x - dividerX) <= hitSlop
 }
 
+@MainActor
 private func isCurrentSidebarMouseEvent(in splitView: NSSplitView) -> Bool {
     guard let event = NSApp.currentEvent,
           event.window === splitView.window
@@ -399,6 +490,7 @@ private func isCurrentSidebarMouseEvent(in splitView: NSSplitView) -> Bool {
     }
 }
 
+@MainActor
 private func isCurrentSidebarTrackingContinuation(in splitView: NSSplitView) -> Bool {
     guard let event = NSApp.currentEvent,
           event.window === splitView.window

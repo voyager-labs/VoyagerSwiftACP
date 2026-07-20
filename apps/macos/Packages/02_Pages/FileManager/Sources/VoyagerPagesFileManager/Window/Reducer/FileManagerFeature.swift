@@ -13,7 +13,6 @@ public struct FileManagerFeature {
     public var body: some Reducer<State, Action> {
         Scope(state: \.content, action: \.content) {
             FileManagerContentFeature()
-            FileManagerContentSyncReducer()
         }
 
         Scope(state: \.content.navigation, action: \.navigation) {

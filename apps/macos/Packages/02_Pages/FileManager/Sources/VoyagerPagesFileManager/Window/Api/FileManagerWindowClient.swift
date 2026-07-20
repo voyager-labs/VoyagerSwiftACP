@@ -1,12 +1,19 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+
+public enum FileManagerWindowActivationResult: Sendable, Equatable {
+    case becameKey
+    case discarded
+}
 
 public struct FileManagerWindowClient: Sendable {
     public var open: @Sendable (_ id: UUID) async -> Void
     public var openTab: @Sendable (_ id: UUID) async -> Void
+    public var activate: @Sendable (_ id: UUID) async -> FileManagerWindowActivationResult
     public var close: @Sendable (_ id: UUID) async -> Void
     public var closeAll: @Sendable () async -> Void
     public var registeredWindowIDs: @Sendable () async -> Set<UUID>
@@ -16,6 +23,7 @@ public struct FileManagerWindowClient: Sendable {
     nonisolated public init(
         open: @escaping @Sendable (_ id: UUID) async -> Void,
         openTab: @escaping @Sendable (_ id: UUID) async -> Void,
+        activate: @escaping @Sendable (_ id: UUID) async -> FileManagerWindowActivationResult,
         close: @escaping @Sendable (_ id: UUID) async -> Void,
         closeAll: @escaping @Sendable () async -> Void,
         registeredWindowIDs: @escaping @Sendable () async -> Set<UUID> = { [] },
@@ -24,6 +32,7 @@ public struct FileManagerWindowClient: Sendable {
     ) {
         self.open = open
         self.openTab = openTab
+        self.activate = activate
         self.close = close
         self.closeAll = closeAll
         self.registeredWindowIDs = registeredWindowIDs
@@ -40,6 +49,9 @@ extension FileManagerWindowClient: DependencyKey {
             },
             openTab: { _ in
                 fatalError("fileManagerWindowClient.openTab live dependency is not configured")
+            },
+            activate: { _ in
+                fatalError("fileManagerWindowClient.activate live dependency is not configured")
             },
             close: { _ in
                 fatalError("fileManagerWindowClient.close live dependency is not configured")
@@ -63,6 +75,9 @@ extension FileManagerWindowClient: DependencyKey {
             },
             openTab: { _ in
                 fatalError("fileManagerWindowClient.openTab test dependency is not configured")
+            },
+            activate: { _ in
+                fatalError("fileManagerWindowClient.activate test dependency is not configured")
             },
             close: { _ in
                 fatalError("fileManagerWindowClient.close test dependency is not configured")
@@ -92,13 +107,130 @@ public extension DependencyValues {
 @MainActor private var fileManagerWindowRequestNewWindow: ((String?) -> Void)?
 @MainActor private var fileManagerWindowRequestNewTab: ((String?) -> Void)?
 @MainActor private var fileManagerWindowResolveStore: ((UUID) -> StoreOf<FileManagerFeature>?)?
+@MainActor private var fileManagerSessionLapseProvider: FileManagerSessionLapseGuardProvider?
 @MainActor private var fileManagerWindowOnBecameKey: ((UUID) -> Void)?
 @MainActor private var fileManagerWindowOnResignedKey: ((UUID) -> Void)?
 @MainActor private var fileManagerWindowOnClosed: ((UUID) -> Void)?
 
+@MainActor
+final class FileManagerWindowActivationTracker {
+    static let discardedWindowLimit = 256
+
+    private struct Waiter {
+        let requestID: UUID
+        let continuation: CheckedContinuation<FileManagerWindowActivationResult, Never>
+    }
+
+    private var waitersByWindowID: [UUID: [Waiter]] = [:]
+    private var activationRequestedWindowIDs: Set<UUID> = []
+    private var discardedWindowIDOrder: [UUID] = []
+    private(set) var discardedWindowIDs: Set<UUID> = []
+    private(set) var pendingWindowIDs: [UUID] = []
+
+    func request(
+        _ windowID: UUID,
+        activate: (() -> Void)? = nil,
+    ) async -> FileManagerWindowActivationResult {
+        let requestID = UUID()
+        return await withTaskCancellationHandler {
+            guard !Task.isCancelled else { return .discarded }
+            guard !consumeDiscardedLifecycle(for: windowID) else { return .discarded }
+            return await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume(returning: .discarded)
+                    return
+                }
+                let isFirstWaiter = waitersByWindowID[windowID] == nil
+                if isFirstWaiter {
+                    pendingWindowIDs.append(windowID)
+                }
+                waitersByWindowID[windowID, default: []].append(.init(
+                    requestID: requestID,
+                    continuation: continuation,
+                ))
+                if isFirstWaiter, let activate {
+                    activationRequestedWindowIDs.insert(windowID)
+                    activate()
+                }
+            }
+        } onCancel: { [weak self] in
+            Task { @MainActor in
+                self?.cancel(requestID: requestID, windowID: windowID)
+            }
+        }
+    }
+
+    func consumeRegistration(
+        for windowID: UUID,
+        activate: () -> Void,
+    ) {
+        clearDiscardedLifecycle(for: windowID)
+        guard waitersByWindowID[windowID]?.isEmpty == false,
+              activationRequestedWindowIDs.insert(windowID).inserted
+        else { return }
+        activate()
+    }
+
+    func discard(_ windowID: UUID) {
+        recordDiscardedLifecycle(for: windowID)
+        complete(windowID, result: .discarded)
+    }
+
+    func discardAll(_ windowIDs: [UUID] = []) {
+        let pendingWindowIDs = pendingWindowIDs
+        (windowIDs + pendingWindowIDs).forEach { recordDiscardedLifecycle(for: $0) }
+        let waiters = pendingWindowIDs.flatMap { takeWaiters(for: $0) }
+        waiters.forEach { $0.continuation.resume(returning: .discarded) }
+    }
+
+    func complete(_ windowID: UUID, result: FileManagerWindowActivationResult) {
+        takeWaiters(for: windowID).forEach { $0.continuation.resume(returning: result) }
+    }
+
+    private func cancel(requestID: UUID, windowID: UUID) {
+        guard var waiters = waitersByWindowID[windowID],
+              let index = waiters.firstIndex(where: { $0.requestID == requestID })
+        else { return }
+        let waiter = waiters.remove(at: index)
+        if waiters.isEmpty {
+            waitersByWindowID[windowID] = nil
+            activationRequestedWindowIDs.remove(windowID)
+            pendingWindowIDs.removeAll { $0 == windowID }
+        } else {
+            waitersByWindowID[windowID] = waiters
+        }
+        waiter.continuation.resume(returning: .discarded)
+    }
+
+    private func takeWaiters(for windowID: UUID) -> [Waiter] {
+        pendingWindowIDs.removeAll { $0 == windowID }
+        activationRequestedWindowIDs.remove(windowID)
+        return waitersByWindowID.removeValue(forKey: windowID) ?? []
+    }
+
+    private func recordDiscardedLifecycle(for windowID: UUID) {
+        guard discardedWindowIDs.insert(windowID).inserted else { return }
+        discardedWindowIDOrder.append(windowID)
+        while discardedWindowIDOrder.count > Self.discardedWindowLimit {
+            discardedWindowIDs.remove(discardedWindowIDOrder.removeFirst())
+        }
+    }
+
+    private func consumeDiscardedLifecycle(for windowID: UUID) -> Bool {
+        guard discardedWindowIDs.remove(windowID) != nil else { return false }
+        discardedWindowIDOrder.removeAll { $0 == windowID }
+        return true
+    }
+
+    private func clearDiscardedLifecycle(for windowID: UUID) {
+        _ = consumeDiscardedLifecycle(for: windowID)
+    }
+}
+
 @MainActor private var fileManagerWindowControllersByID: [UUID: FileManagerWindowCoordinator] = [:]
 @MainActor private var fileManagerWindowControllers: [FileManagerWindowCoordinator] = []
 @MainActor private var fileManagerWindowClosingIDs: Set<UUID> = []
+@MainActor private var fileManagerWindowActivationTracker = FileManagerWindowActivationTracker()
 @MainActor private var didConfigureAutomaticWindowTabbing = false
 
 @MainActor
@@ -138,6 +270,9 @@ public func makeFileManagerWindowClientLive() -> FileManagerWindowClient {
                 fileManagerWindowOpenTab(windowID: id)
             }
         },
+        activate: { id in
+            await fileManagerWindowActivate(windowID: id)
+        },
         close: { id in
             await MainActor.run {
                 fileManagerWindowClose(windowID: id)
@@ -166,6 +301,19 @@ public func makeFileManagerWindowClientLive() -> FileManagerWindowClient {
     )
 }
 
+public struct FileManagerSessionLapseGuardProvider: Sendable {
+    public let resolveStore: @MainActor @Sendable () -> Store<AccountAccessFeature.State?, AccountAccessAction>
+    public let resolveState: @MainActor @Sendable () -> AccountAccessFeature.State?
+
+    public init(
+        resolveStore: @escaping @MainActor @Sendable () -> Store<AccountAccessFeature.State?, AccountAccessAction>,
+        resolveState: @escaping @MainActor @Sendable () -> AccountAccessFeature.State?,
+    ) {
+        self.resolveStore = resolveStore
+        self.resolveState = resolveState
+    }
+}
+
 public struct FileManagerWindowKeyCallbacks {
     public let onBecameKey: @MainActor (UUID) -> Void
     public let onResignedKey: @MainActor (UUID) -> Void
@@ -188,10 +336,12 @@ public func configureFileManagerWindowClientLive(
     requestNewTab: @escaping (String?) -> Void,
     resolveFileManagerStore: @escaping (UUID) -> StoreOf<FileManagerFeature>?,
     windowKeyCallbacks: FileManagerWindowKeyCallbacks,
+    sessionLapseGuardProvider: FileManagerSessionLapseGuardProvider,
 ) {
     fileManagerWindowRequestNewWindow = requestNewWindow
     fileManagerWindowRequestNewTab = requestNewTab
     fileManagerWindowResolveStore = resolveFileManagerStore
+    fileManagerSessionLapseProvider = sessionLapseGuardProvider
     fileManagerWindowOnBecameKey = windowKeyCallbacks.onBecameKey
     fileManagerWindowOnResignedKey = windowKeyCallbacks.onResignedKey
     fileManagerWindowOnClosed = windowKeyCallbacks.onClosed
@@ -271,14 +421,33 @@ private func fileManagerWindowOpenTab(windowID: UUID) {
 }
 
 @MainActor
+private func fileManagerWindowActivate(windowID: UUID) async -> FileManagerWindowActivationResult {
+    guard let controller = fileManagerWindowControllersByID[windowID] else {
+        return await fileManagerWindowActivationTracker.request(windowID)
+    }
+    guard controller.window?.isKeyWindow != true else { return .becameKey }
+    return await fileManagerWindowActivationTracker.request(windowID) {
+        activateFileManagerWindowController(controller)
+    }
+}
+
+@MainActor
+private func activateFileManagerWindowController(_ controller: FileManagerWindowCoordinator) {
+    NSApp.activate(ignoringOtherApps: true)
+    controller.window?.makeKeyAndOrderFront(nil)
+}
+
+@MainActor
 private func fileManagerWindowClose(windowID: UUID) {
-    guard fileManagerWindowControllersByID[windowID] != nil else { return }
+    fileManagerWindowActivationTracker.discard(windowID)
+    guard let controller = fileManagerWindowControllersByID[windowID] else { return }
     fileManagerWindowClosingIDs.insert(windowID)
-    fileManagerWindowControllersByID[windowID]?.window?.close()
+    controller.window?.close()
 }
 
 @MainActor
 private func fileManagerWindowCloseAll() {
+    fileManagerWindowActivationTracker.discardAll(fileManagerWindowControllers.map(\.windowID))
     let controllers = fileManagerWindowControllers.filter {
         !fileManagerWindowClosingIDs.contains($0.windowID)
     }
@@ -299,10 +468,14 @@ private func fileManagerWindowFocus(path: String) {
 private func registerFileManagerWindowController(_ controller: FileManagerWindowCoordinator) {
     fileManagerWindowControllers.append(controller)
     fileManagerWindowControllersByID[controller.windowID] = controller
+    fileManagerWindowActivationTracker.consumeRegistration(for: controller.windowID) {
+        activateFileManagerWindowController(controller)
+    }
 }
 
 @MainActor
 private func unregisterFileManagerWindowController(windowID: UUID) {
+    fileManagerWindowActivationTracker.discard(windowID)
     fileManagerWindowControllersByID.removeValue(forKey: windowID)
     fileManagerWindowControllers.removeAll { $0.windowID == windowID }
 }
@@ -335,13 +508,17 @@ private func makeManagedWindowController(
         store: fileManagerStore,
         entryOperationsUndoManager: entryOperationsUndoManager,
         path: nil,
+        sessionLapseGuardStore: fileManagerSessionLapseProvider?.resolveStore(),
+        sessionLapseGuardState: fileManagerSessionLapseProvider?.resolveState,
         onBecameKey: { id in
+            fileManagerWindowActivationTracker.complete(id, result: .becameKey)
             fileManagerWindowOnBecameKey?(id)
         },
         onResignedKey: { id in
             fileManagerWindowOnResignedKey?(id)
         },
         onWillClose: { id in
+            fileManagerWindowActivationTracker.discard(id)
             fileManagerWindowClosingIDs.insert(id)
             fileManagerWindowOnClosed?(id)
         },

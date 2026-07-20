@@ -81,9 +81,11 @@ enum ParentAction {
 - Separate sensitive credential storage from non-sensitive snapshot/cache persistence; credentials must flow through secure storage clients, while status snapshots may use ordinary persistence clients.
 - For clients that mutate external system state in multiple steps, model partial failure deliberately: read the prior state from the write boundary, stop on uncertain reads, rollback earlier steps when a later step fails, and never persist sentinel/error placeholder values as real state.
 
+For client granularity, capability-boundary splitting, composition patterns (`live(_:)` factory vs `@Dependency` in closure), phantom dependency elimination, and `@DependencyClient` macro policy, see `.agents/skills/voyager-dev/orchestrator/references/11-dependency-client-design.md`.
+
 ## Dependency direction stance
 
-- Follow the structural dependency direction defined in `../../../reviewer/boundary/references/layer-and-segment-rules.md`.
+- Follow the structural dependency direction defined in `../../../reviewer/review/references/layer-and-segment-rules.md`.
 - Keep `tca-contract.md` focused on TCA ownership and execution mechanics that sit inside those boundaries.
 
 ## Cancellation ownership

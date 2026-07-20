@@ -1,12 +1,17 @@
 import AppKit
 import ComposableArchitecture
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var appRootStore: StoreOf<AppRootFeature>?
+
+    /// 현재 앱 신원에 맞는 callback scheme. 테스트에서 override하여 Dev/Prod 동작 검증.
+    /// AppHandoffTarget으로 런타임 bundle ID 기반 결정.
+    var callbackScheme: String = AppHandoffTarget.liveValue.callbackScheme
 
     override init() {
         super.init()
@@ -17,6 +22,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillFinishLaunching(_: Notification) {
+        // 현재 앱 신원에 맞는 scheme으로 ExternalFileRouter 초기화
+        let scheme = AppHandoffTarget.liveValue.callbackScheme
+        withAppRootStore {
+            $0.send(.externalFileRouter(.setExpectedScheme(scheme)))
+        }
         UpdaterClient.registerRelaunchHandlers(
             prepareForRelaunch: {
                 await VoyagerTerminationCoordinator.shared.begin(.sparkleRelaunch)
@@ -27,7 +37,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         withAppRootStore {
             $0.send(.lifecycle(.launch(.willFinishLaunching)))
-            $0.send(.updater(.configureAtLaunch))
         }
     }
 
@@ -39,9 +48,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_: NSApplication, open urls: [URL]) {
-        withAppRootStore {
+        withAppRootStore { store in
+            let fileURLs = urls.filter(\.isFileURL)
+            var didRouteFileBatch = false
             for url in urls {
-                routeOpenedURL(url, to: $0)
+                if url.isFileURL {
+                    guard !didRouteFileBatch else { continue }
+                    didRouteFileBatch = true
+                    routeSystemOpenFileURLs(fileURLs, to: store)
+                } else {
+                    routeOpenedURL(url, to: store)
+                }
             }
         }
     }
@@ -54,7 +71,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
         routeSystemOpenFileURLs(filenames.map(URL.init(fileURLWithPath:)))
-        sender.reply(toOpenOrPrint: .success)
+        reply(toOpenOrPrint: .success, sender: sender)
+    }
+
+    func reply(toOpenOrPrint reply: NSApplication.DelegateReply, sender: NSApplication) {
+        sender.reply(toOpenOrPrint: reply)
     }
 
     /// NSServices "Voyager로 열기" 핸들러
@@ -77,22 +98,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func routeSystemOpenFileURLs(_ urls: [URL]) {
         withAppRootStore {
-            for url in urls {
-                routeFileURL(url, source: .systemOpenEvent, mode: .open, to: $0)
-            }
+            routeSystemOpenFileURLs(urls, to: $0)
         }
+    }
+
+    private func routeSystemOpenFileURLs(_ urls: [URL], to store: StoreOf<AppRootFeature>) {
+        guard !urls.isEmpty else { return }
+        store.send(.receiveExternalFileBatch(
+            urls,
+            source: .systemOpenEvent,
+            mode: .open,
+        ))
     }
 
     private func routeOpenedURL(_ url: URL, to store: StoreOf<AppRootFeature>) {
         switch url.scheme?.lowercased() {
-        case "voyager":
+        case callbackScheme.lowercased():
             if isAuthCallback(url) {
-                store.send(.receiveAuthCallbackURL(url))
+                routeAuthCallback(url)
             } else {
                 store.send(.receiveExternalURL(url))
             }
-        case "file":
-            routeFileURL(url, source: .systemOpenEvent, mode: .open, to: store)
         default:
             break
         }
@@ -122,6 +148,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         } onMissing: {
             true
+        }
+    }
+
+    private func routeAuthCallback(_ url: URL) {
+        withAppRootStore {
+            $0.send(.receiveAuthCallbackURL(url))
         }
     }
 

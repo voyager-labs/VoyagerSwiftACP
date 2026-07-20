@@ -25,6 +25,13 @@ public enum AIProviderBootstrapEvent: Sendable {
 }
 
 public enum AIProviderConnectionBootstrap {
+    /// large_tuple 린트 위반을 피하려고 3-튜플 대신 사용하는 검증 대상 보조 타입.
+    private struct VerifiableProvider {
+        let catalogIndex: Int
+        let provider: AiProvider
+        let credential: StoredCredentialPayload
+    }
+
     public static func effect<Action: Sendable>(
         connectionsFileClient: AIConnectionsFileClient,
         verificationClient: AIProviderVerificationClient,
@@ -71,24 +78,45 @@ public enum AIProviderConnectionBootstrap {
         from file: AIConnectionsFile,
         verificationClient: AIProviderVerificationClient,
     ) async -> [AIProviderBootstrapResult] {
-        var results: [AIProviderBootstrapResult] = []
+        // v1Catalog 순서를 복원하기 위해 인덱스와 함께 verifiable 항목을 사전 수집한다.
+        let verifiable: [VerifiableProvider] = ProviderDescriptor.v1Catalog
+            .enumerated()
+            .compactMap { index, descriptor in
+                guard let record = file.providers[descriptor.provider.rawValue],
+                      shouldVerify(snapshotState: record.snapshot.lastKnownStatus),
+                      let credential = record.credential
+                else { return nil }
+                return VerifiableProvider(
+                    catalogIndex: index,
+                    provider: descriptor.provider,
+                    credential: credential,
+                )
+            }
 
-        for descriptor in ProviderDescriptor.v1Catalog {
-            guard let record = file.providers[descriptor.provider.rawValue],
-                  shouldVerify(snapshotState: record.snapshot.lastKnownStatus),
-                  let credential = record.credential
-            else { continue }
+        guard !verifiable.isEmpty else { return [] }
 
-            let verification = await verificationClient.verify(descriptor.provider, credential)
-            results.append(
-                verifiedResult(
-                    for: descriptor.provider,
-                    verification: verification,
-                ),
-            )
+        // 비throwing TaskGroup 사용 — 한 provider 검증 실패/지연이 형제 task를 취소하지 않는다.
+        // next()는 완료 순서로 반환하므로 (index, result) 튜플로 원래 순서를 추적한다.
+        let collected: [(Int, AIProviderBootstrapResult)] = await withTaskGroup(
+            of: (Int, AIProviderBootstrapResult).self,
+        ) { group in
+            for entry in verifiable {
+                group.addTask {
+                    let verification = await verificationClient.verify(entry.provider, entry.credential)
+                    let result = verifiedResult(for: entry.provider, verification: verification)
+                    return (entry.catalogIndex, result)
+                }
+            }
+
+            var pairs: [(Int, AIProviderBootstrapResult)] = []
+            for await pair in group {
+                pairs.append(pair)
+            }
+            return pairs
         }
 
-        return results
+        // 완료 순서가 아니라 v1Catalog 원래 순서로 정렬하여 반환
+        return collected.sorted(by: { $0.0 < $1.0 }).map(\.1)
     }
 
     public static func persistVerificationResults(
