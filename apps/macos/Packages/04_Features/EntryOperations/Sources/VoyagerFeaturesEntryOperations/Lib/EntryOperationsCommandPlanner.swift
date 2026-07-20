@@ -13,6 +13,7 @@ public enum EntryOperationsNavigationCommand: Sendable {
     case openSelectedItem
     case quickLookSelectedItem
     case getInfoForSelectedItems
+    case getInfoForPath(String)
     case shareSelectedItems(anchor: CGPoint?)
     case revealSelectedItemsInFinder
     case performService(serviceName: String)
@@ -33,6 +34,7 @@ public enum EntryOperationsMutationCommand: Sendable {
     case compressSelectedItems
     case extractSelectedItem
     case toggleTagForSelectedItem(tag: String)
+    case setTagForSelectedItems(tag: String, mode: TagMutationRequest.Mode)
     case moveSelectedItemsToTrash
     case deleteSelectedItemsImmediately
     case putBackSelectedItems
@@ -84,6 +86,8 @@ enum EntryOperationsCommandPlanner {
             return planQuickLookSelectedItem(selected)
         case .getInfoForSelectedItems:
             return planGetInfoForSelectedItems(selected)
+        case let .getInfoForPath(path):
+            return planGetInfoForPath(path)
         case let .shareSelectedItems(anchor):
             return planShareSelectedItems(selected, anchor: anchor)
         case .revealSelectedItemsInFinder:
@@ -132,6 +136,8 @@ enum EntryOperationsCommandPlanner {
             planExtractSelectedItem(context)
         case let .toggleTagForSelectedItem(tag):
             planToggleTagForSelectedItem(context, tag: tag)
+        case let .setTagForSelectedItems(tag, mode):
+            planSetTagForSelectedItems(context, tag: tag, mode: mode)
         case .moveSelectedItemsToTrash:
             planMoveSelectedItemsToTrash(context)
         case .deleteSelectedItemsImmediately:
@@ -174,6 +180,11 @@ enum EntryOperationsCommandPlanner {
     private static func planGetInfoForSelectedItems(_ selected: [EntryModel]) -> [EntryOperationsCommandOutput] {
         guard !selected.isEmpty else { return [] }
         return [.entryOperations(.open(.openFinderInfo(paths: selected.map(\.fullPath))))]
+    }
+
+    private static func planGetInfoForPath(_ path: String) -> [EntryOperationsCommandOutput] {
+        guard !path.isEmpty else { return [] }
+        return [.entryOperations(.open(.openFinderInfo(paths: [path])))]
     }
 
     private static func planShareSelectedItems(
@@ -279,6 +290,22 @@ enum EntryOperationsCommandPlanner {
         return [
             .entryOperations(.tagging(.requestTagMutation(request: .init(
                 mode: .toggle,
+                tagName: tag,
+                paths: selectedPaths,
+            )))),
+        ]
+    }
+
+    private static func planSetTagForSelectedItems(
+        _ context: EntryOperationsCommandContext,
+        tag: String,
+        mode: TagMutationRequest.Mode,
+    ) -> [EntryOperationsCommandOutput] {
+        let selectedPaths = selectedPaths(in: context)
+        guard !selectedPaths.isEmpty else { return [] }
+        return [
+            .entryOperations(.tagging(.requestTagMutation(request: .init(
+                mode: mode,
                 tagName: tag,
                 paths: selectedPaths,
             )))),
