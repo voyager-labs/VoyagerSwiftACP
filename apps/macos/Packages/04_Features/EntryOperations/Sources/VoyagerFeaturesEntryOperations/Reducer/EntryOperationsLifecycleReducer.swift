@@ -12,6 +12,8 @@ struct EntryOperationsLifecycleReducer {
     var alertClient
     @Dependency(\.entryThumbnailCacheClient)
     var entryThumbnailCacheClient
+    @Dependency(\.trashMetadataStoreClient)
+    var trashMetadataStoreClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -22,6 +24,16 @@ struct EntryOperationsLifecycleReducer {
 
             case let .lifecycle(.resetForDuplicate(windowID)):
                 state.resetForDuplicate(windowID: windowID)
+                return .none
+
+            case .loading(.itemsLoaded):
+                return .run { [trashMetadataStoreClient] send in
+                    let paths = await Set(trashMetadataStoreClient.load().map(\.trashPath))
+                    await send(.lifecycle(.restorableTrashPathsLoaded(paths)))
+                }
+
+            case let .lifecycle(.restorableTrashPathsLoaded(paths)):
+                state.restorableTrashPaths = paths
                 return .none
 
             case let .lifecycle(.syncSelectedEntryIDs(ids)):
@@ -74,7 +86,19 @@ struct EntryOperationsLifecycleReducer {
                     }
                 }
 
-            case .lifecycle(.entryActionCompleted):
+            case let .lifecycle(.entryActionCompleted(record)):
+                switch record.operationKind {
+                case .moveToTrash:
+                    state.restorableTrashPaths.formUnion(record.targets.compactMap(\.afterPath))
+                case .putBack:
+                    state.restorableTrashPaths.subtract(record.targets.compactMap(\.beforePath))
+                default:
+                    break
+                }
+                return .none
+
+            case .lifecycle(.emptyTrashCompleted):
+                state.restorableTrashPaths = []
                 return .none
 
             default:
