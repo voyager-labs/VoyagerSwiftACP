@@ -682,6 +682,29 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 }
 
 extension FMW001FileManagerWindowTests {
+    // MARK: - FMW-001-open_file_manager_window
+
+    /// FMW-001-open_file_manager_window: File Manager toolbar가 고정된 icon-only 표현을 유지한다.
+    /// toolbar의 display mode contextual menu가 앱 전용 메뉴 뒤에 노출되지 않도록 창 스타일 계약을 검증한다.
+    /// - 검증 내용: icon-only mode, 사용자 customization, configuration autosave, display mode customization 설정
+    /// - 사전 조건: 새 NSWindow에 FileManagerWindowChrome 스타일 적용
+    /// - 기대 결과: toolbar 표현과 customization 경로가 모두 고정됨
+    func testConfigureWindowStyleDisablesToolbarDisplayModeCustomization() throws {
+        let window = NSWindow(contentViewController: NSViewController())
+
+        FileManagerWindowChrome.configureWindowStyle(window)
+
+        let toolbar = try XCTUnwrap(window.toolbar)
+        XCTAssertEqual(toolbar.displayMode, .iconOnly)
+        XCTAssertFalse(toolbar.allowsUserCustomization)
+        XCTAssertFalse(toolbar.autosavesConfiguration)
+        if #available(macOS 15.0, *) {
+            XCTAssertFalse(toolbar.allowsDisplayModeCustomization)
+        }
+    }
+}
+
+extension FMW001FileManagerWindowTests {
     // MARK: - FMW-001-entry_commands
 
     /// FMW-001-entry_commands: blank-area AppKit menu container disables automatic item validation.

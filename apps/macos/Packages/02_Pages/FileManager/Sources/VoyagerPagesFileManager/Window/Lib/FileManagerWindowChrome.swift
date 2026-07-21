@@ -37,6 +37,9 @@ enum FileManagerWindowChrome {
         toolbar.showsBaselineSeparator = false
         toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = false
+        if #available(macOS 15.0, *) {
+            toolbar.allowsDisplayModeCustomization = false
+        }
         toolbar.autosavesConfiguration = false
         window.toolbar = toolbar
 
