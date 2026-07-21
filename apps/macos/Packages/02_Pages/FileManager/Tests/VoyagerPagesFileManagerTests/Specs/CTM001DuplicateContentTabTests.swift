@@ -38,11 +38,11 @@ final class CTM001DuplicateContentTabTests: XCTestCase {
         XCTAssertEqual(state.previousActiveTabID, sourceID)
     }
 
-    /// CTM-001-duplicate_unpinned_source: selected source 복제는 source selection/anchor만 유지함
-    /// - 검증 내용: duplicate가 새 identity를 만들고 활성화해도 selected membership과 anchor를 복사하지 않음
-    /// - 사전 조건: selected/anchored unpinned Directory source와 선택되지 않은 sibling tab
-    /// - 기대 결과: source selection/anchor는 유지되고 duplicate ID는 unselected이며 나머지 runtime metadata도 보존됨
-    func testDuplicate_selectedSourcePreservesSelectionAndLeavesDuplicateUnselected() {
+    /// CTM-001-duplicate_unpinned_source: selected source 복제는 기존 선택을 보존하고 active duplicate를 선택함
+    /// - 검증 내용: duplicate가 새 identity로 활성화되면 기존 선택/anchor와 active-selection invariant를 함께 유지함
+    /// - 사전 조건: selected/anchored unpinned Directory source와 active sibling tab
+    /// - 기대 결과: source/sibling/active duplicate가 선택되고 anchor 및 나머지 runtime metadata도 보존됨
+    func testDuplicate_selectedSourcePreservesSelectionAndSelectsActiveDuplicate() {
         let sourceID = ContentTabID(rawValue: "source")
         let siblingID = ContentTabID(rawValue: "sibling")
         let duplicateID = ContentTabID(rawValue: "duplicate")
@@ -78,9 +78,9 @@ final class CTM001DuplicateContentTabTests: XCTestCase {
             action: .duplicate(sourceID: sourceID, duplicateID: duplicateID),
         )
 
-        XCTAssertEqual(state.selectedTabIDs, [sourceID])
+        XCTAssertEqual(state.selectedTabIDs, Set([sourceID, siblingID, duplicateID]))
         XCTAssertEqual(state.selectionAnchorID, sourceID)
-        XCTAssertFalse(state.selectedTabIDs.contains(duplicateID))
+        XCTAssertTrue(state.selectedTabIDs.contains(duplicateID))
         XCTAssertEqual(state.activeTabID, duplicateID)
         XCTAssertEqual(state.previousActiveTabID, siblingID)
         XCTAssertEqual(state.pinnedRecordPersistenceError, pinnedErrorBefore)
@@ -125,11 +125,11 @@ final class CTM001DuplicateContentTabTests: XCTestCase {
 
     // MARK: - CTM-001-duplicate_pinned_source
 
-    /// CTM-001-duplicate_pinned_source: Pinned source tab 복제 시 append하고 activeTabID 변경 없음
-    /// - 검증 내용: Pinned source가 active가 아닐 때 append, activeTabID 유지
+    /// CTM-001-duplicate_pinned_source: Pinned source tab 복제 시 pinned 경계에 삽입하고 activeTabID 변경 없음
+    /// - 검증 내용: Pinned source가 active가 아닐 때 첫 unpinned 앞에 삽입, activeTabID 유지
     /// - 사전 조건: Pinned Directory tab과 unpinned Home tab, Home이 active
-    /// - 기대 결과: Duplicate가 append되고 activeTabID는 Home 유지
-    func testDuplicate_pinnedSource_doesNotChangeActive() throws {
+    /// - 기대 결과: Duplicate가 pinned 경계에 삽입되고 activeTabID는 Home 유지
+    func testDuplicate_pinnedSource_doesNotChangeActive() {
         let pinID = ContentTabID()
         let homeID = ContentTabID()
         let duplicateID = ContentTabID()
@@ -148,16 +148,15 @@ final class CTM001DuplicateContentTabTests: XCTestCase {
         _ = reducer.reduce(into: &state, action: .duplicate(sourceID: pinID, duplicateID: duplicateID))
 
         XCTAssertEqual(state.tabs.count, 3)
-        let lastTab = try XCTUnwrap(state.tabs.last)
-        XCTAssertEqual(lastTab.id, duplicateID)
+        XCTAssertEqual(state.tabs.map(\.id), [pinID, duplicateID, homeID])
         XCTAssertEqual(state.activeTabID, homeID)
         XCTAssertNil(state.previousActiveTabID)
     }
 
-    /// CTM-001-duplicate_pinned_source: Pinned source가 active일 때도 append, activeTabID source 유지
-    /// - 검증 내용: Pinned source가 active일 때 append, activeTabID source 그대로
+    /// CTM-001-duplicate_pinned_source: Pinned source가 active일 때도 경계 삽입, activeTabID source 유지
+    /// - 검증 내용: Pinned source가 active일 때 pinned 경계 삽입, activeTabID source 그대로
     /// - 사전 조건: Pinned Directory tab이 active
-    /// - 기대 결과: Duplicate가 append되고 activeTabID는 source 유지
+    /// - 기대 결과: Duplicate가 pinned 경계에 삽입되고 activeTabID는 source 유지
     func testDuplicate_pinnedSource_whenActive() throws {
         let pinID = ContentTabID()
         let duplicateID = ContentTabID()
@@ -378,6 +377,56 @@ final class CTM001DuplicateContentTabTests: XCTestCase {
         XCTAssertEqual(state, originalState)
     }
 
+    /// CTM-001-duplicate_noop_guards: composed reducer도 기존 duplicate ID를 성공으로 오인하지 않음
+    /// - 검증 내용: selection/anchor와 기존 duplicate ID의 owner cache가 모두 보존됨
+    /// - 사전 조건: source와 별도 existing tab이 있고 existing ID로 duplicate action을 직접 전송함
+    /// - 기대 결과: core no-op 이후 Window routing도 selection collapse나 owner handoff를 수행하지 않음
+    func testDuplicate_duplicateIDCollision_composedReducerPreservesSelectionAndOwnerCache() async {
+        let sourceID = ContentTabID(rawValue: "collision-source")
+        let existingID = ContentTabID(rawValue: "collision-existing")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: sourceID,
+                    page: .collection,
+                    anchor: .virtualCollection(id: "Recents"),
+                    isPinned: false,
+                    title: "Source",
+                    iconName: "clock",
+                ),
+                ContentTabItem(
+                    id: existingID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Existing",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: sourceID,
+        )
+        state.contentTabs.selectedTabIDs = [sourceID, existingID]
+        state.contentTabs.selectionAnchorID = existingID
+        state.content.navigation.navigationState = .recents
+        var existingContent = FileManagerContentFeature.State()
+        existingContent.navigation.navigationState = .home
+        state.tabContentStates[existingID] = existingContent
+        let originalContentTabs = state.contentTabs
+        let originalExistingContent = state.tabContentStates[existingID]
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.duplicate(sourceID: sourceID, duplicateID: existingID)))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(store.state.contentTabs, originalContentTabs)
+        XCTAssertEqual(store.state.tabContentStates[existingID], originalExistingContent)
+        await store.finish()
+    }
+
     /// CTM-001-duplicate_noop_guards: maxTabs에 도달하면 no-op
     /// - 검증 내용: state가 완전히 동일하게 유지
     /// - 사전 조건: tabs.count == maxTabs (20)
@@ -556,6 +605,7 @@ extension CTM001DuplicateContentTabTests {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.duplicate(sourceID: sourceID, duplicateID: duplicateID)))
+        await store.skipReceivedActions(strict: false)
 
         // Pending close state는 그대로 유지
         XCTAssertNotNil(store.state.pendingContentTabClose)
@@ -566,7 +616,10 @@ extension CTM001DuplicateContentTabTests {
         XCTAssertNil(store.state.contentTabs.tabs[id: duplicateID])
         XCTAssertNil(store.state.tabContentStates[duplicateID])
         XCTAssertNil(store.state.tabInspectorStates[duplicateID])
-        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [sourceID])
+        XCTAssertEqual(
+            store.state.contentTabs.selectedTabIDs,
+            Set([sourceID, activeBeforePendingID, pendingTabID]),
+        )
         XCTAssertNil(store.state.contentTabs.selectionAnchorID)
 
         // Source/target row 유지
@@ -618,8 +671,11 @@ extension CTM001DuplicateContentTabTests {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.duplicate(sourceID: sourceID, duplicateID: duplicateID)))
+        await store.skipReceivedActions(strict: false)
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [duplicateID])
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, duplicateID)
         await store.finish()
     }
 
@@ -657,6 +713,50 @@ extension CTM001DuplicateContentTabTests {
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
         XCTAssertNil(store.state.pendingContentTabClose)
+        await store.finish()
+    }
+
+    /// CTM-001-duplicate_pending_teardown_guard: Sidebar single duplicate는 owner teardown 중 no-op임
+    /// - 검증 내용: Sidebar delegate부터 command/core routing까지 row/cache/active/selection을 전혀 변경하지 않음
+    /// - 사전 조건: 다른 unpinned tab close의 `pendingContentTabTeardown`이 있고 Home row가 active/selected
+    /// - 기대 결과: duplicate row/internal handoff가 생성되지 않고 teardown transaction state가 byte-for-byte 보존됨
+    func testDuplicate_sidebarSingleDuringPendingTeardown_isWholeStateNoOp() async throws {
+        let sourceID = ContentTabID(rawValue: "teardown-source")
+        let closingID = ContentTabID(rawValue: "teardown-closing")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: sourceID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: sourceID,
+        )
+        state.contentTabs.selectionAnchorID = sourceID
+        state.pendingContentTabTeardown = try PendingContentTabTeardown(
+            requestID: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000901")),
+            tabID: closingID,
+            ownerID: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000902")),
+        )
+        let originalState = state
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.duplicateContentTab(sourceID))))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(store.state, originalState)
         await store.finish()
     }
 

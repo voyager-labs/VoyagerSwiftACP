@@ -6,6 +6,46 @@ import UniformTypeIdentifiers
 import VoyagerEntitiesTag
 import VoyagerShared
 
+struct ContentTabDuplicatePresentation: Equatable {
+    enum Command: Equatable {
+        case duplicateContentTab(ContentTabID)
+        case duplicateSelectedContentTabs
+    }
+
+    let title: String
+    let accessibilityIdentifier: String
+    let isEnabled: Bool
+    let command: Command
+
+    init(
+        clickedTabID: ContentTabID,
+        selectedTabIDs: Set<ContentTabID>,
+        currentTabIDs: [ContentTabID],
+        tabCount: Int,
+    ) {
+        let validSelectedIDs = Set(currentTabIDs).intersection(selectedTabIDs)
+        if validSelectedIDs.count > 1, validSelectedIDs.contains(clickedTabID) {
+            title = "Duplicate \(validSelectedIDs.count) Tabs"
+            accessibilityIdentifier = "duplicate-selected-content-tabs"
+            command = .duplicateSelectedContentTabs
+        } else {
+            title = "Duplicate"
+            accessibilityIdentifier = "duplicate-content-tab-\(clickedTabID)"
+            command = .duplicateContentTab(clickedTabID)
+        }
+        isEnabled = tabCount < ContentTabConstants.maxTabs
+    }
+
+    var delegateAction: FileManagerSidebarAction.Delegate {
+        switch command {
+        case let .duplicateContentTab(tabID):
+            .duplicateContentTab(tabID)
+        case .duplicateSelectedContentTabs:
+            .duplicateSelectedContentTabs
+        }
+    }
+}
+
 struct SidebarView: View {
     let sidebarStore: StoreOf<FileManagerSidebarFeature>
     let contentTabStore: StoreOf<ContentTabFeature>
@@ -33,32 +73,40 @@ struct SidebarView: View {
                     .padding(.top, 50)
             }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    if !sidebarStore.contentTabSidebarItems.isEmpty {
-                        contentTabRows(pinnedContentTabSidebarItems)
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if !sidebarStore.contentTabSidebarItems.isEmpty {
+                            contentTabRows(pinnedContentTabSidebarItems)
 
-                        if !pinnedContentTabSidebarItems.isEmpty,
-                           !unpinnedContentTabSidebarItems.isEmpty
-                        {
-                            contentTabSectionDivider
+                            if !pinnedContentTabSidebarItems.isEmpty,
+                               !unpinnedContentTabSidebarItems.isEmpty
+                            {
+                                contentTabSectionDivider
+                            }
+
+                            reorderableContentTabRows(unpinnedContentTabSidebarItems)
+
+                            Spacer()
+                                .frame(height: 4)
+
+                            newContentTabRow
+
+                            Spacer()
+                                .frame(height: 8)
                         }
 
-                        reorderableContentTabRows(unpinnedContentTabSidebarItems)
-
-                        Spacer()
-                            .frame(height: 4)
-
-                        newContentTabRow
-
-                        Spacer()
-                            .frame(height: 8)
+                        Spacer(minLength: 0)
+                            .frame(maxWidth: .infinity)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                sidebarStore.send(.view(.collapseContentTabSelectionToActive))
+                            }
                     }
-
-                    Spacer()
+                    .frame(minHeight: proxy.size.height, alignment: .top)
                 }
+                .clipped()
             }
-            .clipped()
         }
         .background(Color.clear)
         .navigationSplitViewColumnWidth(ideal: sidebarStore.sidebarWidth)
@@ -332,12 +380,19 @@ struct SidebarView: View {
         _ item: ContentTabProjection.ContentTabSidebarItem,
         reorderDragSource: ContentTabReorderDragSourceConfiguration?,
     ) -> some View {
-        ContentTabSidebarRow(
+        let duplicatePresentation = ContentTabDuplicatePresentation(
+            clickedTabID: item.id,
+            selectedTabIDs: contentTabStore.selectedTabIDs,
+            currentTabIDs: Array(contentTabStore.tabs.ids),
+            tabCount: contentTabStore.tabs.count,
+        )
+        return ContentTabSidebarRow(
             item: item,
             reorderDragSource: reorderDragSource,
             isHovered: contentTabHoveredItemID == item.id,
             isDropTarget: sidebarEntryDropTarget == .contentTab(item.id),
             isSelected: contentTabSelectionPresentation.isSelected(item.id),
+            duplicatePresentation: duplicatePresentation,
             onActivate: {
                 sidebarStore.send(.delegate(.selectContentTab(item.id)))
             },
@@ -347,7 +402,9 @@ struct SidebarView: View {
             onSelectRange: {
                 sidebarStore.send(.view(.selectContentTabRange(to: item.id)))
             },
-            onDuplicate: { sidebarStore.send(.delegate(.duplicateContentTab(item.id))) },
+            onDuplicate: duplicatePresentation.isEnabled ? {
+                sidebarStore.send(.delegate(duplicatePresentation.delegateAction))
+            } : nil,
             onPin: {
                 sidebarStore.send(.delegate(.pinContentTab(item.id)))
             },
@@ -405,6 +462,7 @@ private struct ContentTabSidebarRow: View {
     let isHovered: Bool
     let isDropTarget: Bool
     let isSelected: Bool
+    let duplicatePresentation: ContentTabDuplicatePresentation
     let onActivate: () -> Void
     let onToggleSelection: () -> Void
     let onSelectRange: () -> Void
@@ -428,6 +486,9 @@ private struct ContentTabSidebarRow: View {
             reorderDragSource: reorderDragSource,
             backgroundColor: backgroundColor,
             accessibilityStateValue: accessibilityStateValue,
+            duplicateTitle: duplicatePresentation.title,
+            duplicateAccessibilityIdentifier: duplicatePresentation.accessibilityIdentifier,
+            isDuplicateEnabled: duplicatePresentation.isEnabled,
             onActivate: handlePrimaryAction,
             onToggleSelection: handleToggleSelection,
             onSelectRange: handleSelectRange,
@@ -502,6 +563,9 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
     let reorderDragSource: ContentTabReorderDragSourceConfiguration?
     let backgroundColor: Color
     let accessibilityStateValue: String
+    let duplicateTitle: String
+    let duplicateAccessibilityIdentifier: String
+    let isDuplicateEnabled: Bool
     let onActivate: () -> Void
     let onToggleSelection: () -> Void
     let onSelectRange: () -> Void
@@ -532,7 +596,7 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
             rootView: AnyView(hostedRoot),
             accessibilityLabel: item.title ?? "Untitled",
             accessibilityValue: accessibilityStateValue,
-            duplicateAccessibilityIdentifier: "duplicate-content-tab-\(item.id)",
+            duplicateAccessibilityIdentifier: duplicateAccessibilityIdentifier,
             isPinned: item.isPinned,
             isEnabled: true,
             reorderDragSource: reorderDragSource,
@@ -543,6 +607,8 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
             onPin: onPin,
             onUnpin: onUnpin,
             onClose: onClose,
+            duplicateTitle: duplicateTitle,
+            isDuplicateEnabled: isDuplicateEnabled,
         )
     }
 
@@ -589,7 +655,9 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     private var onPin: () -> Void = {}
     private var onUnpin: () -> Void = {}
     private var onClose: () -> Void = {}
+    private var duplicateTitle = "Duplicate"
     private var duplicateAccessibilityIdentifier = ""
+    private var isDuplicateEnabled = true
     private var isPinned = false
 
     var dragSessionStartOverride: (([NSDraggingItem], NSEvent) -> Void)?
@@ -623,6 +691,8 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         onPin: @escaping () -> Void,
         onUnpin: @escaping () -> Void,
         onClose: @escaping () -> Void,
+        duplicateTitle: String = "Duplicate",
+        isDuplicateEnabled: Bool = true,
     ) {
         self.reorderDragSource = reorderDragSource
         self.onActivate = onActivate
@@ -632,7 +702,9 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         self.onPin = onPin
         self.onUnpin = onUnpin
         self.onClose = onClose
+        self.duplicateTitle = duplicateTitle
         self.duplicateAccessibilityIdentifier = duplicateAccessibilityIdentifier
+        self.isDuplicateEnabled = isDuplicateEnabled
         self.isPinned = isPinned
         self.isEnabled = isEnabled
         presentationView.rootView = rootView
@@ -876,8 +948,10 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
 
     private func makeContextMenu() -> NSMenu {
         let menu = NSMenu()
-        let duplicateItem = menuItem(title: "Duplicate", action: #selector(duplicate))
+        menu.autoenablesItems = false
+        let duplicateItem = menuItem(title: duplicateTitle, action: #selector(duplicate))
         duplicateItem.identifier = NSUserInterfaceItemIdentifier(duplicateAccessibilityIdentifier)
+        duplicateItem.isEnabled = isDuplicateEnabled && onDuplicate != nil
         menu.addItem(duplicateItem)
         if isPinned {
             menu.addItem(menuItem(title: "Unpin", action: #selector(unpin)))
@@ -895,6 +969,7 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     }
 
     @objc private func duplicate() {
+        guard isDuplicateEnabled else { return }
         onDuplicate?()
     }
 

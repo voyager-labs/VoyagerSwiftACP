@@ -46,6 +46,9 @@ struct FileManagerSidebarContentTabSelectionRoutingReducer {
             case let .view(.selectContentTabRange(to: id)):
                 .send(.delegate(.selectContentTabRange(to: id)))
 
+            case .view(.collapseContentTabSelectionToActive):
+                .send(.delegate(.collapseContentTabSelectionToActive))
+
             default:
                 .none
             }

@@ -31,6 +31,26 @@ public struct FileManagerFeature {
             FileManagerInspectorFeature()
         }
 
+        Reduce { state, action in
+            switch action {
+            case let .contentTabs(.duplicate(sourceID, duplicateID)):
+                .send(.internal(.duplicateContentTabReduced(
+                    sourceID: sourceID,
+                    duplicateID: duplicateID,
+                    duplicateIDWasPreexisting: state.contentTabs.tabs[id: duplicateID] != nil,
+                )))
+
+            case let .contentTabs(.duplicateSelected(requests)):
+                .send(.internal(.duplicateSelectedContentTabsReduced(
+                    requests: requests,
+                    preexistingTabIDs: Set(state.contentTabs.tabs.ids),
+                )))
+
+            default:
+                .none
+            }
+        }
+
         Scope(state: \.contentTabs, action: \.contentTabs) {
             ContentTabFeature()
         }

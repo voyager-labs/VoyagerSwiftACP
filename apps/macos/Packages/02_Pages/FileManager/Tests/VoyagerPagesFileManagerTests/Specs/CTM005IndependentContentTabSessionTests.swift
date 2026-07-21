@@ -10355,7 +10355,9 @@ extension CTM005IndependentContentTabSessionTests {
         await store.skipReceivedActions()
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
-        let duplicateID = try XCTUnwrap(store.state.contentTabs.tabs.last?.id)
+        let duplicateID = try XCTUnwrap(
+            store.state.contentTabs.tabs.first { $0.id != sourceID && $0.id != activeID }?.id,
+        )
         let duplicateContent = try XCTUnwrap(store.state.tabContentStates[duplicateID])
         XCTAssertNotEqual(duplicateID, sourceID)
         XCTAssertEqual(duplicateContent.navigation.navigationState, .tags("Recents"))
@@ -10792,7 +10794,9 @@ extension CTM005IndependentContentTabSessionTests {
         await store.send(.request(.duplicateActiveContentTab))
         await store.skipReceivedActions()
 
-        let duplicateID = try XCTUnwrap(store.state.contentTabs.tabs.last?.id)
+        let duplicateID = try XCTUnwrap(
+            store.state.contentTabs.tabs.first { $0.id != sourceID && $0.id != homeID }?.id,
+        )
         XCTAssertNil(store.state.tabContentStates[duplicateID]?.aiChat.sessionID)
 
         await store.send(.contentTabs(.setCurrent(homeID)))
@@ -10855,8 +10859,8 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
-    /// CTM-005-content_tab_duplicate: Inactive pinned source duplicate는 append되고 active 탭이 변경되지 않음
-    func testDuplicate_pinnedInactiveSource_doesNotChangeActive() async throws {
+    /// CTM-005-content_tab_duplicate: Inactive pinned source duplicate는 pinned 경계에 삽입되고 active 탭이 변경되지 않음
+    func testDuplicate_pinnedInactiveSource_doesNotChangeActive() async {
         let pinID = ContentTabID()
         let homeID = ContentTabID()
         var state = FileManagerFeature.State()
@@ -10869,6 +10873,7 @@ extension CTM005IndependentContentTabSessionTests {
             ],
             activeTabID: homeID, recentlyClosed: nil,
         )
+        state.contentTabs.selectedTabIDs = [pinID, homeID]
         state.syncActiveTabContentState()
         state.syncContentTabSidebarItems()
 
@@ -10895,9 +10900,15 @@ extension CTM005IndependentContentTabSessionTests {
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, 3)
         XCTAssertEqual(store.state.contentTabs.activeTabID, homeID)
-        let lastTab = try XCTUnwrap(store.state.contentTabs.tabs.last)
-        XCTAssertEqual(lastTab.anchor, .directory(path: "/pinned"))
-        XCTAssertFalse(lastTab.isPinned)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [homeID])
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, homeID)
+        XCTAssertEqual(store.state.contentTabs.tabs.first?.id, pinID)
+        XCTAssertEqual(store.state.contentTabs.tabs.last?.id, homeID)
+        let duplicate = store.state.contentTabs.tabs[1]
+        XCTAssertNotEqual(duplicate.id, pinID)
+        XCTAssertNotEqual(duplicate.id, homeID)
+        XCTAssertEqual(duplicate.anchor, .directory(path: "/pinned"))
+        XCTAssertFalse(duplicate.isPinned)
         await store.finish()
     }
 

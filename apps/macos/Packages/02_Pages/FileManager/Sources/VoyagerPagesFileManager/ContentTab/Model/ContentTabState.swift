@@ -50,8 +50,14 @@ public struct ClosedContentTabSnapshot: Equatable, Sendable, Codable {
 
 @ObservableState
 public struct ContentTabState: Equatable, Sendable {
-    public var tabs: IdentifiedArrayOf<ContentTabItem> = []
-    public var activeTabID: ContentTabID?
+    public var tabs: IdentifiedArrayOf<ContentTabItem> = [] {
+        didSet { reconcileSelection() }
+    }
+
+    public var activeTabID: ContentTabID? {
+        didSet { reconcileSelection() }
+    }
+
     public var previousActiveTabID: ContentTabID?
     public var recentlyClosed: ClosedContentTabSnapshot?
     public var pinnedRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
@@ -61,11 +67,15 @@ public struct ContentTabState: Equatable, Sendable {
     var selectionAnchorID: ContentTabID?
 
     public var selectedTabCount: Int {
-        selectedTabIDs.count
+        orderedValidSelectedTabIDs.count
     }
 
     public var isBulkActionEnabled: Bool {
-        !selectedTabIDs.isEmpty
+        selectedTabCount > 1
+    }
+
+    public var orderedValidSelectedTabIDs: [ContentTabID] {
+        selectionOrderedTabIDs.filter(selectedTabIDs.contains)
     }
 
     var selectionOrderedTabIDs: [ContentTabID] {
@@ -88,14 +98,28 @@ public struct ContentTabState: Equatable, Sendable {
         self.pinnedRecords = pinnedRecords
         self.pendingPinnedRecordIDs = pendingPinnedRecordIDs
         self.pinnedRecordPersistenceError = pinnedRecordPersistenceError
+        reconcileSelection()
     }
 
     mutating func reconcileSelection() {
         let currentTabIDs = Set(tabs.ids)
         selectedTabIDs.formIntersection(currentTabIDs)
+        if let activeTabID, currentTabIDs.contains(activeTabID) {
+            selectedTabIDs.insert(activeTabID)
+        }
         if let selectionAnchorID, !currentTabIDs.contains(selectionAnchorID) {
             self.selectionAnchorID = nil
         }
+    }
+
+    mutating func collapseSelectionToActive() {
+        guard let activeTabID, tabs[id: activeTabID] != nil else {
+            selectedTabIDs.removeAll()
+            selectionAnchorID = nil
+            return
+        }
+        selectedTabIDs = [activeTabID]
+        selectionAnchorID = activeTabID
     }
 }
 

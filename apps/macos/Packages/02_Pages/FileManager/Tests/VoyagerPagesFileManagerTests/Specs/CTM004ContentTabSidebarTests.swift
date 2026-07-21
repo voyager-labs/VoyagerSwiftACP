@@ -706,11 +706,11 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
         await store.send(.sidebar(.delegate(.openContentTab)))
         await store.receive { action in
-            guard case .contentTabs(.clearSelection) = action else { return false }
+            guard case .contentTabs(.open(.homeDefault)) = action else { return false }
             return true
         }
         await store.receive { action in
-            guard case .contentTabs(.open(.homeDefault)) = action else { return false }
+            guard case .contentTabs(.collapseSelectionToActive) = action else { return false }
             return true
         }
 
@@ -768,11 +768,11 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
         await store.send(.sidebar(.delegate(.openContentTab)))
         await store.receive { action in
-            guard case .contentTabs(.clearSelection) = action else { return false }
+            guard case .contentTabs(.open(.homeDefault)) = action else { return false }
             return true
         }
         await store.receive { action in
-            guard case .contentTabs(.open(.homeDefault)) = action else { return false }
+            guard case .contentTabs(.collapseSelectionToActive) = action else { return false }
             return true
         }
 
@@ -843,12 +843,12 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
         await store.send(.sidebar(.delegate(.selectContentTab(directoryID))))
         await store.receive { action in
-            guard case .contentTabs(.clearSelection) = action else { return false }
-            return true
-        }
-        await store.receive { action in
             guard case let .contentTabs(.setCurrent(id)) = action else { return false }
             return id == directoryID
+        }
+        await store.receive { action in
+            guard case .contentTabs(.collapseSelectionToActive) = action else { return false }
+            return true
         }
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, directoryID, "active tab must switch to Directory")
@@ -857,12 +857,12 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
         await store.send(.sidebar(.delegate(.selectContentTab(homeID))))
         await store.receive { action in
-            guard case .contentTabs(.clearSelection) = action else { return false }
-            return true
-        }
-        await store.receive { action in
             guard case let .contentTabs(.setCurrent(id)) = action else { return false }
             return id == homeID
+        }
+        await store.receive { action in
+            guard case .contentTabs(.collapseSelectionToActive) = action else { return false }
+            return true
         }
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, homeID, "active tab must switch back to Home")

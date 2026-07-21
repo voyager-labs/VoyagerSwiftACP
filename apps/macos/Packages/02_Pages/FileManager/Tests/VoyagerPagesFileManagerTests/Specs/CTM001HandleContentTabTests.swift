@@ -1,11 +1,325 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
+import SwiftUI
 import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
+
+private struct BatchDirectoryCollectionOwnerFixture {
+    let directoryID: ContentTabID
+    let collectionID: ContentTabID
+    let directoryDuplicateID: ContentTabID
+    let collectionDuplicateID: ContentTabID
+    let collectionURL: URL
+    let state: FileManagerFeature.State
+}
+
+private struct BatchSameSessionAiFixture {
+    let firstSourceID: ContentTabID
+    let secondSourceID: ContentTabID
+    let firstDuplicateID: ContentTabID
+    let secondDuplicateID: ContentTabID
+    let sessionID: AiChatSessionID
+    let requestLock: AiChatRequestLock
+    let state: FileManagerFeature.State
+}
+
+private struct BatchPendingCloseFixture {
+    let firstSourceID: ContentTabID
+    let secondSourceID: ContentTabID
+    let thirdSourceID: ContentTabID
+    let pendingTargetID: ContentTabID
+    let firstDuplicateID: ContentTabID
+    let secondDuplicateID: ContentTabID
+    let truncatedDuplicateID: ContentTabID
+    let state: FileManagerFeature.State
+}
+
+@MainActor
+private func makeBatchDirectorySourceContent() -> FileManagerContentFeature.State {
+    var content = FileManagerContentFeature.State.initialContent(
+        for: .directory(path: "/Users/test/Documents"),
+        inheritingWindowContextFrom: .init(),
+    )
+    content.navigation.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .home)]
+    content.navigation.forwardHistory = [
+        ContentPageNavigationHistorySnapshot(navigationState: .folder("/Users/test/Desktop")),
+    ]
+    content.pendingSelectEntryID = "directory-entry"
+    content.composer.isPresented = true
+    content.composer.text = "directory draft"
+    content.entryViewLayout.entryOperations.selectedEntryIDs = ["directory-selected"]
+    return content
+}
+
+@MainActor
+private func makeBatchCollectionSourceContent(
+    inheritingWindowContextFrom directoryContent: FileManagerContentFeature.State,
+) -> FileManagerContentFeature.State {
+    let collectionURL = URL(fileURLWithPath: "/tmp/saved.voycoll")
+    let baselineContext = CollectionContext(query: "kind:document", scopes: ["/tmp"], conditions: [])
+    var content = FileManagerContentFeature.State.initialContent(
+        for: .collectionFile(url: collectionURL),
+        inheritingWindowContextFrom: directoryContent,
+    )
+    content.navigation.backHistory = [
+        ContentPageNavigationHistorySnapshot(navigationState: .folder("/Users/test")),
+    ]
+    content.navigation.forwardHistory = [ContentPageNavigationHistorySnapshot(navigationState: .recents)]
+    content.entryViewLayout.isCollectionMode = true
+    content.collection.collectionContext = CollectionContext(query: "kind:image", scopes: ["/tmp"], conditions: [])
+    content.collection.collectionSession.document = .init(url: collectionURL, name: "Saved Collection")
+    content.collection.collectionSession.metadata.baseline = .init(context: baselineContext)
+    content.collection.isSaving = true
+    content.composer.isPresented = true
+    content.composer.text = "collection draft"
+    return content
+}
+
+@MainActor
+private func makeBatchDirectoryCollectionOwnerFixture() -> BatchDirectoryCollectionOwnerFixture {
+    let directoryID = ContentTabID(rawValue: "directory-source")
+    let collectionID = ContentTabID(rawValue: "collection-source")
+    let directoryContent = makeBatchDirectorySourceContent()
+    let collectionContent = makeBatchCollectionSourceContent(inheritingWindowContextFrom: directoryContent)
+    var state = FileManagerFeature.State()
+    state.contentTabs = ContentTabState(
+        tabs: [
+            ContentTabItem(
+                id: directoryID,
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Documents"),
+                isPinned: false,
+                title: "Documents",
+                iconName: "folder",
+            ),
+            ContentTabItem(
+                id: collectionID,
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/saved.voycoll")),
+                isPinned: false,
+                title: "Saved Collection",
+                iconName: "rectangle.stack",
+            ),
+        ],
+        activeTabID: directoryID,
+    )
+    state.contentTabs.selectedTabIDs = [directoryID, collectionID]
+    state.contentTabs.selectionAnchorID = collectionID
+    state.content = directoryContent
+    var staleDirectoryCache = directoryContent
+    staleDirectoryCache.navigation.backHistory = []
+    staleDirectoryCache.navigation.forwardHistory = []
+    state.tabContentStates = [directoryID: staleDirectoryCache, collectionID: collectionContent]
+    state.inspector.inspectorVisible = true
+    state.syncActiveTabInspectorState()
+    var collectionInspector = FileManagerInspectorFeature.State()
+    collectionInspector.inspectorVisible = true
+    state.tabInspectorStates[collectionID] = collectionInspector.tabSnapshot()
+    state.syncContentTabSidebarItems()
+    return BatchDirectoryCollectionOwnerFixture(
+        directoryID: directoryID,
+        collectionID: collectionID,
+        directoryDuplicateID: ContentTabID(rawValue: "directory-duplicate"),
+        collectionDuplicateID: ContentTabID(rawValue: "collection-duplicate"),
+        collectionURL: URL(fileURLWithPath: "/tmp/saved.voycoll"),
+        state: state,
+    )
+}
+
+private func makeBatchAiRequestLock(sessionID: AiChatSessionID) -> AiChatRequestLock {
+    let modelHandle = AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini")
+    let modelRow = AiModelCatalogRow(
+        handle: modelHandle,
+        displayName: "GPT-4.1 Mini",
+        authMethod: .apiKey,
+        sortOrder: 10,
+    )
+    let requestID = AiChatRequestID(rawValue: UUID())
+    let runID = AiChatRunID(rawValue: UUID())
+    let context = AiChatRequestContextSnapshot(
+        sessionID: sessionID,
+        requestID: requestID,
+        runID: runID,
+        provider: .openai,
+        model: modelHandle,
+        selectedModel: AiProviderModel(
+            id: modelHandle,
+            provider: .openai,
+            rawModelID: "gpt-4.1-mini",
+            displayName: "GPT-4.1 Mini",
+            providerDisplayName: "OpenAI",
+            thinkingCapability: .unknown(reason: .init(message: "Not loaded")),
+        ),
+        selectedModelRow: modelRow,
+        sessionStatus: .active,
+        promptSummary: "shared request",
+        submittedAtMs: 0,
+    )
+    return AiChatRequestLock(
+        kind: .submit,
+        requestID: requestID,
+        runID: runID,
+        context: context,
+        request: AiChatRequest(
+            context: context,
+            messages: [AiChatMessage(role: .user, content: "shared request")],
+        ),
+        persistenceTranscriptHistory: nil,
+        selectedModelHandle: modelHandle,
+        selectedModelRow: modelRow,
+        assistantReplacementIndex: nil,
+    )
+}
+
+@MainActor
+private func makeBatchSameSessionAiFixture() -> BatchSameSessionAiFixture {
+    let firstSourceID = ContentTabID(rawValue: "ai-source-active")
+    let secondSourceID = ContentTabID(rawValue: "ai-source-inactive")
+    let sessionID = AiChatSessionID(rawValue: UUID())
+    let requestLock = makeBatchAiRequestLock(sessionID: sessionID)
+    let sessionIDString = sessionID.rawValue.uuidString
+    var sharedContent = FileManagerContentFeature.State()
+    sharedContent.navigation.navigationState = .aiChat(sessionIDString)
+    sharedContent.aiChat.sessionID = sessionID
+    sharedContent.aiChat.sessionStatus = .active
+    sharedContent.aiChat.executionPhase = .processing(requestLock)
+    var state = FileManagerFeature.State()
+    state.contentTabs = ContentTabState(
+        tabs: [
+            ContentTabItem(
+                id: firstSourceID,
+                page: .aiChat,
+                anchor: .aiChat(sessionID: sessionIDString),
+                isPinned: false,
+                title: "AI Active",
+                iconName: "sparkles",
+            ),
+            ContentTabItem(
+                id: secondSourceID,
+                page: .aiChat,
+                anchor: .aiChat(sessionID: sessionIDString),
+                isPinned: false,
+                title: "AI Inactive",
+                iconName: "sparkles",
+            ),
+        ],
+        activeTabID: firstSourceID,
+    )
+    state.contentTabs.selectedTabIDs = [firstSourceID, secondSourceID]
+    state.contentTabs.selectionAnchorID = secondSourceID
+    state.content = sharedContent
+    state.tabContentStates = [firstSourceID: sharedContent, secondSourceID: sharedContent]
+    state.syncContentTabSidebarItems()
+    return BatchSameSessionAiFixture(
+        firstSourceID: firstSourceID,
+        secondSourceID: secondSourceID,
+        firstDuplicateID: ContentTabID(rawValue: "ai-duplicate-active"),
+        secondDuplicateID: ContentTabID(rawValue: "ai-duplicate-inactive"),
+        sessionID: sessionID,
+        requestLock: requestLock,
+        state: state,
+    )
+}
+
+private func makeBatchPendingCloseTabs() -> IdentifiedArrayOf<ContentTabItem> {
+    var tabs: IdentifiedArrayOf<ContentTabItem> = [
+        ContentTabItem(
+            id: ContentTabID(rawValue: "pending-source-a"),
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "A",
+            iconName: "house",
+        ),
+        ContentTabItem(
+            id: ContentTabID(rawValue: "pending-source-b"),
+            page: .directory,
+            anchor: .directory(path: "/b"),
+            isPinned: false,
+            title: "B",
+            iconName: "folder",
+        ),
+        ContentTabItem(
+            id: ContentTabID(rawValue: "pending-source-c"),
+            page: .directory,
+            anchor: .directory(path: "/c"),
+            isPinned: false,
+            title: "C",
+            iconName: "folder",
+        ),
+        ContentTabItem(
+            id: ContentTabID(rawValue: "pending-target"),
+            page: .directory,
+            anchor: .directory(path: "/c"),
+            isPinned: false,
+            title: "C",
+            iconName: "folder",
+        ),
+    ]
+    let fillerCount = ContentTabConstants.maxTabs - tabs.count - 2
+    for index in 0 ..< fillerCount {
+        tabs.append(ContentTabItem(
+            id: ContentTabID(rawValue: "pending-filler-\(index)"),
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: nil,
+            iconName: nil,
+        ))
+    }
+    return tabs
+}
+
+@MainActor
+private func makeBatchPendingCloseFixture() -> BatchPendingCloseFixture {
+    let firstSourceID = ContentTabID(rawValue: "pending-source-a")
+    let secondSourceID = ContentTabID(rawValue: "pending-source-b")
+    let thirdSourceID = ContentTabID(rawValue: "pending-source-c")
+    let pendingTargetID = ContentTabID(rawValue: "pending-target")
+    var state = FileManagerFeature.State()
+    state.contentTabs = ContentTabState(tabs: makeBatchPendingCloseTabs(), activeTabID: firstSourceID)
+    state.contentTabs.selectedTabIDs = [firstSourceID, secondSourceID, thirdSourceID]
+    state.contentTabs.selectionAnchorID = thirdSourceID
+    state.content.pendingSelectEntryID = "active-source"
+    state.tabContentStates[firstSourceID] = state.content
+    var secondSourceContent = FileManagerContentFeature.State()
+    secondSourceContent.pendingSelectEntryID = "second-source"
+    state.tabContentStates[secondSourceID] = secondSourceContent
+    var thirdSourceContent = FileManagerContentFeature.State()
+    thirdSourceContent.pendingSelectEntryID = "third-source"
+    state.tabContentStates[thirdSourceID] = thirdSourceContent
+    let pendingTargetContent = FileManagerContentFeature.State()
+    state.tabContentStates[pendingTargetID] = pendingTargetContent
+    state.inspector.inspectorVisible = true
+    state.syncActiveTabInspectorState()
+    let pendingTargetInspector = FileManagerInspectorFeature.State()
+    state.tabInspectorStates[pendingTargetID] = pendingTargetInspector
+    state.pendingContentTabClose = PendingContentTabClose(
+        tabID: pendingTargetID,
+        previousActiveTabID: firstSourceID,
+        previousActiveContent: state.content,
+        targetContent: pendingTargetContent,
+        previousActiveInspector: state.inspector,
+        targetInspector: pendingTargetInspector,
+    )
+    state.syncContentTabSidebarItems()
+    return BatchPendingCloseFixture(
+        firstSourceID: firstSourceID,
+        secondSourceID: secondSourceID,
+        thirdSourceID: thirdSourceID,
+        pendingTargetID: pendingTargetID,
+        firstDuplicateID: ContentTabID(rawValue: "pending-duplicate-a"),
+        secondDuplicateID: ContentTabID(rawValue: "pending-duplicate-b"),
+        truncatedDuplicateID: ContentTabID(rawValue: "pending-duplicate-c"),
+        state: state,
+    )
+}
 
 @MainActor
 final class CTM001HandleContentTabTests: XCTestCase {
@@ -309,6 +623,1199 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertNotNil(emptyState.activeTabID)
     }
 
+    // MARK: - CTM-001-duplicate_selected_content_tabs
+
+    /// CTM-001-duplicate_selected_content_tabs: selected row 메뉴는 bulk command를 한 번만 실행함
+    /// 선택된 row의 context menu가 selection을 건드리지 않고 bulk duplicate presentation과 callback을 사용하는지 검증한다.
+    /// - 검증 내용: pure projection의 title/identifier/command와 native NSMenu target-action 1회 dispatch
+    /// - 사전 조건: clicked tab을 포함한 non-empty selection, 남은 tab capacity, 실제 ContentTabSidebarButton menu
+    /// - 기대 결과: bulk label/identifier가 노출되고 menu open은 무효과, 실행은 bulk callback만 정확히 한 번 호출함
+    func testDuplicateSidebarMenu_selectedRowUsesBulkPresentationAndDispatchesOnce() throws {
+        let clickedID = ContentTabID(rawValue: "selected-clicked")
+        let selectedIDs: Set<ContentTabID> = [clickedID, ContentTabID(rawValue: "selected-peer")]
+        let presentation = ContentTabDuplicatePresentation(
+            clickedTabID: clickedID,
+            selectedTabIDs: selectedIDs,
+            currentTabIDs: Array(selectedIDs),
+            tabCount: 2,
+        )
+
+        XCTAssertEqual(presentation.title, "Duplicate 2 Tabs")
+        XCTAssertEqual(presentation.accessibilityIdentifier, "duplicate-selected-content-tabs")
+        XCTAssertTrue(presentation.isEnabled)
+        guard case .duplicateSelectedContentTabs = presentation.command else {
+            return XCTFail("selected clicked row should project the bulk command")
+        }
+        guard case .duplicateSelectedContentTabs = presentation.delegateAction else {
+            return XCTFail("bulk projection should map to the Sidebar bulk delegate")
+        }
+
+        _ = NSApplication.shared
+        let button = ContentTabSidebarButton(frame: .zero)
+        var primaryActionCount = 0
+        var duplicateActionCount = 0
+        button.update(
+            rootView: AnyView(EmptyView()),
+            accessibilityLabel: "Selected Content Tab",
+            accessibilityValue: "Active, Selected",
+            duplicateAccessibilityIdentifier: presentation.accessibilityIdentifier,
+            isPinned: false,
+            isEnabled: true,
+            reorderDragSource: nil,
+            onActivate: { primaryActionCount += 1 },
+            onToggleSelection: { primaryActionCount += 1 },
+            onSelectRange: { primaryActionCount += 1 },
+            onDuplicate: { duplicateActionCount += 1 },
+            onPin: {},
+            onUnpin: {},
+            onClose: {},
+            duplicateTitle: presentation.title,
+            isDuplicateEnabled: presentation.isEnabled,
+        )
+
+        let menu = try XCTUnwrap(button.menu)
+        let duplicateItem = try XCTUnwrap(menu.items.first)
+        XCTAssertEqual(duplicateItem.title, "Duplicate 2 Tabs")
+        XCTAssertEqual(duplicateItem.identifier?.rawValue, "duplicate-selected-content-tabs")
+        XCTAssertTrue(duplicateItem.isEnabled)
+        XCTAssertEqual(primaryActionCount, 0)
+        XCTAssertEqual(duplicateActionCount, 0)
+
+        let action = try XCTUnwrap(duplicateItem.action)
+        XCTAssertTrue(NSApp.sendAction(action, to: duplicateItem.target, from: duplicateItem))
+        XCTAssertEqual(primaryActionCount, 0)
+        XCTAssertEqual(duplicateActionCount, 1)
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: unselected row와 empty selection은 clicked-row single command를 유지함
+    /// 기존 selection이 다른 row에 있거나 비어 있을 때 우클릭 row 하나만 복제하는 fallback을 검증한다.
+    /// - 검증 내용: pure projection의 single title/identifier와 clicked ID delegate mapping
+    /// - 사전 조건: clicked tab은 selection 밖이며 selected peer가 있는 경우와 selection이 비어 있는 경우
+    /// - 기대 결과: 두 경우 모두 기존 `Duplicate`와 clicked-row `.duplicateContentTab` route를 사용함
+    func testDuplicateSidebarMenu_unselectedOrEmptySelectionUsesClickedRowSinglePresentation() {
+        let clickedID = ContentTabID(rawValue: "unselected-clicked")
+        let selections: [Set<ContentTabID>] = [
+            [ContentTabID(rawValue: "selected-peer")],
+            [],
+        ]
+
+        for selectedIDs in selections {
+            let presentation = ContentTabDuplicatePresentation(
+                clickedTabID: clickedID,
+                selectedTabIDs: selectedIDs,
+                currentTabIDs: [clickedID] + Array(selectedIDs),
+                tabCount: 2,
+            )
+
+            XCTAssertEqual(presentation.title, "Duplicate")
+            XCTAssertEqual(
+                presentation.accessibilityIdentifier,
+                "duplicate-content-tab-\(clickedID)",
+            )
+            XCTAssertTrue(presentation.isEnabled)
+            guard case let .duplicateContentTab(projectedID) = presentation.command else {
+                return XCTFail("unselected clicked row should project the single command")
+            }
+            XCTAssertEqual(projectedID, clickedID)
+            guard case let .duplicateContentTab(delegateID) = presentation.delegateAction else {
+                return XCTFail("single projection should map to the clicked-row Sidebar delegate")
+            }
+            XCTAssertEqual(delegateID, clickedID)
+        }
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: active baseline count 1의 capacity zero는 single menu를 비활성화함
+    /// tab limit에 도달한 active-row context menu가 non-bulk label을 유지하면서 duplicate만 실행하지 않는지 검증한다.
+    /// - 검증 내용: pure projection enabled state, NSMenuItem disabled state, guarded target-action callback
+    /// - 사전 조건: clicked row가 selected이고 current tab count가 ContentTabConstants.maxTabs임
+    /// - 기대 결과: single title/identifier는 유지되지만 duplicate item은 disabled이고 callback은 호출되지 않음
+    func testDuplicateSidebarMenu_zeroCapacityDisablesDuplicateItemAndCallback() throws {
+        let clickedID = ContentTabID(rawValue: "capacity-clicked")
+        let presentation = ContentTabDuplicatePresentation(
+            clickedTabID: clickedID,
+            selectedTabIDs: [clickedID],
+            currentTabIDs: [clickedID],
+            tabCount: ContentTabConstants.maxTabs,
+        )
+        XCTAssertEqual(presentation.title, "Duplicate")
+        guard case .duplicateContentTab(clickedID) = presentation.command else {
+            return XCTFail("active baseline must retain the single-row route")
+        }
+        XCTAssertFalse(presentation.isEnabled)
+
+        _ = NSApplication.shared
+        let button = ContentTabSidebarButton(frame: .zero)
+        var duplicateActionCount = 0
+        button.update(
+            rootView: AnyView(EmptyView()),
+            accessibilityLabel: "Selected Content Tab",
+            accessibilityValue: "Active, Selected",
+            duplicateAccessibilityIdentifier: presentation.accessibilityIdentifier,
+            isPinned: false,
+            isEnabled: true,
+            reorderDragSource: nil,
+            onActivate: {},
+            onToggleSelection: {},
+            onSelectRange: {},
+            onDuplicate: { duplicateActionCount += 1 },
+            onPin: {},
+            onUnpin: {},
+            onClose: {},
+            duplicateTitle: presentation.title,
+            isDuplicateEnabled: presentation.isEnabled,
+        )
+
+        let duplicateItem = try XCTUnwrap(button.menu?.items.first)
+        XCTAssertFalse(duplicateItem.isEnabled)
+        let action = try XCTUnwrap(duplicateItem.action)
+        XCTAssertTrue(NSApp.sendAction(action, to: duplicateItem.target, from: duplicateItem))
+        XCTAssertEqual(duplicateActionCount, 0)
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: Sidebar bulk delegate는 Window request로만 전달됨
+    /// context command routing이 active tab과 selected IDs를 선행 변경하지 않고 canonical batch request에 수렴하는지 검증한다.
+    /// - 검증 내용: Sidebar delegate→Window request action과 routing 전후 whole-state equality
+    /// - 사전 조건: active A와 selected A/B를 가진 FileManager Window state
+    /// - 기대 결과: `.duplicateSelectedContentTabs` request가 정확히 한 번 수신되고 active/selection/window state는 불변임
+    func testDuplicateSelectedSidebarDelegate_routesToWindowRequestWithoutStateMutation() async {
+        let tabA = ContentTabID(rawValue: "sidebar-route-a")
+        let tabB = ContentTabID(rawValue: "sidebar-route-b")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabA,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "A",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: tabB,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "B",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: tabA,
+        )
+        state.contentTabs.selectedTabIDs = [tabA, tabB]
+        state.contentTabs.selectionAnchorID = tabB
+        let initialState = state
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.sidebar(.delegate(.duplicateSelectedContentTabs)))
+        await store.receive { action in
+            guard case .request(.duplicateSelectedContentTabs) = action else { return false }
+            return true
+        }
+
+        XCTAssertEqual(store.state, initialState)
+        // store.finish() 불필요: 모든 effect가 receive로 소비됨
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: mixed pinned selection을 source-adjacent 위치로 복제함
+    /// 선택된 source의 ordered request를 적용할 때 pinned boundary와 unpinned source adjacency를 검증한다.
+    /// - 검증 내용: pinned boundary block, 각 unpinned source 직후 insertion, metadata copy, first duplicate active transition
+    /// - 사전 조건: pinned source 하나와 unpinned source 둘, 기존 active/selection/anchor runtime state
+    /// - 기대 결과: pinned copy는 boundary, unpinned copy는 각 source 직후이며 active duplicate만 selection에 추가됨
+    func testDuplicateSelected_mixedSourcesInsertAdjacentCopiesAndPreserveSourceSelection() throws {
+        let firstUnpinnedID = ContentTabID(rawValue: "first-unpinned")
+        let pinnedID = ContentTabID(rawValue: "pinned")
+        let lastUnpinnedID = ContentTabID(rawValue: "last-unpinned")
+        let tailID = ContentTabID(rawValue: "tail")
+        let pinnedDuplicateID = ContentTabID(rawValue: "pinned-copy")
+        let firstDuplicateID = ContentTabID(rawValue: "first-copy")
+        let lastDuplicateID = ContentTabID(rawValue: "last-copy")
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .directory,
+                    anchor: .directory(path: "/pinned"),
+                    isPinned: true,
+                    title: "Pinned",
+                    iconName: "pin",
+                ),
+                ContentTabItem(
+                    id: firstUnpinnedID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "First",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: lastUnpinnedID,
+                    page: .collection,
+                    anchor: .virtualCollection(id: "Recents"),
+                    isPinned: false,
+                    title: "Recents",
+                    iconName: "clock",
+                ),
+                ContentTabItem(
+                    id: tailID,
+                    page: .directory,
+                    anchor: .directory(path: "/tail"),
+                    isPinned: false,
+                    title: "Tail",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: tailID,
+            previousActiveTabID: pinnedID,
+            pinnedRecordPersistenceError: "sentinel",
+        )
+        state.selectedTabIDs = [pinnedID, firstUnpinnedID, lastUnpinnedID, tailID]
+        state.selectionAnchorID = firstUnpinnedID
+
+        _ = ContentTabFeature().reduce(
+            into: &state,
+            action: .duplicateSelected([
+                ContentTabDuplicateRequest(sourceID: pinnedID, duplicateID: pinnedDuplicateID),
+                ContentTabDuplicateRequest(sourceID: firstUnpinnedID, duplicateID: firstDuplicateID),
+                ContentTabDuplicateRequest(sourceID: lastUnpinnedID, duplicateID: lastDuplicateID),
+            ]),
+        )
+
+        XCTAssertEqual(
+            state.tabs.map(\.id),
+            [pinnedID, pinnedDuplicateID, firstUnpinnedID, firstDuplicateID,
+             lastUnpinnedID, lastDuplicateID, tailID],
+        )
+        XCTAssertEqual(state.activeTabID, pinnedDuplicateID)
+        XCTAssertEqual(state.previousActiveTabID, tailID)
+        XCTAssertEqual(
+            state.selectedTabIDs,
+            Set([pinnedID, pinnedDuplicateID, firstUnpinnedID, lastUnpinnedID, tailID]),
+        )
+        XCTAssertEqual(state.selectionAnchorID, firstUnpinnedID)
+        XCTAssertEqual(state.pinnedRecordPersistenceError, "sentinel")
+
+        let duplicateItems = try [pinnedDuplicateID, firstDuplicateID, lastDuplicateID].map {
+            try XCTUnwrap(state.tabs[id: $0])
+        }
+        XCTAssertEqual(duplicateItems.map(\.page), [.directory, .home, .collection])
+        XCTAssertEqual(
+            duplicateItems.map(\.anchor),
+            [.directory(path: "/pinned"), .homeDefault, .virtualCollection(id: "Recents")],
+        )
+        XCTAssertEqual(duplicateItems.map(\.title), ["Pinned", "First", "Recents"])
+        XCTAssertEqual(duplicateItems.map(\.iconName), ["pin", "house", "clock"])
+        XCTAssertTrue(duplicateItems.allSatisfy { !$0.isPinned })
+        XCTAssertTrue(state.selectedTabIDs.contains(pinnedDuplicateID))
+        XCTAssertFalse(state.selectedTabIDs.contains(firstDuplicateID))
+        XCTAssertFalse(state.selectedTabIDs.contains(lastDuplicateID))
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: omitted invalid selected row는 successful source adjacency를 바꾸지 않음
+    /// planner가 복제 불가능한 selected row를 request에서 제외해도 successful source 직후에 삽입하는지 검증한다.
+    /// - 검증 내용: successful request source 기반 insertion과 invalid selection 보존
+    /// - 사전 조건: valid source 뒤에 incompatible unpinned selected row가 있고 request에는 valid source만 포함됨
+    /// - 기대 결과: duplicate가 valid source 직후에 삽입되고 invalid selected row는 그대로 유지됨
+    func testDuplicateSelected_omittedInvalidSelectionDoesNotMoveSuccessfulCopy() {
+        let validSourceID = ContentTabID(rawValue: "valid-source")
+        let incompatibleSelectedID = ContentTabID(rawValue: "incompatible-selected")
+        let tailID = ContentTabID(rawValue: "tail")
+        let duplicateID = ContentTabID(rawValue: "duplicate")
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: validSourceID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Valid",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: incompatibleSelectedID,
+                    page: .home,
+                    anchor: .directory(path: "/incompatible"),
+                    isPinned: false,
+                    title: "Invalid",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: tailID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Tail",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: tailID,
+        )
+        state.selectedTabIDs = [validSourceID, incompatibleSelectedID, tailID]
+        state.selectionAnchorID = incompatibleSelectedID
+
+        _ = ContentTabFeature().reduce(
+            into: &state,
+            action: .duplicateSelected([
+                ContentTabDuplicateRequest(sourceID: validSourceID, duplicateID: duplicateID),
+            ]),
+        )
+
+        XCTAssertEqual(state.tabs.map(\.id), [validSourceID, duplicateID, incompatibleSelectedID, tailID])
+        XCTAssertEqual(
+            state.selectedTabIDs,
+            Set([validSourceID, duplicateID, incompatibleSelectedID, tailID]),
+        )
+        XCTAssertEqual(state.selectionAnchorID, incompatibleSelectedID)
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: all-pinned selection은 pinned/unpinned boundary에 복제함
+    /// pinned source만 선택된 batch가 기존 tab의 상대 순서를 바꾸지 않는지 검증한다.
+    /// - 검증 내용: pinned boundary insertion과 duplicate block 순서
+    /// - 사전 조건: pinned tab 둘 뒤에 unpinned tab 둘이 있는 canonical raw tab list
+    /// - 기대 결과: 두 duplicate가 pinned 영역 직후 하나의 unpinned block으로 삽입되고 첫 duplicate가 active가 됨
+    func testDuplicateSelected_allPinnedSourcesInsertAtPinnedBoundary() {
+        let pinnedA = ContentTabID(rawValue: "pinned-a")
+        let pinnedB = ContentTabID(rawValue: "pinned-b")
+        let unpinnedA = ContentTabID(rawValue: "unpinned-a")
+        let unpinnedB = ContentTabID(rawValue: "unpinned-b")
+        let duplicateB = ContentTabID(rawValue: "copy-b")
+        let duplicateA = ContentTabID(rawValue: "copy-a")
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(id: pinnedA, page: .home, anchor: .homeDefault, isPinned: true,
+                               title: "Pinned A", iconName: "a"),
+                ContentTabItem(id: pinnedB, page: .directory, anchor: .directory(path: "/b"), isPinned: true,
+                               title: "Pinned B", iconName: "b"),
+                ContentTabItem(id: unpinnedA, page: .home, anchor: .homeDefault, isPinned: false,
+                               title: "A", iconName: "a"),
+                ContentTabItem(id: unpinnedB, page: .home, anchor: .homeDefault, isPinned: false,
+                               title: "B", iconName: "b"),
+            ],
+            activeTabID: unpinnedB,
+        )
+        state.selectedTabIDs = [pinnedA, pinnedB, unpinnedB]
+        state.selectionAnchorID = pinnedB
+
+        _ = ContentTabFeature().reduce(
+            into: &state,
+            action: .duplicateSelected([
+                ContentTabDuplicateRequest(sourceID: pinnedB, duplicateID: duplicateB),
+                ContentTabDuplicateRequest(sourceID: pinnedA, duplicateID: duplicateA),
+            ]),
+        )
+
+        XCTAssertEqual(state.tabs.map(\.id), [pinnedA, pinnedB, duplicateB, duplicateA, unpinnedA, unpinnedB])
+        XCTAssertEqual(state.activeTabID, duplicateB)
+        XCTAssertEqual(state.previousActiveTabID, unpinnedB)
+        XCTAssertEqual(state.selectedTabIDs, Set([pinnedA, pinnedB, duplicateB, unpinnedB]))
+        XCTAssertEqual(state.selectionAnchorID, pinnedB)
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: malformed direct requests는 valid request만 보존함
+    /// 중복 identity와 잘못된 source/anchor가 batch 전체를 오염시키지 않는지 검증한다.
+    /// - 검증 내용: missing source, repeated source/duplicate, existing collision, page-anchor mismatch skip
+    /// - 사전 조건: valid source 둘, incompatible source 하나, existing tab identity와 malformed request sequence
+    /// - 기대 결과: request 순서의 valid unique pair만 생성되고 state identity invariant가 유지됨
+    func testDuplicateSelected_malformedRequestsSkipOnlyInvalidPairs() {
+        let validA = ContentTabID(rawValue: "valid-a")
+        let validB = ContentTabID(rawValue: "valid-b")
+        let incompatible = ContentTabID(rawValue: "incompatible")
+        let existing = ContentTabID(rawValue: "existing")
+        let duplicateA = ContentTabID(rawValue: "duplicate-a")
+        let duplicateB = ContentTabID(rawValue: "duplicate-b")
+        let ignored = ContentTabID(rawValue: "ignored")
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(id: validA, page: .home, anchor: .homeDefault, isPinned: false,
+                               title: "A", iconName: "a"),
+                ContentTabItem(id: incompatible, page: .home, anchor: .directory(path: "/wrong"), isPinned: false,
+                               title: "Wrong", iconName: "wrong"),
+                ContentTabItem(id: validB, page: .directory, anchor: .directory(path: "/b"), isPinned: false,
+                               title: "B", iconName: "b"),
+                ContentTabItem(id: existing, page: .home, anchor: .homeDefault, isPinned: false,
+                               title: "Existing", iconName: "existing"),
+            ],
+            activeTabID: existing,
+        )
+
+        _ = ContentTabFeature().reduce(
+            into: &state,
+            action: .duplicateSelected([
+                ContentTabDuplicateRequest(sourceID: ContentTabID(rawValue: "missing"), duplicateID: ignored),
+                ContentTabDuplicateRequest(sourceID: validA, duplicateID: duplicateA),
+                ContentTabDuplicateRequest(sourceID: validA, duplicateID: ContentTabID(rawValue: "repeat-source")),
+                ContentTabDuplicateRequest(sourceID: validB, duplicateID: duplicateA),
+                ContentTabDuplicateRequest(sourceID: incompatible, duplicateID: ContentTabID(rawValue: "bad-anchor")),
+                ContentTabDuplicateRequest(sourceID: validB, duplicateID: existing),
+                ContentTabDuplicateRequest(sourceID: validB, duplicateID: duplicateB),
+            ]),
+        )
+
+        XCTAssertEqual(state.tabs.map(\.id), [validA, duplicateA, incompatible, validB, duplicateB, existing])
+        XCTAssertEqual(state.activeTabID, duplicateA)
+        XCTAssertEqual(state.previousActiveTabID, existing)
+        XCTAssertEqual(Set(state.tabs.ids).count, state.tabs.count)
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: invalid requests는 capacity를 소비하지 않고 zero-success는 no-op임
+    /// 남은 slot을 valid ordered prefix에만 적용하는 core 방어와 성공 없는 batch의 원자성을 검증한다.
+    /// - 검증 내용: invalid-before-capacity filtering, valid prefix truncation, zero-success whole-state equality
+    /// - 사전 조건: maxTabs-2 상태의 valid source 셋과 별도 collision-only request
+    /// - 기대 결과: 앞의 invalid request를 제외한 valid 두 개만 생성되고 collision-only batch는 state를 전혀 바꾸지 않음
+    func testDuplicateSelected_capacityUsesValidPrefixAndZeroSuccessIsWholeStateNoOp() {
+        let sourceA = ContentTabID(rawValue: "source-a")
+        let sourceB = ContentTabID(rawValue: "source-b")
+        let sourceC = ContentTabID(rawValue: "source-c")
+        let duplicateA = ContentTabID(rawValue: "duplicate-a")
+        let duplicateB = ContentTabID(rawValue: "duplicate-b")
+        let duplicateC = ContentTabID(rawValue: "duplicate-c")
+        var tabs: IdentifiedArrayOf<ContentTabItem> = [
+            ContentTabItem(id: sourceA, page: .home, anchor: .homeDefault, isPinned: false,
+                           title: "A", iconName: "a"),
+            ContentTabItem(id: sourceB, page: .directory, anchor: .directory(path: "/b"), isPinned: false,
+                           title: "B", iconName: "b"),
+            ContentTabItem(id: sourceC, page: .collection, anchor: .virtualCollection(id: "Recents"), isPinned: false,
+                           title: "C", iconName: "c"),
+        ]
+        for index in 0 ..< ContentTabConstants.maxTabs - 5 {
+            tabs.append(ContentTabItem(
+                id: ContentTabID(rawValue: "filler-\(index)"),
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: nil,
+                iconName: nil,
+            ))
+        }
+        var state = ContentTabState(tabs: tabs, activeTabID: sourceC, previousActiveTabID: sourceA)
+        state.selectedTabIDs = [sourceA, sourceB, sourceC]
+        state.selectionAnchorID = sourceC
+
+        _ = ContentTabFeature().reduce(
+            into: &state,
+            action: .duplicateSelected([
+                ContentTabDuplicateRequest(
+                    sourceID: ContentTabID(rawValue: "missing"),
+                    duplicateID: ContentTabID(rawValue: "missing-copy"),
+                ),
+                ContentTabDuplicateRequest(sourceID: sourceA, duplicateID: duplicateA),
+                ContentTabDuplicateRequest(sourceID: sourceB, duplicateID: duplicateB),
+                ContentTabDuplicateRequest(sourceID: sourceC, duplicateID: duplicateC),
+            ]),
+        )
+
+        XCTAssertEqual(state.tabs.count, ContentTabConstants.maxTabs)
+        XCTAssertEqual(Array(state.tabs.prefix(5)).map(\.id), [sourceA, duplicateA, sourceB, duplicateB, sourceC])
+        XCTAssertNotNil(state.tabs[id: duplicateA])
+        XCTAssertNotNil(state.tabs[id: duplicateB])
+        XCTAssertNil(state.tabs[id: duplicateC])
+        XCTAssertEqual(state.activeTabID, duplicateA)
+        XCTAssertEqual(state.previousActiveTabID, sourceC)
+
+        let beforeNoOp = state
+        _ = ContentTabFeature().reduce(
+            into: &state,
+            action: .duplicateSelected([
+                ContentTabDuplicateRequest(sourceID: sourceA, duplicateID: duplicateA),
+                ContentTabDuplicateRequest(
+                    sourceID: ContentTabID(rawValue: "still-missing"),
+                    duplicateID: ContentTabID(rawValue: "unused"),
+                ),
+            ]),
+        )
+        XCTAssertEqual(state, beforeNoOp)
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: ordered validation 후 valid prefix만 capacity에 적용함
+    /// 선택 Set 순서와 무관하게 pinned-first 표시 순서로 모든 source를 검증하고 부분 성공 피드백을 집계한다.
+    /// - 검증 내용: stale count, missing directory, valid-before-capacity filtering, fresh deterministic IDs, aggregate
+    /// alert 1회
+    /// - 사전 조건: pinned invalid Directory와 valid Home/Collection/AI source, stale selection, 남은 capacity 2
+    /// - 기대 결과: Home과 Collection request만 한 batch action으로 전달되고 AI는 capacity skip, alert은 success 2/skipped 3을 표시함
+    func testDuplicateSelectedCommand_plansOrderedValidPrefixAndShowsOneAggregateAlert() async throws {
+        let homeID = ContentTabID(rawValue: "home")
+        let missingDirectoryID = ContentTabID(rawValue: "missing-directory")
+        let collectionID = ContentTabID(rawValue: "collection")
+        let aiID = ContentTabID(rawValue: "ai")
+        let staleID = ContentTabID(rawValue: "stale")
+        let collectionURL = URL(fileURLWithPath: "/collections/saved.voycoll")
+        let aiSessionID = "11111111-1111-1111-1111-111111111111"
+        let homeDuplicateUUID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"))
+        let collectionDuplicateUUID = try XCTUnwrap(UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"))
+        let generatedUUIDs = LockIsolated([homeDuplicateUUID, collectionDuplicateUUID])
+        let ordering = LockIsolated<[String]>([])
+        let alerts = LockIsolated<[(title: String, message: String)]>([])
+        var tabs: IdentifiedArrayOf<ContentTabItem> = [
+            ContentTabItem(id: homeID, page: .home, anchor: .homeDefault, isPinned: false,
+                           title: "Home", iconName: "house"),
+            ContentTabItem(id: missingDirectoryID, page: .directory, anchor: .directory(path: "/missing"),
+                           isPinned: true, title: "Missing Directory", iconName: "folder"),
+            ContentTabItem(id: collectionID, page: .collection, anchor: .collectionFile(url: collectionURL),
+                           isPinned: false, title: "Saved Collection", iconName: "rectangle.stack"),
+            ContentTabItem(id: aiID, page: .aiChat, anchor: .aiChat(sessionID: aiSessionID), isPinned: false,
+                           title: "AI Chat", iconName: "sparkles"),
+        ]
+        for index in 0 ..< ContentTabConstants.maxTabs - 6 {
+            tabs.append(ContentTabItem(
+                id: ContentTabID(rawValue: "planner-filler-\(index)"),
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: nil,
+                iconName: nil,
+            ))
+        }
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(tabs: tabs, activeTabID: homeID)
+        state.contentTabs.selectedTabIDs = [aiID, staleID, collectionID, missingDirectoryID, homeID]
+        state.tabContentStates[collectionID] = .init()
+
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerFeature.State, FileManagerFeature.Action> { state, action in
+                if case .contentTabs(.duplicateSelected) = action {
+                    ordering.withValue { $0.append("action") }
+                }
+                return FileManagerWindowCommandRoutingReducer().reduce(into: &state, action: action)
+            }
+        } withDependencies: {
+            $0.uuid = UUIDGenerator {
+                generatedUUIDs.withValue { $0.removeFirst() }
+            }
+            $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
+                if path == "/missing" { return false }
+                isDirectory?.pointee = ObjCBool(path != collectionURL.path)
+                return true
+            }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                ordering.withValue { $0.append("alert") }
+                alerts.withValue { $0.append((title, message)) }
+            }
+        }
+
+        await store.send(.request(.duplicateSelectedContentTabs))
+        await store.receive { action in
+            guard case let .contentTabs(.duplicateSelected(requests)) = action else { return false }
+            return requests == [
+                ContentTabDuplicateRequest(
+                    sourceID: homeID,
+                    duplicateID: ContentTabID(rawValue: homeDuplicateUUID.uuidString),
+                ),
+                ContentTabDuplicateRequest(
+                    sourceID: collectionID,
+                    duplicateID: ContentTabID(rawValue: collectionDuplicateUUID.uuidString),
+                ),
+            ]
+        }
+        await store.finish()
+
+        XCTAssertEqual(ordering.value, ["action", "alert"])
+        let recordedAlerts = alerts.value
+        XCTAssertEqual(recordedAlerts.count, 1)
+        XCTAssertEqual(recordedAlerts[0].title, "Some Tabs Couldn’t Be Duplicated")
+        XCTAssertTrue(recordedAlerts[0].message.contains("Duplicated 2 tabs. Skipped 2 tabs."))
+        XCTAssertTrue(recordedAlerts[0].message.contains("Missing Directory: The directory no longer exists."))
+        XCTAssertTrue(recordedAlerts[0].message.contains("AI Chat: The tab limit was reached."))
+        XCTAssertFalse(recordedAlerts[0].message.contains("selected tab is unavailable"))
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: repeated UUID collision은 bounded fallback으로 해소함
+    /// 기존 tab ID와 충돌하는 constant UUID가 모든 request에 반복되어도 planner가 종료하고 unique ID를 만든다.
+    /// - 검증 내용: existing collision, repeated UUID, multi-request uniqueness, deterministic suffix fallback
+    /// - 사전 조건: UUID rawValue tab이 이미 존재하고 두 valid Home source가 selected, uuid dependency는 constant
+    /// - 기대 결과: planner가 hang 없이 `UUID-1`, `UUID-2` distinct ID를 가진 batch action을 전달함
+    func testDuplicateSelectedCommand_repeatedUUIDCollisionUsesDistinctBoundedFallbacks() async throws {
+        let collisionUUID = try XCTUnwrap(UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC"))
+        let collisionID = ContentTabID(rawValue: collisionUUID.uuidString)
+        let firstSourceID = ContentTabID(rawValue: "first-source")
+        let secondSourceID = ContentTabID(rawValue: "second-source")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(id: collisionID, page: .home, anchor: .homeDefault, isPinned: false,
+                               title: "Existing", iconName: "house"),
+                ContentTabItem(id: firstSourceID, page: .home, anchor: .homeDefault, isPinned: false,
+                               title: "First", iconName: "house"),
+                ContentTabItem(id: secondSourceID, page: .home, anchor: .homeDefault, isPinned: false,
+                               title: "Second", iconName: "house"),
+            ],
+            activeTabID: firstSourceID,
+        )
+        state.contentTabs.selectedTabIDs = [secondSourceID, firstSourceID]
+        let store = TestStore(initialState: state) {
+            FileManagerWindowCommandRoutingReducer()
+        } withDependencies: {
+            $0.uuid = .constant(collisionUUID)
+        }
+
+        await store.send(.request(.duplicateSelectedContentTabs))
+        await store.receive { action in
+            guard case let .contentTabs(.duplicateSelected(requests)) = action else { return false }
+            return requests == [
+                ContentTabDuplicateRequest(
+                    sourceID: firstSourceID,
+                    duplicateID: ContentTabID(rawValue: "\(collisionUUID.uuidString)-1"),
+                ),
+                ContentTabDuplicateRequest(
+                    sourceID: secondSourceID,
+                    duplicateID: ContentTabID(rawValue: "\(collisionUUID.uuidString)-2"),
+                ),
+            ]
+        }
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: active/inactive source Content state를 각각 검증함
+    /// temporary active Collection과 inactive saving Collection을 포함한 전부 invalid selection을 source별 feedback으로 집계한다.
+    /// - 검증 내용: active `state.content`, inactive `tabContentStates`, missing Collection, invalid AI validation
+    /// - 사전 조건: temporary active Directory, missing Collection file, malformed AI session, saving inactive Collection
+    /// - 기대 결과: child batch action 없이 zero-success aggregate alert 한 번에 네 source label/reason이 포함됨
+    func testDuplicateSelectedCommand_allInvalidUsesPerSourceContentAndShowsOneFailureAlert() async {
+        let temporaryID = ContentTabID(rawValue: "temporary")
+        let missingCollectionID = ContentTabID(rawValue: "missing-collection")
+        let invalidAIID = ContentTabID(rawValue: "invalid-ai")
+        let savingCollectionID = ContentTabID(rawValue: "saving-collection")
+        let missingCollectionURL = URL(fileURLWithPath: "/collections/missing.voycoll")
+        let savingCollectionURL = URL(fileURLWithPath: "/collections/saving.voycoll")
+        let alerts = LockIsolated<[(title: String, message: String)]>([])
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(id: temporaryID, page: .directory, anchor: .directory(path: "/temporary"),
+                               isPinned: false, title: "Temporary Collection", iconName: "folder"),
+                ContentTabItem(id: missingCollectionID, page: .collection,
+                               anchor: .collectionFile(url: missingCollectionURL), isPinned: false,
+                               title: "Missing Collection", iconName: "rectangle.stack"),
+                ContentTabItem(id: invalidAIID, page: .aiChat, anchor: .aiChat(sessionID: "not-a-uuid"),
+                               isPinned: false, title: "Broken AI Chat", iconName: "sparkles"),
+                ContentTabItem(id: savingCollectionID, page: .collection,
+                               anchor: .collectionFile(url: savingCollectionURL), isPinned: false,
+                               title: "Saving Collection", iconName: "rectangle.stack"),
+            ],
+            activeTabID: temporaryID,
+        )
+        state.contentTabs.selectedTabIDs = [temporaryID, missingCollectionID, invalidAIID, savingCollectionID]
+        state.content.navigation.navigationState = .collection(.init(
+            kind: .temporary,
+            context: .init(),
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+        var savingContent = FileManagerContentFeature.State()
+        savingContent.collection.isSaving = true
+        state.tabContentStates[savingCollectionID] = savingContent
+
+        let store = TestStore(initialState: state) {
+            FileManagerWindowCommandRoutingReducer()
+        } withDependencies: {
+            $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
+                if path == missingCollectionURL.path { return false }
+                isDirectory?.pointee = ObjCBool(path == "/temporary")
+                return true
+            }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                alerts.withValue { $0.append((title, message)) }
+            }
+        }
+
+        await store.send(.request(.duplicateSelectedContentTabs))
+        await store.finish()
+
+        let recordedAlerts = alerts.value
+        XCTAssertEqual(recordedAlerts.count, 1)
+        XCTAssertEqual(recordedAlerts[0].title, "Cannot Duplicate Selected Tabs")
+        XCTAssertTrue(recordedAlerts[0].message.contains("Duplicated 0 tabs. Skipped 4 tabs."))
+        XCTAssertTrue(recordedAlerts[0].message.contains(
+            "Temporary Collection: Cannot duplicate a temporary collection. Save the collection first.",
+        ))
+        XCTAssertTrue(recordedAlerts[0].message.contains(
+            "Missing Collection: The collection file no longer exists.",
+        ))
+        XCTAssertTrue(recordedAlerts[0].message.contains(
+            "Broken AI Chat: The AI Chat session is no longer valid.",
+        ))
+        XCTAssertTrue(recordedAlerts[0].message.contains(
+            "Saving Collection: Wait for the current collection operation to finish, then try again.",
+        ))
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: empty selection과 pending lifecycle은 no-op임
+    /// bulk command가 selection 또는 안전한 window lifecycle 없이 child mutation/feedback을 만들지 않는지 검증한다.
+    /// - 검증 내용: empty selection, pending close, pending teardown command guard
+    /// - 사전 조건: 각각 selection 없음, selected Home + pending close, selected Home + pending teardown
+    /// - 기대 결과: 세 command 모두 emitted child action과 aggregate alert 없이 종료됨
+    func testDuplicateSelectedCommand_emptyOrPendingLifecycleIsNoOp() async {
+        let sourceID = ContentTabID(rawValue: "source")
+        let source = ContentTabItem(id: sourceID, page: .home, anchor: .homeDefault, isPinned: false,
+                                    title: "Home", iconName: "house")
+        let alerts = LockIsolated<[(title: String, message: String)]>([])
+
+        var emptyState = FileManagerFeature.State()
+        emptyState.contentTabs = ContentTabState(tabs: [source], activeTabID: sourceID)
+        let emptyStore = TestStore(initialState: emptyState) {
+            FileManagerWindowCommandRoutingReducer()
+        } withDependencies: {
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                alerts.withValue { $0.append((title, message)) }
+            }
+        }
+        await emptyStore.send(.request(.duplicateSelectedContentTabs))
+        await emptyStore.finish()
+
+        var closingState = emptyState
+        closingState.contentTabs.selectedTabIDs = [sourceID]
+        closingState.pendingContentTabClose = PendingContentTabClose(tabID: sourceID)
+        let closingStore = TestStore(initialState: closingState) {
+            FileManagerWindowCommandRoutingReducer()
+        } withDependencies: {
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                alerts.withValue { $0.append((title, message)) }
+            }
+        }
+        await closingStore.send(.request(.duplicateSelectedContentTabs))
+        await closingStore.finish()
+
+        var teardownState = emptyState
+        teardownState.contentTabs.selectedTabIDs = [sourceID]
+        teardownState.pendingContentTabTeardown = PendingContentTabTeardown(
+            requestID: UUID(),
+            tabID: sourceID,
+            ownerID: UUID(),
+        )
+        let teardownStore = TestStore(initialState: teardownState) {
+            FileManagerWindowCommandRoutingReducer()
+        } withDependencies: {
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                alerts.withValue { $0.append((title, message)) }
+            }
+        }
+        await teardownStore.send(.request(.duplicateSelectedContentTabs))
+        await teardownStore.finish()
+
+        XCTAssertTrue(alerts.value.isEmpty)
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: capacity zero는 aggregate failure만 표시함
+    /// selected source가 있어도 tab limit에 도달한 경우 child mutation 없이 distinct capacity reason을 제공한다.
+    /// - 검증 내용: zero remaining capacity, zero-success title, capacity skip reason
+    /// - 사전 조건: maxTabs개의 Home tab 중 active와 다른 현재 tab이 selected
+    /// - 기대 결과: batch child action 없이 `Cannot Duplicate Selected Tabs` alert 한 번에 skipped 2를 표시함
+    func testDuplicateSelectedCommand_zeroCapacityShowsOneAggregateFailure() async {
+        let sourceID = ContentTabID(rawValue: "source")
+        let alerts = LockIsolated<[(title: String, message: String)]>([])
+        var tabs: IdentifiedArrayOf<ContentTabItem> = [
+            ContentTabItem(id: sourceID, page: .home, anchor: .homeDefault, isPinned: false,
+                           title: "Home", iconName: "house"),
+        ]
+        for index in 1 ..< ContentTabConstants.maxTabs {
+            tabs.append(ContentTabItem(
+                id: ContentTabID(rawValue: "capacity-filler-\(index)"),
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: nil,
+                iconName: nil,
+            ))
+        }
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(tabs: tabs, activeTabID: sourceID)
+        let secondSourceID = ContentTabID(rawValue: "capacity-filler-1")
+        state.contentTabs.selectedTabIDs = [sourceID, secondSourceID]
+
+        let store = TestStore(initialState: state) {
+            FileManagerWindowCommandRoutingReducer()
+        } withDependencies: {
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                alerts.withValue { $0.append((title, message)) }
+            }
+        }
+
+        await store.send(.request(.duplicateSelectedContentTabs))
+        await store.finish()
+
+        let recordedAlerts = alerts.value
+        XCTAssertEqual(recordedAlerts.count, 1)
+        guard let alert = recordedAlerts.first else { return }
+        XCTAssertEqual(alert.title, "Cannot Duplicate Selected Tabs")
+        XCTAssertTrue(alert.message.contains("Duplicated 0 tabs. Skipped 2 tabs."))
+        XCTAssertEqual(alert.message.components(separatedBy: "The tab limit was reached.").count - 1, 2)
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: batch는 모든 source owner를 handoff 전에 snapshot함
+    /// Directory와 saved Collection source를 함께 복제해 history-only fresh owner와 Inspector 경계를 검증한다.
+    /// - 검증 내용: active/inactive source snapshot, duplicate cache population, single active handoff, default Inspector
+    /// - 사전 조건: live Directory owner, dirty saved Collection cache, source별 history와 non-default Inspector state
+    /// - 기대 결과: 첫 Directory duplicate만 active이고 Collection duplicate는 fresh cache이며 source owner는 보존됨
+    func testDuplicateSelectedBatch_snapshotsDirectoryAndCollectionOwnersBeforeSingleHandoff() async throws {
+        let fixture = makeBatchDirectoryCollectionOwnerFixture()
+        let directorySource = fixture.state.content
+        let collectionSource = try XCTUnwrap(fixture.state.tabContentStates[fixture.collectionID])
+        let collectionInspectorBefore = fixture.state.tabInspectorStates[fixture.collectionID]
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        // store.exhaustivity = .off: batch handoff가 navigation child action을 방출하므로 owner 경계 결과에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.duplicateSelected([
+            ContentTabDuplicateRequest(
+                sourceID: fixture.directoryID,
+                duplicateID: fixture.directoryDuplicateID,
+            ),
+            ContentTabDuplicateRequest(
+                sourceID: fixture.collectionID,
+                duplicateID: fixture.collectionDuplicateID,
+            ),
+        ])))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, fixture.directoryDuplicateID)
+        XCTAssertEqual(store.state.contentTabs.previousActiveTabID, fixture.directoryID)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [fixture.directoryDuplicateID])
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, fixture.directoryDuplicateID)
+        XCTAssertEqual(store.state.content.navigation.backHistory, directorySource.navigation.backHistory)
+        XCTAssertEqual(store.state.content.navigation.forwardHistory, directorySource.navigation.forwardHistory)
+        XCTAssertNil(store.state.content.pendingSelectEntryID)
+        XCTAssertFalse(store.state.content.composer.isPresented)
+        XCTAssertTrue(store.state.content.composer.text.isEmpty)
+        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.selectedEntryIDs.isEmpty)
+        XCTAssertEqual(
+            store.state.tabContentStates[fixture.directoryID]?.navigation.backHistory,
+            directorySource.navigation.backHistory,
+        )
+        XCTAssertEqual(
+            store.state.tabContentStates[fixture.directoryID]?.navigation.forwardHistory,
+            directorySource.navigation.forwardHistory,
+        )
+        XCTAssertEqual(store.state.tabContentStates[fixture.directoryID]?.pendingSelectEntryID, "directory-entry")
+
+        let duplicate = try XCTUnwrap(store.state.tabContentStates[fixture.collectionDuplicateID])
+        XCTAssertEqual(duplicate.navigation.backHistory, collectionSource.navigation.backHistory)
+        XCTAssertEqual(duplicate.navigation.forwardHistory, collectionSource.navigation.forwardHistory)
+        XCTAssertFalse(duplicate.entryViewLayout.isCollectionMode)
+        XCTAssertNil(duplicate.collection.collectionContext)
+        XCTAssertNil(duplicate.collection.collectionSession.document)
+        XCTAssertNil(duplicate.collection.collectionSession.metadata.baseline)
+        XCTAssertFalse(duplicate.collection.isSaving)
+        XCTAssertFalse(duplicate.composer.isPresented)
+        XCTAssertTrue(duplicate.composer.text.isEmpty)
+        XCTAssertEqual(
+            store.state.contentTabs.tabs[id: fixture.collectionDuplicateID]?.anchor,
+            .collectionFile(url: fixture.collectionURL),
+        )
+        XCTAssertEqual(store.state.tabContentStates[fixture.collectionID], collectionSource)
+        XCTAssertFalse(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(
+            store.state.tabInspectorStates[fixture.directoryDuplicateID],
+            FileManagerInspectorFeature.State().tabSnapshot(),
+        )
+        XCTAssertNil(store.state.tabInspectorStates[fixture.collectionDuplicateID])
+        XCTAssertEqual(store.state.tabInspectorStates[fixture.directoryID]?.inspectorVisible, true)
+        XCTAssertEqual(store.state.tabInspectorStates[fixture.collectionID], collectionInspectorBefore)
+        await store.finish()
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: same-session AI sources는 lifecycle owner를 한 번만 보존함
+    /// 동일한 in-flight session을 가리키는 두 source의 batch가 restore/cancel을 중복 생성하지 않는지 검증한다.
+    /// - 검증 내용: pre-handoff source snapshot, session-keyed background owner dedup, disk restore 미호출
+    /// - 사전 조건: active/inactive AI source가 같은 session과 processing request lock을 공유함
+    /// - 기대 결과: 두 duplicate는 같은 anchor를 유지하고 source generation은 processing이며 background owner key는 하나임
+    func testDuplicateSelectedBatch_sameSessionAiPreservesOneLifecycleOwnerWithoutRestoreOrCancel() async {
+        let fixture = makeBatchSameSessionAiFixture()
+        let loadedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.aiConnectionsFileClient.load = { .empty() }
+            $0.aiChatSessionPersistenceClient.loadSession = { requestedSessionID in
+                loadedSessionIDs.withValue { $0.append(requestedSessionID) }
+                return nil
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        // store.exhaustivity = .off: AI handoff의 provider/navigation action보다 lifecycle owner dedup 결과를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.duplicateSelected([
+            ContentTabDuplicateRequest(
+                sourceID: fixture.firstSourceID,
+                duplicateID: fixture.firstDuplicateID,
+            ),
+            ContentTabDuplicateRequest(
+                sourceID: fixture.secondSourceID,
+                duplicateID: fixture.secondDuplicateID,
+            ),
+        ])))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, fixture.firstDuplicateID)
+        XCTAssertEqual(
+            store.state.contentTabs.tabs[id: fixture.secondDuplicateID]?.anchor,
+            .aiChat(sessionID: fixture.sessionID.rawValue.uuidString),
+        )
+        XCTAssertEqual(
+            store.state.tabContentStates[fixture.firstSourceID]?.aiChat.executionPhase,
+            .processing(fixture.requestLock),
+        )
+        XCTAssertEqual(
+            store.state.tabContentStates[fixture.secondSourceID]?.aiChat.executionPhase,
+            .processing(fixture.requestLock),
+        )
+        XCTAssertEqual(store.state.backgroundAiChatStates.count, 1)
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[fixture.sessionID]?.aiChat.executionPhase,
+            .processing(fixture.requestLock),
+        )
+        XCTAssertEqual(store.state.content.aiChat.sessionID, fixture.sessionID)
+        XCTAssertNil(store.state.tabContentStates[fixture.secondDuplicateID]?.aiChat.sessionID)
+        XCTAssertEqual(loadedSessionIDs.value, [])
+        await store.finish()
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: pending close direct batch는 생성 row/cache만 exact rollback함
+    /// malformed existing-ID request와 capacity-truncated request가 pending target/source state를 제거하지 않는지 검증한다.
+    /// - 검증 내용: created-ID filtering, all-duplicate rollback, pending active/previous 복원, selection/source cache 보존
+    /// - 사전 조건: pending inactive close, 남은 capacity 2, existing target collision과 세 valid source request
+    /// - 기대 결과: 두 generated duplicate만 제거되고 pending target, source rows/caches, selection은 원본과 동일함
+    func testDuplicateSelectedBatch_pendingCloseRollsBackEveryCreatedDuplicateOnly() async {
+        let fixture = makeBatchPendingCloseFixture()
+        let originalTabIDs = Array(fixture.state.contentTabs.tabs.ids)
+        let originalSelection = fixture.state.contentTabs.selectedTabIDs
+        let originalSelectionAnchor = fixture.state.contentTabs.selectionAnchorID
+        let originalContent = fixture.state.content
+        let originalInspector = fixture.state.inspector
+        let originalSourceCaches = fixture.state.tabContentStates
+        let originalInspectorCaches = fixture.state.tabInspectorStates
+        let originalPendingClose = fixture.state.pendingContentTabClose
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerFeature()
+        }
+        // store.exhaustivity = .off: defensive rollback의 exact 최종 state와 보존 경계를 직접 비교한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.duplicateSelected([
+            ContentTabDuplicateRequest(sourceID: fixture.firstSourceID, duplicateID: fixture.firstDuplicateID),
+            ContentTabDuplicateRequest(sourceID: fixture.secondSourceID, duplicateID: fixture.secondDuplicateID),
+            ContentTabDuplicateRequest(sourceID: fixture.thirdSourceID, duplicateID: fixture.pendingTargetID),
+            ContentTabDuplicateRequest(sourceID: fixture.thirdSourceID, duplicateID: fixture.truncatedDuplicateID),
+        ])))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(Array(store.state.contentTabs.tabs.ids), originalTabIDs)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: fixture.pendingTargetID])
+        XCTAssertNil(store.state.contentTabs.tabs[id: fixture.firstDuplicateID])
+        XCTAssertNil(store.state.contentTabs.tabs[id: fixture.secondDuplicateID])
+        XCTAssertNil(store.state.contentTabs.tabs[id: fixture.truncatedDuplicateID])
+        XCTAssertNil(store.state.tabContentStates[fixture.firstDuplicateID])
+        XCTAssertNil(store.state.tabContentStates[fixture.secondDuplicateID])
+        XCTAssertNil(store.state.tabInspectorStates[fixture.firstDuplicateID])
+        XCTAssertNil(store.state.tabInspectorStates[fixture.secondDuplicateID])
+        XCTAssertEqual(store.state.contentTabs.activeTabID, fixture.pendingTargetID)
+        XCTAssertEqual(store.state.contentTabs.previousActiveTabID, fixture.firstSourceID)
+        XCTAssertEqual(
+            store.state.contentTabs.selectedTabIDs,
+            originalSelection.union([fixture.pendingTargetID]),
+        )
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, originalSelectionAnchor)
+        XCTAssertEqual(store.state.content, originalContent)
+        XCTAssertEqual(store.state.inspector, originalInspector)
+        XCTAssertEqual(store.state.tabContentStates, originalSourceCaches)
+        XCTAssertEqual(store.state.tabInspectorStates, originalInspectorCaches)
+        XCTAssertEqual(store.state.pendingContentTabClose, originalPendingClose)
+        await store.finish()
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: identical active collision은 generated duplicate로 오인하지 않음
+    /// Core가 거부한 existing ID와 source metadata가 같아도 Window owner state를 handoff/삭제하지 않는지 검증한다.
+    /// - 검증 내용: zero-success existing-ID collision의 row, live Content/Inspector, owner cache 보존
+    /// - 사전 조건: source와 동일 metadata를 가진 existing active tab 및 source/active owner caches
+    /// - 기대 결과: routing reducer가 existing active row를 generated duplicate로 분류하지 않고 owner state를 유지함
+    func testDuplicateSelectedBatch_identicalActiveCollisionPreservesExistingOwnerState() async {
+        let sourceID = ContentTabID(rawValue: "collision-source")
+        let existingID = ContentTabID(rawValue: "collision-existing")
+        let sourceItem = ContentTabItem(
+            id: sourceID,
+            page: .directory,
+            anchor: .directory(path: "/same"),
+            isPinned: false,
+            title: "Same",
+            iconName: "folder",
+        )
+        let existingItem = ContentTabItem(
+            id: existingID,
+            page: sourceItem.page,
+            anchor: sourceItem.anchor,
+            isPinned: false,
+            title: sourceItem.title,
+            iconName: sourceItem.iconName,
+        )
+        var sourceContent = FileManagerContentFeature.State()
+        sourceContent.pendingSelectEntryID = "source-owner"
+        var existingContent = FileManagerContentFeature.State()
+        existingContent.pendingSelectEntryID = "existing-owner"
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(tabs: [sourceItem, existingItem], activeTabID: existingID)
+        state.contentTabs.previousActiveTabID = sourceID
+        state.content = existingContent
+        state.tabContentStates = [sourceID: sourceContent]
+        state.inspector.inspectorVisible = true
+        state.tabInspectorStates[sourceID] = FileManagerInspectorFeature.State().tabSnapshot()
+        state.syncContentTabSidebarItems()
+        let originalTabs = state.contentTabs
+        let originalContent = state.content
+        let originalInspector = state.inspector
+        let originalContentCaches = state.tabContentStates
+        let originalInspectorCaches = state.tabInspectorStates
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        // store.exhaustivity = .off: malformed direct action의 owner-state no-op 경계만 비교한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.duplicateSelected([
+            ContentTabDuplicateRequest(sourceID: sourceID, duplicateID: existingID),
+        ])))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(store.state.contentTabs, originalTabs)
+        XCTAssertEqual(store.state.content, originalContent)
+        XCTAssertEqual(store.state.inspector, originalInspector)
+        XCTAssertEqual(store.state.tabContentStates, originalContentCaches)
+        XCTAssertEqual(store.state.tabInspectorStates, originalInspectorCaches)
+        await store.finish()
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: core가 거부한 repeated source는 owner snapshot에 참여하지 않음
+    /// 동일 metadata source 사이에서 rejected request와 accepted request의 duplicate ID가 같아도 owner를 정확히 연결한다.
+    /// - 검증 내용: core seenSourceIDs replay와 inactive duplicate source-history ownership
+    /// - 사전 조건: A→X 성공, repeated-source A→Y 거부, identical-metadata B→Y 성공 요청 순서
+    /// - 기대 결과: X는 A history, Y는 B history를 가진 fresh owner로 초기화됨
+    func testDuplicateSelectedBatch_replaysCoreRequestUniquenessForOwnerMapping() async {
+        let firstSourceID = ContentTabID(rawValue: "mapping-source-a")
+        let secondSourceID = ContentTabID(rawValue: "mapping-source-b")
+        let firstDuplicateID = ContentTabID(rawValue: "mapping-duplicate-x")
+        let secondDuplicateID = ContentTabID(rawValue: "mapping-duplicate-y")
+        let anchor = ContentTabPageAnchor.directory(path: "/same-source-metadata")
+        let firstItem = ContentTabItem(
+            id: firstSourceID,
+            page: .directory,
+            anchor: anchor,
+            isPinned: false,
+            title: "Same",
+            iconName: "folder",
+        )
+        let secondItem = ContentTabItem(
+            id: secondSourceID,
+            page: firstItem.page,
+            anchor: firstItem.anchor,
+            isPinned: false,
+            title: firstItem.title,
+            iconName: firstItem.iconName,
+        )
+        var firstContent = FileManagerContentFeature.State()
+        firstContent.navigation.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .home)]
+        var secondContent = FileManagerContentFeature.State()
+        secondContent.navigation.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .recents)]
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(tabs: [firstItem, secondItem], activeTabID: firstSourceID)
+        state.contentTabs.selectedTabIDs = [firstSourceID, secondSourceID]
+        state.contentTabs.selectionAnchorID = secondSourceID
+        state.content = firstContent
+        state.tabContentStates = [firstSourceID: firstContent, secondSourceID: secondContent]
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        // store.exhaustivity = .off: owner mapping 결과 외 handoff navigation action은 이 시나리오 범위가 아니다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.duplicateSelected([
+            ContentTabDuplicateRequest(sourceID: firstSourceID, duplicateID: firstDuplicateID),
+            ContentTabDuplicateRequest(sourceID: firstSourceID, duplicateID: secondDuplicateID),
+            ContentTabDuplicateRequest(sourceID: secondSourceID, duplicateID: secondDuplicateID),
+        ])))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, firstDuplicateID)
+        XCTAssertEqual(store.state.content.navigation.backHistory, firstContent.navigation.backHistory)
+        XCTAssertEqual(
+            store.state.tabContentStates[secondDuplicateID]?.navigation.backHistory,
+            secondContent.navigation.backHistory,
+        )
+        XCTAssertEqual(store.state.tabContentStates[secondSourceID], secondContent)
+        await store.finish()
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: 한 Window의 batch owner mutation은 다른 Window state를 변경하지 않음
+    /// File Manager window별 reducer state가 독립 value owner로 유지되는지 검증한다.
+    /// - 검증 내용: 첫 Window direct batch reduce 전후 두 번째 Window whole-state equality
+    /// - 사전 조건: 서로 다른 tab identity와 Content history를 가진 두 FileManagerWindowState value
+    /// - 기대 결과: 첫 Window에 duplicate가 생성되어도 두 번째 Window는 전체 state가 동일함
+    func testDuplicateSelectedBatch_doesNotMutateSecondWindowState() {
+        let firstSourceID = ContentTabID(rawValue: "first-window-source")
+        let firstDuplicateID = ContentTabID(rawValue: "first-window-duplicate")
+        var firstWindow = FileManagerFeature.State()
+        firstWindow.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: firstSourceID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "First Window",
+                iconName: "house",
+            )],
+            activeTabID: firstSourceID,
+        )
+        firstWindow.contentTabs.selectedTabIDs = [firstSourceID]
+        firstWindow.contentTabs.selectionAnchorID = firstSourceID
+        firstWindow.syncActiveTabContentState()
+
+        let secondSourceID = ContentTabID(rawValue: "second-window-source")
+        var secondWindow = FileManagerFeature.State()
+        secondWindow.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: secondSourceID,
+                page: .directory,
+                anchor: .directory(path: "/second-window"),
+                isPinned: false,
+                title: "Second Window",
+                iconName: "folder",
+            )],
+            activeTabID: secondSourceID,
+        )
+        secondWindow.content.navigation.backHistory = [
+            ContentPageNavigationHistorySnapshot(navigationState: .home),
+        ]
+        secondWindow.syncActiveTabContentState()
+        secondWindow.syncActiveTabInspectorState()
+        secondWindow.syncContentTabSidebarItems()
+        let secondWindowBefore = secondWindow
+
+        _ = FileManagerFeature().reduce(
+            into: &firstWindow,
+            action: .contentTabs(.duplicateSelected([
+                ContentTabDuplicateRequest(sourceID: firstSourceID, duplicateID: firstDuplicateID),
+            ])),
+        )
+
+        XCTAssertNotNil(firstWindow.contentTabs.tabs[id: firstDuplicateID])
+        XCTAssertEqual(secondWindow, secondWindowBefore)
+    }
+
     // MARK: - CTM-001-close_content_tab
 
     /// CTM-001-close_content_tab: 일반 close는 restore snapshot을 남기고 마지막 탭 close는 Window handoff 상태로 비워둠
@@ -549,7 +2056,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
     /// - 검증 내용: open과 restore 각각의 fresh ID가 unselected이며 기존 selected set/anchor가 동일함
     /// - 사전 조건: selected/anchored Home tab과 Directory recentlyClosed snapshot
     /// - 기대 결과: 두 새 tab은 active로 생성되지만 Home selection/anchor만 유지되고 metadata sentinel도 보존됨
-    func testOpenAndRestore_createUnselectedIDsWhilePreservingSelectionAndAnchor() throws {
+    func testOpenAndRestore_addEachNewActiveIDToSelectionWhilePreservingAnchor() throws {
         let homeID = ContentTabID(rawValue: "home")
         var state = ContentTabState(
             tabs: [
@@ -580,15 +2087,15 @@ final class CTM001HandleContentTabTests: XCTestCase {
         _ = reducer.reduce(into: &state, action: .open(.homeDefault))
         let openedID = try XCTUnwrap(state.activeTabID)
         XCTAssertNotEqual(openedID, homeID)
-        XCTAssertFalse(state.selectedTabIDs.contains(openedID))
-        XCTAssertEqual(state.selectedTabIDs, [homeID])
+        XCTAssertTrue(state.selectedTabIDs.contains(openedID))
+        XCTAssertEqual(state.selectedTabIDs, Set([homeID, openedID]))
         XCTAssertEqual(state.selectionAnchorID, homeID)
 
         _ = reducer.reduce(into: &state, action: .restore)
         let restoredID = try XCTUnwrap(state.activeTabID)
         XCTAssertNotEqual(restoredID, openedID)
-        XCTAssertFalse(state.selectedTabIDs.contains(restoredID))
-        XCTAssertEqual(state.selectedTabIDs, [homeID])
+        XCTAssertTrue(state.selectedTabIDs.contains(restoredID))
+        XCTAssertEqual(state.selectedTabIDs, Set([homeID, openedID, restoredID]))
         XCTAssertEqual(state.selectionAnchorID, homeID)
         XCTAssertEqual(state.pinnedRecordPersistenceError, "sentinel")
     }
@@ -1521,7 +3028,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
     // MARK: - CTM-001-open_new_content_tab_routing
 
     /// CTM-001-open_new_content_tab_routing: WindowCommand.openNewContentTab 라우팅이 선택을 해제하고 Home tab을 활성화함
-    /// - 검증 내용: .request(.openNewContentTab)이 clearSelection 후 open(.homeDefault)을 순서대로 방출함
+    /// - 검증 내용: .request(.openNewContentTab)이 open(.homeDefault) 후 collapseSelectionToActive를 방출함
     /// - 사전 조건: 선택 및 anchor가 설정된 기본 Home tab 하나가 있는 FileManagerFeature.State
     /// - 기대 결과: 선택과 anchor가 비워지고 새 Home tab이 list 끝에 추가되어 active가 됨
     func testOpenNewContentTab_commandRouting_createsHomeTabAppendedActive() async throws {
@@ -1542,10 +3049,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let beforeActiveID = store.state.contentTabs.activeTabID
 
         await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.clearSelection)
-        XCTAssertTrue(store.state.contentTabs.selectedTabIDs.isEmpty)
-        XCTAssertNil(store.state.contentTabs.selectionAnchorID)
         await store.receive(\.contentTabs.open, .homeDefault)
+        await store.receive(\.contentTabs.collapseSelectionToActive)
 
         let afterCount = store.state.contentTabs.tabs.count
         XCTAssertEqual(afterCount, beforeCount + 1, "tabs count must increment by 1")
@@ -1553,6 +3058,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(lastTab.anchor, .homeDefault, "new tab must have homeDefault anchor")
         XCTAssertEqual(lastTab.page, .home, "new tab must have home page")
         XCTAssertEqual(store.state.contentTabs.activeTabID, lastTab.id, "new tab must be active")
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [lastTab.id])
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, lastTab.id)
         XCTAssertNotEqual(store.state.contentTabs.activeTabID, beforeActiveID, "active tab ID must change to new tab")
     }
 
@@ -1575,8 +3082,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.clearSelection)
         await store.receive(\.contentTabs.open, .homeDefault)
+        await store.receive(\.contentTabs.collapseSelectionToActive)
 
         let lastTab = try XCTUnwrap(store.state.contentTabs.tabs.last)
         XCTAssertEqual(lastTab.anchor, .homeDefault, "new tab must NOT clone existing Directory anchor")
@@ -1601,8 +3108,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let previousActiveID = try XCTUnwrap(store.state.contentTabs.activeTabID)
 
         await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.clearSelection)
         await store.receive(\.contentTabs.open, .homeDefault)
+        await store.receive(\.contentTabs.collapseSelectionToActive)
 
         let newActiveID = try XCTUnwrap(store.state.contentTabs.activeTabID)
         XCTAssertNotNil(
@@ -1632,8 +3139,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let beforeCount = ContentTabProjection.sidebarItems(from: store.state.contentTabs).count
 
         await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.clearSelection)
         await store.receive(\.contentTabs.open, .homeDefault)
+        await store.receive(\.contentTabs.collapseSelectionToActive)
 
         let sidebarItems = ContentTabProjection.sidebarItems(from: store.state.contentTabs)
         XCTAssertEqual(sidebarItems.count, beforeCount + 1, "projection must reflect new tab count")
@@ -1702,12 +3209,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.clearSelection)
         await store.receive(\.contentTabs.open, .homeDefault)
+        await store.receive(\.contentTabs.collapseSelectionToActive)
 
         await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.clearSelection)
         await store.receive(\.contentTabs.open, .homeDefault)
+        await store.receive(\.contentTabs.collapseSelectionToActive)
 
         let allIDs = store.state.contentTabs.tabs.map(\.id)
         let uniqueIDs = Set(allIDs)
