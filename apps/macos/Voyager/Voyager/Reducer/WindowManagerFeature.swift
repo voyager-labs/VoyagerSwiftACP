@@ -314,6 +314,30 @@ struct WindowManagerFeature {
                         },
                 )
 
+            case let .windows(.element(
+                id: sourceWindowID,
+                action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(
+                    tabID: tabID,
+                    navigationState: navigationState,
+                ))),
+            )):
+                return .merge(
+                    state.windows
+                        .filter { windowSession in
+                            windowSession.id != sourceWindowID
+                                && windowSession.window.contentTabs.tabs[id: tabID]?.isPinned == true
+                        }
+                        .map { windowSession in
+                            .send(.windows(.element(
+                                id: windowSession.id,
+                                action: .window(.applyPinnedContentTabRuntimeNavigation(
+                                    tabID: tabID,
+                                    navigationState: navigationState,
+                                )),
+                            )))
+                        },
+                )
+
             case .windows(.element(id: _, action: .window(.contentTabs(.pinnedRecordSaveSucceeded)))):
                 return .send(.pinnedContentTabsStoreChanged)
 

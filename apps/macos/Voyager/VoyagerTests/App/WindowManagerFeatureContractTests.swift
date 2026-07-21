@@ -1,10 +1,12 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
@@ -555,27 +557,33 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
-    /// pinned 저장 성공 이벤트는 external marker 여부와 무관하게 열린 모든 window로 fan-out한다.
-    /// pinned sidebar가 window마다 어긋나지 않고 external unpinned tab이 보존되는지 검증한다.
-    /// - 검증 내용: child pinnedRecordSaveSucceeded → pinnedContentTabsStoreChanged → 모든 window applyPinnedContentTabs
-    /// - 사전 조건: 일반 window와 active external marker window, global pinned store 1개
-    /// - 기대 결과: 두 window 모두 동일한 pinned tab을 받고 external window의 unpinned tab은 유지
+    /// pinned 저장 성공 이벤트는 열린 모든 window로 fan-out하되 기존 runtime 위치를 보존한다.
+    /// 현재 창의 탐색 위치와 다른 창의 durable 복원이 함께 유지되는지 검증한다.
+    /// - 검증 내용: child 저장 성공 → 모든 window 동기화, 기존 tab runtime 유지, 새 tab durable 복원
+    /// - 사전 조건: runtime 이동한 pinned tab이 있는 창과 pinned tab이 없는 external window
+    /// - 기대 결과: 첫 창은 runtime 위치, 둘째 창은 저장 위치를 사용하고 durable record는 동일
     func testPinnedRecordSaveSucceededSyncsPinnedTabsAcrossOpenWindows() async {
         let firstID = UUID()
         let secondID = UUID()
-        let pinnedStore = ContentTabPinnedRecordStore(records: [
-            ContentTabPinnedRecord(
-                id: "global-pin",
-                page: .directory,
-                anchor: .directory(path: "/Users/test/Documents"),
-                title: "Documents",
-                iconName: "folder",
-                pinnedAt: Date(timeIntervalSince1970: 443),
-            ),
-        ])
+        let pinnedID = ContentTabID(rawValue: "global-pin")
+        let runtimePath = "/Users/test/Documents/pdf"
+        let durableRecord = ContentTabPinnedRecord(
+            id: pinnedID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/Users/test/Documents"),
+            title: "Documents",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 443),
+        )
+        let pinnedStore = ContentTabPinnedRecordStore(records: [durableRecord])
         var initialState = WindowManagerFeature.State()
         initialState.windows = [
-            WindowSessionState(id: firstID, window: .makeInitial(path: "/Users/test/A")),
+            Self.makePinnedWindow(
+                id: firstID,
+                tabID: pinnedID,
+                runtimePath: runtimePath,
+                durableRecord: durableRecord,
+            ),
             WindowSessionState(id: secondID, window: .makeInitial(path: "/Users/test/B")),
         ]
         initialState.externalWindowBatchIDs[secondID] = UUID()
@@ -622,14 +630,237 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 && contentTabs.tabs[id: contentTabs.activeTabID ?? ContentTabID(rawValue: "")]?.page == .home
         }
 
-        XCTAssertEqual(store.state.windows[id: firstID]?.window.contentTabs.tabs.first?.id.rawValue, "global-pin")
-        XCTAssertEqual(store.state.windows[id: secondID]?.window.contentTabs.tabs.first?.id.rawValue, "global-pin")
+        let firstWindow = store.state.windows[id: firstID]?.window
+        XCTAssertEqual(firstWindow?.contentTabs.tabs[id: pinnedID]?.anchor, .directory(path: runtimePath))
+        XCTAssertEqual(firstWindow?.content.navigation.currentPath, runtimePath)
+        XCTAssertEqual(firstWindow?.contentTabs.pinnedRecords[pinnedID], durableRecord)
+
+        let secondWindow = store.state.windows[id: secondID]?.window
+        XCTAssertEqual(secondWindow?.contentTabs.tabs[id: pinnedID]?.anchor, durableRecord.anchor)
         XCTAssertEqual(
-            store.state.windows[id: secondID]?.window.contentTabs.tabs.contains {
+            secondWindow?.contentTabs.tabs.contains {
                 !$0.isPinned && $0.anchor == .directory(path: "/Users/test/B")
             },
             true,
         )
+    }
+
+    /// 실행 중 pinned tab 탐색은 같은 pin을 가진 모든 window에 runtime 상태만 전파한다.
+    /// durable record를 변경하지 않고 peer window의 tab, content, Sidebar가 같은 경로를 표시하는지 검증한다.
+    /// - 검증 내용: child runtime 탐색 event → peer window runtime navigation 동기화, persistence 미호출
+    /// - 사전 조건: 같은 pinned tab ID를 원래 경로에서 표시하는 두 window
+    /// - 기대 결과: peer window는 새 경로를 표시하고 두 window의 durable record는 pin 시점 값을 유지
+    func testPinnedTabRuntimeNavigationSyncsAcrossOpenWindowsWithoutPersisting() async {
+        let sourceWindowID = UUID()
+        let peerWindowID = UUID()
+        let inactivePeerWindowID = UUID()
+        let pinnedID = ContentTabID(rawValue: "shared-pin")
+        let originalPath = "/Users/test/Documents"
+        let nextPath = "/Users/test/Documents/pdf"
+        let durableRecord = ContentTabPinnedRecord(
+            id: pinnedID.rawValue,
+            page: .directory,
+            anchor: .directory(path: originalPath),
+            title: "Documents",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 443),
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            Self.makePinnedWindow(
+                id: sourceWindowID,
+                tabID: pinnedID,
+                runtimePath: nextPath,
+                durableRecord: durableRecord,
+            ),
+            Self.makePinnedWindow(
+                id: peerWindowID,
+                tabID: pinnedID,
+                runtimePath: originalPath,
+                durableRecord: durableRecord,
+            ),
+            Self.makeWindowWithInactivePinnedTab(
+                id: inactivePeerWindowID,
+                tabID: pinnedID,
+                runtimePath: originalPath,
+                durableRecord: durableRecord,
+            ),
+        ]
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.displayName = { URL(fileURLWithPath: $0).lastPathComponent }
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in
+                XCTFail("runtime navigation은 durable pin store를 갱신하지 않아야 함")
+            }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in
+                XCTFail("runtime navigation은 durable pin store를 저장하지 않아야 함")
+            }
+        }
+        // store.exhaustivity = .off: parent fan-out의 내부 child action보다 최종 runtime/durable 경계를 검증함
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: sourceWindowID,
+            action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(
+                tabID: pinnedID,
+                navigationState: .folder(nextPath),
+            ))),
+        )))
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: receivedWindowID,
+                action: .window(.applyPinnedContentTabRuntimeNavigation(
+                    tabID: receivedTabID,
+                    navigationState: .folder(receivedPath),
+                )),
+            )) = action
+            else { return false }
+            return receivedWindowID == peerWindowID
+                && receivedTabID == pinnedID
+                && receivedPath == nextPath
+        }
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: receivedWindowID,
+                action: .window(.applyPinnedContentTabRuntimeNavigation(
+                    tabID: receivedTabID,
+                    navigationState: .folder(receivedPath),
+                )),
+            )) = action
+            else { return false }
+            return receivedWindowID == inactivePeerWindowID
+                && receivedTabID == pinnedID
+                && receivedPath == nextPath
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let sourceWindow = store.state.windows[id: sourceWindowID]?.window
+        XCTAssertEqual(sourceWindow?.content.navigation.currentPath, nextPath)
+        XCTAssertEqual(sourceWindow?.contentTabs.pinnedRecords[pinnedID], durableRecord)
+
+        let peerWindow = store.state.windows[id: peerWindowID]?.window
+        XCTAssertEqual(peerWindow?.content.navigation.currentPath, nextPath)
+        XCTAssertEqual(peerWindow?.contentTabs.tabs[id: pinnedID]?.anchor, .directory(path: nextPath))
+        XCTAssertEqual(peerWindow?.contentTabs.tabs[id: pinnedID]?.title, "pdf")
+        XCTAssertEqual(peerWindow?.sidebar.contentTabSidebarItems.first?.title, "pdf")
+        XCTAssertEqual(peerWindow?.contentTabs.pinnedRecords[pinnedID], durableRecord)
+
+        let inactivePeerWindow = store.state.windows[id: inactivePeerWindowID]?.window
+        XCTAssertEqual(inactivePeerWindow?.content.navigation.navigationState, .home)
+        XCTAssertEqual(inactivePeerWindow?.contentTabs.tabs[id: pinnedID]?.anchor, .directory(path: nextPath))
+        XCTAssertEqual(inactivePeerWindow?.sidebar.contentTabSidebarItems.first?.title, "pdf")
+        XCTAssertEqual(inactivePeerWindow?.tabContentStates[pinnedID]?.navigation.currentPath, nextPath)
+        XCTAssertEqual(inactivePeerWindow?.contentTabs.pinnedRecords[pinnedID], durableRecord)
+    }
+
+    /// 동일 anchor로 축약되는 AI Chat과 History route도 모든 window에 구분하여 전파한다.
+    /// - 검증 내용: active/inactive peer의 전체 navigation route 갱신 및 durable record 불변
+    /// - 사전 조건: 같은 pinned tab ID가 동일 AI session의 Chat route를 표시하는 세 window
+    /// - 기대 결과: source가 History로 이동하면 peer의 active/cached route가 모두 History가 됨
+    func testPinnedTabSameAnchorAiRouteSyncsAcrossOpenWindows() async throws {
+        let sourceWindowID = UUID()
+        let peerWindowID = UUID()
+        let inactivePeerWindowID = UUID()
+        let pinnedID = ContentTabID(rawValue: "shared-ai-pin")
+        let sessionUUID = try XCTUnwrap(UUID(uuidString: "A169735F-9E3D-4AD5-88F1-E667212544BF"))
+        let sessionID = sessionUUID.uuidString
+        let durableRecord = ContentTabPinnedRecord(
+            id: pinnedID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/Users/test/Documents"),
+            title: "Documents",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 443),
+        )
+        var inactivePeerInitialWindow = Self.makeAiRuntimePinnedWindow(
+            id: inactivePeerWindowID,
+            tabID: pinnedID,
+            route: .aiChat(sessionID),
+            durableRecord: durableRecord,
+            isActive: false,
+        )
+        let inactivePeerSentinel = Self.seedAiRuntimeSentinel(
+            in: &inactivePeerInitialWindow,
+            tabID: pinnedID,
+            sessionID: AiChatSessionID(rawValue: sessionUUID),
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            Self.makeAiRuntimePinnedWindow(
+                id: sourceWindowID,
+                tabID: pinnedID,
+                route: .aiChatSessions(sessionID),
+                durableRecord: durableRecord,
+                isActive: true,
+            ),
+            Self.makeAiRuntimePinnedWindow(
+                id: peerWindowID,
+                tabID: pinnedID,
+                route: .aiChat(sessionID),
+                durableRecord: durableRecord,
+                isActive: true,
+            ),
+            inactivePeerInitialWindow,
+        ]
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = { .empty() }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in
+                XCTFail("runtime navigation은 durable pin store를 갱신하지 않아야 함")
+            }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in
+                XCTFail("runtime navigation은 durable pin store를 저장하지 않아야 함")
+            }
+        }
+        // store.exhaustivity = .off: parent fan-out 이후 AI route 내부 action보다 최종 route 경계를 검증함
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: sourceWindowID,
+            action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(
+                tabID: pinnedID,
+                navigationState: .aiChatSessions(sessionID),
+            ))),
+        )))
+        await store.receive(\.windows)
+        await store.receive(\.windows)
+        await store.skipReceivedActions()
+
+        let peerWindow = store.state.windows[id: peerWindowID]?.window
+        XCTAssertEqual(peerWindow?.content.navigation.navigationState, .aiChatSessions(sessionID))
+        XCTAssertEqual(peerWindow?.contentTabs.tabs[id: pinnedID]?.anchor, .aiChat(sessionID: sessionID))
+        XCTAssertEqual(peerWindow?.contentTabs.pinnedRecords[pinnedID], durableRecord)
+
+        let inactivePeerWindow = store.state.windows[id: inactivePeerWindowID]?.window
+        XCTAssertEqual(inactivePeerWindow?.content.navigation.navigationState, .home)
+        XCTAssertEqual(
+            inactivePeerWindow?.tabContentStates[pinnedID]?.navigation.navigationState,
+            .aiChatSessions(sessionID),
+        )
+        XCTAssertEqual(inactivePeerWindow?.contentTabs.pinnedRecords[pinnedID], durableRecord)
+        Self.assertAiRuntimeSentinel(
+            inactivePeerWindow?.tabContentStates[pinnedID]?.aiChat,
+            equals: inactivePeerSentinel,
+        )
+        Self.assertAiRuntimeTabProjection(inactivePeerWindow, tabID: pinnedID, equals: inactivePeerSentinel)
+
+        await store.send(.windows(.element(
+            id: inactivePeerWindowID,
+            action: .window(.contentTabs(.setCurrent(pinnedID))),
+        )))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let reactivatedWindow = store.state.windows[id: inactivePeerWindowID]?.window
+        XCTAssertEqual(reactivatedWindow?.contentTabs.activeTabID, pinnedID)
+        XCTAssertEqual(reactivatedWindow?.content.navigation.navigationState, .aiChatSessions(sessionID))
+        Self.assertAiRuntimeSentinel(reactivatedWindow?.content.aiChat, equals: inactivePeerSentinel)
+        Self.assertAiRuntimeTabProjection(reactivatedWindow, tabID: pinnedID, equals: inactivePeerSentinel)
     }
 
     /// live sync는 bootstrap cleanup과 달리 파일 존재 검증으로 열린 pinned tab을 갑자기 제거하지 않는다.
@@ -3654,6 +3885,203 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let free: Int
         let valid: Int
         let expected: [Int]
+    }
+
+    private static func makePinnedWindow(
+        id: UUID,
+        tabID: ContentTabID,
+        runtimePath: String,
+        durableRecord: ContentTabPinnedRecord,
+    ) -> WindowSessionState {
+        var window = FileManagerWindowFeature.State.makeInitial(path: runtimePath)
+        window.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .directory,
+                    anchor: .directory(path: runtimePath),
+                    isPinned: true,
+                    title: URL(fileURLWithPath: runtimePath).lastPathComponent,
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: tabID,
+            pinnedRecords: [tabID: durableRecord],
+        )
+        window.tabContentStates = [:]
+        window.syncActiveTabContentState()
+        window.syncContentTabSidebarItems()
+        return WindowSessionState(id: id, window: window)
+    }
+
+    private static func makeWindowWithInactivePinnedTab(
+        id: UUID,
+        tabID: ContentTabID,
+        runtimePath: String,
+        durableRecord: ContentTabPinnedRecord,
+    ) -> WindowSessionState {
+        var session = makePinnedWindow(
+            id: id,
+            tabID: tabID,
+            runtimePath: runtimePath,
+            durableRecord: durableRecord,
+        )
+        let homeTabID = ContentTabID(rawValue: "\(id.uuidString)-home")
+        session.window.contentTabs.tabs.append(ContentTabItem(
+            id: homeTabID,
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Home",
+            iconName: "house",
+        ))
+        session.window.contentTabs.activeTabID = homeTabID
+        session.window.content = FileManagerContentFeature.State.initialContent(
+            for: .homeDefault,
+            inheritingWindowContextFrom: session.window.content,
+        )
+        session.window.syncActiveTabContentState()
+        session.window.syncContentTabSidebarItems()
+        return session
+    }
+
+    private struct AiRuntimeSentinel {
+        let draftText: String
+        let currentSessionCustomTitle: String
+        let transcriptHistory: [AiChatMessage]
+        let sessionRows: [AiChatSessionSummary]
+        let sessionID: AiChatSessionID
+        let sessionStatus: AiChatSessionStatus
+        let tabTitle: String
+        let tabIconName: String
+    }
+
+    private static func seedAiRuntimeSentinel(
+        in session: inout WindowSessionState,
+        tabID: ContentTabID,
+        sessionID: AiChatSessionID,
+    ) -> AiRuntimeSentinel {
+        let sentinel = AiRuntimeSentinel(
+            draftText: "inactive peer draft sentinel",
+            currentSessionCustomTitle: "Preserved restored session",
+            transcriptHistory: [AiChatMessage(role: .user, content: "preserved transcript")],
+            sessionRows: [AiChatSessionSummary(
+                sessionID: sessionID,
+                title: "Preserved peer session",
+                messageCount: 1,
+                provider: nil,
+                model: nil,
+                createdAtMs: 1,
+                updatedAtMs: 2,
+                status: .active,
+            )],
+            sessionID: sessionID,
+            sessionStatus: .active,
+            tabTitle: "Preserved AI Session",
+            tabIconName: "star.bubble",
+        )
+        session.window.tabContentStates[tabID]?.aiChat.draftText = sentinel.draftText
+        session.window.tabContentStates[tabID]?.aiChat.currentSessionCustomTitle = sentinel.currentSessionCustomTitle
+        session.window.tabContentStates[tabID]?.aiChat.transcriptHistory = sentinel.transcriptHistory
+        session.window.tabContentStates[tabID]?.aiChat.sessionList.allRows = sentinel.sessionRows
+        session.window.tabContentStates[tabID]?.aiChat.sessionList.rows = sentinel.sessionRows
+        session.window.tabContentStates[tabID]?.aiChat.sessionStatus = sentinel.sessionStatus
+        session.window.contentTabs.tabs[id: tabID]?.title = sentinel.tabTitle
+        session.window.contentTabs.tabs[id: tabID]?.iconName = sentinel.tabIconName
+        session.window.syncContentTabSidebarItems()
+        return sentinel
+    }
+
+    private static func assertAiRuntimeSentinel(
+        _ state: AiChatState?,
+        equals sentinel: AiRuntimeSentinel,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        guard let state else {
+            XCTFail("AI runtime state가 존재해야 함", file: file, line: line)
+            return
+        }
+        XCTAssertEqual(state.draftText, sentinel.draftText, file: file, line: line)
+        XCTAssertEqual(state.currentSessionCustomTitle, sentinel.currentSessionCustomTitle, file: file, line: line)
+        XCTAssertEqual(state.transcriptHistory, sentinel.transcriptHistory, file: file, line: line)
+        XCTAssertEqual(state.sessionList.allRows, sentinel.sessionRows, file: file, line: line)
+        XCTAssertEqual(state.sessionList.rows, sentinel.sessionRows, file: file, line: line)
+        XCTAssertEqual(state.sessionID, sentinel.sessionID, file: file, line: line)
+        XCTAssertEqual(state.sessionStatus, sentinel.sessionStatus, file: file, line: line)
+    }
+
+    private static func assertAiRuntimeTabProjection(
+        _ window: FileManagerWindowFeature.State?,
+        tabID: ContentTabID,
+        equals sentinel: AiRuntimeSentinel,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertEqual(window?.contentTabs.tabs[id: tabID]?.title, sentinel.tabTitle, file: file, line: line)
+        XCTAssertEqual(window?.contentTabs.tabs[id: tabID]?.iconName, sentinel.tabIconName, file: file, line: line)
+        let sidebarItem = window?.sidebar.contentTabSidebarItems.first(where: { $0.id == tabID })
+        XCTAssertEqual(sidebarItem?.title, sentinel.tabTitle, file: file, line: line)
+        XCTAssertEqual(sidebarItem?.iconName, sentinel.tabIconName, file: file, line: line)
+    }
+
+    private static func makeAiRuntimePinnedWindow(
+        id: UUID,
+        tabID: ContentTabID,
+        route: ContentPageNavigationRoute,
+        durableRecord: ContentTabPinnedRecord,
+        isActive: Bool,
+    ) -> WindowSessionState {
+        let sessionID = switch route {
+        case let .aiChat(id), let .aiChatSessions(id):
+            id
+        default:
+            preconditionFailure("AI runtime window는 AI navigation route가 필요함")
+        }
+        var session = makePinnedWindow(
+            id: id,
+            tabID: tabID,
+            runtimePath: "/Users/test/Documents",
+            durableRecord: durableRecord,
+        )
+        let anchor = ContentTabPageAnchor.aiChat(sessionID: sessionID)
+        session.window.contentTabs.tabs[id: tabID]?.page = .aiChat
+        session.window.contentTabs.tabs[id: tabID]?.anchor = anchor
+        session.window.contentTabs.tabs[id: tabID]?.title = "AI Chat"
+        session.window.contentTabs.tabs[id: tabID]?.iconName = "message"
+        var aiContent = FileManagerContentFeature.State.initialContent(
+            for: anchor,
+            inheritingWindowContextFrom: session.window.content,
+        )
+        aiContent.navigation.navigationState = route
+        aiContent.aiChat.sessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
+        if case .aiChatSessions = route {
+            aiContent.aiChat.mode = .sessions
+        }
+        session.window.content = aiContent
+        session.window.tabContentStates = [tabID: aiContent]
+
+        guard !isActive else {
+            session.window.syncContentTabSidebarItems()
+            return session
+        }
+        let homeTabID = ContentTabID(rawValue: "\(id.uuidString)-home")
+        session.window.contentTabs.tabs.append(ContentTabItem(
+            id: homeTabID,
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Home",
+            iconName: "house",
+        ))
+        session.window.contentTabs.activeTabID = homeTabID
+        session.window.content = FileManagerContentFeature.State.initialContent(
+            for: .homeDefault,
+            inheritingWindowContextFrom: aiContent,
+        )
+        session.window.syncActiveTabContentState()
+        session.window.syncContentTabSidebarItems()
+        return session
     }
 
     private static func makeWindow(id: UUID, tabCount: Int) -> WindowSessionState {
