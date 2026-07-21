@@ -14,6 +14,11 @@ func handleNavigationDelegate(
         return .concatenate(
             syncActiveContentTabEffect(navigationState, state: state, computerName: computerName),
             handleNavigateToState(navigationState, state: &state),
+            syncPinnedContentTabRuntimeNavigationEffect(
+                navigationState,
+                state: state,
+                computerName: computerName,
+            ),
         )
 
     case let .logDAUNavigation(previous, next):
@@ -33,19 +38,36 @@ func handleNavigationDelegate(
     }
 }
 
+private func syncPinnedContentTabRuntimeNavigationEffect(
+    _ navigationState: ContentPageNavigationRoute,
+    state: FileManagerWindowState,
+    computerName: String,
+) -> Effect<FileManagerWindowAction> {
+    guard let activeTabID = state.contentTabs.activeTabID,
+          let activeTab = state.contentTabs.tabs[id: activeTabID],
+          activeTab.isPinned,
+          contentTabAnchor(for: navigationState, computerName: computerName) != nil
+    else { return .none }
+
+    return .send(.delegate(.pinnedContentTabRuntimeNavigationChanged(
+        tabID: activeTabID,
+        navigationState: navigationState,
+    )))
+}
+
 func syncActiveContentTabEffect(
     _ navigationState: ContentPageNavigationRoute,
     state: FileManagerWindowState,
     computerName: String,
 ) -> Effect<FileManagerWindowAction> {
     guard let activeTabID = state.contentTabs.activeTabID,
+          let activeTab = state.contentTabs.tabs[id: activeTabID],
           let anchor = contentTabAnchor(for: navigationState, computerName: computerName),
-          state.contentTabs.tabs[id: activeTabID]?.anchor != anchor
+          activeTab.anchor != anchor
     else { return .none }
 
-    let updateActiveTabAnchorEffect: Effect<FileManagerWindowAction> = .send(
-        .contentTabs(.updateActivePageAnchor(activeTabID, anchor)),
-    )
+    let updateActiveTabAnchorEffect: Effect<FileManagerWindowAction> =
+        .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
     guard case .aiChat = anchor,
           state.inspector.inspectorVisible,
           state.inspector.activeMode == .chat
@@ -58,7 +80,7 @@ func syncActiveContentTabEffect(
     )
 }
 
-private func contentTabAnchor(
+func contentTabAnchor(
     for navigationState: ContentPageNavigationRoute,
     computerName: String,
 ) -> ContentTabPageAnchor? {

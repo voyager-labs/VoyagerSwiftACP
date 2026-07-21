@@ -71,9 +71,63 @@ struct FileManagerWindowRoutingReducer {
         state.syncHomeFavoriteItems()
     }
 
+    private func applyPinnedContentTabRuntimeNavigation(
+        tabID: ContentTabID,
+        navigationState: ContentPageNavigationRoute,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let tab = state.contentTabs.tabs[id: tabID],
+              tab.isPinned,
+              let anchor = contentTabAnchor(
+                  for: navigationState,
+                  computerName: fileManagerClient.displayName("/"),
+              )
+        else { return .none }
+
+        let isActiveTab = state.contentTabs.activeTabID == tabID
+        let currentNavigationState = isActiveTab
+            ? state.content.navigation.navigationState
+            : state.tabContentStates[tabID]?.navigation.navigationState
+        guard currentNavigationState != navigationState else { return .none }
+
+        guard isActiveTab else {
+            var contentState = state.tabContentStates[tabID]
+                ?? FileManagerContentFeature.State.initialContent(
+                    for: anchor,
+                    inheritingWindowContextFrom: state.content,
+                )
+            contentState.navigation.navigationState = navigationState
+            if case let .aiChatSessions(sessionID) = navigationState {
+                let aiChatSessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
+                _ = contentState.aiChat.prepareSessionsPresentation(for: aiChatSessionID)
+            }
+            state.tabContentStates[tabID] = contentState
+            return tab.anchor == anchor
+                ? .none
+                : .send(.contentTabs(.updateActivePageAnchor(tabID, anchor)))
+        }
+
+        return .concatenate(
+            syncActiveContentTabEffect(
+                navigationState,
+                state: state,
+                computerName: fileManagerClient.displayName("/"),
+            ),
+            .send(.navigation(.internal(.setNavigationState(navigationState)))),
+            handleNavigateToState(navigationState, state: &state),
+        )
+    }
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case let .applyPinnedContentTabRuntimeNavigation(tabID, navigationState):
+                return applyPinnedContentTabRuntimeNavigation(
+                    tabID: tabID,
+                    navigationState: navigationState,
+                    state: &state,
+                )
+
             case let .reserveExternalContentTabs(reservations):
                 guard let activeReservation = reservations.last,
                       state.reserveExternalContentTabs(reservations)
