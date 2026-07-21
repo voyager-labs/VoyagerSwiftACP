@@ -82,7 +82,10 @@ struct FileManagerWindowRoutingReducer {
                 guard let activeReservation = reservations.last,
                       state.reserveExternalContentTabs(reservations)
                 else { return .none }
-                return .send(.contentTabs(.setCurrent(activeReservation.id)))
+                return .concatenate(
+                    .send(.contentTabs(.setCurrent(activeReservation.id))),
+                    .send(.contentTabs(.collapseSelectionToActive)),
+                )
 
             case .resyncActiveCollectionNavigation:
                 guard let activeTabID = state.contentTabs.activeTabID,

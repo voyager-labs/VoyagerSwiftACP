@@ -823,10 +823,10 @@ private extension WindowManagerFeature {
             state.defaultWindowBootstrapWindowIDs.remove(windowID)
         }
         var effects: [Effect<Action>] = application.existingWindowActivations.map { activation in
-            .send(.windows(.element(
-                id: activation.windowID,
-                action: .window(.contentTabs(.setCurrent(activation.tabID))),
-            )))
+            activateExternalContentTab(
+                windowID: activation.windowID,
+                tabID: activation.tabID,
+            )
         }
         effects.append(contentsOf: application.newWindowIDs.flatMap { windowID in
             [
@@ -844,6 +844,22 @@ private extension WindowManagerFeature {
             result: .success(plan),
         )))))
         return .concatenate(effects)
+    }
+
+    private func activateExternalContentTab(
+        windowID: WindowManagerState.WindowID,
+        tabID: ContentTabID,
+    ) -> Effect<Action> {
+        .concatenate(
+            .send(.windows(.element(
+                id: windowID,
+                action: .window(.contentTabs(.setCurrent(tabID))),
+            ))),
+            .send(.windows(.element(
+                id: windowID,
+                action: .window(.contentTabs(.collapseSelectionToActive)),
+            ))),
+        )
     }
 
     private func sendCommandToFocusedWindow(

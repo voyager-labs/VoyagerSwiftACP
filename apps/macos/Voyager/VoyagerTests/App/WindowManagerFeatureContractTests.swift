@@ -2759,6 +2759,17 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         existingWindow.content.composer.cancellationOwnerID = windowID
         existingWindow.syncActiveTabContentState()
         let previousActiveID = try XCTUnwrap(existingWindow.contentTabs.activeTabID)
+        let selectedSiblingID = ContentTabID(rawValue: "existing-window-selected-sibling")
+        existingWindow.contentTabs.tabs.append(ContentTabItem(
+            id: selectedSiblingID,
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Selected Sibling",
+            iconName: "house",
+        ))
+        existingWindow.contentTabs.selectedTabIDs = [previousActiveID, selectedSiblingID]
+        existingWindow.contentTabs.selectionAnchorID = selectedSiblingID
         var initialState = WindowManagerFeature.State()
         initialState.windows = [.init(id: windowID, window: existingWindow)]
         initialState.authorizedExternalOpenBatchID = batchID
@@ -2815,9 +2826,13 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.skipReceivedActions()
 
         let committedWindow = try XCTUnwrap(store.state.windows[id: windowID]?.window)
-        XCTAssertEqual(committedWindow.contentTabs.tabs.map(\.id), [previousActiveID, tabID])
+        XCTAssertEqual(committedWindow.contentTabs.tabs.map(\.id), [previousActiveID, selectedSiblingID, tabID])
         XCTAssertEqual(committedWindow.contentTabs.activeTabID, tabID)
         XCTAssertEqual(committedWindow.contentTabs.previousActiveTabID, previousActiveID)
+        XCTAssertEqual(committedWindow.contentTabs.selectedTabIDs, [tabID])
+        XCTAssertEqual(committedWindow.contentTabs.selectionAnchorID, tabID)
+        XCTAssertEqual(committedWindow.menuCommandProjection.selectedContentTabCount, 1)
+        XCTAssertFalse(committedWindow.menuCommandProjection.canDuplicateSelectedContentTabs)
         XCTAssertEqual(terminalCount.value, 1)
 
         await loadGate.open()

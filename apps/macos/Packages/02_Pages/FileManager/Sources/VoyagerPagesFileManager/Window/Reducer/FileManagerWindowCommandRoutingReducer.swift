@@ -812,7 +812,10 @@ struct FileManagerWindowCommandRoutingReducer {
             return restoreFailureFeedbackEffect(reason)
         }
 
-        return .send(.contentTabs(.restore))
+        return .concatenate(
+            .send(.contentTabs(.restore)),
+            .send(.contentTabs(.collapseSelectionToActive)),
+        )
     }
 
     private func restoreFailureReason(

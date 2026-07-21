@@ -2267,6 +2267,18 @@ final class CTM001HandleContentTabTests: XCTestCase {
     func testRestoreLastClosedTabCommand_validDirectoryRestoresAndConsumesSnapshot() async throws {
         let directoryAnchor = ContentTabPageAnchor.directory(path: "/Users/test/Documents")
         var state = FileManagerFeature.State()
+        let originalActiveID = try XCTUnwrap(state.contentTabs.activeTabID)
+        let selectedSiblingID = ContentTabID(rawValue: "restore-selected-sibling")
+        state.contentTabs.tabs.append(ContentTabItem(
+            id: selectedSiblingID,
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Selected Sibling",
+            iconName: "house",
+        ))
+        state.contentTabs.selectedTabIDs = [originalActiveID, selectedSiblingID]
+        state.contentTabs.selectionAnchorID = selectedSiblingID
         state.contentTabs.recentlyClosed = ClosedContentTabSnapshot(
             page: .directory,
             anchor: directoryAnchor,
@@ -2289,13 +2301,19 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let beforeCount = store.state.contentTabs.tabs.count
 
         await store.send(.request(.restoreLastClosedContentTab))
-        await store.receive(\.contentTabs)
+        await store.receive(\.contentTabs.restore)
+        await store.receive(\.contentTabs.collapseSelectionToActive)
+        await store.skipReceivedActions(strict: false)
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, beforeCount + 1)
         XCTAssertNil(store.state.contentTabs.recentlyClosed)
         let restoredTab = try XCTUnwrap(store.state.contentTabs.tabs.last)
         XCTAssertEqual(restoredTab.anchor, directoryAnchor)
         XCTAssertEqual(restoredTab.page, .directory)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [restoredTab.id])
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, restoredTab.id)
+        XCTAssertEqual(store.state.menuCommandProjection.selectedContentTabCount, 1)
+        XCTAssertFalse(store.state.menuCommandProjection.canDuplicateSelectedContentTabs)
     }
 
     /// CTM-001-restore_last_closed_tab_routing: 삭제된 Directory anchor restore는 snapshot을 소비하고 feedback alert을 표시함
@@ -3825,10 +3843,23 @@ final class CTM001HandleContentTabTests: XCTestCase {
     /// - 검증 내용: 외부 예약 후 active tab ID와 active content pending selection이 caller 입력과 일치한다.
     /// - 사전 조건: seed Directory tab이 active이고 caller가 tab ID, parent Directory anchor, file selection ID를 제공한다.
     /// - 기대 결과: 새 tab은 caller ID로 active가 되고 파일 selection은 첫 load 전에 content snapshot에 존재한다.
-    func testExternalTabReservation_usesCallerIdentityAndPendingSelection() async {
+    func testExternalTabReservation_usesCallerIdentityAndPendingSelection() async throws {
         let callerTabID = ContentTabID(rawValue: "external-file-tab")
+        let selectedSiblingID = ContentTabID(rawValue: "external-selected-sibling")
         let pendingSelection = "/tmp/report.txt"
-        let store = TestStore(initialState: FileManagerWindowState.makeInitial(path: "/seed")) {
+        var state = FileManagerWindowState.makeInitial(path: "/seed")
+        let originalActiveID = try XCTUnwrap(state.contentTabs.activeTabID)
+        state.contentTabs.tabs.append(ContentTabItem(
+            id: selectedSiblingID,
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Selected Sibling",
+            iconName: "house",
+        ))
+        state.contentTabs.selectedTabIDs = [originalActiveID, selectedSiblingID]
+        state.contentTabs.selectionAnchorID = selectedSiblingID
+        let store = TestStore(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
@@ -3844,8 +3875,13 @@ final class CTM001HandleContentTabTests: XCTestCase {
             ),
         ]))
         await store.receive(\.contentTabs.setCurrent, callerTabID)
+        await store.receive(\.contentTabs.collapseSelectionToActive)
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, callerTabID)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [callerTabID])
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, callerTabID)
+        XCTAssertEqual(store.state.menuCommandProjection.selectedContentTabCount, 1)
+        XCTAssertFalse(store.state.menuCommandProjection.canDuplicateSelectedContentTabs)
         XCTAssertEqual(store.state.content.pendingSelectEntryID, pendingSelection)
         XCTAssertEqual(store.state.tabContentStates[callerTabID]?.pendingSelectEntryID, pendingSelection)
     }
