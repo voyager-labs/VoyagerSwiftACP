@@ -231,6 +231,19 @@ public struct AiChatState: Equatable, Sendable {
     public var availableModelsByProvider: [AiProvider: [AiProviderModel]]
     public var transcriptScrollOffsets: [AiChatSessionID: CGFloat]
 
+    public mutating func prepareSessionsPresentation(for sessionID: AiChatSessionID) -> Bool {
+        sessionList.cancelRenaming()
+        sessionList.errorMessage = nil
+        restoreOutcome = nil
+        restoreFailure = nil
+        mode = .sessions
+        self.sessionID = sessionID
+        sessionList.selectedSessionID = sessionID
+        guard let restoreSessionID, restoreSessionID != sessionID else { return false }
+        self.restoreSessionID = nil
+        return true
+    }
+
     public init(
         restoreSessionID: AiChatSessionID? = nil,
         restoreOutcome: AiChatSessionRestoreResult? = nil,
