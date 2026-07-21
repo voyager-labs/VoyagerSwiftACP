@@ -14,6 +14,17 @@ enum FileManagerFixedLocationsLoadPhase: Equatable {
     case loaded
 }
 
+enum FileManagerAiChatInspectorDestination: Equatable {
+    case newChat
+    case chatHistory
+}
+
+struct FileManagerPendingAiChatInspectorOpen: Equatable {
+    var requestID: UUID
+    var tabID: ContentTabID
+    var destination: FileManagerAiChatInspectorDestination
+}
+
 @ObservableState
 public struct FileManagerWindowState: Equatable {
     public var content: FileManagerContentFeature.State
@@ -26,6 +37,7 @@ public struct FileManagerWindowState: Equatable {
     public var contentTabs: ContentTabState
     public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
     public var pendingContentTabClose: PendingContentTabClose?
+    var pendingAiChatInspectorOpen: FileManagerPendingAiChatInspectorOpen?
     var fixedLocationsLoadPhase: FileManagerFixedLocationsLoadPhase = .idle
     var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
 
@@ -40,6 +52,7 @@ public struct FileManagerWindowState: Equatable {
         backgroundInspectorAiChatStates = [:]
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
+        pendingAiChatInspectorOpen = nil
         if let activeTabID = contentTabs.activeTabID {
             tabContentStates[activeTabID] = content
         }

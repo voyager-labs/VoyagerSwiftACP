@@ -23,6 +23,8 @@ public struct FileManagerWindowMenuCommandProjection: Equatable, Sendable {
     public let selectedItemCount: Int
     public let isComposerPresented: Bool
     public let isContextualAiChatPresented: Bool
+    public let isNewChatPresented: Bool
+    public let isChatHistoryPresented: Bool
 }
 
 public extension FileManagerWindowState {
@@ -55,6 +57,14 @@ public extension FileManagerWindowState {
             isContextualAiChatPresented: inspector.inspectorVisible
                 && inspector.inspectorPaneExists
                 && inspector.activeMode == .chat,
+            isNewChatPresented: inspector.inspectorVisible
+                && inspector.inspectorPaneExists
+                && inspector.activeMode == .chat
+                && inspector.aiChat.mode == .chat,
+            isChatHistoryPresented: inspector.inspectorVisible
+                && inspector.inspectorPaneExists
+                && inspector.activeMode == .chat
+                && inspector.aiChat.mode == .sessions,
         )
     }
 }

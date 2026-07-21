@@ -11,191 +11,140 @@ import XCTest
 
 @MainActor
 final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
-    func testCommandLTogglesContextualAiChat() async {
+    func testMenuCommandsRouteSemanticChatDestinations() async {
+        let store = TestStore(initialState: MenuCommandsFeature.State()) {
+            MenuCommandsFeature()
+        }
+        // store.exhaustivity = .off: 메뉴 command에서 WindowManager delegate로의 의미 라우팅만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.view(.edit(.newChat)))
+        await store.receive {
+            guard case .delegate(.windowManager(.edit(.newChat))) = $0 else { return false }
+            return true
+        }
+
+        await store.send(.view(.edit(.showChatHistory)))
+        await store.receive {
+            guard case .delegate(.windowManager(.edit(.showChatHistory))) = $0 else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
+    func testChatCommandsOpenAndSwitchDestinationsWithoutClosingInspector() async {
         let fixture = makeFocusedWindowFixture(
             focusedUUID: makeUUID("00000000-0000-0000-0000-000000000021"),
         )
+        let savedSessionCount = LockIsolated(0)
+        let store = makeWindowManagerStore(fixture: fixture, savedSessionCount: savedSessionCount)
 
-        await assertMenuCommandDelegatesToWindowManager()
-
-        let windowStore = makeWindowManagerStore(fixture: fixture)
-        await assertCommandLOpensContextualAiChat(on: windowStore, fixture: fixture)
-        await assertCommandLClosesContextualAiChat(on: windowStore, fixture: fixture)
-        await windowStore.finish()
-    }
-
-    private func assertMenuCommandDelegatesToWindowManager() async {
-        let menuStore = TestStore(initialState: MenuCommandsFeature.State()) {
-            MenuCommandsFeature()
+        await store.send(.edit(.newChat))
+        await assertWindowManagerRequest(.newChat, on: store, fixture: fixture)
+        await store.receive {
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.internal(.aiChatNewChatInspectorOpenLoaded(_, setup, file))),
+            )) = $0
+            else { return false }
+            return id == fixture.focusedUUID
+                && setup.mode == .chat
+                && setup.currentContext == fixture.expectedSetup.currentContext
+                && file == fixture.connectionsFile
         }
-        menuStore.exhaustivity = .off
-
-        await menuStore.send(.view(.edit(.openContextualAiChat)))
-        await menuStore.receive {
-            guard case .delegate(.windowManager(.edit(.openContextualAiChat))) = $0 else { return false }
-            return true
+        await store.receive {
+            guard case let .windows(.element(id: id, action: .window(.inspector(.openNewChat(setup, file))))) = $0
+            else { return false }
+            return id == fixture.focusedUUID
+                && setup.mode == .chat
+                && setup.currentContext == fixture.expectedSetup.currentContext
+                && file == fixture.connectionsFile
         }
-        await menuStore.finish()
+        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.aiChat.setup)
+        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.aiChat.providerConnectionsUpdated)
+        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.aiChat.prepareUnpersistedNewChat)
+        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.setInspectorVisible) {
+            $0.windows[id: fixture.focusedUUID]?.window.inspector.inspectorVisible = true
+        }
+
+        guard let firstSessionID = store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.sessionID
+        else {
+            XCTFail("Expected New Chat to prepare a session ID")
+            return
+        }
+        XCTAssertEqual(store.state.windows[id: fixture.focusedUUID]?.window.inspector.inspectorVisible, true)
+        XCTAssertEqual(store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.mode, .chat)
+        XCTAssertEqual(
+            store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.transcriptHistory.isEmpty,
+            true,
+        )
+        XCTAssertEqual(store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.draftText.isEmpty, true)
+        XCTAssertEqual(store.state.windows[id: fixture.focusedUUID]?.window.inspector.inspectorPaneExists, false)
+
+        await store.send(.edit(.showChatHistory))
+        await assertWindowManagerRequest(.showChatHistory, on: store, fixture: fixture)
+        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.showChatHistoryRequested)
+        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.aiChat.backToSessionsTapped)
+
+        XCTAssertEqual(store.state.windows[id: fixture.focusedUUID]?.window.inspector.inspectorVisible, true)
+        XCTAssertEqual(store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.mode, .sessions)
+        XCTAssertEqual(
+            store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.sessionID,
+            firstSessionID,
+        )
+
+        await store.send(.edit(.newChat))
+        await assertWindowManagerRequest(.newChat, on: store, fixture: fixture)
+        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.newChatRequested)
+        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.aiChat.prepareUnpersistedNewChat)
+
+        XCTAssertEqual(store.state.windows[id: fixture.focusedUUID]?.window.inspector.inspectorVisible, true)
+        XCTAssertEqual(store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.mode, .chat)
+        XCTAssertNotEqual(
+            store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.sessionID,
+            firstSessionID,
+        )
+        XCTAssertEqual(savedSessionCount.value, 0)
+        await store.finish()
     }
 
     private func makeWindowManagerStore(
         fixture: FocusedWindowFixture,
+        savedSessionCount: LockIsolated<Int>? = nil,
     ) -> TestStore<WindowManagerFeature.State, WindowManagerFeature.Action> {
         let store = TestStore(initialState: fixture.initialState) {
             WindowManagerFeature()
         } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
             $0.aiConnectionsFileClient.load = { fixture.connectionsFile }
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSessionCount?.withValue { $0 += 1 }
+                return snapshot
+            }
         }
+        // store.exhaustivity = .off: WindowManager부터 AiChat persistence까지의 통합 흐름에서 목적지 action만 선별 검증한다.
         store.exhaustivity = .off
         return store
     }
 
-    private func assertCommandLOpensContextualAiChat(
-        on store: TestStore<WindowManagerFeature.State, WindowManagerFeature.Action>,
-        fixture: FocusedWindowFixture,
-    ) async {
-        await store.send(.edit(.openContextualAiChat))
-        await assertWindowManagerRequest(on: store, fixture: fixture)
-        await assertWindowManagerOpenChat(on: store, fixture: fixture)
-        await assertWindowManagerAiChatSetup(on: store, fixture: fixture)
-        await store.send(.windows(.element(
-            id: fixture.focusedUUID,
-            action: .window(.inspector(.setInspectorPaneExists(true))),
-        ))) {
-            $0.windows[id: fixture.focusedUUID]?.window.inspector.inspectorPaneExists = true
-        }
-    }
-
-    private func assertCommandLClosesContextualAiChat(
-        on store: TestStore<WindowManagerFeature.State, WindowManagerFeature.Action>,
-        fixture: FocusedWindowFixture,
-    ) async {
-        await store.send(.edit(.openContextualAiChat))
-        await assertWindowManagerRequest(on: store, fixture: fixture)
-        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.closeChat) {
-            $0.windows[id: fixture.focusedUUID]?.window.inspector.inspectorVisible = false
-        }
-        XCTAssertEqual(
-            store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.sessionID,
-            fixture.expectedSetup.sessionID,
-        )
-    }
-
     private func assertWindowManagerRequest(
+        _ command: FileManagerWindowAction.WindowCommand,
         on store: TestStore<WindowManagerFeature.State, WindowManagerFeature.Action>,
         fixture: FocusedWindowFixture,
     ) async {
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: windowAction)) = action else {
+            guard case let .windows(.element(id: id, action: .window(.request(receivedCommand)))) = action else {
                 return false
             }
-            guard case .window(.request(.openContextualAiChat)) = windowAction else {
+            guard id == fixture.focusedUUID else { return false }
+            switch (receivedCommand, command) {
+            case (.newChat, .newChat), (.showChatHistory, .showChatHistory):
+                return true
+            default:
                 return false
             }
-            return id == fixture.focusedUUID
         }
-    }
-
-    private func assertWindowManagerOpenChat(
-        on store: TestStore<WindowManagerFeature.State, WindowManagerFeature.Action>,
-        fixture: FocusedWindowFixture,
-    ) async {
-        await store.receive { action in
-            guard case let .windows(.element(id: id, action: windowAction)) = action else {
-                return false
-            }
-            guard case let .window(.inspector(inspectorAction)) = windowAction else {
-                return false
-            }
-            guard case let .openChat(setup, connectionsFile) = inspectorAction else {
-                return false
-            }
-            return id == fixture.focusedUUID
-                && setup.sessionID == fixture.expectedSetup.sessionID
-                && setup.currentContext == fixture.expectedSetup.currentContext
-                && connectionsFile == fixture.connectionsFile
-        }
-    }
-
-    private func assertWindowManagerAiChatSetup(
-        on store: TestStore<WindowManagerFeature.State, WindowManagerFeature.Action>,
-        fixture: FocusedWindowFixture,
-    ) async {
-        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.aiChat.setup) {
-            $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.sessionID = fixture.expectedSetup.sessionID
-            $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.sessionStatus = fixture.expectedSetup
-                .sessionStatus
-            $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.currentContext = fixture.expectedSetup
-                .currentContext
-            $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.transcriptHistory = fixture.expectedSetup
-                .transcriptHistory
-            $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.draftText = fixture.expectedSetup.draftText
-            $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.catalogRows = fixture.expectedSetup.catalogRows
-            $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.selectedModelHandle = fixture.expectedSetup
-                .selectedModelHandle
-            $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.lockedModelHandle = fixture.expectedSetup
-                .lockedModelHandle
-            $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.lastExecutionFailure = fixture.expectedSetup
-                .lastExecutionFailure
-            $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.executionPhase = .idle
-        }
-
-        await store.receive { action in
-            guard case let .windows(.element(id: id, action: windowAction)) = action else {
-                return false
-            }
-            guard case let .window(.inspector(.aiChat(aiChatAction))) = windowAction else {
-                return false
-            }
-            guard case let .providerConnectionsUpdated(file) = aiChatAction else {
-                return false
-            }
-            return id == fixture.focusedUUID && file == fixture.connectionsFile
-        }
-
-        guard let aiChat = store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat else {
-            XCTFail("Missing focused window AI chat state")
-            return
-        }
-
-        assertUnconnectedCurrentContextContract(
-            aiChat,
-            expectedSummaryTitle: "Documents · 1 selected",
-            expectedBanner: .init(
-                title: "Connect an AI provider",
-                detail: "Set up a provider in Settings to chat with this context.",
-                fixLabel: "Open Settings",
-            ),
-        )
-    }
-
-    private func assertUnconnectedCurrentContextContract(
-        _ state: AiChatFeature.State,
-        expectedSummaryTitle: String,
-        expectedBanner: AiChatConnectionMetadata,
-    ) {
-        XCTAssertEqual(state.currentContextSummaryDisplayModel.title, expectedSummaryTitle)
-        XCTAssertEqual(state.skeletonDisplayModel.headerTitle, "Chat")
-        XCTAssertEqual(state.skeletonDisplayModel.currentContext.title, expectedSummaryTitle)
-        XCTAssertEqual(state.chatInputDisplayModel.placeholder, "Ask anything…")
-
-        guard case let .unconnected(connection, summary) = state.surfaceState else {
-            XCTFail("Expected provider-missing unconnected surface state")
-            return
-        }
-
-        XCTAssertEqual(connection, expectedBanner)
-        XCTAssertEqual(summary.title, expectedSummaryTitle)
-        XCTAssertEqual(state.connectionState, .unconnected(expectedBanner))
-        XCTAssertFalse(state.canSubmit)
-        XCTAssertFalse(state.chatInputDisplayModel.canSubmit)
-
-        guard case let .unconnected(skeletonConnection) = state.skeletonDisplayModel.surface else {
-            XCTFail("Expected provider-missing skeleton unconnected surface")
-            return
-        }
-
-        XCTAssertEqual(skeletonConnection, expectedBanner)
     }
 
     private func makeEntry(name: String, fullPath: String) -> EntryModel {
@@ -261,15 +210,11 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
         focusedWindow.content.entryViewLayout.selectedIds = [selectedEntry.id]
         initialState.windows[id: focusedUUID]?.window = focusedWindow
 
-        let connectionsFile = AIConnectionsFile.empty()
-
-        let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: focusedWindow.content)
-
         return FocusedWindowFixture(
             initialState: initialState,
             focusedUUID: focusedUUID,
-            connectionsFile: connectionsFile,
-            expectedSetup: expectedSetup,
+            connectionsFile: .empty(),
+            expectedSetup: FileManagerAiChatContextAdapter.makeAiChatSetupState(content: focusedWindow.content),
         )
     }
 }

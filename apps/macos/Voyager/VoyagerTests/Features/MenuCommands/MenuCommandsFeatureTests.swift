@@ -1,5 +1,6 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerFeaturesUpdateVersion
@@ -15,6 +16,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
         }
+        // store.exhaustivity = .off: delegate 라우팅 action만 검증하고 내부 상태 전체 비교는 생략한다.
         store.exhaustivity = .off
 
         await store.send(.view(.app(.checkForUpdates)))
@@ -42,7 +44,8 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let editCases: [(MenuCommandItem.EditCommand, WindowManagerAction)] = [
             (.cut, .edit(.cut)),
             (.copy, .edit(.copy)),
-            (.openContextualAiChat, .edit(.openContextualAiChat)),
+            (.newChat, .edit(.newChat)),
+            (.showChatHistory, .edit(.showChatHistory)),
             (.paste, .edit(.paste)),
             (.duplicate, .edit(.duplicate)),
             (.makeAlias, .edit(.makeAlias)),
@@ -57,6 +60,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
         }
+        // store.exhaustivity = .off: 여러 command의 delegate 라우팅만 검증하고 내부 상태 전체 비교는 생략한다.
         store.exhaustivity = .off
 
         await store.send(.view(.viewCommand(.toggleShowHiddenFiles)))
@@ -139,16 +143,35 @@ final class MenuCommandsFeatureTests: XCTestCase {
         ]
         appState.windowManager.focusedWindowID = focusedID
 
-        XCTAssertTrue(MenuCommandsState(state: appState).isContextualAiChatPresented)
+        var menuState = MenuCommandsState(state: appState)
+        XCTAssertTrue(menuState.isContextualAiChatPresented)
+        XCTAssertTrue(menuState.isChatHistoryPresented)
+        XCTAssertFalse(menuState.isNewChatPresented)
+        XCTAssertEqual(menuState.newChatTitle, "New Chat")
+        XCTAssertEqual(menuState.chatHistoryTitle, "Hide Chat History")
+
+        appState.windowManager.windows[id: focusedID]?.window.inspector.aiChat.mode = .chat
+
+        menuState = MenuCommandsState(state: appState)
+        XCTAssertTrue(menuState.isNewChatPresented)
+        XCTAssertFalse(menuState.isChatHistoryPresented)
+        XCTAssertEqual(menuState.newChatTitle, "Close Chat")
+        XCTAssertEqual(menuState.chatHistoryTitle, "Show Chat History")
 
         appState.windowManager.windows[id: focusedID]?.window.inspector.inspectorPaneExists = false
 
-        XCTAssertFalse(MenuCommandsState(state: appState).isContextualAiChatPresented)
+        menuState = MenuCommandsState(state: appState)
+        XCTAssertFalse(menuState.isContextualAiChatPresented)
+        XCTAssertFalse(menuState.isNewChatPresented)
+        XCTAssertFalse(menuState.isChatHistoryPresented)
 
         appState.windowManager.windows[id: focusedID]?.window.inspector.inspectorPaneExists = true
         appState.windowManager.windows[id: focusedID]?.window.inspector.inspectorVisible = false
 
-        XCTAssertFalse(MenuCommandsState(state: appState).isContextualAiChatPresented)
+        menuState = MenuCommandsState(state: appState)
+        XCTAssertFalse(menuState.isContextualAiChatPresented)
+        XCTAssertFalse(menuState.isNewChatPresented)
+        XCTAssertFalse(menuState.isChatHistoryPresented)
     }
 
     /// testCanRestoreLastClosedTabReflectsFocusedWindowRecentlyClosedState 테스트 동작을 검증한다.
@@ -255,6 +278,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
         }
+        // store.exhaustivity = .off: edit command의 단일 delegate 라우팅만 검증한다.
         store.exhaustivity = .off
 
         await store.send(.view(.edit(command)))
@@ -263,7 +287,8 @@ final class MenuCommandsFeatureTests: XCTestCase {
             switch (action, expected) {
             case (.edit(.cut), .edit(.cut)),
                  (.edit(.copy), .edit(.copy)),
-                 (.edit(.openContextualAiChat), .edit(.openContextualAiChat)),
+                 (.edit(.newChat), .edit(.newChat)),
+                 (.edit(.showChatHistory), .edit(.showChatHistory)),
                  (.edit(.paste), .edit(.paste)),
                  (.edit(.duplicate), .edit(.duplicate)),
                  (.edit(.makeAlias), .edit(.makeAlias)),

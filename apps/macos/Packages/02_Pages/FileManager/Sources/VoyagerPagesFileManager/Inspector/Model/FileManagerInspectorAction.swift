@@ -14,7 +14,11 @@ public enum FileManagerInspectorAction: CasePathable, Sendable {
     case closeChat
     case sessionHeaderNewChatTapped
     case sessionHeaderBackTapped
+    case newChatRequested
+    case showChatHistoryRequested
     case openChat(AiChatSetupState, AIConnectionsFile)
+    case openNewChat(AiChatSetupState, AIConnectionsFile)
+    case openChatHistory(AiChatSetupState, AIConnectionsFile)
     case aiChat(AiChatFeature.Action)
 
     @CasePathable

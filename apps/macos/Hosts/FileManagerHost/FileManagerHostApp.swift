@@ -260,8 +260,8 @@ private final class FileManagerHostMenuController: NSObject, NSMenuItemValidatio
 
         let paneMenu = NSMenu(title: "Panes")
         paneMenu.addItem(
-            withTitle: "Open Chat Pane",
-            action: #selector(openChatPane),
+            withTitle: "Show Chat History",
+            action: #selector(showChatHistory),
             keyEquivalent: "",
         ).target = self
         paneMenu.addItem(
@@ -302,7 +302,7 @@ private final class FileManagerHostMenuController: NSObject, NSMenuItemValidatio
         case "List View":
             menuItem.state = projection.viewLayout == .list ? .on : .off
             return true
-        case "Open Chat Pane":
+        case "Show Chat History":
             menuItem.state = projection.isContextualAiChatPresented ? .on : .off
             return true
         case "Hide Sidebar":
@@ -337,8 +337,8 @@ private final class FileManagerHostMenuController: NSObject, NSMenuItemValidatio
     }
 
     @objc
-    private func openChatPane(_: NSMenuItem) {
-        store.send(.request(.presentContextualAiChat))
+    private func showChatHistory(_: NSMenuItem) {
+        store.send(.request(.showChatHistory))
     }
 
     @objc
