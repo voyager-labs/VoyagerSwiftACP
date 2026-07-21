@@ -189,6 +189,8 @@ private func makeBatchSameSessionAiFixture() -> BatchSameSessionAiFixture {
     sharedContent.aiChat.sessionID = sessionID
     sharedContent.aiChat.sessionStatus = .active
     sharedContent.aiChat.executionPhase = .processing(requestLock)
+    sharedContent.aiChat.transcriptHistory = requestLock.request.messages
+    sharedContent.aiChat.draftText = "shared draft"
     var state = FileManagerFeature.State()
     state.contentTabs = ContentTabState(
         tabs: [
@@ -1528,6 +1530,22 @@ final class CTM001HandleContentTabTests: XCTestCase {
     /// - 기대 결과: 두 duplicate는 같은 anchor를 유지하고 source generation은 processing이며 background owner key는 하나임
     func testDuplicateSelectedBatch_sameSessionAiPreservesOneLifecycleOwnerWithoutRestoreOrCancel() async {
         let fixture = makeBatchSameSessionAiFixture()
+        let finalSnapshot = AiChatSessionSnapshot(
+            sessionID: fixture.sessionID,
+            status: .active,
+            provider: fixture.requestLock.context.provider,
+            model: fixture.requestLock.selectedModelHandle,
+            selectedModelRow: fixture.requestLock.selectedModelRow,
+            selectedThinking: fixture.requestLock.context.selectedThinking,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "shared request"),
+                AiChatMessage(role: .assistant, content: "latest done"),
+            ],
+            lastRequestID: fixture.requestLock.requestID,
+            lastRunID: fixture.requestLock.runID,
+            lastRequestContext: fixture.requestLock.context.requestContext,
+            updatedAtMs: 1_234_567_891_000,
+        )
         let loadedSessionIDs = LockIsolated<[AiChatSessionID]>([])
         let store = TestStore(initialState: fixture.state) {
             FileManagerFeature()
@@ -1576,7 +1594,29 @@ final class CTM001HandleContentTabTests: XCTestCase {
             .processing(fixture.requestLock),
         )
         XCTAssertEqual(store.state.content.aiChat.sessionID, fixture.sessionID)
+        XCTAssertEqual(store.state.content.aiChat.executionPhase, .idle)
+        XCTAssertTrue(store.state.content.aiChat.transcriptHistory.isEmpty)
+        XCTAssertTrue(store.state.content.aiChat.draftText.isEmpty)
         XCTAssertNil(store.state.tabContentStates[fixture.secondDuplicateID]?.aiChat.sessionID)
+        XCTAssertEqual(loadedSessionIDs.value, [])
+
+        await store.send(.backgroundAiChatSnapshotPersisted(finalSnapshot))
+
+        XCTAssertEqual(store.state.content.aiChat.sessionID, fixture.sessionID)
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory, finalSnapshot.transcriptHistory)
+        XCTAssertEqual(
+            store.state.tabContentStates[fixture.firstDuplicateID]?.aiChat.transcriptHistory,
+            finalSnapshot.transcriptHistory,
+        )
+        XCTAssertEqual(
+            store.state.tabContentStates[fixture.firstSourceID]?.aiChat.transcriptHistory,
+            finalSnapshot.transcriptHistory,
+        )
+        XCTAssertEqual(
+            store.state.tabContentStates[fixture.secondSourceID]?.aiChat.transcriptHistory,
+            finalSnapshot.transcriptHistory,
+        )
+        XCTAssertNil(store.state.backgroundAiChatStates[fixture.sessionID])
         XCTAssertEqual(loadedSessionIDs.value, [])
         await store.finish()
     }
