@@ -106,6 +106,49 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(store.state.currentContext, currentContext)
     }
 
+    /// CBW-005-start_chat_conversation_session: Inspector New Chat은 입력 전까지 session을 저장하지 않는다.
+    /// 빈 composer를 여는 동작만으로 history record를 만들거나 삭제 요청을 보내지 않는지 검증합니다.
+    /// - 검증 내용: transient sessionID 준비, save/delete 미호출, history 전환
+    /// - 사전 조건: sessions mode에서 inspector가 새 대화 composer를 요청한다.
+    /// - 기대 결과: chat state는 준비되지만 persistence에는 기록이 생기지 않는다.
+    func testPrepareUnpersistedNewChatDoesNotCreateOrDeleteSession() async {
+        let newSessionID = makeCBW005SessionID("00000000-0000-0000-0000-000000000000")
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let deletedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+
+        let store = TestStore(initialState: AiChatFeature.State(mode: .sessions)) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
+                },
+                deleteSession: { sessionID in
+                    deletedSessionIDs.withValue { $0.append(sessionID) }
+                },
+            )
+        }
+
+        await store.send(.prepareUnpersistedNewChat) { state in
+            self.applyNewChatStartedState(&state, sessionID: newSessionID)
+            state.emptyDraftSessionID = nil
+        }
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+
+        await store.send(.backToSessionsTapped) { state in
+            state.mode = .sessions
+        }
+
+        XCTAssertEqual(store.state.sessionID, newSessionID)
+        XCTAssertNil(store.state.emptyDraftSessionID)
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+        XCTAssertTrue(deletedSessionIDs.value.isEmpty)
+    }
+
     // MARK: - CBW-005-continue_chat_conversation_session
 
     /// CBW-005-continue_chat_conversation_session: Sessions로 돌아가도 active chat data는 유지된다.
@@ -492,7 +535,6 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         }
 
         await store.send(.sessionsAppeared) { state in
-            state.mode = .sessions
             state.sessionList.isLoading = true
             state.sessionList.errorMessage = nil
         }
@@ -4542,7 +4584,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         let displayModel = AiChatSessionsDisplayModel(rows: [], now: makeFixedDate(milliseconds: 1_700_000_000_000))
 
         XCTAssertTrue(displayModel.isEmpty)
-        XCTAssertEqual(displayModel.title, "Sessions")
+        XCTAssertEqual(displayModel.title, "Chat History")
         XCTAssertEqual(displayModel.newChatTitle, "New Chat")
         XCTAssertEqual(displayModel.searchPlaceholder, "Search")
         XCTAssertEqual(displayModel.emptyTitle, "No sessions yet")
@@ -4755,8 +4797,10 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             state.sessionList.errorMessage = nil
         }
 
-        await store.send(.sessionsAppeared) { state in
+        await store.send(.backToSessionsTapped) { state in
             state.mode = .sessions
+        }
+        await store.send(.sessionsAppeared) { state in
             state.sessionList.isLoading = true
             state.sessionList.errorMessage = nil
         }
@@ -4767,9 +4811,6 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             state.sessionList.errorMessage = nil
         }
 
-        await store.send(.backToSessionsTapped) { state in
-            state.mode = .sessions
-        }
         XCTAssertEqual(store.state.executionPhase, .processing(lock))
 
         await store.send(.sessionRowTapped(sessionID)) { state in

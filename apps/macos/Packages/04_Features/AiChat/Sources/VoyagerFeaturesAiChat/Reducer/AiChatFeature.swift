@@ -75,7 +75,7 @@ public struct AiChatFeature {
                 }
 
             case .sessionsAppeared:
-                state.mode = .sessions
+                guard state.mode == .sessions else { return .none }
                 state.sessionList.isLoading = true
                 state.sessionList.errorMessage = nil
                 return loadSessions()
@@ -85,6 +85,13 @@ public struct AiChatFeature {
                 let snapshot = startNewUnselectedChat(state: &state)
                 preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
                 return saveNewChat(snapshot)
+
+            case .prepareUnpersistedNewChat:
+                let preservedExecutionPhase = state.executionPhase
+                _ = startNewUnselectedChat(state: &state)
+                state.emptyDraftSessionID = nil
+                preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
+                return .cancel(id: CancelID.newChat)
 
             case .showSessionsTapped:
                 state.sessionList.cancelRenaming()
@@ -256,6 +263,7 @@ public struct AiChatFeature {
                 return .none
 
             case let .newChatCreated(snapshot):
+                guard state.emptyDraftSessionID == snapshot.sessionID else { return .none }
                 applyNewChatCreated(snapshot: snapshot, state: &state)
                 return .none
 
