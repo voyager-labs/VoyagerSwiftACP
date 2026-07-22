@@ -78,26 +78,26 @@ description = "macOS 개발 앱 빌드 (xcbeautify 필터링)"
 run = """
 set -o pipefail
 mkdir -p build/dev/reports
-NSUnbufferedIO=YES scripts/dev/xcodebuild-branch-product.sh -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug -skipPackagePluginValidation -skipMacroValidation COMPILER_INDEX_STORE_ENABLE=NO build 2>&1 | tee build/dev/xcodebuild.log | mise exec -- xcbeautify --quiet --is-ci --report junit --report-path build/dev/reports
+NSUnbufferedIO=YES scripts/dev/xcodebuild-branch-product.sh -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Dev-Debug -skipPackagePluginValidation -skipMacroValidation COMPILER_INDEX_STORE_ENABLE=NO build 2>&1 | tee build/dev/xcodebuild.log | mise exec -- xcbeautify --quiet --is-ci --report junit --report-path build/dev/reports
 """
 
 # macOS 앱/호스트 빌드 후 실행 (worktree 내부 DerivedData 사용)
 [tasks.macos-launch]
-description = "macOS 앱/호스트 빌드 후 실행 (기본: Voyager-Dev Debug)"
+description = "macOS 앱/호스트 빌드 후 실행 (기본: Voyager-Dev Dev-Debug)"
 run = """
 if [ "$#" -eq 0 ]; then
-  set -- --scheme Voyager-Dev --configuration Debug --env "VOYAGER_PROJECT_ROOT=$PWD"
+  set -- --scheme Voyager-Dev --configuration Dev-Debug --env "VOYAGER_PROJECT_ROOT=$PWD"
 fi
 scripts/dev/macos-launch.sh "$@"
 """
 
 [tasks.macos-filemanager-injection]
-description = "FileManagerHost Debug를 InjectionNext와 함께 빌드 후 실행"
+description = "FileManagerHost Dev-Debug를 InjectionNext와 함께 빌드 후 실행"
 run = """
 scripts/dev/macos-launch.sh \
   --workspace apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj/project.xcworkspace \
   --scheme FileManagerHost-Dev \
-  --configuration Debug \
+  --configuration Dev-Debug \
   --injection-next \
   --env "VOYAGER_PROJECT_ROOT=$PWD" \
   "$@"

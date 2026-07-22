@@ -1,12 +1,12 @@
 [
   {
-    "label": "Voyager Dev: Launch (Debug)",
+    "label": "Voyager Dev: Launch (Dev-Debug)",
     "command": "./scripts/dev/macos-launch.sh",
     "args": [
       "--scheme",
       "Voyager-Dev",
       "--configuration",
-      "Debug",
+      "Dev-Debug",
       "--env",
        "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT",
        "--env",
@@ -15,74 +15,74 @@
      "cwd": "$ZED_WORKTREE_ROOT"
    },
   {
-    "label": "Voyager Dev: Launch (Release)",
+    "label": "Voyager Dev: Launch (Prod-Release)",
     "command": "./scripts/dev/macos-launch.sh",
     "args": [
       "--scheme",
       "Voyager-Dev",
       "--configuration",
-      "Release",
+      "Prod-Release",
       "--env",
       "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
     ],
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
-    "label": "Voyager Prod: Launch (Debug)",
+    "label": "Voyager Prod: Launch (Dev-Debug)",
     "command": "./scripts/dev/macos-launch.sh",
     "args": [
       "--scheme",
       "Voyager-Prod",
       "--configuration",
-      "Debug"
+      "Dev-Debug"
     ],
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
-    "label": "Voyager Prod: Launch (Release)",
+    "label": "Voyager Prod: Launch (Prod-Release)",
     "command": "./scripts/dev/macos-launch.sh",
     "args": [
       "--scheme",
       "Voyager-Prod",
       "--configuration",
-      "Release"
+      "Prod-Release"
     ],
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
-    "label": "VoyagerHelper Dev: Launch (Debug)",
+    "label": "VoyagerHelper Dev: Launch (Dev-Debug)",
     "command": "./scripts/dev/macos-launch.sh",
     "args": [
       "--scheme",
       "VoyagerHelper-Dev",
       "--configuration",
-      "Debug",
+      "Dev-Debug",
       "--env",
       "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
     ],
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
-    "label": "VoyagerHelper Dev: Launch (Release)",
+    "label": "VoyagerHelper Dev: Launch (Prod-Release)",
     "command": "./scripts/dev/macos-launch.sh",
     "args": [
       "--scheme",
       "VoyagerHelper-Dev",
       "--configuration",
-      "Release",
+      "Prod-Release",
       "--env",
       "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
     ],
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
-    "label": "OnboardingHost Dev: Launch (Debug)",
+    "label": "OnboardingHost Dev: Launch (Dev-Debug)",
     "command": "./scripts/dev/macos-launch.sh",
     "args": [
       "--scheme",
       "OnboardingHost-Dev",
       "--configuration",
-      "Debug",
+      "Dev-Debug",
       "--env",
       "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT",
       "--env",
@@ -91,13 +91,13 @@
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
-    "label": "OnboardingHost Dev: Launch (Release)",
+    "label": "OnboardingHost Dev: Launch (Prod-Release)",
     "command": "./scripts/dev/macos-launch.sh",
     "args": [
       "--scheme",
       "OnboardingHost-Dev",
       "--configuration",
-      "Release",
+      "Prod-Release",
       "--env",
       "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT",
       "--env",
@@ -106,58 +106,58 @@
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
-    "label": "SettingsHost Dev: Launch (Debug)",
+    "label": "SettingsHost Dev: Launch (Dev-Debug)",
     "command": "./scripts/dev/macos-launch.sh",
     "args": [
       "--scheme",
       "SettingsHost-Dev",
       "--configuration",
-      "Debug",
+      "Dev-Debug",
       "--env",
       "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
     ],
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
-    "label": "SettingsHost Dev: Launch (Release)",
+    "label": "SettingsHost Dev: Launch (Prod-Release)",
     "command": "./scripts/dev/macos-launch.sh",
     "args": [
       "--scheme",
       "SettingsHost-Dev",
       "--configuration",
-      "Release",
+      "Prod-Release",
       "--env",
       "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
     ],
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
-    "label": "FileManagerHost Dev: Launch (Debug)",
+    "label": "FileManagerHost Dev: Launch (Dev-Debug)",
     "command": "./scripts/dev/macos-launch.sh",
     "args": [
       "--scheme",
       "FileManagerHost-Dev",
       "--configuration",
-      "Debug",
+      "Dev-Debug",
       "--env",
       "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
     ],
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
-    "label": "FileManagerHost Dev: Launch with Injection (Debug)",
+    "label": "FileManagerHost Dev: Launch with Injection (Dev-Debug)",
     "command": "mise",
     "args": ["run", "macos-filemanager-injection"],
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
-    "label": "FileManagerHost Dev: Launch (Release)",
+    "label": "FileManagerHost Dev: Launch (Prod-Release)",
     "command": "./scripts/dev/macos-launch.sh",
     "args": [
       "--scheme",
       "FileManagerHost-Dev",
       "--configuration",
-      "Release",
+      "Prod-Release",
       "--env",
       "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT"
     ],
