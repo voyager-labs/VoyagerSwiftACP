@@ -170,10 +170,14 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
     }
 
     func testOpenInspectorCommandsKeepMatchingDestinationOpen() async {
-        var newChatState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        let previousState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        let staleContext = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: previousState.content)
+        var newChatState = FileManagerFeature.State.makeInitial(path: "/Users/test/Downloads")
+        let expectedContext = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: newChatState.content)
         newChatState.inspector.inspectorVisible = true
         newChatState.inspector.inspectorPaneExists = true
         newChatState.inspector.activeMode = .chat
+        newChatState.inspector.aiChat.currentContext = staleContext
 
         let newChatStore = makeStore(
             initialState: newChatState,
@@ -188,9 +192,15 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertTrue(newChatStore.state.inspector.aiChat.isUntouchedPreparedTransientNewChat)
 
         await newChatStore.send(.request(.newChat))
+        await newChatStore.receive { action in
+            guard case let .inspector(.aiChat(.currentContextChanged(snapshot))) = action else { return false }
+            return snapshot == expectedContext
+        }
         XCTAssertTrue(newChatStore.state.inspector.inspectorVisible)
         XCTAssertEqual(newChatStore.state.inspector.aiChat.mode, .chat)
         XCTAssertEqual(newChatStore.state.inspector.aiChat.sessionID, preparedSessionID)
+        XCTAssertEqual(newChatStore.state.inspector.aiChat.currentContext.summary, "Downloads")
+        XCTAssertTrue(newChatStore.state.inspector.aiChat.isUntouchedPreparedTransientNewChat)
 
         var historyState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         historyState.inspector.inspectorVisible = true
