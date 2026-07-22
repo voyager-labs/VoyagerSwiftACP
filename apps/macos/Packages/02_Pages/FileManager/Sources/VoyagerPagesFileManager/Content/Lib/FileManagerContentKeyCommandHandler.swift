@@ -151,7 +151,7 @@ enum FileManagerContentKeyCommandHandler {
             )))))
 
         case "d":
-            return .send(.entryViewLayout(.delegate(.executeCommand(.clipboard(.duplicateSelectedItems)))))
+            return .send(.delegate(.requestDuplicate))
 
         default:
             return nil

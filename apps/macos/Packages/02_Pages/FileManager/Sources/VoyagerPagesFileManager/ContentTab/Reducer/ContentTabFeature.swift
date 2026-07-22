@@ -35,8 +35,8 @@ public struct ContentTabFeature {
             case let .selectRange(targetID):
                 return selectRange(to: targetID, state: &state)
 
-            case .clearSelection:
-                return clearSelection(state: &state)
+            case .collapseSelectionToActive:
+                return collapseSelectionToActive(state: &state)
 
             case .requestClose:
                 return .none
@@ -52,6 +52,9 @@ public struct ContentTabFeature {
 
             case let .duplicate(sourceID, duplicateID):
                 return duplicate(sourceID: sourceID, duplicateID: duplicateID, state: &state)
+
+            case let .duplicateSelected(requests):
+                return duplicateSelected(requests: requests, state: &state)
 
             case let .reorder(sourceID, targetID, placement):
                 return reorder(sourceID: sourceID, targetID: targetID, placement: placement, state: &state)
@@ -71,8 +74,12 @@ public struct ContentTabFeature {
 
             case let .pinnedRecordSaveFailed(tabID, previousIsPinned, previousPinnedRecord, previousTabIndex):
                 if let previousTabIndex, let tab = state.tabs[id: tabID] {
+                    let selectedTabIDs = state.selectedTabIDs
+                    let selectionAnchorID = state.selectionAnchorID
                     state.tabs.remove(id: tabID)
                     state.tabs.insert(tab, at: min(previousTabIndex, state.tabs.endIndex))
+                    state.selectedTabIDs = selectedTabIDs
+                    state.selectionAnchorID = selectionAnchorID
                 }
                 state.tabs[id: tabID]?.isPinned = previousIsPinned
                 if let record = previousPinnedRecord {
@@ -98,7 +105,7 @@ extension ContentTabFeature {
     ) -> Effect<ContentTabAction> {
         guard state.tabs[id: id] != nil else { return .none }
 
-        if state.selectedTabIDs.contains(id) {
+        if state.selectedTabIDs.contains(id), state.activeTabID != id {
             state.selectedTabIDs.remove(id)
         } else {
             state.selectedTabIDs.insert(id)
@@ -120,6 +127,7 @@ extension ContentTabFeature {
               let targetIndex = orderedIDs.firstIndex(of: targetID)
         else {
             state.selectedTabIDs = [targetID]
+            state.reconcileSelection()
             state.selectionAnchorID = targetID
             return .none
         }
@@ -127,14 +135,12 @@ extension ContentTabFeature {
         let lowerBound = min(anchorIndex, targetIndex)
         let upperBound = max(anchorIndex, targetIndex)
         state.selectedTabIDs = Set(orderedIDs[lowerBound ... upperBound])
+        state.reconcileSelection()
         return .none
     }
 
-    /// 이미 비어 있으면 whole-state no-op이며, 아니면 selection runtime state만 비운다.
-    private func clearSelection(state: inout ContentTabState) -> Effect<ContentTabAction> {
-        guard !state.selectedTabIDs.isEmpty || state.selectionAnchorID != nil else { return .none }
-        state.selectedTabIDs.removeAll()
-        state.selectionAnchorID = nil
+    private func collapseSelectionToActive(state: inout ContentTabState) -> Effect<ContentTabAction> {
+        state.collapseSelectionToActive()
         return .none
     }
 
@@ -271,15 +277,102 @@ extension ContentTabFeature {
         return .none
     }
 
-    private func duplicate(sourceID: ContentTabID, duplicateID: ContentTabID,
-                           state: inout ContentTabState) -> Effect<ContentTabAction>
-    {
-        guard let source = state.tabs[id: sourceID] else { return .none }
-        guard state.tabs[id: duplicateID] == nil else { return .none }
-        guard state.tabs.count < ContentTabConstants.maxTabs else { return .none }
-        guard isValidDuplicate(page: source.page, anchor: source.anchor) else { return .none }
+    private func duplicate(
+        sourceID: ContentTabID,
+        duplicateID: ContentTabID,
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
+        guard state.tabs.count < ContentTabConstants.maxTabs,
+              let source = state.tabs[id: sourceID],
+              let duplicateItem = makeDuplicateItem(
+                  source: source,
+                  duplicateID: duplicateID,
+                  existingIDs: Set(state.tabs.ids),
+              )
+        else {
+            return .none
+        }
 
-        let duplicateItem = ContentTabItem(
+        if source.isPinned {
+            let boundaryIndex = state.tabs.firstIndex(where: { !$0.isPinned }) ?? state.tabs.endIndex
+            state.tabs.insert(duplicateItem, at: boundaryIndex)
+        } else {
+            guard let sourceIndex = state.tabs.index(id: sourceID) else { return .none }
+            state.tabs.insert(duplicateItem, at: sourceIndex + 1)
+            state.previousActiveTabID = state.activeTabID
+            state.activeTabID = duplicateID
+        }
+
+        return .none
+    }
+
+    private func duplicateSelected(
+        requests: [ContentTabDuplicateRequest],
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
+        let remainingCapacity = ContentTabConstants.maxTabs - state.tabs.count
+        guard remainingCapacity > 0, !requests.isEmpty else { return .none }
+
+        let existingIDs = Set(state.tabs.ids)
+        var seenSourceIDs = Set<ContentTabID>()
+        var seenDuplicateIDs = Set<ContentTabID>()
+        var validRequests: [(source: ContentTabItem, duplicate: ContentTabItem)] = []
+
+        for request in requests {
+            guard !seenSourceIDs.contains(request.sourceID),
+                  !seenDuplicateIDs.contains(request.duplicateID),
+                  let source = state.tabs[id: request.sourceID],
+                  let duplicate = makeDuplicateItem(
+                      source: source,
+                      duplicateID: request.duplicateID,
+                      existingIDs: existingIDs,
+                  )
+            else {
+                continue
+            }
+
+            seenSourceIDs.insert(request.sourceID)
+            seenDuplicateIDs.insert(request.duplicateID)
+            validRequests.append((source, duplicate))
+        }
+
+        let successfulRequests = Array(validRequests.prefix(remainingCapacity))
+        guard !successfulRequests.isEmpty else { return .none }
+
+        let preOperationActiveID = state.activeTabID
+        var updatedTabs = Array(state.tabs)
+        let pinnedSourceDuplicates = successfulRequests
+            .filter(\.source.isPinned)
+            .map(\.duplicate)
+        if !pinnedSourceDuplicates.isEmpty {
+            let boundaryIndex = updatedTabs.firstIndex(where: { !$0.isPinned }) ?? updatedTabs.endIndex
+            updatedTabs.insert(contentsOf: pinnedSourceDuplicates, at: boundaryIndex)
+        }
+        for request in successfulRequests where !request.source.isPinned {
+            guard let sourceIndex = updatedTabs.firstIndex(where: { $0.id == request.source.id }) else {
+                continue
+            }
+            updatedTabs.insert(request.duplicate, at: sourceIndex + 1)
+        }
+        state.tabs = .init(uniqueElements: updatedTabs)
+        state.previousActiveTabID = preOperationActiveID
+        state.activeTabID = successfulRequests[0].duplicate.id
+        state.reconcileSelection()
+        return .none
+    }
+
+    private func makeDuplicateItem(
+        source: ContentTabItem,
+        duplicateID: ContentTabID,
+        existingIDs: Set<ContentTabID>,
+    ) -> ContentTabItem? {
+        guard !existingIDs.contains(duplicateID),
+              isValidDuplicate(page: source.page, anchor: source.anchor)
+        else {
+            return nil
+        }
+
+        return ContentTabItem(
             id: duplicateID,
             page: source.page,
             anchor: source.anchor,
@@ -287,17 +380,6 @@ extension ContentTabFeature {
             title: source.title,
             iconName: source.iconName,
         )
-
-        if source.isPinned {
-            state.tabs.append(duplicateItem)
-        } else {
-            let sourceIndex = state.tabs.index(id: sourceID)!
-            state.tabs.insert(duplicateItem, at: sourceIndex + 1)
-            state.previousActiveTabID = state.activeTabID
-            state.activeTabID = duplicateID
-        }
-
-        return .none
     }
 
     private func reorder(
@@ -421,11 +503,15 @@ extension ContentTabFeature {
         else { return .none }
 
         let previousPinnedRecord = state.pinnedRecords[id]
+        let selectedTabIDs = state.selectedTabIDs
+        let selectionAnchorID = state.selectionAnchorID
 
         var unpinnedTab = tab
         unpinnedTab.isPinned = false
         state.tabs.remove(id: id)
         state.tabs.append(unpinnedTab)
+        state.selectedTabIDs = selectedTabIDs
+        state.selectionAnchorID = selectionAnchorID
         state.pinnedRecords.removeValue(forKey: id)
         state.pendingPinnedRecordIDs.remove(id)
         state.pinnedRecordPersistenceError = nil

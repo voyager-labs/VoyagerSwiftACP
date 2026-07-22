@@ -135,7 +135,7 @@ struct WindowManagerFeature {
                 return sendCommandToFocusedWindow(state, .restoreLastClosedContentTab)
 
             case .file(.duplicateTab):
-                return sendCommandToFocusedWindow(state, .duplicateActiveContentTab)
+                return sendDuplicateTabCommandToFocusedWindow(state)
 
             case .file(.newFolder):
                 return sendCommandToFocusedWindow(state, .newFolder)
@@ -823,10 +823,10 @@ private extension WindowManagerFeature {
             state.defaultWindowBootstrapWindowIDs.remove(windowID)
         }
         var effects: [Effect<Action>] = application.existingWindowActivations.map { activation in
-            .send(.windows(.element(
-                id: activation.windowID,
-                action: .window(.contentTabs(.setCurrent(activation.tabID))),
-            )))
+            activateExternalContentTab(
+                windowID: activation.windowID,
+                tabID: activation.tabID,
+            )
         }
         effects.append(contentsOf: application.newWindowIDs.flatMap { windowID in
             [
@@ -846,6 +846,22 @@ private extension WindowManagerFeature {
         return .concatenate(effects)
     }
 
+    private func activateExternalContentTab(
+        windowID: WindowManagerState.WindowID,
+        tabID: ContentTabID,
+    ) -> Effect<Action> {
+        .concatenate(
+            .send(.windows(.element(
+                id: windowID,
+                action: .window(.contentTabs(.setCurrent(tabID))),
+            ))),
+            .send(.windows(.element(
+                id: windowID,
+                action: .window(.contentTabs(.collapseSelectionToActive)),
+            ))),
+        )
+    }
+
     private func sendCommandToFocusedWindow(
         _ state: State,
         _ command: FileManagerWindowAction.WindowCommand,
@@ -853,6 +869,24 @@ private extension WindowManagerFeature {
         guard let id = state.focusedWindowID,
               !state.closingWindowIDs.contains(id)
         else { return .none }
+        return .send(.windows(.element(id: id, action: .window(.request(command)))))
+    }
+
+    private func sendDuplicateTabCommandToFocusedWindow(_ state: State) -> Effect<Action> {
+        guard let id = state.focusedWindowID,
+              !state.closingWindowIDs.contains(id),
+              let window = state.windows[id: id]
+        else { return .none }
+
+        let projection = window.window.menuCommandProjection
+        let command: FileManagerWindowAction.WindowCommand
+        if projection.selectedContentTabCount > 1 {
+            guard projection.canDuplicateSelectedContentTabs else { return .none }
+            command = .duplicateSelectedContentTabs
+        } else {
+            guard projection.canDuplicateActiveContentTab else { return .none }
+            command = .duplicateActiveContentTab
+        }
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }
 

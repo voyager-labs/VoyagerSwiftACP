@@ -252,11 +252,11 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         }
     }
 
-    /// CTM-001-select_content_tabs: 기본 선택 상태와 selector 및 생성 경로의 runtime 초기값 검증
-    /// - 검증 내용: 직접 초기화와 기존 factory가 빈 선택/anchor 및 정확한 computed selector를 제공함
+    /// CTM-001-select_content_tabs: 기본 선택 상태와 selector 및 생성 경로의 active baseline 검증
+    /// - 검증 내용: 빈 직접 초기화와 active를 만드는 factory가 reconciled selection/count를 제공함
     /// - 사전 조건: 기본 상태와 Home/bootstrap/pinned restore 생성 경로
-    /// - 기대 결과: 모든 상태가 빈 선택과 nil anchor로 시작하고 count/bulk selector가 membership을 반영함
-    func testSelectionDefaultsAndSelectors_reflectRuntimeSelection() {
+    /// - 기대 결과: active가 없는 상태만 비고 factory active는 항상 선택되며 count 1은 bulk가 아님
+    func testSelectionDefaultsAndSelectors_reflectRuntimeSelection() throws {
         var state = ContentTabState()
         let factoryStates = [
             ContentTabState.withHomeTab(),
@@ -269,13 +269,19 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         XCTAssertEqual(state.selectedTabCount, 0)
         XCTAssertFalse(state.isBulkActionEnabled)
         for factoryState in factoryStates {
-            XCTAssertEqual(factoryState.selectedTabIDs, [])
+            XCTAssertEqual(factoryState.selectedTabIDs, try [XCTUnwrap(factoryState.activeTabID)])
             XCTAssertNil(factoryState.selectionAnchorID)
-            XCTAssertEqual(factoryState.selectedTabCount, 0)
+            XCTAssertEqual(factoryState.selectedTabCount, 1)
             XCTAssertFalse(factoryState.isBulkActionEnabled)
         }
 
-        state.selectedTabIDs = [ContentTabID(), ContentTabID()]
+        let firstID = ContentTabID(rawValue: "selector-first")
+        let secondID = ContentTabID(rawValue: "selector-second")
+        state = ContentTabState(
+            tabs: [tab(id: firstID, isPinned: false), tab(id: secondID, isPinned: false)],
+            activeTabID: firstID,
+        )
+        state.selectedTabIDs = [firstID, secondID]
 
         XCTAssertEqual(state.selectedTabCount, 2)
         XCTAssertTrue(state.isBulkActionEnabled)
@@ -298,38 +304,22 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         XCTAssertEqual(presentation.selectedTabIDs, [tabA, missingTab])
     }
 
-    /// CTM-001-select_content_tabs: active와 selected의 독립 Boolean 조합 검증
-    /// 기존 Sidebar item active projection과 별도 selection membership이 서로를 덮어쓰지 않는지 확인함
-    /// - 검증 내용: active/selected의 네 가지 truth table
-    /// - 사전 조건: 동일 tab ID에 각 Boolean 조합을 적용한 item과 presentation
-    /// - 기대 결과: item.isActive와 presentation.isSelected가 각 입력을 독립적으로 보존함
-    func testContentTabSelectionPresentation_keepsActiveAndSelectedIndependent() {
+    /// CTM-001-select_content_tabs: active와 selected의 canonical state invariant 검증
+    /// state construction이 valid active를 selected baseline에 포함하는지 확인함
+    /// - 검증 내용: active tab identity와 reconciled selected membership
+    /// - 사전 조건: active A와 inactive B를 가진 ContentTabState
+    /// - 기대 결과: A는 반드시 selected이고 B는 selected가 아님
+    func testContentTabStateConstruction_alwaysSelectsValidActiveTab() {
         let tabID = ContentTabID(rawValue: "truth-table")
-        let combinations = [
-            (isActive: false, isSelected: false),
-            (isActive: false, isSelected: true),
-            (isActive: true, isSelected: false),
-            (isActive: true, isSelected: true),
-        ]
+        let inactiveID = ContentTabID(rawValue: "inactive")
+        let state = ContentTabState(
+            tabs: [tab(id: tabID, isPinned: false), tab(id: inactiveID, isPinned: false)],
+            activeTabID: tabID,
+        )
 
-        for combination in combinations {
-            let item = ContentTabProjection.ContentTabSidebarItem(
-                id: tabID,
-                title: "Truth Table",
-                iconName: "doc",
-                targetURL: nil,
-                tagColorCode: nil,
-                pageType: .directory,
-                isActive: combination.isActive,
-                isPinned: false,
-            )
-            let presentation = ContentTabSelectionPresentation(
-                selectedTabIDs: combination.isSelected ? [tabID] : [],
-            )
-
-            XCTAssertEqual(item.isActive, combination.isActive)
-            XCTAssertEqual(presentation.isSelected(tabID), combination.isSelected)
-        }
+        XCTAssertEqual(state.selectedTabIDs, [tabID])
+        XCTAssertEqual(state.selectedTabCount, 1)
+        XCTAssertFalse(state.isBulkActionEnabled)
     }
 
     /// CTM-001-select_content_tabs: Sidebar selection View action의 Delegate relay 검증
@@ -355,6 +345,31 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             return id == tabB
         }
         // store.finish() 불필요: 모든 effect가 receive로 소비됨
+    }
+
+    /// CTM-001-select_content_tabs: Sidebar empty-space selection collapse ownership 검증
+    /// genuine scroll background action이 Sidebar leaf를 거쳐 canonical ContentTab owner로 전달되는지 확인함
+    /// - 검증 내용: View → Delegate → Window → ContentTab action chain
+    /// - 사전 조건: active A와 selected A/B, anchor B인 FileManager Window state
+    /// - 기대 결과: 최종 selection과 anchor가 active A 하나로 축소됨
+    func testSidebarEmptySpaceClick_routesToCanonicalActiveSelectionCollapse() async {
+        let tabA = ContentTabID(rawValue: "empty-space-a")
+        let tabB = ContentTabID(rawValue: "empty-space-b")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [tab(id: tabA, isPinned: false), tab(id: tabB, isPinned: false)],
+            activeTabID: tabA,
+        )
+        state.contentTabs.selectedTabIDs = [tabA, tabB]
+        state.contentTabs.selectionAnchorID = tabB
+        let store = TestStore(initialState: state) { FileManagerFeature() }
+
+        await store.send(.sidebar(.view(.collapseContentTabSelectionToActive)))
+        await store.receive(\.sidebar.delegate.collapseContentTabSelectionToActive)
+        await store.receive(\.contentTabs.collapseSelectionToActive) {
+            $0.contentTabs.selectedTabIDs = [tabA]
+            $0.contentTabs.selectionAnchorID = tabA
+        }
     }
 
     /// CTM-001-select_content_tabs: Window Sidebar selection Delegate routing 검증
@@ -386,11 +401,11 @@ final class CTM001SelectContentTabsTests: XCTestCase {
     }
 
     /// CTM-001-select_content_tabs: 다른 Content Tab plain click의 selection context cleanup 검증
-    /// Sidebar plain activation이 selection과 anchor를 먼저 비운 뒤 다른 tab으로 전환하는지 확인함
-    /// - 검증 내용: clearSelection → setCurrent 순서, selected IDs/anchor cleanup과 active identity
+    /// Sidebar plain activation이 active를 바꾼 뒤 selection을 active baseline으로 축소하는지 확인함
+    /// - 검증 내용: setCurrent → collapseSelectionToActive 순서, selected IDs/anchor와 active identity
     /// - 사전 조건: A active, A/B selected, anchor B인 두 Content Tab Window 상태
-    /// - 기대 결과: selection context가 먼저 비고 최종 active tab이 B로 전환됨
-    func testPlainClickDifferentTab_clearsSelectionBeforeChangingActiveTab() async {
+    /// - 기대 결과: active가 B로 전환되고 selection/anchor가 B 하나로 수렴함
+    func testPlainClickDifferentTab_activatesThenCollapsesSelectionToNewActiveTab() async {
         let tabA = ContentTabID(rawValue: "plain-different-A")
         let tabB = ContentTabID(rawValue: "plain-different-B")
         var state = FileManagerFeature.State()
@@ -413,31 +428,32 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         }
         await store.send(.sidebar(.delegate(.selectContentTab(tabB))))
         await store.receive { action in
-            guard case .contentTabs(.clearSelection) = action else { return false }
-            return true
-        } assert: {
-            $0.contentTabs.selectedTabIDs = []
-            $0.contentTabs.selectionAnchorID = nil
-        }
-        await store.receive { action in
             guard case let .contentTabs(.setCurrent(id)) = action else { return false }
             return id == tabB
         } assert: {
             $0.contentTabs.activeTabID = tabB
             $0.contentTabs.previousActiveTabID = tabA
+            $0.contentTabs.selectedTabIDs = [tabA, tabB]
+        }
+        await store.receive { action in
+            guard case .contentTabs(.collapseSelectionToActive) = action else { return false }
+            return true
+        } assert: {
+            $0.contentTabs.selectedTabIDs = [tabB]
+            $0.contentTabs.selectionAnchorID = tabB
         }
 
-        XCTAssertTrue(store.state.contentTabs.selectedTabIDs.isEmpty)
-        XCTAssertNil(store.state.contentTabs.selectionAnchorID)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [tabB])
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, tabB)
         XCTAssertEqual(store.state.contentTabs.activeTabID, tabB)
     }
 
     /// CTM-001-select_content_tabs: 현재 active Content Tab plain click의 selection context cleanup 검증
-    /// 이미 active인 row의 재활성화도 canonical selection과 anchor를 먼저 비우는지 확인함
-    /// - 검증 내용: clearSelection → setCurrent 순서, selected IDs/anchor cleanup과 active identity
+    /// 이미 active인 row의 재활성화도 canonical selection과 anchor를 active 하나로 축소하는지 확인함
+    /// - 검증 내용: setCurrent → collapseSelectionToActive 순서, selected IDs/anchor와 active identity
     /// - 사전 조건: A active, A/B selected, anchor B인 두 Content Tab Window 상태
-    /// - 기대 결과: selection context가 먼저 비고 active tab identity는 A로 유지됨
-    func testPlainClickActiveTab_clearsSelectionAndKeepsActiveIdentity() async {
+    /// - 기대 결과: active identity는 A로 유지되고 selection/anchor가 A 하나로 수렴함
+    func testPlainClickActiveTab_collapsesSelectionToActiveIdentity() async {
         let tabA = ContentTabID(rawValue: "plain-active-A")
         let tabB = ContentTabID(rawValue: "plain-active-B")
         var state = FileManagerFeature.State()
@@ -460,28 +476,28 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         }
         await store.send(.sidebar(.delegate(.selectContentTab(tabA))))
         await store.receive { action in
-            guard case .contentTabs(.clearSelection) = action else { return false }
-            return true
-        } assert: {
-            $0.contentTabs.selectedTabIDs = []
-            $0.contentTabs.selectionAnchorID = nil
-        }
-        await store.receive { action in
             guard case let .contentTabs(.setCurrent(id)) = action else { return false }
             return id == tabA
         }
+        await store.receive { action in
+            guard case .contentTabs(.collapseSelectionToActive) = action else { return false }
+            return true
+        } assert: {
+            $0.contentTabs.selectedTabIDs = [tabA]
+            $0.contentTabs.selectionAnchorID = tabA
+        }
 
-        XCTAssertTrue(store.state.contentTabs.selectedTabIDs.isEmpty)
-        XCTAssertNil(store.state.contentTabs.selectionAnchorID)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [tabA])
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, tabA)
         XCTAssertEqual(store.state.contentTabs.activeTabID, tabA)
     }
 
     /// CTM-001-select_content_tabs: Sidebar New Tab 성공 시 selection context cleanup 전체 chain 검증
     /// Window route와 canonical ContentTab reducer가 cleanup 뒤 새 Home tab 생성·활성화를 순서대로 수행하는지 확인함
-    /// - 검증 내용: clearSelection → open(.homeDefault) action 순서, selected IDs/anchor cleanup, 새 active Home tab
+    /// - 검증 내용: open(.homeDefault) → collapseSelectionToActive 순서, selected IDs/anchor, 새 active Home tab
     /// - 사전 조건: 기존 active tab이 선택되어 있고 selection anchor가 존재하며 max-tab limit 미만인 Window 상태
-    /// - 기대 결과: selection context가 먼저 비고 새 Home tab이 마지막에 추가되어 active로 전환됨
-    func testOpenContentTab_clearsSelectionBeforeOpeningAndActivatingHomeTab() async throws {
+    /// - 기대 결과: 새 Home tab이 active가 된 뒤 selection/anchor가 새 tab 하나로 수렴함
+    func testOpenContentTab_opensThenCollapsesSelectionToNewActiveHomeTab() async throws {
         let existingTabID = ContentTabID(rawValue: "new-tab-existing")
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
@@ -505,14 +521,11 @@ final class CTM001SelectContentTabsTests: XCTestCase {
 
         await store.send(.sidebar(.delegate(.openContentTab)))
         await store.receive { action in
-            guard case .contentTabs(.clearSelection) = action else { return false }
+            guard case .contentTabs(.open(.homeDefault)) = action else { return false }
             return true
-        } assert: {
-            $0.contentTabs.selectedTabIDs = []
-            $0.contentTabs.selectionAnchorID = nil
         }
         await store.receive { action in
-            guard case .contentTabs(.open(.homeDefault)) = action else { return false }
+            guard case .contentTabs(.collapseSelectionToActive) = action else { return false }
             return true
         }
 
@@ -522,8 +535,8 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         XCTAssertEqual(openedTab.page, .home)
         XCTAssertEqual(store.state.contentTabs.activeTabID, openedTab.id)
         XCTAssertEqual(store.state.contentTabs.previousActiveTabID, existingTabID)
-        XCTAssertTrue(store.state.contentTabs.selectedTabIDs.isEmpty)
-        XCTAssertNil(store.state.contentTabs.selectionAnchorID)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [openedTab.id])
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, openedTab.id)
     }
 
     /// CTM-001-select_content_tabs: Sidebar New Tab max-tab 제한 시 selection context 보존 검증
@@ -594,7 +607,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             guard case let .contentTabs(.toggleSelection(id)) = action else { return false }
             return id == tabB
         } assert: {
-            $0.contentTabs.selectedTabIDs = [tabB]
+            $0.contentTabs.selectedTabIDs = [tabA, tabB]
             $0.contentTabs.selectionAnchorID = tabB
         }
         await store.send(.sidebar(.view(.selectContentTabRange(to: tabA))))
@@ -605,8 +618,6 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         await store.receive { action in
             guard case let .contentTabs(.selectRange(to: id)) = action else { return false }
             return id == tabA
-        } assert: {
-            $0.contentTabs.selectedTabIDs = [tabA, tabB]
         }
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, tabA)
@@ -689,7 +700,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
 
         state.reconcileSelection()
 
-        XCTAssertEqual(state.selectedTabIDs, [tabA])
+        XCTAssertEqual(state.selectedTabIDs, Set([tabA, tabB]))
         XCTAssertNil(state.selectionAnchorID)
         XCTAssertEqual(state.tabs, tabsBefore)
         XCTAssertEqual(state.activeTabID, activeBefore)
@@ -720,11 +731,11 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         XCTAssertEqual(state.selectionAnchorID, tabB)
     }
 
-    /// CTM-001-select_content_tabs: toggle add/remove와 deselection anchor 정책 검증
-    /// - 검증 내용: 유효 target membership을 두 번 반전하고 두 경우 모두 target을 anchor로 설정함
-    /// - 사전 조건: A/B 탭과 B active, A는 최초 미선택 상태
-    /// - 기대 결과: 첫 toggle은 A를 추가하고 두 번째는 제거하지만 anchor A와 비선택 상태는 보존함
-    func testToggleSelection_addsAndRemovesMembershipWhileAlwaysAnchoringTarget() async {
+    /// CTM-001-select_content_tabs: toggle과 active deselection 방지 정책 검증
+    /// - 검증 내용: inactive membership 반전과 active command-toggle no-op membership
+    /// - 사전 조건: A/B 탭과 B active baseline, A는 최초 미선택 상태
+    /// - 기대 결과: A는 add/remove되고 B toggle은 active selection을 제거하지 않음
+    func testToggleSelection_togglesInactiveButCannotDeselectActive() async {
         let tabA = ContentTabID(rawValue: "A")
         let tabB = ContentTabID(rawValue: "B")
         let store = TestStore(initialState: ContentTabState(
@@ -736,23 +747,27 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         }
 
         await store.send(.toggleSelection(tabA)) {
-            $0.selectedTabIDs = [tabA]
+            $0.selectedTabIDs = [tabA, tabB]
             $0.selectionAnchorID = tabA
         }
         await store.send(.toggleSelection(tabA)) {
-            $0.selectedTabIDs = []
+            $0.selectedTabIDs = [tabB]
+        }
+        await store.send(.toggleSelection(tabB)) {
+            $0.selectionAnchorID = tabB
         }
 
-        XCTAssertEqual(store.state.selectionAnchorID, tabA)
+        XCTAssertEqual(store.state.selectedTabIDs, [tabB])
+        XCTAssertEqual(store.state.selectionAnchorID, tabB)
         XCTAssertEqual(store.state.activeTabID, tabB)
         XCTAssertEqual(store.state.previousActiveTabID, tabA)
     }
 
-    /// CTM-001-select_content_tabs: clear와 already-empty idempotency 검증
-    /// - 검증 내용: selected set/anchor만 비운 뒤 같은 clear를 다시 보내 whole-state no-op인지 확인함
+    /// CTM-001-select_content_tabs: active baseline collapse와 idempotency 검증
+    /// - 검증 내용: selected set/anchor를 active 하나로 축소한 뒤 같은 action의 whole-state no-op 확인
     /// - 사전 조건: A/B가 선택되고 anchor B이며 active/previous identity가 설정된 상태
-    /// - 기대 결과: 첫 clear 뒤 selection runtime state만 비고 두 번째 clear 전후 전체 상태가 동일함
-    func testClearSelection_clearsOnlySelectionAndIsIdempotentWhenAlreadyEmpty() async {
+    /// - 기대 결과: 첫 collapse 뒤 active A만 선택/anchor이고 두 번째 collapse 전후 전체 상태가 동일함
+    func testCollapseSelectionToActive_keepsActiveBaselineAndIsIdempotent() async {
         let tabA = ContentTabID(rawValue: "A")
         let tabB = ContentTabID(rawValue: "B")
         var state = ContentTabState(
@@ -764,14 +779,14 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         state.selectionAnchorID = tabB
         let store = TestStore(initialState: state) { ContentTabFeature() }
 
-        await store.send(.clearSelection) {
-            $0.selectedTabIDs = []
-            $0.selectionAnchorID = nil
+        await store.send(.collapseSelectionToActive) {
+            $0.selectedTabIDs = [tabA]
+            $0.selectionAnchorID = tabA
         }
-        let emptyState = store.state
-        await store.send(.clearSelection)
+        let collapsedState = store.state
+        await store.send(.collapseSelectionToActive)
 
-        XCTAssertEqual(store.state, emptyState)
+        XCTAssertEqual(store.state, collapsedState)
     }
 
     /// CTM-001-select_content_tabs: forward/reverse/cross-divider range의 inclusive replace 검증
@@ -830,7 +845,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         let nilAnchorStore = TestStore(initialState: nilAnchorState) { ContentTabFeature() }
 
         await nilAnchorStore.send(.selectRange(to: tabB)) {
-            $0.selectedTabIDs = [tabB]
+            $0.selectedTabIDs = [tabA, tabB]
             $0.selectionAnchorID = tabB
         }
 
@@ -840,7 +855,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         let staleAnchorStore = TestStore(initialState: staleAnchorState) { ContentTabFeature() }
 
         await staleAnchorStore.send(.selectRange(to: tabB)) {
-            $0.selectedTabIDs = [tabB]
+            $0.selectedTabIDs = [tabA, tabB]
             $0.selectionAnchorID = tabB
         }
     }
@@ -896,7 +911,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             activeTabID: unpinned2,
             previousActiveTabID: unpinned1,
         )
-        state.selectedTabIDs = [unpinned3]
+        state.selectedTabIDs = [unpinned2, unpinned3]
         state.selectionAnchorID = unpinned3
         let store = TestStore(initialState: state) { ContentTabFeature() }
 
@@ -910,7 +925,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             ]
         }
         XCTAssertEqual(store.state.selectionOrderedTabIDs, [pinned1, pinned2, unpinned3, unpinned1, unpinned2])
-        XCTAssertEqual(store.state.selectedTabIDs, [unpinned3])
+        XCTAssertEqual(store.state.selectedTabIDs, Set([unpinned2, unpinned3]))
         XCTAssertEqual(store.state.selectionAnchorID, unpinned3)
 
         await store.send(.selectRange(to: unpinned2)) {
@@ -967,7 +982,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         let store = TestStore(initialState: state) { FileManagerFeature() }
 
         await store.send(.contentTabs(.toggleSelection(tabB))) {
-            $0.contentTabs.selectedTabIDs = [tabB]
+            $0.contentTabs.selectedTabIDs = [tabA, tabB]
             $0.contentTabs.selectionAnchorID = tabB
         }
 

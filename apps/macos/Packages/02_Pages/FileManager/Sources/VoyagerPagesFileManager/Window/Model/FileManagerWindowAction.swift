@@ -46,6 +46,15 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         )
         case homeFavoritesLoaded([FileManagerHomeFavoriteItem])
         case aiChatTabTitleUpdated(sessionID: AiChatSessionID, title: String?)
+        case duplicateContentTabReduced(
+            sourceID: ContentTabID,
+            duplicateID: ContentTabID,
+            duplicateIDWasPreexisting: Bool,
+        )
+        case duplicateSelectedContentTabsReduced(
+            requests: [ContentTabDuplicateRequest],
+            preexistingTabIDs: Set<ContentTabID>,
+        )
         case routeContent(tabID: ContentTabID, action: FileManagerContentAction)
         case sidebarEntryDrop(EntryOperationsAction)
         case undoManagerWindowIDChanged(UUID)
@@ -102,6 +111,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case restoreLastClosedContentTab
         case duplicateContentTab(ContentTabID)
         case duplicateActiveContentTab
+        case duplicateSelectedContentTabs
     }
 
     @CasePathable

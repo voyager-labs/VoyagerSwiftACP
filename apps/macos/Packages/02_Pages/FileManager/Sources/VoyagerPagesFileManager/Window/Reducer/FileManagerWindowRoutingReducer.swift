@@ -82,7 +82,10 @@ struct FileManagerWindowRoutingReducer {
                 guard let activeReservation = reservations.last,
                       state.reserveExternalContentTabs(reservations)
                 else { return .none }
-                return .send(.contentTabs(.setCurrent(activeReservation.id)))
+                return .concatenate(
+                    .send(.contentTabs(.setCurrent(activeReservation.id))),
+                    .send(.contentTabs(.collapseSelectionToActive)),
+                )
 
             case .resyncActiveCollectionNavigation:
                 guard let activeTabID = state.contentTabs.activeTabID,
@@ -93,8 +96,8 @@ struct FileManagerWindowRoutingReducer {
             case let .sidebar(.delegate(.selectContentTab(tabID))):
                 return .merge(
                     .concatenate(
-                        .send(.contentTabs(.clearSelection)),
                         .send(.contentTabs(.setCurrent(tabID))),
+                        .send(.contentTabs(.collapseSelectionToActive)),
                     ),
                     brokenPinnedTabFeedbackEffect(tabID: tabID, state: state),
                 )
@@ -120,12 +123,15 @@ struct FileManagerWindowRoutingReducer {
             case .sidebar(.delegate(.openContentTab)):
                 guard state.contentTabs.tabs.count < ContentTabConstants.maxTabs else { return .none }
                 return .concatenate(
-                    .send(.contentTabs(.clearSelection)),
                     .send(.contentTabs(.open(.homeDefault))),
+                    .send(.contentTabs(.collapseSelectionToActive)),
                 )
 
             case let .sidebar(.delegate(.duplicateContentTab(sourceID))):
                 return .send(.request(.duplicateContentTab(sourceID)))
+
+            case .sidebar(.delegate(.duplicateSelectedContentTabs)):
+                return .send(.request(.duplicateSelectedContentTabs))
 
             case let .sidebar(.delegate(.toggleContentTabSelection(id))):
                 return .send(.contentTabs(.toggleSelection(id)))
@@ -133,12 +139,21 @@ struct FileManagerWindowRoutingReducer {
             case let .sidebar(.delegate(.selectContentTabRange(to: id))):
                 return .send(.contentTabs(.selectRange(to: id)))
 
+            case .sidebar(.delegate(.collapseContentTabSelectionToActive)):
+                return .send(.contentTabs(.collapseSelectionToActive))
+
             case let .sidebar(.delegate(.contentTabReorderRequested(sourceID, targetID, placement))):
                 return .send(.contentTabs(.reorder(
                     sourceID: sourceID,
                     targetID: targetID,
                     placement: placement,
                 )))
+
+            case .content(.delegate(.requestDuplicate)):
+                let command: Action.WindowCommand = state.contentTabs.selectedTabIDs.count > 1
+                    ? .duplicateSelectedContentTabs
+                    : .duplicate
+                return .send(.request(command))
 
             case .content(.delegate(.closeWindow)):
                 return .send(.delegate(.closeWindow))
@@ -318,13 +333,140 @@ struct FileManagerWindowRoutingReducer {
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
 
-            case let .contentTabs(.duplicate(sourceID, duplicateID)):
-                // Post-reduce branch: ContentTabFeature가 row를 생성한 후 handoff/rollback 처리
-                // tabs[id: duplicateID]가 없으면 core guard가 no-op이므로 projection만 유지
-                guard state.contentTabs.tabs[id: duplicateID] != nil else {
+            case .contentTabs(.duplicateSelected):
+                // Pre-scope reducer가 captured identity를 internal action으로 전달한 뒤 owner handoff를 수행한다.
+                return .none
+
+            case let .internal(.duplicateSelectedContentTabsReduced(requests, preexistingTabIDs)):
+                // ContentTabFeature가 identity와 source metadata로 만든 row만 owner-state handoff 대상으로 사용한다.
+                let createdRequests = createdDuplicateRequests(
+                    requests,
+                    preexistingTabIDs: preexistingTabIDs,
+                    state: state,
+                )
+                guard !createdRequests.isEmpty else {
                     syncDashboardProjections(state: &state)
                     return .none
                 }
+
+                // Core mutation 이후에도 Content owner는 pre-operation active를 가리킨다.
+                // 모든 source owner를 local snapshot으로 먼저 고정해 첫 handoff가 뒤 source를 오염시키지 않게 한다.
+                let preOperationActiveID = state.contentTabs.previousActiveTabID
+                let windowContentSnapshot = state.content
+                let ownerSnapshots: [BatchDuplicateOwnerSnapshot] = createdRequests.compactMap { request in
+                    guard let sourceItem = state.contentTabs.tabs[id: request.sourceID],
+                          let duplicateAnchor = state.contentTabs.tabs[id: request.duplicateID]?.anchor
+                    else { return nil }
+                    let sourceContent: FileManagerContentFeature.State? = if request.sourceID == preOperationActiveID {
+                        windowContentSnapshot
+                    } else {
+                        state.tabContentStates[request.sourceID]
+                    }
+                    let sourceAiChatLifecycleSessionIDs = sourceContent.map {
+                        aiChatLifecycleSessionIDsToPreserve($0.aiChat)
+                    } ?? []
+                    return BatchDuplicateOwnerSnapshot(
+                        request: request,
+                        sourceItem: sourceItem,
+                        duplicateAnchor: duplicateAnchor,
+                        sourceContent: sourceContent,
+                        sourceAiChatLifecycleSessionIDs: sourceAiChatLifecycleSessionIDs,
+                        duplicatedContent: makeDuplicatedContentState(
+                            sourceContent,
+                            anchor: duplicateAnchor,
+                            inheritingWindowContextFrom: windowContentSnapshot,
+                        ),
+                    )
+                }
+                guard ownerSnapshots.count == createdRequests.count,
+                      let activeDuplicate = ownerSnapshots.first
+                else {
+                    syncDashboardProjections(state: &state)
+                    return .none
+                }
+
+                if keepPendingDuplicateContentTabCloseFocused(
+                    duplicateIDs: ownerSnapshots.map(\.request.duplicateID),
+                    state: &state,
+                ) {
+                    return .none
+                }
+                state.contentTabs.collapseSelectionToActive()
+
+                let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
+                    || state.activeTabContentStateMissing
+
+                // Inactive duplicates receive fresh Content owners immediately; Inspector owners stay absent/default.
+                for snapshot in ownerSnapshots.dropFirst() {
+                    state.tabContentStates[snapshot.request.duplicateID] = snapshot.duplicatedContent
+                }
+
+                let outgoingAiChatLifecycleSessionIDs = aiChatLifecycleSessionIDsToPreserve(
+                    windowContentSnapshot.aiChat,
+                )
+                var lifecycleSources = ownerSnapshots.compactMap { snapshot in
+                    snapshot.sourceContent.map {
+                        (sessionIDs: snapshot.sourceAiChatLifecycleSessionIDs, content: $0)
+                    }
+                }
+                lifecycleSources.insert(
+                    (sessionIDs: outgoingAiChatLifecycleSessionIDs, content: windowContentSnapshot),
+                    at: 0,
+                )
+                for lifecycleSource in lifecycleSources {
+                    for sessionID in lifecycleSource.sessionIDs {
+                        state.addBackgroundAiChatState(sessionID: sessionID, state: lifecycleSource.content)
+                    }
+                }
+
+                let handoffCleanupEffect: Effect<Action>
+                if shouldResyncContentNavigation {
+                    handoffCleanupEffect = prepareContentForActiveTabHandoff(
+                        state: &state.content,
+                        skipAiChatCleanup: !outgoingAiChatLifecycleSessionIDs.isEmpty,
+                    )
+                    state.saveCurrentContentStateForPreviousActiveTab()
+                    state.saveCurrentInspectorStateForPreviousActiveTab()
+                    state.content = activeDuplicate.duplicatedContent
+                    state.syncActiveTabContentState()
+                    state.restoreInspectorStateForActiveTab()
+                } else {
+                    handoffCleanupEffect = .none
+                }
+
+                let duplicatedAiChatRestoreEffect = activeDuplicate.sourceAiChatLifecycleSessionIDs.isEmpty
+                    ? restoreActiveAiChatSessionIfNeededEffect(state: state)
+                    : Effect<Action>.none
+                syncDashboardProjections(state: &state)
+                syncSidebarSelectionForActiveContentTab(state: &state)
+                return .merge(
+                    .concatenate(
+                        handoffCleanupEffect,
+                        duplicatedAiChatRestoreEffect,
+                        activeTabHandoffEffect(
+                            shouldResyncContentNavigation,
+                            state: state,
+                            aiConnectionsFileClient: aiConnectionsFileClient,
+                            skipAiChatCancel: true,
+                        ),
+                    ),
+                    closeInspectorForActiveAiChatEffect(state: state),
+                )
+
+            case .contentTabs(.duplicate):
+                // Pre-scope reducer가 기존 identity를 캡처한 internal action에서 post-reduce 처리를 수행한다.
+                return .none
+
+            case let .internal(.duplicateContentTabReduced(
+                sourceID,
+                duplicateID,
+                duplicateIDWasPreexisting,
+            )):
+                // Post-reduce branch: ContentTabFeature가 row를 생성한 후 handoff/rollback 처리
+                // 기존 identity collision이나 row 미생성은 core guard no-op이므로 state를 그대로 유지한다.
+                guard !duplicateIDWasPreexisting,
+                      state.contentTabs.tabs[id: duplicateID] != nil
+                else { return .none }
 
                 // Pending close 상태: exact duplicateID row/cache 제거 후 pending state 복원
                 if keepPendingDuplicateContentTabCloseFocused(
@@ -333,6 +475,7 @@ struct FileManagerWindowRoutingReducer {
                 ) {
                     return .none
                 }
+                state.contentTabs.collapseSelectionToActive()
 
                 let sourceAnchor = state.contentTabs.tabs[id: sourceID]?.anchor
                 let duplicateAnchor = state.contentTabs.tabs[id: duplicateID]?.anchor
@@ -413,7 +556,7 @@ struct FileManagerWindowRoutingReducer {
             // Child selection mutation은 보존하고 unrelated Window projection/cleanup은 실행하지 않는다.
             case .contentTabs(.toggleSelection),
                  .contentTabs(.selectRange),
-                 .contentTabs(.clearSelection):
+                 .contentTabs(.collapseSelectionToActive):
                 return .none
 
             case .contentTabs:
@@ -1019,25 +1162,33 @@ private extension FileManagerWindowRoutingReducer {
         syncSidebarSelectionForActiveContentTab(state: &state)
     }
 
-    /// Pending close rollback variant: exact duplicateID row/cache만 제거하고 pending state로 복원한다.
-    /// ContentTabFeature.duplicate가 previousActiveTabID를 덮어썼으므로 pendingClose에 보관된 원본 값을 사용한다.
+    /// Pending close rollback variant: exact duplicateID rows/caches만 제거하고 pending state로 복원한다.
+    /// ContentTabFeature duplicate actions가 previousActiveTabID를 덮어썼으므로 pendingClose의 원본 값을 사용한다.
     func keepPendingDuplicateContentTabCloseFocused(
         duplicateID: ContentTabID,
         state: inout State,
     ) -> Bool {
+        keepPendingDuplicateContentTabCloseFocused(duplicateIDs: [duplicateID], state: &state)
+    }
+
+    func keepPendingDuplicateContentTabCloseFocused(
+        duplicateIDs: [ContentTabID],
+        state: inout State,
+    ) -> Bool {
         guard let pendingClose = state.pendingContentTabClose else { return false }
-        // Exact duplicateID row/cache 제거
-        let wasActive = state.contentTabs.activeTabID == duplicateID
-        state.contentTabs.tabs.remove(id: duplicateID)
+        let duplicateIDSet = Set(duplicateIDs)
+        let wasGeneratedDuplicateActive = state.contentTabs.activeTabID.map(duplicateIDSet.contains) == true
+        for duplicateID in duplicateIDs {
+            state.contentTabs.tabs.remove(id: duplicateID)
+            state.removeContentState(for: duplicateID)
+            state.removeInspectorState(for: duplicateID)
+        }
         state.contentTabs.reconcileSelection()
-        state.removeContentState(for: duplicateID)
-        state.removeInspectorState(for: duplicateID)
-        // Duplicate가 active였으면(unpinned source) pendingClose에 보관된 원본 ID로 복원
-        if wasActive {
+        if wasGeneratedDuplicateActive {
             state.contentTabs.activeTabID = pendingClose.tabID
             state.contentTabs.previousActiveTabID = pendingClose.previousActiveTabID
         }
-        // Pending target/Content/Inspector/projection은 변경하지 않음
+        // Pending target/Content/Inspector는 staging하지 않고 기존 source selection을 유지한다.
         state.syncContentTabSidebarItems()
         syncSidebarSelectionForActiveContentTab(state: &state)
         return true
@@ -1306,6 +1457,48 @@ private extension FileManagerWindowRoutingReducer {
             state.tabInspectorStates[previousActiveTabID] = state.inspector.tabSnapshot()
         }
     }
+}
+
+private struct BatchDuplicateOwnerSnapshot {
+    let request: ContentTabDuplicateRequest
+    let sourceItem: ContentTabItem
+    let duplicateAnchor: ContentTabPageAnchor
+    let sourceContent: FileManagerContentFeature.State?
+    let sourceAiChatLifecycleSessionIDs: [AiChatSessionID]
+    let duplicatedContent: FileManagerContentFeature.State
+}
+
+private func createdDuplicateRequests(
+    _ requests: [ContentTabDuplicateRequest],
+    preexistingTabIDs: Set<ContentTabID>,
+    state: FileManagerWindowState,
+) -> [ContentTabDuplicateRequest] {
+    guard let activeDuplicateID = state.contentTabs.activeTabID,
+          requests.contains(where: { $0.duplicateID == activeDuplicateID })
+    else { return [] }
+
+    var seenSourceIDs = Set<ContentTabID>()
+    var seenDuplicateIDs = Set<ContentTabID>()
+    var createdRequests: [ContentTabDuplicateRequest] = []
+    for request in requests {
+        guard request.sourceID != request.duplicateID,
+              !seenSourceIDs.contains(request.sourceID),
+              !seenDuplicateIDs.contains(request.duplicateID),
+              !preexistingTabIDs.contains(request.duplicateID),
+              let sourceItem = state.contentTabs.tabs[id: request.sourceID],
+              let duplicateItem = state.contentTabs.tabs[id: request.duplicateID]
+        else { continue }
+        guard duplicateItem.page == sourceItem.page,
+              duplicateItem.anchor == sourceItem.anchor,
+              duplicateItem.title == sourceItem.title,
+              duplicateItem.iconName == sourceItem.iconName,
+              !duplicateItem.isPinned
+        else { continue }
+        seenSourceIDs.insert(request.sourceID)
+        seenDuplicateIDs.insert(request.duplicateID)
+        createdRequests.append(request)
+    }
+    return createdRequests
 }
 
 private func duplicateSourceContentState(

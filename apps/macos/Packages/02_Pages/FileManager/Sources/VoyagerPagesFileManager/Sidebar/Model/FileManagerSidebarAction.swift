@@ -16,6 +16,7 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case setAllFixedLocationVisibility(Bool)
         case toggleContentTabSelection(ContentTabID)
         case selectContentTabRange(to: ContentTabID)
+        case collapseContentTabSelectionToActive
         case entryDropRequested(FileManagerSidebarEntryDropRequest)
         case contentTabReorderRequested(
             sourceID: ContentTabID,
@@ -30,11 +31,13 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case selectContentTab(ContentTabID)
         case toggleContentTabSelection(ContentTabID)
         case selectContentTabRange(to: ContentTabID)
+        case collapseContentTabSelectionToActive
         case closeContentTab(ContentTabID)
         case pinContentTab(ContentTabID)
         case unpinContentTab(ContentTabID)
         case openContentTab
         case duplicateContentTab(ContentTabID)
+        case duplicateSelectedContentTabs
         case entryDropRequested(FileManagerSidebarEntryDropRequest)
         case contentTabReorderRequested(
             sourceID: ContentTabID,

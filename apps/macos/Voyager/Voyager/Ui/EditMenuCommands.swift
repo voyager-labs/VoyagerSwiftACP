@@ -139,7 +139,7 @@ struct EditMenuCommands: Commands {
                 sendEditCommand(.duplicate)
             }
             .keyboardShortcut("d", modifiers: .command)
-            .disabled(!canPerformEntryCommands || !hasSelectedItems)
+            .disabled(!viewStore.canDuplicateEntries)
 
             Button("Make Alias") {
                 sendEditCommand(.makeAlias)

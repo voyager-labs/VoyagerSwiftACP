@@ -13,6 +13,8 @@ public struct FileManagerWindowMenuCommandProjection: Equatable, Sendable {
     public let canSaveCollection: Bool
     public let isActiveContentTabPinned: Bool
     public let canRestoreLastClosedTab: Bool
+    public let selectedContentTabCount: Int
+    public let canDuplicateSelectedContentTabs: Bool
     public let canDuplicateActiveContentTab: Bool
     public let sidebarVisible: Bool
     public let showHiddenFiles: Bool
@@ -32,6 +34,10 @@ public extension FileManagerWindowState {
         let selectedIds = content.entryViewLayout.selectedIds
         let activeContentTab = contentTabs.activeTabID.flatMap { contentTabs.tabs[id: $0] }
         let canPerformEntryCommands = !content.isOrdinaryDirectoryLoading
+        let selectedContentTabCount = contentTabs.selectedTabCount
+        let canDuplicateContentTabs = contentTabs.tabs.count < ContentTabConstants.maxTabs
+            && pendingContentTabClose == nil
+            && pendingContentTabTeardown == nil
 
         return FileManagerWindowMenuCommandProjection(
             canPerformEntryCommands: canPerformEntryCommands,
@@ -44,8 +50,10 @@ public extension FileManagerWindowState {
             isActiveContentTabPinned: activeContentTab?.isPinned == true,
             canRestoreLastClosedTab: ContentTabProjection.restoreCandidate(from: contentTabs) != nil && contentTabs.tabs
                 .count < ContentTabConstants.maxTabs && pendingContentTabClose == nil,
-            canDuplicateActiveContentTab: activeContentTab != nil && contentTabs.tabs
-                .count < ContentTabConstants.maxTabs && pendingContentTabClose == nil,
+            selectedContentTabCount: selectedContentTabCount,
+            canDuplicateSelectedContentTabs: selectedContentTabCount > 1 && canDuplicateContentTabs,
+            canDuplicateActiveContentTab: selectedContentTabCount <= 1 && activeContentTab != nil
+                && canDuplicateContentTabs,
             sidebarVisible: sidebar.sidebarVisible,
             showHiddenFiles: content.entryViewLayout.showHiddenFiles,
             viewLayout: content.entryViewLayout.mode,

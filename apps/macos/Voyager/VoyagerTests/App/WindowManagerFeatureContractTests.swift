@@ -966,7 +966,67 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(window?.contentTabs.tabs.last?.anchor, directoryAnchor, "복원된 tab의 anchor가 일치해야 함")
     }
 
-    /// FileCommand .duplicateTab이 focused window로
+    /// CTM-001-duplicate_selected_content_tabs: FileCommand는 focused window selection을 bulk request로 전달한다.
+    /// reconciled selected tab이 있으면 기존 duplicateTab case가 semantic bulk request를 선택한다.
+    /// - 검증 내용: focused window bulk forwarding과 다른 window isolation
+    /// - 사전 조건: 두 window 중 focused window에만 selected content tab이 존재함
+    /// - 기대 결과: focused window만 duplicateSelectedContentTabs request를 수신함
+    func testFileDuplicateTabCommand_routesSelectedTabsToFocusedWindowBulkRequest() async {
+        let focusedWindowID = UUID()
+        let otherWindowID = UUID()
+        var focusedWindow = FileManagerWindowFeature.State.makeInitial(path: "/focused")
+        guard let selectedTabID = focusedWindow.contentTabs.activeTabID else {
+            XCTFail("Expected active content tab")
+            return
+        }
+        let secondSelectedTabID = ContentTabID(rawValue: "focused-second-selected")
+        focusedWindow.contentTabs.tabs.append(ContentTabItem(
+            id: secondSelectedTabID,
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Second",
+            iconName: "house",
+        ))
+        focusedWindow.contentTabs.selectedTabIDs = [selectedTabID, secondSelectedTabID]
+        let otherWindow = FileManagerWindowFeature.State.makeInitial(path: "/other")
+
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            WindowSessionState(id: focusedWindowID, window: focusedWindow),
+            WindowSessionState(id: otherWindowID, window: otherWindow),
+        ]
+        initialState.focusedWindowID = focusedWindowID
+
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerClient.fileExistsWithIsDirectory = { _, isDirectory in
+                isDirectory?.pointee = ObjCBool(true)
+                return true
+            }
+        }
+        store.exhaustivity = .off
+        let otherWindowBeforeCommand = store.state.windows[id: otherWindowID]?.window
+
+        await store.send(.file(.duplicateTab))
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.request(command)))) = action else {
+                return false
+            }
+            guard id == focusedWindowID, case .duplicateSelectedContentTabs = command else { return false }
+            return true
+        }
+        XCTAssertEqual(store.state.windows[id: otherWindowID]?.window, otherWindowBeforeCommand)
+    }
+
+    /// FileCommand .duplicateTab이 selection 없는 focused window로
     /// .request(.duplicateActiveContentTab) 명령을 전송하는지 검증한다.
     func testFileDuplicateTabCommand_routesToFocusedWindowDuplicateRequest() async {
         let windowID = UUID()
@@ -989,11 +1049,70 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.file(.duplicateTab))
-        // request(.duplicateActiveContentTab)가 focused window로 전달되어야 함
-        await store.receive(\.windows)
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.request(command)))) = action else {
+                return false
+            }
+            guard id == windowID, case .duplicateActiveContentTab = command else { return false }
+            return true
+        }
 
         let window = store.state.windows[id: windowID]?.window
         XCTAssertNotNil(window, "window가 존재해야 함")
+        await store.skipReceivedActions()
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: unavailable focused contexts는 duplicate command를 전달하지 않는다.
+    /// no focus, pending close/teardown, zero capacity는 direct FileCommand에도 방어적으로 no-op이다.
+    /// - 검증 내용: command forwarding action과 state mutation 부재
+    /// - 사전 조건: 각 unavailable 상태에서 duplicateTab FileCommand를 직접 전송함
+    /// - 기대 결과: child request가 생성되지 않고 각 store state가 유지됨
+    func testFileDuplicateTabCommand_unavailableContextsAreNoOp() async {
+        let noFocusWindowID = UUID()
+        var noFocusState = WindowManagerFeature.State()
+        noFocusState.windows = [
+            WindowSessionState(id: noFocusWindowID, window: .makeInitial(path: "/no-focus")),
+        ]
+        let noFocusStore = TestStore(initialState: noFocusState) { WindowManagerFeature() }
+        await noFocusStore.send(.file(.duplicateTab))
+        await noFocusStore.finish()
+
+        let pendingCloseWindowID = UUID()
+        var pendingCloseWindow = FileManagerWindowFeature.State.makeInitial(path: "/pending-close")
+        guard let activeTabID = pendingCloseWindow.contentTabs.activeTabID else {
+            XCTFail("Expected active content tab")
+            return
+        }
+        pendingCloseWindow.contentTabs.selectedTabIDs = [activeTabID]
+        pendingCloseWindow.pendingContentTabClose = PendingContentTabClose(tabID: activeTabID)
+        await assertDuplicateTabCommandIsNoOp(windowID: pendingCloseWindowID, window: pendingCloseWindow)
+
+        let pendingTeardownWindowID = UUID()
+        var pendingTeardownWindow = FileManagerWindowFeature.State.makeInitial(path: "/pending-teardown")
+        guard let teardownTabID = pendingTeardownWindow.contentTabs.activeTabID else {
+            XCTFail("Expected active content tab")
+            return
+        }
+        pendingTeardownWindow.contentTabs.selectedTabIDs = [teardownTabID]
+        pendingTeardownWindow.pendingContentTabTeardown = PendingContentTabTeardown(
+            requestID: UUID(),
+            tabID: teardownTabID,
+            ownerID: UUID(),
+        )
+        await assertDuplicateTabCommandIsNoOp(windowID: pendingTeardownWindowID, window: pendingTeardownWindow)
+
+        let fullWindowID = UUID()
+        var fullWindow = FileManagerWindowFeature.State.makeInitial(path: "/full")
+        guard let fullSelectedTabID = fullWindow.contentTabs.activeTabID else {
+            XCTFail("Expected active content tab")
+            return
+        }
+        fullWindow.contentTabs.selectedTabIDs = [fullSelectedTabID]
+        while fullWindow.contentTabs.tabs.count < ContentTabConstants.maxTabs {
+            guard let tab = ContentTabState.withHomeTab().tabs.first else { continue }
+            fullWindow.contentTabs.tabs.append(tab)
+        }
+        await assertDuplicateTabCommandIsNoOp(windowID: fullWindowID, window: fullWindow)
     }
 
     /// EditCommand .duplicate(⌘D)가 Entry duplicate 경로(.edit(.duplicate))로
@@ -2640,6 +2759,17 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         existingWindow.content.composer.cancellationOwnerID = windowID
         existingWindow.syncActiveTabContentState()
         let previousActiveID = try XCTUnwrap(existingWindow.contentTabs.activeTabID)
+        let selectedSiblingID = ContentTabID(rawValue: "existing-window-selected-sibling")
+        existingWindow.contentTabs.tabs.append(ContentTabItem(
+            id: selectedSiblingID,
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Selected Sibling",
+            iconName: "house",
+        ))
+        existingWindow.contentTabs.selectedTabIDs = [previousActiveID, selectedSiblingID]
+        existingWindow.contentTabs.selectionAnchorID = selectedSiblingID
         var initialState = WindowManagerFeature.State()
         initialState.windows = [.init(id: windowID, window: existingWindow)]
         initialState.authorizedExternalOpenBatchID = batchID
@@ -2696,9 +2826,13 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.skipReceivedActions()
 
         let committedWindow = try XCTUnwrap(store.state.windows[id: windowID]?.window)
-        XCTAssertEqual(committedWindow.contentTabs.tabs.map(\.id), [previousActiveID, tabID])
+        XCTAssertEqual(committedWindow.contentTabs.tabs.map(\.id), [previousActiveID, selectedSiblingID, tabID])
         XCTAssertEqual(committedWindow.contentTabs.activeTabID, tabID)
         XCTAssertEqual(committedWindow.contentTabs.previousActiveTabID, previousActiveID)
+        XCTAssertEqual(committedWindow.contentTabs.selectedTabIDs, [tabID])
+        XCTAssertEqual(committedWindow.contentTabs.selectionAnchorID, tabID)
+        XCTAssertEqual(committedWindow.menuCommandProjection.selectedContentTabCount, 1)
+        XCTAssertFalse(committedWindow.menuCommandProjection.canDuplicateSelectedContentTabs)
         XCTAssertEqual(terminalCount.value, 1)
 
         await loadGate.open()
@@ -3724,6 +3858,20 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
 
         XCTAssertEqual(terminalCount.value, 1)
+    }
+
+    private func assertDuplicateTabCommandIsNoOp(
+        windowID: UUID,
+        window: FileManagerWindowFeature.State,
+    ) async {
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [WindowSessionState(id: windowID, window: window)]
+        initialState.focusedWindowID = windowID
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() }
+
+        await store.send(.file(.duplicateTab))
+        await store.finish()
+        XCTAssertEqual(store.state, initialState)
     }
 
     private struct PlacementBoundaryScenario {

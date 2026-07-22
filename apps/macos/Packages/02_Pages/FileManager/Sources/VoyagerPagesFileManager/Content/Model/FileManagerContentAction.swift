@@ -68,6 +68,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case closeWindow
         case openContextualAiChat
         case openAISettings
+        case requestDuplicate
         case requestUndoRedo(EntryActionDirection)
         case currentContextChanged(AiChatCurrentContextSnapshot)
         case homePageAnchorSelected(ContentTabPageAnchor)
