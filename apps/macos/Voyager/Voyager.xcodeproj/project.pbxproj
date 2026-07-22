@@ -977,9 +977,9 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
 			};
-			name = Debug;
+			name = "Dev-Debug";
 		};
-		7E14EDEE2E86622E005AC834 /* Release */ = {
+		7E14EDEE2E86622E005AC834 /* Prod-Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -1036,9 +1036,9 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_VERSION = 6.0;
 			};
-			name = Release;
+			name = "Prod-Release";
 		};
-		7E14EDF02E86622E005AC834 /* Debug */ = {
+7E14EDF02E86622E005AC834 /* Dev-Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = dev;
@@ -1051,6 +1051,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				EMIT_FRONTEND_COMMAND_LINES = YES;
 				ENABLE_APP_SANDBOX = NO;
@@ -1062,6 +1063,10 @@
 				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Voyager/Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Voyager$(VOYAGER_APP_SUFFIX) (Debug)";
@@ -1086,17 +1091,22 @@
 				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = singlefile;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
+				VOYAGER_APP_SUFFIX = "";
 				VOYAGER_CALLBACK_SCHEME = voyager-dev;
 				VOYAGER_RELEASED_AT = 1970-01-01T00:00:00Z;
+				XPC_MACH_SERVICE_NAME = fm.voyager.Voyager.FilterSearchXPC.dev;
 			};
-			name = Debug;
+			name = "Dev-Debug";
 		};
-		7E14EDF12E86622E005AC834 /* Release */ = {
+		7E14EDF12E86622E005AC834 /* Prod-Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = prod;
@@ -1108,6 +1118,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				EMIT_FRONTEND_COMMAND_LINES = "";
 				ENABLE_APP_SANDBOX = NO;
@@ -1136,18 +1147,150 @@
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUFeedURL = "https://downloads.voyager.fm/releases/appcast.xml";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				VOYAGER_CALLBACK_SCHEME = voyager;
+				VOYAGER_RELEASED_AT = "";
+				XPC_MACH_SERVICE_NAME = fm.voyager.Voyager.FilterSearchXPC;
+			};
+			name = "Prod-Release";
+		};
+		A100000000000000000000A1 /* Dev-Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APP_ENV = dev;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 0;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = UNR9C79D99;
+				EMIT_FRONTEND_COMMAND_LINES = "";
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Voyager/Config/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Voyager$(VOYAGER_APP_SUFFIX)";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_SUEnableAutomaticChecks = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MARKETING_VERSION = 0.8.2;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.dev;
+				PRODUCT_MODULE_NAME = Voyager;
+				PRODUCT_NAME = "$(TARGET_NAME)$(VOYAGER_APP_SUFFIX)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = YES;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = YES;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				VOYAGER_APP_SUFFIX = "-profile";
+				VOYAGER_CALLBACK_SCHEME = voyager-dev;
+				VOYAGER_RELEASED_AT = 1970-01-01T00:00:00Z;
+				XPC_MACH_SERVICE_NAME = fm.voyager.Voyager.FilterSearchXPC.dev;
+			};
+			name = "Dev-Release";
+		};
+		A100000000000000000000A2 /* Prod-Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APP_ENV = prod;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 0;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = UNR9C79D99;
+				EMIT_FRONTEND_COMMAND_LINES = "";
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Voyager/Config/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Voyager$(VOYAGER_APP_SUFFIX) (Debug)";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_SUEnableAutomaticChecks = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MARKETING_VERSION = 0.8.2;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager-proddebug;
+				PRODUCT_MODULE_NAME = Voyager;
+				PRODUCT_NAME = "$(TARGET_NAME)$(VOYAGER_APP_SUFFIX)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = YES;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = YES;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = singlefile;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
+				VOYAGER_APP_SUFFIX = "-proddebug";
 				VOYAGER_CALLBACK_SCHEME = voyager;
 				VOYAGER_RELEASED_AT = "";
+				XPC_MACH_SERVICE_NAME = fm.voyager.Voyager.FilterSearchXPC;
 			};
-			name = Release;
+			name = "Prod-Debug";
 		};
-		7E14EDF32E86622E005AC834 /* Debug */ = {
+		7E14EDF32E86622E005AC834 /* Dev-Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -1169,32 +1312,9 @@
 				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Voyager$(VOYAGER_APP_SUFFIX).app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Voyager$(VOYAGER_APP_SUFFIX)";
 			};
-			name = Debug;
+			name = "Dev-Debug";
 		};
-		7E14EDF42E86622E005AC834 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 0;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = UNR9C79D99;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.8.2;
-				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Voyager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Voyager";
-			};
-			name = Release;
-		};
-		7E14EDF62E86622E005AC834 /* Debug */ = {
+		7E14EDF62E86622E005AC834 /* Dev-Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "Apple Development";
@@ -1214,30 +1334,9 @@
 				SWIFT_VERSION = 6.0;
 				TEST_TARGET_NAME = Voyager;
 			};
-			name = Debug;
+			name = "Dev-Debug";
 		};
-		7E14EDF72E86622E005AC834 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 0;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = UNR9C79D99;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.8.2;
-				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
-				TEST_TARGET_NAME = Voyager;
-			};
-			name = Release;
-		};
-		7E14EE422E866E86005AC834 /* Debug */ = {
+		7E14EE422E866E86005AC834 /* Dev-Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = dev;
@@ -1249,10 +1348,11 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				EMIT_FRONTEND_COMMAND_LINES = YES;
 				ENABLE_APP_SANDBOX = NO;
-				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
@@ -1261,6 +1361,10 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				EXECUTABLE_NAME = "Voyager Helper (Debug)";
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VoyagerHelper/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Voyager Helper (Debug)";
@@ -1272,7 +1376,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.8.2;
-				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper.dev;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
@@ -1284,15 +1388,18 @@
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = singlefile;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 			};
-			name = Debug;
+			name = "Dev-Debug";
 		};
-		7E14EE432E866E86005AC834 /* Release */ = {
+		7E14EE432E866E86005AC834 /* Prod-Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = prod;
@@ -1303,6 +1410,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				EMIT_FRONTEND_COMMAND_LINES = "";
 				ENABLE_APP_SANDBOX = NO;
@@ -1333,14 +1441,135 @@
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 			};
-			name = Release;
+			name = "Prod-Release";
 		};
-		7E14EE452E866E86005AC834 /* Debug */ = {
+		A100000000000000000000A3 /* Dev-Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APP_ENV = dev;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 0;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = UNR9C79D99;
+				EMIT_FRONTEND_COMMAND_LINES = "";
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				EXECUTABLE_NAME = "Voyager Helper";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = VoyagerHelper/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Voyager Helper";
+				INFOPLIST_KEY_CFBundleName = "Voyager Helper";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.8.2;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper.dev;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = YES;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = YES;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = "Dev-Release";
+		};
+		A100000000000000000000A4 /* Prod-Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APP_ENV = prod;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 0;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = UNR9C79D99;
+				EMIT_FRONTEND_COMMAND_LINES = "";
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				EXECUTABLE_NAME = "Voyager Helper (Debug)";
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = VoyagerHelper/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Voyager Helper (Debug)";
+				INFOPLIST_KEY_CFBundleName = "Voyager Helper (Debug)";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.8.2;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = YES;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = YES;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = singlefile;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = "Prod-Debug";
+		};
+		7E14EE452E866E86005AC834 /* Dev-Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -1362,32 +1591,9 @@
 				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VoyagerHelper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Voyager Helper (Debug)";
 			};
-			name = Debug;
+			name = "Dev-Debug";
 		};
-		7E14EE462E866E86005AC834 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 0;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = UNR9C79D99;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.8.2;
-				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VoyagerHelper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Voyager Helper";
-			};
-			name = Release;
-		};
-		F10000000000000000000007 /* Debug */ = {
+		F10000000000000000000007 /* Dev-Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = dev;
@@ -1395,7 +1601,13 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = UNR9C79D99;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = FilterSearchXPC/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1403,18 +1615,22 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.8.2;
-				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.FilterSearchXPC;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.FilterSearchXPC.dev;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = singlefile;
 				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
+				XPC_MACH_SERVICE_NAME = fm.voyager.Voyager.FilterSearchXPC.dev;
 			};
-			name = Debug;
+			name = "Dev-Debug";
 		};
-		F10000000000000000000008 /* Release */ = {
+		F10000000000000000000008 /* Prod-Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = prod;
@@ -1422,6 +1638,7 @@
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1436,11 +1653,83 @@
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
+				XPC_MACH_SERVICE_NAME = fm.voyager.Voyager.FilterSearchXPC;
 			};
-			name = Release;
+			name = "Prod-Release";
+		};
+		A100000000000000000000A5 /* Dev-Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APP_ENV = dev;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 0;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = UNR9C79D99;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FilterSearchXPC/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.8.2;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.FilterSearchXPC.dev;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				XPC_MACH_SERVICE_NAME = fm.voyager.Voyager.FilterSearchXPC.dev;
+			};
+			name = "Dev-Release";
+		};
+		A100000000000000000000A6 /* Prod-Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APP_ENV = prod;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 0;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = UNR9C79D99;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FilterSearchXPC/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.8.2;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.FilterSearchXPC;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = singlefile;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				XPC_MACH_SERVICE_NAME = fm.voyager.Voyager.FilterSearchXPC;
+			};
+			name = "Prod-Debug";
 		};
 /* End XCBuildConfiguration section */
 
@@ -1448,65 +1737,68 @@
 		7E14EDC72E86622C005AC834 /* Build configuration list for PBXProject "Voyager" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				7E14EDED2E86622E005AC834 /* Debug */,
-				7E14EDEE2E86622E005AC834 /* Release */,
+				7E14EDED2E86622E005AC834 /* Dev-Debug */,
+				7E14EDEE2E86622E005AC834 /* Prod-Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = "Prod-Release";
 		};
 		7E14EDEF2E86622E005AC834 /* Build configuration list for PBXNativeTarget "Voyager" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				7E14EDF02E86622E005AC834 /* Debug */,
-				7E14EDF12E86622E005AC834 /* Release */,
+				7E14EDF02E86622E005AC834 /* Dev-Debug */,
+				A100000000000000000000A1 /* Dev-Release */,
+				A100000000000000000000A2 /* Prod-Debug */,
+				7E14EDF12E86622E005AC834 /* Prod-Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = "Prod-Debug";
 		};
 		7E14EDF22E86622E005AC834 /* Build configuration list for PBXNativeTarget "VoyagerTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				7E14EDF32E86622E005AC834 /* Debug */,
-				7E14EDF42E86622E005AC834 /* Release */,
+				7E14EDF32E86622E005AC834 /* Dev-Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = "Dev-Debug";
 		};
 		7E14EDF52E86622E005AC834 /* Build configuration list for PBXNativeTarget "VoyagerUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				7E14EDF62E86622E005AC834 /* Debug */,
-				7E14EDF72E86622E005AC834 /* Release */,
+				7E14EDF62E86622E005AC834 /* Dev-Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = "Dev-Debug";
 		};
 		7E14EE412E866E86005AC834 /* Build configuration list for PBXNativeTarget "VoyagerHelper" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				7E14EE422E866E86005AC834 /* Debug */,
-				7E14EE432E866E86005AC834 /* Release */,
+				7E14EE422E866E86005AC834 /* Dev-Debug */,
+				A100000000000000000000A3 /* Dev-Release */,
+				A100000000000000000000A4 /* Prod-Debug */,
+				7E14EE432E866E86005AC834 /* Prod-Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = "Prod-Debug";
 		};
 		7E14EE442E866E86005AC834 /* Build configuration list for PBXNativeTarget "VoyagerHelperTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				7E14EE452E866E86005AC834 /* Debug */,
-				7E14EE462E866E86005AC834 /* Release */,
+				7E14EE452E866E86005AC834 /* Dev-Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = "Dev-Debug";
 		};
 		F10000000000000000000006 /* Build configuration list for PBXNativeTarget "FilterSearchXPC" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				F10000000000000000000007 /* Debug */,
-				F10000000000000000000008 /* Release */,
+				F10000000000000000000007 /* Dev-Debug */,
+				A100000000000000000000A5 /* Dev-Release */,
+				A100000000000000000000A6 /* Prod-Debug */,
+				F10000000000000000000008 /* Prod-Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = "Prod-Debug";
 		};
 /* End XCConfigurationList section */
 

@@ -155,7 +155,7 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		B10000000000000000000011 /* Debug */ = {
+		B10000000000000000000011 /* Dev-Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -220,9 +220,9 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
 			};
-			name = Debug;
+			name = Dev-Debug;
 		};
-		B10000000000000000000012 /* Release */ = {
+		B10000000000000000000012 /* Dev-Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -279,19 +279,20 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_VERSION = 6.0;
 			};
-			name = Release;
+			name = Dev-Release;
 		};
-		B10000000000000000000014 /* Debug */ = {
+		B10000000000000000000014 /* Dev-Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = dev;
 				AUTOMATION_APPLE_EVENTS = YES;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
@@ -309,25 +310,27 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUFeedURL = "";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 			};
-			name = Debug;
+			name = Dev-Debug;
 		};
-		B10000000000000000000015 /* Release */ = {
+		B10000000000000000000015 /* Dev-Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				APP_ENV = prod;
+				APP_ENV = dev;
 				AUTOMATION_APPLE_EVENTS = YES;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
@@ -345,13 +348,14 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUFeedURL = "";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 			};
-			name = Release;
+			name = Dev-Release;
 		};
 /* End XCBuildConfiguration section */
 
@@ -359,20 +363,20 @@
 		B10000000000000000000010 /* Build configuration list for PBXProject "OnboardingHost" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B10000000000000000000011 /* Debug */,
-				B10000000000000000000012 /* Release */,
+				B10000000000000000000011 /* Dev-Debug */,
+				B10000000000000000000012 /* Dev-Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Dev-Release;
 		};
 		B10000000000000000000013 /* Build configuration list for PBXNativeTarget "OnboardingHost" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B10000000000000000000014 /* Debug */,
-				B10000000000000000000015 /* Release */,
+				B10000000000000000000014 /* Dev-Debug */,
+				B10000000000000000000015 /* Dev-Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Dev-Release;
 		};
 /* End XCConfigurationList section */
 
