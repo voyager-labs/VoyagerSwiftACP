@@ -118,6 +118,111 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         return state
     }
 
+    private struct DirtyPinnedCollectionFixture {
+        let tabID: ContentTabID
+        let state: FileManagerFeature.State
+        let sourceRoute: ContentPageNavigationRoute
+        let sourceAnchor: ContentTabPageAnchor
+        let record: ContentTabPinnedRecord
+        let dirtyContext: CollectionContext
+    }
+
+    private func makeDirtyPinnedCollectionFixture(isActive: Bool) -> DirtyPinnedCollectionFixture {
+        let tabID = ContentTabID()
+        let homeID = ContentTabID()
+        let sourceURL = URL(fileURLWithPath: "/tmp/source.voycoll")
+        let sourceContext = CollectionContext(query: "source", scopes: ["/tmp/source"], conditions: [])
+        let dirtyContext = CollectionContext(query: "dirty draft", scopes: ["/tmp/source"], conditions: [])
+        let sourceAnchor: ContentTabPageAnchor = .collectionFile(url: sourceURL)
+        let record = Self.pinnedRecord(
+            id: tabID,
+            page: .collection,
+            anchor: sourceAnchor,
+            title: "Source",
+            iconName: "rectangle.stack",
+        )
+        let sourceRoute = ContentPageNavigationRoute.collection(.init(
+            kind: .file(url: sourceURL, name: "Source"),
+            context: sourceContext,
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+        let dirtyContent = makeDirtyCollectionContent(
+            sourceContext: sourceContext,
+            dirtyContext: dirtyContext,
+            sourceRoute: sourceRoute,
+        )
+        var state = FileManagerFeature.State()
+        state.contentTabs = makeDirtyPinnedContentTabs(
+            tabID: tabID,
+            homeID: homeID,
+            sourceAnchor: sourceAnchor,
+            record: record,
+            isActive: isActive,
+        )
+        state.tabContentStates[tabID] = dirtyContent
+        if isActive {
+            state.content = dirtyContent
+        } else {
+            state.tabContentStates[homeID] = state.content
+        }
+        state.syncContentTabSidebarItems()
+        return DirtyPinnedCollectionFixture(
+            tabID: tabID,
+            state: state,
+            sourceRoute: sourceRoute,
+            sourceAnchor: sourceAnchor,
+            record: record,
+            dirtyContext: dirtyContext,
+        )
+    }
+
+    private func makeDirtyCollectionContent(
+        sourceContext: CollectionContext,
+        dirtyContext: CollectionContext,
+        sourceRoute: ContentPageNavigationRoute,
+    ) -> FileManagerContentFeature.State {
+        var content = FileManagerContentFeature.State()
+        content.entryViewLayout.isCollectionMode = true
+        content.collection.collectionContext = dirtyContext
+        content.collection.collectionSession.metadata.baseline = .init(context: sourceContext)
+        content.navigation.navigationState = sourceRoute
+        return content
+    }
+
+    private func makeDirtyPinnedContentTabs(
+        tabID: ContentTabID,
+        homeID: ContentTabID,
+        sourceAnchor: ContentTabPageAnchor,
+        record: ContentTabPinnedRecord,
+        isActive: Bool,
+    ) -> ContentTabState {
+        ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .collection,
+                    anchor: sourceAnchor,
+                    isPinned: true,
+                    title: "Source",
+                    iconName: "rectangle.stack",
+                ),
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: isActive ? tabID : homeID,
+            recentlyClosed: nil,
+            pinnedRecords: [tabID: record],
+        )
+    }
+
     private static let pinnedAt = Date(timeIntervalSince1970: 443)
 
     private static func pinnedRecord(
@@ -1016,6 +1121,76 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(sidebarItem.iconName, "folder")
         XCTAssertEqual(store.state.contentTabs.pinnedRecords[tabID], originalRecord)
         XCTAssertTrue(persistenceRecorder.stores().isEmpty)
+    }
+
+    /// CTM-003-pin_content_tab_s: active dirty pinned Collection은 peer runtime navigation을 거부함
+    /// 다른 window의 runtime route가 현재 window의 저장되지 않은 Collection draft를 덮어쓰지 않는지 검증한다.
+    /// - 검증 내용: active route/tab anchor/draft/durable record 불변
+    /// - 사전 조건: active pinned tab이 dirty file-backed Collection 상태
+    /// - 기대 결과: inbound folder route를 적용하지 않고 현재 Collection runtime과 draft를 유지
+    func testPinnedRuntimeNavigation_preservesActiveDirtyCollection() async {
+        let fixture = makeDirtyPinnedCollectionFixture(isActive: true)
+        let store = makeDirtyPinnedCollectionStore(fixture.state)
+
+        await store.send(.applyPinnedContentTabRuntimeNavigation(
+            tabID: fixture.tabID,
+            navigationState: .folder("/tmp/peer"),
+        ))
+        await store.finish()
+
+        assertDirtyPinnedCollectionPreserved(fixture, state: store.state.content, store: store)
+    }
+
+    /// CTM-003-pin_content_tab_s: inactive dirty pinned Collection도 peer runtime navigation을 거부함
+    /// 캐시된 dirty draft의 route와 tab anchor를 inbound fan-out이 변경하지 않는지 검증한다.
+    /// - 검증 내용: cached route/tab anchor/draft/durable record 불변
+    /// - 사전 조건: Home이 active이고 pinned Collection tab은 inactive dirty 상태
+    /// - 기대 결과: inbound folder route를 무시하고 기존 cached Collection draft를 유지
+    func testPinnedRuntimeNavigation_preservesInactiveDirtyCollectionCache() async {
+        let fixture = makeDirtyPinnedCollectionFixture(isActive: false)
+        let store = makeDirtyPinnedCollectionStore(fixture.state)
+
+        await store.send(.applyPinnedContentTabRuntimeNavigation(
+            tabID: fixture.tabID,
+            navigationState: .folder("/tmp/peer"),
+        ))
+        await store.finish()
+
+        let cachedState = store.state.tabContentStates[fixture.tabID]
+        XCTAssertEqual(cachedState?.navigation.navigationState, fixture.sourceRoute)
+        XCTAssertEqual(cachedState?.collection.collectionContext, fixture.dirtyContext)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: fixture.tabID]?.anchor, fixture.sourceAnchor)
+        XCTAssertEqual(store.state.contentTabs.pinnedRecords[fixture.tabID], fixture.record)
+    }
+
+    private func makeDirtyPinnedCollectionStore(
+        _ state: FileManagerFeature.State,
+    ) -> TestStore<FileManagerFeature.State, FileManagerWindowAction> {
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_608))
+        }
+        store.exhaustivity = .off
+        return store
+    }
+
+    private func assertDirtyPinnedCollectionPreserved(
+        _ fixture: DirtyPinnedCollectionFixture,
+        state: FileManagerContentFeature.State,
+        store: TestStore<FileManagerFeature.State, FileManagerWindowAction>,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertEqual(state.navigation.navigationState, fixture.sourceRoute, file: file, line: line)
+        XCTAssertEqual(
+            store.state.contentTabs.tabs[id: fixture.tabID]?.anchor,
+            fixture.sourceAnchor,
+            file: file,
+            line: line,
+        )
+        XCTAssertEqual(state.collection.collectionContext, fixture.dirtyContext, file: file, line: line)
+        XCTAssertEqual(store.state.contentTabs.pinnedRecords[fixture.tabID], fixture.record, file: file, line: line)
     }
 
     /// CTM-003-pin_content_tab_s: persistence 실패 시 optimistic 상태 rollback

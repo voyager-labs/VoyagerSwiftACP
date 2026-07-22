@@ -96,10 +96,13 @@ struct FileManagerWindowRoutingReducer {
         else { return .none }
 
         let isActiveTab = state.contentTabs.activeTabID == tabID
+        let targetContentState: FileManagerContentState? = isActiveTab
+            ? state.content
+            : state.tabContentStates[tabID]
+        guard targetContentState?.hasUnsavedCollectionChanges != true else { return .none }
+
         let cancelCollectionOpenEffect = isActiveTab ? cancelPendingCollectionOpen(state: &state) : .none
-        let currentNavigationState = isActiveTab
-            ? state.content.navigation.navigationState
-            : state.tabContentStates[tabID]?.navigation.navigationState
+        let currentNavigationState = targetContentState?.navigation.navigationState
         guard currentNavigationState != navigationState else { return cancelCollectionOpenEffect }
 
         guard isActiveTab else {
@@ -646,7 +649,7 @@ private extension FileManagerWindowRoutingReducer {
             targetState = inactiveState
         }
 
-        if targetState.isCollectionMode, targetState.canSaveCollection {
+        if targetState.isCollectionMode, targetState.hasUnsavedCollectionChanges {
             state.pendingContentTabClose = PendingContentTabClose(
                 tabID: tabID,
                 previousActiveTabID: isActiveTarget ? nil : state.contentTabs.activeTabID,
@@ -655,10 +658,16 @@ private extension FileManagerWindowRoutingReducer {
                 previousActiveInspector: isActiveTarget ? nil : state.inspector,
                 targetInspector: isActiveTarget ? nil : state.inspectorState(for: tabID),
             )
-            return .run { send in
-                let choice = await collectionAlertClient.showUnsavedNavigationAlert()
-                await send(.contentTabCloseAlertResponse(choice))
-            }
+            let cancelCollectionOpenEffect = isActiveTarget
+                ? cancelPendingCollectionOpen(state: &state)
+                : .none
+            return .concatenate(
+                cancelCollectionOpenEffect,
+                .run { send in
+                    let choice = await collectionAlertClient.showUnsavedNavigationAlert()
+                    await send(.contentTabCloseAlertResponse(choice))
+                },
+            )
         }
 
         return .send(.contentTabs(.close(tabID)))
