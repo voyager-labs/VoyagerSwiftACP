@@ -1153,6 +1153,63 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         )
     }
 
+    /// CTM-003-pin_content_tab_s: inactive clean Collection cache도 non-Collection peer route에서 정리함
+    /// peer route를 반영한 cached tab을 다시 활성화해도 이전 Collection/Composer 상태를 복원하지 않는지 검증한다.
+    /// - 검증 내용: inactive cache와 재활성화 content의 Collection/Composer 초기화, durable record 불변
+    /// - 사전 조건: Home이 active이고 pinned tab은 저장된 clean Collection cache 상태
+    /// - 기대 결과: folder route를 유지하면서 stale Collection context/session/Composer metadata를 남기지 않음
+    func testPinnedRuntimeNavigation_cleansInactiveCollectionCacheBeforeReactivation() async {
+        let fixture = makeDirtyPinnedCollectionFixture(isActive: false)
+        let sourceURL = URL(fileURLWithPath: "/tmp/source.voycoll")
+        let cleanContext = fixture.state.tabContentStates[fixture.tabID]?
+            .collection.collectionSession.metadata.baseline?.context
+        var state = fixture.state
+        state.tabContentStates[fixture.tabID]?.collection.collectionContext = cleanContext
+        state.tabContentStates[fixture.tabID]?.collection.collectionSession.document = .init(
+            url: sourceURL,
+            name: "Source",
+        )
+        state.tabContentStates[fixture.tabID]?.composer.isCollectionMode = true
+        state.tabContentStates[fixture.tabID]?.composer.collectionContext = cleanContext
+        state.tabContentStates[fixture.tabID]?.composer.openedCollectionURL = sourceURL
+        let store = makeDirtyPinnedCollectionStore(state)
+        let targetRoute = ContentPageNavigationRoute.folder("/tmp/peer")
+
+        await store.send(.applyPinnedContentTabRuntimeNavigation(
+            tabID: fixture.tabID,
+            navigationState: targetRoute,
+        ))
+        await store.skipReceivedActions()
+
+        assertCleanCollectionState(
+            store.state.tabContentStates[fixture.tabID],
+            navigationState: targetRoute,
+        )
+        XCTAssertEqual(store.state.contentTabs.pinnedRecords[fixture.tabID], fixture.record)
+
+        await store.send(.contentTabs(.setCurrent(fixture.tabID)))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        assertCleanCollectionState(store.state.content, navigationState: targetRoute)
+        XCTAssertEqual(store.state.contentTabs.pinnedRecords[fixture.tabID], fixture.record)
+    }
+
+    private func assertCleanCollectionState(
+        _ contentState: FileManagerContentFeature.State?,
+        navigationState: ContentPageNavigationRoute,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertEqual(contentState?.navigation.navigationState, navigationState, file: file, line: line)
+        XCTAssertEqual(contentState?.entryViewLayout.isCollectionMode, false, file: file, line: line)
+        XCTAssertNil(contentState?.collection.collectionContext, file: file, line: line)
+        XCTAssertNil(contentState?.collection.collectionSession.document, file: file, line: line)
+        XCTAssertEqual(contentState?.composer.isCollectionMode, false, file: file, line: line)
+        XCTAssertNil(contentState?.composer.collectionContext, file: file, line: line)
+        XCTAssertNil(contentState?.composer.openedCollectionURL, file: file, line: line)
+    }
+
     private func assertCleanPinnedCollectionExit(
         navigationState: ContentPageNavigationRoute,
         expectedAnchor: ContentTabPageAnchor,

@@ -101,19 +101,20 @@ struct FileManagerWindowRoutingReducer {
             : state.tabContentStates[tabID]
         guard targetContentState?.hasUnsavedCollectionChanges != true else { return .none }
 
+        let shouldResetCollectionMode = targetContentState?.isCollectionMode == true
+            && !navigationState.isCollection
+
         let cancelCollectionOpenEffect = isActiveTab ? cancelPendingCollectionOpen(state: &state) : .none
-        let resetCollectionModeEffect = if isActiveTab,
-                                           targetContentState?.isCollectionMode == true,
-                                           !navigationState.isCollection
-        {
+        let resetCollectionModeEffect = if isActiveTab, shouldResetCollectionMode {
             resetComposerAndClearCollectionModeEffect()
         } else {
             Effect<Action>.none
         }
         let currentNavigationState = targetContentState?.navigation.navigationState
-        guard currentNavigationState != navigationState else {
+        if isActiveTab, currentNavigationState == navigationState {
             return .concatenate(cancelCollectionOpenEffect, resetCollectionModeEffect)
         }
+        guard currentNavigationState != navigationState || shouldResetCollectionMode else { return .none }
 
         guard isActiveTab else {
             var contentState = state.tabContentStates[tabID]
@@ -121,6 +122,9 @@ struct FileManagerWindowRoutingReducer {
                     for: anchor,
                     inheritingWindowContextFrom: state.content,
                 )
+            if shouldResetCollectionMode {
+                contentState.resetComposerAndClearCollectionMode()
+            }
             contentState.navigation.navigationState = navigationState
             switch navigationState {
             case let .aiChat(sessionID):
