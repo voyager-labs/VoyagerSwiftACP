@@ -89,7 +89,6 @@ struct FileManagerNavigationActionReducer {
                 ),
                 state: &state,
                 collectionFileClient: collectionFileClient,
-                collectionStalenessClient: collectionStalenessClient,
                 metricsClient: metricsClient,
             )
         }
@@ -273,7 +272,6 @@ private func handleOpenCollectionFile(
     request: ContentPageCollectionOpenRequest,
     state: inout FileManagerWindowState,
     collectionFileClient: CollectionFileClient,
-    collectionStalenessClient: CollectionStalenessClient,
     metricsClient: MetricsClient,
 ) -> Effect<FileManagerWindowAction> {
     if state.content.collection.collectionSession.document?.url.path != request.url.path {
@@ -281,11 +279,8 @@ private func handleOpenCollectionFile(
     }
     state.pendingCollectionOpenRequest = request
 
-    let canonicalPath = request.url.standardizedFileURL.path
-    let isAlreadyStale = collectionStalenessClient.record(canonicalPath)?.lastInvalidatedAt != nil
-    let reopenContext = state.content.collection.collectionContext
-    let clearExistingCollectionEffect: Effect<FileManagerWindowAction> = if state.content.isCollectionMode {
-        .send(.content(.internal(.clearCollectionMode)))
+    let cancelExistingCollectionEffect: Effect<FileManagerWindowAction> = if state.content.isCollectionMode {
+        cancelExistingCollectionEffects(state: state)
     } else {
         .none
     }
@@ -297,15 +292,35 @@ private func handleOpenCollectionFile(
 
     return .concatenate(
         .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(true))))),
-        clearExistingCollectionEffect,
-        .send(.content(.collection(.openRequested(
-            request.url,
-            reopenContext: reopenContext,
-            isAlreadyStale: isAlreadyStale,
-        )))),
+        cancelExistingCollectionEffect,
         .send(.navigation(.internal(.prepareCollectionFileOpen(request.url)))),
         loadEffect,
     )
+}
+
+private func cancelExistingCollectionEffects(
+    state: FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    var effects: [Effect<FileManagerWindowAction>] = [
+        .cancel(id: OpenCollectionFileCancelID(
+            windowID: state.content.entryViewLayout.entryOperations.windowID,
+        )),
+    ]
+    let composer = state.content.composer
+    if composer.isLoadingSearch
+        || composer.activeSearchRequestID != nil
+        || composer.queryRenderPhase != .idle
+    {
+        effects.append(.send(.content(.composer(.cancelSearch))))
+    }
+    if composer.isLoadingFilters
+        || composer.isFilteringInFlight
+        || composer.activeFiltersRequestID != nil
+        || composer.pendingSearchQuery != nil
+    {
+        effects.append(.send(.content(.composer(.cancelFilters))))
+    }
+    return .concatenate(effects)
 }
 
 private func collectionFileLoadEffect(
@@ -354,6 +369,11 @@ private func handleCollectionFileLoaded(
             .lastInvalidatedAt != nil
         let hasScopeRootChangedSinceSnapshot = collectionScopeRootsChangedSinceSnapshot(file)
         isStale = hasPersistedInvalidation || hasScopeRootChangedSinceSnapshot
+        state.content.collection.prepareOpenTransition(
+            at: request.url,
+            reopenContext: state.content.collection.collectionContext,
+            isAlreadyStale: hasPersistedInvalidation,
+        )
         environment.collectionStalenessClient.registerCollection(
             canonicalPath,
             file.scopes,
@@ -382,6 +402,7 @@ private func handleCollectionFileLoaded(
     case let .failure(error):
         return handleCollectionFileLoadedFailure(
             error,
+            request: request,
             state: &state,
             collectionAlertClient: environment.collectionAlertClient,
         )
@@ -525,9 +546,22 @@ nonisolated private func collectionScopeRootModified(
 
 private func handleCollectionFileLoadedFailure(
     _ error: ContentPageNavigationErrorFingerprint,
+    request: ContentPageCollectionOpenRequest,
     state _: inout FileManagerWindowState,
     collectionAlertClient: CollectionAlertClient,
 ) -> Effect<FileManagerWindowAction> {
+    if case .collection = request.sourceRoute {
+        return .concatenate(
+            .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
+            .run { _ in
+                await collectionAlertClient.showCollectionOpenErrorAlert(
+                    "Unable to Open Collection",
+                    error.message,
+                )
+            },
+        )
+    }
+
     var effects: [Effect<FileManagerWindowAction>] = [
         .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
         .send(.navigation(.internal(.rollbackBackHistoryOnce))),
