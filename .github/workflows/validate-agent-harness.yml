@@ -23,5 +23,6 @@ jobs:
           BASE_REF: origin/${{ github.base_ref || 'develop' }}
         run: |
           set -euo pipefail
+          pip install pbxproj
           python3 -m scripts.validate_harness --base-ref "${BASE_REF}"
           python3 -m scripts.verify_plan --base-ref "${BASE_REF}"
