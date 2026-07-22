@@ -45,7 +45,10 @@ public struct FileManagerInspectorFeature {
                 state.inspectorVisible = false
                 return .none
 
-            case .sessionHeaderNewChatTapped, .newChatRequested:
+            case .sessionHeaderNewChatTapped:
+                return .send(.delegate(.newChatRequested))
+
+            case .newChatRequested:
                 state.inspectorVisible = true
                 state.activeMode = .chat
                 return .send(.aiChat(.prepareUnpersistedNewChat))

@@ -37,6 +37,41 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertEqual(store.state.inspector.aiChat.currentContext.summary, "Documents · 1 selected")
     }
 
+    func testSessionHeaderNewChatUsesLatestFileManagerContext() async {
+        let preparedSessionID = makeSessionID("00000000-0000-0000-0000-000000000081")
+        let previousState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        let staleContext = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: previousState.content)
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Downloads")
+        let expectedContext = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: initialState.content)
+        initialState.inspector.inspectorVisible = true
+        initialState.inspector.inspectorPaneExists = true
+        initialState.inspector.activeMode = .chat
+        initialState.inspector.aiChat.mode = .sessions
+        initialState.inspector.aiChat.currentContext = staleContext
+
+        let store = makeStore(
+            initialState: initialState,
+            uuid: preparedSessionID.rawValue,
+            connectionsFile: .empty(),
+        )
+
+        await store.send(.inspector(.sessionHeaderNewChatTapped))
+        await store.receive(\.inspector.delegate.newChatRequested)
+        await store.receive(\.request.newChat)
+        await store.receive { action in
+            guard case let .inspector(.aiChat(.prepareUnpersistedNewChatWithContext(snapshot))) = action else {
+                return false
+            }
+            return snapshot == expectedContext
+        }
+
+        XCTAssertTrue(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.aiChat.mode, .chat)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, preparedSessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.currentContext.summary, "Downloads")
+        XCTAssertTrue(store.state.inspector.aiChat.isUntouchedPreparedTransientNewChat)
+    }
+
     func testOpenInspectorCommandsRefreshCurrentContextWhenSwitchingToNewChat() async {
         let sessionID = makeSessionID("00000000-0000-0000-0000-000000000061")
         let previousState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")

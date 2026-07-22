@@ -23,6 +23,7 @@ public enum FileManagerInspectorAction: CasePathable, Sendable {
 
     @CasePathable
     public enum Delegate: Sendable {
+        case newChatRequested
         case openAISettings
         case requestAttachmentPicker
         case clearCurrentContextSelection

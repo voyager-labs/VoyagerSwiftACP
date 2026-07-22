@@ -175,6 +175,9 @@ struct FileManagerWindowCommandRoutingReducer {
                 state.pendingAiChatInspectorOpen = nil
                 return .cancel(id: FileManagerAiChatInspectorOpenCancelID())
 
+            case .inspector(.delegate(.newChatRequested)):
+                return .send(.request(.newChat))
+
             case .inspector(.delegate(.openAISettings)):
                 return .send(.delegate(.openAISettings))
 
