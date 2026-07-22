@@ -149,6 +149,12 @@ struct FileManagerWindowRoutingReducer {
                     placement: placement,
                 )))
 
+            case .content(.delegate(.requestDuplicate)):
+                let command: Action.WindowCommand = state.contentTabs.selectedTabIDs.count > 1
+                    ? .duplicateSelectedContentTabs
+                    : .duplicate
+                return .send(.request(command))
+
             case .content(.delegate(.closeWindow)):
                 return .send(.delegate(.closeWindow))
 

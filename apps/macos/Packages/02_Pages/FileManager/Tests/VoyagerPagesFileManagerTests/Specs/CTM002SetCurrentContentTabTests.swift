@@ -7,12 +7,12 @@ import XCTest
 final class CTM002SetCurrentContentTabTests: XCTestCase {
     // MARK: - CTM-002-set_current_content_tab_by_index
 
-    /// CTM-002-set_current_content_tab_by_index: 현재 Content Tab 선택은 대상 tab identity만 active로 만듦
+    /// CTM-002-set_current_content_tab_by_index: 현재 Content Tab 선택은 target을 active selection에 포함함
     /// Sidebar primary click이나 index 기반 선택이 공유할 reducer contract를 검증한다.
-    /// - 검증 내용: setCurrent가 activeTabID만 target id로 변경하고 tab 목록을 유지함
+    /// - 검증 내용: setCurrent가 activeTabID를 변경하고 기존 selection을 보존하며 target을 포함함
     /// - 사전 조건: Home, Directory, Collection 세 탭과 Home active 상태
-    /// - 기대 결과: 지정한 tab id가 순서대로 active가 되고 다른 상태는 유지됨
-    func testSetCurrentContentTabByIndex_activatesOnlyTargetIdentity() async {
+    /// - 기대 결과: 지정한 tab id가 순서대로 active가 되고 active target은 selection에도 포함됨
+    func testSetCurrentContentTabByIndex_activatesTargetAndIncludesItInSelection() async {
         let homeID = ContentTabID()
         let directoryID = ContentTabID()
         let collectionID = ContentTabID()
@@ -51,7 +51,7 @@ final class CTM002SetCurrentContentTabTests: XCTestCase {
             $0.activeTabID = directoryID
         }
 
-        XCTAssertEqual(store.state.selectedTabIDs, [homeID, collectionID])
+        XCTAssertEqual(store.state.selectedTabIDs, [homeID, collectionID, directoryID])
         XCTAssertEqual(store.state.selectionAnchorID, directoryID)
         await store.finish()
     }

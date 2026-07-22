@@ -821,6 +821,80 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // store.finish() 불필요: 모든 effect가 receive로 소비됨
     }
 
+    /// CTM-001-duplicate_selected_content_tabs: raw Cmd-D는 Content semantic delegate로 전달됨
+    /// key-command focus가 Content로 복귀해도 entry duplicate를 직접 실행하지 않는 boundary를 검증한다.
+    /// - 검증 내용: Cmd-D keyboard action이 `.requestDuplicate` delegate를 정확히 한 번 방출함
+    /// - 사전 조건: 기본 Content 상태와 command modifier가 설정된 D key command
+    /// - 기대 결과: EntryViewLayout action 없이 parent-owned duplicate request만 수신됨
+    func testDuplicateKeyCommand_routesThroughContentDelegate() async {
+        let command = KeyCommand(
+            keyCode: 2,
+            modifiers: .command,
+            characters: "d",
+            charactersIgnoringModifiers: "d",
+        )
+        let store = TestStore(initialState: FileManagerContentState()) {
+            FileManagerContentKeyCommandReducer()
+        }
+
+        await store.send(.view(.handleKeyCommand(command)))
+        await store.receive(\.delegate.requestDuplicate)
+        await store.finish()
+    }
+
+    /// CTM-001-duplicate_selected_content_tabs: Content duplicate delegate는 Window selection policy를 따름
+    /// 동일한 Cmd-D intent가 single selection에서는 entry, multi selection에서는 selected tabs duplicate로 분기되는지 검증한다.
+    /// - 검증 내용: selected tab count별 Content delegate→Window request mapping
+    /// - 사전 조건: active A와 single A 또는 multi A/B selection을 가진 Window state
+    /// - 기대 결과: single은 `.duplicate`, multi는 `.duplicateSelectedContentTabs` request를 수신함
+    func testDuplicateContentDelegate_routesBySelectedContentTabCount() async {
+        let tabA = ContentTabID(rawValue: "content-route-a")
+        let tabB = ContentTabID(rawValue: "content-route-b")
+        for (selectedTabIDs, expectsBulkDuplicate) in [
+            (Set([tabA]), false),
+            (Set([tabA, tabB]), true),
+        ] {
+            var state = FileManagerFeature.State()
+            state.contentTabs = ContentTabState(
+                tabs: [
+                    ContentTabItem(
+                        id: tabA,
+                        page: .home,
+                        anchor: .homeDefault,
+                        isPinned: false,
+                        title: "A",
+                        iconName: "house",
+                    ),
+                    ContentTabItem(
+                        id: tabB,
+                        page: .home,
+                        anchor: .homeDefault,
+                        isPinned: false,
+                        title: "B",
+                        iconName: "house",
+                    ),
+                ],
+                activeTabID: tabA,
+            )
+            state.contentTabs.selectedTabIDs = selectedTabIDs
+            let initialState = state
+            let store = TestStore(initialState: state) {
+                FileManagerWindowRoutingReducer()
+            }
+
+            await store.send(.content(.delegate(.requestDuplicate)))
+            await store.receive { action in
+                if expectsBulkDuplicate {
+                    guard case .request(.duplicateSelectedContentTabs) = action else { return false }
+                } else {
+                    guard case .request(.duplicate) = action else { return false }
+                }
+                return true
+            }
+            XCTAssertEqual(store.state, initialState)
+        }
+    }
+
     /// CTM-001-duplicate_selected_content_tabs: mixed pinned selection을 source-adjacent 위치로 복제함
     /// 선택된 source의 ordered request를 적용할 때 pinned boundary와 unpinned source adjacency를 검증한다.
     /// - 검증 내용: pinned boundary block, 각 unpinned source 직후 insertion, metadata copy, first duplicate active transition

@@ -10434,8 +10434,18 @@ extension CTM005IndependentContentTabSessionTests {
             guard case let .contentTabs(.duplicate(receivedSourceID, _)) = action else { return false }
             return receivedSourceID == sourceID
         }
-
         let duplicateID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+        await store.receive { action in
+            guard case let .internal(.duplicateContentTabReduced(
+                receivedSourceID,
+                receivedDuplicateID,
+                duplicateIDWasPreexisting,
+            )) = action else { return false }
+            return receivedSourceID == sourceID
+                && receivedDuplicateID == duplicateID
+                && !duplicateIDWasPreexisting
+        }
+
         let sourceContent = try XCTUnwrap(store.state.tabContentStates[sourceID])
         XCTAssertEqual(store.state.contentTabs.tabs[id: duplicateID]?.anchor, .collectionFile(url: collectionURL))
         XCTAssertFalse(store.state.content.entryViewLayout.isCollectionMode)
@@ -10639,8 +10649,18 @@ extension CTM005IndependentContentTabSessionTests {
             guard case let .contentTabs(.duplicate(receivedSourceID, _)) = action else { return false }
             return receivedSourceID == sourceID
         }
-
         let duplicateID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+        await store.receive { action in
+            guard case let .internal(.duplicateContentTabReduced(
+                receivedSourceID,
+                receivedDuplicateID,
+                duplicateIDWasPreexisting,
+            )) = action else { return false }
+            return receivedSourceID == sourceID
+                && receivedDuplicateID == duplicateID
+                && !duplicateIDWasPreexisting
+        }
+
         XCTAssertNil(store.state.content.aiChat.sessionID)
         XCTAssertNotNil(store.state.backgroundAiChatStates[aiSessionID])
         XCTAssertEqual(loadedSessionIDs.value, [])

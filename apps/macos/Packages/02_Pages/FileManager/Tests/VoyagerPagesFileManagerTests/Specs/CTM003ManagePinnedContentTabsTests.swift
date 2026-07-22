@@ -2836,7 +2836,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(state.contentTabs.tabs[id: activeTabID]?.page, .home)
         XCTAssertFalse(state.contentTabs.tabs[id: activeTabID]?.isPinned ?? true)
         XCTAssertEqual(state.content.navigation.currentPath, "Home")
-        XCTAssertTrue(state.contentTabs.selectedTabIDs.isEmpty)
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, [activeTabID])
         XCTAssertNil(state.contentTabs.selectionAnchorID)
         XCTAssertNil(state.tabContentStates[pinnedID])
         XCTAssertEqual(state.tabContentStates[activeTabID]?.navigation.currentPath, "Home")
