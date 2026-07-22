@@ -37,9 +37,12 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertEqual(store.state.inspector.aiChat.currentContext.summary, "Documents · 1 selected")
     }
 
-    func testOpenInspectorCommandsSwitchDestinationWithoutClosingOrFreshSetup() async {
+    func testOpenInspectorCommandsRefreshCurrentContextWhenSwitchingToNewChat() async {
         let sessionID = makeSessionID("00000000-0000-0000-0000-000000000061")
-        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        let previousState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        let staleContext = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: previousState.content)
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Downloads")
+        let expectedContext = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: initialState.content)
         initialState.inspector.inspectorVisible = true
         initialState.inspector.inspectorPaneExists = true
         initialState.inspector.activeMode = .chat
@@ -47,6 +50,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         initialState.inspector.aiChat.sessionID = sessionID
         initialState.inspector.aiChat.sessionStatus = .active
         initialState.inspector.aiChat.draftText = "Preserved draft"
+        initialState.inspector.aiChat.currentContext = staleContext
 
         let store = makeStore(
             initialState: initialState,
@@ -62,21 +66,57 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
 
         XCTAssertTrue(store.state.inspector.inspectorVisible)
         XCTAssertEqual(store.state.inspector.aiChat.mode, .sessions)
+        XCTAssertEqual(store.state.inspector.aiChat.currentContext.summary, "Documents")
         XCTAssertEqual(store.state.inspector.aiChat.sessionID, sessionID)
         XCTAssertEqual(store.state.inspector.aiChat.draftText, "Preserved draft")
 
         await store.send(.request(.newChat))
-        await store.receive(\.inspector.newChatRequested)
-        await store.receive(\.inspector.aiChat.prepareUnpersistedNewChat)
+        await store.receive { action in
+            guard case let .inspector(.aiChat(.prepareUnpersistedNewChatWithContext(snapshot))) = action else {
+                return false
+            }
+            return snapshot == expectedContext
+        }
 
         XCTAssertTrue(store.state.inspector.inspectorVisible)
         XCTAssertEqual(store.state.inspector.aiChat.mode, .chat)
+        XCTAssertEqual(store.state.inspector.aiChat.currentContext.summary, "Downloads")
         XCTAssertNotEqual(store.state.inspector.aiChat.sessionID, sessionID)
         XCTAssertTrue(store.state.inspector.aiChat.draftText.isEmpty)
         XCTAssertTrue(store.state.inspector.aiChat.transcriptHistory.isEmpty)
     }
 
-    func testOpenInspectorCommandsCloseMatchingDestination() async {
+    func testInspectorTransientNewChatDoesNotCancelContentNewChatPersistence() async throws {
+        let saveGate = AiChatSaveGate()
+        let store = TestStore(
+            initialState: FileManagerFeature.State.makeInitial(path: "/Users/test/Documents"),
+        ) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+            $0.aiChatSessionPersistenceClient.saveSession = { try await saveGate.save($0) }
+        }
+        // store.exhaustivity = .off: sibling AiChat effect의 cancellation 격리와 완료 action만 선별 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.aiChat(.newChatTapped)))
+        await saveGate.waitForPendingSave()
+        let contentSessionID = try XCTUnwrap(store.state.content.aiChat.sessionID)
+
+        await store.send(.inspector(.aiChat(.prepareUnpersistedNewChat)))
+        await saveGate.resumePendingSave()
+        await store.receive { action in
+            guard case let .content(.aiChat(.newChatCreated(snapshot))) = action else { return false }
+            return snapshot.sessionID == contentSessionID
+        }
+
+        let cancellationCount = await saveGate.cancellationCount
+        XCTAssertEqual(cancellationCount, 0)
+        XCTAssertEqual(store.state.content.aiChat.emptyDraftSessionID, contentSessionID)
+    }
+
+    func testOpenInspectorCommandsKeepMatchingDestinationOpen() async {
         var newChatState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         newChatState.inspector.inspectorVisible = true
         newChatState.inspector.inspectorPaneExists = true
@@ -88,12 +128,12 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
             uuid: makeUUID("00000000-0000-0000-0000-000000000063"),
             connectionsFile: .empty(),
         )
-        // store.exhaustivity = .off: 동일 목적지 command의 inspector 닫기 action만 선별 검증한다.
+        // store.exhaustivity = .off: 동일 목적지 command가 상태를 유지하는 계약만 선별 검증한다.
         newChatStore.exhaustivity = .off
 
         await newChatStore.send(.request(.newChat))
-        await newChatStore.receive(\.inspector.closeChat)
-        XCTAssertFalse(newChatStore.state.inspector.inspectorVisible)
+        XCTAssertTrue(newChatStore.state.inspector.inspectorVisible)
+        XCTAssertEqual(newChatStore.state.inspector.aiChat.mode, .chat)
 
         var historyState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         historyState.inspector.inspectorVisible = true
@@ -106,26 +146,15 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
             uuid: makeUUID("00000000-0000-0000-0000-000000000064"),
             connectionsFile: .empty(),
         )
-        // store.exhaustivity = .off: 동일 목적지 command의 inspector 닫기 action만 선별 검증한다.
+        // store.exhaustivity = .off: 동일 목적지 command가 상태를 유지하는 계약만 선별 검증한다.
         historyStore.exhaustivity = .off
 
         await historyStore.send(.request(.showChatHistory))
-        await historyStore.receive(\.inspector.closeChat)
-        XCTAssertFalse(historyStore.state.inspector.inspectorVisible)
+        XCTAssertTrue(historyStore.state.inspector.inspectorVisible)
+        XCTAssertEqual(historyStore.state.inspector.aiChat.mode, .sessions)
 
-        let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: historyStore.state.content)
         await historyStore.send(.request(.newChat))
-        await assertOpenNewChat(
-            on: historyStore,
-            expectedSetup: expectedSetup,
-            expectedConnectionsFile: .empty(),
-        )
-        await assertAiChatSetup(on: historyStore, expectedSetup: expectedSetup)
-        await assertProviderConnectionsUpdated(on: historyStore, expectedFile: .empty())
-        await historyStore.receive(\.inspector.aiChat.prepareUnpersistedNewChat)
-        await historyStore.receive(\.inspector.setInspectorVisible) {
-            $0.inspector.inspectorVisible = true
-        }
+        await historyStore.receive(\.inspector.aiChat.prepareUnpersistedNewChatWithContext)
 
         XCTAssertTrue(historyStore.state.inspector.inspectorVisible)
         XCTAssertEqual(historyStore.state.inspector.aiChat.mode, .chat)
@@ -534,7 +563,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertNil(store.state.inspector.aiChat.sessionID)
     }
 
-    func testToolbarSparklesOpensAndClosesNewChat() async {
+    func testToolbarSparklesKeepsMatchingNewChatOpen() async {
         let fixedUUID = makeUUID("00000000-0000-0000-0000-000000000010")
         let selectedEntry = makeEntry(name: "Draft.md", fullPath: "/Users/test/Documents/Draft.md")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
@@ -571,13 +600,14 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
             $0.inspector.inspectorPaneExists = true
         }
 
+        let preparedSessionID = store.state.inspector.aiChat.sessionID
         await store.send(.content(.view(.newChatTapped)))
         await store.receive(\.content.delegate.newChatRequested)
         await store.receive(\.request.newChat)
-        await store.receive(\.inspector.closeChat)
 
-        XCTAssertFalse(store.state.inspector.inspectorVisible)
+        XCTAssertTrue(store.state.inspector.inspectorVisible)
         XCTAssertEqual(store.state.inspector.activeMode, .chat)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, preparedSessionID)
         XCTAssertTrue(store.state.inspector.aiChat.transcriptHistory.isEmpty)
         XCTAssertTrue(store.state.inspector.aiChat.draftText.isEmpty)
     }
@@ -944,5 +974,44 @@ private actor AIConnectionsLoadGate {
 
     func resumeNext(with connectionsFile: AIConnectionsFile) {
         continuations.removeFirst().resume(returning: connectionsFile)
+    }
+}
+
+private struct PendingAiChatSave {
+    let snapshot: AiChatSessionSnapshot
+    let continuation: CheckedContinuation<AiChatSessionSnapshot, Error>
+}
+
+private actor AiChatSaveGate {
+    private var pendingSaves: [UUID: PendingAiChatSave] = [:]
+    private(set) var cancellationCount = 0
+
+    func save(_ snapshot: AiChatSessionSnapshot) async throws -> AiChatSessionSnapshot {
+        let token = UUID()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                pendingSaves[token] = PendingAiChatSave(snapshot: snapshot, continuation: continuation)
+            }
+        } onCancel: {
+            Task { await self.cancel(token: token) }
+        }
+    }
+
+    func waitForPendingSave() async {
+        while pendingSaves.isEmpty {
+            await Task.yield()
+        }
+    }
+
+    func resumePendingSave() {
+        guard let token = pendingSaves.keys.first,
+              let pendingSave = pendingSaves.removeValue(forKey: token)
+        else { return }
+        pendingSave.continuation.resume(returning: pendingSave.snapshot)
+    }
+
+    private func cancel(token: UUID) {
+        cancellationCount += 1
+        pendingSaves.removeValue(forKey: token)?.continuation.resume(throwing: CancellationError())
     }
 }

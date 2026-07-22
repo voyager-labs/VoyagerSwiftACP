@@ -95,8 +95,14 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
 
         await store.send(.edit(.newChat))
         await assertWindowManagerRequest(.newChat, on: store, fixture: fixture)
-        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.newChatRequested)
-        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.aiChat.prepareUnpersistedNewChat)
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.inspector(.aiChat(.prepareUnpersistedNewChatWithContext(snapshot)))),
+            )) = action
+            else { return false }
+            return id == fixture.focusedUUID && snapshot == fixture.expectedSetup.currentContext
+        }
 
         XCTAssertEqual(store.state.windows[id: fixture.focusedUUID]?.window.inspector.inspectorVisible, true)
         XCTAssertEqual(store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.mode, .chat)

@@ -12,23 +12,22 @@ extension FileManagerWindowCommandRoutingReducer {
     ) -> Effect<Action> {
         if isInspectorChatPresented(state, destination: destination) {
             state.pendingAiChatInspectorOpen = nil
-            return .concatenate(
-                .cancel(id: FileManagerAiChatInspectorOpenCancelID()),
-                .send(.inspector(.closeChat)),
-            )
+            return .cancel(id: FileManagerAiChatInspectorOpenCancelID())
         }
 
         if isInspectorChatPresented(state) {
             state.pendingAiChatInspectorOpen = nil
-            let action: Action = switch destination {
+            let destinationEffect: Effect<Action> = switch destination {
             case .newChat:
-                .inspector(.newChatRequested)
+                .send(.inspector(.aiChat(.prepareUnpersistedNewChatWithContext(
+                    FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: state.content),
+                ))))
             case .chatHistory:
-                .inspector(.showChatHistoryRequested)
+                .send(.inspector(.showChatHistoryRequested))
             }
             return .concatenate(
                 .cancel(id: FileManagerAiChatInspectorOpenCancelID()),
-                .send(action),
+                destinationEffect,
             )
         }
 
