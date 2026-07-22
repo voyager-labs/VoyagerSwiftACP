@@ -13,7 +13,7 @@ if [[ "${1:-}" == "--dry-run" ]]; then
         'NSUnbufferedIO=YES scripts/dev/xcodebuild-branch-product.sh test \' \
         '  -project apps/macos/Voyager/Voyager.xcodeproj \' \
         '  -scheme Voyager-Dev \' \
-        '  -configuration Debug \' \
+        '  -configuration Dev-Debug \' \
         '  -skipPackagePluginValidation \' \
         '  -skipMacroValidation \' \
         '  COMPILER_INDEX_STORE_ENABLE=NO \' \
@@ -32,7 +32,7 @@ mkdir -p "$REPO_ROOT/build/dev/reports"
 NSUnbufferedIO=YES "$XCODEBUILD_CMD" test \
     -project "$REPO_ROOT/apps/macos/Voyager/Voyager.xcodeproj" \
     -scheme Voyager-Dev \
-    -configuration Debug \
+    -configuration Dev-Debug \
     -skipPackagePluginValidation \
     -skipMacroValidation \
     COMPILER_INDEX_STORE_ENABLE=NO \

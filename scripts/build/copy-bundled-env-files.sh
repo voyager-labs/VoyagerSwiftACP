@@ -5,8 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
 
-if [[ "${CONFIGURATION:-}" != "Release" ]]; then
-  echo "[Voyager] Skip env copy for ${CONFIGURATION:-unknown}" >&2
+if [[ "${APP_ENV:-}" != "prod" ]]; then
+  echo "[Voyager] Skip env copy for APP_ENV=${APP_ENV:-unset}" >&2
   exit 0
 fi
 
