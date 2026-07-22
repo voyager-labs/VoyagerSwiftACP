@@ -31,11 +31,22 @@ func handleNavigationDelegate(
         return .none
 
     case .resetComposer:
-        return .concatenate(
-            .send(.content(.internal(.resetComposer))),
-            .send(.content(.internal(.exitCollectionMode))),
-        )
+        return resetComposerAndExitCollectionModeEffect()
     }
+}
+
+func resetComposerAndExitCollectionModeEffect() -> Effect<FileManagerWindowAction> {
+    .concatenate(
+        .send(.content(.internal(.resetComposer))),
+        .send(.content(.internal(.exitCollectionMode))),
+    )
+}
+
+func resetComposerAndClearCollectionModeEffect() -> Effect<FileManagerWindowAction> {
+    .concatenate(
+        .send(.content(.internal(.resetComposer))),
+        .send(.content(.internal(.clearCollectionMode))),
+    )
 }
 
 func syncPinnedContentTabRuntimeNavigationEffect(

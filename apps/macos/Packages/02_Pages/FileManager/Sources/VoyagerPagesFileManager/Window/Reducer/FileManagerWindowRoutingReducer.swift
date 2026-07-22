@@ -102,8 +102,18 @@ struct FileManagerWindowRoutingReducer {
         guard targetContentState?.hasUnsavedCollectionChanges != true else { return .none }
 
         let cancelCollectionOpenEffect = isActiveTab ? cancelPendingCollectionOpen(state: &state) : .none
+        let resetCollectionModeEffect = if isActiveTab,
+                                           targetContentState?.isCollectionMode == true,
+                                           !navigationState.isCollection
+        {
+            resetComposerAndClearCollectionModeEffect()
+        } else {
+            Effect<Action>.none
+        }
         let currentNavigationState = targetContentState?.navigation.navigationState
-        guard currentNavigationState != navigationState else { return cancelCollectionOpenEffect }
+        guard currentNavigationState != navigationState else {
+            return .concatenate(cancelCollectionOpenEffect, resetCollectionModeEffect)
+        }
 
         guard isActiveTab else {
             var contentState = state.tabContentStates[tabID]
@@ -130,6 +140,7 @@ struct FileManagerWindowRoutingReducer {
 
         return .concatenate(
             cancelCollectionOpenEffect,
+            resetCollectionModeEffect,
             syncActiveContentTabEffect(
                 navigationState,
                 state: state,

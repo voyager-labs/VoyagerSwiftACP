@@ -1123,6 +1123,78 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertTrue(persistenceRecorder.stores().isEmpty)
     }
 
+    /// CTM-003-pin_content_tab_s: clean pinned Collection은 non-Collection peer route 적용 전에 Collection 상태를 종료함
+    /// peer runtime navigation도 일반 navigation과 동일한 Collection/Composer 정리 경계를 거치는지 검증한다.
+    /// - 검증 내용: folder/AI route 적용, Collection/Composer 초기화, durable record 불변
+    /// - 사전 조건: active pinned tab이 저장된 clean Collection 상태
+    /// - 기대 결과: target route와 runtime anchor를 반영하고 stale Collection context/session을 남기지 않음
+    func testPinnedRuntimeNavigation_exitsCleanCollectionForNonCollectionRoutes() async {
+        let sessionID = "00000000-0000-0000-0000-000000000608"
+        await assertCleanPinnedCollectionExit(
+            navigationState: .folder("/tmp/peer"),
+            expectedAnchor: .directory(path: "/tmp/peer"),
+        )
+        await assertCleanPinnedCollectionExit(
+            navigationState: .aiChat(sessionID),
+            expectedAnchor: .aiChat(sessionID: sessionID),
+        )
+    }
+
+    /// CTM-003-pin_content_tab_s: target route가 같아도 stale Collection 상태를 정리함
+    /// route/anchor가 먼저 반영된 peer에서 남은 Collection/Composer 상태를 self-healing하는지 검증한다.
+    /// - 검증 내용: same-route cleanup과 durable record 불변
+    /// - 사전 조건: folder route/anchor와 stale clean Collection 상태가 함께 존재
+    /// - 기대 결과: route/anchor를 유지하면서 Collection/Composer metadata만 초기화
+    func testPinnedRuntimeNavigation_cleansStaleCollectionStateForSameRoute() async {
+        await assertCleanPinnedCollectionExit(
+            navigationState: .folder("/tmp/peer"),
+            expectedAnchor: .directory(path: "/tmp/peer"),
+            startsAtTargetRoute: true,
+        )
+    }
+
+    private func assertCleanPinnedCollectionExit(
+        navigationState: ContentPageNavigationRoute,
+        expectedAnchor: ContentTabPageAnchor,
+        startsAtTargetRoute: Bool = false,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) async {
+        let fixture = makeDirtyPinnedCollectionFixture(isActive: true)
+        let sourceURL = URL(fileURLWithPath: "/tmp/source.voycoll")
+        let cleanContext = fixture.state.content.collection.collectionSession.metadata.baseline?.context
+        var state = fixture.state
+        state.content.collection.collectionContext = cleanContext
+        state.content.collection.collectionSession.document = .init(url: sourceURL, name: "Source")
+        state.content.composer.isCollectionMode = true
+        state.content.composer.collectionContext = cleanContext
+        state.content.composer.openedCollectionURL = sourceURL
+        if startsAtTargetRoute {
+            state.content.navigation.navigationState = navigationState
+            state.contentTabs.tabs[id: fixture.tabID]?.anchor = expectedAnchor
+        }
+        state.syncActiveTabContentState()
+        XCTAssertFalse(state.content.hasUnsavedCollectionChanges, file: file, line: line)
+        let store = makeDirtyPinnedCollectionStore(state)
+
+        await store.send(.applyPinnedContentTabRuntimeNavigation(
+            tabID: fixture.tabID,
+            navigationState: navigationState,
+        ))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(store.state.content.navigation.navigationState, navigationState, file: file, line: line)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: fixture.tabID]?.anchor, expectedAnchor, file: file, line: line)
+        XCTAssertFalse(store.state.content.entryViewLayout.isCollectionMode, file: file, line: line)
+        XCTAssertNil(store.state.content.collection.collectionContext, file: file, line: line)
+        XCTAssertNil(store.state.content.collection.collectionSession.document, file: file, line: line)
+        XCTAssertFalse(store.state.content.composer.isCollectionMode, file: file, line: line)
+        XCTAssertNil(store.state.content.composer.collectionContext, file: file, line: line)
+        XCTAssertNil(store.state.content.composer.openedCollectionURL, file: file, line: line)
+        XCTAssertEqual(store.state.contentTabs.pinnedRecords[fixture.tabID], fixture.record, file: file, line: line)
+    }
+
     /// CTM-003-pin_content_tab_s: active dirty pinned Collection은 peer runtime navigation을 거부함
     /// 다른 window의 runtime route가 현재 window의 저장되지 않은 Collection draft를 덮어쓰지 않는지 검증한다.
     /// - 검증 내용: active route/tab anchor/draft/durable record 불변
