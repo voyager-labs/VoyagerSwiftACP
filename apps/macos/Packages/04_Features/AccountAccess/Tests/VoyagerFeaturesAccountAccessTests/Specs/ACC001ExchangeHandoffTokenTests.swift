@@ -227,7 +227,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         canonicalToken: AccountTokensFile,
     ) {
         let temporaryHome = try TemporaryHomeFixture()
-        let tokenStore = AccountTokenFileStore.withCustomHome(homeURL: temporaryHome.homeURL)
+        let tokenStore = AccountTokenFileStore.withCustomHome(homeURL: temporaryHome.homeURL, appEnv: .dev)
         let canonicalToken = AccountTokensFile(
             updatedAtMs: 1,
             accessToken: "canonical-access-token",
@@ -705,8 +705,14 @@ extension ACC001ExchangeHandoffTokenTests {
 
         XCTAssertFalse(store.state.hasAccountSession)
         XCTAssertTrue(store.state.didSignInFail)
-        let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: fixture.temporaryHome.homeURL)
-        let markerURL = AccountTokenFSLocation.rollbackMarkerFileURL(homeDirectoryURL: fixture.temporaryHome.homeURL)
+        let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(
+            homeDirectoryURL: fixture.temporaryHome.homeURL,
+            appEnv: .dev,
+        )
+        let markerURL = AccountTokenFSLocation.rollbackMarkerFileURL(
+            homeDirectoryURL: fixture.temporaryHome.homeURL,
+            appEnv: .dev,
+        )
         XCTAssertFalse(fixture.temporaryHome.snapshotFile(at: stagingURL).exists)
         XCTAssertFalse(fixture.temporaryHome.snapshotFile(at: markerURL).exists)
         let canonicalToken = try await fixture.tokenStore.read()
@@ -799,7 +805,7 @@ extension ACC001ExchangeHandoffTokenTests {
     /// - 기대 결과: 토큰 파일이 디스크에 존재하고 accessToken/refreshToken이 일치한다.
     func testExchangeSuccessPersistsTokensToDisk() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
 
         let expectedSession = AccountSession(
             accessToken: "ac4-access-token",
@@ -835,7 +841,7 @@ extension ACC001ExchangeHandoffTokenTests {
     /// - 기대 결과: AppHandoffExchangeError.networkFailure throw, 토큰 파일 미존재, read()=nil
     func testExchangeFailureNoFileWritten() async throws {
         let fixture = try TemporaryHomeFixture(createVoyagerDirectory: false)
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
 
         let clients = makeWiredClients(
             exchangeHandoff: { _, _, _ in
@@ -867,7 +873,7 @@ extension ACC001ExchangeHandoffTokenTests {
     /// - 기대 결과: capturedContext=.paywall, accessToken/refreshToken 일치, 토큰 파일 저장됨
     func testPaywallContextExchangeSucceedsAndPersists() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
 
         let expectedSession = AccountSession(
             accessToken: "ac6-paywall-access",
@@ -904,7 +910,7 @@ extension ACC001ExchangeHandoffTokenTests {
     /// - 기대 결과: 첫 번째는 session 반환 성공, 두 번째는 ticketAlreadyUsed 에러
     func testTicketReplayPreventionSecondExchangeFails() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
 
         nonisolated(unsafe) var callCount = 0
         let clients = makeWiredClients(
@@ -979,7 +985,7 @@ extension ACC001ExchangeHandoffTokenTests {
     /// - 기대 결과: 최종 read가 nil이 아니고 accessToken이 일치함
     func testConcurrentWriteReadDoesNotCrash() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
 
         let tokens = AccountTokensFile(
             updatedAtMs: 42,

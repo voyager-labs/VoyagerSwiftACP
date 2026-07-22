@@ -825,7 +825,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
     func testNilExpiryHandoffSessionUsesPersistedFallbackBeforeUnlock() async throws {
         await storePendingHandoff()
         let fixture = try TemporaryHomeFixture()
-        let tokenStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let tokenStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let liveAccountSessionClient = AccountSessionClient.live(store: tokenStore)
         nonisolated(unsafe) var persistedSessionExpiresAt: Date?
         nonisolated(unsafe) var persistedSessionBindingID: UUID?
