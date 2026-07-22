@@ -78,7 +78,7 @@ class XcodebuildBranchProductShellTests(unittest.TestCase):
             "-scheme",
             "Voyager-Dev",
             "-configuration",
-            "Debug",
+            "Dev-Debug",
             "build",
         )
 
@@ -102,6 +102,29 @@ class XcodebuildBranchProductShellTests(unittest.TestCase):
         ]
         self.assertEqual(len(suffixes), 1)
         self.assertNotEqual(suffixes[0], "VOYAGER_APP_SUFFIX=-")
+
+    def test_dev_release_does_not_trigger_suffix_injection(self) -> None:
+        result = self.run_script(
+            "-project",
+            "apps/macos/Voyager/Voyager.xcodeproj",
+            "-scheme",
+            "Voyager-Dev",
+            "-configuration",
+            "Dev-Release",
+            "build",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        arguments = self.args()
+        self.assertEqual(arguments.count("-derivedDataPath"), 1)
+        self.assertEqual(arguments.count("-clonedSourcePackagesDirPath"), 1)
+        self.assertEqual(arguments.count("-packageCachePath"), 1)
+        suffixes = [
+            argument
+            for argument in arguments
+            if argument.startswith("VOYAGER_APP_SUFFIX=")
+        ]
+        self.assertEqual(len(suffixes), 0)
 
     def test_explicit_cache_flags_are_preserved_without_duplication(self) -> None:
         result = self.run_script(
