@@ -32,6 +32,9 @@ let kPackage = Package(
                 .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
             ],
+            resources: [
+                .copy("Resources/Sounds"),
+            ],
         ),
         .testTarget(
             name: "VoyagerFeaturesEntryOperationsTests",
