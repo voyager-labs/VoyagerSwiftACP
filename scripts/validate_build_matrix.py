@@ -11,10 +11,8 @@ treated as errors, not gracefully skipped.
 
 from __future__ import annotations
 
-import json
 import os
 import re
-import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -139,11 +137,10 @@ class _PbxObjectWrapper:
 
 
 class _PbxProjectWrapper:
-    """Wrapper around plutil-parsed pbxproj JSON, providing .objects API.
+    """Wrapper around parsed pbxproj data, providing .objects API.
 
-    Uses macOS built-in plutil(1) to convert the OpenStep-format .pbxproj
-    to JSON, then serves the object graph through the same get_objects_in_section()
-    interface that the pbxproj library provided.
+    Uses a pure-Python OpenStep plist parser (no external dependencies)
+    that works on macOS, Linux, and CI runners alike.
     """
 
     __slots__ = ("_objects",)
@@ -159,7 +156,7 @@ class _PbxProjectWrapper:
         return [
             _PbxObjectWrapper(uuid, obj)
             for uuid, obj in self._objects.items()
-            if obj.get("isa") == isa
+            if isinstance(obj, dict) and obj.get("isa") == isa
         ]
 
 
@@ -171,15 +168,100 @@ class BuildMatrixError(Exception):
         super().__init__(message)
 
 
+def _parse_openstep_plist(text: str) -> Any:
+    """Parse an OpenStep-format plist string into Python objects.
+
+    This is a minimal parser for the subset of OpenStep format used by
+    Xcode .pbxproj files. No external dependencies required — works on
+    any platform (macOS, Linux, CI).
+    """
+    # Strip // and /* */ comments
+    # // comments are only at line-start (section markers, UTF8 magic header)
+    text = re.sub(r"(?m)^\s*//.*", "", text)
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    text = text.strip()
+
+    def _parse_dict(pos: int) -> tuple[dict[str, Any], int]:
+        pos += 1  # skip {
+        result: dict[str, Any] = {}
+        while pos < len(text):
+            while pos < len(text) and text[pos] in " \t\n\r":
+                pos += 1
+            if pos >= len(text) or text[pos] == "}":
+                return result, pos + 1 if pos < len(text) else pos
+            if text[pos] == ";":
+                pos += 1
+                continue
+            key, pos = _parse_value(pos)
+            while pos < len(text) and text[pos] in " \t\n\r":
+                pos += 1
+            if pos < len(text) and text[pos] == "=":
+                pos += 1
+            val, pos = _parse_value(pos)
+            while pos < len(text) and text[pos] in " \t\n\r":
+                pos += 1
+            if pos < len(text) and text[pos] == ";":
+                pos += 1
+            if isinstance(key, str):
+                result[key] = val
+        return result, pos
+
+    def _parse_array(pos: int) -> tuple[list[Any], int]:
+        pos += 1  # skip (
+        result: list[Any] = []
+        while pos < len(text):
+            while pos < len(text) and text[pos] in " \t\n\r":
+                pos += 1
+            if pos >= len(text) or text[pos] == ")":
+                return result, pos + 1 if pos < len(text) else pos
+            if text[pos] in ",;":
+                pos += 1
+                continue
+            val, pos = _parse_value(pos)
+            if val is not None:
+                result.append(val)
+        return result, pos
+
+    def _parse_value(pos: int) -> tuple[Any, int]:
+        while pos < len(text) and text[pos] in " \t\n\r":
+            pos += 1
+        if pos >= len(text):
+            return None, pos
+        c = text[pos]
+        if c == "{":
+            return _parse_dict(pos)
+        elif c == "(":
+            return _parse_array(pos)
+        elif c == '"':
+            pos += 1
+            buf: list[str] = []
+            while pos < len(text):
+                if text[pos] == '"':
+                    return "".join(buf), pos + 1
+                if text[pos] == "\\" and pos + 1 < len(text):
+                    pos += 1
+                    buf.append(text[pos])
+                else:
+                    buf.append(text[pos])
+                pos += 1
+            return "".join(buf), pos
+        else:
+            buf: list[str] = []
+            while pos < len(text) and text[pos] not in " \t\n\r;)}],":
+                buf.append(text[pos])
+                pos += 1
+            val = "".join(buf)
+            if val in ("nil", "null"):
+                return None, pos
+            return val, pos
+
+    result, _ = _parse_value(0)
+    return result if isinstance(result, dict) else {}
+
+
 def _load_pbxproj(path: Path) -> _PbxProjectWrapper:
-    """Load a pbxproj file using plutil (macOS built-in)."""
-    result = subprocess.run(
-        ["plutil", "-convert", "json", "-o", "-", str(path)],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return _PbxProjectWrapper(json.loads(result.stdout))
+    """Load a pbxproj file using a portable pure-Python OpenStep parser."""
+    return _PbxProjectWrapper(_parse_openstep_plist(path.read_text(encoding="utf-8")))
 
 
 def _get_config_by_name(configs: list[Any], name: str) -> Any | None:
