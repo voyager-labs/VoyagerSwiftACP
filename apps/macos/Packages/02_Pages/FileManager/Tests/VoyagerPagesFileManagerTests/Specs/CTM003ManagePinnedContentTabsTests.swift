@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
@@ -1121,6 +1122,288 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(sidebarItem.iconName, "folder")
         XCTAssertEqual(store.state.contentTabs.pinnedRecords[tabID], originalRecord)
         XCTAssertTrue(persistenceRecorder.stores().isEmpty)
+    }
+
+    private struct MissingInactiveAiChatCacheFixture {
+        let homeTabID: ContentTabID
+        let pinnedTabID: ContentTabID
+        let sessionID: AiChatSessionID
+        let targetRoute: ContentPageNavigationRoute
+        let durableRecord: ContentTabPinnedRecord
+        let restoredSnapshot: AiChatSessionSnapshot
+        let cachedSessionID: AiChatSessionID?
+        let state: FileManagerFeature.State
+    }
+
+    /// CTM-003-pin_content_tab_s: cache가 없는 inactive AI Chat tab은 재활성화 시 저장 session을 복원함
+    /// runtime fan-out 시 빈 Chat을 로드 완료 상태로 오인하지 않고 persisted session restore intent를 보존하는지 검증한다.
+    /// - 검증 내용: deferred restore cache, 실제 session load, durable record 불변
+    /// - 사전 조건: Home이 active이고 pinned tab의 content cache가 없는 상태
+    /// - 기대 결과: fan-out 직후 복원 대기 상태를 저장하고 활성화 시 persisted snapshot을 적용
+    func testPinnedRuntimeNavigation_restoresMissingInactiveAiChatCacheAfterReactivation() async {
+        await assertDeferredAiChatRestoreFlow(makeMissingInactiveAiChatCacheFixture())
+    }
+
+    /// CTM-003-pin_content_tab_s: target runtime이 없는 inactive AI cache도 재활성화 시 저장 session을 복원함
+    /// 기존 다른 Chat runtime과 background snapshot을 보존하고 활성화 경계에서 target restore로 전환하는지 검증한다.
+    /// - 검증 내용: nonmatching runtime 보존, background snapshot 이후 deferred restore, persisted target 적용
+    /// - 사전 조건: inactive pinned tab cache가 다른 AI session runtime을 보유
+    /// - 기대 결과: cache 단계에서는 기존 runtime을 보존하고 활성화 후 target snapshot으로 교체
+    func testPinnedRuntimeNavigation_restoresNonmatchingInactiveAiChatCacheAfterReactivation() async {
+        let cachedSessionID = AiChatSessionID(rawValue: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 7)))
+        await assertDeferredAiChatRestoreFlow(
+            makeMissingInactiveAiChatCacheFixture(cachedSessionID: cachedSessionID),
+        )
+    }
+
+    /// CTM-003-pin_content_tab_s: target runtime이 이미 있는 inactive AI cache는 그대로 보존함
+    /// 동일 session fan-out과 재활성화가 persistence restore나 draft 초기화를 유발하지 않는지 검증한다.
+    /// - 검증 내용: matching runtime/draft 보존, persistence load 미호출
+    /// - 사전 조건: inactive pinned tab cache가 target AI session runtime을 보유
+    /// - 기대 결과: cached runtime을 그대로 활성화하고 durable record를 유지
+    func testPinnedRuntimeNavigation_preservesMatchingInactiveAiChatCache() async {
+        let targetSessionID = AiChatSessionID(rawValue: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 8)))
+        let fixture = makeMissingInactiveAiChatCacheFixture(cachedSessionID: targetSessionID)
+        let loadedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+        let store = makeMissingInactiveAiChatCacheStore(fixture, loadedSessionIDs: loadedSessionIDs)
+
+        await store.send(.applyPinnedContentTabRuntimeNavigation(
+            tabID: fixture.pinnedTabID,
+            navigationState: fixture.targetRoute,
+        ))
+        await store.send(.contentTabs(.setCurrent(fixture.pinnedTabID)))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertTrue(loadedSessionIDs.value.isEmpty)
+        XCTAssertEqual(store.state.content.aiChat.sessionID, targetSessionID)
+        XCTAssertEqual(store.state.content.aiChat.draftText, "cached runtime draft")
+        XCTAssertEqual(store.state.contentTabs.pinnedRecords[fixture.pinnedTabID], fixture.durableRecord)
+    }
+
+    private func assertDeferredAiChatRestoreFlow(_ fixture: MissingInactiveAiChatCacheFixture) async {
+        let loadedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+        let store = makeMissingInactiveAiChatCacheStore(fixture, loadedSessionIDs: loadedSessionIDs)
+
+        await store.send(.applyPinnedContentTabRuntimeNavigation(
+            tabID: fixture.pinnedTabID,
+            navigationState: fixture.targetRoute,
+        ))
+        await store.skipReceivedActions()
+        assertDeferredAiChatCache(fixture, store: store, loadedSessionIDs: loadedSessionIDs)
+        if let cachedSessionID = fixture.cachedSessionID {
+            await store.send(.backgroundAiChatSnapshotPersisted(
+                makeBackgroundAiChatSnapshot(sessionID: cachedSessionID),
+            ))
+            XCTAssertEqual(
+                store.state.tabContentStates[fixture.pinnedTabID]?.aiChat.deferredChatSessionRestoreID,
+                fixture.sessionID,
+            )
+        }
+
+        await store.send(.contentTabs(.setCurrent(fixture.pinnedTabID)))
+        await store.skipReceivedActions()
+        await store.finish()
+        assertRestoredAiChatCache(fixture, store: store, loadedSessionIDs: loadedSessionIDs)
+    }
+
+    private func makeMissingInactiveAiChatCacheFixture(
+        cachedSessionID: AiChatSessionID? = nil,
+    ) -> MissingInactiveAiChatCacheFixture {
+        let homeTabID = ContentTabID()
+        let pinnedTabID = ContentTabID()
+        let sessionUUID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 8))
+        let sessionID = AiChatSessionID(rawValue: sessionUUID)
+        let durableAnchor = ContentTabPageAnchor.directory(path: "/tmp/pinned-origin")
+        let durableRecord = Self.pinnedRecord(
+            id: pinnedTabID,
+            anchor: durableAnchor,
+            title: "Pinned Origin",
+            iconName: "folder",
+        )
+        let restoredSnapshot = makeRestoredAiChatSnapshot(sessionID: sessionID)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: makeMissingInactiveAiChatTabs(
+                homeTabID: homeTabID,
+                pinnedTabID: pinnedTabID,
+                durableAnchor: durableAnchor,
+                durableRecord: durableRecord,
+            ),
+            activeTabID: homeTabID,
+            recentlyClosed: nil,
+            pinnedRecords: [pinnedTabID: durableRecord],
+        )
+        state.syncActiveTabContentState()
+        let cachedContent = makeCachedAiChatContent(
+            sessionID: cachedSessionID,
+            inheritingWindowContextFrom: state.content,
+        )
+        state.tabContentStates[pinnedTabID] = cachedContent
+        if let cachedSessionID, let cachedContent {
+            state.backgroundAiChatStates[cachedSessionID] = cachedContent
+        }
+        state.syncContentTabSidebarItems()
+        return MissingInactiveAiChatCacheFixture(
+            homeTabID: homeTabID,
+            pinnedTabID: pinnedTabID,
+            sessionID: sessionID,
+            targetRoute: .aiChat(sessionUUID.uuidString),
+            durableRecord: durableRecord,
+            restoredSnapshot: restoredSnapshot,
+            cachedSessionID: cachedSessionID,
+            state: state,
+        )
+    }
+
+    private func makeRestoredAiChatSnapshot(sessionID: AiChatSessionID) -> AiChatSessionSnapshot {
+        AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: "Saved pinned chat",
+            provider: nil,
+            model: nil,
+            updatedAtMs: 608,
+        )
+    }
+
+    private func makeBackgroundAiChatSnapshot(sessionID: AiChatSessionID) -> AiChatSessionSnapshot {
+        AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: "Background cached runtime",
+            provider: nil,
+            model: nil,
+            updatedAtMs: 609,
+        )
+    }
+
+    private func makeCachedAiChatContent(
+        sessionID: AiChatSessionID?,
+        inheritingWindowContextFrom content: FileManagerContentFeature.State,
+    ) -> FileManagerContentFeature.State? {
+        guard let sessionID else { return nil }
+        var cachedContent = FileManagerContentFeature.State.initialContent(
+            for: .aiChat(sessionID: sessionID.rawValue.uuidString),
+            inheritingWindowContextFrom: content,
+        )
+        cachedContent.aiChat.sessionID = sessionID
+        cachedContent.aiChat.mode = .chat
+        cachedContent.aiChat.draftText = "cached runtime draft"
+        return cachedContent
+    }
+
+    private func makeMissingInactiveAiChatTabs(
+        homeTabID: ContentTabID,
+        pinnedTabID: ContentTabID,
+        durableAnchor: ContentTabPageAnchor,
+        durableRecord: ContentTabPinnedRecord,
+    ) -> IdentifiedArrayOf<ContentTabItem> {
+        [
+            ContentTabItem(
+                id: pinnedTabID,
+                page: .directory,
+                anchor: durableAnchor,
+                isPinned: true,
+                title: durableRecord.title,
+                iconName: durableRecord.iconName,
+            ),
+            ContentTabItem(
+                id: homeTabID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            ),
+        ]
+    }
+
+    private func makeMissingInactiveAiChatCacheStore(
+        _ fixture: MissingInactiveAiChatCacheFixture,
+        loadedSessionIDs: LockIsolated<[AiChatSessionID]>,
+    ) -> TestStore<FileManagerFeature.State, FileManagerWindowAction> {
+        let restoredSnapshot = fixture.restoredSnapshot
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient.loadSession = { requestedSessionID in
+                loadedSessionIDs.withValue { $0.append(requestedSessionID) }
+                return restoredSnapshot
+            }
+            $0.aiConnectionsFileClient.load = { .empty() }
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in
+                XCTFail("runtime fan-out은 durable pin을 갱신하지 않아야 함")
+            }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in
+                XCTFail("runtime fan-out은 durable pin을 저장하지 않아야 함")
+            }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 608))
+        }
+        // store.exhaustivity = .off: window tab handoff와 AI restore 내부 action보다 최종 cache/restore 계약을 검증함
+        store.exhaustivity = .off
+        return store
+    }
+
+    private func assertDeferredAiChatCache(
+        _ fixture: MissingInactiveAiChatCacheFixture,
+        store: TestStore<FileManagerFeature.State, FileManagerWindowAction>,
+        loadedSessionIDs: LockIsolated<[AiChatSessionID]>,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        let cachedState = store.state.tabContentStates[fixture.pinnedTabID]
+        XCTAssertEqual(store.state.contentTabs.activeTabID, fixture.homeTabID, file: file, line: line)
+        XCTAssertEqual(cachedState?.navigation.navigationState, fixture.targetRoute, file: file, line: line)
+        XCTAssertEqual(cachedState?.aiChat.sessionID, fixture.cachedSessionID, file: file, line: line)
+        XCTAssertNil(cachedState?.aiChat.restoreSessionID, file: file, line: line)
+        XCTAssertEqual(cachedState?.aiChat.deferredChatSessionRestoreID, fixture.sessionID, file: file, line: line)
+        XCTAssertEqual(cachedState?.aiChat.sessionList.selectedSessionID, fixture.sessionID, file: file, line: line)
+        XCTAssertEqual(cachedState?.aiChat.mode, .sessions, file: file, line: line)
+        if fixture.cachedSessionID != nil {
+            XCTAssertEqual(cachedState?.aiChat.draftText, "cached runtime draft", file: file, line: line)
+        }
+        XCTAssertEqual(
+            store.state.contentTabs.pinnedRecords[fixture.pinnedTabID],
+            fixture.durableRecord,
+            file: file,
+            line: line,
+        )
+        XCTAssertTrue(loadedSessionIDs.value.isEmpty, file: file, line: line)
+    }
+
+    private func assertRestoredAiChatCache(
+        _ fixture: MissingInactiveAiChatCacheFixture,
+        store: TestStore<FileManagerFeature.State, FileManagerWindowAction>,
+        loadedSessionIDs: LockIsolated<[AiChatSessionID]>,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertEqual(loadedSessionIDs.value, [fixture.sessionID], file: file, line: line)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, fixture.pinnedTabID, file: file, line: line)
+        XCTAssertEqual(store.state.content.navigation.navigationState, fixture.targetRoute, file: file, line: line)
+        XCTAssertEqual(store.state.content.aiChat.sessionID, fixture.sessionID, file: file, line: line)
+        XCTAssertNil(store.state.content.aiChat.deferredChatSessionRestoreID, file: file, line: line)
+        XCTAssertEqual(
+            store.state.content.aiChat.sessionList.selectedSessionID,
+            fixture.sessionID,
+            file: file,
+            line: line,
+        )
+        XCTAssertEqual(store.state.content.aiChat.mode, .chat, file: file, line: line)
+        XCTAssertEqual(
+            store.state.content.aiChat.currentSessionCustomTitle,
+            fixture.restoredSnapshot.customTitle,
+            file: file,
+            line: line,
+        )
+        XCTAssertEqual(
+            store.state.contentTabs.pinnedRecords[fixture.pinnedTabID],
+            fixture.durableRecord,
+            file: file,
+            line: line,
+        )
     }
 
     /// CTM-003-pin_content_tab_s: clean pinned Collection은 non-Collection peer route 적용 전에 Collection 상태를 종료함

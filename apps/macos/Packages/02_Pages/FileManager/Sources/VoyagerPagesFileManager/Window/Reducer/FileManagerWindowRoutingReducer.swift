@@ -129,7 +129,9 @@ struct FileManagerWindowRoutingReducer {
             switch navigationState {
             case let .aiChat(sessionID):
                 let aiChatSessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
-                _ = contentState.aiChat.prepareChatPresentation(for: aiChatSessionID)
+                if !contentState.aiChat.prepareChatPresentation(for: aiChatSessionID) {
+                    contentState.aiChat.prepareDeferredChatSessionRestore(for: aiChatSessionID)
+                }
             case let .aiChatSessions(sessionID):
                 let aiChatSessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
                 _ = contentState.aiChat.prepareSessionsPresentation(for: aiChatSessionID)
