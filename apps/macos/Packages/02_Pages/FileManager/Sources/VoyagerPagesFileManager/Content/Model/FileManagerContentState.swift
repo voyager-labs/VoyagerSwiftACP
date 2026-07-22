@@ -67,9 +67,13 @@ public struct FileManagerContentState: Equatable {
         openedCollectionURL != nil
     }
 
+    var hasUnsavedCollectionChanges: Bool {
+        collection.canSave(isCollectionMode: isCollectionMode)
+    }
+
     public var canSaveCollection: Bool {
         !entryViewLayout.isCollectionContentLoading
-            && collection.canSave(isCollectionMode: isCollectionMode)
+            && hasUnsavedCollectionChanges
     }
 
     var isOpenedCollectionDirty: Bool {

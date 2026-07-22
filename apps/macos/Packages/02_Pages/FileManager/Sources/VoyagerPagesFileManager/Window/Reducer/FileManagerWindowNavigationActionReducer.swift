@@ -260,7 +260,7 @@ struct FileManagerNavigationActionReducer {
     }
 
     private func shouldPromptForUnsavedNavigation(_ state: FileManagerContentState) -> Bool {
-        state.isCollectionMode && state.canSaveCollection
+        state.isCollectionMode && state.hasUnsavedCollectionChanges
     }
 }
 

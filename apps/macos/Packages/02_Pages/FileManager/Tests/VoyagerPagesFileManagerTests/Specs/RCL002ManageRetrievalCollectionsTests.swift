@@ -758,6 +758,29 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         await store.finish()
     }
 
+    /// RCL-002-alert_unsaved_collection_filter_changes: Collection open loading 중에도 dirty navigation 보호 유지
+    /// Save UI가 비활성화된 loading 상태와 미저장 변경 보호 판정이 분리되는지 검증한다.
+    /// - 검증 내용: loading 중 goBack 요청이 unsaved alert로 라우팅됨
+    /// - 사전 조건: dirty Collection이며 다른 Collection open loading이 진행 중
+    /// - 기대 결과: Save eligibility는 false지만 back navigation은 alert를 거침
+    func testAlertUnsavedCollectionFilterChanges_whileLoading_routesToUnsavedAlert() async {
+        var state = makeDirtyWindowState()
+        state.content.entryViewLayout.isCollectionContentLoading = true
+        let store = TestStore(initialState: state) {
+            FileManagerNavigationActionReducer()
+        } withDependencies: {
+            $0.collectionAlertClient = .testValue
+        }
+
+        XCTAssertFalse(store.state.content.canSaveCollection)
+        XCTAssertTrue(store.state.content.hasUnsavedCollectionChanges)
+
+        await store.send(.navigation(.view(.goBack)))
+        await store.receive(\.navigation.internal.showUnsavedNavigationAlert)
+        await store.receive(\.navigation.internal.unsavedNavigationAlertResponse)
+        await store.finish()
+    }
+
     private func makeSnapshotFile() -> VoyagerCollectionFile {
         let base = VoyagerCollectionFile(
             id: "rcl-filemanager-snapshot",
