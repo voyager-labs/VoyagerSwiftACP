@@ -12,7 +12,7 @@ public struct EnvironmentLoader {
 
     nonisolated private static let projectRootKey = "VOYAGER_PROJECT_ROOT"
 
-    public enum AppEnv: String {
+    public enum AppEnv: String, Sendable {
         case dev
         case prod
 
@@ -141,5 +141,15 @@ public extension Dotenv {
             return nil
         }
         return EnvironmentLoader.AppEnv(rawValue: value)
+    }
+}
+
+public extension EnvironmentLoader {
+    /// VOY-580: 앱 bootstrap 시점에 APP_ENV가 설정되었는지 검증한다.
+    /// 설정되지 않았으면 fatalError로 crash하여 fail-closed로 동작한다.
+    nonisolated static func requireAppEnv() {
+        guard Dotenv.appEnv != nil else {
+            fatalError("APP_ENV missing - cannot resolve token storage namespace")
+        }
     }
 }

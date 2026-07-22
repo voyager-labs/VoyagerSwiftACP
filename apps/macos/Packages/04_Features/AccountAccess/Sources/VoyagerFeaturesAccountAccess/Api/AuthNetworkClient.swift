@@ -71,23 +71,24 @@ public struct AuthNetworkClient: Sendable {
 
 public extension AuthNetworkClient {
     static func live() -> Self {
-        AuthNetworkClient(
+        let appEnv = EnvironmentLoader.detectAppEnv()
+        return AuthNetworkClient(
             exchangeHandoff: { ticket, state, context in
-                try await exchangeHandoffLive(ticket: ticket, state: state, context: context)
+                try await exchangeHandoffLive(ticket: ticket, state: state, context: context, appEnv: appEnv)
             },
             fetchAccessStatus: {
-                try await fetchAccessStatusLive()
+                try await fetchAccessStatusLive(appEnv: appEnv)
             },
             bindDevice: { request in
-                try await bindDeviceLive(request)
+                try await bindDeviceLive(request, appEnv: appEnv)
             },
             refreshToken: {
-                let store = AccountTokenFileStore.withDefaultHome()
+                let store = AccountTokenFileStore.withDefaultHome(appEnv: appEnv)
                 let refreshed = try await refreshTokenLive(store: store)
                 return refreshed.session
             },
             syncSessionWithRequestID: { intent, device, requestID in
-                try await syncSessionLive(intent: intent, device: device, requestID: requestID)
+                try await syncSessionLive(intent: intent, device: device, requestID: requestID, appEnv: appEnv)
             },
         )
     }
@@ -98,6 +99,7 @@ public extension AuthNetworkClient {
         ticket: String,
         state: String,
         context: AppHandoffContext,
+        appEnv _: EnvironmentLoader.AppEnv,
     ) async throws -> AccountSession {
         // extracted from AppHandoffExchangeClient.swift:21-67
         guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL"),
@@ -153,8 +155,8 @@ public extension AuthNetworkClient {
         return try throwMappedExchangeError(errorCode)
     }
 
-    private static func fetchAccessStatusLive() async throws -> AccessStatusResponse {
-        let store = AccountTokenFileStore.withDefaultHome()
+    private static func fetchAccessStatusLive(appEnv: EnvironmentLoader.AppEnv) async throws -> AccessStatusResponse {
+        let store = AccountTokenFileStore.withDefaultHome(appEnv: appEnv)
         let file = try await store.read()
         guard let file else { throw AccessError.notConfigured }
         guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL"),
@@ -184,8 +186,10 @@ public extension AuthNetworkClient {
         return try decodeAccessStatusResponse(data)
     }
 
-    private static func bindDeviceLive(_ bindingRequest: DeviceBindingRequest) async throws -> DeviceBindingResponse {
-        let store = AccountTokenFileStore.withDefaultHome()
+    private static func bindDeviceLive(_ bindingRequest: DeviceBindingRequest,
+                                       appEnv: EnvironmentLoader.AppEnv) async throws -> DeviceBindingResponse
+    {
+        let store = AccountTokenFileStore.withDefaultHome(appEnv: appEnv)
         let file = try await store.read()
         guard let file else { throw DeviceBindingError.notConfigured }
         guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL"),
@@ -279,8 +283,9 @@ public extension AuthNetworkClient {
         intent: SessionSyncIntent,
         device: DeviceBindingRequest,
         requestID: String,
+        appEnv: EnvironmentLoader.AppEnv,
     ) async throws -> SessionSyncResult {
-        let store = AccountTokenFileStore.withDefaultHome()
+        let store = AccountTokenFileStore.withDefaultHome(appEnv: appEnv)
         let file: AccountTokensFile
         do {
             guard let storedFile = try await store.read() else { throw SessionSyncError.storageFailure }
@@ -331,7 +336,7 @@ public extension AuthNetworkClient {
         }
 
         guard let syncError = sessionSyncError(for: httpResponse.statusCode) else {
-            return try await legacySessionSync(intent: intent, device: device, store: store)
+            return try await legacySessionSync(intent: intent, device: device, store: store, appEnv: appEnv)
         }
         throw syncError
     }
@@ -391,6 +396,7 @@ public extension AuthNetworkClient {
         intent: SessionSyncIntent,
         device: DeviceBindingRequest,
         store: AccountTokenFileStore,
+        appEnv: EnvironmentLoader.AppEnv,
     ) async throws -> SessionSyncResult {
         let refreshedSession: AccountSession? = if intent == .refresh {
             try await refreshLegacySession(store: store)
@@ -400,7 +406,7 @@ public extension AuthNetworkClient {
 
         let access: AccessStatusResponse
         do {
-            access = try await fetchAccessStatusLive()
+            access = try await fetchAccessStatusLive(appEnv: appEnv)
         } catch let error where isCancellationError(error) {
             throw CancellationError()
         } catch {
@@ -408,7 +414,7 @@ public extension AuthNetworkClient {
         }
 
         let outcome: SessionSyncDeviceBindingOutcome = if access.toAccessStatus().isActive {
-            try await legacyDeviceBindingOutcome(for: device)
+            try await legacyDeviceBindingOutcome(for: device, appEnv: appEnv)
         } else {
             .notAttempted
         }
@@ -492,9 +498,10 @@ public extension AuthNetworkClient {
 
     private static func legacyDeviceBindingOutcome(
         for device: DeviceBindingRequest,
+        appEnv: EnvironmentLoader.AppEnv,
     ) async throws -> SessionSyncDeviceBindingOutcome {
         do {
-            _ = try await bindDeviceLive(device)
+            _ = try await bindDeviceLive(device, appEnv: appEnv)
             return .bound
         } catch is CancellationError {
             throw CancellationError()
