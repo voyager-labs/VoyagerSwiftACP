@@ -121,9 +121,8 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertTrue(store.state.inspector.aiChat.transcriptHistory.isEmpty)
     }
 
-    func testNewChatFromRestoredInspectorChatPreparesDifferentTransientSession() async {
+    func testNewChatFromRestoredInspectorChatClosesDisplayedNewChat() async {
         let restoredSessionID = makeSessionID("00000000-0000-0000-0000-000000000065")
-        let preparedSessionID = makeSessionID("00000000-0000-0000-0000-000000000066")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         initialState.inspector.inspectorVisible = true
         initialState.inspector.inspectorPaneExists = true
@@ -135,22 +134,22 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
 
         let store = makeStore(
             initialState: initialState,
-            uuid: preparedSessionID.rawValue,
+            uuid: makeUUID("00000000-0000-0000-0000-000000000066"),
             connectionsFile: .empty(),
         )
 
         await store.send(.request(.newChat))
-        await store.receive(\.inspector.aiChat.prepareUnpersistedNewChatWithContext)
+        await store.receive(\.inspector.closeChat) {
+            $0.inspector.inspectorVisible = false
+        }
 
-        XCTAssertEqual(store.state.inspector.aiChat.sessionID, preparedSessionID)
-        XCTAssertEqual(store.state.inspector.aiChat.preparedTransientSessionID, preparedSessionID)
-        XCTAssertTrue(store.state.inspector.aiChat.isUntouchedPreparedTransientNewChat)
-        XCTAssertTrue(store.state.inspector.aiChat.transcriptHistory.isEmpty)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, restoredSessionID)
+        XCTAssertFalse(store.state.inspector.aiChat.isUntouchedPreparedTransientNewChat)
+        XCTAssertEqual(store.state.inspector.aiChat.transcriptHistory.count, 1)
     }
 
-    func testNewChatFromPersistedEmptyInspectorChatPreparesDifferentTransientSession() async {
+    func testNewChatFromPersistedEmptyInspectorChatClosesDisplayedNewChat() async {
         let persistedSessionID = makeSessionID("00000000-0000-0000-0000-000000000067")
-        let preparedSessionID = makeSessionID("00000000-0000-0000-0000-000000000068")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         initialState.inspector.inspectorVisible = true
         initialState.inspector.inspectorPaneExists = true
@@ -161,17 +160,17 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
 
         let store = makeStore(
             initialState: initialState,
-            uuid: preparedSessionID.rawValue,
+            uuid: makeUUID("00000000-0000-0000-0000-000000000068"),
             connectionsFile: .empty(),
         )
 
         await store.send(.request(.newChat))
-        await store.receive(\.inspector.aiChat.prepareUnpersistedNewChatWithContext)
+        await store.receive(\.inspector.closeChat) {
+            $0.inspector.inspectorVisible = false
+        }
 
-        XCTAssertEqual(store.state.inspector.aiChat.sessionID, preparedSessionID)
-        XCTAssertNotEqual(store.state.inspector.aiChat.sessionID, persistedSessionID)
-        XCTAssertEqual(store.state.inspector.aiChat.preparedTransientSessionID, preparedSessionID)
-        XCTAssertTrue(store.state.inspector.aiChat.isUntouchedPreparedTransientNewChat)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, persistedSessionID)
+        XCTAssertFalse(store.state.inspector.aiChat.isUntouchedPreparedTransientNewChat)
     }
 
     func testInspectorTransientNewChatDoesNotCancelContentNewChatPersistence() async throws {
@@ -204,38 +203,24 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertEqual(store.state.content.aiChat.emptyDraftSessionID, contentSessionID)
     }
 
-    func testOpenInspectorCommandsKeepMatchingDestinationOpen() async {
-        let previousState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
-        let staleContext = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: previousState.content)
-        var newChatState = FileManagerFeature.State.makeInitial(path: "/Users/test/Downloads")
-        let expectedContext = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: newChatState.content)
+    func testOpenInspectorCommandsCloseMatchingDestination() async {
+        var newChatState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         newChatState.inspector.inspectorVisible = true
         newChatState.inspector.inspectorPaneExists = true
         newChatState.inspector.activeMode = .chat
-        newChatState.inspector.aiChat.currentContext = staleContext
+        newChatState.inspector.aiChat.mode = .chat
 
         let newChatStore = makeStore(
             initialState: newChatState,
             uuid: makeUUID("00000000-0000-0000-0000-000000000063"),
             connectionsFile: .empty(),
         )
-        // store.exhaustivity = .off: 동일 목적지 command가 상태를 유지하는 계약만 선별 검증한다.
-        newChatStore.exhaustivity = .off
-
-        await newChatStore.send(.inspector(.aiChat(.prepareUnpersistedNewChat)))
-        let preparedSessionID = newChatStore.state.inspector.aiChat.sessionID
-        XCTAssertTrue(newChatStore.state.inspector.aiChat.isUntouchedPreparedTransientNewChat)
 
         await newChatStore.send(.request(.newChat))
-        await newChatStore.receive { action in
-            guard case let .inspector(.aiChat(.currentContextChanged(snapshot))) = action else { return false }
-            return snapshot == expectedContext
+        await newChatStore.receive(\.inspector.closeChat) {
+            $0.inspector.inspectorVisible = false
         }
-        XCTAssertTrue(newChatStore.state.inspector.inspectorVisible)
         XCTAssertEqual(newChatStore.state.inspector.aiChat.mode, .chat)
-        XCTAssertEqual(newChatStore.state.inspector.aiChat.sessionID, preparedSessionID)
-        XCTAssertEqual(newChatStore.state.inspector.aiChat.currentContext.summary, "Downloads")
-        XCTAssertTrue(newChatStore.state.inspector.aiChat.isUntouchedPreparedTransientNewChat)
 
         var historyState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         historyState.inspector.inspectorVisible = true
@@ -248,21 +233,35 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
             uuid: makeUUID("00000000-0000-0000-0000-000000000064"),
             connectionsFile: .empty(),
         )
-        // store.exhaustivity = .off: 동일 목적지 command가 상태를 유지하는 계약만 선별 검증한다.
-        historyStore.exhaustivity = .off
 
         await historyStore.send(.request(.showChatHistory))
-        XCTAssertTrue(historyStore.state.inspector.inspectorVisible)
+        await historyStore.receive(\.inspector.closeChat) {
+            $0.inspector.inspectorVisible = false
+        }
         XCTAssertEqual(historyStore.state.inspector.aiChat.mode, .sessions)
+    }
 
-        await historyStore.send(.request(.newChat))
-        await historyStore.receive(\.inspector.aiChat.prepareUnpersistedNewChatWithContext)
+    func testHistoryToNewChatSwitchIgnoresStaleSessionsLifecycle() async {
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.inspector.inspectorVisible = true
+        initialState.inspector.inspectorPaneExists = true
+        initialState.inspector.activeMode = .chat
+        initialState.inspector.aiChat.mode = .sessions
 
-        XCTAssertTrue(historyStore.state.inspector.inspectorVisible)
-        XCTAssertEqual(historyStore.state.inspector.aiChat.mode, .chat)
+        let store = makeStore(
+            initialState: initialState,
+            uuid: makeUUID("00000000-0000-0000-0000-000000000069"),
+            connectionsFile: .empty(),
+        )
 
-        await historyStore.send(.inspector(.aiChat(.sessionsAppeared)))
-        XCTAssertEqual(historyStore.state.inspector.aiChat.mode, .chat)
+        await store.send(.request(.newChat))
+        await store.receive(\.inspector.aiChat.prepareUnpersistedNewChatWithContext)
+
+        XCTAssertTrue(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.aiChat.mode, .chat)
+
+        await store.send(.inspector(.aiChat(.sessionsAppeared)))
+        XCTAssertEqual(store.state.inspector.aiChat.mode, .chat)
     }
 
     func testRepeatedPendingNewChatCommandCancelsInspectorOpen() async throws {
@@ -665,7 +664,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertNil(store.state.inspector.aiChat.sessionID)
     }
 
-    func testToolbarSparklesKeepsMatchingNewChatOpen() async {
+    func testToolbarSparklesOpensAndClosesNewChat() async {
         let fixedUUID = makeUUID("00000000-0000-0000-0000-000000000010")
         let selectedEntry = makeEntry(name: "Draft.md", fullPath: "/Users/test/Documents/Draft.md")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
@@ -702,14 +701,14 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
             $0.inspector.inspectorPaneExists = true
         }
 
-        let preparedSessionID = store.state.inspector.aiChat.sessionID
         await store.send(.content(.view(.newChatTapped)))
         await store.receive(\.content.delegate.newChatRequested)
         await store.receive(\.request.newChat)
+        await store.receive(\.inspector.closeChat) {
+            $0.inspector.inspectorVisible = false
+        }
 
-        XCTAssertTrue(store.state.inspector.inspectorVisible)
         XCTAssertEqual(store.state.inspector.activeMode, .chat)
-        XCTAssertEqual(store.state.inspector.aiChat.sessionID, preparedSessionID)
         XCTAssertTrue(store.state.inspector.aiChat.transcriptHistory.isEmpty)
         XCTAssertTrue(store.state.inspector.aiChat.draftText.isEmpty)
     }

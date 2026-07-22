@@ -110,6 +110,12 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
             store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.sessionID,
             firstSessionID,
         )
+
+        await store.send(.edit(.newChat))
+        await assertWindowManagerRequest(.newChat, on: store, fixture: fixture)
+        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.closeChat)
+
+        XCTAssertEqual(store.state.windows[id: fixture.focusedUUID]?.window.inspector.inspectorVisible, false)
         XCTAssertEqual(savedSessionCount.value, 0)
         await store.finish()
     }
