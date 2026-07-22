@@ -47,14 +47,16 @@ struct MenuCommandsState: Equatable {
     var selectedItemCount: Int
     var isComposerPresented: Bool
     var isContextualAiChatPresented: Bool
+    var isNewChatPresented: Bool
+    var isChatHistoryPresented: Bool
     var canUseAiChatInspector: Bool
 
     var newChatTitle: String {
-        "New Chat"
+        isNewChatPresented ? "Close Chat" : "New Chat"
     }
 
     var chatHistoryTitle: String {
-        "Show Chat History"
+        isChatHistoryPresented ? "Hide Chat History" : "Show Chat History"
     }
 
     init() {
@@ -79,6 +81,8 @@ struct MenuCommandsState: Equatable {
         selectedItemCount = 0
         isComposerPresented = false
         isContextualAiChatPresented = false
+        isNewChatPresented = false
+        isChatHistoryPresented = false
         canUseAiChatInspector = false
     }
 
@@ -115,6 +119,8 @@ struct MenuCommandsState: Equatable {
         selectedItemCount = projection.selectedItemCount
         isComposerPresented = projection.isComposerPresented
         isContextualAiChatPresented = projection.isContextualAiChatPresented
+        isNewChatPresented = projection.isNewChatPresented
+        isChatHistoryPresented = projection.isChatHistoryPresented
         canUseAiChatInspector = projection.canUseAiChatInspector
     }
 }

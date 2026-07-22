@@ -135,6 +135,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         focusedWindow.inspector.inspectorVisible = true
         focusedWindow.inspector.inspectorPaneExists = true
         focusedWindow.inspector.activeMode = .chat
+        focusedWindow.inspector.aiChat.mode = .sessions
 
         var unfocusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Downloads")
         unfocusedWindow.inspector.inspectorVisible = false
@@ -149,12 +150,24 @@ final class MenuCommandsFeatureTests: XCTestCase {
 
         var menuState = MenuCommandsState(state: appState)
         XCTAssertTrue(menuState.isContextualAiChatPresented)
+        XCTAssertFalse(menuState.isNewChatPresented)
+        XCTAssertTrue(menuState.isChatHistoryPresented)
         XCTAssertTrue(menuState.canUseAiChatInspector)
         XCTAssertEqual(menuState.newChatTitle, "New Chat")
-        XCTAssertEqual(menuState.chatHistoryTitle, "Show Chat History")
+        XCTAssertEqual(menuState.chatHistoryTitle, "Hide Chat History")
 
         appState.windowManager.windows[id: focusedID]?.window.inspector.aiChat.mode = .chat
         menuState = MenuCommandsState(state: appState)
+        XCTAssertTrue(menuState.isNewChatPresented)
+        XCTAssertFalse(menuState.isChatHistoryPresented)
+        XCTAssertEqual(menuState.newChatTitle, "Close Chat")
+        XCTAssertEqual(menuState.chatHistoryTitle, "Show Chat History")
+
+        appState.windowManager.windows[id: focusedID]?.window.inspector.inspectorPaneExists = false
+        menuState = MenuCommandsState(state: appState)
+        XCTAssertFalse(menuState.isContextualAiChatPresented)
+        XCTAssertFalse(menuState.isNewChatPresented)
+        XCTAssertFalse(menuState.isChatHistoryPresented)
         XCTAssertEqual(menuState.newChatTitle, "New Chat")
         XCTAssertEqual(menuState.chatHistoryTitle, "Show Chat History")
 
@@ -172,7 +185,10 @@ final class MenuCommandsFeatureTests: XCTestCase {
         XCTAssertTrue(MenuCommandsState(state: appState).canUseAiChatInspector)
 
         appState.windowManager.focusedWindowID = nil
-        XCTAssertFalse(MenuCommandsState(state: appState).canUseAiChatInspector)
+        menuState = MenuCommandsState(state: appState)
+        XCTAssertFalse(menuState.canUseAiChatInspector)
+        XCTAssertEqual(menuState.newChatTitle, "New Chat")
+        XCTAssertEqual(menuState.chatHistoryTitle, "Show Chat History")
     }
 
     /// testCanRestoreLastClosedTabReflectsFocusedWindowRecentlyClosedState 테스트 동작을 검증한다.
