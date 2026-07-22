@@ -733,6 +733,24 @@ extension FMW001FileManagerWindowTests {
         var state = FileManagerWindowState.makeInitial(path: "/Users/test/Documents")
         let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
 
+        XCTAssertFalse(state.menuCommandProjection.isNewChatPresented)
+        XCTAssertFalse(state.menuCommandProjection.isChatHistoryPresented)
+
+        state.inspector.inspectorVisible = true
+        state.inspector.inspectorPaneExists = true
+        state.inspector.activeMode = .chat
+        state.inspector.aiChat.mode = .sessions
+        XCTAssertFalse(state.menuCommandProjection.isNewChatPresented)
+        XCTAssertTrue(state.menuCommandProjection.isChatHistoryPresented)
+
+        state.inspector.aiChat.mode = .chat
+        XCTAssertTrue(state.menuCommandProjection.isNewChatPresented)
+        XCTAssertFalse(state.menuCommandProjection.isChatHistoryPresented)
+
+        state.inspector.inspectorPaneExists = false
+        XCTAssertFalse(state.menuCommandProjection.isNewChatPresented)
+        XCTAssertFalse(state.menuCommandProjection.isChatHistoryPresented)
+
         XCTAssertTrue(state.menuCommandProjection.canUseAiChatInspector)
 
         state.contentTabs.tabs[id: activeTabID]?.anchor = .homeDefault
