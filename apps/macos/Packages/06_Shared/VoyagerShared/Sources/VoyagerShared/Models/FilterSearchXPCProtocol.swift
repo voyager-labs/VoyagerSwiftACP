@@ -10,5 +10,8 @@ public protocol FilterSearchXPCServiceProtocol {
 }
 
 public enum FilterSearchXPCServiceConstants {
-    nonisolated public static let machServiceName = "fm.voyager.Voyager.FilterSearchXPC"
+    nonisolated public static var machServiceName: String {
+        Bundle.main.infoDictionary?["XPC_MACH_SERVICE_NAME"] as? String
+            ?? "fm.voyager.Voyager.FilterSearchXPC" // legacy fallback
+    }
 }
