@@ -86,6 +86,59 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertTrue(store.state.inspector.aiChat.transcriptHistory.isEmpty)
     }
 
+    func testNewChatFromRestoredInspectorChatPreparesDifferentTransientSession() async {
+        let restoredSessionID = makeSessionID("00000000-0000-0000-0000-000000000065")
+        let preparedSessionID = makeSessionID("00000000-0000-0000-0000-000000000066")
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.inspector.inspectorVisible = true
+        initialState.inspector.inspectorPaneExists = true
+        initialState.inspector.activeMode = .chat
+        initialState.inspector.aiChat.mode = .chat
+        initialState.inspector.aiChat.sessionID = restoredSessionID
+        initialState.inspector.aiChat.sessionStatus = .active
+        initialState.inspector.aiChat.transcriptHistory = [AiChatMessage(role: .user, content: "Persisted question")]
+
+        let store = makeStore(
+            initialState: initialState,
+            uuid: preparedSessionID.rawValue,
+            connectionsFile: .empty(),
+        )
+
+        await store.send(.request(.newChat))
+        await store.receive(\.inspector.aiChat.prepareUnpersistedNewChatWithContext)
+
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, preparedSessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.preparedTransientSessionID, preparedSessionID)
+        XCTAssertTrue(store.state.inspector.aiChat.isUntouchedPreparedTransientNewChat)
+        XCTAssertTrue(store.state.inspector.aiChat.transcriptHistory.isEmpty)
+    }
+
+    func testNewChatFromPersistedEmptyInspectorChatPreparesDifferentTransientSession() async {
+        let persistedSessionID = makeSessionID("00000000-0000-0000-0000-000000000067")
+        let preparedSessionID = makeSessionID("00000000-0000-0000-0000-000000000068")
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.inspector.inspectorVisible = true
+        initialState.inspector.inspectorPaneExists = true
+        initialState.inspector.activeMode = .chat
+        initialState.inspector.aiChat.mode = .chat
+        initialState.inspector.aiChat.sessionID = persistedSessionID
+        initialState.inspector.aiChat.sessionStatus = .idle
+
+        let store = makeStore(
+            initialState: initialState,
+            uuid: preparedSessionID.rawValue,
+            connectionsFile: .empty(),
+        )
+
+        await store.send(.request(.newChat))
+        await store.receive(\.inspector.aiChat.prepareUnpersistedNewChatWithContext)
+
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, preparedSessionID)
+        XCTAssertNotEqual(store.state.inspector.aiChat.sessionID, persistedSessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.preparedTransientSessionID, preparedSessionID)
+        XCTAssertTrue(store.state.inspector.aiChat.isUntouchedPreparedTransientNewChat)
+    }
+
     func testInspectorTransientNewChatDoesNotCancelContentNewChatPersistence() async throws {
         let saveGate = AiChatSaveGate()
         let store = TestStore(
@@ -121,7 +174,6 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         newChatState.inspector.inspectorVisible = true
         newChatState.inspector.inspectorPaneExists = true
         newChatState.inspector.activeMode = .chat
-        newChatState.inspector.aiChat.mode = .chat
 
         let newChatStore = makeStore(
             initialState: newChatState,
@@ -131,9 +183,14 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         // store.exhaustivity = .off: 동일 목적지 command가 상태를 유지하는 계약만 선별 검증한다.
         newChatStore.exhaustivity = .off
 
+        await newChatStore.send(.inspector(.aiChat(.prepareUnpersistedNewChat)))
+        let preparedSessionID = newChatStore.state.inspector.aiChat.sessionID
+        XCTAssertTrue(newChatStore.state.inspector.aiChat.isUntouchedPreparedTransientNewChat)
+
         await newChatStore.send(.request(.newChat))
         XCTAssertTrue(newChatStore.state.inspector.inspectorVisible)
         XCTAssertEqual(newChatStore.state.inspector.aiChat.mode, .chat)
+        XCTAssertEqual(newChatStore.state.inspector.aiChat.sessionID, preparedSessionID)
 
         var historyState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         historyState.inspector.inspectorVisible = true

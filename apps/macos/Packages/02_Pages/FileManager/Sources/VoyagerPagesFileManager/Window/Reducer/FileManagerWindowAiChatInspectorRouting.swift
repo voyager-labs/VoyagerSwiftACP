@@ -78,7 +78,7 @@ extension FileManagerWindowCommandRoutingReducer {
         guard isInspectorChatPresented(state) else { return false }
         switch destination {
         case .newChat:
-            return state.inspector.aiChat.mode == .chat
+            return state.inspector.aiChat.isUntouchedPreparedTransientNewChat
         case .chatHistory:
             return state.inspector.aiChat.mode == .sessions
         }
