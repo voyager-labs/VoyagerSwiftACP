@@ -720,3 +720,36 @@ extension FMW001FileManagerWindowTests {
         XCTAssertFalse(menu.autoenablesItems)
     }
 }
+
+extension FMW001FileManagerWindowTests {
+    // MARK: - VOY-619-ai_chat_command_availability
+
+    /// VOY-619-ai_chat_command_availability: 활성 탭의 Inspector capability를 메뉴 projection에 반영한다.
+    /// 메뉴가 실행 불가능한 Home/AiChat 탭에서 활성 상태로 노출되지 않도록 canonical anchor capability를 검증한다.
+    /// - 검증 내용: Home/AiChat과 Directory/Collection anchor별 canUseAiChatInspector 값
+    /// - 사전 조건: 동일한 active tab의 anchor를 지원·미지원 유형으로 전환
+    /// - 기대 결과: Inspector 지원 anchor에서만 AiChat 메뉴 명령이 활성화됨
+    func testMenuCommandProjectionReflectsActiveTabInspectorCapability() throws {
+        var state = FileManagerWindowState.makeInitial(path: "/Users/test/Documents")
+        let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+
+        XCTAssertTrue(state.menuCommandProjection.canUseAiChatInspector)
+
+        state.contentTabs.tabs[id: activeTabID]?.anchor = .homeDefault
+        XCTAssertFalse(state.menuCommandProjection.canUseAiChatInspector)
+
+        state.contentTabs.tabs[id: activeTabID]?.anchor = .aiChat(sessionID: "projection-test")
+        XCTAssertFalse(state.menuCommandProjection.canUseAiChatInspector)
+
+        state.contentTabs.tabs[id: activeTabID]?.anchor = .directory(path: "/Users/test/Documents")
+        XCTAssertTrue(state.menuCommandProjection.canUseAiChatInspector)
+
+        state.contentTabs.tabs[id: activeTabID]?.anchor = .collectionFile(
+            url: URL(fileURLWithPath: "/Users/test/Test.voycoll"),
+        )
+        XCTAssertTrue(state.menuCommandProjection.canUseAiChatInspector)
+
+        state.contentTabs.tabs[id: activeTabID]?.anchor = .virtualCollection(id: "Favorite")
+        XCTAssertTrue(state.menuCommandProjection.canUseAiChatInspector)
+    }
+}

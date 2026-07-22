@@ -123,11 +123,15 @@ final class MenuCommandsFeatureTests: XCTestCase {
         ))
     }
 
-    func testMenuCommandStateReflectsFocusedWindowContextualAiChatPresentation() {
+    func testMenuCommandStateReflectsFocusedWindowAiChatAvailabilityAndTitles() {
         let focusedID = makeUUID("00000000-0000-0000-0000-000000000041")
         let unfocusedID = makeUUID("00000000-0000-0000-0000-000000000042")
 
         var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        guard let activeTabID = focusedWindow.contentTabs.activeTabID else {
+            XCTFail("Expected focused window to have an active tab")
+            return
+        }
         focusedWindow.inspector.inspectorVisible = true
         focusedWindow.inspector.inspectorPaneExists = true
         focusedWindow.inspector.activeMode = .chat
@@ -145,33 +149,30 @@ final class MenuCommandsFeatureTests: XCTestCase {
 
         var menuState = MenuCommandsState(state: appState)
         XCTAssertTrue(menuState.isContextualAiChatPresented)
-        XCTAssertTrue(menuState.isChatHistoryPresented)
-        XCTAssertFalse(menuState.isNewChatPresented)
+        XCTAssertTrue(menuState.canUseAiChatInspector)
         XCTAssertEqual(menuState.newChatTitle, "New Chat")
-        XCTAssertEqual(menuState.chatHistoryTitle, "Hide Chat History")
-
-        appState.windowManager.windows[id: focusedID]?.window.inspector.aiChat.mode = .chat
-
-        menuState = MenuCommandsState(state: appState)
-        XCTAssertTrue(menuState.isNewChatPresented)
-        XCTAssertFalse(menuState.isChatHistoryPresented)
-        XCTAssertEqual(menuState.newChatTitle, "Close Chat")
         XCTAssertEqual(menuState.chatHistoryTitle, "Show Chat History")
 
-        appState.windowManager.windows[id: focusedID]?.window.inspector.inspectorPaneExists = false
-
+        appState.windowManager.windows[id: focusedID]?.window.inspector.aiChat.mode = .chat
         menuState = MenuCommandsState(state: appState)
-        XCTAssertFalse(menuState.isContextualAiChatPresented)
-        XCTAssertFalse(menuState.isNewChatPresented)
-        XCTAssertFalse(menuState.isChatHistoryPresented)
+        XCTAssertEqual(menuState.newChatTitle, "New Chat")
+        XCTAssertEqual(menuState.chatHistoryTitle, "Show Chat History")
 
-        appState.windowManager.windows[id: focusedID]?.window.inspector.inspectorPaneExists = true
-        appState.windowManager.windows[id: focusedID]?.window.inspector.inspectorVisible = false
+        appState.windowManager.windows[id: focusedID]?.window.contentTabs.tabs[id: activeTabID]?.anchor = .homeDefault
+        XCTAssertFalse(MenuCommandsState(state: appState).canUseAiChatInspector)
 
-        menuState = MenuCommandsState(state: appState)
-        XCTAssertFalse(menuState.isContextualAiChatPresented)
-        XCTAssertFalse(menuState.isNewChatPresented)
-        XCTAssertFalse(menuState.isChatHistoryPresented)
+        appState.windowManager.windows[id: focusedID]?.window.contentTabs.tabs[id: activeTabID]?.anchor = .aiChat(
+            sessionID: "menu-test",
+        )
+        XCTAssertFalse(MenuCommandsState(state: appState).canUseAiChatInspector)
+
+        appState.windowManager.windows[id: focusedID]?.window.contentTabs.tabs[id: activeTabID]?.anchor = .directory(
+            path: "/Users/test/Documents",
+        )
+        XCTAssertTrue(MenuCommandsState(state: appState).canUseAiChatInspector)
+
+        appState.windowManager.focusedWindowID = nil
+        XCTAssertFalse(MenuCommandsState(state: appState).canUseAiChatInspector)
     }
 
     /// testCanRestoreLastClosedTabReflectsFocusedWindowRecentlyClosedState 테스트 동작을 검증한다.
