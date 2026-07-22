@@ -59,13 +59,13 @@ Terminal, Zed, VSCode/Sweetpad task는 `scripts/dev/xcodebuild-branch-product.sh
 mise run macos-launch
 
 # 저장된 진행 상태를 유지한 채 온보딩 강제 표시(Debug 전용, 일회성)
-mise run macos-launch -- --scheme Voyager-Dev --configuration Debug --env VOYAGER_SCHEME_FORCE_ONBOARDING=1
+mise run macos-launch -- --scheme Voyager-Dev --configuration Dev-Debug --env VOYAGER_SCHEME_FORCE_ONBOARDING=1
 
 # 특정 scheme/configuration 빌드 후 실행
-mise run macos-launch -- --scheme SettingsHost-Dev --configuration Debug
+mise run macos-launch -- --scheme SettingsHost-Dev --configuration Dev-Debug
 
 # 빌드만 확인
-mise run macos-launch -- --scheme Voyager-Dev --configuration Debug --no-launch
+mise run macos-launch -- --scheme Voyager-Dev --configuration Dev-Debug --no-launch
 ```
 
 `Voyager-Dev`가 유일한 개발 실행 scheme입니다. Debug 실행의 `VOYAGER_SCHEME_FORCE_ONBOARDING` launch 환경변수가 `0`이거나 없으면 저장된 진행 상태에 따라 동작하고, 정확히 `1`이면 저장된 진행 상태를 지우지 않은 채 온보딩을 강제로 표시합니다. 이 값은 `.env` 설정이 아니며 Release/Prod에서는 지원하지 않습니다.
