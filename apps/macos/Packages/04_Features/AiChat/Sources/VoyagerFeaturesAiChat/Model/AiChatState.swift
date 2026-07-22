@@ -311,6 +311,15 @@ public struct AiChatState: Equatable, Sendable {
         return match.value
     }
 
+    /// inactive cache에서 loaded runtime과 History route intent를 분리한다.
+    public mutating func prepareInactiveSessionsPresentation(for sessionID: AiChatSessionID) {
+        if self.sessionID == sessionID {
+            _ = prepareSessionsPresentation(for: sessionID)
+        } else {
+            prepareDeferredChatSessionRestore(for: sessionID)
+        }
+    }
+
     public mutating func prepareSessionsPresentation(for sessionID: AiChatSessionID) -> Bool {
         deferredChatSessionRestoreID = nil
         sessionList.cancelRenaming()
