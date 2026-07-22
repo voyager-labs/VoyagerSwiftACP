@@ -114,6 +114,7 @@ extension AiChatFeature {
     }
 
     func apply(setup: AiChatSetupState, to state: inout State) {
+        state.invalidatePreparedTransientSession()
         let targetSessionID = setup.sessionID ?? setup.restoreSessionID
         movePendingRequestStartToBackgroundIfNeeded(
             state: &state,
@@ -128,7 +129,7 @@ extension AiChatFeature {
         clearSetupRuntimeState(&state)
     }
 
-    private func movePendingRequestStartToBackgroundIfNeeded(
+    func movePendingRequestStartToBackgroundIfNeeded(
         state: inout State,
         targetSessionID: AiChatSessionID?,
     ) {
@@ -211,6 +212,7 @@ extension AiChatFeature {
     }
 
     func applyRestoredSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
+        state.invalidatePreparedTransientSession()
         let preservedExecutionPhase = promotedNavigationExecutionPhase(for: snapshot.sessionID, state: &state)
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .active
@@ -259,6 +261,7 @@ extension AiChatFeature {
     }
 
     func applyNewSessionSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
+        state.invalidatePreparedTransientSession()
         let preservedExecutionPhase = promotedNavigationExecutionPhase(for: snapshot.sessionID, state: &state)
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .idle

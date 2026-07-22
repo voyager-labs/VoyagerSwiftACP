@@ -334,26 +334,18 @@ public struct AiChatFeature {
                 return .none
 
             case let .selectedModelChanged(handle):
-                let resolvedHandle = state.normalizedSelectionHandle(handle)
-                guard state.selectedModelHandle != resolvedHandle else { return .none }
-                state.selectedModelHandle = resolvedHandle
-                state.unavailableSelectedModelHandle = nil
-                normalizeSelectionIfNeeded(&state)
-                clearRetryBlockingFailureIfNeeded(&state)
-                return .none
+                return handleSelectedModelChanged(handle, state: &state)
 
             case let .selectedThinkingChanged(selectedThinking):
-                guard state.selectedThinking != selectedThinking else { return .none }
-                state.selectedThinking = selectedThinking
-                normalizeSelectionIfNeeded(&state)
-                clearRetryBlockingFailureIfNeeded(&state)
-                return .none
+                return handleSelectedThinkingChanged(selectedThinking, state: &state)
 
             case let .currentContextChanged(snapshot):
                 applyCurrentContextSnapshot(snapshot, state: &state)
                 return .none
 
             case let .draftTextChanged(text):
+                guard state.draftText != text else { return .none }
+                state.markPreparedTransientSessionAsTouched()
                 state.draftText = text
                 clearRetryBlockingFailureIfNeeded(&state)
                 return .none
@@ -391,10 +383,13 @@ public struct AiChatFeature {
                         return .none
                     }
                     guard state.addedAttachments[index].source == .folder else { return .none }
-                    state.addedAttachments[index] = updateAttachmentFolderStructureMode(
+                    let updatedAttachment = updateAttachmentFolderStructureMode(
                         mode,
                         for: state.addedAttachments[index],
                     )
+                    guard updatedAttachment != state.addedAttachments[index] else { return .none }
+                    state.markPreparedTransientSessionAsTouched()
+                    state.addedAttachments[index] = updatedAttachment
                 }
                 return .none
 

@@ -41,6 +41,7 @@ extension AiChatFeature {
               let preparedRequest = prepareRequest(kind: kind, state: state)
         else { return .none }
 
+        state.invalidatePreparedTransientSession(for: sessionID)
         let pendingRequest = AiChatPendingRequestStart(
             resolutionID: UUID(),
             kind: kind,
@@ -689,6 +690,7 @@ extension AiChatFeature {
     func handleResetTapped(state: inout State) -> Effect<Action> {
         let cancellationEffect = cancelAllInFlightWork(state: &state)
         state.pendingRequestStart = nil
+        state.invalidatePreparedTransientSession()
         state.emptyDraftSessionID = nil
         state.restoreSessionID = nil
         state.restoreOutcome = nil

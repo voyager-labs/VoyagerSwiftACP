@@ -59,9 +59,11 @@ extension AiChatFeature {
         currentContext: AiChatCurrentContextSnapshot?,
         state: inout State,
     ) -> Effect<Action> {
+        movePendingRequestStartToBackgroundIfNeeded(state: &state, targetSessionID: nil)
         let preservedExecutionPhase = state.executionPhase
-        _ = startNewUnselectedChat(state: &state)
+        let snapshot = startNewUnselectedChat(state: &state)
         state.emptyDraftSessionID = nil
+        state.preparedTransientSessionID = snapshot.sessionID
         if let currentContext {
             applyCurrentContextSnapshot(currentContext, state: &state)
         }
@@ -132,6 +134,7 @@ extension AiChatFeature {
         selectedSessionID: AiChatSessionID?,
         state: inout State,
     ) {
+        state.invalidatePreparedTransientSession()
         state.sessionID = sessionID
         state.emptyDraftSessionID = sessionID
         state.sessionStatus = .idle
@@ -469,6 +472,7 @@ extension AiChatFeature {
     }
 
     func applyNewChatCreated(snapshot: AiChatSessionSnapshot, state: inout State) {
+        state.invalidatePreparedTransientSession()
         applyNewSessionSnapshot(snapshot, state: &state)
         state.emptyDraftSessionID = snapshot.sessionID
         state.restoreSessionID = snapshot.sessionID
