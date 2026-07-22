@@ -71,6 +71,17 @@ struct FileManagerWindowRoutingReducer {
         state.syncHomeFavoriteItems()
     }
 
+    private func cancelPendingCollectionOpen(state: inout State) -> Effect<Action> {
+        guard state.pendingCollectionOpenRequest != nil else { return .none }
+        state.pendingCollectionOpenRequest = nil
+        return .concatenate(
+            .cancel(id: OpenCollectionFileCancelID(
+                windowID: state.content.entryViewLayout.entryOperations.windowID,
+            )),
+            .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
+        )
+    }
+
     private func applyPinnedContentTabRuntimeNavigation(
         tabID: ContentTabID,
         navigationState: ContentPageNavigationRoute,
@@ -85,10 +96,11 @@ struct FileManagerWindowRoutingReducer {
         else { return .none }
 
         let isActiveTab = state.contentTabs.activeTabID == tabID
+        let cancelCollectionOpenEffect = isActiveTab ? cancelPendingCollectionOpen(state: &state) : .none
         let currentNavigationState = isActiveTab
             ? state.content.navigation.navigationState
             : state.tabContentStates[tabID]?.navigation.navigationState
-        guard currentNavigationState != navigationState else { return .none }
+        guard currentNavigationState != navigationState else { return cancelCollectionOpenEffect }
 
         guard isActiveTab else {
             var contentState = state.tabContentStates[tabID]
@@ -97,9 +109,15 @@ struct FileManagerWindowRoutingReducer {
                     inheritingWindowContextFrom: state.content,
                 )
             contentState.navigation.navigationState = navigationState
-            if case let .aiChatSessions(sessionID) = navigationState {
+            switch navigationState {
+            case let .aiChat(sessionID):
+                let aiChatSessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
+                _ = contentState.aiChat.prepareChatPresentation(for: aiChatSessionID)
+            case let .aiChatSessions(sessionID):
                 let aiChatSessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
                 _ = contentState.aiChat.prepareSessionsPresentation(for: aiChatSessionID)
+            default:
+                break
             }
             state.tabContentStates[tabID] = contentState
             return tab.anchor == anchor
@@ -108,12 +126,13 @@ struct FileManagerWindowRoutingReducer {
         }
 
         return .concatenate(
+            cancelCollectionOpenEffect,
             syncActiveContentTabEffect(
                 navigationState,
                 state: state,
                 computerName: fileManagerClient.displayName("/"),
             ),
-            .send(.navigation(.internal(.setNavigationState(navigationState)))),
+            .send(.navigation(.internal(.applyPinnedPeerNavigationState(navigationState)))),
             handleNavigateToState(navigationState, state: &state),
         )
     }
@@ -127,6 +146,18 @@ struct FileManagerWindowRoutingReducer {
                     navigationState: navigationState,
                     state: &state,
                 )
+
+            case .navigation(.view(.navigateToPath)),
+                 .navigation(.view(.showRecents)),
+                 .navigation(.view(.showComputer)),
+                 .navigation(.view(.showTag)),
+                 .navigation(.view(.showAiChat)),
+                 .navigation(.view(.showAiChatSessions)),
+                 .navigation(.view(.goBack)),
+                 .navigation(.view(.goForward)),
+                 .navigation(.view(.goToHistoryIndex)),
+                 .navigation(.view(.goToEnclosingDirectory)):
+                return cancelPendingCollectionOpen(state: &state)
 
             case let .reserveExternalContentTabs(reservations):
                 guard let activeReservation = reservations.last,
@@ -209,7 +240,7 @@ struct FileManagerWindowRoutingReducer {
                     handoffCleanupEffect,
                     activeTabHandoffEffect(
                         shouldResyncContentNavigation,
-                        state: state,
+                        state: &state,
                         aiConnectionsFileClient: aiConnectionsFileClient,
                         skipAiChatCancel: true,
                     ),
@@ -256,7 +287,7 @@ struct FileManagerWindowRoutingReducer {
                     handoffCleanupEffect,
                     activeTabHandoffEffect(
                         shouldResyncContentNavigation,
-                        state: state,
+                        state: &state,
                         aiConnectionsFileClient: aiConnectionsFileClient,
                         skipAiChatCancel: true,
                     ),
@@ -324,7 +355,7 @@ struct FileManagerWindowRoutingReducer {
                     handoffCleanupEffect,
                     activeTabHandoffEffect(
                         shouldResyncContentNavigation,
-                        state: state,
+                        state: &state,
                         aiConnectionsFileClient: aiConnectionsFileClient,
                         skipAiChatCancel: true,
                     ),
@@ -373,7 +404,7 @@ struct FileManagerWindowRoutingReducer {
                     handoffCleanupEffect,
                     activeTabHandoffEffect(
                         shouldResyncContentNavigation,
-                        state: state,
+                        state: &state,
                         aiConnectionsFileClient: aiConnectionsFileClient,
                         skipAiChatCancel: true,
                     ),
@@ -393,7 +424,7 @@ struct FileManagerWindowRoutingReducer {
                 return .merge(
                     activeTabHandoffEffect(
                         shouldResyncContentNavigation,
-                        state: state,
+                        state: &state,
                         aiConnectionsFileClient: aiConnectionsFileClient,
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
@@ -422,12 +453,28 @@ struct FileManagerWindowRoutingReducer {
                 state.pendingContentTabClose?.didReceiveWriteBackComposerSync = true
                 return finalizePendingContentTabCloseIfWriteBackEffectsCompleted(state: &state)
 
-            case .navigation(.internal(.setNavigationState)):
-                guard state.pendingContentTabClose != nil else {
-                    return .none
+            case let .navigation(.internal(.setNavigationState(navigationState))):
+                let pendingCloseEffect: Effect<Action>
+                if state.pendingContentTabClose != nil {
+                    state.pendingContentTabClose?.didReceiveWriteBackNavigationState = true
+                    pendingCloseEffect = finalizePendingContentTabCloseIfWriteBackEffectsCompleted(state: &state)
+                } else {
+                    pendingCloseEffect = .none
                 }
-                state.pendingContentTabClose?.didReceiveWriteBackNavigationState = true
-                return finalizePendingContentTabCloseIfWriteBackEffectsCompleted(state: &state)
+
+                let pinnedCollectionFanOutEffect: Effect<Action> = if case let .collection(collectionNavigation) =
+                    navigationState,
+                    case .file = collectionNavigation.kind
+                {
+                    syncPinnedContentTabRuntimeNavigationEffect(
+                        navigationState,
+                        state: state,
+                        computerName: fileManagerClient.displayName("/"),
+                    )
+                } else {
+                    .none
+                }
+                return .merge(pendingCloseEffect, pinnedCollectionFanOutEffect)
 
             case let .content(.aiChat(.deleteSessionTapped(sessionID))),
                  let .inspector(.aiChat(.deleteSessionTapped(sessionID))):
@@ -742,6 +789,7 @@ private func prepareContentForActiveTabHandoff(
     }
     state.entryViewLayout.entryOperations.isLoading = false
     state.entryViewLayout.entryOperations.isReloading = false
+    state.entryViewLayout.isCollectionContentLoading = false
     return aiChatCleanupEffect
 }
 
@@ -786,13 +834,14 @@ private func clearInFlightComposerStateOnTabSwitch(state: inout ComposerFeature.
 
 private func activeTabHandoffEffect(
     _ shouldResyncContentNavigation: Bool,
-    state: FileManagerWindowState,
+    state: inout FileManagerWindowState,
     aiConnectionsFileClient: AIConnectionsFileClient,
     skipAiChatCancel: Bool = false,
 ) -> Effect<FileManagerWindowAction> {
     guard shouldResyncContentNavigation else {
         return .none
     }
+    state.pendingCollectionOpenRequest = nil
     let navigationEffect = resyncContentNavigationEffect(state: state)
     return .concatenate(
         cancelInFlightContentEffectsOnTabSwitch(state: state, skipAiChatCancel: skipAiChatCancel),

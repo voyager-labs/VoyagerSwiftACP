@@ -198,6 +198,7 @@ private struct PinnedCollectionRestoreFixture {
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
             $0.entryLoadingClient.loadItems = { url, _ in loads.withValue { $0.append(url.path) }
                 return []
             }

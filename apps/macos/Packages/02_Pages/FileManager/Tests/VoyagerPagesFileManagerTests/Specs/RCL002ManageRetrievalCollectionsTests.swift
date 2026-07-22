@@ -535,8 +535,15 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             compatibility: makeSnapshotAllowedCompatibility(),
         )
         var initialState = FileManagerWindowState()
+        let collectionURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/snapshot.voycoll")
+        let request = ContentPageCollectionOpenRequest(
+            id: UUID(608),
+            url: collectionURL,
+            sourceRoute: initialState.content.navigation.navigationState,
+        )
+        initialState.pendingCollectionOpenRequest = request
         initialState.content.collection.collectionSession.document = .init(
-            url: URL(fileURLWithPath: "/VoyagerFixtures/Collections/snapshot.voycoll"),
+            url: collectionURL,
             name: "snapshot",
             compatibility: makeSnapshotAllowedCompatibility(),
         )
@@ -551,7 +558,10 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         // 이 suite는 window open effect의 라우팅을 검증하므로 composer/content child 내부 state diff는 제외한다.
         store.exhaustivity = .off
 
-        await store.send(.navigation(.internal(.collectionFileLoaded(.success(loadResult)))))
+        await store.send(.navigation(.internal(.collectionFileLoaded(
+            request: request,
+            result: .success(loadResult),
+        ))))
         await store.receive(\.content.composer.view.setPresented)
         await store.receive(\.content.internal.requestNavigation)
         await store.receive(\.content.internal.applyNavigationState)

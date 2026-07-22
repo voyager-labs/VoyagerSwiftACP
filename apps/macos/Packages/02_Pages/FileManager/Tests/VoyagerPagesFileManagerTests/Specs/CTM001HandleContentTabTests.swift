@@ -1503,6 +1503,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 )
             }
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
             $0.continuousClock = ImmediateClock()
         }
         // 비포괄적: picker/load/open flow가 여러 child action을 방출하므로
@@ -1561,6 +1562,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             $0.collectionFileClient.load = { _ in throw TestError.loadFailed }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
         }
         // 비포괄적: 실패 경로의 alert/rollback child action보다 tab anchor 보존을 검증한다.
         store.exhaustivity = .off
@@ -1614,6 +1616,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             $0.searchClient.search = { _ in throw TestError.searchFailed }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
             $0.continuousClock = ImmediateClock()
         }
         // 비포괄적: 검색 실패 alert/rollback 세부 action보다 tab anchor 보존을 검증한다.
@@ -2010,6 +2013,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 throw TestError.loadFailed
             }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+            $0.uuid = .incrementing
             $0.entryLoadingClient.loadItems = { _, _ in
                 directoryLoads.withValue { $0 += 1 }
                 return []
