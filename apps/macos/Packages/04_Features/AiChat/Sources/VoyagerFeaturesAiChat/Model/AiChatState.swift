@@ -231,6 +231,56 @@ public struct AiChatState: Equatable, Sendable {
     public var availableModelsByProvider: [AiProvider: [AiProviderModel]]
     public var transcriptScrollOffsets: [AiChatSessionID: CGFloat]
 
+    /// 기존 session runtime을 보존한 채 Chat 표시 의미 상태만 준비한다.
+    @discardableResult
+    public mutating func prepareChatPresentation(for sessionID: AiChatSessionID) -> Bool {
+        guard self.sessionID == sessionID else { return false }
+
+        sessionList.cancelRenaming()
+        sessionList.errorMessage = nil
+        if let restoreSessionID, restoreSessionID != sessionID {
+            self.restoreSessionID = nil
+            if sessionList.selectedSessionID == restoreSessionID {
+                sessionList.selectedSessionID = nil
+            }
+        }
+        restoreOutcome = nil
+        restoreFailure = nil
+        if let promotedExecutionPhase = takePromotedNavigationExecutionPhase(for: sessionID) {
+            executionPhase = promotedExecutionPhase
+        }
+        mode = .chat
+        return true
+    }
+
+    mutating func takePromotedNavigationExecutionPhase(
+        for sessionID: AiChatSessionID,
+    ) -> AiChatExecutionPhase? {
+        switch executionPhase {
+        case let .processing(lock) where lock.context.sessionID == sessionID:
+            return .processing(lock)
+        case let .completed(lock) where lock.context.sessionID == sessionID:
+            return .completed(lock)
+        case let .failed(lock, failure) where lock.context.sessionID == sessionID:
+            return .failed(lock, failure)
+        case let .cancelled(lock) where lock.context.sessionID == sessionID:
+            return .cancelled(lock)
+        case let .persistenceRecovery(lock, failure) where lock.context.sessionID == sessionID:
+            return .persistenceRecovery(lock, failure)
+        default:
+            break
+        }
+
+        guard let match = backgroundExecutionPhases
+            .filter({ _, phase in phase.lock?.context.sessionID == sessionID })
+            .max(by: { lhs, rhs in
+                lhs.value.navigationPromotionPriority < rhs.value.navigationPromotionPriority
+            })
+        else { return nil }
+        backgroundExecutionPhases[match.key] = nil
+        return match.value
+    }
+
     public mutating func prepareSessionsPresentation(for sessionID: AiChatSessionID) -> Bool {
         sessionList.cancelRenaming()
         sessionList.errorMessage = nil
