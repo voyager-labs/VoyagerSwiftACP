@@ -147,8 +147,13 @@ public extension Dotenv {
 public extension EnvironmentLoader {
     /// VOY-580: 앱 bootstrap 시점에 APP_ENV가 설정되었는지 검증한다.
     /// 설정되지 않았으면 fatalError로 crash하여 fail-closed로 동작한다.
+    ///
+    /// `detectAppEnv()`가 Info.plist 누락 시 `.dev`를 기본값으로 설정하므로
+    /// `Dotenv.appEnv`가 아닌 raw Info.plist 값을 직접 검증한다.
     nonisolated static func requireAppEnv() {
-        guard Dotenv.appEnv != nil else {
+        guard let rawValue = Bundle.main.infoDictionary?["APP_ENV"] as? String,
+              AppEnv(rawValue: rawValue) != nil
+        else {
             fatalError("APP_ENV missing - cannot resolve token storage namespace")
         }
     }
