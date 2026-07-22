@@ -74,8 +74,12 @@ public struct ContentTabFeature {
 
             case let .pinnedRecordSaveFailed(tabID, previousIsPinned, previousPinnedRecord, previousTabIndex):
                 if let previousTabIndex, let tab = state.tabs[id: tabID] {
+                    let selectedTabIDs = state.selectedTabIDs
+                    let selectionAnchorID = state.selectionAnchorID
                     state.tabs.remove(id: tabID)
                     state.tabs.insert(tab, at: min(previousTabIndex, state.tabs.endIndex))
+                    state.selectedTabIDs = selectedTabIDs
+                    state.selectionAnchorID = selectionAnchorID
                 }
                 state.tabs[id: tabID]?.isPinned = previousIsPinned
                 if let record = previousPinnedRecord {
@@ -499,15 +503,15 @@ extension ContentTabFeature {
         else { return .none }
 
         let previousPinnedRecord = state.pinnedRecords[id]
+        let selectedTabIDs = state.selectedTabIDs
         let selectionAnchorID = state.selectionAnchorID
 
         var unpinnedTab = tab
         unpinnedTab.isPinned = false
         state.tabs.remove(id: id)
         state.tabs.append(unpinnedTab)
-        if selectionAnchorID == id {
-            state.selectionAnchorID = id
-        }
+        state.selectedTabIDs = selectedTabIDs
+        state.selectionAnchorID = selectionAnchorID
         state.pinnedRecords.removeValue(forKey: id)
         state.pendingPinnedRecordIDs.remove(id)
         state.pinnedRecordPersistenceError = nil

@@ -2096,7 +2096,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let anchorID = ContentTabID(rawValue: "unpin-anchor")
         let targetAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/UnpinTarget")
         let pinnedRecord = Self.pinnedRecord(id: targetID, anchor: targetAnchor, title: "Unpin Target")
-        let initialState = Self.selectionPreservationState(
+        var initialState = Self.selectionPreservationState(
             targetID: targetID,
             anchorID: anchorID,
             targetAnchor: targetAnchor,
@@ -2105,6 +2105,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             previousActiveTabID: anchorID,
             pinnedRecord: pinnedRecord,
         )
+        initialState.activeTabID = anchorID
+        initialState.selectedTabIDs = [targetID, anchorID]
+        initialState.selectionAnchorID = targetID
 
         let successStore = TestStore(initialState: initialState) {
             ContentTabFeature()
@@ -2115,10 +2118,13 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         }
         await successStore.send(.unpin(targetID)) {
             Self.expectUnpinnedState(&$0, targetID: targetID)
+            $0.selectedTabIDs.insert(targetID)
+            $0.selectionAnchorID = targetID
         }
         await successStore.receive(\.pinnedRecordSaveSucceeded)
         await successStore.finish()
-        Self.assertSelection(successStore.state, targetID: targetID, anchorID: anchorID)
+        XCTAssertEqual(successStore.state.selectedTabIDs, [targetID, anchorID])
+        XCTAssertEqual(successStore.state.selectionAnchorID, targetID)
 
         let rollbackStore = TestStore(initialState: initialState) {
             ContentTabFeature()
@@ -2127,15 +2133,20 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         }
         await rollbackStore.send(.unpin(targetID)) {
             Self.expectUnpinnedState(&$0, targetID: targetID)
+            $0.selectedTabIDs.insert(targetID)
+            $0.selectionAnchorID = targetID
         }
         await rollbackStore.receive(\.pinnedRecordSaveFailed) {
             $0.tabs.move(fromOffsets: [1], toOffset: 0)
             $0.tabs[id: targetID]?.isPinned = true
             $0.pinnedRecords[targetID] = pinnedRecord
             $0.pinnedRecordPersistenceError = "pinned_record_save_failed"
+            $0.selectedTabIDs.insert(targetID)
+            $0.selectionAnchorID = targetID
         }
         await rollbackStore.finish()
-        Self.assertSelection(rollbackStore.state, targetID: targetID, anchorID: anchorID)
+        XCTAssertEqual(rollbackStore.state.selectedTabIDs, [targetID, anchorID])
+        XCTAssertEqual(rollbackStore.state.selectionAnchorID, targetID)
     }
 
     /// CTM-003-unpin_content_tab_s: persistence 실패 rollback은 원래 pinned 상대 순서를 복원함
