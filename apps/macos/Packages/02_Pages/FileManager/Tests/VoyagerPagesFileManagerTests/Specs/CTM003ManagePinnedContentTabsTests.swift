@@ -1098,7 +1098,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         )
 
         let feature = ContentTabFeature()
-        _ = feature.reduce(into: &state, action: .pinnedRecordSaveSucceeded)
+        _ = feature.reduce(into: &state, action: .pinnedRecordSaveSucceeded(activeID))
         XCTAssertEqual(state.previousActiveTabID, previousID)
         XCTAssertNil(state.pinnedRecordPersistenceError)
 
