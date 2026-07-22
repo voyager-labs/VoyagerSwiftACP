@@ -191,6 +191,7 @@ public typealias AiChatCurrentContextFolderStructureModes = [
 @ObservableState
 public struct AiChatState: Equatable, Sendable {
     public var restoreSessionID: AiChatSessionID?
+    public var deferredChatSessionRestoreID: AiChatSessionID?
     public var restoreOutcome: AiChatSessionRestoreResult?
     public var restoreFailure: AiChatSessionRestoreFailure?
     public var mode: AiChatMode
@@ -236,6 +237,7 @@ public struct AiChatState: Equatable, Sendable {
     public mutating func prepareChatPresentation(for sessionID: AiChatSessionID) -> Bool {
         guard self.sessionID == sessionID else { return false }
 
+        deferredChatSessionRestoreID = nil
         sessionList.cancelRenaming()
         sessionList.errorMessage = nil
         if let restoreSessionID, restoreSessionID != sessionID {
@@ -250,6 +252,34 @@ public struct AiChatState: Equatable, Sendable {
             executionPhase = promotedExecutionPhase
         }
         mode = .chat
+        return true
+    }
+
+    /// inactive cache에서 활성화 시 복원할 persisted Chat session 의도만 준비한다.
+    public mutating func prepareDeferredChatSessionRestore(for sessionID: AiChatSessionID) {
+        sessionList.cancelRenaming()
+        sessionList.errorMessage = nil
+        sessionList.selectedSessionID = sessionID
+        deferredChatSessionRestoreID = sessionID
+        restoreSessionID = nil
+        restoreOutcome = nil
+        restoreFailure = nil
+        mode = .sessions
+    }
+
+    /// 준비된 persisted Chat session 의도를 active restore lifecycle로 승격한다.
+    public mutating func beginDeferredChatSessionRestore(for sessionID: AiChatSessionID) -> Bool {
+        guard self.sessionID != sessionID,
+              restoreSessionID == nil,
+              emptyDraftSessionID != sessionID,
+              deferredChatSessionRestoreID == sessionID
+        else { return false }
+        deferredChatSessionRestoreID = nil
+        restoreSessionID = sessionID
+        sessionList.selectedSessionID = sessionID
+        restoreOutcome = nil
+        restoreFailure = nil
+        mode = .sessions
         return true
     }
 
@@ -282,6 +312,7 @@ public struct AiChatState: Equatable, Sendable {
     }
 
     public mutating func prepareSessionsPresentation(for sessionID: AiChatSessionID) -> Bool {
+        deferredChatSessionRestoreID = nil
         sessionList.cancelRenaming()
         sessionList.errorMessage = nil
         restoreOutcome = nil
@@ -296,6 +327,7 @@ public struct AiChatState: Equatable, Sendable {
 
     public init(
         restoreSessionID: AiChatSessionID? = nil,
+        deferredChatSessionRestoreID: AiChatSessionID? = nil,
         restoreOutcome: AiChatSessionRestoreResult? = nil,
         restoreFailure: AiChatSessionRestoreFailure? = nil,
         mode: AiChatMode = .sessions,
@@ -337,6 +369,7 @@ public struct AiChatState: Equatable, Sendable {
         transcriptScrollOffsets: [AiChatSessionID: CGFloat] = [:],
     ) {
         self.restoreSessionID = restoreSessionID
+        self.deferredChatSessionRestoreID = deferredChatSessionRestoreID
         self.restoreOutcome = restoreOutcome
         self.restoreFailure = restoreFailure
         self.mode = mode

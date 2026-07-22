@@ -81,6 +81,12 @@ extension AiChatFeature {
             return .none
         }
 
+        if state.beginDeferredChatSessionRestore(for: sessionID) {
+            moveVisibleProcessingToBackgroundIfNeeded(state: &state, targetSessionID: sessionID)
+            state.currentContextFolderStructureModes = [:]
+            return restoreSession(sessionID: sessionID, state: state)
+        }
+
         if state.sessionList.allRows.contains(where: { $0.sessionID == sessionID }) {
             if state.sessionID != sessionID {
                 moveVisibleProcessingToBackgroundIfNeeded(state: &state, targetSessionID: sessionID)
