@@ -86,20 +86,10 @@ struct EntryOperationsLifecycleReducer {
                     }
                 }
 
-                // Sound effect
-                switch result {
-                case .success:
-                    if kind.isSoundableSuccessKind {
-                        effects.append(.run { [soundClient] _ in
-                            await soundClient.play(.operationCompleted)
-                        })
-                    }
-                case let .failure(error):
-                    if error != .cancelled {
-                        effects.append(.run { [soundClient] _ in
-                            await soundClient.play(.error)
-                        })
-                    }
+                if case let .failure(error) = result, error != .cancelled {
+                    effects.append(.run { [soundClient] _ in
+                        await soundClient.play(.error)
+                    })
                 }
 
                 return effects.isEmpty ? .none : .merge(effects)
@@ -123,12 +113,18 @@ struct EntryOperationsLifecycleReducer {
                     break
                 }
 
-                if record.operationKind == .moveToTrash {
+                switch record.operationKind {
+                case .moveToTrash:
                     return .run { [soundClient] _ in
                         await soundClient.play(.moveToTrash)
                     }
+                case .pasteFileCopy, .pasteFileMove, .pasteFileDuplicate, .putBack:
+                    return .run { [soundClient] _ in
+                        await soundClient.play(.operationCompleted)
+                    }
+                default:
+                    return .none
                 }
-                return .none
 
             case .lifecycle(.emptyTrashCompleted):
                 state.restorableTrashPaths = []
@@ -139,17 +135,6 @@ struct EntryOperationsLifecycleReducer {
             default:
                 return .none
             }
-        }
-    }
-}
-
-private extension OperationKind {
-    var isSoundableSuccessKind: Bool {
-        switch self {
-        case .pasteFileCopy, .pasteFileMove, .pasteFileDuplicate, .putBack:
-            true
-        default:
-            false
         }
     }
 }
