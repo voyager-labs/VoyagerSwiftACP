@@ -55,7 +55,24 @@ extension AiChatFeature {
         )
     }
 
-    func saveNewChat(_ snapshot: AiChatSessionSnapshot) -> Effect<Action> {
+    func prepareUnpersistedNewChat(
+        currentContext: AiChatCurrentContextSnapshot?,
+        state: inout State,
+    ) -> Effect<Action> {
+        let preservedExecutionPhase = state.executionPhase
+        _ = startNewUnselectedChat(state: &state)
+        state.emptyDraftSessionID = nil
+        if let currentContext {
+            applyCurrentContextSnapshot(currentContext, state: &state)
+        }
+        preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
+        return .cancel(id: CancelID.newChat(ownerID: state.cancellationOwnerID))
+    }
+
+    func saveNewChat(
+        _ snapshot: AiChatSessionSnapshot,
+        ownerID: UUID,
+    ) -> Effect<Action> {
         .run { [aiChatSessionPersistenceClient] send in
             do {
                 let persistedSnapshot = try await aiChatSessionPersistenceClient.saveSession(snapshot)
@@ -66,7 +83,7 @@ extension AiChatFeature {
                 await send(.newChatFailed(Self.newChatFailureMessage(for: error)))
             }
         }
-        .cancellable(id: CancelID.newChat, cancelInFlight: true)
+        .cancellable(id: CancelID.newChat(ownerID: ownerID), cancelInFlight: true)
     }
 
     func routeToChatSession(_ sessionID: AiChatSessionID, state: inout State) -> Effect<Action> {

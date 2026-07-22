@@ -662,7 +662,7 @@ extension AiChatFeature {
             cancelAllRequestLifecycleWork(state: &state),
             .cancel(id: CancelID.restore),
             .cancel(id: CancelID.modelList),
-            .cancel(id: CancelID.newChat),
+            .cancel(id: CancelID.newChat(ownerID: state.cancellationOwnerID)),
             .cancel(id: CancelID.sessionList),
             .cancel(id: CancelID.sessionDelete),
             .cancel(id: CancelID.sessionRename),

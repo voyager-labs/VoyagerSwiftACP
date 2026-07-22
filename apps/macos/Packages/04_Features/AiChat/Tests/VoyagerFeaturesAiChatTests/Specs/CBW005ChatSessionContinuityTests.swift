@@ -149,6 +149,73 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertTrue(deletedSessionIDs.value.isEmpty)
     }
 
+    /// CBW-005-start_chat_conversation_session: fresh context를 적용하는 transient New Chat은 stale draft state를 먼저 비운다.
+    /// 이전 attachment와 folder mode가 새 FileManager context를 필터링하거나 변형하지 않는지 검증합니다.
+    /// - 검증 내용: overlapping item/reference 보존, stale attachment/mode 제거, 기본 folder mode 파생, save/delete 미호출
+    /// - 사전 조건: stale attachment가 fresh item 경로와 겹치고 이전 folder mode가 남아 있다.
+    /// - 기대 결과: fresh context 전체가 새 transient chat에 적용되고 persistence에는 기록이 생기지 않는다.
+    func testPrepareUnpersistedNewChatWithContextClearsStaleDraftStateBeforeApplyingContext() async {
+        let selectedPath = "/tmp/Selected.md"
+        let freshFolderPath = "/tmp/FreshFolder"
+        let staleFolderKey = makeNavigationFolderKey("/tmp/StaleFolder")
+        let freshFolderKey = makeNavigationFolderKey(freshFolderPath)
+        let freshContext = makeContextSnapshot(
+            summary: "Fresh context",
+            references: [AiChatContextReference(
+                kind: .folder,
+                identifier: freshFolderPath,
+                title: "FreshFolder",
+                subtitle: freshFolderPath,
+                metadata: ["path": freshFolderPath],
+            )],
+            items: [AiChatContextItem(
+                kind: .file,
+                identifier: selectedPath,
+                title: "Selected.md",
+                subtitle: selectedPath,
+                metadata: ["path": selectedPath],
+            )],
+            attachments: [],
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let deletedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            currentContextFolderStructureModes: [staleFolderKey: .includeSubfolders],
+            addedAttachments: [makeNavigationAttachment(path: selectedPath)],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
+                },
+                deleteSession: { sessionID in
+                    deletedSessionIDs.withValue { $0.append(sessionID) }
+                },
+            )
+        }
+        // store.exhaustivity = .off: reset된 전체 chat state 대신 context 원자성과 persistence 경계만 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.prepareUnpersistedNewChatWithContext(freshContext))
+
+        XCTAssertEqual(store.state.mode, .chat)
+        XCTAssertTrue(store.state.addedAttachments.isEmpty)
+        XCTAssertEqual(store.state.currentContext.summary, "Fresh context")
+        XCTAssertEqual(store.state.currentContext.items.map(\.identifier), [selectedPath])
+        XCTAssertEqual(store.state.currentContext.references.map(\.identifier), [freshFolderPath])
+        XCTAssertNil(store.state.currentContextFolderStructureModes[staleFolderKey])
+        XCTAssertEqual(store.state.currentContextFolderStructureModes, [freshFolderKey: .currentFolderOnly])
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+        XCTAssertTrue(deletedSessionIDs.value.isEmpty)
+    }
+
     // MARK: - CBW-005-continue_chat_conversation_session
 
     /// CBW-005-continue_chat_conversation_session: Sessions로 돌아가도 active chat data는 유지된다.

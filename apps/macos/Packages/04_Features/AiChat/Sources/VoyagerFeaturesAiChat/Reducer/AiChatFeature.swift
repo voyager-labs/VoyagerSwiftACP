@@ -19,7 +19,7 @@ public struct AiChatFeature {
         case sessionList
         case sessionDelete
         case sessionRename
-        case newChat
+        case newChat(ownerID: UUID)
         case transcriptScrollOffsetPersistence
         case attachmentDrop
     }
@@ -84,14 +84,13 @@ public struct AiChatFeature {
                 let preservedExecutionPhase = state.executionPhase
                 let snapshot = startNewUnselectedChat(state: &state)
                 preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
-                return saveNewChat(snapshot)
+                return saveNewChat(snapshot, ownerID: state.cancellationOwnerID)
 
             case .prepareUnpersistedNewChat:
-                let preservedExecutionPhase = state.executionPhase
-                _ = startNewUnselectedChat(state: &state)
-                state.emptyDraftSessionID = nil
-                preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
-                return .cancel(id: CancelID.newChat)
+                return prepareUnpersistedNewChat(currentContext: nil, state: &state)
+
+            case let .prepareUnpersistedNewChatWithContext(snapshot):
+                return prepareUnpersistedNewChat(currentContext: snapshot, state: &state)
 
             case .showSessionsTapped:
                 state.sessionList.cancelRenaming()
@@ -129,7 +128,7 @@ public struct AiChatFeature {
                     let preservedExecutionPhase = state.executionPhase
                     let snapshot = startNewUnselectedChat(state: &state)
                     preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
-                    return saveNewChat(snapshot)
+                    return saveNewChat(snapshot, ownerID: state.cancellationOwnerID)
                 }
                 state.sessionList.cancelRenaming()
                 state.sessionList.errorMessage = nil
@@ -145,7 +144,7 @@ public struct AiChatFeature {
                 let preservedExecutionPhase = state.executionPhase
                 let snapshot = startNewUnselectedChat(state: &state)
                 preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
-                return saveNewChat(snapshot)
+                return saveNewChat(snapshot, ownerID: state.cancellationOwnerID)
 
             case .rebindContextTapped:
                 state.sessionStatus = .active
@@ -351,19 +350,7 @@ public struct AiChatFeature {
                 return .none
 
             case let .currentContextChanged(snapshot):
-                let currentContext = currentContextSnapshot(
-                    snapshot,
-                    excluding: state.addedAttachments,
-                    applyingFolderStructureModes: state.currentContextFolderStructureModes,
-                )
-                ensureCurrentFolderStructureModeDefaults(
-                    for: currentContext,
-                    in: &state.currentContextFolderStructureModes,
-                )
-                state.currentContext = applyFolderStructureModes(
-                    state.currentContextFolderStructureModes,
-                    to: currentContext,
-                )
+                applyCurrentContextSnapshot(snapshot, state: &state)
                 return .none
 
             case let .draftTextChanged(text):

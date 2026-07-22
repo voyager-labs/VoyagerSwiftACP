@@ -190,6 +190,7 @@ public typealias AiChatCurrentContextFolderStructureModes = [
 
 @ObservableState
 public struct AiChatState: Equatable, Sendable {
+    var cancellationOwnerID = UUID()
     public var restoreSessionID: AiChatSessionID?
     public var restoreOutcome: AiChatSessionRestoreResult?
     public var restoreFailure: AiChatSessionRestoreFailure?
