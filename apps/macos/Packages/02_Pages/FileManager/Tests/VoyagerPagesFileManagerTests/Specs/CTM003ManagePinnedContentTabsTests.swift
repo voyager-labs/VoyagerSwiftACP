@@ -1167,10 +1167,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let loadedSessionIDs = LockIsolated<[AiChatSessionID]>([])
         let store = makeMissingInactiveAiChatCacheStore(fixture, loadedSessionIDs: loadedSessionIDs)
 
-        await store.send(.applyPinnedContentTabRuntimeNavigation(
-            tabID: fixture.pinnedTabID,
-            navigationState: fixture.targetRoute,
-        ))
+        await sendHistoryThenChatRuntimeNavigation(fixture, store: store)
         await store.send(.contentTabs(.setCurrent(fixture.pinnedTabID)))
         await store.skipReceivedActions()
         await store.finish()
@@ -1185,11 +1182,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let loadedSessionIDs = LockIsolated<[AiChatSessionID]>([])
         let store = makeMissingInactiveAiChatCacheStore(fixture, loadedSessionIDs: loadedSessionIDs)
 
-        await store.send(.applyPinnedContentTabRuntimeNavigation(
-            tabID: fixture.pinnedTabID,
-            navigationState: fixture.targetRoute,
-        ))
-        await store.skipReceivedActions()
+        await sendHistoryThenChatRuntimeNavigation(fixture, store: store)
         assertDeferredAiChatCache(fixture, store: store, loadedSessionIDs: loadedSessionIDs)
         if let cachedSessionID = fixture.cachedSessionID {
             await store.send(.backgroundAiChatSnapshotPersisted(
@@ -1205,6 +1198,20 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.skipReceivedActions()
         await store.finish()
         assertRestoredAiChatCache(fixture, store: store, loadedSessionIDs: loadedSessionIDs)
+    }
+
+    private func sendHistoryThenChatRuntimeNavigation(
+        _ fixture: MissingInactiveAiChatCacheFixture,
+        store: TestStore<FileManagerFeature.State, FileManagerWindowAction>,
+    ) async {
+        await store.send(.applyPinnedContentTabRuntimeNavigation(
+            tabID: fixture.pinnedTabID,
+            navigationState: .aiChatSessions(fixture.sessionID.rawValue.uuidString),
+        ))
+        await store.send(.applyPinnedContentTabRuntimeNavigation(
+            tabID: fixture.pinnedTabID,
+            navigationState: fixture.targetRoute,
+        ))
     }
 
     private func makeMissingInactiveAiChatCacheFixture(
