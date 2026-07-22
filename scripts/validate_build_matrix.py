@@ -11,8 +11,10 @@ treated as errors, not gracefully skipped.
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -116,6 +118,51 @@ CI_WORKFLOW = Path(".github/workflows/release-macos-prod.yml")
 VALID_SCHEME_CONFIGS = {DEV_DEBUG, DEV_RELEASE, PROD_DEBUG, PROD_RELEASE}
 
 
+class _PbxObjectWrapper:
+    """Wrapper around a plutil-parsed pbxproj JSON object dict.
+
+    Provides get() and get_id() matching the pbxproj library's API so that
+    existing validation code works without modification.
+    """
+
+    __slots__ = ("_uuid", "_data")
+
+    def __init__(self, uuid: str, data: dict[str, Any]) -> None:
+        self._uuid = uuid
+        self._data = data
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._data.get(key, default)
+
+    def get_id(self) -> str:
+        return self._uuid
+
+
+class _PbxProjectWrapper:
+    """Wrapper around plutil-parsed pbxproj JSON, providing .objects API.
+
+    Uses macOS built-in plutil(1) to convert the OpenStep-format .pbxproj
+    to JSON, then serves the object graph through the same get_objects_in_section()
+    interface that the pbxproj library provided.
+    """
+
+    __slots__ = ("_objects",)
+
+    def __init__(self, data: dict[str, Any]) -> None:
+        self._objects = data.get("objects", {})
+
+    @property
+    def objects(self) -> _PbxProjectWrapper:
+        return self
+
+    def get_objects_in_section(self, isa: str) -> list[_PbxObjectWrapper]:
+        return [
+            _PbxObjectWrapper(uuid, obj)
+            for uuid, obj in self._objects.items()
+            if obj.get("isa") == isa
+        ]
+
+
 class BuildMatrixError(Exception):
     """Raised when a build matrix invariant is violated."""
 
@@ -124,11 +171,15 @@ class BuildMatrixError(Exception):
         super().__init__(message)
 
 
-def _load_pbxproj(path: Path) -> Any:
-    """Load a pbxproj file using the pbxproj package."""
-    from pbxproj import XcodeProject
-
-    return XcodeProject.load(str(path))
+def _load_pbxproj(path: Path) -> _PbxProjectWrapper:
+    """Load a pbxproj file using plutil (macOS built-in)."""
+    result = subprocess.run(
+        ["plutil", "-convert", "json", "-o", "-", str(path)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return _PbxProjectWrapper(json.loads(result.stdout))
 
 
 def _get_config_by_name(configs: list[Any], name: str) -> Any | None:
@@ -144,10 +195,7 @@ def _get_build_setting(cfg: Any, key: str) -> str | None:
     bs = cfg.get("buildSettings", {})
     if bs is None:
         return None
-    if isinstance(bs, dict):
-        return bs.get(key)
-    # PBXGenericObject: access via getattr
-    return getattr(bs, key, None)
+    return bs.get(key)
 
 
 def _target_config_names(config_lists: list[Any], cl_id: str) -> list[str]:
