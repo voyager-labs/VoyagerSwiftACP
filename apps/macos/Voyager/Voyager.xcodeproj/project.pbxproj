@@ -1284,9 +1284,9 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 				VOYAGER_APP_SUFFIX = "-proddebug";
-				VOYAGER_CALLBACK_SCHEME = voyager;
+				VOYAGER_CALLBACK_SCHEME = voyager-proddebug;
 				VOYAGER_RELEASED_AT = "";
-				XPC_MACH_SERVICE_NAME = fm.voyager.Voyager.FilterSearchXPC;
+				XPC_MACH_SERVICE_NAME = fm.voyager.Voyager.FilterSearchXPC.proddebug;
 			};
 			name = "Prod-Debug";
 		};
@@ -1546,7 +1546,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.8.2;
-				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper-proddebug;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
@@ -1716,7 +1716,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.8.2;
-				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.FilterSearchXPC;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.FilterSearchXPC.proddebug;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
@@ -1727,7 +1727,7 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
-				XPC_MACH_SERVICE_NAME = fm.voyager.Voyager.FilterSearchXPC;
+				XPC_MACH_SERVICE_NAME = fm.voyager.Voyager.FilterSearchXPC.proddebug;
 			};
 			name = "Prod-Debug";
 		};

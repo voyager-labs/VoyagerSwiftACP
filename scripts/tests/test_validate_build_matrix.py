@@ -178,7 +178,7 @@ class ValidateVoyagerPbxprojTests(unittest.TestCase):
                     "ENABLE_HARDENED_RUNTIME": "YES",
                     "VOYAGER_APP_SUFFIX": "-proddebug",
                     "SUFeedURL": "",
-                    "XPC_MACH_SERVICE_NAME": "fm.voyager.Voyager.FilterSearchXPC",
+                    "XPC_MACH_SERVICE_NAME": "fm.voyager.Voyager.FilterSearchXPC.proddebug",
                 },
             ),
             _make_cfg(
@@ -222,7 +222,7 @@ class ValidateVoyagerPbxprojTests(unittest.TestCase):
                 PROD_DEBUG,
                 {
                     "APP_ENV": "prod",
-                    "PRODUCT_BUNDLE_IDENTIFIER": "fm.voyager.VoyagerHelper",
+                    "PRODUCT_BUNDLE_IDENTIFIER": "fm.voyager.VoyagerHelper-proddebug",
                     "CODE_SIGN_IDENTITY": "Developer ID Application",
                     "ENABLE_HARDENED_RUNTIME": "YES",
                     "VOYAGER_APP_SUFFIX": "-proddebug",
@@ -279,8 +279,8 @@ class ValidateVoyagerPbxprojTests(unittest.TestCase):
                 PROD_DEBUG,
                 {
                     "APP_ENV": "prod",
-                    "PRODUCT_BUNDLE_IDENTIFIER": "fm.voyager.Voyager.FilterSearchXPC",
-                    "XPC_MACH_SERVICE_NAME": "fm.voyager.Voyager.FilterSearchXPC",
+                    "PRODUCT_BUNDLE_IDENTIFIER": "fm.voyager.Voyager.FilterSearchXPC.proddebug",
+                    "XPC_MACH_SERVICE_NAME": "fm.voyager.Voyager.FilterSearchXPC.proddebug",
                     "CODE_SIGN_IDENTITY": "Developer ID Application",
                     "ENABLE_HARDENED_RUNTIME": "YES",
                 },

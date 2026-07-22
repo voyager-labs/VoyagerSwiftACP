@@ -69,13 +69,13 @@ BUNDLE_ID_MAP: dict[str, dict[str, str]] = {
     "VoyagerHelper": {
         DEV_DEBUG: "fm.voyager.VoyagerHelper.dev",
         DEV_RELEASE: "fm.voyager.VoyagerHelper.dev",
-        PROD_DEBUG: "fm.voyager.VoyagerHelper",
+        PROD_DEBUG: "fm.voyager.VoyagerHelper-proddebug",
         PROD_RELEASE: "fm.voyager.VoyagerHelper",
     },
     "FilterSearchXPC": {
         DEV_DEBUG: "fm.voyager.Voyager.FilterSearchXPC.dev",
         DEV_RELEASE: "fm.voyager.Voyager.FilterSearchXPC.dev",
-        PROD_DEBUG: "fm.voyager.Voyager.FilterSearchXPC",
+        PROD_DEBUG: "fm.voyager.Voyager.FilterSearchXPC.proddebug",
         PROD_RELEASE: "fm.voyager.Voyager.FilterSearchXPC",
     },
 }
@@ -92,7 +92,7 @@ SUFEED_URL_MAP: dict[str, str | None] = {
 XPC_MACH_SERVICE_NAME_MAP: dict[str, str] = {
     DEV_DEBUG: "fm.voyager.Voyager.FilterSearchXPC.dev",
     DEV_RELEASE: "fm.voyager.Voyager.FilterSearchXPC.dev",
-    PROD_DEBUG: "fm.voyager.Voyager.FilterSearchXPC",
+    PROD_DEBUG: "fm.voyager.Voyager.FilterSearchXPC.proddebug",
     PROD_RELEASE: "fm.voyager.Voyager.FilterSearchXPC",
 }
 
