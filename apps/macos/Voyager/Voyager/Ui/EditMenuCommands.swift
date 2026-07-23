@@ -61,6 +61,7 @@ struct EditMenuCommands: Commands {
             Button("Undo") {
                 sendUndoRedoAction(
                     textResponderIsEditing: isTextEditingResponder(),
+                    canHandleByTextResponder: canUndoInTextResponder(),
                     selector: undoSelector,
                     fallback: .requestUndo,
                 )
@@ -71,6 +72,7 @@ struct EditMenuCommands: Commands {
             Button("Redo") {
                 sendUndoRedoAction(
                     textResponderIsEditing: isTextEditingResponder(),
+                    canHandleByTextResponder: canRedoInTextResponder(),
                     selector: redoSelector,
                     fallback: .requestRedo,
                 )
@@ -172,11 +174,12 @@ struct EditMenuCommands: Commands {
 
     static func performUndoRedoAction(
         textResponderIsEditing: Bool,
+        canHandleByTextResponder: Bool,
         isComposerPresented: Bool,
         sendResponderAction: () -> Bool,
         sendFallback: () -> Void,
     ) {
-        if textResponderIsEditing, sendResponderAction() {
+        if textResponderIsEditing, canHandleByTextResponder, sendResponderAction() {
             return
         }
         guard !isComposerPresented else { return }
@@ -217,11 +220,13 @@ struct EditMenuCommands: Commands {
 
     private func sendUndoRedoAction(
         textResponderIsEditing: Bool,
+        canHandleByTextResponder: Bool,
         selector: Selector,
         fallback command: MenuCommandItem.EditCommand,
     ) {
         Self.performUndoRedoAction(
             textResponderIsEditing: textResponderIsEditing,
+            canHandleByTextResponder: canHandleByTextResponder,
             isComposerPresented: viewStore.isComposerPresented,
             sendResponderAction: {
                 NSApp.sendAction(selector, to: nil, from: nil)

@@ -146,6 +146,32 @@ final class MenuCommandsFeatureTests: XCTestCase {
         ))
     }
 
+    /// VOY-165-undo_fallback: history 없는 responder는 AppKit dispatch 전에 FileManager fallback
+    /// selector 수신 가능 여부와 실제 Undo capability를 구분해 no-op responder가 fallback을 가로채지 않는지 검증한다.
+    /// - 검증 내용: responder capability false일 때 dispatch 생략과 fallback 호출 횟수
+    /// - 사전 조건: text responder 편집 중, responder Undo 불가, FileManager Undo 가능, selector dispatch 가능
+    /// - 기대 결과: responder dispatch 0회와 FileManager fallback 1회
+    func testUndoRedoSkipsDispatchForResponderWithoutHistory() {
+        var responderAttemptCount = 0
+        var fallbackCount = 0
+
+        EditMenuCommands.performUndoRedoAction(
+            textResponderIsEditing: true,
+            canHandleByTextResponder: false,
+            isComposerPresented: false,
+            sendResponderAction: {
+                responderAttemptCount += 1
+                return true
+            },
+            sendFallback: {
+                fallbackCount += 1
+            },
+        )
+
+        XCTAssertEqual(responderAttemptCount, 0)
+        XCTAssertEqual(fallbackCount, 1)
+    }
+
     /// VOY-165-undo_fallback: text responder가 Undo를 처리하지 못하면 FileManager fallback 실행
     /// responder 후보 존재와 실제 AppKit dispatch 성공을 구분하는지 검증한다.
     /// - 검증 내용: responder dispatch 실패 후 fallback 호출 횟수
@@ -157,6 +183,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
 
         EditMenuCommands.performUndoRedoAction(
             textResponderIsEditing: true,
+            canHandleByTextResponder: true,
             isComposerPresented: false,
             sendResponderAction: {
                 responderAttemptCount += 1
@@ -182,6 +209,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
 
         EditMenuCommands.performUndoRedoAction(
             textResponderIsEditing: true,
+            canHandleByTextResponder: true,
             isComposerPresented: true,
             sendResponderAction: {
                 responderAttemptCount += 1
