@@ -101,9 +101,13 @@ final class CBW002RequestContextManagementTests: XCTestCase {
     /// - 검증 내용: collectionDocument, folder source와 folderStructureMode metadata를 확인합니다.
     /// - 사전 조건: `.voycoll` collection 파일과 Projects folder를 picker에서 함께 선택합니다.
     /// - 기대 결과: 두 source가 각각 collection/folder attachment draft로 추가됩니다.
-    func testAddAttachmentFromPickerAcceptsCollectionAndFolderSources() async {
+    func testAddAttachmentFromPickerAcceptsCollectionAndFolderSources() async throws {
         let collectionURL = URL(fileURLWithPath: "/tmp/Workspace.voycoll")
-        let folderURL = URL(filePath: "/tmp/Projects", directoryHint: .isDirectory)
+        let sandbox = try makeCBW002TemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+        let projectsURL = sandbox.appendingPathComponent("Projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: projectsURL, withIntermediateDirectories: false)
+        let folderURL = projectsURL
         let store = TestStore(initialState: AiChatFeature.State()) {
             AiChatFeature()
         }

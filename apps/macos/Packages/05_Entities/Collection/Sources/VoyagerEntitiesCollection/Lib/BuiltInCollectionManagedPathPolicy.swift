@@ -112,6 +112,7 @@ enum BuiltInCollectionManagedPathPolicy {
         var trailingComponents: [String] = []
 
         while !fileManagerClient.fileExists(existingAncestorURL.path) {
+            guard existingAncestorURL.path != "/" else { break }
             let parentURL = existingAncestorURL.deletingLastPathComponent()
             guard parentURL.path != existingAncestorURL.path else { break }
             trailingComponents.insert(existingAncestorURL.lastPathComponent, at: 0)

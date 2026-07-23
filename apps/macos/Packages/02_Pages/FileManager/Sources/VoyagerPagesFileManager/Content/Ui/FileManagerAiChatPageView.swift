@@ -138,7 +138,7 @@ struct FileManagerAiChatPageView: View {
                 title: aiChatHistoryTitle(for: sessionID, sessionList: sessionList),
             )
         case .aiChatSessions:
-            return ToolbarHistoryItem(iconSystemName: "clock.arrow.circlepath", title: "Sessions")
+            return ToolbarHistoryItem(iconSystemName: "clock.arrow.circlepath", title: "Chat History")
         case let .collection(navigation):
             let title: String = switch navigation.kind {
             case .temporary:
@@ -185,7 +185,7 @@ private struct AiChatPageHeaderView: View {
                 canGoForward: viewState.canGoForward,
                 canGoToEnclosingDirectory: true,
                 enclosingDirectorySystemName: viewState.mode == .sessions ? "bubble.right" : "clock.arrow.circlepath",
-                enclosingDirectoryHelp: viewState.mode == .sessions ? "Return to chat" : "View chat history",
+                enclosingDirectoryHelp: viewState.mode == .sessions ? "Return to chat" : "Show Chat History",
                 enclosingDirectoryAction: aiChatToggleAction,
             )
 
@@ -238,7 +238,7 @@ private struct AiChatPageHeaderView: View {
     private var headerTitle: String {
         switch viewState.mode {
         case .sessions:
-            "Sessions"
+            "Chat History"
         case .chat:
             chatHeaderTitle
         }

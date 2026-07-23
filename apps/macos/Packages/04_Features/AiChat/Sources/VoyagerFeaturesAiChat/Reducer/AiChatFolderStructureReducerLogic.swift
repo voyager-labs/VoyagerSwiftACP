@@ -3,7 +3,25 @@ import Foundation
 import VoyagerEntitiesAi
 
 extension AiChatFeature {
+    func applyCurrentContextSnapshot(_ snapshot: AiChatCurrentContextSnapshot, state: inout State) {
+        let currentContext = currentContextSnapshot(
+            snapshot,
+            excluding: state.addedAttachments,
+            applyingFolderStructureModes: state.currentContextFolderStructureModes,
+        )
+        ensureCurrentFolderStructureModeDefaults(
+            for: currentContext,
+            in: &state.currentContextFolderStructureModes,
+        )
+        state.currentContext = applyFolderStructureModes(
+            state.currentContextFolderStructureModes,
+            to: currentContext,
+        )
+    }
+
     func updateCurrentContextFolderStructureMode(_ mode: AiChatFolderStructureMode, state: inout State) {
+        let previousModes = state.currentContextFolderStructureModes
+        let previousContext = state.currentContext
         let currentContextKeys = currentContextFolderStructureKeys(for: state.currentContext)
         let targetKeys = mode == .includeSubfolders
             ? pruningFolderStructureKeysCoveredByRecursiveParents(currentContextKeys)
@@ -20,6 +38,9 @@ extension AiChatFeature {
             excluding: state.addedAttachments,
             applyingFolderStructureModes: state.currentContextFolderStructureModes,
         )
+        if state.currentContextFolderStructureModes != previousModes || state.currentContext != previousContext {
+            state.markPreparedTransientSessionAsTouched()
+        }
     }
 
     func removeCurrentContextDuplicates(state: inout State) {

@@ -77,6 +77,8 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Voyager uses Finder automation to reveal selected items in Finder.</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

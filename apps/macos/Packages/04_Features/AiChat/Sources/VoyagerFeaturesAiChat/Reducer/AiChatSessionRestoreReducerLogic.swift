@@ -114,6 +114,7 @@ extension AiChatFeature {
     }
 
     func apply(setup: AiChatSetupState, to state: inout State) {
+        state.invalidatePreparedTransientSession()
         let targetSessionID = setup.sessionID ?? setup.restoreSessionID
         movePendingRequestStartToBackgroundIfNeeded(
             state: &state,
@@ -128,7 +129,7 @@ extension AiChatFeature {
         clearSetupRuntimeState(&state)
     }
 
-    private func movePendingRequestStartToBackgroundIfNeeded(
+    func movePendingRequestStartToBackgroundIfNeeded(
         state: inout State,
         targetSessionID: AiChatSessionID?,
     ) {
@@ -211,6 +212,7 @@ extension AiChatFeature {
     }
 
     func applyRestoredSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
+        state.invalidatePreparedTransientSession()
         let preservedExecutionPhase = promotedNavigationExecutionPhase(for: snapshot.sessionID, state: &state)
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .active
@@ -233,32 +235,11 @@ extension AiChatFeature {
         for sessionID: AiChatSessionID,
         state: inout State,
     ) -> AiChatExecutionPhase? {
-        switch state.executionPhase {
-        case let .processing(lock) where lock.context.sessionID == sessionID:
-            return .processing(lock)
-        case let .completed(lock) where lock.context.sessionID == sessionID:
-            return .completed(lock)
-        case let .failed(lock, failure) where lock.context.sessionID == sessionID:
-            return .failed(lock, failure)
-        case let .cancelled(lock) where lock.context.sessionID == sessionID:
-            return .cancelled(lock)
-        case let .persistenceRecovery(lock, failure) where lock.context.sessionID == sessionID:
-            return .persistenceRecovery(lock, failure)
-        default:
-            break
-        }
-
-        guard let match = state.backgroundExecutionPhases
-            .filter({ _, phase in phase.lock?.context.sessionID == sessionID })
-            .max(by: { lhs, rhs in
-                lhs.value.navigationPromotionPriority < rhs.value.navigationPromotionPriority
-            })
-        else { return nil }
-        state.backgroundExecutionPhases[match.key] = nil
-        return match.value
+        state.takePromotedNavigationExecutionPhase(for: sessionID)
     }
 
     func applyNewSessionSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
+        state.invalidatePreparedTransientSession()
         let preservedExecutionPhase = promotedNavigationExecutionPhase(for: snapshot.sessionID, state: &state)
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .idle
@@ -383,7 +364,7 @@ struct AiChatRestoreContext {
     var selectedThinking: AiThinkingSelection?
 }
 
-private extension AiChatExecutionPhase {
+extension AiChatExecutionPhase {
     var navigationPromotionPriority: Int {
         switch self {
         case .processing:

@@ -103,7 +103,7 @@ struct ToolbarView: View {
         case .aiChat:
             "Ask Voyager"
         case .aiChatSessions:
-            "Sessions"
+            "Chat History"
         case let .collection(collectionNavigation):
             switch collectionNavigation.kind {
             case .temporary:
@@ -158,7 +158,7 @@ struct ToolbarView: View {
                 title: aiChatHistoryTitle(for: sessionID, sessionList: sessionList),
             )
         case .aiChatSessions:
-            return ToolbarHistoryItem(iconSystemName: "clock.arrow.circlepath", title: "Sessions")
+            return ToolbarHistoryItem(iconSystemName: "clock.arrow.circlepath", title: "Chat History")
         case let .collection(navigation):
             let title: String = switch navigation.kind {
             case .temporary:
@@ -253,7 +253,7 @@ struct ToolbarView: View {
             toolbarTitleArea(viewStore: viewStore)
 
             if !chromeProps.isContextualAiChatPresented {
-                contextualAiChatButton
+                newChatButton
             }
         }
     }
@@ -307,25 +307,17 @@ struct ToolbarView: View {
         .buttonStyle(.borderless)
     }
 
-    private var contextualAiChatButton: some View {
-        let title = "Open Contextual AI Chat"
+    private var newChatButton: some View {
+        let title = "New Chat"
 
-        return Button(
-            action: { store.send(.view(.openContextualAiChatTapped)) },
-            label: {
-                ToolbarHoverButtonLabel(
-                    systemName: "sidebar.trailing",
-                    isEnabled: true,
-                    font: nil,
-                )
-            },
+        return ToolbarContextMenuButton(
+            systemName: "sidebar.trailing",
+            help: title,
+            primaryAction: { store.send(.view(.newChatTapped)) },
+            contextMenuTitle: "Show Chat History",
+            contextMenuAction: { store.send(.view(.showChatHistoryTapped)) },
         )
-        .buttonStyle(.borderless)
-        .frame(width: 28, height: 28)
-        .contentShape(Rectangle())
         .zIndex(2)
-        .help(title)
-        .accessibilityLabel(title)
     }
 
     private func titleContent(viewStore: ViewStore<ViewState, FileManagerContentFeature.Action>) -> some View {

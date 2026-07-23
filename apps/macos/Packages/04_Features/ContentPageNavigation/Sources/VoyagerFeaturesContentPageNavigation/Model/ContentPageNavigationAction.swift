@@ -20,6 +20,18 @@ public enum ContentPageCollectionFileLoadResult: Equatable, Sendable {
     case failure(ContentPageNavigationErrorFingerprint)
 }
 
+public struct ContentPageCollectionOpenRequest: Equatable, Sendable {
+    public let id: UUID
+    public let url: URL
+    public let sourceRoute: ContentPageNavigationRoute
+
+    public init(id: UUID, url: URL, sourceRoute: ContentPageNavigationRoute) {
+        self.id = id
+        self.url = url
+        self.sourceRoute = sourceRoute
+    }
+}
+
 @CasePathable
 public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
     case view(View)
@@ -54,8 +66,12 @@ public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
         case appendBackHistory(ContentPageNavigationHistorySnapshot)
         case clearForwardHistory
         case setNavigationState(ContentPageNavigationRoute)
+        case applyPinnedPeerNavigationState(ContentPageNavigationRoute)
         case setPendingNavigation(ContentPageNavigationPending?)
-        case collectionFileLoaded(ContentPageCollectionFileLoadResult)
+        case collectionFileLoaded(
+            request: ContentPageCollectionOpenRequest,
+            result: ContentPageCollectionFileLoadResult,
+        )
         case navigateToCollection(ContentPageCollectionNavigation)
         case performNavigation(ContentPageNavigationPending)
         case showUnsavedNavigationAlert(ContentPageNavigationPending)
