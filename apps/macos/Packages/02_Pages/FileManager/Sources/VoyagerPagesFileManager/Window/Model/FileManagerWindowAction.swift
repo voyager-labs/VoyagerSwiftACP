@@ -10,6 +10,14 @@ import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
+public enum SelectedContentTabCloseOutcome: Equatable, Sendable {
+    case removed
+    case unpinned
+    case cancelled
+    case failed
+    case missing
+}
+
 @CasePathable
 public enum FileManagerWindowAction: CasePathable, Sendable {
     case delegate(Delegate)
@@ -32,8 +40,35 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case reserveExternalContentTabs([ExternalContentTabReservation])
     case resyncActiveCollectionNavigation
 
+    case requestCloseSelectedContentTabs
+    case performSelectedContentTabCloseMutation(
+        operationID: UUID,
+        tabID: ContentTabID,
+        action: ContentTabAction,
+    )
+    case performBatchCloseContentAction(
+        operationID: UUID,
+        tabID: ContentTabID,
+        action: FileManagerContentAction,
+    )
+    case performBatchCloseNavigationAction(
+        operationID: UUID,
+        tabID: ContentTabID,
+        action: ContentPageNavigationFeature.Action,
+    )
+    case processNextSelectedContentTabClose(operationID: UUID)
+    case selectedContentTabCloseItemCompleted(
+        operationID: UUID,
+        tabID: ContentTabID,
+        outcome: SelectedContentTabCloseOutcome,
+    )
     case closeContentTabRequested(ContentTabID)
     case contentTabCloseAlertResponse(CollectionNavigationChoice)
+    case selectedContentTabCloseAlertResponse(
+        operationID: UUID,
+        tabID: ContentTabID,
+        choice: CollectionNavigationChoice,
+    )
 
     case onAppear
     case onDisappear
@@ -107,6 +142,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case copyURLs
         case openNewContentTab
         case closeActiveContentTab
+        case closeSelectedContentTabs
         case toggleActiveContentTabPin
         case restoreLastClosedContentTab
         case duplicateContentTab(ContentTabID)

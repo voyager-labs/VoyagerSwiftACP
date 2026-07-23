@@ -8,6 +8,19 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
+@ObservableState
+struct ContentTabRowInteractionSurface: Equatable {
+    let currentTabIDs: [ContentTabID]
+    let validSelectedTabIDs: Set<ContentTabID>
+    let isCloseEnabled: Bool
+
+    init(state: FileManagerWindowState) {
+        currentTabIDs = Array(state.contentTabs.tabs.ids)
+        validSelectedTabIDs = Set(currentTabIDs).intersection(state.contentTabs.selectedTabIDs)
+        isCloseEnabled = state.canStartSelectedContentTabClose
+    }
+}
+
 public enum FileManagerUndoRedoPhase: Equatable, Sendable {
     case idle
     case invoking(requestID: UUID, direction: EntryActionDirection)
@@ -36,7 +49,9 @@ public struct FileManagerWindowState: Equatable {
     public var contentTabs: ContentTabState
     public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
     public var pendingContentTabClose: PendingContentTabClose?
+    public var pendingSelectedContentTabClose: PendingSelectedContentTabClose?
     public var pendingContentTabTeardown: PendingContentTabTeardown?
+    public var isClosing: Bool
     public var pendingDirectoryReloadTabIDs: Set<ContentTabID>
     public var windowID: UUID?
     public var undoManagerAvailability: UndoManagerAvailability
@@ -56,7 +71,9 @@ public struct FileManagerWindowState: Equatable {
         backgroundInspectorAiChatStates = [:]
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
+        pendingSelectedContentTabClose = nil
         pendingContentTabTeardown = nil
+        isClosing = false
         pendingDirectoryReloadTabIDs = []
         windowID = nil
         undoManagerAvailability = .init()
@@ -186,7 +203,9 @@ public struct FileManagerWindowState: Equatable {
         contentTabs = externalContentTabs
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
+        pendingSelectedContentTabClose = nil
         pendingContentTabTeardown = nil
+        isClosing = false
         pendingDirectoryReloadTabIDs = []
         windowID = initialWindowID
         undoManagerAvailability = .init()
@@ -211,38 +230,147 @@ public struct PendingContentTabTeardown: Equatable, Sendable {
     }
 }
 
+public struct PendingSelectedContentTabClose: Equatable, Sendable {
+    public let operationID: UUID
+    public let orderedTargetIDs: [ContentTabID]
+    public var cursor: Int
+    public var currentTabID: ContentTabID?
+    public let originalActiveTabID: ContentTabID?
+    public let preferredFallbackIDs: [ContentTabID]
+
+    public init(
+        operationID: UUID,
+        orderedTargetIDs: [ContentTabID],
+        cursor: Int,
+        currentTabID: ContentTabID?,
+        originalActiveTabID: ContentTabID?,
+        preferredFallbackIDs: [ContentTabID],
+    ) {
+        self.operationID = operationID
+        self.orderedTargetIDs = orderedTargetIDs
+        self.cursor = cursor
+        self.currentTabID = currentTabID
+        self.originalActiveTabID = originalActiveTabID
+        self.preferredFallbackIDs = preferredFallbackIDs
+    }
+
+    public init(
+        operationID: UUID,
+        orderedTargetIDs: [ContentTabID],
+        originalActiveTabID: ContentTabID?,
+        preferredFallbackIDs: [ContentTabID],
+    ) {
+        self.init(
+            operationID: operationID,
+            orderedTargetIDs: orderedTargetIDs,
+            cursor: 0,
+            currentTabID: nil,
+            originalActiveTabID: originalActiveTabID,
+            preferredFallbackIDs: preferredFallbackIDs,
+        )
+    }
+
+    public init(
+        operationID: UUID,
+        orderedTargetIDs: [ContentTabID],
+        cursor: Int,
+        originalActiveTabID: ContentTabID?,
+        preferredFallbackIDs: [ContentTabID],
+    ) {
+        self.init(
+            operationID: operationID,
+            orderedTargetIDs: orderedTargetIDs,
+            cursor: cursor,
+            currentTabID: nil,
+            originalActiveTabID: originalActiveTabID,
+            preferredFallbackIDs: preferredFallbackIDs,
+        )
+    }
+
+    public init(
+        operationID: UUID,
+        orderedTargetIDs: [ContentTabID],
+        currentTabID: ContentTabID?,
+        originalActiveTabID: ContentTabID?,
+        preferredFallbackIDs: [ContentTabID],
+    ) {
+        self.init(
+            operationID: operationID,
+            orderedTargetIDs: orderedTargetIDs,
+            cursor: 0,
+            currentTabID: currentTabID,
+            originalActiveTabID: originalActiveTabID,
+            preferredFallbackIDs: preferredFallbackIDs,
+        )
+    }
+}
+
 public struct PendingContentTabClose: Equatable {
     public let tabID: ContentTabID
     public let previousActiveTabID: ContentTabID?
+    public let originalPreviousActiveTabID: ContentTabID?
     public let previousActiveContent: FileManagerContentFeature.State?
     public let targetContent: FileManagerContentFeature.State?
     public let previousActiveInspector: FileManagerInspectorFeature.State?
     public let targetInspector: FileManagerInspectorFeature.State?
+    public let batchOperationID: UUID?
     public var didReceiveWriteBackNavigationState: Bool
     public var didReceiveWriteBackComposerSync: Bool
+    public var didReceiveSaveCompletedFailure: Bool
+    public var didReceiveWriteBackFailure: Bool
+    public var didReceiveSaveFeedbackFailure: Bool
 
     public init(
         tabID: ContentTabID,
         previousActiveTabID: ContentTabID? = nil,
+        originalPreviousActiveTabID: ContentTabID? = nil,
         previousActiveContent: FileManagerContentFeature.State? = nil,
         targetContent: FileManagerContentFeature.State? = nil,
         previousActiveInspector: FileManagerInspectorFeature.State? = nil,
         targetInspector: FileManagerInspectorFeature.State? = nil,
+        batchOperationID: UUID? = nil,
         didReceiveWriteBackNavigationState: Bool = false,
         didReceiveWriteBackComposerSync: Bool = false,
+        didReceiveSaveCompletedFailure: Bool = false,
+        didReceiveWriteBackFailure: Bool = false,
+        didReceiveSaveFeedbackFailure: Bool = false,
     ) {
         self.tabID = tabID
         self.previousActiveTabID = previousActiveTabID
+        self.originalPreviousActiveTabID = originalPreviousActiveTabID
         self.previousActiveContent = previousActiveContent
         self.targetContent = targetContent
         self.previousActiveInspector = previousActiveInspector
         self.targetInspector = targetInspector
+        self.batchOperationID = batchOperationID
         self.didReceiveWriteBackNavigationState = didReceiveWriteBackNavigationState
         self.didReceiveWriteBackComposerSync = didReceiveWriteBackComposerSync
+        self.didReceiveSaveCompletedFailure = didReceiveSaveCompletedFailure
+        self.didReceiveWriteBackFailure = didReceiveWriteBackFailure
+        self.didReceiveSaveFeedbackFailure = didReceiveSaveFeedbackFailure
     }
 }
 
 public extension FileManagerWindowState {
+    internal var canStartSelectedContentTabClose: Bool {
+        guard !isClosing,
+              pendingSelectedContentTabClose == nil,
+              pendingContentTabClose == nil,
+              pendingContentTabTeardown == nil
+        else { return false }
+
+        switch undoRedoPhase {
+        case .idle, .desynchronized:
+            return true
+        case .invoking, .replaying, .refreshing, .recovering, .tearingDownTab:
+            return false
+        }
+    }
+
+    internal var contentTabRowInteractionSurface: ContentTabRowInteractionSurface {
+        ContentTabRowInteractionSurface(state: self)
+    }
+
     func appPreferencesPreservingSidebarState(from preferences: AppPreferencesState) -> AppPreferencesState {
         var result = preferences
         result.sidebarVisible = sidebar.sidebarVisible

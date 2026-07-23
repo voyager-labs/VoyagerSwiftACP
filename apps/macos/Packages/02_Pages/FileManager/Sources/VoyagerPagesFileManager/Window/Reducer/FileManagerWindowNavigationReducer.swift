@@ -28,6 +28,17 @@ private struct FileManagerNavigationBridgeReducer {
             case let .content(.internal(.requestNavigation(navigationAction))):
                 .send(.navigation(navigationAction))
 
+            case let .performBatchCloseContentAction(
+                operationID,
+                tabID,
+                .internal(.requestNavigation(navigationAction)),
+            ):
+                .send(.performBatchCloseNavigationAction(
+                    operationID: operationID,
+                    tabID: tabID,
+                    action: navigationAction,
+                ))
+
             case let .content(.internal(.applyNavigationState(navigationState))):
                 syncActiveContentTabEffect(
                     navigationState,
