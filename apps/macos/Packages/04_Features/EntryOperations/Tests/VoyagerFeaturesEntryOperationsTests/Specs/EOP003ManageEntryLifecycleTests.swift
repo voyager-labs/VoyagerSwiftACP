@@ -792,3 +792,274 @@ private extension EOP003ManageEntryLifecycleTests {
         await store.receive(\.lifecycle.restorableTrashPathsLoaded)
     }
 }
+
+// MARK: - VOY-610-entry-sound
+
+private actor SoundRecorder {
+    var playedSounds: [EntryOperationSound] = []
+
+    func record(_ sound: EntryOperationSound) {
+        playedSounds.append(sound)
+    }
+}
+
+extension EOP003ManageEntryLifecycleTests {
+    /// VOY-610-entry-sound: moveToTrash batch completion이 EntryOperationSound.moveToTrash를 정확히 한 번 요청한다.
+    /// 사용자가 하나 이상의 Entry를 Trash로 이동한 후 batch가 완료되면 drag-to-trash 사운드가 재생된다.
+    /// - 검증 내용: entryActionCompleted(.moveToTrash) → .moveToTrash sound
+    /// - 사전 조건: recorder가 주입된 TestStore
+    /// - 기대 결과: recorder.playedSounds에 [.moveToTrash]가 기록된다
+    func testMoveToTrashBatchPlaysFinderTrashSoundOnce() async {
+        let recorder = SoundRecorder()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOperationSoundClient = EntryOperationSoundClient(play: { sound in
+                await recorder.record(sound)
+            })
+        }
+        let record = EntryActionRecord(
+            operationKind: .moveToTrash,
+            targets: [.init(beforePath: "/a/file.txt", afterPath: "/.Trash/file.txt")],
+        )
+
+        // store.exhaustivity = .off: sound play is a fire-and-forget .run effect
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.entryActionCompleted(record)))
+        await store.finish()
+
+        let sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds, [.moveToTrash])
+    }
+
+    /// VOY-610-entry-sound: emptyTrashCompleted가 EntryOperationSound.emptyTrash를 정확히 한 번 요청한다.
+    /// 사용자가 Trash 비우기를 완료하면 empty-trash 사운드가 재생된다.
+    /// - 검증 내용: emptyTrashCompleted → .emptyTrash sound
+    /// - 사전 조건: recorder가 주입된 TestStore
+    /// - 기대 결과: recorder.playedSounds에 [.emptyTrash]가 기록된다
+    func testEmptyTrashCompletedPlaysFinderEmptyTrashSoundOnce() async {
+        let recorder = SoundRecorder()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOperationSoundClient = EntryOperationSoundClient(play: { sound in
+                await recorder.record(sound)
+            })
+        }
+
+        // store.exhaustivity = .off: sound play is a fire-and-forget .run effect
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.emptyTrashCompleted))
+        await store.finish()
+
+        let sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds, [.emptyTrash])
+    }
+
+    /// VOY-610-entry-sound: pasteFileCopy/pasteFileMove/pasteFileDuplicate/putBack batch 완료가
+    /// EntryOperationSound.operationCompleted를 batch당 정확히 1회 요청한다.
+    /// 다중 파일 복사/이동에서도 사운드는 batch 완료 시 1회만 재생된다.
+    /// - 검증 내용: entryActionCompleted for pasteFileCopy/pasteFileMove/pasteFileDuplicate/putBack →
+    /// .operationCompleted sound (batch당 1회)
+    /// - 사전 조건: recorder가 주입된 TestStore
+    /// - 기대 결과: 각 batch마다 recorder.playedSounds에 .operationCompleted가 1회 기록된다
+    func testBatchCompletionsPlayOperationCompletedSound() async {
+        let recorder = SoundRecorder()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOperationSoundClient = EntryOperationSoundClient(play: { sound in
+                await recorder.record(sound)
+            })
+        }
+
+        store.exhaustivity = .off
+
+        let copyRecord = EntryActionRecord(
+            operationKind: .pasteFileCopy,
+            targets: [
+                .init(beforePath: "/a/src1.txt", afterPath: "/b/dst1.txt"),
+                .init(beforePath: "/a/src2.txt", afterPath: "/b/dst2.txt"),
+            ],
+        )
+        await store.send(.lifecycle(.entryActionCompleted(copyRecord)))
+        await store.finish()
+
+        var sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds, [.operationCompleted], "pasteFileCopy batch should play operationCompleted once")
+
+        let moveRecord = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [.init(beforePath: "/a/src.txt", afterPath: "/b/dst.txt")],
+        )
+        await store.send(.lifecycle(.entryActionCompleted(moveRecord)))
+        await store.finish()
+        sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds, [.operationCompleted, .operationCompleted])
+
+        let duplicateRecord = EntryActionRecord(
+            operationKind: .pasteFileDuplicate,
+            targets: [.init(beforePath: "/a/src.txt", afterPath: "/a/src copy.txt")],
+        )
+        await store.send(.lifecycle(.entryActionCompleted(duplicateRecord)))
+        await store.finish()
+        sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds, [.operationCompleted, .operationCompleted, .operationCompleted])
+
+        let putBackRecord = EntryActionRecord(
+            operationKind: .putBack,
+            targets: [.init(beforePath: "/.Trash/file.txt", afterPath: "/original/file.txt")],
+        )
+        await store.send(.lifecycle(.entryActionCompleted(putBackRecord)))
+        await store.finish()
+        sounds = await recorder.playedSounds
+        XCTAssertEqual(
+            sounds,
+            [.operationCompleted, .operationCompleted, .operationCompleted, .operationCompleted],
+        )
+    }
+
+    /// VOY-610-entry-sound: non-cancel 오류는 .error 사운드를 요청하고 .cancelled는 무음이다.
+    /// 사용자의 파일 작업이 실패하면 preferred alert 사운드가 재생되지만, 취소는 무음이다.
+    /// - 검증 내용: operationFinished(.failure(.system)) → .error sound, operationFinished(.failure(.cancelled)) → 무음
+    /// - 사전 조건: recorder가 주입된 TestStore
+    /// - 기대 결과: .system 오류 사운드가 기록되고 .cancelled는 기록되지 않는다
+    func testFailuresPlayPreferredAlertExceptCancellation() async {
+        let recorder = SoundRecorder()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOperationSoundClient = EntryOperationSoundClient(play: { sound in
+                await recorder.record(sound)
+            })
+        }
+
+        // store.exhaustivity = .off: sound play is a fire-and-forget .run effect
+        store.exhaustivity = .off
+
+        // system error → .error sound
+        await store.send(.lifecycle(.operationFinished(
+            "/a/file.txt",
+            .pasteFileCopy,
+            .failure(.system(message: "disk full")),
+        )))
+        await store.finish()
+
+        var sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds, [.error], "system error should play error sound")
+
+        // cancelled → no sound
+        await store.send(.lifecycle(.operationFinished("/a/file.txt", .pasteFileCopy, .failure(.cancelled))))
+        await store.finish()
+
+        sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds, [.error], "cancelled should NOT produce sound")
+    }
+
+    /// VOY-610-entry-sound: 두 개의 연속 entryActionCompleted batch가 각각 sound client에 도달한다.
+    /// reducer는 모든 batch 완료를 sound client에 전달하며, throttle은 SoundPlayer live value에서만 적용된다.
+    /// - 검증 내용: 연속 entryActionCompleted 2회 → recorder에 2개의 sound
+    /// - 사전 조건: recorder가 주입된 TestStore
+    /// - 기대 결과: recorder.playedSounds.count가 2 (reducer는 throttle 없이 모든 요청을 전달)
+    func testRapidBatchCompletionsReachSoundClient() async {
+        let recorder = SoundRecorder()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOperationSoundClient = EntryOperationSoundClient(play: { sound in
+                await recorder.record(sound)
+            })
+        }
+
+        store.exhaustivity = .off
+
+        let batch1 = EntryActionRecord(
+            operationKind: .pasteFileCopy,
+            targets: [.init(beforePath: "/a/src.txt", afterPath: "/b/dst.txt")],
+        )
+        await store.send(.lifecycle(.entryActionCompleted(batch1)))
+        await store.finish()
+
+        let batch2 = EntryActionRecord(
+            operationKind: .pasteFileCopy,
+            targets: [.init(beforePath: "/c/src.txt", afterPath: "/d/dst.txt")],
+        )
+        await store.send(.lifecycle(.entryActionCompleted(batch2)))
+        await store.finish()
+
+        let sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds.count, 2, "Both batches should request sound; throttle is in live value only")
+    }
+
+    /// VOY-610-entry-sound: operationFinished(.success)는 모든 종류에서 무음이며,
+    /// entryActionCompleted에서도 createFolder/createAlias/rename/setTags는 사운드를 생성하지 않는다.
+    /// 완료 사운드는 pasteFileCopy/Move/Duplicate/putBack batch에서만 재생된다.
+    /// - 검증 내용: operationFinished(.success) for excluded kinds → 0 sound,
+    ///   entryActionCompleted for createFolder/createAlias/rename/setTags → 0 sound
+    /// - 사전 조건: recorder가 주입된 TestStore
+    /// - 기대 결과: recorder.playedSounds가 비어 있다
+    func testExcludedOperationKindsProduceNoSound() async {
+        let recorder = SoundRecorder()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOperationSoundClient = EntryOperationSoundClient(play: { sound in
+                await recorder.record(sound)
+            })
+        }
+
+        store.exhaustivity = .off
+
+        let excludedKinds: [OperationKind] = [
+            .createFolder,
+            .rename,
+            .setTags,
+            .compress,
+            .extract,
+            .openDefault,
+            .revealInFinder,
+        ]
+        for kind in excludedKinds {
+            await store.send(.lifecycle(.operationFinished("/a/file.txt", kind, .success(()))))
+            await store.finish()
+        }
+
+        let undoableNonSoundableKinds: [OperationKind] = [
+            .createFolder,
+            .createAlias,
+            .rename,
+            .setTags,
+        ]
+        for kind in undoableNonSoundableKinds {
+            let record = EntryActionRecord(
+                operationKind: kind,
+                targets: [.init(beforePath: nil, afterPath: "/a/file.txt")],
+            )
+            await store.send(.lifecycle(.entryActionCompleted(record)))
+            await store.finish()
+        }
+
+        let sounds = await recorder.playedSounds
+        XCTAssertTrue(sounds.isEmpty, "Excluded operation kinds should produce no sound")
+    }
+
+    /// VOY-610-entry-sound: moveToTrash batch completion이 정확히 한 번 요청하고
+    /// entryActionCompleted의 기존 상태 업데이트(restorableTrashPaths)는 유지된다.
+    /// - 검증 내용: sound 요청과 state 업데이트가 모두 정상 동작
+    /// - 사전 조건: recorder가 주입된 TestStore
+    /// - 기대 결과: recorder.playedSounds에 [.moveToTrash]가 있고, state.restorableTrashPaths가 갱신된다
+    func testMoveToTrashSoundPreservesStateUpdate() async {
+        let recorder = SoundRecorder()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOperationSoundClient = EntryOperationSoundClient(play: { sound in
+                await recorder.record(sound)
+            })
+        }
+
+        let record = EntryActionRecord(
+            operationKind: .moveToTrash,
+            targets: [.init(beforePath: "/a/file.txt", afterPath: "/.Trash/file.txt")],
+        )
+
+        // store.exhaustivity = .off: sound play is a fire-and-forget .run effect
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.entryActionCompleted(record)))
+        await store.finish()
+
+        let sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds, [.moveToTrash])
+
+        XCTAssertTrue(store.state.restorableTrashPaths.contains("/.Trash/file.txt"))
+    }
+}
