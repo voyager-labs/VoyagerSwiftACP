@@ -123,6 +123,56 @@ final class MenuCommandsFeatureTests: XCTestCase {
         ))
     }
 
+    /// VOY-165-undo_fallback: text responder가 Undo를 처리하지 못하면 FileManager fallback 실행
+    /// responder 후보 존재와 실제 AppKit dispatch 성공을 구분하는지 검증한다.
+    /// - 검증 내용: responder dispatch 실패 후 fallback 호출 횟수
+    /// - 사전 조건: text responder 편집 중, Composer 닫힘, AppKit dispatch false
+    /// - 기대 결과: responder 시도 1회와 FileManager fallback 1회
+    func testUndoRedoFallsBackWhenTextResponderDoesNotHandleAction() {
+        var responderAttemptCount = 0
+        var fallbackCount = 0
+
+        EditMenuCommands.performUndoRedoAction(
+            textResponderIsEditing: true,
+            isComposerPresented: false,
+            sendResponderAction: {
+                responderAttemptCount += 1
+                return false
+            },
+            sendFallback: {
+                fallbackCount += 1
+            },
+        )
+
+        XCTAssertEqual(responderAttemptCount, 1)
+        XCTAssertEqual(fallbackCount, 1)
+    }
+
+    /// VOY-165-undo_fallback: Composer 표시 중 FileManager fallback 차단
+    /// responder dispatch 실패 후에도 Composer가 file operation Undo를 차단하는지 검증한다.
+    /// - 검증 내용: responder dispatch 시도와 fallback 미호출
+    /// - 사전 조건: text responder 편집 중, Composer 열림, AppKit dispatch false
+    /// - 기대 결과: responder 시도 1회와 FileManager fallback 0회
+    func testUndoRedoDoesNotFallBackWhileComposerIsPresented() {
+        var responderAttemptCount = 0
+        var fallbackCount = 0
+
+        EditMenuCommands.performUndoRedoAction(
+            textResponderIsEditing: true,
+            isComposerPresented: true,
+            sendResponderAction: {
+                responderAttemptCount += 1
+                return false
+            },
+            sendFallback: {
+                fallbackCount += 1
+            },
+        )
+
+        XCTAssertEqual(responderAttemptCount, 1)
+        XCTAssertEqual(fallbackCount, 0)
+    }
+
     func testMenuCommandStateReflectsFocusedWindowAiChatAvailabilityAndTitles() {
         let focusedID = makeUUID("00000000-0000-0000-0000-000000000041")
         let unfocusedID = makeUUID("00000000-0000-0000-0000-000000000042")

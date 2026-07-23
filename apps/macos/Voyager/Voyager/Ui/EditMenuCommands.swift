@@ -154,6 +154,19 @@ struct EditMenuCommands: Commands {
         canHandleByTextResponder || canPerformEntryCommands
     }
 
+    static func performUndoRedoAction(
+        textResponderIsEditing: Bool,
+        isComposerPresented: Bool,
+        sendResponderAction: () -> Bool,
+        sendFallback: () -> Void,
+    ) {
+        if textResponderIsEditing, sendResponderAction() {
+            return
+        }
+        guard !isComposerPresented else { return }
+        sendFallback()
+    }
+
     private func isTextEditingResponder() -> Bool {
         guard let responder = NSApp.keyWindow?.firstResponder else { return false }
         return responder is NSTextView || responder is NSTextField
@@ -191,12 +204,15 @@ struct EditMenuCommands: Commands {
         selector: Selector,
         fallback command: MenuCommandItem.EditCommand,
     ) {
-        if textResponderIsEditing {
-            _ = NSApp.sendAction(selector, to: nil, from: nil)
-            return
-        }
-
-        guard !viewStore.isComposerPresented else { return }
-        sendEditCommand(command)
+        Self.performUndoRedoAction(
+            textResponderIsEditing: textResponderIsEditing,
+            isComposerPresented: viewStore.isComposerPresented,
+            sendResponderAction: {
+                NSApp.sendAction(selector, to: nil, from: nil)
+            },
+            sendFallback: {
+                sendEditCommand(command)
+            },
+        )
     }
 }
