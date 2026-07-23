@@ -145,16 +145,23 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     /// - 검증 내용: 각 비-entry command가 기존 하위 reducer action을 방출
     /// - 사전 조건: 일반 Directory mode, entry loading 중
     /// - 기대 결과: 명령 범주별 기존 routing 유지
-    func testOrdinaryDirectoryLoadingPreservesNonEntryCommands() async {
-        let state = makeSelectedState(isLoading: true, isCollectionMode: false)
+    func testOrdinaryDirectoryLoadingPreservesNonEntryCommands() async throws {
+        var state = makeSelectedState(isLoading: true, isCollectionMode: false)
+        state.content.entryViewLayout.entryOperations.undoRecords = [makeUndoRedoRecord("loading-undo")]
+        state.content.entryViewLayout.entryOperations.redoRecords = [makeUndoRedoRecord("loading-redo")]
+        let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
         let store = makeStore(initialState: state)
 
         await store.send(.request(.toggleShowHiddenFiles))
         await store.receive(\.content.view.toggleShowHiddenFilesAndReload)
         await store.send(.request(.requestUndo))
-        await store.receive(\.content.entryViewLayout.entryOperations.undoRedo.requestUndo)
+        await store.receive {
+            matchesTargetedUndoRedoRequest($0, tabID: activeTabID, request: .undo)
+        }
         await store.send(.request(.requestRedo))
-        await store.receive(\.content.entryViewLayout.entryOperations.undoRedo.requestRedo)
+        await store.receive {
+            matchesTargetedUndoRedoRequest($0, tabID: activeTabID, request: .redo)
+        }
         await store.send(.request(.goBack))
         await store.receive(\.navigation.view.goBack)
         await store.send(.request(.setViewLayout(.grid)))
@@ -417,11 +424,97 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     /// - 검증 내용: request(.requestUndo) 전송 시 content.entryViewLayout.entryOperations.undoRedo.requestUndo 수신
     /// - 사전 조건: 기본 상태의 FileManagerWindow
     /// - 기대 결과: undoRedo.requestUndo 액션 수신
-    func test_undoRedoRequest_undo_forwardsToEntryOperations() async {
-        let store = makeStore()
+    func test_undoRedoRequest_undo_forwardsToEntryOperations() async throws {
+        let (store, activeTabID) = try makeWindowCommandStore(request: .undo)
 
         await store.send(.request(.requestUndo))
-        await store.receive(\.content.entryViewLayout.entryOperations.undoRedo.requestUndo)
+        await store.receive {
+            matchesTargetedUndoRedoRequest($0, tabID: activeTabID, request: .undo)
+        }
+        await store.finish()
+    }
+
+    /// FMW-001-request_undo: 표시 중인 Composer는 file Undo/Redo menu capability를 숨긴다.
+    /// Text responder가 없는 상태에서도 Composer가 file-operation history보다 우선하는 menu projection을 검증한다.
+    /// - 검증 내용: file undo/redo record가 각각 있어도 Composer 표시 중 projection의 canUndo/canRedo가 false인지 확인한다.
+    /// - 사전 조건: active Content tab에 undo/redo history가 있고 Collection Filter Composer가 표시 중이다.
+    /// - 기대 결과: isComposerPresented는 true이며 file Undo와 Redo menu capability는 모두 false다.
+    func testComposerPresentedSuppressesFileUndoRedoMenuProjection() {
+        var state = FileManagerWindowState()
+        state.content.entryViewLayout.entryOperations.undoRecords = [makeUndoRedoRecord("composer-undo")]
+        state.content.entryViewLayout.entryOperations.redoRecords = [makeUndoRedoRecord("composer-redo")]
+        state.content.composer.isPresented = true
+
+        let projection = state.menuCommandProjection
+
+        XCTAssertTrue(projection.isComposerPresented)
+        XCTAssertFalse(projection.canUndo)
+        XCTAssertFalse(projection.canRedo)
+    }
+
+    /// FMW-001-request_undo: 표시 중인 Collection Filter Composer가 Cmd-Z 파일 작업 fallback을 차단
+    /// Composer가 로컬 undo/redo 이력을 소유할 때 FileManager key-command 경계가 이를 침범하지 않는지 검증한다.
+    /// - 검증 내용: handleKeyCommand(Cmd-Z)의 EntryOperations requestUndo 미방출과 Composer 이력 불변
+    /// - 사전 조건: Composer가 표시 중이고 history와 redoHistory가 각각 1건 존재
+    /// - 기대 결과: 하위 file-operation action 없이 기존 history와 redoHistory가 그대로 유지됨
+    func testUndoKeyCommandWhenComposerPresentedBlocksEntryOperationsAndPreservesHistory() async {
+        var state = FileManagerContentState()
+        withDependencies {
+            $0.entryLoadingClient = .testValue
+            $0.searchClient = .testValue
+            $0.registryClient = .testValue
+        } operation: {
+            _ = FileManagerContentFeature().reduce(
+                into: &state,
+                action: .composer(.addScope(path: "/VoyagerFixtures/Documents")),
+            )
+            _ = FileManagerContentFeature().reduce(
+                into: &state,
+                action: .composer(.addScope(path: "/VoyagerFixtures/Notes")),
+            )
+            _ = FileManagerContentFeature().reduce(into: &state, action: .composer(.undo))
+        }
+        state.composer.isPresented = true
+        let history = state.composer.history
+        let redoHistory = state.composer.redoHistory
+        XCTAssertEqual(history.count, 1)
+        XCTAssertEqual(redoHistory.count, 1)
+
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        }
+        let command = makeUndoKeyCommand()
+
+        await store.send(.view(.handleKeyCommand(command)))
+
+        XCTAssertEqual(store.state.composer.history, history)
+        XCTAssertEqual(store.state.composer.redoHistory, redoHistory)
+        await store.finish()
+    }
+
+    /// FMW-001-request_undo: text first-responder의 local history가 비어도 file Undo로 fallback하지 않는다.
+    /// 사용자가 빈 편집 이력을 가진 text field에서 Cmd-Z를 눌러도 현재 탭의 file-operation history를 소비하지 않는지 검증한다.
+    /// - 검증 내용: text responder가 존재하는 동안 `handleKeyCommand(Cmd-Z)`가 EntryOperations requestUndo를 방출하지 않는다.
+    /// - 사전 조건: key window의 first responder가 undo 가능한 action이 없는 NSTextView이고 Composer는 표시되지 않는다.
+    /// - 기대 결과: 하위 file-operation action 없이 text responder precedence가 유지된다.
+    func testUndoKeyCommandWithEmptyTextResponderHistoryDoesNotFallbackToEntryOperations() async {
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 240, height: 80))
+        textView.undoManager?.removeAllActions()
+        XCTAssertFalse(textView.undoManager?.canUndo ?? false)
+
+        let command = makeUndoKeyCommand()
+        let store = TestStore(initialState: FileManagerContentState()) {
+            Reduce<FileManagerContentState, FileManagerContentAction> { state, action in
+                guard case let .view(.handleKeyCommand(command)) = action else { return .none }
+                return FileManagerContentKeyCommandHandler.effect(
+                    for: command,
+                    state: state,
+                    textResponderIsEditing: true,
+                )
+            }
+        }
+
+        await store.send(.view(.handleKeyCommand(command)))
         await store.finish()
     }
 
@@ -432,11 +525,13 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     /// - 검증 내용: request(.requestRedo) 전송 시 content.entryViewLayout.entryOperations.undoRedo.requestRedo 수신
     /// - 사전 조건: 기본 상태의 FileManagerWindow
     /// - 기대 결과: undoRedo.requestRedo 액션 수신
-    func test_undoRedoRequest_redo_forwardsToEntryOperations() async {
-        let store = makeStore()
+    func test_undoRedoRequest_redo_forwardsToEntryOperations() async throws {
+        let (store, activeTabID) = try makeWindowCommandStore(request: .redo)
 
         await store.send(.request(.requestRedo))
-        await store.receive(\.content.entryViewLayout.entryOperations.undoRedo.requestRedo)
+        await store.receive {
+            matchesTargetedUndoRedoRequest($0, tabID: activeTabID, request: .redo)
+        }
         await store.finish()
     }
 
@@ -769,5 +864,68 @@ extension FMW001FileManagerWindowTests {
 
         state.contentTabs.tabs[id: activeTabID]?.anchor = .virtualCollection(id: "Favorite")
         XCTAssertTrue(state.menuCommandProjection.canUseAiChatInspector)
+    }
+}
+
+private enum UndoRedoRequestKind {
+    case undo
+    case redo
+}
+
+private func matchesTargetedUndoRedoRequest(
+    _ action: FileManagerWindowAction,
+    tabID: ContentTabID,
+    request: UndoRedoRequestKind,
+) -> Bool {
+    switch (request, action) {
+    case let (.undo, .tabContent(tabID: targetID, action: .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))))),
+         let (.redo, .tabContent(tabID: targetID, action: .entryViewLayout(.entryOperations(.undoRedo(.requestRedo))))):
+        targetID == tabID
+    default:
+        false
+    }
+}
+
+private func makeUndoKeyCommand() -> KeyCommand {
+    KeyCommand(
+        keyCode: 6,
+        modifiers: [.command],
+        characters: "z",
+        charactersIgnoringModifiers: "z",
+    )
+}
+
+@MainActor
+private func makeWindowCommandStore(
+    request: UndoRedoRequestKind,
+) throws -> (
+    TestStore<FileManagerWindowState, FileManagerWindowAction>,
+    ContentTabID,
+) {
+    var state = FileManagerWindowState()
+    let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+    let record = makeUndoRedoRecord(request == .undo ? "undo" : "redo")
+    if request == .undo {
+        state.content.entryViewLayout.entryOperations.undoRecords = [record]
+    } else {
+        state.content.entryViewLayout.entryOperations.redoRecords = [record]
+    }
+    let store = TestStore(initialState: state) {
+        FileManagerWindowCommandRoutingReducer()
+    }
+    return (store, activeTabID)
+}
+
+private func makeUndoRedoRecord(_ name: String) -> EntryActionRecord {
+    EntryActionRecord(
+        operationKind: .rename,
+        targets: [.init(beforePath: "/tmp/\(name)-old", afterPath: "/tmp/\(name)-new")],
+    )
+}
+
+@MainActor
+private func makeFileManagerContentStore() -> TestStore<FileManagerContentState, FileManagerContentAction> {
+    TestStore(initialState: FileManagerContentState()) {
+        FileManagerContentFeature()
     }
 }

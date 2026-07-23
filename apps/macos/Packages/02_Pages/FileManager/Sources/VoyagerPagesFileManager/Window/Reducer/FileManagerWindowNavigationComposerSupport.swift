@@ -71,23 +71,38 @@ func syncActiveContentTabEffect(
     state: FileManagerWindowState,
     computerName: String,
 ) -> Effect<FileManagerWindowAction> {
-    guard let activeTabID = state.contentTabs.activeTabID,
-          let activeTab = state.contentTabs.tabs[id: activeTabID],
-          let anchor = contentTabAnchor(for: navigationState, computerName: computerName),
-          activeTab.anchor != anchor
+    guard let activeTabID = state.contentTabs.activeTabID else { return .none }
+    return syncContentTabEffect(
+        navigationState,
+        tabID: activeTabID,
+        state: state,
+        computerName: computerName,
+    )
+}
+
+func syncContentTabEffect(
+    _ navigationState: ContentPageNavigationRoute,
+    tabID: ContentTabID,
+    state: FileManagerWindowState,
+    computerName: String,
+) -> Effect<FileManagerWindowAction> {
+    guard let anchor = contentTabAnchor(for: navigationState, computerName: computerName),
+          state.contentTabs.tabs[id: tabID]?.anchor != anchor
     else { return .none }
 
-    let updateActiveTabAnchorEffect: Effect<FileManagerWindowAction> =
-        .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
-    guard case .aiChat = anchor,
+    let updateTabAnchorEffect: Effect<FileManagerWindowAction> = .send(
+        .contentTabs(.updateActivePageAnchor(tabID, anchor)),
+    )
+    guard tabID == state.contentTabs.activeTabID,
+          case .aiChat = anchor,
           state.inspector.inspectorVisible,
           state.inspector.activeMode == .chat
     else {
-        return updateActiveTabAnchorEffect
+        return updateTabAnchorEffect
     }
     return .concatenate(
         .send(.inspector(.closeChat)),
-        updateActiveTabAnchorEffect,
+        updateTabAnchorEffect,
     )
 }
 

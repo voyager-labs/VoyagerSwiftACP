@@ -123,6 +123,107 @@ final class MenuCommandsFeatureTests: XCTestCase {
         ))
     }
 
+    /// VOY-165-undo_fallback: 빈 text responder에서도 FileManager Undo capability 유지
+    /// responder가 편집 중이지만 자체 history가 없을 때 file operation fallback이 메뉴를 활성화하는지 검증한다.
+    /// - 검증 내용: responder capability false와 file operation capability true의 결합
+    /// - 사전 조건: text responder 편집 중, responder Undo 불가, FileManager Undo 가능
+    /// - 기대 결과: Undo/Redo command capability 활성화
+    func testUndoCapabilityIncludesFileFallbackWhenTextResponderHistoryIsEmpty() {
+        XCTAssertTrue(EditMenuCommands.canPerformUndoRedoCommand(
+            textResponderIsEditing: true,
+            canHandleByTextResponder: false,
+            canPerformFileOperation: true,
+        ))
+        XCTAssertTrue(EditMenuCommands.canPerformUndoRedoCommand(
+            textResponderIsEditing: true,
+            canHandleByTextResponder: true,
+            canPerformFileOperation: false,
+        ))
+        XCTAssertFalse(EditMenuCommands.canPerformUndoRedoCommand(
+            textResponderIsEditing: true,
+            canHandleByTextResponder: false,
+            canPerformFileOperation: false,
+        ))
+    }
+
+    /// VOY-165-undo_fallback: history 없는 responder는 AppKit dispatch 전에 FileManager fallback
+    /// selector 수신 가능 여부와 실제 Undo capability를 구분해 no-op responder가 fallback을 가로채지 않는지 검증한다.
+    /// - 검증 내용: responder capability false일 때 dispatch 생략과 fallback 호출 횟수
+    /// - 사전 조건: text responder 편집 중, responder Undo 불가, FileManager Undo 가능, selector dispatch 가능
+    /// - 기대 결과: responder dispatch 0회와 FileManager fallback 1회
+    func testUndoRedoSkipsDispatchForResponderWithoutHistory() {
+        var responderAttemptCount = 0
+        var fallbackCount = 0
+
+        EditMenuCommands.performUndoRedoAction(
+            textResponderIsEditing: true,
+            canHandleByTextResponder: false,
+            isComposerPresented: false,
+            sendResponderAction: {
+                responderAttemptCount += 1
+                return true
+            },
+            sendFallback: {
+                fallbackCount += 1
+            },
+        )
+
+        XCTAssertEqual(responderAttemptCount, 0)
+        XCTAssertEqual(fallbackCount, 1)
+    }
+
+    /// VOY-165-undo_fallback: text responder가 Undo를 처리하지 못하면 FileManager fallback 실행
+    /// responder 후보 존재와 실제 AppKit dispatch 성공을 구분하는지 검증한다.
+    /// - 검증 내용: responder dispatch 실패 후 fallback 호출 횟수
+    /// - 사전 조건: text responder 편집 중, Composer 닫힘, AppKit dispatch false
+    /// - 기대 결과: responder 시도 1회와 FileManager fallback 1회
+    func testUndoRedoFallsBackWhenTextResponderDoesNotHandleAction() {
+        var responderAttemptCount = 0
+        var fallbackCount = 0
+
+        EditMenuCommands.performUndoRedoAction(
+            textResponderIsEditing: true,
+            canHandleByTextResponder: true,
+            isComposerPresented: false,
+            sendResponderAction: {
+                responderAttemptCount += 1
+                return false
+            },
+            sendFallback: {
+                fallbackCount += 1
+            },
+        )
+
+        XCTAssertEqual(responderAttemptCount, 1)
+        XCTAssertEqual(fallbackCount, 1)
+    }
+
+    /// VOY-165-undo_fallback: Composer 표시 중 FileManager fallback 차단
+    /// responder dispatch 실패 후에도 Composer가 file operation Undo를 차단하는지 검증한다.
+    /// - 검증 내용: responder dispatch 시도와 fallback 미호출
+    /// - 사전 조건: text responder 편집 중, Composer 열림, AppKit dispatch false
+    /// - 기대 결과: responder 시도 1회와 FileManager fallback 0회
+    func testUndoRedoDoesNotFallBackWhileComposerIsPresented() {
+        var responderAttemptCount = 0
+        var fallbackCount = 0
+
+        EditMenuCommands.performUndoRedoAction(
+            textResponderIsEditing: true,
+            canHandleByTextResponder: true,
+            isComposerPresented: true,
+            sendResponderAction: {
+                responderAttemptCount += 1
+                return false
+            },
+            sendFallback: {
+                fallbackCount += 1
+            },
+        )
+
+        XCTAssertEqual(responderAttemptCount, 1)
+        XCTAssertEqual(fallbackCount, 0)
+    }
+
     func testMenuCommandStateReflectsFocusedWindowAiChatAvailabilityAndTitles() {
         let focusedID = makeUUID("00000000-0000-0000-0000-000000000041")
         let unfocusedID = makeUUID("00000000-0000-0000-0000-000000000042")

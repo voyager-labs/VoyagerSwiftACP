@@ -6,6 +6,7 @@ import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
@@ -16,6 +17,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case `internal`(Internal)
     case request(WindowCommand)
     case content(FileManagerContentFeature.Action)
+    case tabContent(tabID: ContentTabID, action: FileManagerContentFeature.Action)
     case backgroundAiChat(AiChatAction)
     case backgroundAiChatSnapshotPersisted(AiChatSessionSnapshot)
     case backgroundInspectorAiChat(AiChatAction)
@@ -33,6 +35,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case applyHiddenFixedLocationIDs(Set<FileManagerFixedLocationItem.ID>)
     case aiConnectionsFileUpdated(AIConnectionsFile)
     case reserveExternalContentTabs([ExternalContentTabReservation])
+    case activateExternalContentTabUndoScopes([ContentTabID])
     case resyncActiveCollectionNavigation
 
     case closeContentTabRequested(ContentTabID)
@@ -47,6 +50,11 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case fixedLocationsLoaded(
             requestID: UUID,
             items: [FileManagerFixedLocationItem],
+        )
+        case entryActionCompleted(
+            tabID: ContentTabID,
+            record: EntryActionRecord,
+            undoManagerGeneration: UInt64?,
         )
         case homeFavoritesLoaded([FileManagerHomeFavoriteItem])
         case aiChatTabTitleUpdated(sessionID: AiChatSessionID, title: String?)

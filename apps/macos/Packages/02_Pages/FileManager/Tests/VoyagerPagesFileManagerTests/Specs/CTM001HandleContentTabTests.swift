@@ -27,7 +27,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             return receivedPath == path
         }
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.folder(receivedPath)))) = action
+            guard case let .tabContent(_, .internal(.applyNavigationState(.folder(receivedPath)))) = action
             else { return false }
             return receivedPath == path
         }
@@ -350,13 +350,14 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         _ = reducer.reduce(into: &lastTabState, action: .close(lastID))
 
-        // 마지막 tab은 제거되지 않고 Home tab으로 reset됨
+        // 마지막 tab은 새 ID의 Home tab으로 교체됨
         XCTAssertEqual(lastTabState.tabs.count, 1)
         XCTAssertEqual(lastTabState.tabs[0].page, .home)
         XCTAssertEqual(lastTabState.tabs[0].anchor, .homeDefault)
         XCTAssertEqual(lastTabState.tabs[0].title, "Home")
         XCTAssertEqual(lastTabState.tabs[0].iconName, "house")
-        XCTAssertEqual(lastTabState.activeTabID, lastID)
+        XCTAssertNotEqual(lastTabState.activeTabID, lastID)
+        XCTAssertEqual(lastTabState.tabs[0].id, lastTabState.activeTabID)
         XCTAssertNil(lastTabState.recentlyClosed)
     }
 
@@ -1330,7 +1331,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let beforeCount = store.state.contentTabs.tabs.count
         let beforeActiveID = store.state.contentTabs.activeTabID
 
-        await store.send(.content(.view(.homeSelectionTapped(.fixedDirectory(.desktop)))))
+        await store.sendTabContent(.view(.homeSelectionTapped(.fixedDirectory(.desktop))))
         await store.receive(\.contentTabs)
         await receiveDirectoryNavigation(store, path: desktopPath)
 
@@ -1361,7 +1362,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // Documents anchor 변환 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.fixedDirectory(.documents)))))
+        await store.sendTabContent(.view(.homeSelectionTapped(.fixedDirectory(.documents))))
         await store.receive(\.contentTabs)
         await receiveDirectoryNavigation(store, path: documentsPath)
 
@@ -1391,7 +1392,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // HomeSelectionReducer의 picker effect 결과를 방출하므로 최종 anchor 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.openDirectory))))
+        await store.sendTabContent(.view(.homeSelectionTapped(.openDirectory)))
         await store.receive(\.contentTabs)
         await receiveDirectoryNavigation(store, path: "/tmp/test")
 
@@ -1418,8 +1419,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // 피커 취소 no-op 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.openDirectory))))
-        await store.receive(\.content.internal.homeDirectoryPickerFinished)
+        await store.sendTabContent(.view(.homeSelectionTapped(.openDirectory)))
+        await store.receiveTabContent(\.internal.homeDirectoryPickerFinished)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .homeDefault)
@@ -1441,8 +1442,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // 피커 실패 no-op 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.openDirectory))))
-        await store.receive(\.content.internal.homeDirectoryPickerFinished)
+        await store.sendTabContent(.view(.homeSelectionTapped(.openDirectory)))
+        await store.receiveTabContent(\.internal.homeDirectoryPickerFinished)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .homeDefault)
@@ -1510,11 +1511,11 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // 최종 anchor 확정 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
-        await store.receive(\.content.internal.homeCollectionPickerFinished)
+        await store.sendTabContent(.view(.homeSelectionTapped(.openCollection)))
+        await store.receiveTabContent(\.internal.homeCollectionPickerFinished)
         await store.receive(\.navigation.view.openCollectionFile)
         await store.receive(\.navigation.internal.collectionFileLoaded)
-        await store.receive(\.content.internal.applyNavigationState)
+        await store.receiveTabContent(\.internal.applyNavigationState)
         await store.receive(\.contentTabs)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
@@ -1537,8 +1538,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // 컬렉션 피커 취소 no-op 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
-        await store.receive(\.content.internal.homeCollectionPickerFinished)
+        await store.sendTabContent(.view(.homeSelectionTapped(.openCollection)))
+        await store.receiveTabContent(\.internal.homeCollectionPickerFinished)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .homeDefault)
@@ -1567,8 +1568,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // 비포괄적: 실패 경로의 alert/rollback child action보다 tab anchor 보존을 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
-        await store.receive(\.content.internal.homeCollectionPickerFinished)
+        await store.sendTabContent(.view(.homeSelectionTapped(.openCollection)))
+        await store.receiveTabContent(\.internal.homeCollectionPickerFinished)
         await store.receive(\.navigation.view.openCollectionFile)
         await store.receive(\.navigation.internal.collectionFileLoaded)
 
@@ -1622,11 +1623,11 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // 비포괄적: 검색 실패 alert/rollback 세부 action보다 tab anchor 보존을 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
-        await store.receive(\.content.internal.homeCollectionPickerFinished)
+        await store.sendTabContent(.view(.homeSelectionTapped(.openCollection)))
+        await store.receiveTabContent(\.internal.homeCollectionPickerFinished)
         await store.receive(\.navigation.view.openCollectionFile)
         await store.receive(\.navigation.internal.collectionFileLoaded)
-        await store.receive(\.content.delegate.composerCollectionSearchFailed)
+        await store.receiveTabContent(\.delegate.composerCollectionSearchFailed)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .homeDefault)
@@ -1654,7 +1655,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // HomeSelectionReducer의 session 생성 effect 결과를 방출하므로 최종 anchor 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.startAiChat))))
+        await store.sendTabContent(.view(.homeSelectionTapped(.startAiChat)))
         await store.receive(\.contentTabs)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
@@ -1677,8 +1678,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // 세션 생성 실패 no-op 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.startAiChat))))
-        await store.receive(\.content.internal.homeAiChatSessionCreated)
+        await store.sendTabContent(.view(.homeSelectionTapped(.startAiChat)))
+        await store.receiveTabContent(\.internal.homeAiChatSessionCreated)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .homeDefault)
@@ -1708,7 +1709,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let beforeCount = store.state.contentTabs.tabs.count
         let beforeActiveID = store.state.contentTabs.activeTabID
 
-        await store.send(.content(.view(.homeSelectionTapped(.fixedDirectory(.desktop)))))
+        await store.sendTabContent(.view(.homeSelectionTapped(.fixedDirectory(.desktop))))
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, beforeCount)
         XCTAssertEqual(store.state.contentTabs.activeTabID, beforeActiveID)
@@ -1776,7 +1777,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         let initialTabCount = store.state.contentTabs.tabs.count
 
-        await store.send(.content(.view(.homeSelectionTapped(.startAiChat))))
+        await store.sendTabContent(.view(.homeSelectionTapped(.startAiChat)))
         // Home AI Chat 전환은 same-tab handoff에서도 Inspector Chat을 먼저 닫고,
         // active tab anchor와 navigation route를 고정한 뒤 provider load만 tab-scoped async로 처리한다.
         await store.receive { action in
@@ -1802,7 +1803,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             return receivedSessionID == sessionID
         }
         await store.receive { action in
-            guard case .content(.aiChat(.setup)) = action else { return false }
+            guard case .tabContent(_, .aiChat(.setup)) = action else { return false }
             return true
         }
         await store.receive { action in
@@ -1817,12 +1818,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
             return receivedSessionID == sessionID
         }
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action
+            guard case let .tabContent(_, .internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action
             else { return false }
             return receivedSessionID == sessionID
         }
         await store.receive { action in
-            guard case .content(.aiChat(.providerConnectionsUpdated)) = action else { return false }
+            guard case .tabContent(_, .aiChat(.providerConnectionsUpdated)) = action else { return false }
             return true
         }
 
@@ -1971,9 +1972,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // store.exhaustivity = .off: cancellation과 경로별 load 호출 외 navigation child action은 별도 owner가 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+        await store.sendTabContent(.entryViewLayout(.entryOperations(.loading(
             .loadItems(path: "/seed", showHidden: false),
-        )))))
+        ))))
         await fulfillment(of: [oldLoadStarted], timeout: 1)
         await store.send(.reserveExternalContentTabs([
             .init(id: tabID, anchor: .directory(path: "/external")),
@@ -1985,6 +1986,64 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         XCTAssertEqual(cancellationCount.value, 1)
         XCTAssertEqual(loadPaths.value, ["/seed", "/external"])
+    }
+
+    /// CTM-001-external_tab_reservation: 비활성 탭 reload는 활성 탭의 진행 중 load를 취소하지 않는다.
+    /// 탭별 loading cancellation owner가 같은 window 안의 독립 content session을 격리하는지 검증한다.
+    /// - 검증 내용: B load 대기 중 inactive A operation completion이 A reload를 시작해도 B cancellation은 0회다.
+    /// - 사전 조건: 같은 window의 A와 B Directory tab이 있고 B load effect가 continuation gate에서 대기 중이다.
+    /// - 기대 결과: A reload가 시작되며 B load는 독립적으로 계속 실행된다.
+    func testInactiveTabReloadDoesNotCancelActiveTabLoad() async throws {
+        let tabB = ContentTabID(rawValue: "B")
+        let initialState = FileManagerWindowState.makeInitial(path: "/a")
+        let tabA = try XCTUnwrap(initialState.contentTabs.activeTabID)
+
+        let activeLoadStarted = expectation(description: "active B load started")
+        let inactiveReloadStarted = expectation(description: "inactive A reload started")
+        let activeLoadGate = AsyncStream<Void>.makeStream()
+        let activeLoadCancellationCount = LockIsolated(0)
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { url, _ in
+                switch url.path {
+                case "/b":
+                    activeLoadStarted.fulfill()
+                    return await withTaskCancellationHandler {
+                        for await _ in activeLoadGate.stream {}
+                        return []
+                    } onCancel: {
+                        activeLoadCancellationCount.withValue { $0 += 1 }
+                        activeLoadGate.continuation.finish()
+                    }
+                case "/a":
+                    inactiveReloadStarted.fulfill()
+                    return []
+                default:
+                    return []
+                }
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { $0.finish() }
+            }
+        }
+        // store.exhaustivity = .off: navigation 부수 action보다 탭별 loading cancellation 격리를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.reserveExternalContentTabs([
+            .init(id: tabB, anchor: .directory(path: "/b")),
+        ]))
+        await store.receive(\.contentTabs.setCurrent, tabB)
+        await fulfillment(of: [activeLoadStarted], timeout: 1)
+
+        await store.send(ExternalTabReservationTestFixture.inactiveReloadAction(tabID: tabA))
+        await fulfillment(of: [inactiveReloadStarted], timeout: 1)
+
+        XCTAssertEqual(activeLoadCancellationCount.value, 0)
+        activeLoadGate.continuation.finish()
+        await store.skipReceivedActions()
+        await store.finish()
     }
 
     /// CTM-001-external_tab_reservation: Collection reservation은 canonical open 경로를 정확히 한 번 사용한다.
@@ -2196,6 +2255,17 @@ private enum ExternalTabReservationTestFixture {
         let tab: ContentTabItem
         let content: FileManagerContentState
         let record: ContentTabPinnedRecord
+    }
+
+    static func inactiveReloadAction(tabID: ContentTabID) -> FileManagerWindowAction {
+        .tabContent(
+            tabID: tabID,
+            action: .entryViewLayout(.entryOperations(.lifecycle(.operationFinished(
+                "/a/file.txt",
+                .rename,
+                .success(()),
+            )))),
+        )
     }
 
     static func makeInvalidSets(existingID: ContentTabID) -> [[ExternalContentTabReservation]] {
