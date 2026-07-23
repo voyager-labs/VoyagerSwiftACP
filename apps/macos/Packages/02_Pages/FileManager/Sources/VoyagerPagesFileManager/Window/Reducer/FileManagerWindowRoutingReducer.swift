@@ -12,6 +12,9 @@ import VoyagerShared
 
 @Reducer
 struct FileManagerWindowRoutingReducer {
+    typealias State = FileManagerWindowState
+    typealias Action = FileManagerWindowAction
+
     @Dependency(\.collectionAlertClient)
     var collectionAlertClient
     @Dependency(\.fileManagerClient)
@@ -22,9 +25,8 @@ struct FileManagerWindowRoutingReducer {
     var entryLoadingClient
     @Dependency(\.aiConnectionsFileClient)
     var aiConnectionsFileClient
-
-    typealias State = FileManagerWindowState
-    typealias Action = FileManagerWindowAction
+    @Dependency(\.fileOperationUndoManagerClient)
+    var fileOperationUndoManagerClient
 
     private func cannotPinCollectionFeedbackEffect() -> Effect<Action> {
         let collectionAlertClient = collectionAlertClient
@@ -74,11 +76,19 @@ struct FileManagerWindowRoutingReducer {
     private func cancelPendingCollectionOpen(state: inout State) -> Effect<Action> {
         guard state.pendingCollectionOpenRequest != nil else { return .none }
         state.pendingCollectionOpenRequest = nil
+        let clearLoadingEffect: Effect<Action> = if let activeTabID = state.contentTabs.activeTabID {
+            .send(.tabContent(
+                tabID: activeTabID,
+                action: .entryViewLayout(.internal(.setCollectionContentLoading(false))),
+            ))
+        } else {
+            .none
+        }
         return .concatenate(
             .cancel(id: OpenCollectionFileCancelID(
                 windowID: state.content.entryViewLayout.entryOperations.windowID,
             )),
-            .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
+            clearLoadingEffect,
         )
     }
 
@@ -157,6 +167,54 @@ struct FileManagerWindowRoutingReducer {
         )
     }
 
+    private func undoManagerScope(tabID: ContentTabID, state: State) -> UndoManagerScope? {
+        guard let windowID = state.windowID else { return nil }
+        return UndoManagerScope(windowID: windowID, contentTabID: tabID.rawValue)
+    }
+
+    private func activateUndoManagerScopeEffect(tabID: ContentTabID, state: State) -> Effect<Action> {
+        guard let scope = undoManagerScope(tabID: tabID, state: state) else { return .none }
+        _ = fileOperationUndoManagerClient.activate(scope)
+        return .none
+    }
+
+    private func deactivateUndoManagerScopeEffect(tabID: ContentTabID, state: State) -> Effect<Action> {
+        guard let scope = undoManagerScope(tabID: tabID, state: state) else { return .none }
+        fileOperationUndoManagerClient.deactivate(scope)
+        return .cancel(id: FileOperationUndoRegistrationCancelID(scope: scope))
+    }
+
+    private func replaceUndoManagerScopeEffect(
+        closedTabID: ContentTabID,
+        homeTabID: ContentTabID,
+        state: State,
+    ) -> Effect<Action> {
+        guard let closedScope = undoManagerScope(tabID: closedTabID, state: state),
+              let homeScope = undoManagerScope(tabID: homeTabID, state: state)
+        else { return .none }
+        fileOperationUndoManagerClient.deactivate(closedScope)
+        _ = fileOperationUndoManagerClient.activate(homeScope)
+        return .cancel(id: FileOperationUndoRegistrationCancelID(scope: closedScope))
+    }
+
+    private func reconcileUndoManagerScopesEffect(
+        tabAnchorsBeforeSync: [(id: ContentTabID, anchor: ContentTabPageAnchor)],
+        state: State,
+    ) -> Effect<Action> {
+        let tabAnchorsAfterSync = state.contentTabs.tabs.map { (id: $0.id, anchor: $0.anchor) }
+        let anchorsBeforeSync = Dictionary(uniqueKeysWithValues: tabAnchorsBeforeSync)
+        let anchorsAfterSync = Dictionary(uniqueKeysWithValues: tabAnchorsAfterSync)
+        let teardownEffect = tabAnchorsBeforeSync.reduce(Effect<Action>.none) { effect, tab in
+            guard anchorsAfterSync[tab.id] != tab.anchor else { return effect }
+            return .concatenate(effect, deactivateUndoManagerScopeEffect(tabID: tab.id, state: state))
+        }
+        let activationEffect = tabAnchorsAfterSync.reduce(Effect<Action>.none) { effect, tab in
+            guard anchorsBeforeSync[tab.id] != tab.anchor else { return effect }
+            return .concatenate(effect, activateUndoManagerScopeEffect(tabID: tab.id, state: state))
+        }
+        return .concatenate(teardownEffect, activationEffect)
+    }
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -214,7 +272,8 @@ struct FileManagerWindowRoutingReducer {
             case .sidebar(.delegate(.openContentTab)):
                 return .send(.contentTabs(.open(.homeDefault)))
 
-            case .content(.delegate(.closeWindow)):
+            case let .tabContent(tabID, .delegate(.closeWindow)):
+                guard tabID == state.contentTabs.activeTabID else { return .none }
                 return .send(.closeWindow)
 
             case .closeWindow:
@@ -271,6 +330,9 @@ struct FileManagerWindowRoutingReducer {
                 if keepPendingContentTabCloseFocusedAfterOpen(state: &state) {
                     return .none
                 }
+                let openedTabID = state.activeTabContentStateMissing
+                    ? state.contentTabs.activeTabID
+                    : nil
                 let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
                     || state.activeTabContentStateMissing
                 let handoffCleanupEffect: Effect<Action>
@@ -312,19 +374,29 @@ struct FileManagerWindowRoutingReducer {
                         skipAiChatCancel: true,
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
+                    openedTabID.map { activateUndoManagerScopeEffect(tabID: $0, state: state) } ?? .none,
                 )
 
             case let .contentTabs(.close(tabID)):
                 if keepPendingContentTabCloseFocused(state: &state) {
                     return .none
                 }
-                var shouldCloseWindow = false
                 let isRemovedTab = state.contentTabs.tabs[id: tabID] == nil
-                let shouldRestorePreviousActiveTab = isRemovedTab
+                let isActualRemoval = isRemovedTab
+                    && (state.tabContentStates[tabID] != nil || state.contentTabs.previousActiveTabID == tabID)
+                let shouldRestorePreviousActiveTab = isActualRemoval
                     && state.contentTabs.previousActiveTabID == tabID
-                let shouldResetLastTabContent = state.contentTabs.previousActiveTabID == tabID
-                    && state.contentTabs.activeTabID == tabID
-                let shouldResyncContentNavigation = shouldRestorePreviousActiveTab || shouldResetLastTabContent
+                let replacementHomeTabID: ContentTabID? = if shouldRestorePreviousActiveTab,
+                                                             state.activeTabContentStateMissing,
+                                                             let activeTabID = state.contentTabs.activeTabID,
+                                                             state.contentTabs.tabs[id: activeTabID]?
+                                                             .anchor == .homeDefault
+                {
+                    activeTabID
+                } else {
+                    nil
+                }
+                let shouldResyncContentNavigation = shouldRestorePreviousActiveTab
                 let aiChatLifecycleSessionIDs = aiChatLifecycleSessionIDsToPreserve(state.content.aiChat)
                 let isAiChatLifecyclePreservingTabClose = shouldResyncContentNavigation
                     && !aiChatLifecycleSessionIDs.isEmpty
@@ -357,20 +429,20 @@ struct FileManagerWindowRoutingReducer {
                         removeBackgroundAiChatOwnersPromotedToActiveContent(state: &state)
                         state.restoreInspectorStateForActiveTab()
                     }
-                } else if shouldResetLastTabContent {
-                    state.addBackgroundAiChatState(for: tabID)
-                    state.addBackgroundInspectorAiChatState(for: tabID)
-                    state.content = contentState(
-                        for: state.contentTabs.tabs[id: tabID]?.anchor,
-                        inheritingWindowContextFrom: state.content,
-                    )
-                    state.inspector = .init()
-                    state.syncActiveTabContentState()
-                    state.syncActiveTabInspectorState()
-                    shouldCloseWindow = true
                 }
                 syncDashboardProjections(state: &state)
                 syncSidebarSelectionForActiveContentTab(state: &state)
+                let undoManagerLifecycleEffect: Effect<Action> = if let replacementHomeTabID {
+                    replaceUndoManagerScopeEffect(
+                        closedTabID: tabID,
+                        homeTabID: replacementHomeTabID,
+                        state: state,
+                    )
+                } else if isActualRemoval {
+                    deactivateUndoManagerScopeEffect(tabID: tabID, state: state)
+                } else {
+                    .none
+                }
                 let handoffEffect: Effect<Action> = .merge(
                     handoffCleanupEffect,
                     activeTabHandoffEffect(
@@ -380,13 +452,17 @@ struct FileManagerWindowRoutingReducer {
                         skipAiChatCancel: true,
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
+                    undoManagerLifecycleEffect,
                 )
-                return shouldCloseWindow ? .merge(handoffEffect, .send(.closeWindow)) : handoffEffect
+                return handoffEffect
 
             case .contentTabs(.restore):
                 if keepPendingContentTabCloseFocused(state: &state) {
                     return .none
                 }
+                let restoredTabID = state.activeTabContentStateMissing
+                    ? state.contentTabs.activeTabID
+                    : nil
                 let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
                     || state.activeTabContentStateMissing
                 let handoffCleanupEffect: Effect<Action>
@@ -429,11 +505,13 @@ struct FileManagerWindowRoutingReducer {
                         skipAiChatCancel: true,
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
+                    restoredTabID.map { activateUndoManagerScopeEffect(tabID: $0, state: state) } ?? .none,
                 )
 
             case let .applyPinnedContentTabs(contentTabs):
                 let activeTabIDBeforeSync = state.contentTabs.activeTabID
                 let activeAnchorBeforeSync = activeTabIDBeforeSync.flatMap { state.contentTabs.tabs[id: $0]?.anchor }
+                let tabAnchorsBeforeSync = state.contentTabs.tabs.map { (id: $0.id, anchor: $0.anchor) }
                 state.applyPinnedContentTabs(contentTabs)
                 syncDashboardProjections(state: &state)
                 let activeAnchorAfterSync = state.contentTabs.activeTabID
@@ -448,6 +526,10 @@ struct FileManagerWindowRoutingReducer {
                         aiConnectionsFileClient: aiConnectionsFileClient,
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
+                    reconcileUndoManagerScopesEffect(
+                        tabAnchorsBeforeSync: tabAnchorsBeforeSync,
+                        state: state,
+                    ),
                 )
 
             case .contentTabs:
@@ -460,22 +542,18 @@ struct FileManagerWindowRoutingReducer {
             case let .contentTabCloseAlertResponse(choice):
                 return handleContentTabCloseAlertResponse(choice: choice, state: &state)
 
-            case .content(.collection(.saveCompleted(.success))):
-                guard state.pendingContentTabClose != nil else {
-                    return .none
-                }
-                return .none
-
-            case .content(.composer(.internal(.syncCollectionState))):
-                guard state.pendingContentTabClose != nil else {
-                    return .none
-                }
+            case let .tabContent(tabID, .composer(.internal(.syncCollectionState))):
+                guard state.pendingContentTabClose?.tabID == tabID,
+                      state.contentTabs.activeTabID == tabID
+                else { return .none }
                 state.pendingContentTabClose?.didReceiveWriteBackComposerSync = true
                 return finalizePendingContentTabCloseIfWriteBackEffectsCompleted(state: &state)
 
             case let .navigation(.internal(.setNavigationState(navigationState))):
                 let pendingCloseEffect: Effect<Action>
-                if state.pendingContentTabClose != nil {
+                if let pendingTabID = state.pendingContentTabClose?.tabID,
+                   state.contentTabs.activeTabID == pendingTabID
+                {
                     state.pendingContentTabClose?.didReceiveWriteBackNavigationState = true
                     pendingCloseEffect = finalizePendingContentTabCloseIfWriteBackEffectsCompleted(state: &state)
                 } else {
@@ -496,44 +574,58 @@ struct FileManagerWindowRoutingReducer {
                 }
                 return .merge(pendingCloseEffect, pinnedCollectionFanOutEffect)
 
-            case let .content(.aiChat(.deleteSessionTapped(sessionID))),
-                 let .inspector(.aiChat(.deleteSessionTapped(sessionID))):
+            // Delete/rename 결과는 동일 session의 모든 tab/background owner에 적용되는 session-global event다.
+            case let .tabContent(tabID, .aiChat(.deleteSessionTapped(sessionID))):
+                guard fileManagerContentState(for: tabID, state: state) != nil else { return .none }
                 return cancelAndRemoveBackgroundAiChatOwners(sessionID: sessionID, state: &state)
 
-            case let .content(.aiChat(.sessionDeleteSucceeded(sessionID))),
-                 let .inspector(.aiChat(.sessionDeleteSucceeded(sessionID))):
+            case let .inspector(.aiChat(.deleteSessionTapped(sessionID))):
+                return cancelAndRemoveBackgroundAiChatOwners(sessionID: sessionID, state: &state)
+
+            case let .tabContent(tabID, .aiChat(.sessionDeleteSucceeded(sessionID))):
+                guard fileManagerContentState(for: tabID, state: state) != nil else { return .none }
                 propagateAiChatSessionDeleteSucceeded(sessionID: sessionID, state: &state)
                 return .none
 
-            case let .content(.aiChat(.sessionDeleteFailed(sessionID, _))),
-                 let .inspector(.aiChat(.sessionDeleteFailed(sessionID, _))):
+            case let .inspector(.aiChat(.sessionDeleteSucceeded(sessionID))):
+                propagateAiChatSessionDeleteSucceeded(sessionID: sessionID, state: &state)
+                return .none
+
+            case let .tabContent(tabID, .aiChat(.sessionDeleteFailed(sessionID, _))):
+                guard fileManagerContentState(for: tabID, state: state) != nil else { return .none }
                 state.removeBackgroundAiChatState(sessionID: sessionID)
                 state.removeBackgroundInspectorAiChatState(sessionID: sessionID)
                 return .none
 
-            case let .content(.aiChat(.sessionRenameSucceeded(summary, customTitle))),
-                 let .inspector(.aiChat(.sessionRenameSucceeded(summary, customTitle))):
-                refreshAiChatCustomTitle(
-                    summary: summary,
-                    customTitle: customTitle,
-                    state: &state,
-                )
+            case let .inspector(.aiChat(.sessionDeleteFailed(sessionID, _))):
+                state.removeBackgroundAiChatState(sessionID: sessionID)
+                state.removeBackgroundInspectorAiChatState(sessionID: sessionID)
+                return .none
+
+            case let .tabContent(tabID, .aiChat(.sessionRenameSucceeded(summary, customTitle))):
+                guard fileManagerContentState(for: tabID, state: state) != nil else { return .none }
+                refreshAiChatCustomTitle(summary: summary, customTitle: customTitle, state: &state)
                 state.updateAiChatTabTitle(sessionID: summary.sessionID, title: summary.title)
                 return .none
 
-            case let .content(.aiChat(aiChatAction)):
-                if shouldRefreshActiveAiChatTabTitleFromSessionList(aiChatAction) {
-                    state.refreshActiveAiChatTabTitleFromSessionList()
-                    state.syncContentTabSidebarItems()
-                } else if case .sessionListLoaded = aiChatAction {
-                    state.refreshActiveAiChatTabTitleFromSessionList(onlyIfUsingFallback: true)
-                    state.syncContentTabSidebarItems()
-                }
+            case let .inspector(.aiChat(.sessionRenameSucceeded(summary, customTitle))):
+                refreshAiChatCustomTitle(summary: summary, customTitle: customTitle, state: &state)
+                state.updateAiChatTabTitle(sessionID: summary.sessionID, title: summary.title)
+                return .none
+
+            case let .tabContent(tabID, .aiChat(aiChatAction)):
+                guard let originContent = fileManagerContentState(for: tabID, state: state) else { return .none }
+                refreshAiChatTabTitleFromSessionListIfNeeded(
+                    tabID: tabID,
+                    action: aiChatAction,
+                    originContent: originContent,
+                    state: &state,
+                )
                 let snapshotSessionID = sessionSnapshotSavedSummary(from: aiChatAction)?.sessionID
                 let effect = routeBackgroundAiChatAction(aiChatAction, state: &state)
                 refreshAiChatFollowUpFromBackgroundIfNeeded(
                     aiChatAction,
-                    backgroundAiChat: state.content.aiChat,
+                    backgroundAiChat: originContent.aiChat,
                     state: &state,
                     skipsActiveContent: true,
                 )
@@ -580,18 +672,13 @@ struct FileManagerWindowRoutingReducer {
                 handleBackgroundInspectorAiChatSnapshotPersisted(snapshot, state: &state)
                 return .none
 
-            case .content(.collection(.saveCompleted(.failure))):
-                guard state.pendingContentTabClose != nil else {
-                    return .none
-                }
-                return .none
-
-            case .content(.collection(.savePanelResponse(nil))),
-                 .content(.collection(.writeBackFailed)),
-                 .content(.collection(.delegate(.saveFeedback))):
-                guard let pendingClose = state.pendingContentTabClose else {
-                    return .none
-                }
+            case let .tabContent(tabID, .collection(.savePanelResponse(nil))),
+                 let .tabContent(tabID, .collection(.writeBackFailed)),
+                 let .tabContent(tabID, .collection(.delegate(.saveFeedback))):
+                guard let pendingClose = state.pendingContentTabClose,
+                      pendingClose.tabID == tabID,
+                      state.contentTabs.activeTabID == tabID
+                else { return .none }
                 restorePreviousActiveContentIfNeeded(pendingClose, state: &state)
                 state.pendingContentTabClose = nil
                 return .none
@@ -926,12 +1013,16 @@ private func restartAiChatProviderLoadOnTabRestoreEffect(
         } catch {
             connectionsFile = .empty()
         }
-        await send(.content(.aiChat(.providerConnectionsUpdated(connectionsFile))))
+        await send(.tabContent(
+            tabID: activeTabID,
+            action: .aiChat(.providerConnectionsUpdated(connectionsFile)),
+        ))
     }
     .cancellable(id: HomeAiChatOpenCancelID(tabID: activeTabID), cancelInFlight: true)
 }
 
 private func resyncContentNavigationEffect(state: FileManagerWindowState) -> Effect<FileManagerWindowAction> {
+    guard let activeTabID = state.contentTabs.activeTabID else { return .none }
     if let collectionURL = collectionFileURLRequiringOpen(state: state) {
         return .send(.navigation(.view(.openCollectionFile(collectionURL))))
     }
@@ -940,11 +1031,11 @@ private func resyncContentNavigationEffect(state: FileManagerWindowState) -> Eff
     }
     if case let .collection(navigation) = navigationState {
         return .concatenate(
-            .send(.content(.internal(.applyNavigationState(.collection(navigation))))),
+            .send(.tabContent(tabID: activeTabID, action: .internal(.applyNavigationState(.collection(navigation))))),
             .send(.navigation(.internal(.navigateToCollection(navigation)))),
         )
     }
-    return .send(.content(.internal(.applyNavigationState(navigationState))))
+    return .send(.tabContent(tabID: activeTabID, action: .internal(.applyNavigationState(navigationState))))
 }
 
 private func collectionFileURLRequiringOpen(state: FileManagerWindowState) -> URL? {
@@ -1284,6 +1375,31 @@ private func routeBackgroundAiChatAction(
 private struct SessionSnapshotSavedPayload {
     let summary: AiChatSessionSummary
     let snapshot: AiChatSessionSnapshot?
+}
+
+private func refreshAiChatTabTitleFromSessionListIfNeeded(
+    tabID: ContentTabID,
+    action: AiChatAction,
+    originContent: FileManagerContentFeature.State,
+    state: inout FileManagerWindowState,
+) {
+    let onlyIfUsingFallback: Bool
+    if shouldRefreshActiveAiChatTabTitleFromSessionList(action) {
+        onlyIfUsingFallback = false
+    } else if case .sessionListLoaded = action {
+        onlyIfUsingFallback = true
+    } else {
+        return
+    }
+
+    guard !onlyIfUsingFallback || state.contentTabs.tabs[id: tabID]?.title == "AI Chat",
+          case let .aiChat(sessionIDString) = state.contentTabs.tabs[id: tabID]?.anchor,
+          let sessionUUID = UUID(uuidString: sessionIDString),
+          let summary = originContent.aiChat.sessionList.allRows.first(where: {
+              $0.sessionID.rawValue == sessionUUID
+          })
+    else { return }
+    state.updateAiChatTabTitle(sessionID: summary.sessionID, title: summary.title)
 }
 
 private func shouldRefreshActiveAiChatTabTitleFromSessionList(_ action: AiChatAction) -> Bool {

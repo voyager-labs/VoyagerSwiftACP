@@ -175,8 +175,10 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
 
     func testInspectorTransientNewChatDoesNotCancelContentNewChatPersistence() async throws {
         let saveGate = AiChatSaveGate()
+        let initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        let activeTabID = try XCTUnwrap(initialState.contentTabs.activeTabID)
         let store = TestStore(
-            initialState: FileManagerFeature.State.makeInitial(path: "/Users/test/Documents"),
+            initialState: initialState,
         ) {
             FileManagerFeature()
         } withDependencies: {
@@ -187,15 +189,15 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         // store.exhaustivity = .off: sibling AiChat effect의 cancellation 격리와 완료 action만 선별 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.aiChat(.newChatTapped)))
+        await store.send(.tabContent(tabID: activeTabID, action: .aiChat(.newChatTapped)))
         await saveGate.waitForPendingSave()
         let contentSessionID = try XCTUnwrap(store.state.content.aiChat.sessionID)
 
         await store.send(.inspector(.aiChat(.prepareUnpersistedNewChat)))
         await saveGate.resumePendingSave()
         await store.receive { action in
-            guard case let .content(.aiChat(.newChatCreated(snapshot))) = action else { return false }
-            return snapshot.sessionID == contentSessionID
+            guard case let .tabContent(tabID, .aiChat(.newChatCreated(snapshot))) = action else { return false }
+            return tabID == activeTabID && snapshot.sessionID == contentSessionID
         }
 
         let cancellationCount = await saveGate.cancellationCount
@@ -380,17 +382,22 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertEqual(store.state.inspector.activeMode, .chat)
     }
 
-    func testToolbarSparklesWithoutConfiguredProviderShowsSettingsGate() async {
+    func testToolbarSparklesWithoutConfiguredProviderShowsSettingsGate() async throws {
         let fixedUUID = makeUUID("00000000-0000-0000-0000-000000000030")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         initialState.content.navigation.seedInitialFolderPath("/Users/test/Documents")
+        let activeTabID = try XCTUnwrap(initialState.contentTabs.activeTabID)
+        initialState.tabContentStates[activeTabID] = initialState.content
 
         let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: initialState.content)
 
         let store = makeStore(initialState: initialState, uuid: fixedUUID, connectionsFile: .empty())
 
-        await store.send(.content(.view(.newChatTapped)))
-        await store.receive(\.content.delegate.newChatRequested)
+        await store.send(.tabContent(tabID: activeTabID, action: .view(.newChatTapped)))
+        await store.receive { action in
+            guard case let .tabContent(tabID, .delegate(.newChatRequested)) = action else { return false }
+            return tabID == activeTabID
+        }
         await store.receive(\.request.newChat)
         await assertOpenNewChat(on: store, expectedSetup: expectedSetup, expectedConnectionsFile: .empty())
         await assertAiChatSetup(on: store, expectedSetup: expectedSetup)
@@ -664,20 +671,25 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertNil(store.state.inspector.aiChat.sessionID)
     }
 
-    func testToolbarSparklesOpensAndClosesNewChat() async {
+    func testToolbarSparklesOpensAndClosesNewChat() async throws {
         let fixedUUID = makeUUID("00000000-0000-0000-0000-000000000010")
         let selectedEntry = makeEntry(name: "Draft.md", fullPath: "/Users/test/Documents/Draft.md")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         initialState.content.entryViewLayout.entryOperations.items = [selectedEntry]
         initialState.content.entryViewLayout.selectedIds = [selectedEntry.id]
+        let activeTabID = try XCTUnwrap(initialState.contentTabs.activeTabID)
+        initialState.tabContentStates[activeTabID] = initialState.content
 
         let connectionsFile = AIConnectionsFile.empty()
         let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: initialState.content)
 
         let store = makeStore(initialState: initialState, uuid: fixedUUID, connectionsFile: connectionsFile)
 
-        await store.send(.content(.view(.newChatTapped)))
-        await store.receive(\.content.delegate.newChatRequested)
+        await store.send(.tabContent(tabID: activeTabID, action: .view(.newChatTapped)))
+        await store.receive { action in
+            guard case let .tabContent(tabID, .delegate(.newChatRequested)) = action else { return false }
+            return tabID == activeTabID
+        }
         await store.receive(\.request.newChat)
         await assertOpenNewChat(on: store, expectedSetup: expectedSetup, expectedConnectionsFile: connectionsFile)
         await assertAiChatSetup(on: store, expectedSetup: expectedSetup)
@@ -701,8 +713,11 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
             $0.inspector.inspectorPaneExists = true
         }
 
-        await store.send(.content(.view(.newChatTapped)))
-        await store.receive(\.content.delegate.newChatRequested)
+        await store.send(.tabContent(tabID: activeTabID, action: .view(.newChatTapped)))
+        await store.receive { action in
+            guard case let .tabContent(tabID, .delegate(.newChatRequested)) = action else { return false }
+            return tabID == activeTabID
+        }
         await store.receive(\.request.newChat)
         await store.receive(\.inspector.closeChat) {
             $0.inspector.inspectorVisible = false
@@ -713,12 +728,14 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertTrue(store.state.inspector.aiChat.draftText.isEmpty)
     }
 
-    func testSelectionStateChangesRouteIntoOpenAiChatContext() async {
+    func testSelectionStateChangesRouteIntoOpenAiChatContext() async throws {
         let firstEntry = makeEntry(name: "Draft.md", fullPath: "/Users/test/Documents/Draft.md")
         let secondEntry = makeEntry(name: "Notes.md", fullPath: "/Users/test/Documents/Notes.md")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         initialState.content.entryViewLayout.entryOperations.items = [firstEntry, secondEntry]
         initialState.content.entryViewLayout.selectedIds = [firstEntry.id]
+        let activeTabID = try XCTUnwrap(initialState.contentTabs.activeTabID)
+        initialState.tabContentStates[activeTabID] = initialState.content
 
         let connectionsFile = AIConnectionsFile.empty()
         let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: initialState.content)
@@ -752,21 +769,35 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await assertAiChatSetup(on: store, expectedSetup: expectedSetup)
         await assertProviderConnectionsUpdated(on: store, expectedFile: connectionsFile)
 
-        await store.send(.content(.entryViewLayout(.internal(.setSelectionState(
-            ids: [secondEntry.id],
-            lastSelectedId: secondEntry.id,
-            rangeAnchorId: secondEntry.id,
-            shouldScrollToSelection: false,
-        ))))) {
+        await store.send(.tabContent(
+            tabID: activeTabID,
+            action: .entryViewLayout(.internal(.setSelectionState(
+                ids: [secondEntry.id],
+                lastSelectedId: secondEntry.id,
+                rangeAnchorId: secondEntry.id,
+                shouldScrollToSelection: false,
+            ))),
+        )) {
             $0.content.entryViewLayout.selectedIds = [secondEntry.id]
             $0.content.entryViewLayout.lastSelectedId = secondEntry.id
             $0.content.entryViewLayout.rangeAnchorId = secondEntry.id
             $0.content.entryViewLayout.shouldScrollToSelection = false
+            $0.tabContentStates[activeTabID]?.entryViewLayout.selectedIds = [secondEntry.id]
+            $0.tabContentStates[activeTabID]?.entryViewLayout.lastSelectedId = secondEntry.id
+            $0.tabContentStates[activeTabID]?.entryViewLayout.rangeAnchorId = secondEntry.id
+            $0.tabContentStates[activeTabID]?.entryViewLayout.shouldScrollToSelection = false
         }
-        await store.receive(\.content.entryViewLayout.delegate.selectionChanged)
         await store.receive { action in
-            guard case let .content(.delegate(.currentContextChanged(snapshot))) = action else { return false }
-            return snapshot == rawUpdatedContext
+            guard case let .tabContent(tabID, .entryViewLayout(.delegate(.selectionChanged))) = action else {
+                return false
+            }
+            return tabID == activeTabID
+        }
+        await store.receive { action in
+            guard case let .tabContent(tabID, .delegate(.currentContextChanged(snapshot))) = action else {
+                return false
+            }
+            return tabID == activeTabID && snapshot == rawUpdatedContext
         }
         await store.receive(\.inspector.aiChat.currentContextChanged) {
             $0.inspector.aiChat.currentContext = updatedContext

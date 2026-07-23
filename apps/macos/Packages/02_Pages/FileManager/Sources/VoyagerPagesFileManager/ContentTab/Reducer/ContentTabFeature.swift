@@ -118,12 +118,18 @@ extension ContentTabFeature {
                 state.recentlyClosed = snapshot
             }
 
+            let homeTab = ContentTabItem(
+                id: ContentTabID(),
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )
             state.previousActiveTabID = id
-            state.tabs[id: id]?.page = .home
-            state.tabs[id: id]?.anchor = .homeDefault
-            state.tabs[id: id]?.title = "Home"
-            state.tabs[id: id]?.iconName = "house"
-            state.activeTabID = id
+            state.tabs.remove(id: id)
+            state.tabs.append(homeTab)
+            state.activeTabID = homeTab.id
             return .none
         }
 
