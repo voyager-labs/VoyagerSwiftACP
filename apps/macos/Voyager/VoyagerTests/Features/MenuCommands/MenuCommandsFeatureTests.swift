@@ -478,7 +478,20 @@ final class MenuCommandsFeatureTests: XCTestCase {
         _ command: MenuCommandItem.AppCommand,
         routesTo expected: WindowManagerAction,
     ) async {
-        let store = TestStore(initialState: MenuCommandsFeature.State()) {
+        var initialState = MenuCommandsFeature.State()
+        switch command {
+        case .newTab:
+            initialState.canOpenNewContentTab = true
+        case .togglePinTab:
+            initialState.canToggleActiveContentTabPin = true
+        case .restoreLastClosedTab:
+            initialState.canRestoreLastClosedTab = true
+        case .duplicateTab:
+            initialState.canDuplicateActiveContentTab = true
+        default:
+            break
+        }
+        let store = TestStore(initialState: initialState) {
             MenuCommandsFeature()
         }
         // 비포괄적: app command → delegate(.windowManager(action)) 단일 라우팅만 검증하며,
