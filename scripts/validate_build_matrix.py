@@ -107,6 +107,9 @@ HOST_TEST_TARGETS = {"SettingsHostTests"}
 
 # Scheme files directory
 SCHEMES_DIR = Path("apps/macos/Voyager/Voyager.xcodeproj/xcshareddata/xcschemes")
+WORKSPACE_SCHEMES_DIR = Path(
+    "apps/macos/Voyager/Voyager.xcworkspace/xcshareddata/xcschemes"
+)
 
 # CI files to check for Prod-Release references
 CI_SCRIPT = Path("scripts/ci/release-macos-prod.sh")
@@ -831,8 +834,9 @@ def validate_host_projects(errors: list[str]) -> None:
 
 
 def validate_schemes(errors: list[str]) -> None:
-    """Validate scheme files."""
+    """Validate scheme files (project + workspace mirrors)."""
     check_scheme_files(SCHEMES_DIR, errors)
+    check_scheme_files(WORKSPACE_SCHEMES_DIR, errors)
 
 
 def validate_ci(errors: list[str]) -> None:
