@@ -39,16 +39,16 @@ struct ContentPaneContextMenu: View {
         if isTrashFolder {
             Button("Empty Trash") {
                 store
-                    .send(.entryViewLayout(.entryOperations(.trash(.emptyTrash(paths: store.entryViewLayout.entries
-                            .map(\.fullPath))))))
+                    .send(.entryOperations(.trash(.emptyTrash(paths: store.entryViewLayout.entries
+                            .map(\.fullPath)))))
             }
             .disabled(!canPerformEntryCommands)
         } else {
             Button("New Folder") {
-                store.send(.entryViewLayout(.entryOperations(.edit(.createNewFolder(
+                store.send(.entryOperations(.edit(.createNewFolder(
                     parentPath: store.navigation.currentPath,
                     siblingNames: store.entryViewLayout.entries.map(\.name),
-                )))))
+                ))))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
             .disabled(!canPerformEntryCommands)
@@ -119,10 +119,10 @@ struct ContentPaneContextMenu: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.entryViewLayout.entryArrangements.sortKey == key },
+                get: { store.entryArrangements.sortKey == key },
                 set: { isOn in
                     if isOn {
-                        store.send(.entryViewLayout(.entryArrangements(.setSortKey(key))))
+                        store.send(.entryArrangements(.setSortKey(key)))
                     }
                 },
             ),
@@ -133,10 +133,10 @@ struct ContentPaneContextMenu: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.entryViewLayout.entryArrangements.sortOrder == order },
+                get: { store.entryArrangements.sortOrder == order },
                 set: { isOn in
                     if isOn {
-                        store.send(.entryViewLayout(.entryArrangements(.setSortOrder(order))))
+                        store.send(.entryArrangements(.setSortOrder(order)))
                     }
                 },
             ),
@@ -147,10 +147,10 @@ struct ContentPaneContextMenu: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.entryViewLayout.entryArrangements.groupKey == key },
+                get: { store.entryArrangements.groupKey == key },
                 set: { isOn in
                     if isOn {
-                        store.send(.entryViewLayout(.entryArrangements(.setGroupKey(key))))
+                        store.send(.entryArrangements(.setGroupKey(key)))
                     }
                 },
             ),

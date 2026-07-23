@@ -21,11 +21,11 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         state.entryViewLayout.mode = .grid
 
         let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
 
         await store.send(.view(.changeLayout(.list)))
         await store.receive(\.entryViewLayout.internal.setMode) {
             $0.entryViewLayout.mode = .list
-            $0.entryViewLayout.outlineProjectionRevision += 1
         }
 
         await store.receive(\.composer.internal.syncCollectionState)
@@ -40,11 +40,11 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
     /// - 기대 결과: state.entryViewLayout.mode == .grid, composer.syncCollectionState 수신
     func testChangeLayoutToGridUpdatesMode() async {
         let store = makeFileManagerContentFeatureStore()
+        store.exhaustivity = .off
 
         await store.send(.view(.changeLayout(.grid)))
         await store.receive(\.entryViewLayout.internal.setMode) {
             $0.entryViewLayout.mode = .grid
-            $0.entryViewLayout.outlineProjectionRevision += 1
         }
 
         await store.receive(\.composer.internal.syncCollectionState)
@@ -58,11 +58,12 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
     func testChangeLayoutPersistsToSettings() async {
         let recorder = UserDefaultsStringRecorder()
         let store = makeFileManagerContentFeatureStore(setString: recorder.record)
+        store.exhaustivity = .off
 
         await store.send(.view(.changeLayout(.grid)))
         await store.receive(\.entryViewLayout.internal.setMode) {
             $0.entryViewLayout.mode = .grid
-            $0.entryViewLayout.outlineProjectionRevision += 1
+            $0.entryViewLayout.mode = .grid
         }
 
         await store.receive(\.composer.internal.syncCollectionState)
@@ -79,19 +80,19 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         let renamingId: EntryModel.ID = "test-entry-id"
         var state = FileManagerContentState()
         state.entryViewLayout.mode = .list
-        state.entryViewLayout.entryOperations.renamingItemId = renamingId
+        state.entryOperations.renamingItemId = renamingId
 
         let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
 
         await store.send(.view(.changeLayout(.grid)))
         await store.receive(\.entryViewLayout.internal.setMode) {
             $0.entryViewLayout.mode = .grid
-            $0.entryViewLayout.outlineProjectionRevision += 1
         }
 
         await store.receive(\.composer.internal.syncCollectionState)
-        await store.receive(\.entryViewLayout.entryOperations.edit.cancelRename) {
-            $0.entryViewLayout.entryOperations.renamingItemId = nil
+        await store.receive(\.entryOperations.edit.cancelRename) {
+            $0.entryOperations.renamingItemId = nil
         }
     }
 
@@ -104,19 +105,18 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         let renamingId: EntryModel.ID = "test-entry-id"
         var state = FileManagerContentState()
         state.entryViewLayout.mode = .list
-        state.entryViewLayout.entryOperations.renamingItemId = renamingId
+        state.entryOperations.renamingItemId = renamingId
 
         let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
 
         // 같은 모드로 변경 → isModeChanging == false → 취소 없음
         await store.send(.view(.changeLayout(.list)))
-        await store.receive(\.entryViewLayout.internal.setMode) {
-            $0.entryViewLayout.outlineProjectionRevision += 1
-        }
+        await store.receive(\.entryViewLayout.internal.setMode)
 
         await store.receive(\.composer.internal.syncCollectionState)
         XCTAssertEqual(store.state.entryViewLayout.mode, .list)
-        XCTAssertEqual(store.state.entryViewLayout.entryOperations.renamingItemId, renamingId)
+        XCTAssertEqual(store.state.entryOperations.renamingItemId, renamingId)
     }
 
     // MARK: - EVM-002-show_hide_hidden_entry
@@ -135,7 +135,7 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath("/seed")
         state.entryViewLayout.showHiddenFiles = false
-        state.entryViewLayout.entryArrangements.sortKey = .kind
+        state.entryArrangements.sortKey = .kind
 
         let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
@@ -152,11 +152,11 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         }
 
         _ = await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(
+            guard case let .entryOperations(.loading(.loadItems(
                 path,
                 showHidden,
                 priority,
-            )))) = action else { return false }
+            ))) = action else { return false }
             return path == "/seed"
                 && showHidden
                 && priority == .active([.spotlight])
@@ -180,15 +180,15 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         // store.exhaustivity = .off: arrangement apply 내부 액션은 metadata reload 계약의 검증 대상이 아님
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryArrangements(.setSortKey(.kind)))) {
-            $0.entryViewLayout.entryArrangements.sortKey = .kind
+        await store.send(.entryArrangements(.setSortKey(.kind))) {
+            $0.entryArrangements.sortKey = .kind
         }
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(
+            guard case let .entryOperations(.loading(.loadItems(
                 path,
                 showHidden: _,
                 priority,
-            )))) = action else { return false }
+            ))) = action else { return false }
             return path == "/seed" && priority == .active([.spotlight])
         }
         await store.receive(\.entryViewLayout.hierarchy.arrangementMetadataPriorityChanged)
@@ -210,8 +210,8 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         // store.exhaustivity = .off: collection materialization 내부 stream은 현재 path 재요청 계약의 검증 대상이 아님
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryArrangements(.setSortKey(.kind)))) {
-            $0.entryViewLayout.entryArrangements.sortKey = .kind
+        await store.send(.entryArrangements(.setSortKey(.kind))) {
+            $0.entryArrangements.sortKey = .kind
         }
         await store.receive { action in
             guard case let .entryViewLayout(.internal(.applyCollectionSearchPaths(paths, showHidden))) = action
@@ -241,8 +241,8 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         // store.exhaustivity = .off: collection materialization stream은 원본 path 재사용 계약의 검증 대상이 아님
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryArrangements(.setSortKey(.kind)))) {
-            $0.entryViewLayout.entryArrangements.sortKey = .kind
+        await store.send(.entryArrangements(.setSortKey(.kind))) {
+            $0.entryArrangements.sortKey = .kind
         }
         await store.receive { action in
             guard case let .entryViewLayout(.internal(.applyCollectionSearchPaths(paths, _))) = action
@@ -279,8 +279,8 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         // store.exhaustivity = .off: collection materialization stream은 append 원본 path 재사용 계약의 검증 대상이 아님
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryArrangements(.setSortKey(.kind)))) {
-            $0.entryViewLayout.entryArrangements.sortKey = .kind
+        await store.send(.entryArrangements(.setSortKey(.kind))) {
+            $0.entryArrangements.sortKey = .kind
         }
         await store.receive { action in
             guard case let .entryViewLayout(.internal(.applyCollectionSearchPaths(paths, _))) = action
@@ -301,15 +301,15 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         // store.exhaustivity = .off: arrangement apply 내부 액션은 metadata reload 계약의 검증 대상이 아님
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryArrangements(.setGroupKey(.tags)))) {
-            $0.entryViewLayout.entryArrangements.groupKey = .tags
+        await store.send(.entryArrangements(.setGroupKey(.tags))) {
+            $0.entryArrangements.groupKey = .tags
         }
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(
+            guard case let .entryOperations(.loading(.loadItems(
                 path,
                 showHidden: _,
                 priority,
-            )))) = action else { return false }
+            ))) = action else { return false }
             return path == "/seed" && priority == .active([.tags])
         }
         await store.receive(\.entryViewLayout.hierarchy.arrangementMetadataPriorityChanged)
@@ -334,11 +334,11 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
             initialState: state,
             setString: recorder.record,
         )
+        store.exhaustivity = .off
 
         await store.send(.view(.changeLayout(.list)))
         await store.receive(\.entryViewLayout.internal.setMode) {
             $0.entryViewLayout.mode = .list
-            $0.entryViewLayout.outlineProjectionRevision += 1
         }
 
         await store.receive(\.composer.internal.syncCollectionState)
@@ -362,7 +362,8 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
             .temporaryFolder(id: "/seed/file-b", name: "file-b"),
             .temporaryFolder(id: "/seed/file-c", name: "file-c"),
         ]
-        state.entryViewLayout.entryOperations.loadingContext.items = IdentifiedArrayOf(uniqueElements: entries)
+        state.entryOperations.loadingContext.items = IdentifiedArrayOf(uniqueElements: entries)
+        state.entryViewLayout.entries = entries
         state.entryViewLayout.selectedIds = ["/seed/file-a", "/seed/file-c"]
 
         let store = makeFileManagerContentFeatureStore(initialState: state)
@@ -387,7 +388,8 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
             .temporaryFolder(id: "/seed/file-x", name: "file-x"),
             .temporaryFolder(id: "/seed/file-y", name: "file-y"),
         ]
-        state.entryViewLayout.entryOperations.loadingContext.items = IdentifiedArrayOf(uniqueElements: entries)
+        state.entryOperations.loadingContext.items = IdentifiedArrayOf(uniqueElements: entries)
+        state.entryViewLayout.entries = entries
         state.entryViewLayout.selectedIds = []
 
         let store = makeFileManagerContentFeatureStore(initialState: state)

@@ -7,7 +7,9 @@ import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
@@ -24,10 +26,10 @@ public struct FileManagerContentFeature {
             switch action {
             case let .collection(.saveCompleted(result)):
                 return handleCollectionSaveCompleted(result: result, state: &state)
-            case let .entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID)))):
+            case let .entryOperations(.lifecycle(.windowIDChanged(windowID))):
                 state.composer.cancellationOwnerID = windowID
                 return .none
-            case let .entryViewLayout(.entryOperations(.lifecycle(.resetForDuplicate(windowID)))):
+            case let .entryOperations(.lifecycle(.resetForDuplicate(windowID))):
                 state.composer.cancellationOwnerID = windowID
                 return .none
             case let .entryViewLayout(.entryArrangements(.setSortKey(key))):
@@ -61,8 +63,24 @@ public struct FileManagerContentFeature {
             CollectionFeature()
         }
 
+        Reduce { state, action in
+            handlePendingSelectionBeforeEntryLayoutLoaded(action, state: &state)
+        }
+
         Scope(state: \.entryViewLayout, action: \.entryViewLayout) {
             EntryViewLayoutFeature()
+        }
+
+        Scope(state: \.entryOperations, action: \.entryOperations) {
+            EntryOperationsFeature()
+        }
+
+        Scope(state: \.entryArrangements, action: \.entryArrangements) {
+            EntryArrangementsFeature()
+        }
+
+        Scope(state: \.entryThumbnail, action: \.entryThumbnail) {
+            EntryThumbnailFeature()
         }
 
         Scope(state: \.aiChat, action: \.aiChat) {
@@ -84,6 +102,19 @@ public struct FileManagerContentFeature {
         FileManagerContentSyncReducer()
 
         FileManagerHomeSelectionReducer()
+
+        // Feature → Widget view state 동기화
+        Reduce { state, _ in
+            state.entryViewLayout.entries = Array(state.entryOperations.items)
+            state.entryViewLayout.isLoading = state.entryOperations.isLoading
+            state.entryViewLayout.renamingItemId = state.entryOperations.renamingItemId
+            state.entryViewLayout.sortKey = .fromShared(state.entryArrangements.sortKey)
+            state.entryViewLayout.sortOrder = state.entryArrangements.sortOrder
+            state.entryViewLayout.groupKey = .fromShared(state.entryArrangements.groupKey.rawValue)
+            state.entryViewLayout.collapsedGroups = state.entryArrangements.collapsedGroups
+            state.entryViewLayout.clipboardCutPaths = Set(state.entryOperations.clipboardItems)
+            return .none
+        }
 
         Reduce { state, action in
             if let effect = handleCollectionOwnerAction(action, state: &state) {
@@ -109,14 +140,8 @@ public struct FileManagerContentFeature {
             case .aiChat(.cancelInFlightWork):
                 return .none
 
-            case .view(.newChatTapped):
-                return .send(.delegate(.newChatRequested))
-
-            case .view(.aiChatNewChatTapped):
-                return .send(.delegate(.durableNewChatRequested))
-
-            case .view(.showChatHistoryTapped):
-                return .send(.delegate(.showChatHistoryRequested))
+            case .view(.openContextualAiChatTapped):
+                return .send(.delegate(.openContextualAiChat))
 
             case .aiChat(.delegate(.openAISettings)):
                 return .send(.delegate(.openAISettings))
@@ -196,17 +221,37 @@ public struct FileManagerContentFeature {
         )
     }
 
+    private func handlePendingSelectionBeforeEntryLayoutLoaded(
+        _ action: Action,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard case let .entryOperations(.loading(.streamEvent(streamEvent))) = action,
+              case let .coreBatch(items: entries, batchIndex: batchIndex) = streamEvent.event,
+              streamEvent.generation == state.entryOperations.loadingContext.generation,
+              batchIndex == state.entryOperations.loadingContext.expectedCoreBatchIndex
+        else {
+            return .none
+        }
+        guard FileManagerContentEntryOpsCoordinator.applyPendingSelectionForLoadedEntries(
+            entries: entries,
+            state: &state,
+        ) else {
+            return .none
+        }
+        return .send(.entryViewLayout(.delegate(.selectionChanged)))
+    }
+
     private func handlePendingSelectionAfterEntryLayoutLoaded(
         _ action: Action,
         state: inout State,
     ) -> Effect<Action> {
         let entries: [EntryModel]
         switch action {
-        case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(loadedEntries)))):
+        case let .entryOperations(.loading(.itemsLoaded(loadedEntries))):
             entries = loadedEntries
-        case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
+        case let .entryOperations(.loading(.streamEvent(streamEvent))):
             guard case .coreBatch = streamEvent.event else { return .none }
-            entries = Array(state.entryViewLayout.entryOperations.loadingContext.items)
+            entries = Array(state.entryOperations.loadingContext.items)
         default:
             return .none
         }

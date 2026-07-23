@@ -96,7 +96,7 @@ extension FileManagerContentFeature {
             .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
             .send(.collection(.sessionResetRequested)),
             .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
-            .cancel(id: OpenCollectionFileCancelID(windowID: state.entryViewLayout.entryOperations.windowID)),
+            .cancel(id: OpenCollectionFileCancelID(windowID: state.entryOperations.windowID)),
             .cancel(id: ComposerFeature.CancelID.search(ownerID: state.composer.cancellationOwnerID)),
             .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.composer.cancellationOwnerID)),
         )
@@ -323,8 +323,8 @@ extension FileManagerContentFeature {
         let nextNavigationState = ContentPageNavigationRoute.collection(
             ContentPageCollectionNavigationFactory.makeCollectionNavigation(
                 payload.navigation,
-                sortKey: state.entryViewLayout.entryArrangements.sortKey,
-                sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
+                sortKey: state.entryArrangements.sortKey,
+                sortOrder: state.entryArrangements.sortOrder,
                 viewLayout: state.entryViewLayout.mode,
             ),
         )
@@ -358,8 +358,8 @@ extension FileManagerContentFeature {
         let nextNavigationState = ContentPageNavigationRoute.collection(
             ContentPageCollectionNavigationFactory.makeCollectionNavigation(
                 payload.nextNavigation,
-                sortKey: state.entryViewLayout.entryArrangements.sortKey,
-                sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
+                sortKey: state.entryArrangements.sortKey,
+                sortOrder: state.entryArrangements.sortOrder,
                 viewLayout: state.entryViewLayout.mode,
             ),
         )
@@ -376,8 +376,8 @@ extension FileManagerContentFeature {
                     navigationState: .collection(
                         ContentPageCollectionNavigationFactory.makeCollectionNavigation(
                             historyNavigation,
-                            sortKey: state.entryViewLayout.entryArrangements.sortKey,
-                            sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
+                            sortKey: state.entryArrangements.sortKey,
+                            sortOrder: state.entryArrangements.sortOrder,
                             viewLayout: state.entryViewLayout.mode,
                         ),
                     ),

@@ -40,7 +40,7 @@ final class FileManagerHostFixturePhaseNotificationTests: XCTestCase {
             $0.hierarchy.expandedFolderIDs = [projectsID]
             $0.hierarchy.foldersByID[projectsID] = .init(phase: .loading, generation: 1)
         }
-        await store.receive(\.entryOperations.loading.loadFolderItems)
+        await store.receive(\.delegate.expandRequested)
         await store.finish()
     }
 }

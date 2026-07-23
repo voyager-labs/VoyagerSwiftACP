@@ -30,8 +30,8 @@ func makeWindowCollectionNavigation(
     return ContentPageCollectionNavigation(
         kind: kind,
         context: payload.context,
-        sortKey: state.content.entryViewLayout.entryArrangements.sortKey,
-        sortOrder: state.content.entryViewLayout.entryArrangements.sortOrder,
+        sortKey: state.content.entryArrangements.sortKey,
+        sortOrder: state.content.entryArrangements.sortOrder,
         viewLayout: contentPageNavigationViewLayout(from: state.content.entryViewLayout.mode),
         compatibility: payload.compatibility,
     )

@@ -33,7 +33,7 @@ struct SortGroupButton: View {
                     sortOrderToggle("Ascending", order: .ascending)
                     sortOrderToggle("Descending", order: .descending)
                 }
-                .disabled(store.entryViewLayout.entryArrangements.groupKey != .none)
+                .disabled(store.entryArrangements.groupKey != .none)
             },
         )
     }
@@ -42,10 +42,10 @@ struct SortGroupButton: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.entryViewLayout.entryArrangements.groupKey == key },
+                get: { store.entryArrangements.groupKey == key },
                 set: { isOn in
                     if isOn {
-                        store.send(.entryViewLayout(.entryArrangements(.setGroupKey(key))))
+                        store.send(.entryArrangements(.setGroupKey(key)))
                     }
                 },
             ),
@@ -56,10 +56,10 @@ struct SortGroupButton: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.entryViewLayout.entryArrangements.sortKey == key },
+                get: { store.entryArrangements.sortKey == key },
                 set: { isOn in
                     if isOn {
-                        store.send(.entryViewLayout(.entryArrangements(.setSortKey(key))))
+                        store.send(.entryArrangements(.setSortKey(key)))
                     }
                 },
             ),
@@ -70,10 +70,10 @@ struct SortGroupButton: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.entryViewLayout.entryArrangements.sortOrder == order },
+                get: { store.entryArrangements.sortOrder == order },
                 set: { isOn in
                     if isOn {
-                        store.send(.entryViewLayout(.entryArrangements(.setSortOrder(order))))
+                        store.send(.entryArrangements(.setSortOrder(order)))
                     }
                 },
             ),

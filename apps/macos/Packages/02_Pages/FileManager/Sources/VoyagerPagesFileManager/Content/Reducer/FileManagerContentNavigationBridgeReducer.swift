@@ -5,7 +5,6 @@ import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
-import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
@@ -34,8 +33,7 @@ struct FileManagerContentNavigationBridgeReducer {
                 state.entryViewLayout.currentPath = scrollPositionKey
                 state.entryViewLayout.savedScrollOffset = state.navigation.scrollPositions[scrollPositionKey]
                 if case .folder = navigationState {
-                    state.entryViewLayout.entryOperations.isReloading = !state.entryViewLayout.entryOperations.items
-                        .isEmpty
+                    state.entryOperations.isReloading = !state.entryOperations.items.isEmpty
                 }
                 return applyNavigationStateEffect(navigationState, state: state)
 
@@ -50,11 +48,12 @@ struct FileManagerContentNavigationBridgeReducer {
                 let showHidden = !state.entryViewLayout.showHiddenFiles
                 return .concatenate(
                     .send(.entryViewLayout(.view(.toggleShowHiddenFiles))),
+                    .send(.entryViewLayout(.hierarchy(.showHiddenFilesRefreshRequested))),
                     FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(
                         navigationState: state.navigation.navigationState,
                         showHidden: showHidden,
                         priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
-                            for: state.entryViewLayout.entryArrangements,
+                            for: state.entryArrangements,
                         ),
                     ),
                 )
@@ -145,10 +144,8 @@ struct FileManagerContentNavigationBridgeReducer {
             path: hierarchyRootPath(for: navigationState),
         ))))
         let cancelRootLoad: Effect<Action> = .cancel(
-            id: EntryOperationsLoadingCancelID.loadItems(
-                windowID: state.entryViewLayout.entryOperations.windowID,
-                ownerID: state.entryViewLayout.entryOperations.loadingCancellationOwnerID,
-            ),
+            id: EntryOperationsLoadingCancelID
+                .loadItems(windowID: state.entryOperations.windowID ?? UUID()),
         )
         return switch navigationState {
         case .home: homeRouteEffect(rootContextChange: rootContextChange)
@@ -164,10 +161,7 @@ struct FileManagerContentNavigationBridgeReducer {
                 rootContextChange: rootContextChange,
                 cancelRootLoad: cancelRootLoad,
             )
-        case .computer: computerRouteEffect(
-                rootContextChange: rootContextChange,
-                cancelRootLoad: cancelRootLoad,
-            )
+        case .computer: computerRouteEffect(rootContextChange: rootContextChange, cancelRootLoad: cancelRootLoad)
         case .collection: collectionRouteEffect(state: state, rootContextChange: rootContextChange)
         case let .aiChat(sessionID): aiChatRouteEffect(
                 sessionID: sessionID,
@@ -204,7 +198,7 @@ struct FileManagerContentNavigationBridgeReducer {
                 path: path,
                 showHidden: state.entryViewLayout.showHiddenFiles,
                 priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
-                    for: state.entryViewLayout.entryArrangements,
+                    for: state.entryArrangements,
                 ),
             ))),
             observeFolderChangesEffect(path: path),
@@ -389,7 +383,7 @@ struct FileManagerContentNavigationBridgeReducer {
     }
 
     private func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<Action> {
-        .send(.entryViewLayout(.entryOperations(action)))
+        .send(.entryOperations(action))
     }
 }
 

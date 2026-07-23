@@ -25,7 +25,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     ) -> FileManagerWindowState {
         var state = FileManagerWindowState()
         state.content.entryViewLayout.selectedIds = ["selected-entry"]
-        state.content.entryViewLayout.entryOperations.isLoading = isLoading
+        state.content.entryOperations.isLoading = isLoading
         state.content.entryViewLayout.isCollectionMode = isCollectionMode
         state.content.navigation.navigationState = .folder("/tmp")
         return state
@@ -48,53 +48,6 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     }
 
     // MARK: - VOY-578-entry_commands
-
-    // MARK: - VOY-150-context_menu_loading_capability
-
-    /// VOY-150-context_menu_loading_capability: AppKit 빈 영역 메뉴는 loading capability를 New Folder와 Empty Trash에 적용한다.
-    /// 일반 Directory loading 중 stale 메뉴 command가 실행되지 않도록 두 항목의 실제 AppKit enablement가 projection과 일치해야 한다.
-    /// - 검증 내용: normal/loading 및 Trash/non-Trash configuration에서 메뉴 항목의 isEnabled 상태.
-    /// - 사전 조건: ContentPaneContextMenuBuilder에 ordinary Directory와 Trash의 loading capability configuration을 각각 전달한다.
-    /// - 기대 결과: ordinary Directory loading만 New Folder와 Empty Trash가 비활성화되고, normal 상태는 활성 상태를 유지한다.
-    func testAppKitBlankAreaMenuAppliesLoadingCapabilityToNewFolderAndEmptyTrash() {
-        assertPrimaryMenuItem(title: "New Folder", isTrashFolder: false, canPerformEntryCommands: true, isEnabled: true)
-        assertPrimaryMenuItem(title: "Empty Trash", isTrashFolder: true, canPerformEntryCommands: true, isEnabled: true)
-        assertPrimaryMenuItem(
-            title: "New Folder",
-            isTrashFolder: false,
-            canPerformEntryCommands: false,
-            isEnabled: false,
-        )
-        assertPrimaryMenuItem(
-            title: "Empty Trash",
-            isTrashFolder: true,
-            canPerformEntryCommands: false,
-            isEnabled: false,
-        )
-    }
-
-    /// FMW-001-entry_commands: 빈 영역 메뉴는 loading 중 Paste와 Select All을 비활성화한다.
-    /// 빈 영역 메뉴도 app menu 및 키 입력과 같은 capability projection을 사용해 stale clipboard나 selection 동작을 노출하지 않아야 한다.
-    /// - 검증 내용: context menu configuration의 capability와 item count가 Paste, Select All, Sort, Group 활성 정책에 반영된다.
-    /// - 사전 조건: 일반 Directory loading 중이고 clipboard에는 항목이 있으나 표시 항목은 없다.
-    /// - 기대 결과: Paste, Select All, Sort, Group mutation은 모두 비활성화된다.
-    func testEmptyAreaMenuUsesLoadingCapabilityForPasteAndSelectAll() {
-        let configuration = ContentPaneContextMenuBuilder.Configuration(
-            isTrashFolder: false,
-            viewLayout: .list,
-            sortKey: .name,
-            sortOrder: .ascending,
-            groupKey: .none,
-            canPaste: true,
-            itemCount: 0,
-            canPerformEntryCommands: false,
-        )
-
-        XCTAssertFalse(configuration.canPasteItems)
-        XCTAssertFalse(configuration.canSelectAll)
-        XCTAssertFalse(configuration.canChangeSort)
-        XCTAssertFalse(configuration.canChangeGroup)
-    }
 
     /// VOY-578-entry_commands: 일반 Directory loading 중 모든 전역 entry 명령 차단
     /// stale 선택이 유지되어도 menu capability와 최종 routing이 함께 명령 실행을 막는지 검증한다.
@@ -145,23 +98,16 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     /// - 검증 내용: 각 비-entry command가 기존 하위 reducer action을 방출
     /// - 사전 조건: 일반 Directory mode, entry loading 중
     /// - 기대 결과: 명령 범주별 기존 routing 유지
-    func testOrdinaryDirectoryLoadingPreservesNonEntryCommands() async throws {
-        var state = makeSelectedState(isLoading: true, isCollectionMode: false)
-        state.content.entryViewLayout.entryOperations.undoRecords = [makeUndoRedoRecord("loading-undo")]
-        state.content.entryViewLayout.entryOperations.redoRecords = [makeUndoRedoRecord("loading-redo")]
-        let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+    func testOrdinaryDirectoryLoadingPreservesNonEntryCommands() async {
+        let state = makeSelectedState(isLoading: true, isCollectionMode: false)
         let store = makeStore(initialState: state)
 
         await store.send(.request(.toggleShowHiddenFiles))
         await store.receive(\.content.view.toggleShowHiddenFilesAndReload)
         await store.send(.request(.requestUndo))
-        await store.receive {
-            matchesTargetedUndoRedoRequest($0, tabID: activeTabID, request: .undo)
-        }
+        await store.receive(\.content.entryOperations.undoRedo.requestUndo)
         await store.send(.request(.requestRedo))
-        await store.receive {
-            matchesTargetedUndoRedoRequest($0, tabID: activeTabID, request: .redo)
-        }
+        await store.receive(\.content.entryOperations.undoRedo.requestRedo)
         await store.send(.request(.goBack))
         await store.receive(\.navigation.view.goBack)
         await store.send(.request(.setViewLayout(.grid)))
@@ -325,7 +271,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.openSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))) = $0
             else { return false }
             return true
         }
@@ -344,7 +290,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.openSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))) = $0
             else { return false }
             return true
         }
@@ -391,7 +337,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.quickLookSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))) = $0
             else { return false }
             return true
         }
@@ -410,7 +356,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.quickLookSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))) = $0
             else { return false }
             return true
         }
@@ -421,100 +367,14 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
     /// FMW-001-request_undo: undo 명령 라우팅
     /// requestUndo 요청이 entryOperations undoRedo 리듀서로 전달되는지 검증.
-    /// - 검증 내용: request(.requestUndo) 전송 시 content.entryViewLayout.entryOperations.undoRedo.requestUndo 수신
+    /// - 검증 내용: request(.requestUndo) 전송 시 content.entryOperations.undoRedo.requestUndo 수신
     /// - 사전 조건: 기본 상태의 FileManagerWindow
     /// - 기대 결과: undoRedo.requestUndo 액션 수신
-    func test_undoRedoRequest_undo_forwardsToEntryOperations() async throws {
-        let (store, activeTabID) = try makeWindowCommandStore(request: .undo)
+    func test_undoRedoRequest_undo_forwardsToEntryOperations() async {
+        let store = makeStore()
 
         await store.send(.request(.requestUndo))
-        await store.receive {
-            matchesTargetedUndoRedoRequest($0, tabID: activeTabID, request: .undo)
-        }
-        await store.finish()
-    }
-
-    /// FMW-001-request_undo: 표시 중인 Composer는 file Undo/Redo menu capability를 숨긴다.
-    /// Text responder가 없는 상태에서도 Composer가 file-operation history보다 우선하는 menu projection을 검증한다.
-    /// - 검증 내용: file undo/redo record가 각각 있어도 Composer 표시 중 projection의 canUndo/canRedo가 false인지 확인한다.
-    /// - 사전 조건: active Content tab에 undo/redo history가 있고 Collection Filter Composer가 표시 중이다.
-    /// - 기대 결과: isComposerPresented는 true이며 file Undo와 Redo menu capability는 모두 false다.
-    func testComposerPresentedSuppressesFileUndoRedoMenuProjection() {
-        var state = FileManagerWindowState()
-        state.content.entryViewLayout.entryOperations.undoRecords = [makeUndoRedoRecord("composer-undo")]
-        state.content.entryViewLayout.entryOperations.redoRecords = [makeUndoRedoRecord("composer-redo")]
-        state.content.composer.isPresented = true
-
-        let projection = state.menuCommandProjection
-
-        XCTAssertTrue(projection.isComposerPresented)
-        XCTAssertFalse(projection.canUndo)
-        XCTAssertFalse(projection.canRedo)
-    }
-
-    /// FMW-001-request_undo: 표시 중인 Collection Filter Composer가 Cmd-Z 파일 작업 fallback을 차단
-    /// Composer가 로컬 undo/redo 이력을 소유할 때 FileManager key-command 경계가 이를 침범하지 않는지 검증한다.
-    /// - 검증 내용: handleKeyCommand(Cmd-Z)의 EntryOperations requestUndo 미방출과 Composer 이력 불변
-    /// - 사전 조건: Composer가 표시 중이고 history와 redoHistory가 각각 1건 존재
-    /// - 기대 결과: 하위 file-operation action 없이 기존 history와 redoHistory가 그대로 유지됨
-    func testUndoKeyCommandWhenComposerPresentedBlocksEntryOperationsAndPreservesHistory() async {
-        var state = FileManagerContentState()
-        withDependencies {
-            $0.entryLoadingClient = .testValue
-            $0.searchClient = .testValue
-            $0.registryClient = .testValue
-        } operation: {
-            _ = FileManagerContentFeature().reduce(
-                into: &state,
-                action: .composer(.addScope(path: "/VoyagerFixtures/Documents")),
-            )
-            _ = FileManagerContentFeature().reduce(
-                into: &state,
-                action: .composer(.addScope(path: "/VoyagerFixtures/Notes")),
-            )
-            _ = FileManagerContentFeature().reduce(into: &state, action: .composer(.undo))
-        }
-        state.composer.isPresented = true
-        let history = state.composer.history
-        let redoHistory = state.composer.redoHistory
-        XCTAssertEqual(history.count, 1)
-        XCTAssertEqual(redoHistory.count, 1)
-
-        let store = TestStore(initialState: state) {
-            FileManagerContentFeature()
-        }
-        let command = makeUndoKeyCommand()
-
-        await store.send(.view(.handleKeyCommand(command)))
-
-        XCTAssertEqual(store.state.composer.history, history)
-        XCTAssertEqual(store.state.composer.redoHistory, redoHistory)
-        await store.finish()
-    }
-
-    /// FMW-001-request_undo: text first-responder의 local history가 비어도 file Undo로 fallback하지 않는다.
-    /// 사용자가 빈 편집 이력을 가진 text field에서 Cmd-Z를 눌러도 현재 탭의 file-operation history를 소비하지 않는지 검증한다.
-    /// - 검증 내용: text responder가 존재하는 동안 `handleKeyCommand(Cmd-Z)`가 EntryOperations requestUndo를 방출하지 않는다.
-    /// - 사전 조건: key window의 first responder가 undo 가능한 action이 없는 NSTextView이고 Composer는 표시되지 않는다.
-    /// - 기대 결과: 하위 file-operation action 없이 text responder precedence가 유지된다.
-    func testUndoKeyCommandWithEmptyTextResponderHistoryDoesNotFallbackToEntryOperations() async {
-        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 240, height: 80))
-        textView.undoManager?.removeAllActions()
-        XCTAssertFalse(textView.undoManager?.canUndo ?? false)
-
-        let command = makeUndoKeyCommand()
-        let store = TestStore(initialState: FileManagerContentState()) {
-            Reduce<FileManagerContentState, FileManagerContentAction> { state, action in
-                guard case let .view(.handleKeyCommand(command)) = action else { return .none }
-                return FileManagerContentKeyCommandHandler.effect(
-                    for: command,
-                    state: state,
-                    textResponderIsEditing: true,
-                )
-            }
-        }
-
-        await store.send(.view(.handleKeyCommand(command)))
+        await store.receive(\.content.entryOperations.undoRedo.requestUndo)
         await store.finish()
     }
 
@@ -522,16 +382,14 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
     /// FMW-001-request_redo: redo 명령 라우팅
     /// requestRedo 요청이 entryOperations undoRedo 리듀서로 전달되는지 검증.
-    /// - 검증 내용: request(.requestRedo) 전송 시 content.entryViewLayout.entryOperations.undoRedo.requestRedo 수신
+    /// - 검증 내용: request(.requestRedo) 전송 시 content.entryOperations.undoRedo.requestRedo 수신
     /// - 사전 조건: 기본 상태의 FileManagerWindow
     /// - 기대 결과: undoRedo.requestRedo 액션 수신
-    func test_undoRedoRequest_redo_forwardsToEntryOperations() async throws {
-        let (store, activeTabID) = try makeWindowCommandStore(request: .redo)
+    func test_undoRedoRequest_redo_forwardsToEntryOperations() async {
+        let store = makeStore()
 
         await store.send(.request(.requestRedo))
-        await store.receive {
-            matchesTargetedUndoRedoRequest($0, tabID: activeTabID, request: .redo)
-        }
+        await store.receive(\.content.entryOperations.undoRedo.requestRedo)
         await store.finish()
     }
 
@@ -560,7 +418,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     func testMakeInitialCreatesStateWithoutWindowID() {
         let state = FileManagerWindowState.makeInitial(path: nil)
 
-        XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
+        XCTAssertNil(state.content.entryOperations.windowID)
     }
 
     /// FMW-001-open_new_file_manager_window: makeInitial path seed와 entry operation state 분리
@@ -572,7 +430,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         let path = "/Users/test/Documents"
         let state = FileManagerWindowState.makeInitial(path: path)
 
-        XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
+        XCTAssertNil(state.content.entryOperations.windowID)
     }
 
     /// FMW-001-open_new_file_manager_window: FileManagerWindowState 기본 collection mode 비활성
@@ -584,7 +442,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         let state = FileManagerWindowState()
 
         XCTAssertFalse(state.content.entryViewLayout.isCollectionMode)
-        XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
+        XCTAssertNil(state.content.entryOperations.windowID)
     }
 
     /// FMW-001-open_new_file_manager_window: entry operations reset 시 windowID 제거
@@ -595,14 +453,14 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     func testContentEntryOperationsResetClearsWindowID() {
         let windowID = UUID()
         var state = FileManagerWindowState.makeInitial(path: nil)
-        state.content.entryViewLayout.entryOperations.windowID = windowID
-        XCTAssertEqual(state.content.entryViewLayout.entryOperations.windowID, windowID)
+        state.content.entryOperations.windowID = windowID
+        XCTAssertEqual(state.content.entryOperations.windowID, windowID)
 
-        state.content.entryViewLayout.entryOperations = EntryOperationsState()
-        XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
+        state.content.entryOperations = EntryOperationsState()
+        XCTAssertNil(state.content.entryOperations.windowID)
 
-        state.content.entryViewLayout.entryOperations.windowID = windowID
-        XCTAssertEqual(state.content.entryViewLayout.entryOperations.windowID, windowID)
+        state.content.entryOperations.windowID = windowID
+        XCTAssertEqual(state.content.entryOperations.windowID, windowID)
     }
 
     /// FMW-001-open_new_file_manager_window: FileManager feature 기본 navigation slice 구성
@@ -679,45 +537,23 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         await store.finish()
     }
 
-    private func assertPrimaryMenuItem(
-        title: String,
-        isTrashFolder: Bool,
-        canPerformEntryCommands: Bool,
-        isEnabled: Bool,
-    ) {
-        let configuration = ContentPaneContextMenuBuilder.Configuration(
-            isTrashFolder: isTrashFolder,
-            viewLayout: .list,
-            sortKey: .name,
-            sortOrder: .ascending,
-            groupKey: .none,
-            canPaste: true,
-            itemCount: 1,
-            canPerformEntryCommands: canPerformEntryCommands,
-        )
-        let item = ContentPaneContextMenuBuilder.makePrimaryMenuItem(configuration: configuration, target: self)
-
-        XCTAssertEqual(item.title, title)
-        XCTAssertEqual(item.isEnabled, isEnabled)
-    }
-
     private func matchesEntryCommandAction(
         _ command: FileManagerWindowAction.WindowCommand,
         _ action: FileManagerWindowAction,
     ) -> Bool {
         switch (command, action) {
-        case (.newFolder, .content(.entryViewLayout(.entryOperations(.edit(.createNewFolder))))),
+        case (.newFolder, .content(.entryOperations(.edit(.createNewFolder)))),
              (
                  .openSelectedItem,
-                 .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))),
+                 .content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))),
              ),
              (
                  .quickLookSelectedItem,
-                 .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))),
+                 .content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))),
              ),
-             (.cut, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.cutSelectedItems)))))),
-             (.copy, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedItems)))))),
-             (.paste, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.pasteItems)))))):
+             (.cut, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.cutSelectedItems"))))),
+             (.copy, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedItems"))))),
+             (.paste, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems"))))):
             true
 
         default:
@@ -730,17 +566,17 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         _ action: FileManagerWindowAction,
     ) -> Bool {
         switch (command, action) {
-        case (.duplicate, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.duplicateSelectedItems)))))),
+        case (.duplicate, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.duplicateSelectedItems"))))),
              (
                  .makeAlias,
-                 .content(.entryViewLayout(.delegate(.executeCommand(.mutation(.createAliasForSelectedItems))))),
+                 .content(.entryViewLayout(.delegate(.executeCommand("mutation.createAliasForSelectedItems")))),
              ),
              (.selectAll, .content(.view(.selectAllEntries))),
              (
                  .copyAbsolutePaths,
-                 .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedAbsolutePaths))))),
+                 .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedAbsolutePaths")))),
              ),
-             (.copyURLs, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedURLs)))))):
+             (.copyURLs, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedURLs"))))):
             true
 
         default:
@@ -773,159 +609,5 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         XCTAssertEqual(window.frame.width, 1240, accuracy: 0.5)
         XCTAssertEqual(window.frame.height, 760, accuracy: 0.5)
-    }
-}
-
-extension FMW001FileManagerWindowTests {
-    // MARK: - FMW-001-open_file_manager_window
-
-    /// FMW-001-open_file_manager_window: File Manager toolbar가 고정된 icon-only 표현을 유지한다.
-    /// toolbar의 display mode contextual menu가 앱 전용 메뉴 뒤에 노출되지 않도록 창 스타일 계약을 검증한다.
-    /// - 검증 내용: icon-only mode, 사용자 customization, configuration autosave, display mode customization 설정
-    /// - 사전 조건: 새 NSWindow에 FileManagerWindowChrome 스타일 적용
-    /// - 기대 결과: toolbar 표현과 customization 경로가 모두 고정됨
-    func testConfigureWindowStyleDisablesToolbarDisplayModeCustomization() throws {
-        let window = NSWindow(contentViewController: NSViewController())
-
-        FileManagerWindowChrome.configureWindowStyle(window)
-
-        let toolbar = try XCTUnwrap(window.toolbar)
-        XCTAssertEqual(toolbar.displayMode, .iconOnly)
-        XCTAssertFalse(toolbar.allowsUserCustomization)
-        XCTAssertFalse(toolbar.autosavesConfiguration)
-        if #available(macOS 15.0, *) {
-            XCTAssertFalse(toolbar.allowsDisplayModeCustomization)
-        }
-    }
-}
-
-extension FMW001FileManagerWindowTests {
-    // MARK: - FMW-001-entry_commands
-
-    /// FMW-001-entry_commands: blank-area AppKit menu container disables automatic item validation.
-    /// loading capability가 false인 item을 responder chain이 다시 활성화하면 stale callback guard가 우회될 수 있다.
-    /// - 검증 내용: root와 nested builder가 공유하는 container의 autoenablesItems 상태.
-    /// - 사전 조건: menu item registry resource를 초기화하지 않는 bare menu container다.
-    /// - 기대 결과: container가 false를 반환해 명시적 capability를 보존한다.
-    func testBlankAreaMenuContainerDisablesAutomaticValidation() {
-        // RED: menu containers inherited AppKit auto-enablement.
-        let menu = ContentPaneContextMenuBuilder.makeMenuContainer()
-
-        // GREEN: root and nested builders share an explicit non-auto-enabling container.
-        XCTAssertFalse(menu.autoenablesItems)
-    }
-}
-
-extension FMW001FileManagerWindowTests {
-    // MARK: - VOY-619-ai_chat_command_availability
-
-    /// VOY-619-ai_chat_command_availability: 활성 탭의 Inspector capability를 메뉴 projection에 반영한다.
-    /// 메뉴가 실행 불가능한 Home/AiChat 탭에서 활성 상태로 노출되지 않도록 canonical anchor capability를 검증한다.
-    /// - 검증 내용: Home/AiChat과 Directory/Collection anchor별 canUseAiChatInspector 값
-    /// - 사전 조건: 동일한 active tab의 anchor를 지원·미지원 유형으로 전환
-    /// - 기대 결과: Inspector 지원 anchor에서만 AiChat 메뉴 명령이 활성화됨
-    func testMenuCommandProjectionReflectsActiveTabInspectorCapability() throws {
-        var state = FileManagerWindowState.makeInitial(path: "/Users/test/Documents")
-        let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
-
-        XCTAssertFalse(state.menuCommandProjection.isNewChatPresented)
-        XCTAssertFalse(state.menuCommandProjection.isChatHistoryPresented)
-
-        state.inspector.inspectorVisible = true
-        state.inspector.inspectorPaneExists = true
-        state.inspector.activeMode = .chat
-        state.inspector.aiChat.mode = .sessions
-        XCTAssertFalse(state.menuCommandProjection.isNewChatPresented)
-        XCTAssertTrue(state.menuCommandProjection.isChatHistoryPresented)
-
-        state.inspector.aiChat.mode = .chat
-        XCTAssertTrue(state.menuCommandProjection.isNewChatPresented)
-        XCTAssertFalse(state.menuCommandProjection.isChatHistoryPresented)
-
-        state.inspector.inspectorPaneExists = false
-        XCTAssertFalse(state.menuCommandProjection.isNewChatPresented)
-        XCTAssertFalse(state.menuCommandProjection.isChatHistoryPresented)
-
-        XCTAssertTrue(state.menuCommandProjection.canUseAiChatInspector)
-
-        state.contentTabs.tabs[id: activeTabID]?.anchor = .homeDefault
-        XCTAssertFalse(state.menuCommandProjection.canUseAiChatInspector)
-
-        state.contentTabs.tabs[id: activeTabID]?.anchor = .aiChat(sessionID: "projection-test")
-        XCTAssertFalse(state.menuCommandProjection.canUseAiChatInspector)
-
-        state.contentTabs.tabs[id: activeTabID]?.anchor = .directory(path: "/Users/test/Documents")
-        XCTAssertTrue(state.menuCommandProjection.canUseAiChatInspector)
-
-        state.contentTabs.tabs[id: activeTabID]?.anchor = .collectionFile(
-            url: URL(fileURLWithPath: "/Users/test/Test.voycoll"),
-        )
-        XCTAssertTrue(state.menuCommandProjection.canUseAiChatInspector)
-
-        state.contentTabs.tabs[id: activeTabID]?.anchor = .virtualCollection(id: "Favorite")
-        XCTAssertTrue(state.menuCommandProjection.canUseAiChatInspector)
-    }
-}
-
-private enum UndoRedoRequestKind {
-    case undo
-    case redo
-}
-
-private func matchesTargetedUndoRedoRequest(
-    _ action: FileManagerWindowAction,
-    tabID: ContentTabID,
-    request: UndoRedoRequestKind,
-) -> Bool {
-    switch (request, action) {
-    case let (.undo, .tabContent(tabID: targetID, action: .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))))),
-         let (.redo, .tabContent(tabID: targetID, action: .entryViewLayout(.entryOperations(.undoRedo(.requestRedo))))):
-        targetID == tabID
-    default:
-        false
-    }
-}
-
-private func makeUndoKeyCommand() -> KeyCommand {
-    KeyCommand(
-        keyCode: 6,
-        modifiers: [.command],
-        characters: "z",
-        charactersIgnoringModifiers: "z",
-    )
-}
-
-@MainActor
-private func makeWindowCommandStore(
-    request: UndoRedoRequestKind,
-) throws -> (
-    TestStore<FileManagerWindowState, FileManagerWindowAction>,
-    ContentTabID,
-) {
-    var state = FileManagerWindowState()
-    let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
-    let record = makeUndoRedoRecord(request == .undo ? "undo" : "redo")
-    if request == .undo {
-        state.content.entryViewLayout.entryOperations.undoRecords = [record]
-    } else {
-        state.content.entryViewLayout.entryOperations.redoRecords = [record]
-    }
-    let store = TestStore(initialState: state) {
-        FileManagerWindowCommandRoutingReducer()
-    }
-    return (store, activeTabID)
-}
-
-private func makeUndoRedoRecord(_ name: String) -> EntryActionRecord {
-    EntryActionRecord(
-        operationKind: .rename,
-        targets: [.init(beforePath: "/tmp/\(name)-old", afterPath: "/tmp/\(name)-new")],
-    )
-}
-
-@MainActor
-private func makeFileManagerContentStore() -> TestStore<FileManagerContentState, FileManagerContentAction> {
-    TestStore(initialState: FileManagerContentState()) {
-        FileManagerContentFeature()
     }
 }

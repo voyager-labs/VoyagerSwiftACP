@@ -24,8 +24,6 @@ struct FileManagerNavigationActionReducer {
     var collectionStalenessClient
     @Dependency(\.metricsClient)
     var metricsClient
-    @Dependency(\.uuid)
-    var uuid
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -82,13 +80,10 @@ struct FileManagerNavigationActionReducer {
 
         case let .openCollectionFile(url):
             handleOpenCollectionFile(
-                request: .init(
-                    id: uuid(),
-                    url: url,
-                    sourceRoute: state.content.navigation.navigationState,
-                ),
+                url,
                 state: &state,
                 collectionFileClient: collectionFileClient,
+                collectionStalenessClient: collectionStalenessClient,
                 metricsClient: metricsClient,
             )
         }
@@ -119,7 +114,6 @@ struct FileManagerNavigationActionReducer {
              .appendBackHistory,
              .clearForwardHistory,
              .setNavigationState,
-             .applyPinnedPeerNavigationState,
              .setPendingNavigation:
             .none
         }
@@ -162,16 +156,13 @@ struct FileManagerNavigationActionReducer {
         state: inout State,
     ) -> Effect<Action> {
         switch action {
-        case let .collectionFileLoaded(request, result):
+        case let .collectionFileLoaded(result):
             handleCollectionFileLoaded(
-                request: request,
-                result: result,
+                result,
                 state: &state,
-                environment: .init(
-                    collectionAlertClient: collectionAlertClient,
-                    registryClient: registryClient,
-                    collectionStalenessClient: collectionStalenessClient,
-                ),
+                collectionAlertClient: collectionAlertClient,
+                registryClient: registryClient,
+                collectionStalenessClient: collectionStalenessClient,
             )
 
         case let .navigateToCollection(navigation):
@@ -260,7 +251,7 @@ struct FileManagerNavigationActionReducer {
     }
 
     private func shouldPromptForUnsavedNavigation(_ state: FileManagerContentState) -> Bool {
-        state.isCollectionMode && state.hasUnsavedCollectionChanges
+        state.isCollectionMode && state.canSaveCollection
     }
 }
 
@@ -269,142 +260,108 @@ struct OpenCollectionFileCancelID: Hashable {
 }
 
 private func handleOpenCollectionFile(
-    request: ContentPageCollectionOpenRequest,
+    _ url: URL,
     state: inout FileManagerWindowState,
     collectionFileClient: CollectionFileClient,
+    collectionStalenessClient: CollectionStalenessClient,
     metricsClient: MetricsClient,
 ) -> Effect<FileManagerWindowAction> {
-    if state.content.collection.collectionSession.document?.url.path != request.url.path {
+    if state.content.collection.collectionSession.document?.url.path != url.path {
         metricsClient.logDAUNavigation(.collection)
     }
-    state.pendingCollectionOpenRequest = request
 
-    let cancelExistingCollectionEffect: Effect<FileManagerWindowAction> = if state.content.isCollectionMode {
-        cancelExistingCollectionEffects(state: state)
+    let canonicalPath = url.standardizedFileURL.path
+    let isAlreadyStale = collectionStalenessClient.record(canonicalPath)?.lastInvalidatedAt != nil
+    let reopenContext = state.content.collection.collectionContext
+    let clearExistingCollectionEffect: Effect<FileManagerWindowAction> = if state.content.isCollectionMode {
+        .send(.content(.internal(.clearCollectionMode)))
     } else {
         .none
     }
-    let loadEffect = collectionFileLoadEffect(
-        request: request,
-        collectionFileClient: collectionFileClient,
-        windowID: state.content.entryViewLayout.entryOperations.windowID,
+
+    let loadEffect: Effect<FileManagerWindowAction> = .run { [url] send in
+        do {
+            let result = try await collectionFileClient.load(url)
+            try Task.checkCancellation()
+            await send(.navigation(.internal(.collectionFileLoaded(.success(result)))))
+        } catch is CancellationError {
+            return
+        } catch {
+            await send(
+                .navigation(
+                    .internal(.collectionFileLoaded(.failure(ContentPageNavigationErrorFingerprint(error: error)))),
+                ),
+            )
+        }
+    }
+    .cancellable(
+        id: OpenCollectionFileCancelID(windowID: state.content.entryOperations.windowID),
+        cancelInFlight: true,
     )
 
     return .concatenate(
         .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(true))))),
-        cancelExistingCollectionEffect,
-        .send(.navigation(.internal(.prepareCollectionFileOpen(request.url)))),
+        clearExistingCollectionEffect,
+        .send(.content(.collection(.openRequested(
+            url,
+            reopenContext: reopenContext,
+            isAlreadyStale: isAlreadyStale,
+        )))),
+        .send(.navigation(.internal(.prepareCollectionFileOpen(url)))),
         loadEffect,
     )
 }
 
-private func cancelExistingCollectionEffects(
-    state: FileManagerWindowState,
-) -> Effect<FileManagerWindowAction> {
-    var effects: [Effect<FileManagerWindowAction>] = [
-        .cancel(id: OpenCollectionFileCancelID(
-            windowID: state.content.entryViewLayout.entryOperations.windowID,
-        )),
-    ]
-    let composer = state.content.composer
-    if composer.isLoadingSearch
-        || composer.activeSearchRequestID != nil
-        || composer.queryRenderPhase != .idle
-    {
-        effects.append(.send(.content(.composer(.cancelSearch))))
-    }
-    if composer.isLoadingFilters
-        || composer.isFilteringInFlight
-        || composer.activeFiltersRequestID != nil
-        || composer.pendingSearchQuery != nil
-    {
-        effects.append(.send(.content(.composer(.cancelFilters))))
-    }
-    return .concatenate(effects)
-}
-
-private func collectionFileLoadEffect(
-    request: ContentPageCollectionOpenRequest,
-    collectionFileClient: CollectionFileClient,
-    windowID: UUID?,
-) -> Effect<FileManagerWindowAction> {
-    .run { send in
-        do {
-            let result = try await collectionFileClient.load(request.url)
-            try Task.checkCancellation()
-            await send(.navigation(.internal(.collectionFileLoaded(
-                request: request,
-                result: .success(result),
-            ))))
-        } catch is CancellationError {
-            return
-        } catch {
-            await send(.navigation(.internal(.collectionFileLoaded(
-                request: request,
-                result: .failure(ContentPageNavigationErrorFingerprint(error: error)),
-            ))))
-        }
-    }
-    .cancellable(id: OpenCollectionFileCancelID(windowID: windowID), cancelInFlight: true)
-}
-
 private func handleCollectionFileLoaded(
-    request: ContentPageCollectionOpenRequest,
-    result: ContentPageCollectionFileLoadResult,
+    _ result: ContentPageCollectionFileLoadResult,
     state: inout FileManagerWindowState,
-    environment: CollectionOpenEnvironment,
+    collectionAlertClient: CollectionAlertClient,
+    registryClient: RegistryClient,
+    collectionStalenessClient: CollectionStalenessClient,
 ) -> Effect<FileManagerWindowAction> {
-    guard state.pendingCollectionOpenRequest?.id == request.id,
-          state.pendingCollectionOpenRequest?.url == request.url,
-          state.content.navigation.navigationState == request.sourceRoute
-    else { return .none }
-    state.pendingCollectionOpenRequest = nil
-
     switch result {
     case let .success(loadResult):
         let file = loadResult.file
         var isStale = false
-        let canonicalPath = request.url.standardizedFileURL.path
-        let hasPersistedInvalidation = environment.collectionStalenessClient.record(canonicalPath)?
-            .lastInvalidatedAt != nil
-        let hasScopeRootChangedSinceSnapshot = collectionScopeRootsChangedSinceSnapshot(file)
-        isStale = hasPersistedInvalidation || hasScopeRootChangedSinceSnapshot
-        state.content.collection.prepareOpenTransition(
-            at: request.url,
-            reopenContext: state.content.collection.collectionContext,
-            isAlreadyStale: hasPersistedInvalidation,
-        )
-        environment.collectionStalenessClient.registerCollection(
-            canonicalPath,
-            file.scopes,
-            file.excludedScopes,
-            file.includeSubfolders,
-        )
-        if hasScopeRootChangedSinceSnapshot {
-            environment.collectionStalenessClient.upsertRecord(
+        if let url = state.content.collection.collectionSession.document?.url {
+            let canonicalPath = url.standardizedFileURL.path
+            let hasPersistedInvalidation = collectionStalenessClient.record(canonicalPath)?.lastInvalidatedAt != nil
+            let hasScopeRootChangedSinceSnapshot = collectionScopeRootsChangedSinceSnapshot(file)
+            isStale = hasPersistedInvalidation || hasScopeRootChangedSinceSnapshot
+            collectionStalenessClient.registerCollection(
                 canonicalPath,
-                .init(
-                    definitionFingerprint: file.snapshotMeta?.definitionFingerprint ?? "",
-                    relevanceRoots: file.snapshotMeta?.relevanceRoots ?? file.scopes,
-                    excludedScopes: file.excludedScopes,
-                    includeSubfolders: file.includeSubfolders,
-                    lastInvalidatedAt: Date(),
-                ),
+                file.scopes,
+                file.excludedScopes,
+                file.includeSubfolders,
             )
+            if hasScopeRootChangedSinceSnapshot {
+                collectionStalenessClient.upsertRecord(
+                    canonicalPath,
+                    .init(
+                        definitionFingerprint: file.snapshotMeta?.definitionFingerprint ?? "",
+                        relevanceRoots: file.snapshotMeta?.relevanceRoots ?? file.scopes,
+                        excludedScopes: file.excludedScopes,
+                        includeSubfolders: file.includeSubfolders,
+                        lastInvalidatedAt: Date(),
+                    ),
+                )
+            }
         }
         return handleCollectionFileLoadedSuccess(
             file,
             compatibility: loadResult.compatibility,
             isStale: isStale,
             state: &state,
-            environment: environment,
+            environment: .init(
+                collectionAlertClient: collectionAlertClient,
+                registryClient: registryClient,
+            ),
         )
     case let .failure(error):
         return handleCollectionFileLoadedFailure(
             error,
-            request: request,
             state: &state,
-            collectionAlertClient: environment.collectionAlertClient,
+            collectionAlertClient: collectionAlertClient,
         )
     }
 }
@@ -450,7 +407,7 @@ private func handleNavigateToCollection(
             compatibility: payload.document?.compatibility,
             isCollectionMode: true,
         )))),
-        .send(.content(.entryViewLayout(.entryArrangements(.reapply)))),
+        .send(.content(.entryArrangements(.reapply))),
         queryEffect,
     )
 }
@@ -516,7 +473,6 @@ private func handleCollectionFileLoadedSuccess(
 private struct CollectionOpenEnvironment {
     let collectionAlertClient: CollectionAlertClient
     let registryClient: RegistryClient
-    let collectionStalenessClient: CollectionStalenessClient
 }
 
 nonisolated func collectionScopeRootsChangedSinceSnapshot(
@@ -546,22 +502,9 @@ nonisolated private func collectionScopeRootModified(
 
 private func handleCollectionFileLoadedFailure(
     _ error: ContentPageNavigationErrorFingerprint,
-    request: ContentPageCollectionOpenRequest,
     state _: inout FileManagerWindowState,
     collectionAlertClient: CollectionAlertClient,
 ) -> Effect<FileManagerWindowAction> {
-    if case .collection = request.sourceRoute {
-        return .concatenate(
-            .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
-            .run { _ in
-                await collectionAlertClient.showCollectionOpenErrorAlert(
-                    "Unable to Open Collection",
-                    error.message,
-                )
-            },
-        )
-    }
-
     var effects: [Effect<FileManagerWindowAction>] = [
         .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
         .send(.navigation(.internal(.rollbackBackHistoryOnce))),

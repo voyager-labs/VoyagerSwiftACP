@@ -44,7 +44,7 @@ enum FileManagerContentEntryOpsCoordinator {
         reloadEntryItemsEffect(
             navigationState: state.navigation.navigationState,
             showHidden: state.entryViewLayout.showHiddenFiles,
-            priority: rootMetadataPriority(for: state.entryViewLayout.entryArrangements),
+            priority: rootMetadataPriority(for: state.entryArrangements),
         )
     }
 
@@ -290,7 +290,7 @@ enum FileManagerContentEntryOpsCoordinator {
     }
 
     private static func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<FileManagerContentAction> {
-        .send(.entryViewLayout(.entryOperations(action)))
+        .send(.entryOperations(action))
     }
 }
 

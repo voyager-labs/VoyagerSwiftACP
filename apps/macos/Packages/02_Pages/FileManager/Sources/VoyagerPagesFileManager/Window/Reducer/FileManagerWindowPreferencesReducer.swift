@@ -22,9 +22,9 @@ struct FileManagerWindowPreferencesReducer {
                 }
 
                 return .merge(
-                    .send(.content(.entryViewLayout(.entryArrangements(.setSortKey(preferences.sortKey))))),
-                    .send(.content(.entryViewLayout(.entryArrangements(.setSortOrder(preferences.sortOrder))))),
-                    .send(.content(.entryViewLayout(.entryArrangements(.setGroupKey(preferences.groupKey))))),
+                    .send(.content(.entryArrangements(.setSortKey(preferences.sortKey)))),
+                    .send(.content(.entryArrangements(.setSortOrder(preferences.sortOrder)))),
+                    .send(.content(.entryArrangements(.setGroupKey(preferences.groupKey)))),
                 )
 
             default:
@@ -44,8 +44,8 @@ private func applyContentPreferences(
     content.entryViewLayout.listTextSize = preferences.listTextSize
     content.entryViewLayout.gridTextSize = preferences.gridTextSize
     content.entryViewLayout.showHiddenFiles = preferences.showHiddenFiles
-    content.entryViewLayout.entryArrangements.updateSortKey(preferences.sortKey)
-    content.entryViewLayout.entryArrangements.updateSortOrder(preferences.sortOrder)
-    content.entryViewLayout.entryArrangements.updateGroupKey(preferences.groupKey)
+    content.entryArrangements.updateSortKey(preferences.sortKey)
+    content.entryArrangements.updateSortOrder(preferences.sortOrder)
+    content.entryArrangements.updateGroupKey(preferences.groupKey)
     content.syncComposerCollectionState()
 }

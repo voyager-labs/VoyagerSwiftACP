@@ -20,14 +20,13 @@ struct FileManagerWindowCommandRoutingReducer {
     typealias Action = FileManagerWindowAction
 
     nonisolated private enum CancelID: Hashable {
+        case contextualAiChatOpen
         case loadFixedLocations
         case loadHomeFavorites
     }
 
     @Dependency(\.aiConnectionsFileClient)
-    var aiConnectionsFileClient
-    @Dependency(\.aiChatDefaultSettingsClient)
-    var aiChatDefaultSettingsClient
+    private var aiConnectionsFileClient
     @Dependency(\.searchClient)
     private var searchClient
     @Dependency(\.collectionAlertClient)
@@ -43,7 +42,7 @@ struct FileManagerWindowCommandRoutingReducer {
     @Dependency(\.userDefaultsClient)
     private var userDefaultsClient
     @Dependency(\.uuid)
-    var uuid
+    private var uuid
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -111,31 +110,26 @@ struct FileManagerWindowCommandRoutingReducer {
                 )
                 return .none
 
-            case .request(.reopenChat):
-                return handleAiChatReopenRequest(state: &state)
-
             case let .request(command):
                 return handleRequestedCommand(command, state: &state)
 
-            case let .tabContent(tabID, .delegate(.openPathInNewWindow(path))):
-                guard tabID == state.contentTabs.activeTabID else { return .none }
+            case let .content(.delegate(.openPathInNewWindow(path))):
                 return .send(.delegate(.openPathInNewWindow(path)))
 
-            case let .tabContent(tabID, .delegate(.currentContextChanged(snapshot))):
-                guard tabID == state.contentTabs.activeTabID else { return .none }
+            case let .content(.delegate(.currentContextChanged(snapshot))):
                 return .send(.inspector(.aiChat(.currentContextChanged(snapshot))))
 
-            case let .tabContent(tabID, .delegate(.homePageAnchorSelected(anchor))):
-                guard tabID == state.contentTabs.activeTabID,
-                      state.contentTabs.tabs[id: tabID]?.anchor == .homeDefault
+            case let .content(.delegate(.homePageAnchorSelected(anchor))):
+                guard let activeTabID = state.contentTabs.activeTabID,
+                      state.contentTabs.tabs[id: activeTabID]?.anchor == .homeDefault
                 else { return .none }
-                return handleHomePageAnchorSelected(anchor, activeTabID: tabID)
+                return handleHomePageAnchorSelected(anchor, activeTabID: activeTabID)
 
-            case let .tabContent(tabID, .delegate(.homeChatHistorySessionSelected(sessionID))):
-                guard tabID == state.contentTabs.activeTabID,
-                      state.contentTabs.tabs[id: tabID]?.anchor == .homeDefault
+            case let .content(.delegate(.homeChatHistorySessionSelected(sessionID))):
+                guard let activeTabID = state.contentTabs.activeTabID,
+                      state.contentTabs.tabs[id: activeTabID]?.anchor == .homeDefault
                 else { return .none }
-                return handleHomeChatHistorySessionSelected(sessionID, activeTabID: tabID)
+                return handleHomeChatHistorySessionSelected(sessionID, activeTabID: activeTabID)
 
             case let .sidebar(.delegate(.selectFixedLocation(id))):
                 guard let activeTabID = state.contentTabs.activeTabID,
@@ -163,40 +157,20 @@ struct FileManagerWindowCommandRoutingReducer {
                     state.sidebar.hiddenFixedLocationItemIDs,
                 )))
 
-            case let .tabContent(tabID, .delegate(.aiChatSessionCreated(sessionID))):
-                return routeAiChatTab(tabID, to: sessionID, title: "New Chat", state: state)
+            case let .content(.delegate(.aiChatSessionCreated(sessionID))):
+                return routeActiveAiChatTab(to: sessionID, title: "New Chat", state: state)
 
-            case let .tabContent(tabID, .delegate(.aiChatSessionRestored(sessionID, title))):
-                return routeAiChatTab(tabID, to: sessionID, title: title, state: state)
+            case let .content(.delegate(.aiChatSessionRestored(sessionID, title))):
+                return routeActiveAiChatTab(to: sessionID, title: title, state: state)
 
-            case let .tabContent(tabID, .delegate(.newChatRequested)):
-                guard tabID == state.contentTabs.activeTabID else { return .none }
-                return .send(.request(.newChat))
+            case .content(.delegate(.openContextualAiChat)):
+                return .send(.request(.openContextualAiChat))
 
-            case let .tabContent(tabID, .delegate(.durableNewChatRequested)):
-                guard tabID == state.contentTabs.activeTabID else { return .none }
-                return beginContentAiChatNewChatSeedResolution(state: &state)
-
-            case let .tabContent(tabID, .delegate(.showChatHistoryRequested)):
-                guard tabID == state.contentTabs.activeTabID else { return .none }
-                return .send(.request(.showChatHistory))
-
-            case let .tabContent(tabID, .delegate(.openAISettings)):
-                guard tabID == state.contentTabs.activeTabID else { return .none }
+            case .content(.delegate(.openAISettings)):
                 return .send(.delegate(.openAISettings))
 
             case .inspector(.closeChat):
-                state.pendingAiChatInspectorOpen = nil
-                return .merge(
-                    .cancel(id: FileManagerAiChatInspectorOpenCancelID()),
-                    cancelAiChatNewChatSeedResolution(state: &state),
-                )
-
-            case .inspector(.openNewChat):
-                return .none
-
-            case .inspector(.delegate(.newChatRequested)):
-                return .send(.request(.newChat))
+                return .cancel(id: CancelID.contextualAiChatOpen)
 
             case .inspector(.delegate(.openAISettings)):
                 return .send(.delegate(.openAISettings))
@@ -205,11 +179,7 @@ struct FileManagerWindowCommandRoutingReducer {
                 return .send(.delegate(.requestAttachmentPicker))
 
             case .inspector(.delegate(.clearCurrentContextSelection)):
-                guard let activeTabID = state.contentTabs.activeTabID else { return .none }
-                return .send(.tabContent(
-                    tabID: activeTabID,
-                    action: .entryViewLayout(.internal(.applyClearSelection)),
-                ))
+                return .send(.content(.entryViewLayout(.internal(.applyClearSelection))))
 
             case let .aiConnectionsFileUpdated(file):
                 return .merge(
@@ -222,98 +192,6 @@ struct FileManagerWindowCommandRoutingReducer {
                 state.fixedLocationsLoadPhase = .loaded
                 state.applyFixedLocationItems(items, hiddenLocationIDs: state.sidebar.hiddenFixedLocationItemIDs)
                 return .none
-
-            case let .internal(.aiChatNewChatInspectorOpenLoaded(requestID, setup, connectionsFile)):
-                return handleAiChatInspectorOpenCompletion(
-                    requestID: requestID,
-                    destination: .newChat,
-                    setup: setup,
-                    connectionsFile: connectionsFile,
-                    state: &state,
-                )
-
-            case let .internal(.aiChatHistoryInspectorOpenLoaded(requestID, setup, connectionsFile)):
-                return handleAiChatInspectorOpenCompletion(
-                    requestID: requestID,
-                    destination: .chatHistory,
-                    setup: setup,
-                    connectionsFile: connectionsFile,
-                    state: &state,
-                )
-
-            case let .internal(.aiChatReopenInspectorOpenLoaded(requestID, setup, connectionsFile)):
-                return handleAiChatInspectorOpenCompletion(
-                    requestID: requestID,
-                    destination: .reopenChat,
-                    setup: setup,
-                    connectionsFile: connectionsFile,
-                    state: &state,
-                )
-
-            case let .internal(.aiChatNewChatDefaultsLoaded(requestID, candidate)):
-                return handleAiChatNewChatDefaultsLoaded(
-                    requestID: requestID,
-                    candidate: candidate,
-                    state: &state,
-                )
-
-            case let .internal(.homeAiChatNewChatSeedRequested(sessionID)):
-                return beginHomeContentAiChatNewChatSeedResolution(
-                    sessionID: sessionID,
-                    state: &state,
-                )
-
-            case let .internal(.applyContentNewChatSeed(application)):
-                return applyContentNewChatSeed(application, state: &state)
-
-            case let .internal(.applyInspectorNewChatSeed(application)):
-                return applyInspectorNewChatSeed(application, state: &state)
-
-            case .inspector(.aiChat(.providerConnectionsUpdated)):
-                if state.pendingAiChatInspectorOpen?.destination == .newChat {
-                    if case let .known(providers) = state.inspector.aiChat.providerConnectionSnapshot,
-                       !providers.isEmpty
-                    {
-                        return .none
-                    }
-                    return beginAiChatNewChatAfterInspectorOpen(
-                        state: &state,
-                        requiresCatalogRefresh: false,
-                    )
-                }
-                return handleAiChatNewChatCatalogRefresh(
-                    targetKind: .inspector,
-                    state: &state,
-                )
-
-            case let .tabContent(tabID, .aiChat(.providerConnectionsUpdated)):
-                guard tabID == state.contentTabs.activeTabID else { return .none }
-                return handleAiChatNewChatCatalogRefresh(targetKind: .content, state: &state)
-
-            case let .inspector(.aiChat(.modelListLoaded(requestID, _, _))),
-                 let .inspector(.aiChat(.modelListLoadFailed(requestID, _, _))):
-                if state.pendingAiChatInspectorOpen?.destination == .newChat,
-                   state.pendingAiChatNewChat == nil
-                {
-                    return beginAiChatNewChatAfterInspectorOpen(
-                        state: &state,
-                        requiresCatalogRefresh: false,
-                    )
-                }
-                return handleAiChatNewChatCatalogRefresh(
-                    targetKind: .inspector,
-                    state: &state,
-                    requestID: requestID,
-                )
-
-            case let .tabContent(tabID, .aiChat(.modelListLoaded(requestID, _, _))),
-                 let .tabContent(tabID, .aiChat(.modelListLoadFailed(requestID, _, _))):
-                guard tabID == state.contentTabs.activeTabID else { return .none }
-                return handleAiChatNewChatCatalogRefresh(
-                    targetKind: .content,
-                    state: &state,
-                    requestID: requestID,
-                )
 
             default:
                 return .none
@@ -332,25 +210,19 @@ struct FileManagerWindowCommandRoutingReducer {
         userDefaultsClient.setObject(Array(ids).sorted(), SettingsKeys.hiddenFixedLocationIDs)
     }
 
-    private func routeAiChatTab(
-        _ tabID: ContentTabID,
+    private func routeActiveAiChatTab(
         to sessionID: AiChatSessionID,
         title: String? = nil,
         state: State,
     ) -> Effect<Action> {
-        guard case .aiChat = state.contentTabs.tabs[id: tabID]?.anchor else { return .none }
+        guard let activeTabID = state.contentTabs.activeTabID,
+              case .aiChat = state.contentTabs.tabs[id: activeTabID]?.anchor
+        else { return .none }
         let sessionIDString = sessionID.rawValue.uuidString
-        let updateAnchorEffect: Effect<Action> = .send(
-            .contentTabs(.updateActivePageAnchor(tabID, .aiChat(sessionID: sessionIDString))),
+        let routingEffect: Effect<Action> = .merge(
+            .send(.navigation(.view(.showAiChat(sessionIDString)))),
+            .send(.contentTabs(.updateActivePageAnchor(activeTabID, .aiChat(sessionID: sessionIDString)))),
         )
-        let routingEffect: Effect<Action> = if tabID == state.contentTabs.activeTabID {
-            .merge(
-                .send(.navigation(.view(.showAiChat(sessionIDString)))),
-                updateAnchorEffect,
-            )
-        } else {
-            updateAnchorEffect
-        }
         guard let title else { return routingEffect }
         return .concatenate(
             routingEffect,
@@ -376,10 +248,7 @@ struct FileManagerWindowCommandRoutingReducer {
             } catch {
                 connectionsFile = .empty()
             }
-            await send(.tabContent(
-                tabID: activeTabID,
-                action: .aiChat(.providerConnectionsUpdated(connectionsFile)),
-            ))
+            await send(.content(.aiChat(.providerConnectionsUpdated(connectionsFile))))
         }
         .cancellable(id: HomeAiChatOpenCancelID(tabID: activeTabID), cancelInFlight: true)
 
@@ -387,7 +256,7 @@ struct FileManagerWindowCommandRoutingReducer {
             .send(.inspector(.closeChat)),
             .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
             .send(.navigation(.view(.showAiChat(sessionString)))),
-            .send(.tabContent(tabID: activeTabID, action: .aiChat(.setup(setup)))),
+            .send(.content(.aiChat(.setup(setup)))),
             providerLoadEffect,
         )
     }
@@ -411,10 +280,9 @@ struct FileManagerWindowCommandRoutingReducer {
             return .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
 
         case let .aiChat(sessionID):
-            guard let rawSessionID = UUID(uuidString: sessionID) else { return .none }
-            let sessionUUID = AiChatSessionID(rawValue: rawSessionID)
+            let sessionUUID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
             let setup = AiChatSetupState(
-                restoreSessionID: nil,
+                restoreSessionID: sessionUUID,
                 sessionID: sessionUUID,
                 mode: .chat,
             )
@@ -425,10 +293,7 @@ struct FileManagerWindowCommandRoutingReducer {
                 } catch {
                     connectionsFile = .empty()
                 }
-                await send(.tabContent(
-                    tabID: activeTabID,
-                    action: .aiChat(.providerConnectionsUpdated(connectionsFile)),
-                ))
+                await send(.content(.aiChat(.providerConnectionsUpdated(connectionsFile))))
             }
             .cancellable(id: HomeAiChatOpenCancelID(tabID: activeTabID), cancelInFlight: true)
 
@@ -437,20 +302,27 @@ struct FileManagerWindowCommandRoutingReducer {
                 .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
                 .send(.internal(.aiChatTabTitleUpdated(sessionID: sessionUUID, title: "New Chat"))),
                 .send(.navigation(.view(.showAiChat(sessionID)))),
-                .send(.tabContent(tabID: activeTabID, action: .aiChat(.setup(setup)))),
+                .send(.content(.aiChat(.setup(setup)))),
                 providerLoadEffect,
-                .send(.internal(.homeAiChatNewChatSeedRequested(sessionID: sessionUUID))),
             )
         }
     }
 
     private func handleRequestedCommand(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
         switch command {
-        case .openNewContentTab,
-             .closeActiveContentTab,
-             .toggleActiveContentTabPin,
-             .restoreLastClosedContentTab:
-            handleContentTabRequest(command, state: &state)
+        case .openNewContentTab:
+            .send(.contentTabs(.open(.homeDefault)))
+
+        case .closeActiveContentTab:
+            state.contentTabs.activeTabID
+                .map { .send(.closeContentTabRequested($0)) }
+                ?? .none
+
+        case .toggleActiveContentTabPin:
+            toggleActiveContentTabPin(state: state)
+
+        case .restoreLastClosedContentTab:
+            handleRestoreLastClosedContentTab(state: &state)
 
         case .newFolder,
              .openSelectedItem,
@@ -471,8 +343,8 @@ struct FileManagerWindowCommandRoutingReducer {
         case .saveCollection,
              .saveCollectionAs,
              .toggleComposer,
-             .newChat,
-             .showChatHistory:
+             .openContextualAiChat,
+             .presentContextualAiChat:
             handleComposerRequest(command, state: &state)
 
         case .goBack,
@@ -493,30 +365,7 @@ struct FileManagerWindowCommandRoutingReducer {
 
         case .requestUndo,
              .requestRedo:
-            handleUndoRedoRequest(command, state: state)
-
-        case .reopenChat:
-            .none
-        }
-    }
-
-    private func handleContentTabRequest(
-        _ command: Action.WindowCommand,
-        state: inout State,
-    ) -> Effect<Action> {
-        switch command {
-        case .openNewContentTab:
-            .send(.contentTabs(.open(.homeDefault)))
-        case .closeActiveContentTab:
-            state.contentTabs.activeTabID
-                .map { .send(.closeContentTabRequested($0)) }
-                ?? .none
-        case .toggleActiveContentTabPin:
-            toggleActiveContentTabPin(state: state)
-        case .restoreLastClosedContentTab:
-            handleRestoreLastClosedContentTab(state: &state)
-        default:
-            .none
+            handleUndoRedoRequest(command)
         }
     }
 
@@ -587,17 +436,15 @@ struct FileManagerWindowCommandRoutingReducer {
 
         switch command {
         case .newFolder:
-            return .send(.content(.entryViewLayout(.entryOperations(
+            return .send(.content(.entryOperations(
                 .edit(.createNewFolder(
                     parentPath: currentPath,
                     siblingNames: state.content.entryViewLayout.entries.map(\.name),
                 )),
-            ))))
+            )))
 
         case .paste:
-            return .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(
-                .pasteItems(destinationPath: currentPath),
-            ))))))
+            return .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems")))))
 
         default:
             return nil
@@ -610,13 +457,13 @@ struct FileManagerWindowCommandRoutingReducer {
             guard !state.content.isOrdinaryDirectoryLoading,
                   !state.content.entryViewLayout.selectedIds.isEmpty
             else { return .none }
-            return .send(.content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))))
+            return .send(.content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))))
 
         case .quickLookSelectedItem:
             guard !state.content.isOrdinaryDirectoryLoading,
                   !state.content.entryViewLayout.selectedIds.isEmpty
             else { return .none }
-            return .send(.content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))))
+            return .send(.content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))))
 
         case .selectAll:
             return .send(.content(.view(.selectAllEntries)))
@@ -629,18 +476,16 @@ struct FileManagerWindowCommandRoutingReducer {
     private func handleEntryRequestEditing(_ command: Action.WindowCommand) -> Effect<Action>? {
         switch command {
         case .cut:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.cutSelectedItems))))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.cutSelectedItems")))))
 
         case .copy:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedItems))))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedItems")))))
 
         case .duplicate:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.duplicateSelectedItems))))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.duplicateSelectedItems")))))
 
         case .makeAlias:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand(.mutation(
-                .createAliasForSelectedItems,
-            ))))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand("mutation.createAliasForSelectedItems")))))
 
         default:
             nil
@@ -650,12 +495,10 @@ struct FileManagerWindowCommandRoutingReducer {
     private func handleEntryRequestCopying(_ command: Action.WindowCommand) -> Effect<Action>? {
         switch command {
         case .copyAbsolutePaths:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(
-                .copySelectedAbsolutePaths,
-            ))))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedAbsolutePaths")))))
 
         case .copyURLs:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedURLs))))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedURLs")))))
 
         default:
             nil
@@ -675,22 +518,31 @@ struct FileManagerWindowCommandRoutingReducer {
     private func handleComposerRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
         switch command {
         case .saveCollection:
-            .send(.content(.composer(.saveCollection)))
+            return .send(.content(.composer(.saveCollection)))
 
         case .saveCollectionAs:
-            .send(.content(.composer(.saveCollectionAs)))
+            return .send(.content(.composer(.saveCollectionAs)))
 
         case .toggleComposer:
-            .send(.content(.composer(.setPresented(!state.content.composer.isPresented))))
+            return .send(.content(.composer(.setPresented(!state.content.composer.isPresented))))
 
-        case .newChat:
-            handleAiChatInspectorRequest(destination: .newChat, state: &state)
+        case .openContextualAiChat:
+            if state.inspector.inspectorVisible,
+               state.inspector.inspectorPaneExists,
+               state.inspector.activeMode == .chat
+            {
+                return .merge(
+                    .send(.inspector(.closeChat)),
+                    .cancel(id: CancelID.contextualAiChatOpen),
+                )
+            }
+            return openContextualAiChatEffect(state: state)
 
-        case .showChatHistory:
-            handleAiChatInspectorRequest(destination: .chatHistory, state: &state)
+        case .presentContextualAiChat:
+            return openContextualAiChatEffect(state: state)
 
         default:
-            .none
+            return .none
         }
     }
 
@@ -710,7 +562,7 @@ struct FileManagerWindowCommandRoutingReducer {
         if let activeTabID = state.contentTabs.activeTabID,
            case .aiChat = state.contentTabs.tabs[id: activeTabID]?.anchor
         {
-            effects.append(.send(.tabContent(tabID: activeTabID, action: .aiChat(.providerConnectionsUpdated(file)))))
+            effects.append(.send(.content(.aiChat(.providerConnectionsUpdated(file)))))
         }
 
         // Inspector AI Chat forwarding (기존 동작 유지)
@@ -722,6 +574,28 @@ struct FileManagerWindowCommandRoutingReducer {
         }
 
         return .merge(effects)
+    }
+
+    private func openContextualAiChatEffect(state: State) -> Effect<Action> {
+        guard let activeTabID = state.contentTabs.activeTabID,
+              state.supportsInspector(tabID: activeTabID)
+        else { return .none }
+
+        let content = state.content
+        // Entry opens the inspector with seeded context only so AiChat starts on Sessions.
+        // Session creation/restoration stays inside AiChat via New Chat or explicit restoreSessionID.
+        var setup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: content)
+        setup.mode = .sessions
+        return .run { [aiConnectionsFileClient, setup] send in
+            let connectionsFile: AIConnectionsFile
+            do {
+                connectionsFile = try await aiConnectionsFileClient.load()
+            } catch {
+                connectionsFile = .empty()
+            }
+            await send(.inspector(.openChat(setup, connectionsFile)))
+        }
+        .cancellable(id: CancelID.contextualAiChatOpen, cancelInFlight: true)
     }
 
     private func handleNavigationRequest(_ command: Action.WindowCommand) -> Effect<Action> {
@@ -749,44 +623,29 @@ struct FileManagerWindowCommandRoutingReducer {
             .send(.content(.view(.changeLayout(layout))))
 
         case let .setGroupKey(key):
-            .send(.content(.entryViewLayout(.entryArrangements(.setGroupKey(key)))))
+            .send(.content(.entryArrangements(.setGroupKey(key))))
 
         case let .setSortKey(key):
-            .send(.content(.entryViewLayout(.entryArrangements(.setSortKey(key)))))
+            .send(.content(.entryArrangements(.setSortKey(key))))
 
         case let .setSortOrder(order):
-            .send(.content(.entryViewLayout(.entryArrangements(.setSortOrder(order)))))
+            .send(.content(.entryArrangements(.setSortOrder(order))))
 
         default:
             .none
         }
     }
 
-    private func handleUndoRedoRequest(
-        _ command: Action.WindowCommand,
-        state: State,
-    ) -> Effect<Action> {
-        guard let activeTabID = state.contentTabs.activeTabID,
-              state.contentTabs.tabs[id: activeTabID] != nil
-        else { return .none }
-
+    private func handleUndoRedoRequest(_ command: Action.WindowCommand) -> Effect<Action> {
         switch command {
         case .requestUndo:
-            guard state.content.entryViewLayout.entryOperations.canUndoEntryAction else { return .none }
-            return .send(.tabContent(
-                tabID: activeTabID,
-                action: .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))),
-            ))
+            .send(.content(.entryOperations(.undoRedo(.requestUndo))))
 
         case .requestRedo:
-            guard state.content.entryViewLayout.entryOperations.canRedoEntryAction else { return .none }
-            return .send(.tabContent(
-                tabID: activeTabID,
-                action: .entryViewLayout(.entryOperations(.undoRedo(.requestRedo))),
-            ))
+            .send(.content(.entryOperations(.undoRedo(.requestRedo))))
 
         default:
-            return .none
+            .none
         }
     }
 

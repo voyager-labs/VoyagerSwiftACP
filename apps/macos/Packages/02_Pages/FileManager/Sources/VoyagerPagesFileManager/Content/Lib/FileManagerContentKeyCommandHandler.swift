@@ -41,7 +41,7 @@ enum FileManagerContentKeyCommandHandler {
 
         guard !state.entryViewLayout.selectedIds.isEmpty else { return .none }
 
-        return .send(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem)))))
+        return .send(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem"))))
     }
 
     private static func deleteKeyEffect(
@@ -56,11 +56,11 @@ enum FileManagerContentKeyCommandHandler {
 
         if command.modifiers.contains(.option) {
             return .send(.entryViewLayout(.delegate(.executeCommand(
-                .mutation(.deleteSelectedItemsImmediately),
+                "mutation.deleteSelectedItemsImmediately",
             ))))
         }
         return .send(.entryViewLayout(.delegate(.executeCommand(
-            .mutation(.moveSelectedItemsToTrash),
+            "mutation.moveSelectedItemsToTrash",
         ))))
     }
 
@@ -70,7 +70,7 @@ enum FileManagerContentKeyCommandHandler {
     ) -> Effect<FileManagerContentAction>? {
         guard command.modifiers.isDisjoint(with: [.command, .option, .control, .shift]),
               command.keyCode == 36 || command.keyCode == 76,
-              state.entryViewLayout.entryOperations.renamingItemId == nil
+              state.entryOperations.renamingItemId == nil
         else {
             return nil
         }
@@ -120,7 +120,7 @@ enum FileManagerContentKeyCommandHandler {
            command.modifiers.isDisjoint(with: [.option, .control, .shift])
         {
             guard !state.entryViewLayout.selectedIds.isEmpty else { return .none }
-            return .send(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem)))))
+            return .send(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem"))))
         }
 
         guard command.modifiers.isDisjoint(with: [.option, .control, .shift]),
@@ -131,18 +131,16 @@ enum FileManagerContentKeyCommandHandler {
 
         switch key {
         case "x":
-            return .send(.entryViewLayout(.delegate(.executeCommand(.clipboard(.cutSelectedItems)))))
+            return .send(.entryViewLayout(.delegate(.executeCommand("clipboard.cutSelectedItems"))))
 
         case "c":
-            return .send(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedItems)))))
+            return .send(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedItems"))))
 
         case "v":
-            return .send(.entryViewLayout(.delegate(.executeCommand(.clipboard(
-                .pasteItems(destinationPath: state.navigation.currentPath),
-            )))))
+            return .send(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems"))))
 
         case "d":
-            return .send(.entryViewLayout(.delegate(.executeCommand(.clipboard(.duplicateSelectedItems)))))
+            return .send(.entryViewLayout(.delegate(.executeCommand("clipboard.duplicateSelectedItems"))))
 
         default:
             return nil
@@ -163,18 +161,18 @@ enum FileManagerContentKeyCommandHandler {
                 _ = NSApp.sendAction(redoSelector, to: nil, from: nil)
                 return .none
             }
-            return .send(.entryViewLayout(.entryOperations(.undoRedo(
+            return .send(.entryOperations(.undoRedo(
                 EntryOperationsAction.UndoRedo.requestRedo,
-            ))))
+            )))
         }
 
         if textResponderIsEditing {
             _ = NSApp.sendAction(undoSelector, to: nil, from: nil)
             return .none
         }
-        return .send(.entryViewLayout(.entryOperations(.undoRedo(
+        return .send(.entryOperations(.undoRedo(
             EntryOperationsAction.UndoRedo.requestUndo,
-        ))))
+        )))
     }
 
     private static func selectionMovementEffect(

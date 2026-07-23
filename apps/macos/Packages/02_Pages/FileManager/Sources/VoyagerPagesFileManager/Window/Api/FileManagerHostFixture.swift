@@ -195,7 +195,7 @@ private enum FileManagerHostFixtureStateFactory {
         state.content.navigation.seedInitialFolderPath(FileManagerHostFixtureSampleData.path)
         state.content.entryViewLayout.mode = .list
         state.content.entryViewLayout.hierarchy.replaceRoot(path: FileManagerHostFixtureSampleData.path)
-        state.content.entryViewLayout.entryOperations.items = IdentifiedArrayOf(
+        state.content.entryOperations.items = IdentifiedArrayOf(
             uniqueElements: FileManagerHostFixtureSampleData.entries,
         )
         state.content.entryViewLayout.entries = FileManagerHostFixtureSampleData.entries

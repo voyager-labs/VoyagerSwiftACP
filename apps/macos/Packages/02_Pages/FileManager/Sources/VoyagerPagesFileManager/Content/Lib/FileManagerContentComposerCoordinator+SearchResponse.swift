@@ -175,8 +175,8 @@ extension FileManagerContentComposerCoordinator {
         let proposedNextNavigationState = ContentPageNavigationRoute.collection(
             ContentPageCollectionNavigationFactory.makeCollectionNavigation(
                 state.collection.makeNavigationPresentationPayload(context: resolvedContext),
-                sortKey: state.entryViewLayout.entryArrangements.sortKey,
-                sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
+                sortKey: state.entryArrangements.sortKey,
+                sortOrder: state.entryArrangements.sortOrder,
                 viewLayout: state.entryViewLayout.mode,
             ),
         )
