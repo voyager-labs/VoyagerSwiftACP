@@ -243,6 +243,15 @@ struct FileManagerWindowRoutingReducer {
                 else { return .none }
                 return .send(.contentTabs(.setCurrent(activeReservation.id)))
 
+            case let .activateExternalContentTabUndoScopes(tabIDs):
+                guard Set(tabIDs).count == tabIDs.count,
+                      tabIDs.allSatisfy({ state.contentTabs.tabs[id: $0] != nil })
+                else { return .none }
+                for tabID in tabIDs {
+                    _ = activateUndoManagerScopeEffect(tabID: tabID, state: state)
+                }
+                return .none
+
             case .resyncActiveCollectionNavigation:
                 guard let activeTabID = state.contentTabs.activeTabID,
                       case .collectionFile = state.contentTabs.tabs[id: activeTabID]?.anchor

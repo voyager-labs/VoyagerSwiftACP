@@ -35,6 +35,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case applyHiddenFixedLocationIDs(Set<FileManagerFixedLocationItem.ID>)
     case aiConnectionsFileUpdated(AIConnectionsFile)
     case reserveExternalContentTabs([ExternalContentTabReservation])
+    case activateExternalContentTabUndoScopes([ContentTabID])
     case resyncActiveCollectionNavigation
 
     case closeContentTabRequested(ContentTabID)
