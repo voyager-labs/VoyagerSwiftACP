@@ -2,9 +2,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
-import VoyagerFeaturesEntryArrangements
-import VoyagerFeaturesEntryOperations
-import VoyagerFeaturesEntryThumbnail
+import VoyagerShared
 
 @CasePathable
 public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
@@ -12,10 +10,6 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
     case delegate(Delegate)
     case `internal`(Internal)
     case hierarchy(EntryListHierarchyAction)
-
-    case entryOperations(EntryOperationsFeature.Action)
-    case entryThumbnail(EntryThumbnailFeature.Action)
-    case entryArrangements(EntryArrangementsFeature.Action)
 
     public struct EntryViewLayoutPreferences: Sendable {
         public let listIconSize: CGFloat
@@ -54,11 +48,19 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
 
     @CasePathable
     public enum Delegate: Sendable {
-        case executeCommand(EntryOperationsCommand)
+        case executeCommand(String)
         case openPathInNewWindow(String)
         case startRename(item: EntryModel, text: String)
         case saveScrollOffset(CGPoint, forPath: String)
         case selectionChanged
+        // Feature로 라우팅할 intent
+        case expandRequested(EntryModel.ID)
+        case collapseRequested(EntryModel.ID)
+        case retryRequested(EntryModel.ID)
+        case openEntry(EntryModel)
+        case renameCommitted(itemID: EntryModel.ID, newName: String)
+        case sortChanged(EntryViewLayoutSortKey, VoyagerShared.SortOrder)
+        case groupChanged(EntryViewLayoutGroupKey)
     }
 
     @CasePathable

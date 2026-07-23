@@ -3,9 +3,6 @@ import Combine
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
-import VoyagerFeaturesEntryArrangements
-import VoyagerFeaturesEntryOperations
-import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
 struct EntryListCoordinatorSortDescriptorChange: Equatable {
@@ -136,14 +133,6 @@ public final class EntryListCoordinator: NSObject {
         store.state
     }
 
-    func sendEntryOperations(_ action: EntryOperationsFeature.Action) {
-        store.send(.entryOperations(action))
-    }
-
-    func sendEntryArrangements(_ action: EntryArrangementsFeature.Action) {
-        store.send(.entryArrangements(action))
-    }
-
     weak var view: EntryListView?
     var didBind = false
     var scrollView: NSScrollView {
@@ -177,13 +166,12 @@ public final class EntryListCoordinator: NSObject {
     var boundsDidChangeObserver: NSObjectProtocol?
     var lastRenderSnapshot: RenderSnapshot?
     var renderObservationCancellable: AnyCancellable?
+    let renderThrottler = MainThreadThrottler(intervalMs: 16, latest: true)
     let visibleRowsPrefetchThrottler = MainThreadThrottler(intervalMs: 150, latest: true)
     let dateModifiedResizeDebouncer = MainThreadDebouncer(intervalMs: 150)
     var thumbnailImagesByPath: [String: NSImage] = [:]
     @Dependency(\.entryOpenClient)
     var entryOpenClient
-    @Dependency(\.entryFileOpsClient)
-    var entryFileOpsClient
     @Dependency(\.workspaceClient)
     var workspaceClient
     @Dependency(\.entryThumbnailCacheClient)
@@ -336,7 +324,6 @@ public final class EntryListCoordinator: NSObject {
         }
         guard !paths.isEmpty else { return }
         pruneThumbnailSession(keeping: paths)
-        store.send(.entryThumbnail(.requestThumbnails(paths: Array(paths))))
         refreshVisibleNameCellIcons(for: refreshThumbnailProjection(paths: paths))
     }
 
@@ -409,30 +396,17 @@ public final class EntryListCoordinator: NSObject {
     }
 
     func makeOutlineItems(state: EntryViewLayoutState) -> [OutlineItem] {
-        if state.entryArrangements.groupKey == .none {
+        if state.groupKey == .none {
             return state.entries.map { OutlineItem(kind: .entry($0)) }
         }
-        var result: [OutlineItem] = []
-        for group in state.entryArrangements.groupedItems {
-            let items = group.items.map { OutlineItem(kind: .entry($0)) }
-            if !group.groupName.isEmpty, state.entryArrangements.groupKey != .name {
-                let isCollapsed = state.entryArrangements.collapsedGroups.contains(group.groupName)
-                let groupItem = OutlineItem(
-                    kind: .group(name: group.groupName, colorCode: group.colorCode, isCollapsed: isCollapsed),
-                    children: items,
-                )
-                result.append(groupItem)
-            } else {
-                result.append(contentsOf: items)
-            }
-        }
-        return result
+        // Grouping will be restored in Wave 2 (Page bridge provides grouped items)
+        return state.entries.map { OutlineItem(kind: .entry($0)) }
     }
 
     func applyGroupExpansionState() {
         isUpdatingGroupExpansion = true
         for (name, item) in groupItemByName {
-            if state.entryArrangements.collapsedGroups.contains(name) {
+            if state.collapsedGroups.contains(name) {
                 tableView.collapseItem(item)
             } else {
                 tableView.expandItem(item)

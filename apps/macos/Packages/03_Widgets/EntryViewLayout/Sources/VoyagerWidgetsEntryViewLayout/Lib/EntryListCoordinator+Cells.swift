@@ -1,6 +1,5 @@
 @preconcurrency import AppKit
 import VoyagerEntitiesEntry
-import VoyagerFeaturesEntryOperations
 
 extension EntryListCoordinator {
     func makeStatusCell(
@@ -47,9 +46,9 @@ extension EntryListCoordinator {
         columnId: String,
         columnWidth: CGFloat,
         thumbnail: NSImage?,
+        isLoadingChildren: Bool,
     ) -> EntryListEntryCellViewConfiguration {
-        let isCut = state.entryOperations.clipboardItems.contains(entry.fullPath)
-            && state.entryOperations.clipboardOperation == .cut
+        let isCut = state.clipboardCutPaths.contains(entry.fullPath)
 
         return .init(
             context: .init(
@@ -61,25 +60,68 @@ extension EntryListCoordinator {
                 thumbnail: thumbnail,
                 isHidden: entry.isHidden,
                 isCut: isCut,
-                isRenaming: state.entryOperations.renamingItemId == entry.id,
-                renamingText: state.entryOperations.renamingText,
+                isLoadingChildren: isLoadingChildren,
+                isRenaming: state.renamingItemId == entry.id,
+                renamingText: entry.name,
                 workspaceClient: workspaceClient,
                 onRenameUpdate: { [weak self] text in
                     guard let self else { return }
-                    guard state.entryOperations.renamingItemId != nil else { return }
-                    sendEntryOperations(.edit(.updateRenamingText(text)))
+                    guard state.renamingItemId != nil else { return }
+                    store.send(.delegate(.startRename(item: entry, text: text)))
                 },
                 onRenameCommit: { [weak self] in
                     guard let self else { return }
-                    guard state.entryOperations.renamingItemId != nil else { return }
-                    sendEntryOperations(.edit(.commitRename))
+                    guard state.renamingItemId != nil else { return }
+                    store.send(.delegate(.renameCommitted(itemID: entry.id, newName: entry.name)))
                 },
                 onRenameCancel: { [weak self] in
                     guard let self else { return }
-                    guard state.entryOperations.renamingItemId != nil else { return }
-                    sendEntryOperations(.edit(.cancelRename))
+                    guard state.renamingItemId != nil else { return }
+                    store.send(.internal(.setSelectionState(
+                        ids: state.selectedIds,
+                        lastSelectedId: state.lastSelectedId,
+                        rangeAnchorId: state.rangeAnchorId,
+                        shouldScrollToSelection: false,
+                    )))
                 },
             ),
         )
+    }
+
+    func makeStatusCell(
+        outlineView: NSOutlineView,
+        tableColumn: NSTableColumn?,
+        title: String,
+        retryFolderID: EntryModel.ID?,
+    ) -> NSView {
+        let resolvedColumn = tableColumn ?? outlineView.outlineTableColumn
+        let columnID = resolvedColumn?.identifier.rawValue ?? EntryListColumn.name.rawValue
+        guard columnID == outlineView.outlineTableColumn?.identifier.rawValue else {
+            let identifier = NSUserInterfaceItemIdentifier("entry-status-empty-cell-\(columnID)")
+            let cell = (outlineView.makeView(withIdentifier: identifier, owner: self) as? EntryListEmptyCellView)
+                ?? EntryListEmptyCellView()
+            cell.identifier = identifier
+            return cell
+        }
+
+        let identifier = NSUserInterfaceItemIdentifier("entry-status-cell-\(columnID)")
+        let cell = (outlineView.makeView(withIdentifier: identifier, owner: self) as? EntryListStatusCellView)
+            ?? EntryListStatusCellView()
+        cell.identifier = identifier
+        cell.setAccessibilityParent(outlineView)
+        cell.configure(title: title, retryTitle: retryFolderID == nil ? nil : "Retry") { [weak self] in
+            guard let self, let retryFolderID else { return }
+            sendProjectionIntent(.retry(retryFolderID, revision: state.outlineProjectionRevision))
+        }
+        return cell
+    }
+
+    func statusTitle(for failure: EntryListHierarchyFailure) -> String {
+        switch failure {
+        case .permissionDenied:
+            "Unable to load folder"
+        case let .unavailable(description):
+            description
+        }
     }
 }

@@ -1,7 +1,6 @@
 import Foundation
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
-import VoyagerFeaturesEntryOperations
 
 struct EntryContextMenuTagSpec {
     let name: String

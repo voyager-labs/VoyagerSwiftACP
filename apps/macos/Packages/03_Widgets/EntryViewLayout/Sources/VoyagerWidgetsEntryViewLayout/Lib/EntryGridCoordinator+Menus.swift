@@ -1,34 +1,22 @@
 @preconcurrency import AppKit
 import VoyagerEntitiesTag
-import VoyagerFeaturesEntryOperations
 
 extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProviding {
     func contextMenu(for indexPath: IndexPath?, event: NSEvent) -> NSMenu {
         updateContextMenuAnchor(event)
         let rowEntry = entry(at: indexPath)
-        let target = EntryContextMenuTarget.resolve(
-            displayEntries: state.entries,
-            selectedIds: state.selectedIds,
-            rowEntry: rowEntry,
-        )
-        synchronizeContextMenuSelection(target)
-        preloadOpenWithApplications(selectedEntries: target.entries)
+        let selectedEntries = selectedEntries(rowEntry: rowEntry)
+        preloadOpenWithApplications(selectedEntries: selectedEntries)
         let menuSpec = EntryContextMenuSpecFactory.make(
-            selectedIds: target.selectedIds,
-            selectedEntries: target.entries,
+            selectedIds: state.selectedIds,
+            selectedEntries: selectedEntries,
             rowEntry: rowEntry,
             isTrashFolder: isTrashFolder,
-            restorableTrashPaths: state.entryOperations.restorableTrashPaths,
-            canPaste: !state.entryOperations.clipboardItems.isEmpty,
+            canPaste: !state.clipboardCutPaths.isEmpty,
             favoriteTags: finderFavoritesTagClient.favoriteTags(),
-            openWithApplications: openWithApplications(selectedEntries: target.entries),
+            openWithApplications: openWithApplications(selectedEntries: selectedEntries),
         )
-        let coordinator = EntryContextMenuCoordinator(
-            store: store,
-            target: target,
-            anchorView: collectionView,
-            anchorScreenPoint: contextMenuAnchor,
-        )
+        let coordinator = EntryContextMenuCoordinator(store: store, rowEntry: rowEntry)
         contextMenuCoordinator = coordinator
         return EntryContextMenuBuilder.makeMenu(configuration: .init(
             target: coordinator,
@@ -38,25 +26,9 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             showCompress: menuSpec.showCompress,
             showExtract: menuSpec.showExtract,
             isTrashFolder: menuSpec.isTrashFolder,
-            canPutBack: menuSpec.canPutBack,
             openWithApplications: menuSpec.openWithApplications,
             showOpenWith: menuSpec.showOpenWith,
-            paletteTags: menuSpec.paletteTags,
-            knownTags: menuSpec.knownTags,
-            canPerformEntryCommands: (!state.entryOperations.isLoading || state.isCollectionMode)
-                && !target.containsBusyEntry(itemStates: state.entryOperations.itemStates),
+            tags: menuSpec.tags,
         ))
-    }
-
-    private func synchronizeContextMenuSelection(_ target: EntryContextMenuTarget) {
-        guard state.selectedIds != target.selectedIds else { return }
-        _ = MainActor.assumeIsolated {
-            store.send(.internal(.setSelectionState(
-                ids: target.selectedIds,
-                lastSelectedId: target.entries.last?.id,
-                rangeAnchorId: target.entries.last?.id,
-                shouldScrollToSelection: false,
-            )))
-        }
     }
 }

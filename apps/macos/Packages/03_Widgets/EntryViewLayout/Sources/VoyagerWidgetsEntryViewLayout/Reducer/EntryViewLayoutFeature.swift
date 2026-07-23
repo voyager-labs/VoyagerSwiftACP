@@ -2,9 +2,6 @@ import ComposableArchitecture
 import Foundation
 import IdentifiedCollections
 import VoyagerEntitiesEntry
-import VoyagerFeaturesEntryArrangements
-import VoyagerFeaturesEntryOperations
-import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
 public struct EntryViewLayoutCollectionCancelID: Hashable, Sendable {
@@ -33,7 +30,6 @@ public struct EntryViewLayoutFeature {
 
     @Dependency(\.entryLoadingClient)
     private var entryLoadingClient
-
     public init() {}
 
     enum CollectionOperation: Hashable {
@@ -43,18 +39,6 @@ public struct EntryViewLayoutFeature {
 
     public var body: some Reducer<State, Action> {
         EntryListHierarchyReducer()
-
-        Scope(state: \.entryOperations, action: \.entryOperations) {
-            EntryOperationsFeature()
-        }
-
-        Scope(state: \.entryThumbnail, action: \.entryThumbnail) {
-            EntryThumbnailFeature()
-        }
-
-        Scope(state: \.entryArrangements, action: \.entryArrangements) {
-            EntryArrangementsFeature()
-        }
 
         Reduce { state, action in
             switch action {
@@ -66,10 +50,10 @@ public struct EntryViewLayoutFeature {
                 state.shouldScrollToSelection = shouldScrollToSelection
 
                 var effects: [Effect<Action>] = []
-                if let renamingId = state.entryOperations.renamingItemId {
+                if let renamingId = state.renamingItemId {
                     let isRenamingItemSelected = ids == [renamingId]
                     if !isRenamingItemSelected {
-                        effects.append(.send(.entryOperations(.edit(.cancelRename))))
+                        effects.append(.send(.delegate(.renameCommitted(itemID: renamingId, newName: ""))))
                     }
                 }
 
@@ -292,7 +276,8 @@ public struct EntryViewLayoutFeature {
 
             case let .internal(.addCollectionPaths(paths)):
                 guard state.isCollectionMode else { return .none }
-                state.removedCollectionPaths.subtract(paths.map(Self.normalizedPath(_:)))
+                let explicitPaths = Set(paths.map(Self.normalizedPath(_:)))
+                state.removedCollectionPaths.subtract(explicitPaths)
                 state.nextCollectionAppendToken &+= 1
                 let token = state.nextCollectionAppendToken
                 let epoch = state.collectionReplaceEpoch
@@ -392,6 +377,8 @@ public struct EntryViewLayoutFeature {
                     }
                 }
 
+                state.removedCollectionPaths.formUnion(mutatedPaths)
+
                 let remainingItems = state.collectionItems.filter { item in
                     !Self.matchesAnyMutatedPath(item.fullPath, mutatedPaths: mutatedPaths)
                 }
@@ -444,69 +431,8 @@ public struct EntryViewLayoutFeature {
             case .delegate:
                 return .none
 
-            case .entryThumbnail:
-                return .none
-
             case .hierarchy:
                 return .none
-
-            case let .entryOperations(entryOperationsAction):
-                switch entryOperationsAction {
-                case let .delegate(.folderLoadEvent(request, event)):
-                    return .send(.hierarchy(.folderChildrenResponse(
-                        rootContextGeneration: request.id.rootContextGeneration,
-                        folderID: request.id.folderID,
-                        folderGeneration: request.folderGeneration,
-                        .event(event),
-                    )))
-
-                case let .delegate(.folderLoadFinished(request)):
-                    return .send(.hierarchy(.folderChildrenResponse(
-                        rootContextGeneration: request.id.rootContextGeneration,
-                        folderID: request.id.folderID,
-                        folderGeneration: request.folderGeneration,
-                        .streamCompleted,
-                    )))
-
-                case let .delegate(.folderLoadFailed(request, failure)):
-                    return .send(.hierarchy(.folderChildrenResponse(
-                        rootContextGeneration: request.id.rootContextGeneration,
-                        folderID: request.id.folderID,
-                        folderGeneration: request.folderGeneration,
-                        .failed(Self.hierarchyFailure(from: failure)),
-                    )))
-
-                case .loading(.cancelAndClearItems),
-                     .loading(.itemsLoaded),
-                     .loading(.itemsLoadFailed),
-                     .loading(.streamEvent),
-                     .loading(.streamFailed):
-                    return Self.updateEntriesAndReapply(&state)
-
-                default:
-                    return .none
-                }
-
-            case let .entryArrangements(entryArrangementsAction):
-                switch entryArrangementsAction {
-                case .setSortKey, .setSortOrder, .setGroupKey:
-                    Self.reconcileSelectionWithVisibleEntries(&state)
-                    return .none
-
-                case .delegate(.requestApply):
-                    return .send(.entryArrangements(.apply(
-                        items: state.entries,
-                        isCollectionMode: state.isCollectionMode,
-                    )))
-
-                case let .delegate(.applied(sortedItems, _)):
-                    state.entries = sortedItems
-                    Self.reconcileSelectionWithVisibleEntries(&state)
-                    return .none
-
-                default:
-                    return .none
-                }
             }
         }
     }
@@ -532,29 +458,10 @@ public struct EntryViewLayoutFeature {
 
     // MARK: - Helpers
 
-    static func hierarchyFailure(from failure: EntryFolderLoadFailure) -> EntryLoadFailure {
-        switch failure {
-        case .permissionDenied:
-            .permissionDenied
-        case let .unavailable(description):
-            .unavailable(description: description)
-        }
-    }
-
     static func updateEntriesAndReapply(_ state: inout State) -> Effect<Action> {
         state.entries = state.displayOrderItems
         reconcileSelectionWithVisibleEntries(&state)
-        return .merge(
-            .send(.entryArrangements(.reapply)),
-            reconcileRenamingItemWithVisibleEntries(state),
-        )
-    }
-
-    static func reconcileRenamingItemWithVisibleEntries(_ state: State) -> Effect<Action> {
-        guard let renamingID = state.entryOperations.renamingItemId,
-              !state.visibleSelectableEntryIDs(isNormalDirectoryPage: true).contains(renamingID)
-        else { return .none }
-        return .send(.entryOperations(.edit(.cancelRename)))
+        return .none
     }
 
     static func setShowHiddenFiles(_ showHiddenFiles: Bool, state: inout State) -> Effect<Action> {
@@ -577,8 +484,7 @@ public struct EntryViewLayoutFeature {
         state: State,
     ) -> Bool {
         let activeProbes = [
-            metadataProbe(for: state.entryArrangements.sortKey),
-            metadataProbe(for: state.entryArrangements.groupKey),
+            metadataProbe(for: state.sortKey.sharedSortKey),
         ].compactMap(\.self)
         guard !activeProbes.isEmpty else { return false }
         return patches.contains { patch in
@@ -600,17 +506,6 @@ public struct EntryViewLayoutFeature {
         case .tags:
             .tags
         case .name, .size, .dateModified, .dateCreated, .dateAdded:
-            nil
-        }
-    }
-
-    static func metadataProbe(for key: GroupKey) -> EntryMetadataProbe? {
-        switch key {
-        case .kind, .application, .dateLastOpened:
-            .spotlight
-        case .tags:
-            .tags
-        case .none, .name, .size, .dateModified, .dateCreated, .dateAdded:
             nil
         }
     }
@@ -712,12 +607,13 @@ public struct EntryViewLayoutFeature {
     }
 
     static func patchAffectsActiveArrangement(_ patch: EntryMetadataPatch, state: State) -> Bool {
-        switch patch {
+        let sortKey = state.sortKey.sharedSortKey
+        return switch patch {
         case .spotlight:
-            [SortKey.kind, .application, .dateLastOpened].contains(state.entryArrangements.sortKey)
-                || [GroupKey.kind, .application, .dateLastOpened].contains(state.entryArrangements.groupKey)
+            [VoyagerShared.SortKey.kind, .application, .dateLastOpened].contains(sortKey)
+                || [EntryViewLayoutGroupKey.kind, .application, .dateLastOpened].contains(state.groupKey)
         case .tags:
-            state.entryArrangements.sortKey == .tags || state.entryArrangements.groupKey == .tags
+            sortKey == .tags || state.groupKey == .tags
         case .supplementaryMetadata:
             false
         }
@@ -725,16 +621,17 @@ public struct EntryViewLayoutFeature {
 
     static func collectionMetadataPriority(for state: State) -> EntryMetadataPriority {
         var probes: [EntryMetadataProbe] = []
-        if [.kind, .application, .dateLastOpened].contains(state.entryArrangements.sortKey) {
+        let sortKey = state.sortKey.sharedSortKey
+        if [VoyagerShared.SortKey.kind, .application, .dateLastOpened].contains(sortKey) {
             probes.append(.spotlight)
         }
-        if state.entryArrangements.sortKey == .tags {
+        if sortKey == .tags {
             probes.append(.tags)
         }
-        if [.kind, .application, .dateLastOpened].contains(state.entryArrangements.groupKey) {
+        if [EntryViewLayoutGroupKey.kind, .application, .dateLastOpened].contains(state.groupKey) {
             probes.append(.spotlight)
         }
-        if state.entryArrangements.groupKey == .tags {
+        if state.groupKey == .tags {
             probes.append(.tags)
         }
         return probes.isEmpty ? .none : .active(probes)
@@ -745,7 +642,14 @@ public struct EntryViewLayoutFeature {
             isNormalDirectoryPage: state.selectionProjectionIsHierarchyEnabled,
         ))
         state.selectedIds = state.selectedIds.intersection(remainingIds)
-        state.advanceOutlineProjectionRevision()
+
+        // Only advance revision when the visible entries structure actually changed.
+        // Selection-only changes (e.g., user clicking different items) do not affect
+        // the outline projection and must not trigger NSOutlineView reloadData.
+        if remainingIds != state.lastVisibleSelectableEntryIDs {
+            state.advanceOutlineProjectionRevision()
+            state.lastVisibleSelectableEntryIDs = remainingIds
+        }
 
         guard !state.selectedIds.isEmpty else {
             state.lastSelectedId = nil

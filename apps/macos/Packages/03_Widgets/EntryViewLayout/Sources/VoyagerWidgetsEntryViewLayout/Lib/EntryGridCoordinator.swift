@@ -3,8 +3,6 @@ import Combine
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
-import VoyagerFeaturesEntryArrangements
-import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
@@ -13,14 +11,6 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     let store: StoreOf<EntryViewLayoutFeature>
     var state: EntryViewLayoutState {
         store.state
-    }
-
-    func sendEntryOperations(_ action: EntryOperationsFeature.Action) {
-        store.send(.entryOperations(action))
-    }
-
-    func sendEntryArrangements(_ action: EntryArrangementsFeature.Action) {
-        store.send(.entryArrangements(action))
     }
 
     weak var view: EntryGridView?
@@ -61,8 +51,6 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     var entryOpenClient
     @Dependency(\.entryLoadingClient)
     var entryLoadingClient
-    @Dependency(\.entryFileOpsClient)
-    var entryFileOpsClient
     @Dependency(\.workspaceClient)
     var workspaceClient
     @Dependency(\.entryThumbnailCacheClient)
@@ -169,28 +157,16 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     }
 
     func makeSections(state: EntryViewLayoutState) -> [Section] {
-        if state.entryArrangements.groupKey == .none {
-            return [
-                Section(
-                    title: nil,
-                    colorCode: nil,
-                    count: state.entries.count,
-                    items: Array(state.entries),
-                    isCollapsed: false,
-                ),
-            ]
-        }
-        return state.entryArrangements.groupedItems.map { group in
-            let showHeader = !group.groupName.isEmpty && state.entryArrangements.groupKey != .name
-            let isCollapsed = state.entryArrangements.collapsedGroups.contains(group.groupName)
-            return Section(
-                title: showHeader ? group.groupName : nil,
-                colorCode: group.colorCode,
-                count: group.count,
-                items: isCollapsed ? [] : group.items,
-                isCollapsed: isCollapsed,
-            )
-        }
+        // Grouping will be restored in Wave 2 (Page bridge provides grouped items)
+        [
+            Section(
+                title: nil,
+                colorCode: nil,
+                count: state.entries.count,
+                items: Array(state.entries),
+                isCollapsed: false,
+            ),
+        ]
     }
 
     func updateLayout(for width: CGFloat) {
@@ -234,7 +210,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     }
 
     func syncRenamingFromStore() {
-        let renamingItemId = state.entryOperations.renamingItemId
+        let renamingItemId = state.renamingItemId
         let previousRenamingItemId = lastRenamingItemId
         lastRenamingItemId = renamingItemId
         if let previousRenamingItemId, let previousIndexPath = indexPathByEntryId[previousRenamingItemId] {
@@ -397,7 +373,7 @@ extension EntryGridCoordinator {
             action: { [weak self] in
                 guard let self else { return }
                 saveScrollPosition()
-                store.send(.delegate(.executeCommand(.navigation(.openSelectedItem))))
+                store.send(.delegate(.openEntry(entry)))
             },
         )
     }

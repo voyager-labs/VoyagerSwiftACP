@@ -1,32 +1,13 @@
 @preconcurrency import AppKit
 import VoyagerEntitiesEntry
-import VoyagerFeaturesEntryOperations
 
 extension EntryGridCoordinator {
-    func preloadOpenWithApplications(selectedEntries: [EntryModel]) {
-        let selectedFiles = selectedEntries.filter { !$0.isFolder }
-        if selectedFiles.isEmpty {
-            return
-        }
-
-        if selectedFiles.count > 1 {
-            sendEntryOperations(.openWith(.loadCommonApplicationsForFiles(files: selectedFiles)))
-        } else if let file = selectedFiles.first,
-                  state.entryOperations.applicationsForItems[file.fullPath] == nil
-        {
-            sendEntryOperations(.openWith(.loadApplicationsForFile(file: file)))
-        }
+    func preloadOpenWithApplications(selectedEntries _: [EntryModel]) {
+        // Open-with applications are now loaded by the Page bridge (Wave 2)
     }
 
-    func openWithApplications(selectedEntries: [EntryModel]) -> [ApplicationInfo] {
-        let selectedFiles = selectedEntries.filter { !$0.isFolder }
-        return if selectedFiles.count > 1 {
-            state.entryOperations.commonApplicationsForSelectedFiles
-        } else if let file = selectedFiles.first {
-            state.entryOperations.applicationsForItems[file.fullPath] ?? []
-        } else {
-            []
-        }
+    func openWithApplications(selectedEntries _: [EntryModel]) -> [ApplicationInfo] {
+        []
     }
 
     func updateContextMenuAnchor(_ event: NSEvent) {
@@ -35,17 +16,6 @@ extension EntryGridCoordinator {
             contextMenuAnchor = screenPoint
         } else {
             contextMenuAnchor = nil
-        }
-    }
-
-    func dragOperation(from resolved: EntryDropResolvedOperation) -> NSDragOperation {
-        switch resolved {
-        case .none:
-            []
-        case .copy:
-            .copy
-        case .move:
-            .move
         }
     }
 }

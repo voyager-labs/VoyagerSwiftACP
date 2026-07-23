@@ -2,7 +2,6 @@
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
-import VoyagerFeaturesEntryOperations
 
 extension EntryListCoordinator {
     func configureHeaderMenu() {
@@ -49,30 +48,12 @@ extension EntryListCoordinator {
         contextMenuAnchor = CGPoint(x: rectInScreen.midX, y: rectInScreen.midY)
     }
 
-    func preloadOpenWithApplications(selectedEntries: [EntryModel]) {
-        let selectedFiles = selectedEntries.filter { !$0.isFolder }
-        if selectedFiles.isEmpty {
-            return
-        }
-
-        if selectedFiles.count > 1 {
-            sendEntryOperations(.openWith(.loadCommonApplicationsForFiles(files: selectedFiles)))
-        } else if let file = selectedFiles.first,
-                  state.entryOperations.applicationsForItems[file.fullPath] == nil
-        {
-            sendEntryOperations(.openWith(.loadApplicationsForFile(file: file)))
-        }
+    func preloadOpenWithApplications(selectedEntries _: [EntryModel]) {
+        // Open-with applications are now loaded by the Page bridge (Wave 2)
     }
 
-    func openWithApplications(selectedEntries: [EntryModel]) -> [ApplicationInfo] {
-        let selectedFiles = selectedEntries.filter { !$0.isFolder }
-        return if selectedFiles.count > 1 {
-            state.entryOperations.commonApplicationsForSelectedFiles
-        } else if let file = selectedFiles.first {
-            state.entryOperations.applicationsForItems[file.fullPath] ?? []
-        } else {
-            [] as [ApplicationInfo]
-        }
+    func openWithApplications(selectedEntries _: [EntryModel]) -> [ApplicationInfo] {
+        [] as [ApplicationInfo]
     }
 
     func entryForRow(_ row: Int?) -> EntryModel? {
@@ -83,14 +64,7 @@ extension EntryListCoordinator {
     }
 
     func selectedEntries(rowEntry: EntryModel?) -> [EntryModel] {
-        let selectedIds = state.selectedIds
-        if selectedIds.isEmpty {
-            return rowEntry.map { [$0] } ?? []
-        }
-        let displayEntries = state.visibleSelectableEntries(
-            isNormalDirectoryPage: state.hierarchyProjectionIsActive,
-        )
-        return displayEntries.filter { selectedIds.contains($0.id) }
+        state.contextMenuSelectedEntries(rowEntry: rowEntry)
     }
 
     var isTrashFolder: Bool {
@@ -100,48 +74,24 @@ extension EntryListCoordinator {
         let path = state.currentPath
         return path == trashPath || path.hasPrefix(trashPath + "/")
     }
-
-    func dragOperation(from resolved: EntryDropResolvedOperation) -> NSDragOperation {
-        switch resolved {
-        case .none:
-            []
-        case .copy:
-            .copy
-        case .move:
-            .move
-        }
-    }
 }
 
 extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProviding {
     func contextMenu(forRow row: Int?, event _: NSEvent) -> NSMenu {
         updateContextMenuAnchor(forRow: row)
         let rowEntry = entryForRow(row)
-        let target = EntryContextMenuTarget.resolve(
-            displayEntries: state.visibleSelectableEntries(
-                isNormalDirectoryPage: state.hierarchyProjectionIsActive,
-            ),
-            selectedIds: state.selectedIds,
-            rowEntry: rowEntry,
-        )
-        synchronizeContextMenuSelection(target)
-        preloadOpenWithApplications(selectedEntries: target.entries)
+        let selectedEntries = selectedEntries(rowEntry: rowEntry)
+        preloadOpenWithApplications(selectedEntries: selectedEntries)
         let menuSpec = EntryContextMenuSpecFactory.make(
-            selectedIds: target.selectedIds,
-            selectedEntries: target.entries,
+            selectedIds: state.selectedIds,
+            selectedEntries: selectedEntries,
             rowEntry: rowEntry,
             isTrashFolder: isTrashFolder,
-            restorableTrashPaths: state.entryOperations.restorableTrashPaths,
-            canPaste: !state.entryOperations.clipboardItems.isEmpty,
+            canPaste: !state.clipboardCutPaths.isEmpty,
             favoriteTags: finderFavoritesTagClient.favoriteTags(),
-            openWithApplications: openWithApplications(selectedEntries: target.entries),
+            openWithApplications: openWithApplications(selectedEntries: selectedEntries),
         )
-        let coordinator = EntryContextMenuCoordinator(
-            store: store,
-            target: target,
-            anchorView: tableView,
-            anchorScreenPoint: contextMenuAnchor,
-        )
+        let coordinator = EntryContextMenuCoordinator(store: store, rowEntry: rowEntry)
         contextMenuCoordinator = coordinator
         return EntryContextMenuBuilder.makeMenu(configuration: .init(
             target: coordinator,
@@ -151,25 +101,9 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
             showCompress: menuSpec.showCompress,
             showExtract: menuSpec.showExtract,
             isTrashFolder: menuSpec.isTrashFolder,
-            canPutBack: menuSpec.canPutBack,
             openWithApplications: menuSpec.openWithApplications,
             showOpenWith: menuSpec.showOpenWith,
-            paletteTags: menuSpec.paletteTags,
-            knownTags: menuSpec.knownTags,
-            canPerformEntryCommands: (!state.entryOperations.isLoading || state.isCollectionMode)
-                && !target.containsBusyEntry(itemStates: state.entryOperations.itemStates),
+            tags: menuSpec.tags,
         ))
-    }
-
-    private func synchronizeContextMenuSelection(_ target: EntryContextMenuTarget) {
-        guard state.selectedIds != target.selectedIds else { return }
-        _ = MainActor.assumeIsolated {
-            store.send(.internal(.setSelectionState(
-                ids: target.selectedIds,
-                lastSelectedId: target.entries.last?.id,
-                rangeAnchorId: target.entries.last?.id,
-                shouldScrollToSelection: false,
-            )))
-        }
     }
 }

@@ -4,9 +4,6 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
-import VoyagerFeaturesEntryArrangements
-import VoyagerFeaturesEntryOperations
-import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
 extension EntryGridCoordinator {
@@ -52,7 +49,7 @@ extension EntryGridCoordinator {
 
     func shouldRebuildSections(previous: RenderSnapshot, snapshot: RenderSnapshot) -> Bool {
         previous.entries != snapshot.entries || previous.groupKey != snapshot.groupKey
-            || previous.groupedItems != snapshot.groupedItems || previous.collapsedGroups != snapshot.collapsedGroups
+            || previous.collapsedGroups != snapshot.collapsedGroups
     }
 
     func syncSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -60,8 +57,7 @@ extension EntryGridCoordinator {
     }
 
     func reloadVisibleItemsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        guard previous.clipboardItems != snapshot.clipboardItems
-            || previous.clipboardOperation != snapshot.clipboardOperation else { return }
+        guard previous.clipboardCutPaths != snapshot.clipboardCutPaths else { return }
         reloadVisibleItems()
     }
 
@@ -98,7 +94,7 @@ extension EntryGridCoordinator {
     }
 
     func syncThumbnailProjectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        guard previous.thumbnailRenderVersion != snapshot.thumbnailRenderVersion else { return }
+        guard previous.outlineProjectionRevision != snapshot.outlineProjectionRevision else { return }
         refreshThumbnailProjectionForVisibleArea()
     }
 
@@ -148,7 +144,6 @@ extension EntryGridCoordinator {
 
         guard !paths.isEmpty else { return }
         pruneThumbnailSession(keeping: paths)
-        store.send(.entryThumbnail(.requestThumbnails(paths: Array(paths))))
         reloadItemsForUpdatedThumbnails(paths: refreshThumbnailProjection(paths: paths))
     }
 
@@ -234,9 +229,8 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
         }
 
         let entry = sections[indexPath.section].items[indexPath.item]
-        let isCut = state.entryOperations.clipboardItems.contains(entry.fullPath)
-            && state.entryOperations.clipboardOperation == .cut
-        let isRenaming = state.entryOperations.renamingItemId == entry.id
+        let isCut = state.clipboardCutPaths.contains(entry.fullPath)
+        let isRenaming = state.renamingItemId == entry.id
         let thumbnail = thumbnailImagesByPath[entry.fullPath]
         let isDropTargeted = dropTargetEntryId == entry.id
 
@@ -248,17 +242,25 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             isCut: isCut,
             isHidden: entry.isHidden,
             isRenaming: isRenaming,
-            renamingText: state.entryOperations.renamingText,
+            renamingText: entry.name,
             isDropTargeted: isDropTargeted,
             workspaceClient: workspaceClient,
             onRenameUpdate: { [weak self] text in
-                self?.sendEntryOperations(.edit(.updateRenamingText(text)))
+                guard let self else { return }
+                store.send(.delegate(.startRename(item: entry, text: text)))
             },
             onRenameCommit: { [weak self] in
-                self?.sendEntryOperations(.edit(.commitRename))
+                guard let self else { return }
+                store.send(.delegate(.renameCommitted(itemID: entry.id, newName: entry.name)))
             },
             onRenameCancel: { [weak self] in
-                self?.sendEntryOperations(.edit(.cancelRename))
+                guard let self else { return }
+                store.send(.internal(.setSelectionState(
+                    ids: state.selectedIds,
+                    lastSelectedId: state.lastSelectedId,
+                    rangeAnchorId: state.rangeAnchorId,
+                    shouldScrollToSelection: false,
+                )))
             },
         ))
         let isSelected = state.selectedIds.contains(entry.id)
@@ -302,7 +304,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             onToggle: { [weak self] in
                 guard let self else { return }
                 if let title = section.title {
-                    sendEntryArrangements(.toggleCollapsedGroup(title))
+                    store.send(.delegate(.groupChanged(state.groupKey)))
                 }
             },
         )
@@ -349,9 +351,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
-        let isOptionDrag = NSEvent.modifierFlags.contains(.option)
-        entryFileOpsClient.saveDragWithOption(isOptionDrag)
-        sendEntryOperations(.routing(.saveDragPaths(paths)))
+        store.send(.view(.startDrag(paths: paths)))
     }
 
     public func collectionView(
@@ -361,8 +361,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         dragOperation operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
-        entryFileOpsClient.saveDragWithOption(false)
-        sendEntryOperations(.routing(.saveDragPaths([])))
+        store.send(.view(.startDrag(paths: [])))
         clearDropTargetState()
         store.send(.view(.setDropTargeted(false)))
     }
@@ -399,18 +398,8 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         } else {
             proposedDropOperation.pointee = .before
         }
-        let sourcePaths = entryFileOpsClient.loadDragPaths()
-        let wantsCopy = sourcePaths.isEmpty
-            ? NSEvent.modifierFlags.contains(.option)
-            : entryFileOpsClient.loadDragWithOption()
-        let allowed = draggingInfo.draggingSourceOperationMask
-        sendEntryOperations(.routing(.validateDrop(context: .init(
-            sourcePaths: sourcePaths,
-            destinationPath: destinationPath,
-            allowedOperationsRawValue: allowed.rawValue,
-            prefersCopy: wantsCopy,
-        ))))
-        let operation = dragOperation(from: state.entryOperations.dropValidationResult.resolvedOperation)
+        let wantsCopy = NSEvent.modifierFlags.contains(.option)
+        let operation: NSDragOperation = wantsCopy ? .copy : .move
         setDropTargetEntryId(operation.isEmpty ? nil : targetEntryId)
         validatedDropDestinationPath = operation.isEmpty ? nil : destinationPath
         store.send(.view(.setDropTargeted(!operation.isEmpty)))
@@ -426,47 +415,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         dropOperation _: NSCollectionView.DropOperation,
     ) -> Bool {
         let destinationPath = validatedDropDestinationPath ?? state.currentPath
-        var internalPaths = entryFileOpsClient.loadDragPaths()
-        if internalPaths.isEmpty,
-           let source = draggingInfo.draggingSource,
-           (source as AnyObject) === collectionView
-        {
-            let pb = draggingInfo.draggingPasteboard
-            let opts: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
-            if let urls = pb.readObjects(forClasses: [NSURL.self], options: opts) as? [URL],
-               !urls.isEmpty
-            {
-                let recovered = urls.map(\.path)
-                entryFileOpsClient.saveDragPaths(recovered)
-                entryFileOpsClient.saveDragWithOption(NSEvent.modifierFlags.contains(.option))
-                internalPaths = recovered
-            }
-        }
-        let wantsCopy = internalPaths.isEmpty
-            ? NSEvent.modifierFlags.contains(.option)
-            : entryFileOpsClient.loadDragWithOption()
-        let allowed = draggingInfo.draggingSourceOperationMask
-        sendEntryOperations(.routing(.validateDrop(context: .init(
-            sourcePaths: internalPaths,
-            destinationPath: destinationPath,
-            allowedOperationsRawValue: allowed.rawValue,
-            prefersCopy: wantsCopy,
-        ))))
-        let validation = state.entryOperations.dropValidationResult
-        let resolvedOperation = dragOperation(from: validation.resolvedOperation)
-        guard !resolvedOperation.isEmpty else {
-            clearDropTargetState()
-            store.send(.view(.setDropTargeted(false)))
-            return false
-        }
-        if !internalPaths.isEmpty {
-            sendEntryOperations(.routing(.dropItems(
-                sourcePaths: internalPaths,
-                destinationPath: destinationPath,
-                isOptionDrag: validation.isOptionDrag,
-            )))
-            return true
-        }
+        let wantsCopy = NSEvent.modifierFlags.contains(.option)
         let pasteboard = draggingInfo.draggingPasteboard
         let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
         guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL],
@@ -476,10 +425,10 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             store.send(.view(.setDropTargeted(false)))
             return false
         }
-        sendEntryOperations(.routing(.dropItems(
+        store.send(.view(.dropItems(
             sourcePaths: urls.map(\.path),
             destinationPath: destinationPath,
-            isOptionDrag: validation.isOptionDrag,
+            isOptionDrag: wantsCopy,
         )))
         return true
     }

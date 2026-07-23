@@ -5,9 +5,7 @@ import IdentifiedCollections
 import SwiftUI
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesEntry
-import VoyagerFeaturesEntryArrangements
-import VoyagerFeaturesEntryOperations
-import VoyagerFeaturesEntryThumbnail
+import VoyagerShared
 
 @ObservableState
 public struct EntryViewLayoutState: Equatable {
@@ -25,11 +23,20 @@ public struct EntryViewLayoutState: Equatable {
     }
 
     public var mode: Mode = .list
-    public var entryOperations: EntryOperationsFeature.State = .init()
-    public var entryThumbnail: EntryThumbnailFeature.State = .init()
-    public var entryArrangements: EntryArrangementsFeature.State = .init()
+    public var isLoading: Bool = false
+    public var renamingItemId: EntryModel.ID?
+    public var sortKey: EntryViewLayoutSortKey = .name
+    public var sortOrder: VoyagerShared.SortOrder = .ascending
+    public var groupKey: EntryViewLayoutGroupKey = .none
+    public var collapsedGroups: Set<String> = []
+    public var clipboardCutPaths: Set<String> = []
     public var hierarchy: EntryListHierarchyState = .init()
     public var outlineProjectionRevision: Int = 0
+
+    /// Cached set of visible selectable entry IDs from the last reconciliation.
+    /// Used to detect whether visible entries actually changed, avoiding
+    /// unnecessary `outlineProjectionRevision` bumps on selection-only changes.
+    var lastVisibleSelectableEntryIDs: Set<EntryModel.ID>?
 
     public var currentPath: String = ""
     public var selectedIds: Set<EntryModel.ID> = []
@@ -66,12 +73,12 @@ public struct EntryViewLayoutState: Equatable {
     public var collectionIncompleteFailure: String?
     public var removedCollectionPaths: Set<String> = []
 
-    /// When true, `displayItems` returns `collectionItems`; otherwise `entryOperations.items`.
+    /// When true, `displayItems` returns `collectionItems`; otherwise `entries`.
     public var isCollectionMode: Bool = false
 
-    /// Canonical display items: `collectionItems` in collection mode, `entryOperations.items` otherwise.
+    /// Canonical display items: `collectionItems` in collection mode, `entries` otherwise.
     public var displayItems: IdentifiedArrayOf<EntryModel> {
-        isCollectionMode ? collectionItems : entryOperations.items
+        isCollectionMode ? collectionItems : IdentifiedArrayOf(uniqueElements: entries)
     }
 
     /// Ordered snapshot of `displayItems` for list/grid rendering.
@@ -93,7 +100,17 @@ public struct EntryViewLayoutState: Equatable {
         mode == .list
             && !isCollectionMode
             && !hierarchy.rootPath.isEmpty
-            && entryArrangements.groupKey == .none
+            && groupKey == .none
+    }
+
+    func contextMenuSelectedEntries(rowEntry: EntryModel?) -> [EntryModel] {
+        guard !selectedIds.isEmpty else {
+            return rowEntry.map { [$0] } ?? []
+        }
+        let selectableEntries = hierarchyProjectionIsActive
+            ? visibleSelectableEntries(isNormalDirectoryPage: true)
+            : entries
+        return selectableEntries.filter { selectedIds.contains($0.id) }
     }
 
     private func outlineProjection(isNormalDirectoryPage: Bool) -> EntryListOutlineProjection {
@@ -104,10 +121,10 @@ public struct EntryViewLayoutState: Equatable {
             context: .init(
                 mode: mode,
                 isNormalDirectoryPage: isNormalDirectoryPage && !isCollectionMode,
-                hasActiveGrouping: entryArrangements.groupKey != .none,
+                hasActiveGrouping: groupKey != .none,
             ),
-            sortKey: entryArrangements.sortKey,
-            sortOrder: entryArrangements.sortOrder,
+            sortKey: sortKey.sharedSortKey,
+            sortOrder: sortOrder,
         )
     }
 
@@ -120,7 +137,6 @@ public struct EntryViewLayoutState: Equatable {
     }
 
     public init() {}
-
     public mutating func clearCollectionPresentation() {
         isCollectionMode = false
         collectionItems = []
