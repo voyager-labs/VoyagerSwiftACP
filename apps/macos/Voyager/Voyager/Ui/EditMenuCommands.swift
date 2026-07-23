@@ -24,8 +24,16 @@ struct EditMenuCommands: Commands {
         let textResponderIsEditing = isTextEditingResponder()
         let canUndoResponder = canUndoInTextResponder()
         let canRedoResponder = canRedoInTextResponder()
-        let canUndo = textResponderIsEditing ? canUndoResponder : viewStore.canUndo
-        let canRedo = textResponderIsEditing ? canRedoResponder : viewStore.canRedo
+        let canUndo = Self.canPerformUndoRedoCommand(
+            textResponderIsEditing: textResponderIsEditing,
+            canHandleByTextResponder: canUndoResponder,
+            canPerformFileOperation: viewStore.canUndo,
+        )
+        let canRedo = Self.canPerformUndoRedoCommand(
+            textResponderIsEditing: textResponderIsEditing,
+            canHandleByTextResponder: canRedoResponder,
+            canPerformFileOperation: viewStore.canRedo,
+        )
 
         let selectedCount = viewStore.selectedItemCount
         let hasSelectedItems = selectedCount > 0
@@ -152,6 +160,14 @@ struct EditMenuCommands: Commands {
         canPerformEntryCommands: Bool,
     ) -> Bool {
         canHandleByTextResponder || canPerformEntryCommands
+    }
+
+    static func canPerformUndoRedoCommand(
+        textResponderIsEditing: Bool,
+        canHandleByTextResponder: Bool,
+        canPerformFileOperation: Bool,
+    ) -> Bool {
+        (textResponderIsEditing && canHandleByTextResponder) || canPerformFileOperation
     }
 
     static func performUndoRedoAction(

@@ -123,6 +123,29 @@ final class MenuCommandsFeatureTests: XCTestCase {
         ))
     }
 
+    /// VOY-165-undo_fallback: 빈 text responder에서도 FileManager Undo capability 유지
+    /// responder가 편집 중이지만 자체 history가 없을 때 file operation fallback이 메뉴를 활성화하는지 검증한다.
+    /// - 검증 내용: responder capability false와 file operation capability true의 결합
+    /// - 사전 조건: text responder 편집 중, responder Undo 불가, FileManager Undo 가능
+    /// - 기대 결과: Undo/Redo command capability 활성화
+    func testUndoCapabilityIncludesFileFallbackWhenTextResponderHistoryIsEmpty() {
+        XCTAssertTrue(EditMenuCommands.canPerformUndoRedoCommand(
+            textResponderIsEditing: true,
+            canHandleByTextResponder: false,
+            canPerformFileOperation: true,
+        ))
+        XCTAssertTrue(EditMenuCommands.canPerformUndoRedoCommand(
+            textResponderIsEditing: true,
+            canHandleByTextResponder: true,
+            canPerformFileOperation: false,
+        ))
+        XCTAssertFalse(EditMenuCommands.canPerformUndoRedoCommand(
+            textResponderIsEditing: true,
+            canHandleByTextResponder: false,
+            canPerformFileOperation: false,
+        ))
+    }
+
     /// VOY-165-undo_fallback: text responder가 Undo를 처리하지 못하면 FileManager fallback 실행
     /// responder 후보 존재와 실제 AppKit dispatch 성공을 구분하는지 검증한다.
     /// - 검증 내용: responder dispatch 실패 후 fallback 호출 횟수
