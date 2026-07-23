@@ -117,7 +117,7 @@ jobs:
     env:
       PROJECT_PATH: apps/macos/Voyager/Voyager.xcodeproj
       SCHEME: Voyager-Prod
-      CONFIGURATION: Release
+      CONFIGURATION: Prod-Release
       BUILD_DIR: ${{ github.workspace }}/build/ci
       CURRENT_PROJECT_VERSION_OVERRIDE: ${{ github.run_number }}
       SIGNING_KEYCHAIN: signing_temp_${{ github.run_id }}_${{ github.run_attempt }}

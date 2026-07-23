@@ -458,7 +458,7 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
     /// - 기대 결과: SessionSyncResult.sessionExpiresAt이 CAS에 실제 저장된 fallback expiry와 일치한다.
     func testLegacyRefreshResultIncludesPersistedSessionExpiry() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let source = AccountTokensFile(
             updatedAtMs: 1,
             accessToken: "source-access-token",
@@ -501,7 +501,7 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
     /// - 기대 결과: storageFailure를 throw하고 현재 token file을 유지한다.
     func testLegacyRefreshCasMismatchRejectsExpiryResult() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let source = AccountTokensFile(
             updatedAtMs: 1,
             accessToken: "source-access-token",
@@ -598,7 +598,7 @@ extension ACC005AuthNetworkClientTests {
             }
 
             let fixture = try TemporaryHomeFixture()
-            let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+            let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
             do {
                 _ = try await AuthNetworkClient.sessionSyncResult(
                     data: capturedSessionSyncResponseData(currentPeriodEnd: gatewayDate),
@@ -646,7 +646,7 @@ extension ACC005AuthNetworkClientTests {
     /// - 기대 결과: CAS 저장 뒤 token은 rotated 값이고 sessionBindingID는 source binding과 같다.
     func testSessionSyncRotationPreservesPreviousSessionBinding() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let binding = UUID()
         let source = AccountTokensFile(
             updatedAtMs: 1,
@@ -684,7 +684,7 @@ extension ACC005AuthNetworkClientTests {
     /// - 기대 결과: stale rotated token은 저장되지 않고 current token의 binding이 보존된다.
     func testSessionSyncRotationRejectsStaleSourceCas() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let sourceBinding = UUID()
         let currentBinding = UUID()
         let source = AccountTokensFile(
@@ -731,7 +731,7 @@ extension ACC005AuthNetworkClientTests {
     /// - 기대 결과: rotated credentials가 CAS로 교체되고 access eligibility가 SessionSyncResult에 유지된다.
     func testCapturedSessionSyncWireFixtureDecodesAndPersistsRotatedCredentials() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let binding = UUID()
         let source = AccountTokensFile(
             updatedAtMs: 1,

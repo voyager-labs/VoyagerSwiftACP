@@ -32,7 +32,7 @@ set -euo pipefail
 # ─── 기본값 ────────────────────────────────────────────────
 WORKSPACE="apps/macos/Voyager/Voyager.xcworkspace"
 DERIVED_DATA=""
-CONFIGURATION="Debug"
+CONFIGURATION="Dev-Debug"
 SCHEME=""
 LAUNCH=1
 INJECTION_NEXT=0
@@ -73,8 +73,8 @@ if [[ -z "$SCHEME" ]]; then
 fi
 
 if [[ "$INJECTION_NEXT" -eq 1 ]]; then
-  if [[ "$SCHEME" != "FileManagerHost-Dev" || "$CONFIGURATION" != "Debug" ]]; then
-    echo "오류: --injection-next는 FileManagerHost-Dev Debug에서만 사용할 수 있습니다." >&2
+  if [[ "$SCHEME" != "FileManagerHost-Dev" || "$CONFIGURATION" != "Dev-Debug" ]]; then
+    echo "오류: --injection-next는 FileManagerHost-Dev Dev-Debug에서만 사용할 수 있습니다." >&2
     exit 1
   fi
 

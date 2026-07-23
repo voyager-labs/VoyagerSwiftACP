@@ -44,6 +44,8 @@ pre-commit:
           echo "Run: git reset HEAD -- .sisyphus/ .omx/" >&2
           exit 1
         fi
+    validate-build-matrix:
+      run: python3 -m scripts.validate_build_matrix
     agent-harness:
       run: |
         python3 -m scripts.validate_harness --staged

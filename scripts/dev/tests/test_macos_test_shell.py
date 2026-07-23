@@ -119,7 +119,7 @@ class MacOSTestShellTests(unittest.TestCase):
             "-scheme",
             "Voyager-Dev",
             "-configuration",
-            "Debug",
+            "Dev-Debug",
             "-derivedDataPath",
             "-clonedSourcePackagesDirPath",
             "-packageCachePath",

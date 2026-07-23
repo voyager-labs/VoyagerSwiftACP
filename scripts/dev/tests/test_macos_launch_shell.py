@@ -82,7 +82,7 @@ class MacOSLaunchShellTests(unittest.TestCase):
                 "--scheme",
                 "Voyager-Dev",
                 "--configuration",
-                "Debug",
+                "Dev-Debug",
                 "--derived-data",
                 str(self.derived_data),
             ],
@@ -116,7 +116,7 @@ class MacOSLaunchShellTests(unittest.TestCase):
                 "--scheme",
                 "Voyager-Dev",
                 "--configuration",
-                "Debug",
+                "Dev-Debug",
             ],
             cwd=ROOT,
             env={

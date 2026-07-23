@@ -59,13 +59,13 @@ Terminal, Zed, VSCode/Sweetpad task는 `scripts/dev/xcodebuild-branch-product.sh
 mise run macos-launch
 
 # 저장된 진행 상태를 유지한 채 온보딩 강제 표시(Debug 전용, 일회성)
-mise run macos-launch -- --scheme Voyager-Dev --configuration Debug --env VOYAGER_SCHEME_FORCE_ONBOARDING=1
+mise run macos-launch -- --scheme Voyager-Dev --configuration Dev-Debug --env VOYAGER_SCHEME_FORCE_ONBOARDING=1
 
 # 특정 scheme/configuration 빌드 후 실행
-mise run macos-launch -- --scheme SettingsHost-Dev --configuration Debug
+mise run macos-launch -- --scheme SettingsHost-Dev --configuration Dev-Debug
 
 # 빌드만 확인
-mise run macos-launch -- --scheme Voyager-Dev --configuration Debug --no-launch
+mise run macos-launch -- --scheme Voyager-Dev --configuration Dev-Debug --no-launch
 ```
 
 `Voyager-Dev`가 유일한 개발 실행 scheme입니다. Debug 실행의 `VOYAGER_SCHEME_FORCE_ONBOARDING` launch 환경변수가 `0`이거나 없으면 저장된 진행 상태에 따라 동작하고, 정확히 `1`이면 저장된 진행 상태를 지우지 않은 채 온보딩을 강제로 표시합니다. 이 값은 `.env` 설정이 아니며 Release/Prod에서는 지원하지 않습니다.
@@ -97,8 +97,8 @@ report는 active Git worktree의 local payload를 한 번만 계산하고 공유
 ### IDE별 실행 경로와 온보딩 표시 토글
 
 - Xcode: `apps/macos/Voyager/Voyager.xcworkspace`를 열고 `Voyager-Dev` scheme을 선택합니다. Debug Run 환경변수 `VOYAGER_SCHEME_FORCE_ONBOARDING`을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 설정하면 진행 상태를 유지한 채 온보딩을 강제로 표시합니다.
-- Zed: `.zed/tasks.json`의 `Voyager Dev: Launch (Debug)` task를 실행합니다. task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 바꾸면 온보딩을 강제로 표시합니다.
-- VSCode/Sweetpad: `.vscode/tasks.json`의 `Voyager Dev: Launch (Debug)` task를 실행합니다. task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 Zed와 같이 설정합니다. Sweetpad build는 `.vscode/settings.json`의 shared xcodebuild wrapper를 사용합니다.
+- Zed: `.zed/tasks.json`의 `Voyager Dev: Launch (Dev-Debug)` task를 실행합니다. task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 바꾸면 온보딩을 강제로 표시합니다.
+- VSCode/Sweetpad: `.vscode/tasks.json`의 `Voyager Dev: Launch (Dev-Debug)` task를 실행합니다. task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 Zed와 같이 설정합니다. Sweetpad build는 `.vscode/settings.json`의 shared xcodebuild wrapper를 사용합니다.
 
 이 토글은 launch 환경이며 `.env` 파일에 설정하지 않습니다. Debug 전용 동작이므로 Release/Prod에서는 지원하지 않습니다.
 
@@ -193,7 +193,7 @@ InjectionNext는 `FileManagerHost` 전용 Debug 개발 도구입니다. `Voyager
 mise run macos-filemanager-injection
 ```
 
-Zed와 VSCode에서는 `FileManagerHost Dev: Launch with Injection (Debug)` task를 선택합니다. 기존 FileManagerHost Debug/Release task는 Injection 없는 일반 실행으로 유지됩니다.
+Zed와 VSCode에서는 `FileManagerHost Dev: Launch with Injection (Dev-Debug)` task를 선택합니다. 기존 FileManagerHost Dev-Debug/Dev-Release task는 Injection 없는 일반 실행으로 유지됩니다.
 
 `INJECTION_PROJECT_ROOT`는 `apps/macos`를 가리키므로 Host와 `Packages` 소스를 함께 감시합니다. Content Tab sidebar row는 HotSwiftUI를 통해 재그리기되며, InjectionNext 전용 Xcode/task 환경에서만 FileManager 패키지가 `-Xlinker -interposable`을 추가합니다.
 

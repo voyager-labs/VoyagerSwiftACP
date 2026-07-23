@@ -6,6 +6,8 @@
 	<string>$(APP_ENV)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
+	<key>XPC_MACH_SERVICE_NAME</key>
+	<string>$(XPC_MACH_SERVICE_NAME)</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundlePackageType</key>
@@ -16,7 +18,7 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>MachServices</key>
 	<dict>
-		<key>fm.voyager.Voyager.FilterSearchXPC</key>
+		<key>$(XPC_MACH_SERVICE_NAME)</key>
 		<true/>
 	</dict>
 	<key>XPCService</key>

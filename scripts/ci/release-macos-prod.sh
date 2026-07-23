@@ -7,7 +7,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
 BUILD_DIR="${BUILD_DIR:-${REPO_ROOT}/build/ci}"
 PROJECT_PATH="${PROJECT_PATH:-apps/macos/Voyager/Voyager.xcodeproj}"
 SCHEME="${SCHEME:-Voyager-Prod}"
-CONFIGURATION="${CONFIGURATION:-Release}"
+CONFIGURATION="${CONFIGURATION:-Prod-Release}"
 CURRENT_PROJECT_VERSION_OVERRIDE="${CURRENT_PROJECT_VERSION_OVERRIDE:-}"
 VOYAGER_RELEASED_AT="${VOYAGER_RELEASED_AT:-}"
 
@@ -26,6 +26,7 @@ Usage:
   scripts/ci/release-macos-prod.sh <command>
 
 Commands:
+  --dry-run       - hardening gate를 검증하고 종료합니다 (archive/notarize 생략).
   fetch-baseline  - appcast/baseline zip을 build/ci로 가져옵니다.
   build-notarize  - archive/export/dmg/notarize/zip/appcast를 생성합니다.
   generate-latest - latest.json만 생성합니다.
@@ -81,6 +82,124 @@ PY
   then
     exit 1
   fi
+}
+
+hardening_gate() {
+  # Hardening gate: only Prod-Release + Voyager-Prod can deploy
+  if [[ "${CONFIGURATION}" != "Prod-Release" ]]; then
+    echo "error: only Prod-Release can be released (got: ${CONFIGURATION})" >&2
+    exit 1
+  fi
+  if [[ "${SCHEME}" != "Voyager-Prod" ]]; then
+    echo "error: only Voyager-Prod scheme can be released (got: ${SCHEME})" >&2
+    exit 1
+  fi
+  log "Hardening gate passed (CONFIGURATION=Prod-Release, SCHEME=Voyager-Prod)"
+}
+
+verify_archive_artifacts() {
+  local app_path="${BUILD_DIR}/export/Voyager.app"
+  local helper_path="${app_path}/Contents/Helpers/VoyagerHelper.app"
+  local xpc_path="${app_path}/Contents/XPCServices/FilterSearchXPC.xpc"
+  local errors=0
+
+  log "Verifying release artifact invariants..."
+
+  # --- Info.plist checks ---
+
+  # 1. Voyager.app: APP_ENV == prod
+  local app_env
+  app_env="$(plutil -p "${app_path}/Contents/Info.plist" | grep '"APP_ENV"' | sed 's/.*"APP_ENV" => "\(.*\)"/\1/')"
+  if [[ "${app_env}" != "prod" ]]; then
+    echo "error: Voyager.app APP_ENV is '${app_env}', expected 'prod'" >&2
+    errors=$((errors + 1))
+  else
+    log "  ✓ Voyager.app APP_ENV = prod"
+  fi
+
+  # 2. Voyager.app: CFBundleIdentifier == fm.voyager.Voyager
+  local bundle_id
+  bundle_id="$(plutil -p "${app_path}/Contents/Info.plist" | grep '"CFBundleIdentifier"' | sed 's/.*"CFBundleIdentifier" => "\(.*\)"/\1/')"
+  if [[ "${bundle_id}" != "fm.voyager.Voyager" ]]; then
+    echo "error: Voyager.app CFBundleIdentifier is '${bundle_id}', expected 'fm.voyager.Voyager'" >&2
+    errors=$((errors + 1))
+  else
+    log "  ✓ Voyager.app CFBundleIdentifier = fm.voyager.Voyager"
+  fi
+
+  # 3. Voyager.app: SUFeedURL == canonical prod appcast
+  local feed_url
+  feed_url="$(plutil -p "${app_path}/Contents/Info.plist" | grep '"SUFeedURL"' | sed 's/.*"SUFeedURL" => "\(.*\)"/\1/')"
+  if [[ "${feed_url}" != "https://downloads.voyager.fm/releases/appcast.xml" ]]; then
+    echo "error: Voyager.app SUFeedURL is '${feed_url}', expected 'https://downloads.voyager.fm/releases/appcast.xml'" >&2
+    errors=$((errors + 1))
+  else
+    log "  ✓ Voyager.app SUFeedURL = https://downloads.voyager.fm/releases/appcast.xml"
+  fi
+
+  # 4. VoyagerHelper.app: APP_ENV == prod
+  if [[ -d "${helper_path}" ]]; then
+    local helper_env
+    helper_env="$(plutil -p "${helper_path}/Contents/Info.plist" | grep '"APP_ENV"' | sed 's/.*"APP_ENV" => "\(.*\)"/\1/')"
+    if [[ "${helper_env}" != "prod" ]]; then
+      echo "error: VoyagerHelper.app APP_ENV is '${helper_env}', expected 'prod'" >&2
+      errors=$((errors + 1))
+    else
+      log "  ✓ VoyagerHelper.app APP_ENV = prod"
+    fi
+  else
+    echo "error: VoyagerHelper.app not found at ${helper_path}" >&2
+    errors=$((errors + 1))
+  fi
+
+  # 5. FilterSearchXPC.xpc: Mach service name is prod variant
+  if [[ -d "${xpc_path}" ]]; then
+    local mach_service
+    mach_service="$(plutil -p "${xpc_path}/Contents/Info.plist" | grep -A1 '"MachServices"' | tail -1 | sed 's/.*"\(.*\)" => true/\1/')"
+    if [[ "${mach_service}" != "fm.voyager.Voyager.FilterSearchXPC" ]]; then
+      echo "error: FilterSearchXPC Mach service name is '${mach_service}', expected 'fm.voyager.Voyager.FilterSearchXPC'" >&2
+      errors=$((errors + 1))
+    else
+      log "  ✓ FilterSearchXPC Mach service = fm.voyager.Voyager.FilterSearchXPC"
+    fi
+  else
+    echo "error: FilterSearchXPC.xpc not found at ${xpc_path}" >&2
+    errors=$((errors + 1))
+  fi
+
+  # 6. CODE_SIGN_IDENTITY of all 3 binaries is Developer ID Application
+  # 7. Hardened runtime (runtime flag) is enabled
+  for binary_path in "${app_path}" "${helper_path}" "${xpc_path}"; do
+    if [[ ! -d "${binary_path}" ]]; then
+      continue
+    fi
+    local codesign_out
+    codesign_out="$(codesign -dv --verbose=4 "${binary_path}" 2>&1 || true)"
+
+    # Check Developer ID Application
+    if echo "${codesign_out}" | grep -q "Developer ID Application"; then
+      log "  ✓ $(basename "${binary_path}"): signed with Developer ID Application"
+    else
+      echo "error: $(basename "${binary_path}") is not signed with Developer ID Application" >&2
+      echo "  codesign output: ${codesign_out}" >&2
+      errors=$((errors + 1))
+    fi
+
+    # Check hardened runtime
+    if echo "${codesign_out}" | grep -q "flags.*runtime"; then
+      log "  ✓ $(basename "${binary_path}"): hardened runtime enabled"
+    else
+      echo "error: $(basename "${binary_path}") does not have hardened runtime enabled" >&2
+      errors=$((errors + 1))
+    fi
+  done
+
+  if [[ "${errors}" -gt 0 ]]; then
+    echo "error: ${errors} artifact verification check(s) failed" >&2
+    exit 1
+  fi
+
+  log "All release artifact invariants verified."
 }
 
 prepare_release_identity() {
@@ -158,6 +277,7 @@ fetch_baseline() {
 
 build_notarize() {
   resolve_version
+  hardening_gate
   prepare_release_identity
   : "${DOWNLOADS_BASE_URL:?Missing env: DOWNLOADS_BASE_URL}"
   : "${SPARKLE_PRIVATE_KEY:?Missing env: SPARKLE_PRIVATE_KEY}"
@@ -170,6 +290,8 @@ build_notarize() {
 
   log "Exporting app..."
   "${SCRIPT_DIR}/export-macos-app.sh" "${BUILD_DIR}/Voyager.xcarchive" "${BUILD_DIR}/export"
+
+  verify_archive_artifacts
 
   log "Creating DMG..."
   uv run "${SCRIPT_DIR}/create-dmg.py" "${BUILD_DIR}/export/Voyager.app" "${BUILD_DIR}/Voyager.dmg"
@@ -270,6 +392,10 @@ main() {
 
   local cmd="${1:-}"
   case "${cmd}" in
+    --dry-run)
+      hardening_gate
+      log "Dry-run: hardening gate passed, no archive produced."
+      ;;
     fetch-baseline)
       fetch_baseline
       ;;
