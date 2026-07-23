@@ -259,6 +259,7 @@ enum ExternalOpenPlacementApplication {
                 newWindowIDs.append(placementWindow.windowID)
             } else {
                 guard var window = updatedWindows[id: placementWindow.windowID]?.window,
+                      window.pendingSelectedContentTabClose == nil,
                       window.reserveExternalContentTabs(reservations)
                 else { return nil }
                 updatedWindows[id: placementWindow.windowID]?.window = window
