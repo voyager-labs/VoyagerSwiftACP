@@ -27,7 +27,6 @@ public struct EntryOperationsState: Equatable {
     public var applicationsForItems: [String: [ApplicationInfo]] = [:]
     public var commonApplicationsForSelectedFiles: [ApplicationInfo] = []
     public var dropValidationResult: EntryDropValidationResult = .empty
-
     public init() {}
 
     public mutating func resetForDuplicate(windowID: UUID) {

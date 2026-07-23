@@ -15,22 +15,21 @@
 프로젝트 루트에 환경별 `.env` 파일을 생성합니다:
 
 - **`.env.dev`** (Git ignored): 로컬 개발 환경
-    - 모든 설정 포함 (비밀키 포함)
-    - Debug 빌드에서 사용
+    - 로컬 개발 시크릿을 포함할 수 있으며, 커밋하거나 산출물에 번들하지 않음
     - 생성: `cp .env.example .env.dev`
 - **`.env.prod`** (Git tracked): 프로덕션 환경 템플릿
     - 비밀키 제외한 기본 설정만 포함
-    - Release 빌드에서 사용
-    - Secrets는 파일에 포함하지 않음 (앱 번들 노출 방지)
+    - `Prod-Release` production artifact에만 포함할 수 있는 공개 런타임 설정
+    - Secrets는 파일이나 앱 번들에 포함하지 않음
 
-### 환경 자동 감지
+### 환경 선택
 
-앱은 빌드 설정에 따라 환경을 자동으로 감지합니다:
+VOY-580 승인 목표에서 런타임 환경(`APP_ENV=dev|prod`)과 컴파일 모드(`Debug|Release`)는 독립 축입니다. 스킴 이름이나 컴파일 모드만으로 런타임 환경을 추론하지 않습니다.
 
-- **Debug 빌드** → `dev` 환경 (로컬 `uv` 사용)
-- **Release 빌드** → `prod` 환경 (번들 venv 사용)
+- 목표 action mapping은 `Voyager-Dev`: Dev-Debug/Dev-Release, `Voyager-Prod`: Prod-Debug/Prod-Release입니다.
+- 목표 운영 배포는 `Prod-Release`만 허용합니다.
 
-`APP_ENV`는 빌드 설정에서 자동으로 설정되므로 `.env` 파일에 명시할 필요가 없습니다.
+현재 Xcode와 CLI는 legacy `Debug`/`Release` configuration을 사용합니다. VOY-580 구현 전에는 위 목표 조합이 별도 configuration으로 빌드되거나 배포 자격이 강제되지 않습니다. 전체 계약과 Dotenv 소유권은 [canonical 환경 문서](docs/canonical/ENGINEERING/common/environment.md)를 따릅니다.
 
 ### 백엔드 실행 방식
 
@@ -43,7 +42,7 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
 
 - 비밀키는 커밋 금지
 - 로컬 개발: `.env.dev` 파일 사용 (Git ignored)
-- CI/CD: `.env.prod`는 secrets 없이 복사 (앱 번들 노출 방지)
+- VOY-580 목표 production packaging: `Prod-Release`에서만 시크릿 없는 `.env.prod`를 포함할 수 있음
 
 ## Quick Start
 
@@ -54,7 +53,7 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
 
 - macOS App
     - Xcode에서 시작(권장): `xed apps/macos/Voyager/Voyager.xcworkspace` (열기 후 `Cmd+R` 실행)
-        - Workspace에 Voyager.xcodeproj, OnboardingHost.xcodeproj, SettingsHost.xcodeproj가 포함되어 있습니다
+        - Workspace에 Voyager.xcodeproj, OnboardingHost.xcodeproj, SettingsHost.xcodeproj, FileManagerHost.xcodeproj가 포함되어 있습니다
     - (대안) Xcode 프로젝트: `xed apps/macos/Voyager/Voyager.xcodeproj`
     - Terminal/Agent에서 실행:
         - 기본 개발 앱 실행: `mise run macos-launch`
@@ -70,10 +69,8 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
         - 태스크로 실행 (권장):
             - `Cmd+Shift+P` (또는 `Ctrl+Shift+P`)로 Command Palette 열기
             - "Tasks: Run Task" 입력 후 다음 태스크 중 선택:
-                - `Voyager Dev: Launch (Debug)` - 개발 환경 Debug 모드로 빌드 및 실행
-                - `Voyager Dev: Launch (Release)` - 개발 환경 Release 모드로 빌드 및 실행
-                - `Voyager Prod: Launch (Debug)` - 프로덕션 환경 Debug 모드로 빌드 및 실행
-                - `Voyager Prod: Launch (Release)` - 프로덕션 환경 Release 모드로 빌드 및 실행
+            - 현재 legacy task: `Voyager Dev: Launch (Debug)` / `Voyager Dev: Launch (Release)` / `Voyager Prod: Launch (Debug)` / `Voyager Prod: Launch (Release)`
+            - 위 task 이름은 VOY-580 목표 mapping을 아직 구현하거나 강제하지 않으며, 현재 `Debug`/`Release` command를 그대로 실행합니다.
                 - `OnboardingHost Dev: Launch (Debug)` - 온보딩 호스트 Debug 모드로 빌드 및 실행
                 - `OnboardingHost Dev: Launch (Release)` - 온보딩 호스트 Release 모드로 빌드 및 실행
                 - `SettingsHost Dev: Launch (Debug)` - 설정 호스트 Debug 모드로 빌드 및 실행
