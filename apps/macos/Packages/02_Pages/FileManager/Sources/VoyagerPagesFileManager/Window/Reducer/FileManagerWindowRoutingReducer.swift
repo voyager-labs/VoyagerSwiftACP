@@ -981,13 +981,20 @@ private func cancelInFlightContentEffectsOnTabSwitch(
     state: FileManagerWindowState,
     skipAiChatCancel: Bool = false,
 ) -> Effect<FileManagerWindowAction> {
-    .merge(
+    let loadingCancellationEffect: Effect<FileManagerWindowAction> = state.contentTabs.previousActiveTabID
+        .flatMap { state.tabContentStates[$0] }
+        .map { previousContent in
+            .cancel(id: EntryOperationsLoadingCancelID.loadItems(
+                windowID: previousContent.entryViewLayout.entryOperations.windowID,
+                ownerID: previousContent.entryViewLayout.entryOperations.loadingCancellationOwnerID,
+            ))
+        } ?? .none
+
+    return .merge(
         .cancel(id: OpenCollectionFileCancelID(
             windowID: state.content.entryViewLayout.entryOperations.windowID,
         )),
-        .cancel(id: EntryOperationsLoadingCancelID.loadItems(
-            windowID: state.content.entryViewLayout.entryOperations.windowID,
-        )),
+        loadingCancellationEffect,
         .cancel(id: ComposerFeature.CancelID.search(ownerID: state.content.composer.cancellationOwnerID)),
         .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.content.composer.cancellationOwnerID)),
         state.contentTabs.previousActiveTabID

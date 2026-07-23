@@ -1988,6 +1988,64 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(loadPaths.value, ["/seed", "/external"])
     }
 
+    /// CTM-001-external_tab_reservation: 비활성 탭 reload는 활성 탭의 진행 중 load를 취소하지 않는다.
+    /// 탭별 loading cancellation owner가 같은 window 안의 독립 content session을 격리하는지 검증한다.
+    /// - 검증 내용: B load 대기 중 inactive A operation completion이 A reload를 시작해도 B cancellation은 0회다.
+    /// - 사전 조건: 같은 window의 A와 B Directory tab이 있고 B load effect가 continuation gate에서 대기 중이다.
+    /// - 기대 결과: A reload가 시작되며 B load는 독립적으로 계속 실행된다.
+    func testInactiveTabReloadDoesNotCancelActiveTabLoad() async throws {
+        let tabB = ContentTabID(rawValue: "B")
+        let initialState = FileManagerWindowState.makeInitial(path: "/a")
+        let tabA = try XCTUnwrap(initialState.contentTabs.activeTabID)
+
+        let activeLoadStarted = expectation(description: "active B load started")
+        let inactiveReloadStarted = expectation(description: "inactive A reload started")
+        let activeLoadGate = AsyncStream<Void>.makeStream()
+        let activeLoadCancellationCount = LockIsolated(0)
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { url, _ in
+                switch url.path {
+                case "/b":
+                    activeLoadStarted.fulfill()
+                    return await withTaskCancellationHandler {
+                        for await _ in activeLoadGate.stream {}
+                        return []
+                    } onCancel: {
+                        activeLoadCancellationCount.withValue { $0 += 1 }
+                        activeLoadGate.continuation.finish()
+                    }
+                case "/a":
+                    inactiveReloadStarted.fulfill()
+                    return []
+                default:
+                    return []
+                }
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { $0.finish() }
+            }
+        }
+        // store.exhaustivity = .off: navigation 부수 action보다 탭별 loading cancellation 격리를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.reserveExternalContentTabs([
+            .init(id: tabB, anchor: .directory(path: "/b")),
+        ]))
+        await store.receive(\.contentTabs.setCurrent, tabB)
+        await fulfillment(of: [activeLoadStarted], timeout: 1)
+
+        await store.send(ExternalTabReservationTestFixture.inactiveReloadAction(tabID: tabA))
+        await fulfillment(of: [inactiveReloadStarted], timeout: 1)
+
+        XCTAssertEqual(activeLoadCancellationCount.value, 0)
+        activeLoadGate.continuation.finish()
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
     /// CTM-001-external_tab_reservation: Collection reservation은 canonical open 경로를 정확히 한 번 사용한다.
     /// Directory reload와 Collection open이 중복 실행되지 않는 handoff 분기를 검증한다.
     /// - 검증 내용: openCollectionFile load 1회와 directory loadItems 0회다.
@@ -2197,6 +2255,17 @@ private enum ExternalTabReservationTestFixture {
         let tab: ContentTabItem
         let content: FileManagerContentState
         let record: ContentTabPinnedRecord
+    }
+
+    static func inactiveReloadAction(tabID: ContentTabID) -> FileManagerWindowAction {
+        .tabContent(
+            tabID: tabID,
+            action: .entryViewLayout(.entryOperations(.lifecycle(.operationFinished(
+                "/a/file.txt",
+                .rename,
+                .success(()),
+            )))),
+        )
     }
 
     static func makeInvalidSets(existingID: ContentTabID) -> [[ExternalContentTabReservation]] {
