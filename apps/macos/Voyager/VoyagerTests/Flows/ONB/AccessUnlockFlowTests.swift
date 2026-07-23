@@ -42,8 +42,11 @@ final class AccessUnlockFlowTests: XCTestCase {
             deviceBindingOutcome: .bound,
             connectedDeviceAvailability: .available,
         )
-        let accountSessionClient = AccountSessionClient(read: { _ in session }, persist: { _ in },
-                                                        delete: { _ in })
+        let accountSessionClient = AccountSessionClient(
+            read: { _ in session },
+            persist: { _ in },
+            delete: { _ in },
+        )
         let sessionSynced = expectation(description: "AccountAccess session sync completes")
         let authNetworkClient = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw SessionSyncError.capabilityMiss },
@@ -123,8 +126,11 @@ final class AccessUnlockFlowTests: XCTestCase {
     /// - 사전 조건: hasAccountSession = false, auth_state = logged_out
     /// - 기대 결과: Next 비활성화, Login route 노출, entitlement fetch 미실행
     func testSignInRequiredKeepsAccessBlockedAndExposesLoginRoute() throws {
-        let accountSessionClient = AccountSessionClient(read: { _ in nil }, persist: { _ in },
-                                                        delete: { _ in })
+        let accountSessionClient = AccountSessionClient(
+            read: { _ in nil },
+            persist: { _ in },
+            delete: { _ in },
+        )
         let authNetworkClient = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw SessionSyncError.capabilityMiss },
             fetchAccessStatus: { throw SessionSyncError.capabilityMiss },
