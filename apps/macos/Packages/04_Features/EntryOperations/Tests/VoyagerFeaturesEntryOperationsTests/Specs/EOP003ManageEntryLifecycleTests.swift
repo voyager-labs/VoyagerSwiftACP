@@ -582,6 +582,35 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertNil(manager)
     }
 
+    /// EOP-003-undo_entry_action: 같은 event turn의 파일 작업은 native Undo step을 각각 소유한다.
+    /// 연속 등록된 두 logical record가 AppKit event grouping으로 한 번에 소비되지 않는지 검증한다.
+    /// - 검증 내용: B Undo 후 A가 native undo top에 남고 B는 redo 가능하며 A Undo도 이어서 성공한다.
+    /// - 사전 조건: 동일 scope와 generation에 A, B record를 동기적으로 연속 등록한다.
+    /// - 기대 결과: 각 perform 요청이 정확히 한 record만 이동하고 scope가 invalidated되지 않는다.
+    func testFileOperationRegistrySeparatesSameEventRegistrationsIntoNativeUndoSteps() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let client = FileOperationUndoManagerClient.live(registry: registry)
+        let scope = UndoManagerScope(windowID: UUID(), contentTabID: "same-event-tab")
+        let recordA = EntryActionRecord(operationKind: .rename, targets: [])
+        let recordB = EntryActionRecord(operationKind: .pasteFileCopy, targets: [])
+        _ = client.activate(scope)
+        let generation = try XCTUnwrap(client.generation(scope))
+
+        XCTAssertTrue(client.registerUndo(scope, generation, recordA))
+        XCTAssertTrue(client.registerUndo(scope, generation, recordB))
+
+        let firstOutcome = client.performUndoRedo(scope, generation, .undo, recordB.id)
+        let managerValue = await client.undoManager(scope)
+        let manager = try XCTUnwrap(managerValue)
+        XCTAssertEqual(firstOutcome, .applied)
+        XCTAssertTrue(manager.canUndo)
+        XCTAssertTrue(manager.canRedo)
+
+        let secondOutcome = client.performUndoRedo(scope, generation, .undo, recordA.id)
+        XCTAssertEqual(secondOutcome, .applied)
+        XCTAssertFalse(manager.canUndo)
+    }
+
     // MARK: - EOP-003-redo_entry_action
 
     /// EOP-003-redo_entry_action: activate되지 않은 explicit scope의 redo는 fail-closed된다.

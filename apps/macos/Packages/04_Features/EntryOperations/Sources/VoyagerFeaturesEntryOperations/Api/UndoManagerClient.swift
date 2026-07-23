@@ -64,6 +64,7 @@ public final class FileOperationUndoManagerRegistry {
         }
 
         let manager = UndoManager()
+        manager.groupsByEvent = false
         entries[scope] = Entry(manager: manager, generation: nextGeneration())
         return manager
     }
@@ -114,9 +115,11 @@ public final class FileOperationUndoManagerRegistry {
             recordID: record.id,
         )
         FileOperationUndoManagerHandlerStore.store(for: entry.manager).add(handler)
+        entry.manager.beginUndoGrouping()
         entry.manager.registerUndo(withTarget: handler) { target in
             target.handleUndo()
         }
+        entry.manager.endUndoGrouping()
         entry.undoRecordIDs.append(record.id)
         entry.redoRecordIDs.removeAll()
         return true
