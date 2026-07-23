@@ -12,13 +12,45 @@ public struct UndoManagerScope: Hashable, Sendable {
     }
 }
 
+public enum FileOperationUndoDirection: Equatable, Sendable {
+    case undo
+    case redo
+}
+
+public enum FileOperationUndoTransitionRejection: Equatable, Sendable {
+    case missingScope
+    case staleGeneration
+    case unavailable
+}
+
+public enum FileOperationUndoTransitionOutcome: Equatable, Sendable {
+    case applied
+    case rejected(FileOperationUndoTransitionRejection)
+    case invalidated
+}
+
 @MainActor
 public final class FileOperationUndoManagerRegistry {
     public typealias Generation = UInt64
 
-    private struct Entry {
+    private final class Entry {
         let manager: UndoManager
         var generation: Generation
+        var undoRecordIDs: [UUID] = []
+        var redoRecordIDs: [UUID] = []
+        var pendingTransition: PendingTransition?
+        var isInvalidated = false
+
+        init(manager: UndoManager, generation: Generation) {
+            self.manager = manager
+            self.generation = generation
+        }
+    }
+
+    private struct PendingTransition: Equatable {
+        let direction: FileOperationUndoDirection
+        let recordID: UUID
+        var didComplete = false
     }
 
     private var entries: [UndoManagerScope: Entry] = [:]
@@ -38,20 +70,9 @@ public final class FileOperationUndoManagerRegistry {
     }
 
     public func deactivate(_ scope: UndoManagerScope) {
-        guard var entry = entries[scope] else {
-            return
-        }
-
+        guard let entry = entries[scope] else { return }
         entry.generation = nextGeneration()
-        entries[scope] = entry
-        entry.manager.removeAllActions()
-        FileOperationUndoManagerHandlerStore.store(for: entry.manager).clear()
-        objc_setAssociatedObject(
-            entry.manager,
-            &FileOperationUndoManagerHandlerStoreKey.value,
-            nil,
-            .OBJC_ASSOCIATION_RETAIN_NONATOMIC,
-        )
+        clearNativeHistory(entry)
         entries.removeValue(forKey: scope)
     }
 
@@ -81,44 +102,117 @@ public final class FileOperationUndoManagerRegistry {
         _ scope: UndoManagerScope,
         expectedGeneration: Generation,
         record: EntryActionRecord,
-        onUndo: @escaping @Sendable (EntryActionRecord) async -> Void,
-        onRedo: @escaping @Sendable (EntryActionRecord) async -> Void,
     ) -> Bool {
-        guard let entry = entries[scope], entry.generation == expectedGeneration else {
-            return false
-        }
+        guard let entry = entries[scope], entry.generation == expectedGeneration,
+              !entry.isInvalidated, entry.pendingTransition == nil
+        else { return false }
 
         let handler = FileOperationUndoManagerHandler(
             registry: self,
             scope: scope,
             generation: expectedGeneration,
             undoManager: entry.manager,
-            onUndo: onUndo,
-            onRedo: onRedo,
+            recordID: record.id,
         )
         FileOperationUndoManagerHandlerStore.store(for: entry.manager).add(handler)
         entry.manager.registerUndo(withTarget: handler) { target in
-            target.handleUndo(record)
+            target.handleUndo()
         }
+        entry.undoRecordIDs.append(record.id)
+        entry.redoRecordIDs.removeAll()
         return true
     }
 
-    @discardableResult
-    public func requestUndo(_ scope: UndoManagerScope) -> Bool {
-        guard let manager = entries[scope]?.manager, manager.canUndo else {
-            return false
+    public func performUndoRedo(
+        _ scope: UndoManagerScope,
+        expectedGeneration: Generation,
+        direction: FileOperationUndoDirection,
+        expectedRecordID: UUID,
+    ) -> FileOperationUndoTransitionOutcome {
+        guard let entry = entries[scope] else {
+            return .rejected(.missingScope)
         }
-        manager.undo()
-        return true
+        guard entry.generation == expectedGeneration else {
+            return .rejected(.staleGeneration)
+        }
+        guard !entry.isInvalidated, entry.pendingTransition == nil else {
+            invalidate(entry)
+            return .invalidated
+        }
+
+        let recordIDs = direction == .undo ? entry.undoRecordIDs : entry.redoRecordIDs
+        let isAvailable = direction == .undo ? entry.manager.canUndo : entry.manager.canRedo
+        guard recordIDs.last == expectedRecordID, isAvailable else {
+            invalidate(entry)
+            return .invalidated
+        }
+
+        entry.pendingTransition = PendingTransition(direction: direction, recordID: expectedRecordID)
+        switch direction {
+        case .undo:
+            entry.manager.undo()
+        case .redo:
+            entry.manager.redo()
+        }
+
+        guard entry.pendingTransition?.didComplete == true else {
+            invalidate(entry)
+            return .invalidated
+        }
+        entry.pendingTransition = nil
+        return .applied
     }
 
-    @discardableResult
-    public func requestRedo(_ scope: UndoManagerScope) -> Bool {
-        guard let manager = entries[scope]?.manager, manager.canRedo else {
-            return false
+    fileprivate func completeNativeTransition(
+        scope: UndoManagerScope,
+        generation: Generation,
+        direction: FileOperationUndoDirection,
+        recordID: UUID,
+        handler: FileOperationUndoManagerHandler,
+    ) {
+        guard let entry = entries[scope], entry.generation == generation,
+              entry.pendingTransition == PendingTransition(direction: direction, recordID: recordID)
+        else {
+            if let entry = entries[scope] {
+                invalidate(entry)
+            }
+            return
         }
-        manager.redo()
-        return true
+
+        switch direction {
+        case .undo:
+            entry.manager.registerUndo(withTarget: handler) { target in
+                target.handleRedo()
+            }
+            _ = entry.undoRecordIDs.popLast()
+            entry.redoRecordIDs.append(recordID)
+        case .redo:
+            entry.manager.registerUndo(withTarget: handler) { target in
+                target.handleUndo()
+            }
+            _ = entry.redoRecordIDs.popLast()
+            entry.undoRecordIDs.append(recordID)
+        }
+        entry.pendingTransition?.didComplete = true
+    }
+
+    private func invalidate(_ entry: Entry) {
+        entry.isInvalidated = true
+        clearNativeHistory(entry)
+    }
+
+    private func clearNativeHistory(_ entry: Entry) {
+        entry.manager.removeAllActions()
+        entry.undoRecordIDs.removeAll()
+        entry.redoRecordIDs.removeAll()
+        entry.pendingTransition = nil
+        FileOperationUndoManagerHandlerStore.store(for: entry.manager).clear()
+        objc_setAssociatedObject(
+            entry.manager,
+            &FileOperationUndoManagerHandlerStoreKey.value,
+            nil,
+            .OBJC_ASSOCIATION_RETAIN_NONATOMIC,
+        )
     }
 
     private func nextGeneration() -> Generation {
@@ -135,44 +229,36 @@ public struct FileOperationUndoManagerClient: Sendable {
     public var deactivate: @Sendable (UndoManagerScope) -> Void
     public var deactivateAll: @MainActor @Sendable (UUID) async -> Void
     public var undoManager: @MainActor @Sendable (UndoManagerScope) async -> UndoManager?
-    public var registerUndo: @MainActor @Sendable (
-        _ scope: UndoManagerScope,
-        _ expectedGeneration: Generation,
-        _ record: EntryActionRecord,
-        _ onUndo: @escaping @Sendable (EntryActionRecord) async -> Void,
-        _ onRedo: @escaping @Sendable (EntryActionRecord) async -> Void,
-    ) async -> Bool
-    public var requestUndo: @MainActor @Sendable (UndoManagerScope) async -> Bool
-    public var requestRedo: @MainActor @Sendable (UndoManagerScope) async -> Bool
+    public var registerUndo: @Sendable (UndoManagerScope, Generation, EntryActionRecord) -> Bool
+    public var performUndoRedo: @Sendable (
+        UndoManagerScope,
+        Generation,
+        FileOperationUndoDirection,
+        UUID,
+    ) -> FileOperationUndoTransitionOutcome
     public var generation: @Sendable (UndoManagerScope) -> Generation?
-    public var isGenerationCurrent: @MainActor @Sendable (UndoManagerScope, Generation) async -> Bool
 
     nonisolated public init(
         activate: @escaping @Sendable (UndoManagerScope) -> UndoManager?,
         deactivate: @escaping @Sendable (UndoManagerScope) -> Void,
         deactivateAll: @escaping @MainActor @Sendable (UUID) async -> Void,
         undoManager: @escaping @MainActor @Sendable (UndoManagerScope) async -> UndoManager?,
-        registerUndo: @escaping @MainActor @Sendable (
-            _ scope: UndoManagerScope,
-            _ expectedGeneration: Generation,
-            _ record: EntryActionRecord,
-            _ onUndo: @escaping @Sendable (EntryActionRecord) async -> Void,
-            _ onRedo: @escaping @Sendable (EntryActionRecord) async -> Void,
-        ) async -> Bool,
-        requestUndo: @escaping @MainActor @Sendable (UndoManagerScope) async -> Bool,
-        requestRedo: @escaping @MainActor @Sendable (UndoManagerScope) async -> Bool,
+        registerUndo: @escaping @Sendable (UndoManagerScope, Generation, EntryActionRecord) -> Bool,
+        performUndoRedo: @escaping @Sendable (
+            UndoManagerScope,
+            Generation,
+            FileOperationUndoDirection,
+            UUID,
+        ) -> FileOperationUndoTransitionOutcome,
         generation: @escaping @Sendable (UndoManagerScope) -> Generation?,
-        isGenerationCurrent: @escaping @MainActor @Sendable (UndoManagerScope, Generation) async -> Bool,
     ) {
         self.activate = activate
         self.deactivate = deactivate
         self.deactivateAll = deactivateAll
         self.undoManager = undoManager
         self.registerUndo = registerUndo
-        self.requestUndo = requestUndo
-        self.requestRedo = requestRedo
+        self.performUndoRedo = performUndoRedo
         self.generation = generation
-        self.isGenerationCurrent = isGenerationCurrent
     }
 }
 
@@ -182,39 +268,42 @@ public extension FileOperationUndoManagerClient {
     ) -> FileOperationUndoManagerClient {
         .init(
             activate: { scope in
-                if Thread.isMainThread {
-                    return MainActor.assumeIsolated { registry.activate(scope) }
-                }
-                return DispatchQueue.main.sync { registry.activate(scope) }
+                withRegistry(registry) { $0.activate(scope) }
             },
             deactivate: { scope in
-                if Thread.isMainThread {
-                    MainActor.assumeIsolated { registry.deactivate(scope) }
-                } else {
-                    DispatchQueue.main.sync { registry.deactivate(scope) }
-                }
+                withRegistry(registry) { $0.deactivate(scope) }
             },
             deactivateAll: { registry.deactivateAll(windowID: $0) },
             undoManager: { registry.undoManager(for: $0) },
-            registerUndo: { scope, expectedGeneration, record, onUndo, onRedo in
-                registry.registerUndo(
-                    scope,
-                    expectedGeneration: expectedGeneration,
-                    record: record,
-                    onUndo: onUndo,
-                    onRedo: onRedo,
-                )
-            },
-            requestUndo: { registry.requestUndo($0) },
-            requestRedo: { registry.requestRedo($0) },
-            generation: { scope in
-                if Thread.isMainThread {
-                    return MainActor.assumeIsolated { registry.generation(for: scope) }
+            registerUndo: { scope, expectedGeneration, record in
+                withRegistry(registry) {
+                    $0.registerUndo(scope, expectedGeneration: expectedGeneration, record: record)
                 }
-                return DispatchQueue.main.sync { registry.generation(for: scope) }
             },
-            isGenerationCurrent: { registry.isCurrent($0, generation: $1) },
+            performUndoRedo: { scope, expectedGeneration, direction, expectedRecordID in
+                withRegistry(registry) {
+                    $0.performUndoRedo(
+                        scope,
+                        expectedGeneration: expectedGeneration,
+                        direction: direction,
+                        expectedRecordID: expectedRecordID,
+                    )
+                }
+            },
+            generation: { scope in
+                withRegistry(registry) { $0.generation(for: scope) }
+            },
         )
+    }
+
+    nonisolated private static func withRegistry<Value: Sendable>(
+        _ registry: FileOperationUndoManagerRegistry,
+        operation: @MainActor @Sendable (FileOperationUndoManagerRegistry) -> Value,
+    ) -> Value {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { operation(registry) }
+        }
+        return DispatchQueue.main.sync { operation(registry) }
     }
 }
 
@@ -233,11 +322,9 @@ extension FileOperationUndoManagerClient: DependencyKey {
             deactivate: { _ in },
             deactivateAll: { _ in },
             undoManager: { _ in nil },
-            registerUndo: { _, _, _, _, _ in false },
-            requestUndo: { _ in false },
-            requestRedo: { _ in false },
+            registerUndo: { _, _, _ in false },
+            performUndoRedo: { _, _, _, _ in .rejected(.missingScope) },
             generation: { _ in nil },
-            isGenerationCurrent: { _, _ in false },
         )
     }
 }
@@ -255,59 +342,39 @@ private final class FileOperationUndoManagerHandler {
     private weak var undoManager: UndoManager?
     private let scope: UndoManagerScope
     private let generation: FileOperationUndoManagerRegistry.Generation
-    private let onUndo: @Sendable (EntryActionRecord) async -> Void
-    private let onRedo: @Sendable (EntryActionRecord) async -> Void
+    private let recordID: UUID
 
     init(
         registry: FileOperationUndoManagerRegistry,
         scope: UndoManagerScope,
         generation: FileOperationUndoManagerRegistry.Generation,
         undoManager: UndoManager,
-        onUndo: @escaping @Sendable (EntryActionRecord) async -> Void,
-        onRedo: @escaping @Sendable (EntryActionRecord) async -> Void,
+        recordID: UUID,
     ) {
         self.registry = registry
         self.scope = scope
         self.generation = generation
         self.undoManager = undoManager
-        self.onUndo = onUndo
-        self.onRedo = onRedo
+        self.recordID = recordID
     }
 
-    func handleUndo(_ record: EntryActionRecord) {
-        guard isCurrent, let undoManager else {
-            return
-        }
-        undoManager.registerUndo(withTarget: self) { target in
-            target.handleRedo(record)
-        }
-        invokeIfCurrent(onUndo, record: record)
+    func handleUndo() {
+        complete(.undo)
     }
 
-    func handleRedo(_ record: EntryActionRecord) {
-        guard isCurrent, let undoManager else {
-            return
-        }
-        undoManager.registerUndo(withTarget: self) { target in
-            target.handleUndo(record)
-        }
-        invokeIfCurrent(onRedo, record: record)
+    func handleRedo() {
+        complete(.redo)
     }
 
-    private var isCurrent: Bool {
-        registry?.isCurrent(scope, generation: generation) == true
-    }
-
-    private func invokeIfCurrent(
-        _ callback: @escaping @Sendable (EntryActionRecord) async -> Void,
-        record: EntryActionRecord,
-    ) {
-        Task { @MainActor [weak registry, scope, generation] in
-            guard registry?.isCurrent(scope, generation: generation) == true else {
-                return
-            }
-            await callback(record)
-        }
+    private func complete(_ direction: FileOperationUndoDirection) {
+        guard let registry, let undoManager else { return }
+        registry.completeNativeTransition(
+            scope: scope,
+            generation: generation,
+            direction: direction,
+            recordID: recordID,
+            handler: self,
+        )
     }
 }
 

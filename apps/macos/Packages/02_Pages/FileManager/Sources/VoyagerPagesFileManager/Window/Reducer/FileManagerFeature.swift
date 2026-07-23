@@ -47,10 +47,18 @@ public struct FileManagerFeature {
                 }
 
             case let .internal(.entryActionCompleted(tabID, record, expectedGeneration)):
-                guard let expectedGeneration,
+                guard record.operationKind.isUndoable,
+                      let expectedGeneration,
                       undoManagerGeneration(tabID: tabID, state: state) == expectedGeneration,
-                      state.contentTabs.tabs[id: tabID] != nil
+                      state.contentTabs.tabs[id: tabID] != nil,
+                      let windowID = state.windowID
                 else { return .none }
+
+                let scope = UndoManagerScope(windowID: windowID, contentTabID: tabID.rawValue)
+                guard fileOperationUndoManagerClient.registerUndo(scope, expectedGeneration, record) else {
+                    clearLogicalUndoHistory(tabID: tabID, state: &state)
+                    return .none
+                }
 
                 let isActiveTab = state.contentTabs.activeTabID == tabID
                 guard var contentState = isActiveTab ? state.content : state.tabContentStates[tabID] else {
@@ -93,6 +101,17 @@ public struct FileManagerFeature {
         FileManagerWindowRoutingReducer()
         FileManagerWindowUndoRoutingReducer()
         FileManagerWindowCommandRoutingReducer()
+    }
+
+    private func clearLogicalUndoHistory(tabID: ContentTabID, state: inout State) {
+        let isActiveTab = state.contentTabs.activeTabID == tabID
+        guard var contentState = isActiveTab ? state.content : state.tabContentStates[tabID] else { return }
+        contentState.entryViewLayout.entryOperations.undoRecords.removeAll()
+        contentState.entryViewLayout.entryOperations.redoRecords.removeAll()
+        if isActiveTab {
+            state.content = contentState
+        }
+        state.tabContentStates[tabID] = contentState
     }
 
     private func undoManagerGeneration(

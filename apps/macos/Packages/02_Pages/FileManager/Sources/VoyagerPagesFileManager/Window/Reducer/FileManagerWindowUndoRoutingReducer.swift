@@ -2,15 +2,6 @@ import ComposableArchitecture
 import Foundation
 import VoyagerFeaturesEntryOperations
 
-struct FileOperationUndoRegistrationCancelID: Hashable {
-    let scope: UndoManagerScope
-}
-
-private enum FileOperationNativeUndoEvent {
-    case undo(EntryActionRecord)
-    case redo(EntryActionRecord)
-}
-
 @Reducer
 struct FileManagerWindowUndoRoutingReducer {
     typealias State = FileManagerWindowState
@@ -22,25 +13,17 @@ struct FileManagerWindowUndoRoutingReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .internal(.entryActionCompleted(tabID, record, generation)):
-                registerNativeUndoEffect(
-                    tabID: tabID,
-                    record: record,
-                    generation: generation,
-                    state: state,
-                )
-
             case let .tabContent(
                 tabID,
                 .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))),
             ):
-                requestNativeUndoRedoEffect(tabID: tabID, isUndo: true, state: state)
+                performUndoRedo(tabID: tabID, direction: .undo, state: &state)
 
             case let .tabContent(
                 tabID,
                 .entryViewLayout(.entryOperations(.undoRedo(.requestRedo))),
             ):
-                requestNativeUndoRedoEffect(tabID: tabID, isUndo: false, state: state)
+                performUndoRedo(tabID: tabID, direction: .redo, state: &state)
 
             default:
                 .none
@@ -53,77 +36,70 @@ struct FileManagerWindowUndoRoutingReducer {
         return UndoManagerScope(windowID: windowID, contentTabID: tabID.rawValue)
     }
 
-    private func tabContentState(tabID: ContentTabID, state: State) -> FileManagerContentState? {
-        guard state.contentTabs.tabs[id: tabID] != nil else { return nil }
-        if state.contentTabs.activeTabID == tabID {
-            return state.content
-        }
-        return state.tabContentStates[tabID]
-    }
-
-    private func registerNativeUndoEffect(
+    private func performUndoRedo(
         tabID: ContentTabID,
-        record: EntryActionRecord,
-        generation: FileOperationUndoManagerClient.Generation?,
-        state: State,
+        direction: FileOperationUndoDirection,
+        state: inout State,
     ) -> Effect<Action> {
-        guard record.operationKind.isUndoable,
-              tabContentState(tabID: tabID, state: state) != nil,
+        guard state.contentTabs.tabs[id: tabID] != nil,
               let scope = undoManagerScope(tabID: tabID, state: state),
-              let generation
+              let generation = fileOperationUndoManagerClient.generation(scope)
         else { return .none }
 
-        let client = fileOperationUndoManagerClient
-        return .run { send in
-            let (events, continuation) = AsyncStream<FileOperationNativeUndoEvent>.makeStream()
-            defer { continuation.finish() }
-            let didRegister = await client.registerUndo(
-                scope,
-                generation,
-                record,
-                { continuation.yield(.undo($0)) },
-                { continuation.yield(.redo($0)) },
-            )
-            guard didRegister else { return }
-
-            for await event in events {
-                guard await client.isGenerationCurrent(scope, generation) else { return }
-                let action: EntryOperationsAction.UndoRedo = switch event {
-                case let .undo(record):
-                    .undoEntryAction(record)
-                case let .redo(record):
-                    .redoEntryAction(record)
-                }
-                await send(.tabContent(
-                    tabID: tabID,
-                    action: .entryViewLayout(.entryOperations(.undoRedo(action))),
-                ))
-            }
-        }
-        .cancellable(id: FileOperationUndoRegistrationCancelID(scope: scope))
-    }
-
-    private func requestNativeUndoRedoEffect(
-        tabID: ContentTabID,
-        isUndo: Bool,
-        state: State,
-    ) -> Effect<Action> {
-        guard let content = tabContentState(tabID: tabID, state: state),
-              let scope = undoManagerScope(tabID: tabID, state: state)
-        else { return .none }
-
-        let operations = content.entryViewLayout.entryOperations
-        guard isUndo ? operations.canUndoEntryAction : operations.canRedoEntryAction else {
+        let isActiveTab = state.contentTabs.activeTabID == tabID
+        guard var contentState = isActiveTab ? state.content : state.tabContentStates[tabID] else {
             return .none
         }
-
-        let client = fileOperationUndoManagerClient
-        return .run { _ in
-            if isUndo {
-                _ = await client.requestUndo(scope)
-            } else {
-                _ = await client.requestRedo(scope)
-            }
+        let operations = contentState.entryViewLayout.entryOperations
+        let record: EntryActionRecord? = switch direction {
+        case .undo:
+            operations.canUndoEntryAction ? operations.latestUndoRecord : nil
+        case .redo:
+            operations.canRedoEntryAction ? operations.latestRedoRecord : nil
         }
+        guard let record else { return .none }
+
+        let outcome = fileOperationUndoManagerClient.performUndoRedo(
+            scope,
+            generation,
+            direction,
+            record.id,
+        )
+        switch outcome {
+        case .applied:
+            let undoRedoAction: EntryOperationsAction.UndoRedo = switch direction {
+            case .undo:
+                .undoEntryAction(record)
+            case .redo:
+                .redoEntryAction(record)
+            }
+            let effect = FileManagerContentFeature().reduce(
+                into: &contentState,
+                action: .entryViewLayout(.entryOperations(.undoRedo(undoRedoAction))),
+            )
+            updateContentState(contentState, tabID: tabID, isActiveTab: isActiveTab, state: &state)
+            return effect.map { .tabContent(tabID: tabID, action: $0) }
+
+        case .invalidated:
+            contentState.entryViewLayout.entryOperations.undoRecords.removeAll()
+            contentState.entryViewLayout.entryOperations.redoRecords.removeAll()
+            updateContentState(contentState, tabID: tabID, isActiveTab: isActiveTab, state: &state)
+            return .none
+
+        case .rejected:
+            return .none
+        }
+    }
+
+    private func updateContentState(
+        _ contentState: FileManagerContentState,
+        tabID: ContentTabID,
+        isActiveTab: Bool,
+        state: inout State,
+    ) {
+        if isActiveTab {
+            state.content = contentState
+        }
+        state.tabContentStates[tabID] = contentState
     }
 }

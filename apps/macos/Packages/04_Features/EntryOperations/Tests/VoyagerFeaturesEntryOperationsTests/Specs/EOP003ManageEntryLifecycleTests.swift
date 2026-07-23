@@ -573,12 +573,12 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
             targets: [.init(beforePath: "/a/old.txt", afterPath: "/a/new.txt")],
         )
 
-        let didRegister = await client.registerUndo(scope, 0, record, { _ in }, { _ in })
-        let didRequestUndo = await client.requestUndo(scope)
+        let didRegister = client.registerUndo(scope, 0, record)
+        let outcome = client.performUndoRedo(scope, 0, .undo, record.id)
         let manager = await client.undoManager(scope)
 
         XCTAssertFalse(didRegister)
-        XCTAssertFalse(didRequestUndo)
+        XCTAssertEqual(outcome, .rejected(.missingScope))
         XCTAssertNil(manager)
     }
 
@@ -594,10 +594,10 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let client = FileOperationUndoManagerClient.live(registry: registry)
         let scope = UndoManagerScope(windowID: UUID(), contentTabID: "missing-tab")
 
-        let didRequestRedo = await client.requestRedo(scope)
+        let outcome = client.performUndoRedo(scope, 0, .redo, UUID())
         let manager = await client.undoManager(scope)
 
-        XCTAssertFalse(didRequestRedo)
+        XCTAssertEqual(outcome, .rejected(.missingScope))
         XCTAssertNil(manager)
     }
 

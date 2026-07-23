@@ -181,7 +181,7 @@ struct FileManagerWindowRoutingReducer {
     private func deactivateUndoManagerScopeEffect(tabID: ContentTabID, state: State) -> Effect<Action> {
         guard let scope = undoManagerScope(tabID: tabID, state: state) else { return .none }
         fileOperationUndoManagerClient.deactivate(scope)
-        return .cancel(id: FileOperationUndoRegistrationCancelID(scope: scope))
+        return .none
     }
 
     private func replaceUndoManagerScopeEffect(
@@ -194,7 +194,7 @@ struct FileManagerWindowRoutingReducer {
         else { return .none }
         fileOperationUndoManagerClient.deactivate(closedScope)
         _ = fileOperationUndoManagerClient.activate(homeScope)
-        return .cancel(id: FileOperationUndoRegistrationCancelID(scope: closedScope))
+        return .none
     }
 
     private func reconcileUndoManagerScopesEffect(

@@ -39,7 +39,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
     /// - 검증 내용: W1/A와 W1/B를 가진 coordinator 생성 직후 manager lookup 및 A registerUndo 성공을 확인한다.
     /// - 사전 조건: composition-scoped registry/client와 두 existing tab을 가진 초기 FileManager state가 있다.
     /// - 기대 결과: coordinator init 반환 시 두 manager가 존재하고 첫 operation registration이 fail-closed되지 않는다.
-    func testCoordinatorActivatesAllInitialTabScopesBeforeOperationIngress() async throws {
+    func testCoordinatorActivatesAllInitialTabScopesBeforeOperationIngress() throws {
         let registry = FileOperationUndoManagerRegistry()
         let client = makeClient(registry: registry)
         let windowID = UUID()
@@ -60,13 +60,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertNotNil(registry.undoManager(for: scopeB))
         let generationValue = client.generation(scopeA)
         let generation = try XCTUnwrap(generationValue)
-        let didRegister = await client.registerUndo(
-            scopeA,
-            generation,
-            makeRecord("initial"),
-            { _ in },
-            { _ in },
-        )
+        let didRegister = client.registerUndo(scopeA, generation, makeRecord("initial"))
         XCTAssertTrue(didRegister)
     }
 
@@ -98,51 +92,34 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
     }
 
     /// EOP-003-undo_entry_action: active scope 요청은 같은 window의 inactive scope history를 소비하지 않는다.
-    /// W1/A와 W1/B 모두 native history가 있을 때 active B 요청이 B callback만 실행하는지 검증한다.
-    /// - 검증 내용: B scope requestUndo 후 A/B callback 횟수와 각 manager의 canUndo projection을 확인한다.
-    /// - 사전 조건: W1/A와 W1/B가 activate되어 각각 undo record 한 건을 등록했고 B가 active request 대상이다.
-    /// - 기대 결과: B callback만 한 번 실행되고 A history는 그대로 남는다.
+    /// W1/A와 W1/B 모두 native history가 있을 때 B transaction만 해당 native stack을 이동하는지 검증한다.
+    /// - 검증 내용: B scope undo transaction 후 outcome과 A/B manager의 canUndo/canRedo projection을 확인한다.
+    /// - 사전 조건: W1/A와 W1/B가 activate되어 각각 undo record 한 건을 등록했다.
+    /// - 기대 결과: B transaction만 적용되고 A history는 그대로 남는다.
     func testActiveScopeUndoDoesNotFallbackToInactiveHistory() async throws {
         let client = makeClient()
         let windowID = UUID()
         let scopeA = UndoManagerScope(windowID: windowID, contentTabID: "A")
         let scopeB = UndoManagerScope(windowID: windowID, contentTabID: "B")
-        let callbacks = LockIsolated<[String]>([])
-        let callback = expectation(description: "active B undo callback")
+        let recordA = makeRecord("A")
+        let recordB = makeRecord("B")
         _ = client.activate(scopeA)
         _ = client.activate(scopeB)
 
-        let generationAValue = client.generation(scopeA)
-        let generationBValue = client.generation(scopeB)
-        let generationA = try XCTUnwrap(generationAValue)
-        let generationB = try XCTUnwrap(generationBValue)
-        let registeredA = await client.registerUndo(
-            scopeA,
-            generationA,
-            makeRecord("A"),
-            { _ in callbacks.withValue { $0.append("A") } },
-            { _ in },
-        )
-        let registeredB = await client.registerUndo(
-            scopeB,
-            generationB,
-            makeRecord("B"),
-            { _ in
-                callbacks.withValue { $0.append("B") }
-                callback.fulfill()
-            },
-            { _ in },
-        )
-        XCTAssertTrue(registeredA)
-        XCTAssertTrue(registeredB)
+        let generationA = try XCTUnwrap(client.generation(scopeA))
+        let generationB = try XCTUnwrap(client.generation(scopeB))
+        XCTAssertTrue(client.registerUndo(scopeA, generationA, recordA))
+        XCTAssertTrue(client.registerUndo(scopeB, generationB, recordB))
 
-        let requestedUndo = await client.requestUndo(scopeB)
-        XCTAssertTrue(requestedUndo)
-        await fulfillment(of: [callback], timeout: 1)
+        let outcome = client.performUndoRedo(scopeB, generationB, .undo, recordB.id)
 
-        XCTAssertEqual(callbacks.value, ["B"])
+        XCTAssertEqual(outcome, .applied)
         let inactiveManager = await client.undoManager(scopeA)
+        let activeManager = await client.undoManager(scopeB)
         XCTAssertEqual(inactiveManager?.canUndo, true)
+        XCTAssertEqual(inactiveManager?.canRedo, false)
+        XCTAssertEqual(activeManager?.canUndo, false)
+        XCTAssertEqual(activeManager?.canRedo, true)
     }
 
     /// EOP-003-undo_entry_action: A에서 시작한 completion은 B 전환 후 inactive A snapshot만 갱신한다.
@@ -455,21 +432,14 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertIdentical(registry.undoManager(for: otherScope), otherManager)
     }
 
-    /// EOP-003-undo_entry_action: operation completion은 origin scope에 native undo를 등록하고 captured tab으로 callback한다.
-    /// active tab이 B로 바뀐 뒤 A manager undo가 A logical stack과 replay만 진행하는 native bridge를 검증한다.
-    /// - 검증 내용: A completion 등록, B 전환, A manager undo 후 A/B history와 replay 호출을 확인한다.
+    /// EOP-003-undo_entry_action: operation completion은 origin scope에 native undo를 등록하고 targeted request로 replay한다.
+    /// active tab이 B로 바뀐 뒤 A request가 A logical/native stack과 replay만 진행하는 transaction을 검증한다.
+    /// - 검증 내용: A completion 등록, B 전환, targeted A undo 후 A/B history와 replay 호출을 확인한다.
     /// - 사전 조건: W1/A·W1/B scope가 활성화되고 operation origin은 A이며 두 tab history는 비어 있다.
-    /// - 기대 결과: A manager만 undo 가능하고 callback은 `.tabContent(A, undoEntryAction)` 경로로 A만 변경한다.
-    func testNativeUndoBridgeDispatchesCapturedOriginTabAfterActiveTabSwitch() async throws {
+    /// - 기대 결과: A manager만 전이되고 targeted request는 A logical stack만 변경한다.
+    func testNativeUndoTransactionPreservesOriginTabAfterActiveTabSwitch() async throws {
         let registry = FileOperationUndoManagerRegistry()
-        var client = makeClient(registry: registry)
-        let didRegisterNativeUndo = expectation(description: "native undo registered")
-        let registerUndo = client.registerUndo
-        client.registerUndo = { scope, generation, record, onUndo, onRedo in
-            let result = await registerUndo(scope, generation, record, onUndo, onRedo)
-            didRegisterNativeUndo.fulfill()
-            return result
-        }
+        let client = makeClient(registry: registry)
         let windowID = UUID()
         let tabA = ContentTabID(rawValue: "A")
         let tabB = ContentTabID(rawValue: "B")
@@ -480,15 +450,14 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         fileOpsClient.renameFile = { _, _ in replayCompleted.fulfill() }
         _ = client.activate(scopeA)
         _ = client.activate(scopeB)
-        let generationAValue = client.generation(scopeA)
-        let generationA = try XCTUnwrap(generationAValue)
+        let generationA = try XCTUnwrap(client.generation(scopeA))
         let record = makeRecord("native-A")
         let store = makeStore(
             state: makeTwoTabState(windowID: windowID, activeTabID: tabA),
             client: client,
             entryFileOpsClient: fileOpsClient,
         )
-        // store.exhaustivity = .off: native callback 이후 replay lifecycle보다 origin scope 격리를 검증한다.
+        // store.exhaustivity = .off: replay lifecycle보다 origin scope의 atomic stack 전이를 검증한다.
         store.exhaustivity = .off
 
         await store.send(.internal(.entryActionCompleted(
@@ -496,14 +465,16 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
             record: record,
             undoManagerGeneration: generationA,
         )))
-        await fulfillment(of: [didRegisterNativeUndo], timeout: 1)
         let managerA = try XCTUnwrap(registry.undoManager(for: scopeA))
         let managerB = try XCTUnwrap(registry.undoManager(for: scopeB))
         XCTAssertTrue(managerA.canUndo)
         XCTAssertFalse(managerB.canUndo)
 
         await store.send(.contentTabs(.setCurrent(tabB)))
-        managerA.undo()
+        await store.send(.tabContent(
+            tabID: tabA,
+            action: .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))),
+        ))
         await fulfillment(of: [replayCompleted], timeout: 1)
         await store.skipReceivedActions()
 
@@ -511,6 +482,8 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
         XCTAssertEqual(store.state.tabContentStates[tabA]?.entryViewLayout.entryOperations.redoRecords, [record])
         XCTAssertEqual(store.state.tabContentStates[tabB]?.entryViewLayout.entryOperations.undoRecords.isEmpty, true)
+        XCTAssertFalse(managerA.canUndo)
+        XCTAssertTrue(managerA.canRedo)
         await store.skipInFlightEffects()
     }
 
@@ -523,17 +496,18 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let registry = FileOperationUndoManagerRegistry()
         var client = makeClient(registry: registry)
         let requestedScopes = LockIsolated<[UndoManagerScope]>([])
-        client.requestUndo = { scope in
+        client.performUndoRedo = { scope, _, _, _ in
             requestedScopes.withValue { $0.append(scope) }
-            return false
+            return .rejected(.unavailable)
         }
         let windowID = UUID()
         let tabB = ContentTabID(rawValue: "B")
         var state = makeTwoTabState(windowID: windowID, activeTabID: tabB)
         state.content.entryViewLayout.entryOperations.undoRecords = [makeRecord("B")]
         state.tabContentStates[tabB] = state.content
+        _ = client.activate(UndoManagerScope(windowID: windowID, contentTabID: tabB.rawValue))
         let store = makeStore(state: state, client: client)
-        // store.exhaustivity = .off: targeted request effect의 scope 기록만 검증한다.
+        // store.exhaustivity = .off: targeted transaction의 scope 기록만 검증한다.
         store.exhaustivity = .off
 
         await store.send(.request(.requestUndo))
@@ -601,8 +575,6 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let registry = FileOperationUndoManagerRegistry()
         let client = makeClient(registry: registry)
         let scope = UndoManagerScope(windowID: UUID(), contentTabID: "A")
-        let staleCallback = expectation(description: "stale registration callback")
-        staleCallback.isInverted = true
         _ = client.activate(scope)
         let staleGenerationValue = client.generation(scope)
         let staleGeneration = try XCTUnwrap(staleGenerationValue)
@@ -614,15 +586,8 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let currentGeneration = try XCTUnwrap(currentGenerationValue)
         XCTAssertNotEqual(staleGeneration, currentGeneration)
 
-        let didRegister = await client.registerUndo(
-            scope,
-            staleGeneration,
-            makeRecord("stale-register"),
-            { _ in staleCallback.fulfill() },
-            { _ in },
-        )
+        let didRegister = client.registerUndo(scope, staleGeneration, makeRecord("stale-register"))
         newManager.undo()
-        await fulfillment(of: [staleCallback], timeout: 0.1)
 
         XCTAssertFalse(didRegister)
         XCTAssertFalse(newManager.canUndo)
@@ -638,26 +603,17 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
     func testDeactivatedGenerationCallbackCannotMutateReactivatedScope() async throws {
         let client = makeClient()
         let scope = UndoManagerScope(windowID: UUID(), contentTabID: "A")
-        let staleCallback = expectation(description: "stale callback")
-        staleCallback.isInverted = true
         let oldManagerValue = client.activate(scope)
         let oldManager = try XCTUnwrap(oldManagerValue)
         let generationValue = client.generation(scope)
         let generation = try XCTUnwrap(generationValue)
-        let registered = await client.registerUndo(
-            scope,
-            generation,
-            makeRecord("old"),
-            { _ in staleCallback.fulfill() },
-            { _ in },
-        )
+        let registered = client.registerUndo(scope, generation, makeRecord("old"))
         XCTAssertTrue(registered)
 
         client.deactivate(scope)
         let newManagerValue = client.activate(scope)
         let newManager = try XCTUnwrap(newManagerValue)
         oldManager.undo()
-        await fulfillment(of: [staleCallback], timeout: 0.1)
 
         XCTAssertNotIdentical(oldManager, newManager)
         XCTAssertFalse(oldManager.canUndo)
@@ -690,13 +646,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         _ = client.activate(scopeB)
         let generationBeforeValue = client.generation(scopeA)
         let generationBefore = try XCTUnwrap(generationBeforeValue)
-        let didRegister = await client.registerUndo(
-            scopeA,
-            generationBefore,
-            makeRecord("survivor"),
-            { _ in },
-            { _ in },
-        )
+        let didRegister = client.registerUndo(scopeA, generationBefore, makeRecord("survivor"))
         XCTAssertTrue(didRegister)
         let survivor = try XCTUnwrap(state.contentTabs.tabs[id: tabA])
         let store = makeStore(state: state, client: client)
@@ -741,13 +691,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let managerBefore = try XCTUnwrap(managerBeforeValue)
         let generationBeforeValue = client.generation(scope)
         let generationBefore = try XCTUnwrap(generationBeforeValue)
-        let didRegister = await client.registerUndo(
-            scope,
-            generationBefore,
-            makeRecord("runtime-anchor"),
-            { _ in },
-            { _ in },
-        )
+        let didRegister = client.registerUndo(scope, generationBefore, makeRecord("runtime-anchor"))
         XCTAssertTrue(didRegister)
         XCTAssertTrue(managerBefore.canUndo)
         var persistedReplacement = makeTab(id: tabA, isPinned: true)
@@ -868,13 +812,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let oldManager = try XCTUnwrap(oldManagerValue)
         let oldGenerationValue = client.generation(oldScope)
         let oldGeneration = try XCTUnwrap(oldGenerationValue)
-        let didRegister = await client.registerUndo(
-            oldScope,
-            oldGeneration,
-            makeRecord("removed-pinned"),
-            { _ in },
-            { _ in },
-        )
+        let didRegister = client.registerUndo(oldScope, oldGeneration, makeRecord("removed-pinned"))
         XCTAssertTrue(didRegister)
         let store = makeStore(state: state, client: client)
         // store.exhaustivity = .off: empty pinned inventory의 Home 생성 부수 action보다 scope lifecycle만 검증한다.
