@@ -50,6 +50,7 @@ public struct FileManagerWindowState: Equatable {
     public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
     public var pendingContentTabClose: PendingContentTabClose?
     public var pendingSelectedContentTabClose: PendingSelectedContentTabClose?
+    public var deferredPinnedContentTabs: ContentTabState?
     public var pendingContentTabTeardown: PendingContentTabTeardown?
     public var isClosing: Bool
     public var pendingDirectoryReloadTabIDs: Set<ContentTabID>
@@ -72,6 +73,7 @@ public struct FileManagerWindowState: Equatable {
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
         pendingSelectedContentTabClose = nil
+        deferredPinnedContentTabs = nil
         pendingContentTabTeardown = nil
         isClosing = false
         pendingDirectoryReloadTabIDs = []
@@ -204,6 +206,7 @@ public struct FileManagerWindowState: Equatable {
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
         pendingSelectedContentTabClose = nil
+        deferredPinnedContentTabs = nil
         pendingContentTabTeardown = nil
         isClosing = false
         pendingDirectoryReloadTabIDs = []
@@ -316,9 +319,11 @@ public struct PendingContentTabClose: Equatable {
     public let batchOperationID: UUID?
     public var didReceiveWriteBackNavigationState: Bool
     public var didReceiveWriteBackComposerSync: Bool
+    public var requiresWriteBackFailureTerminal: Bool
     public var didReceiveSaveCompletedFailure: Bool
     public var didReceiveWriteBackFailure: Bool
     public var didReceiveSaveFeedbackFailure: Bool
+    public var didReceiveSaveBlockedFeedback: Bool
 
     public init(
         tabID: ContentTabID,
@@ -331,9 +336,11 @@ public struct PendingContentTabClose: Equatable {
         batchOperationID: UUID? = nil,
         didReceiveWriteBackNavigationState: Bool = false,
         didReceiveWriteBackComposerSync: Bool = false,
+        requiresWriteBackFailureTerminal: Bool = true,
         didReceiveSaveCompletedFailure: Bool = false,
         didReceiveWriteBackFailure: Bool = false,
         didReceiveSaveFeedbackFailure: Bool = false,
+        didReceiveSaveBlockedFeedback: Bool = false,
     ) {
         self.tabID = tabID
         self.previousActiveTabID = previousActiveTabID
@@ -345,18 +352,32 @@ public struct PendingContentTabClose: Equatable {
         self.batchOperationID = batchOperationID
         self.didReceiveWriteBackNavigationState = didReceiveWriteBackNavigationState
         self.didReceiveWriteBackComposerSync = didReceiveWriteBackComposerSync
+        self.requiresWriteBackFailureTerminal = requiresWriteBackFailureTerminal
         self.didReceiveSaveCompletedFailure = didReceiveSaveCompletedFailure
         self.didReceiveWriteBackFailure = didReceiveWriteBackFailure
         self.didReceiveSaveFeedbackFailure = didReceiveSaveFeedbackFailure
+        self.didReceiveSaveBlockedFeedback = didReceiveSaveBlockedFeedback
     }
+}
+
+private func isSelectedContentTabCloseBusy(_ content: FileManagerContentFeature.State) -> Bool {
+    content.collection.isSaving
+        || content.collection.collectionSession.phase.isInflightWriteBack
 }
 
 public extension FileManagerWindowState {
     internal var canStartSelectedContentTabClose: Bool {
+        let selectedInactiveContentIsBusy = contentTabs.orderedValidSelectedTabIDs.contains { tabID in
+            tabID != contentTabs.activeTabID
+                && tabContentStates[tabID].map(isSelectedContentTabCloseBusy) == true
+        }
         guard !isClosing,
               pendingSelectedContentTabClose == nil,
               pendingContentTabClose == nil,
-              pendingContentTabTeardown == nil
+              pendingContentTabTeardown == nil,
+              !isSelectedContentTabCloseBusy(content),
+              !selectedInactiveContentIsBusy,
+              contentTabs.pendingPinnedRecordIDs.isEmpty
         else { return false }
 
         switch undoRedoPhase {

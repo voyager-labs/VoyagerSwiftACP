@@ -40,6 +40,10 @@ private actor WindowBootstrapSuspensionGate {
 }
 
 /// 윈도우 관리자 계약 — 포커스 윈도우로의 명령 팬아웃과 미사용 시 no-op를 검증.
+private func pinnedTabIDs(_ contentTabs: ContentTabState?) -> [String] {
+    contentTabs?.tabs.filter(\.isPinned).map(\.id.rawValue) ?? []
+}
+
 @MainActor
 final class WindowManagerFeatureContractTests: XCTestCase {
     /// testApplyAppPreferencesFansOutToAllWindows 테스트 동작을 검증한다.
@@ -638,15 +642,26 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
-    /// Batch pinned 저장 성공도 기존 전역 pinned sync 경로를 정확히 한 번 사용한다.
-    /// - 검증 내용: correlated child success → pinnedContentTabsStoreChanged 1회 → 다른 window applyPinnedContentTabs
-    /// - 사전 조건: source window의 matching batch/current pending과 별도 열린 window, global pinned store 1개
-    /// - 기대 결과: 다른 window가 global pinned state를 받고 sync semantic action은 한 번만 발생함
+    /// busy source window는 최신 pinned snapshot을 batch 완료 뒤 한 번 재생한다.
+    /// source가 batch 중 fan-out을 defer해도 추가 store-changed event 없이 최신 snapshot으로 수렴하는지 검증한다.
+    /// - 검증 내용: 이전 deferred snapshot을 latest-wins로 교체하고 coordinator clear 뒤 source에 replay
+    /// - 사전 조건: source window의 matching batch/current pending, 이전 snapshot, 별도 열린 window, 최신 global store
+    /// - 기대 결과: store event는 한 번이고 두 window가 최신 pinned state로 수렴하며 source의 local unpinned tab은 보존됨
     func testBatchPinnedRecordSaveSucceededSyncsOtherWindowsExactlyOnce() async {
         let sourceWindowID = UUID()
         let otherWindowID = UUID()
         let operationID = UUID()
         let batchTabID = ContentTabID(rawValue: "batch-pinned-success")
+        let stalePinnedStore = ContentTabPinnedRecordStore(records: [
+            ContentTabPinnedRecord(
+                id: "stale-batch-pin",
+                page: .directory,
+                anchor: .directory(path: "/Users/test/StaleBatchPin"),
+                title: "Stale Batch Pin",
+                iconName: "folder",
+                pinnedAt: Date(timeIntervalSince1970: 452),
+            ),
+        ])
         let globalPinnedStore = ContentTabPinnedRecordStore(records: [
             ContentTabPinnedRecord(
                 id: "global-batch-pin",
@@ -657,6 +672,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 pinnedAt: Date(timeIntervalSince1970: 453),
             ),
         ])
+        let stalePinnedTabs = ContentTabState.restoringPinnedRecords(from: stalePinnedStore).state
         var sourceWindow = FileManagerWindowFeature.State.makeInitial(path: "/Users/test/Source")
         sourceWindow.contentTabs.tabs.append(ContentTabItem(
             id: batchTabID,
@@ -698,27 +714,72 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 453))
             $0.contentTabPinnedRecordClient.loadStore = { _ in globalPinnedStore }
         }
-        // store.exhaustivity = .off: package batch 정산보다 parent의 전역 sync semantic action과 다른 window payload를 검증한다.
+        // store.exhaustivity = .off: parent fan-out과 source replay의 semantic 경계 및 최종 window state를 검증한다.
         store.exhaustivity = .off
 
         await store.send(.windows(.element(
             id: sourceWindowID,
-            action: .window(.performSelectedContentTabCloseMutation(
-                operationID: operationID,
-                tabID: batchTabID,
-                action: .pinnedRecordSaveSucceeded(tabID: batchTabID),
-            )),
+            action: .window(.applyPinnedContentTabs(stalePinnedTabs)),
         )))
-        await store.receive(\.pinnedContentTabsStoreChanged)
+        XCTAssertEqual(
+            pinnedTabIDs(store.state.windows[id: sourceWindowID]?.window.deferredPinnedContentTabs),
+            ["stale-batch-pin"],
+        )
+
+        await store.send(.pinnedContentTabsStoreChanged)
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs(contentTabs)))) = action
+            else { return false }
+            return id == sourceWindowID
+                && contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue) == ["global-batch-pin"]
+        }
         await store.receive { action in
             guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs(contentTabs)))) = action
             else { return false }
             return id == otherWindowID
                 && contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue) == ["global-batch-pin"]
         }
+        XCTAssertEqual(
+            pinnedTabIDs(store.state.windows[id: sourceWindowID]?.window.deferredPinnedContentTabs),
+            ["global-batch-pin"],
+        )
+
+        await store.send(.windows(.element(
+            id: sourceWindowID,
+            action: .window(.selectedContentTabCloseItemCompleted(
+                operationID: operationID,
+                tabID: batchTabID,
+                outcome: .unpinned,
+            )),
+        )))
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.processNextSelectedContentTabClose(receivedID)),
+            )) = action else { return false }
+            return id == sourceWindowID && receivedID == operationID
+        }
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs(contentTabs)))) = action
+            else { return false }
+            return id == sourceWindowID
+                && contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue) == ["global-batch-pin"]
+        }
         await store.finish()
 
         XCTAssertEqual(syncCount.value, 1)
+        XCTAssertNil(store.state.windows[id: sourceWindowID]?.window.pendingSelectedContentTabClose)
+        XCTAssertNil(store.state.windows[id: sourceWindowID]?.window.deferredPinnedContentTabs)
+        XCTAssertEqual(
+            store.state.windows[id: sourceWindowID]?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
+            ["global-batch-pin"],
+        )
+        XCTAssertEqual(
+            store.state.windows[id: sourceWindowID]?.window.contentTabs.tabs.contains {
+                !$0.isPinned && $0.anchor == .directory(path: "/Users/test/Source")
+            },
+            true,
+        )
         XCTAssertEqual(
             store.state.windows[id: otherWindowID]?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
             ["global-batch-pin"],

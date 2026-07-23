@@ -55,7 +55,7 @@ public extension FileManagerWindowState {
             canGoBack: content.navigation.canGoBack,
             canGoForward: content.navigation.canGoForward,
             canGoToEnclosingDirectory: content.navigation.canGoToEnclosingDirectory,
-            canSaveCollection: content.canSaveCollection,
+            canSaveCollection: content.canSaveCollection && isBatchCloseIdle,
             canOpenNewContentTab: contentTabs.tabs.count < ContentTabConstants.maxTabs && isBatchCloseIdle,
             canToggleActiveContentTabPin: activeContentTab != nil
                 && isBatchCloseIdle

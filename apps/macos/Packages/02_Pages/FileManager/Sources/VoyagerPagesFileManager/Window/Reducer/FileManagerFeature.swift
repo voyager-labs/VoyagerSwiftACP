@@ -26,17 +26,11 @@ public struct FileManagerFeature {
         Reduce { state, action in
             switch action {
             case let .content(contentAction):
-                guard state.pendingSelectedContentTabClose == nil
-                    || !contentAction.isSelectedContentTabCloseTerminalInput
-                else { return .none }
                 return FileManagerContentFeature()
                     .reduce(into: &state.content, action: contentAction)
                     .map(Action.content)
 
             case let .navigation(navigationAction):
-                guard state.pendingSelectedContentTabClose == nil
-                    || !navigationAction.isSelectedContentTabCloseTerminalInput
-                else { return .none }
                 return ContentPageNavigationFeature()
                     .reduce(into: &state.content.navigation, action: navigationAction)
                     .map(Action.navigation)
@@ -54,6 +48,7 @@ public struct FileManagerFeature {
                             action: $0,
                         )
                     }
+                    .cancellable(id: SelectedContentTabCloseOperationCancelID(operationID: operationID))
 
             case let .performBatchCloseNavigationAction(operationID, tabID, navigationAction):
                 guard state.isCurrentSelectedContentTabClose(operationID: operationID, tabID: tabID) else {
@@ -68,6 +63,7 @@ public struct FileManagerFeature {
                             action: $0,
                         )
                     }
+                    .cancellable(id: SelectedContentTabCloseOperationCancelID(operationID: operationID))
 
             case let .contentTabs(contentTabAction):
                 guard state.pendingSelectedContentTabClose == nil
@@ -76,7 +72,8 @@ public struct FileManagerFeature {
                 return reduceContentTabAction(contentTabAction, state: &state)
 
             case let .performSelectedContentTabCloseMutation(operationID, tabID, contentTabAction):
-                guard let pending = state.pendingSelectedContentTabClose,
+                guard !state.isClosing,
+                      let pending = state.pendingSelectedContentTabClose,
                       pending.operationID == operationID,
                       pending.currentTabID == tabID,
                       contentTabAction.isCorrelatedSelectedContentTabCloseMutation(for: tabID)
@@ -92,6 +89,7 @@ public struct FileManagerFeature {
                         action: $0,
                     )
                 }
+                .cancellable(id: SelectedContentTabCloseOperationCancelID(operationID: operationID))
 
             default:
                 return .none
@@ -140,7 +138,9 @@ extension ContentTabAction {
         switch self {
         case .toggleSelection,
              .selectRange,
-             .collapseSelectionToActive:
+             .collapseSelectionToActive,
+             .pinnedRecordSaveSucceeded,
+             .pinnedRecordSaveFailed:
             true
         default:
             false
@@ -170,33 +170,13 @@ extension ContentTabAction {
 
 private extension FileManagerWindowState {
     func isCurrentSelectedContentTabClose(operationID: UUID, tabID: ContentTabID) -> Bool {
-        guard let batch = pendingSelectedContentTabClose,
+        guard !isClosing,
+              let batch = pendingSelectedContentTabClose,
               let pendingClose = pendingContentTabClose
         else { return false }
         return batch.operationID == operationID
             && batch.currentTabID == tabID
             && pendingClose.batchOperationID == operationID
             && pendingClose.tabID == tabID
-    }
-}
-
-private extension FileManagerContentAction {
-    var isSelectedContentTabCloseTerminalInput: Bool {
-        switch self {
-        case .collection(.savePanelResponse),
-             .collection(.saveCompleted),
-             .collection(.writeBackFailed),
-             .collection(.delegate(.saveFeedback)),
-             .composer(.internal(.syncCollectionState)):
-            true
-        default:
-            false
-        }
-    }
-}
-
-private extension ContentPageNavigationAction {
-    var isSelectedContentTabCloseTerminalInput: Bool {
-        if case .internal(.setNavigationState) = self { true } else { false }
     }
 }

@@ -377,7 +377,7 @@ private struct SelectedCloseFallbackCase {
 }
 
 private struct SelectedCloseTerminalCase {
-    let action: FileManagerWindowAction
+    let actions: [FileManagerWindowAction]
     let expectedOutcome: SelectedContentTabCloseOutcome
 }
 
@@ -525,19 +525,34 @@ final class CTM001HandleContentTabTests: XCTestCase {
     ) -> [SelectedCloseTerminalCase] {
         [
             SelectedCloseTerminalCase(
-                action: .performBatchCloseContentAction(
-                    operationID: operationID,
-                    tabID: tabID,
-                    action: .collection(.savePanelResponse(nil)),
-                ),
+                actions: [
+                    .performBatchCloseContentAction(
+                        operationID: operationID,
+                        tabID: tabID,
+                        action: .collection(.savePanelResponse(nil)),
+                    ),
+                ],
                 expectedOutcome: .cancelled,
             ),
             SelectedCloseTerminalCase(
-                action: .performBatchCloseContentAction(
-                    operationID: operationID,
-                    tabID: tabID,
-                    action: .collection(.writeBackFailed),
-                ),
+                actions: [
+                    .performBatchCloseContentAction(
+                        operationID: operationID,
+                        tabID: tabID,
+                        action: .collection(.saveCompleted(.failure(SelectedClosePersistenceError()))),
+                    ),
+                    .performBatchCloseContentAction(
+                        operationID: operationID,
+                        tabID: tabID,
+                        action: .collection(.delegate(.saveFeedback(CollectionSaveFeedback(
+                            stage: .saveFailed,
+                            category: .saveFailed,
+                            title: "Save Failed",
+                            message: "Unable to save collection.",
+                            isRetryable: true,
+                        )))),
+                    ),
+                ],
                 expectedOutcome: .failed,
             ),
         ]
@@ -711,12 +726,6 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 fixture.tabC,
                 .directory(path: "/blocked-anchor"),
             )),
-            .contentTabs(.pinnedRecordSaveFailed(
-                tabID: fixture.tabD,
-                previousIsPinned: false,
-                previousPinnedRecord: nil,
-                previousTabIndex: nil,
-            )),
         ]
     }
 
@@ -736,7 +745,67 @@ final class CTM001HandleContentTabTests: XCTestCase {
         state.pendingContentTabClose = PendingContentTabClose(
             tabID: fixture.tabA,
             batchOperationID: operationID,
+            requiresWriteBackFailureTerminal: false,
         )
+        return state
+    }
+
+    private func makeSelectedCloseSaveFeedback() -> CollectionSaveFeedback {
+        CollectionSaveFeedback(
+            stage: .saveFailed,
+            category: .saveFailed,
+            title: "Save Failed",
+            message: "Unable to save collection.",
+            isRetryable: true,
+        )
+    }
+
+    private func makeDisappearingSelectedCloseState(
+        fixture: SelectedContentTabCloseFixture,
+        operationID: UUID,
+        requestID: UUID,
+        ownerID: UUID,
+    ) -> FileManagerFeature.State {
+        let previousContent = fixture.state.content
+        var targetContent = makeDirtySelectedCloseContentState()
+        targetContent.collection.isSaving = true
+        targetContent.collection.pendingSaveContext = CollectionContext(
+            query: "pending",
+            scopes: ["/tmp"],
+            conditions: [],
+        )
+        targetContent.collection.collectionSession.phase = .opened(
+            kind: .hydratedSnapshot,
+            base: .stale,
+            inflight: .writingBackRefreshedSnapshot,
+        )
+        var state = fixture.state
+        state.contentTabs.activeTabID = fixture.tabA
+        state.contentTabs.previousActiveTabID = fixture.tabC
+        state.content = targetContent
+        state.tabContentStates[fixture.tabC] = previousContent
+        state.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
+            operationID: operationID,
+            orderedTargetIDs: [fixture.tabA],
+            currentTabID: fixture.tabA,
+            originalActiveTabID: fixture.tabC,
+            preferredFallbackIDs: [fixture.tabC],
+        )
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: fixture.tabA,
+            previousActiveTabID: fixture.tabC,
+            previousActiveContent: previousContent,
+            targetContent: targetContent,
+            batchOperationID: operationID,
+        )
+        state.deferredPinnedContentTabs = fixture.state.contentTabs
+        state.pendingContentTabTeardown = PendingContentTabTeardown(
+            requestID: requestID,
+            tabID: fixture.tabA,
+            ownerID: ownerID,
+        )
+        state.undoRedoPhase = .tearingDownTab(requestID: requestID, ownerID: ownerID)
+        state.undoManagerAvailability = .init(canUndo: true, canRedo: true)
         return state
     }
 
@@ -924,12 +993,15 @@ final class CTM001HandleContentTabTests: XCTestCase {
         state.pendingContentTabClose = PendingContentTabClose(
             tabID: fixture.tabA,
             batchOperationID: operationID,
+            requiresWriteBackFailureTerminal: false,
         )
         let store = TestStore(initialState: state) { FileManagerWindowRoutingReducer() }
         // store.exhaustivity = .off: terminal outcome과 최종 identity만 검증한다.
         store.exhaustivity = .off
 
-        await store.send(testCase.action)
+        for action in testCase.actions {
+            await store.send(action)
+        }
         await store.receive { action in
             guard case let .selectedContentTabCloseItemCompleted(_, tabID, outcome) = action else { return false }
             return tabID == fixture.tabA && outcome == testCase.expectedOutcome
@@ -2945,8 +3017,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
     /// CTM-001-close_selected_content_tabs: direct child topology action은 parent gate 이전에 차단됨
     /// Window semantic route를 우회한 ContentTab action도 batch current와 gap 전체에서 state를 변경하지 않는지 검증한다.
-    /// - 검증 내용: setCurrent/open/restore/reorder/pin/unpin/duplicate/requestClose/close/commit/anchor/persistence
-    /// terminal
+    /// - 검증 내용: setCurrent/open/restore/reorder/pin/unpin/duplicate/requestClose/close/commit/anchor topology action
     /// - 사전 조건: current A인 coordinator와 cursor 1/current nil인 inter-item gap coordinator
     /// - 기대 결과: 각 direct child action 처리 후 FileManagerWindowState 전체가 초기값과 동일함
     func testCloseSelectedContentTabs_blocksDirectContentTabTopologyActionsBeforeChildMutation() async throws {
@@ -2987,6 +3058,210 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 await store.finish()
                 XCTAssertEqual(store.state, initialState)
             }
+        }
+    }
+
+    /// CTM-001-close_selected_content_tabs: unrelated child terminal은 reduce되지만 cursor를 진행하지 않음
+    /// batch wrapper 밖에서 도착한 Content/Navigation/pin persistence terminal이 각 child state만 정리하는지 검증한다.
+    /// - 검증 내용: save-panel 취소, navigation state, pin success/failure child reduction과 batch identity 불변
+    /// - 사전 조건: A가 current인 batch와 별도 pin persistence state 및 in-flight save transient
+    /// - 기대 결과: child state는 갱신되지만 cursor/current/per-item close correlation은 그대로 유지된다.
+    func testCloseSelectedContentTabs_unrelatedChildTerminalsReduceWithoutProgression() async throws {
+        let fixture = makeSelectedContentTabCloseFixture()
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000453"))
+        var initialState = makeDirtyBatchPendingState(fixture: fixture, operationID: operationID)
+        initialState.content.collection.isSaving = true
+        initialState.content.collection.pendingSaveContext = CollectionContext(
+            query: "pending",
+            scopes: ["/tmp"],
+            conditions: [],
+        )
+        initialState.contentTabs.pendingPinnedRecordIDs = [fixture.tabD]
+        initialState.contentTabs.pinnedRecordPersistenceError = "sentinel"
+        let expectedBatch = initialState.pendingSelectedContentTabClose
+        let expectedPendingClose = initialState.pendingContentTabClose
+        let store = TestStore(initialState: initialState) { FileManagerFeature() }
+
+        await store.send(.content(.collection(.savePanelResponse(nil)))) {
+            $0.content.collection.isSaving = false
+            $0.content.collection.pendingSaveContext = nil
+        }
+        await store.send(.navigation(.internal(.setNavigationState(.folder("/unrelated"))))) {
+            $0.content.navigation.navigationState = .folder("/unrelated")
+        }
+        await store.send(.contentTabs(.pinnedRecordSaveSucceeded(tabID: fixture.tabB))) {
+            $0.contentTabs.pinnedRecordPersistenceError = nil
+        }
+        await store.send(.contentTabs(.pinnedRecordSaveFailed(
+            tabID: fixture.tabD,
+            previousIsPinned: true,
+            previousPinnedRecord: nil,
+            previousTabIndex: nil,
+        ))) {
+            $0.contentTabs.pendingPinnedRecordIDs.remove(fixture.tabD)
+            $0.contentTabs.pinnedRecordPersistenceError = "pinned_record_save_failed"
+        }
+
+        XCTAssertEqual(store.state.pendingSelectedContentTabClose, expectedBatch)
+        XCTAssertEqual(store.state.pendingContentTabClose, expectedPendingClose)
+    }
+
+    /// CTM-001-close_selected_content_tabs: 시작과 Save surface는 batch 관련 busy state를 공유함
+    /// save/write-back/pin persistence 중에는 시작을 막고 진행 중 batch에서는 Save/Save As와 menu Save를 차단하는지 검증한다.
+    /// - 검증 내용: canStart gate, command routing no-op, menu canSaveCollection false
+    /// - 사전 조건: 선택 tab 3개와 saving/write-back/pending pin 세 시작 상태 및 dirty batch 상태
+    /// - 기대 결과: busy 상태는 coordinator를 만들지 않고 batch 중 Save command와 menu capability가 모두 비활성화된다.
+    func testCloseSelectedContentTabs_blocksStartAndSaveSurfacesWhileBusy() async throws {
+        let fixture = makeSelectedContentTabCloseFixture()
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000453"))
+        var savingState = fixture.state
+        savingState.content.collection.isSaving = true
+        var writeBackState = fixture.state
+        writeBackState.content.collection.collectionSession.phase = .opened(
+            kind: .hydratedSnapshot,
+            base: .stale,
+            inflight: .writingBackRefreshedSnapshot,
+        )
+        var pinState = fixture.state
+        pinState.contentTabs.pendingPinnedRecordIDs = [fixture.tabD]
+
+        for initialState in [savingState, writeBackState, pinState] {
+            XCTAssertFalse(initialState.canStartSelectedContentTabClose)
+            XCTAssertFalse(initialState.contentTabRowInteractionSurface.isCloseEnabled)
+            XCTAssertFalse(initialState.menuCommandProjection.canCloseSelectedContentTabs)
+            let store = TestStore(initialState: initialState) { FileManagerWindowRoutingReducer() } withDependencies: {
+                $0.uuid = .constant(operationID)
+            }
+            await store.send(.requestCloseSelectedContentTabs)
+            XCTAssertNil(store.state.pendingSelectedContentTabClose)
+        }
+
+        var batchState = makeDirtyBatchPendingState(fixture: fixture, operationID: operationID)
+        batchState.content = makeDirtySelectedCloseContentState()
+        XCTAssertTrue(batchState.content.canSaveCollection)
+        XCTAssertFalse(batchState.menuCommandProjection.canSaveCollection)
+        for command in [
+            FileManagerWindowAction.WindowCommand.saveCollection,
+            .saveCollectionAs,
+        ] {
+            let store = TestStore(initialState: batchState) { FileManagerWindowCommandRoutingReducer() }
+            await store.send(.request(command))
+            XCTAssertEqual(store.state, batchState)
+        }
+    }
+
+    /// CTM-001-close_selected_content_tabs: selected inactive busy owner만 batch 시작을 차단함
+    /// 실행 대상 retained content의 save/write-back은 거부하되 선택되지 않은 inactive owner는 무관한지 검증한다.
+    /// - 검증 내용: selected inactive saving/write-back no-start와 unselected inactive busy start 허용
+    /// - 사전 조건: active C, selected A/B/C, unselected D와 각 inactive retained content
+    /// - 기대 결과: A가 busy면 coordinator가 없고 D만 busy면 frozen selected coordinator가 생성된다.
+    func testCloseSelectedContentTabs_selectedInactiveBusyControlsStartGate() throws {
+        let fixture = makeSelectedContentTabCloseFixture()
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000453"))
+        var savingContent = FileManagerContentFeature.State()
+        savingContent.collection.isSaving = true
+        var writeBackContent = FileManagerContentFeature.State()
+        writeBackContent.collection.collectionSession.phase = .opened(
+            kind: .hydratedSnapshot,
+            base: .stale,
+            inflight: .writingBackRefreshedSnapshot,
+        )
+
+        for busyContent in [savingContent, writeBackContent] {
+            var state = fixture.state
+            state.tabContentStates[fixture.tabA] = busyContent
+            XCTAssertFalse(state.canStartSelectedContentTabClose)
+            _ = withDependencies {
+                $0.uuid = .constant(operationID)
+            } operation: {
+                FileManagerWindowRoutingReducer().reduce(
+                    into: &state,
+                    action: .requestCloseSelectedContentTabs,
+                )
+            }
+            XCTAssertNil(state.pendingSelectedContentTabClose)
+        }
+
+        var unrelatedBusyState = fixture.state
+        unrelatedBusyState.tabContentStates[fixture.tabD] = writeBackContent
+        XCTAssertTrue(unrelatedBusyState.canStartSelectedContentTabClose)
+        _ = withDependencies {
+            $0.uuid = .constant(operationID)
+        } operation: {
+            FileManagerWindowRoutingReducer().reduce(
+                into: &unrelatedBusyState,
+                action: .requestCloseSelectedContentTabs,
+            )
+        }
+        XCTAssertEqual(unrelatedBusyState.pendingSelectedContentTabClose?.operationID, operationID)
+    }
+
+    /// CTM-001-close_selected_content_tabs: window disappearance는 operation state를 원자적으로 정리함
+    /// inactive target staging과 undo teardown 중 window가 사라져도 이전 active owner를 복원하고 늦은 action을 무시하는지 검증한다.
+    /// - 검증 내용: staged owner restore, save transient/cursor/deferred/teardown clear, undo desync, stale progression
+    /// no-op
+    /// - 사전 조건: A target이 active로 staging되고 save/teardown/deferred snapshot이 남은 batch operation
+    /// - 기대 결과: C owner 복원 뒤 closing 상태가 되며 onAppear 후에도 이전 operation action은 batch를 되살리지 않는다.
+    func testCloseSelectedContentTabs_onDisappearCleansOperationAndIgnoresLateActions() async throws {
+        let fixture = makeSelectedContentTabCloseFixture()
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000453"))
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000454"))
+        let ownerID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000455"))
+        let initialState = makeDisappearingSelectedCloseState(
+            fixture: fixture,
+            operationID: operationID,
+            requestID: requestID,
+            ownerID: ownerID,
+        )
+        let previousContent = fixture.state.content
+        let store = TestStore(initialState: initialState) { FileManagerWindowRoutingReducer() }
+        // store.exhaustivity = .off: cancellation effect보다 lifecycle owner state와 stale action 결과를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.onDisappear)
+        XCTAssertTrue(store.state.isClosing)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, fixture.tabC)
+        XCTAssertEqual(store.state.content, previousContent)
+        XCTAssertFalse(store.state.tabContentStates[fixture.tabA]?.collection.isSaving ?? true)
+        XCTAssertNil(store.state.tabContentStates[fixture.tabA]?.collection.pendingSaveContext)
+        XCTAssertFalse(
+            store.state.tabContentStates[fixture.tabA]?.collection.collectionSession.phase.isInflightWriteBack
+                ?? true,
+        )
+        XCTAssertFalse(
+            store.state.tabContentStates[fixture.tabA]?.collection.collectionSession.phase.isInflightRefresh
+                ?? true,
+        )
+        XCTAssertNil(store.state.pendingSelectedContentTabClose)
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNil(store.state.deferredPinnedContentTabs)
+        XCTAssertNil(store.state.pendingContentTabTeardown)
+        XCTAssertEqual(store.state.undoRedoPhase, .desynchronized)
+        XCTAssertEqual(store.state.undoManagerAvailability, .init())
+
+        await store.send(.onAppear) { $0.isClosing = false }
+        let stableState = store.state
+        let lateActions: [FileManagerWindowAction] = [
+            .processNextSelectedContentTabClose(operationID: operationID),
+            .selectedContentTabCloseItemCompleted(
+                operationID: operationID,
+                tabID: fixture.tabA,
+                outcome: .removed,
+            ),
+            .selectedContentTabCloseAlertResponse(
+                operationID: operationID,
+                tabID: fixture.tabA,
+                choice: .discard,
+            ),
+            .performSelectedContentTabCloseMutation(
+                operationID: operationID,
+                tabID: fixture.tabA,
+                action: .commitClose(fixture.tabA),
+            ),
+        ]
+        for action in lateActions {
+            await store.send(action)
+            XCTAssertEqual(store.state, stableState)
         }
     }
 
@@ -3167,11 +3442,11 @@ final class CTM001HandleContentTabTests: XCTestCase {
         )
     }
 
-    /// CTM-001-close_selected_content_tabs: dirty save failure는 기존 feedback terminal까지 기다림
-    /// saveCompleted failure를 조기 batch terminal로 해석하지 않고 실제 사용자 feedback action에서 current item을 실패 처리하는지 검증한다.
-    /// - 검증 내용: saveCompleted(.failure) no-advance, saveFeedback/writeBackFailed 모두 수신 후 failed terminal과 queue 종료
-    /// - 사전 조건: A가 batch current이고 PendingContentTabClose가 operationID를 보유함
-    /// - 기대 결과: feedback 전 cursor/current는 유지되고 feedback 뒤 A/selection은 유지된 채 pending만 clear된다.
+    /// CTM-001-close_selected_content_tabs: 일반 dirty Save 실패는 terminal 순서와 무관하게 정산됨
+    /// write-back phase가 아닌 Save는 feedback과 saveCompleted가 모두 도착하면 추가 terminal 없이 실패 처리되는지 검증한다.
+    /// - 검증 내용: saveFeedback 선행 no-advance, saveCompleted 후 failed terminal과 queue 종료
+    /// - 사전 조건: A가 batch current이고 일반 Save phase의 PendingContentTabClose가 operationID를 보유함
+    /// - 기대 결과: 두 terminal 전까지 current가 유지되고 완료 뒤 A/selection은 유지된 채 pending만 clear된다.
     func testCloseSelectedContentTabs_saveFailureWaitsForFeedbackTerminal() async throws {
         let fixture = makeSelectedContentTabCloseFixture()
         let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000453"))
@@ -3182,38 +3457,23 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             FileManagerWindowRoutingReducer()
         }
-        // store.exhaustivity = .off: Content child feedback projection보다 batch terminal 시점을 검증한다.
+        // store.exhaustivity = .off: batch failure terminal의 순서 독립성과 최종 identity에 집중한다.
         store.exhaustivity = .off
 
-        let error = NSError(domain: "batch-save", code: 453)
-        await store.send(.performBatchCloseContentAction(
-            operationID: operationID,
-            tabID: fixture.tabA,
-            action: .collection(.saveCompleted(.failure(error))),
-        ))
-        XCTAssertEqual(store.state.pendingSelectedContentTabClose?.currentTabID, fixture.tabA)
-        XCTAssertNotNil(store.state.pendingContentTabClose)
-
-        let feedback = CollectionSaveFeedback(
-            stage: .saveFailed,
-            category: .saveFailed,
-            title: "Save Failed",
-            message: "Unable to save collection.",
-            isRetryable: true,
-        )
+        let feedback = makeSelectedCloseSaveFeedback()
         await store.send(.performBatchCloseContentAction(
             operationID: operationID,
             tabID: fixture.tabA,
             action: .collection(.delegate(.saveFeedback(feedback))),
         ))
         XCTAssertTrue(store.state.pendingContentTabClose?.didReceiveSaveFeedbackFailure ?? false)
-        XCTAssertFalse(store.state.pendingContentTabClose?.didReceiveWriteBackFailure ?? true)
         XCTAssertNotNil(store.state.pendingSelectedContentTabClose)
 
+        let error = NSError(domain: "batch-save", code: 453)
         await store.send(.performBatchCloseContentAction(
             operationID: operationID,
             tabID: fixture.tabA,
-            action: .collection(.writeBackFailed),
+            action: .collection(.saveCompleted(.failure(error))),
         ))
         await store.receive { action in
             guard case let .selectedContentTabCloseItemCompleted(_, tabID, outcome) = action else { return false }
@@ -3225,6 +3485,107 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [fixture.tabA])
         XCTAssertNil(store.state.pendingContentTabClose)
         XCTAssertNil(store.state.pendingSelectedContentTabClose)
+    }
+
+    /// CTM-001-close_selected_content_tabs: write-back phase Save 실패는 전용 terminal까지 기다림
+    /// Save dispatch 직전 phase를 캡처해 feedback과 saveCompleted 뒤에도 writeBackFailed 전에는 batch를 유지하는지 검증한다.
+    /// - 검증 내용: phase 기반 requiresWriteBackFailureTerminal 캡처와 세 failure terminal의 공통 finalizer
+    /// - 사전 조건: A가 batch current이고 Collection session이 writingBackRefreshedSnapshot phase임
+    /// - 기대 결과: writeBackFailed 전에는 current가 유지되고 마지막 terminal 뒤에만 failed 정산과 queue 종료가 발생한다.
+    func testCloseSelectedContentTabs_writeBackFailureWaitsForWriteBackTerminal() async throws {
+        let fixture = makeSelectedContentTabCloseFixture()
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000453"))
+        var initialState = makeDirtyBatchPendingState(fixture: fixture, operationID: operationID)
+        initialState.content.collection.collectionSession.phase = .opened(
+            kind: .hydratedSnapshot,
+            base: .stale,
+            inflight: .writingBackRefreshedSnapshot,
+        )
+        let store = TestStore(initialState: initialState) { FileManagerWindowRoutingReducer() }
+        // store.exhaustivity = .off: phase capture와 failure terminal 경계만 명시 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.selectedContentTabCloseAlertResponse(
+            operationID: operationID,
+            tabID: fixture.tabA,
+            choice: .save,
+        )) {
+            $0.pendingContentTabClose?.requiresWriteBackFailureTerminal = true
+        }
+        await store.receive { action in
+            guard case let .performBatchCloseContentAction(receivedID, tabID, contentAction) = action,
+                  case .composer(.view(.saveCollection)) = contentAction
+            else { return false }
+            return receivedID == operationID && tabID == fixture.tabA
+        }
+
+        let feedback = makeSelectedCloseSaveFeedback()
+        await store.send(.performBatchCloseContentAction(
+            operationID: operationID,
+            tabID: fixture.tabA,
+            action: .collection(.saveCompleted(.failure(SelectedClosePersistenceError()))),
+        ))
+        await store.send(.performBatchCloseContentAction(
+            operationID: operationID,
+            tabID: fixture.tabA,
+            action: .collection(.delegate(.saveFeedback(feedback))),
+        ))
+        XCTAssertEqual(store.state.pendingSelectedContentTabClose?.currentTabID, fixture.tabA)
+        XCTAssertNotNil(store.state.pendingContentTabClose)
+
+        await store.send(.performBatchCloseContentAction(
+            operationID: operationID,
+            tabID: fixture.tabA,
+            action: .collection(.writeBackFailed),
+        ))
+        await store.receive { action in
+            guard case let .selectedContentTabCloseItemCompleted(_, tabID, outcome) = action else { return false }
+            return tabID == fixture.tabA && outcome == .failed
+        }
+        await store.receive(\.processNextSelectedContentTabClose, operationID)
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNil(store.state.pendingSelectedContentTabClose)
+    }
+
+    /// CTM-001-close_selected_content_tabs: save-blocked feedback만으로 current item을 실패 정산함
+    /// payload validation이 saveCompleted를 만들지 않는 경우에도 batch가 멈추지 않고 정확히 한 번 진행하는지 검증한다.
+    /// - 검증 내용: saveBlocked feedback 단독 failed terminal, queue 종료, duplicate stale feedback no-op
+    /// - 사전 조건: A가 batch current이고 write-back terminal expectation이 true인 pending close
+    /// - 기대 결과: feedback 직후 A는 유지된 채 pending이 clear되고 같은 늦은 feedback은 상태를 바꾸지 않는다.
+    func testCloseSelectedContentTabs_saveBlockedFeedbackCompletesWithoutSaveCompleted() async throws {
+        let fixture = makeSelectedContentTabCloseFixture()
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000453"))
+        var initialState = makeDirtyBatchPendingState(fixture: fixture, operationID: operationID)
+        initialState.pendingContentTabClose?.requiresWriteBackFailureTerminal = true
+        let store = TestStore(initialState: initialState) { FileManagerWindowRoutingReducer() }
+        // store.exhaustivity = .off: feedback-only terminal 수와 최종 batch identity를 직접 검증한다.
+        store.exhaustivity = .off
+        let feedback = CollectionSaveFeedback(
+            stage: .saveBlocked,
+            category: .emptyContent,
+            title: "Nothing to Save",
+            message: "Add a query, scope, or condition before saving.",
+            isRetryable: false,
+        )
+        let action = FileManagerWindowAction.performBatchCloseContentAction(
+            operationID: operationID,
+            tabID: fixture.tabA,
+            action: .collection(.delegate(.saveFeedback(feedback))),
+        )
+
+        await store.send(action)
+        await store.receive { action in
+            guard case let .selectedContentTabCloseItemCompleted(_, tabID, outcome) = action else { return false }
+            return tabID == fixture.tabA && outcome == .failed
+        }
+        await store.receive(\.processNextSelectedContentTabClose, operationID)
+        XCTAssertNil(store.state.pendingSelectedContentTabClose)
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: fixture.tabA])
+
+        let completedState = store.state
+        await store.send(action)
+        XCTAssertEqual(store.state, completedState)
     }
 
     /// CTM-001-close_selected_content_tabs: dirty Save는 두 write-back terminal 뒤에만 close를 재개함

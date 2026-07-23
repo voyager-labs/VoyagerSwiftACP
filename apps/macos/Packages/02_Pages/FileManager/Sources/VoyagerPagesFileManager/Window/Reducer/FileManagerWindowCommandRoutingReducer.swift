@@ -408,7 +408,9 @@ struct FileManagerWindowCommandRoutingReducer {
                  .restoreLastClosedContentTab,
                  .duplicateContentTab,
                  .duplicateActiveContentTab,
-                 .duplicateSelectedContentTabs:
+                 .duplicateSelectedContentTabs,
+                 .saveCollection,
+                 .saveCollectionAs:
                 return .none
             default:
                 break

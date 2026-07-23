@@ -10,6 +10,10 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
+struct SelectedContentTabCloseOperationCancelID: Hashable {
+    let operationID: UUID
+}
+
 @Reducer
 struct FileManagerWindowRoutingReducer {
     @Dependency(\.collectionAlertClient)
@@ -86,8 +90,7 @@ struct FileManagerWindowRoutingReducer {
                 return .none
 
             case .onDisappear:
-                state.isClosing = true
-                return .none
+                return handleWindowDisappear(state: &state)
 
             case let .processNextSelectedContentTabClose(operationID):
                 return processNextSelectedContentTabClose(operationID: operationID, state: &state)
@@ -101,7 +104,8 @@ struct FileManagerWindowRoutingReducer {
                 )
 
             case let .performSelectedContentTabCloseMutation(operationID, tabID, contentTabAction):
-                guard let pending = state.pendingSelectedContentTabClose,
+                guard !state.isClosing,
+                      let pending = state.pendingSelectedContentTabClose,
                       pending.operationID == operationID,
                       pending.currentTabID == tabID,
                       contentTabAction.isCorrelatedSelectedContentTabCloseMutation(for: tabID)
@@ -356,7 +360,10 @@ struct FileManagerWindowRoutingReducer {
                 )
 
             case let .applyPinnedContentTabs(contentTabs):
-                guard state.pendingSelectedContentTabClose == nil else { return .none }
+                guard state.pendingSelectedContentTabClose == nil else {
+                    state.deferredPinnedContentTabs = contentTabs
+                    return .none
+                }
                 let activeTabIDBeforeSync = state.contentTabs.activeTabID
                 let activeAnchorBeforeSync = activeTabIDBeforeSync.flatMap { state.contentTabs.tabs[id: $0]?.anchor }
                 state.applyPinnedContentTabs(contentTabs)
@@ -838,7 +845,7 @@ struct FileManagerWindowRoutingReducer {
                       state.pendingContentTabClose != nil
                 else { return .none }
                 state.pendingContentTabClose?.didReceiveSaveCompletedFailure = true
-                return .none
+                return finalizePendingContentTabCloseFailureIfReady(state: &state)
 
             case .content(.collection(.savePanelResponse(nil))):
                 guard state.pendingSelectedContentTabClose == nil else { return .none }
@@ -851,11 +858,11 @@ struct FileManagerWindowRoutingReducer {
                 state.pendingContentTabClose?.didReceiveWriteBackFailure = true
                 return finalizePendingContentTabCloseFailureIfReady(state: &state)
 
-            case .content(.collection(.delegate(.saveFeedback))):
+            case let .content(.collection(.delegate(.saveFeedback(feedback)))):
                 guard state.pendingSelectedContentTabClose == nil,
                       state.pendingContentTabClose != nil
                 else { return .none }
-                state.pendingContentTabClose?.didReceiveSaveFeedbackFailure = true
+                recordPendingContentTabCloseSaveFeedback(feedback, state: &state)
                 return finalizePendingContentTabCloseFailureIfReady(state: &state)
 
             case let .performBatchCloseContentAction(
@@ -869,7 +876,7 @@ struct FileManagerWindowRoutingReducer {
                     state: state,
                 ) else { return .none }
                 state.pendingContentTabClose?.didReceiveSaveCompletedFailure = true
-                return .none
+                return finalizePendingContentTabCloseFailureIfReady(state: &state)
 
             case let .performBatchCloseContentAction(
                 operationID,
@@ -899,19 +906,71 @@ struct FileManagerWindowRoutingReducer {
             case let .performBatchCloseContentAction(
                 operationID,
                 tabID,
-                .collection(.delegate(.saveFeedback)),
+                .collection(.delegate(.saveFeedback(feedback))),
             ):
                 guard isCurrentSelectedContentTabClose(
                     operationID: operationID,
                     tabID: tabID,
                     state: state,
                 ) else { return .none }
-                state.pendingContentTabClose?.didReceiveSaveFeedbackFailure = true
+                recordPendingContentTabCloseSaveFeedback(feedback, state: &state)
                 return finalizePendingContentTabCloseFailureIfReady(state: &state)
 
             default:
                 return .none
             }
+        }
+    }
+}
+
+private extension FileManagerWindowRoutingReducer {
+    func handleWindowDisappear(state: inout State) -> Effect<Action> {
+        let operationID = state.pendingSelectedContentTabClose?.operationID
+            ?? state.pendingContentTabClose?.batchOperationID
+        if let pendingClose = state.pendingContentTabClose {
+            restorePreviousActiveContentIfNeeded(pendingClose, state: &state)
+            normalizeCloseTriggeredSaveState(pendingClose, state: &state)
+        }
+        if let teardown = state.pendingContentTabTeardown,
+           case let .tearingDownTab(requestID, ownerID) = state.undoRedoPhase,
+           requestID == teardown.requestID,
+           ownerID == teardown.ownerID
+        {
+            state.undoRedoPhase = .desynchronized
+            state.undoManagerAvailability = .init()
+        }
+        state.isClosing = true
+        state.pendingSelectedContentTabClose = nil
+        state.pendingContentTabClose = nil
+        state.deferredPinnedContentTabs = nil
+        state.pendingContentTabTeardown = nil
+        guard let operationID else { return .none }
+        return .cancel(id: SelectedContentTabCloseOperationCancelID(operationID: operationID))
+    }
+
+    func normalizeCloseTriggeredSaveState(
+        _ pendingClose: PendingContentTabClose,
+        state: inout State,
+    ) {
+        if pendingClose.targetContent != nil,
+           var targetContent = state.tabContentStates[pendingClose.tabID]
+        {
+            normalizeCloseTriggeredCollectionState(&targetContent.collection)
+            state.tabContentStates[pendingClose.tabID] = targetContent
+        } else {
+            normalizeCloseTriggeredCollectionState(&state.content.collection)
+            state.syncActiveTabContentState()
+        }
+    }
+
+    func normalizeCloseTriggeredCollectionState(_ collection: inout CollectionState) {
+        collection.isSaving = false
+        collection.pendingSave = nil
+        collection.pendingSaveContext = nil
+        if collection.collectionSession.phase.isInflightRefresh
+            || collection.collectionSession.phase.isInflightWriteBack
+        {
+            collection.collectionSession.failRefreshOrWriteBack()
         }
     }
 }
@@ -1293,6 +1352,7 @@ private func cleanPendingDirectoryReloadTabIDs(state: inout FileManagerWindowSta
 
 private extension FileManagerWindowRoutingReducer {
     func allowsSelectedContentTabCloseLifecycleMutation(state: State) -> Bool {
+        guard !state.isClosing else { return false }
         guard let batch = state.pendingSelectedContentTabClose else { return true }
         guard let pendingClose = state.pendingContentTabClose else { return false }
         return pendingClose.batchOperationID == batch.operationID
@@ -1331,14 +1391,24 @@ private extension FileManagerWindowRoutingReducer {
         operationID: UUID,
         state: inout State,
     ) -> Effect<Action> {
-        guard var pending = state.pendingSelectedContentTabClose,
+        guard !state.isClosing,
+              var pending = state.pendingSelectedContentTabClose,
               pending.operationID == operationID,
               pending.currentTabID == nil
         else { return .none }
 
         guard pending.cursor < pending.orderedTargetIDs.count else {
+            let deferredPinnedContentTabs = state.deferredPinnedContentTabs
             state.pendingSelectedContentTabClose = nil
-            return .none
+            state.deferredPinnedContentTabs = nil
+            let cancelEffect = Effect<Action>.cancel(
+                id: SelectedContentTabCloseOperationCancelID(operationID: operationID),
+            )
+            guard let deferredPinnedContentTabs else { return cancelEffect }
+            return .concatenate(
+                cancelEffect,
+                .send(.applyPinnedContentTabs(deferredPinnedContentTabs)),
+            )
         }
 
         let tabID = pending.orderedTargetIDs[pending.cursor]
@@ -1379,7 +1449,8 @@ private extension FileManagerWindowRoutingReducer {
         outcome: SelectedContentTabCloseOutcome,
         state: inout State,
     ) -> Effect<Action> {
-        guard var pending = state.pendingSelectedContentTabClose,
+        guard !state.isClosing,
+              var pending = state.pendingSelectedContentTabClose,
               pending.operationID == operationID,
               pending.currentTabID == tabID
         else { return .none }
@@ -1449,7 +1520,8 @@ private extension FileManagerWindowRoutingReducer {
         tabID: ContentTabID,
         state: State,
     ) -> Bool {
-        guard let batch = state.pendingSelectedContentTabClose,
+        guard !state.isClosing,
+              let batch = state.pendingSelectedContentTabClose,
               let pendingClose = state.pendingContentTabClose
         else { return false }
         return batch.operationID == operationID
@@ -1718,11 +1790,15 @@ private extension FileManagerWindowRoutingReducer {
         )
         state.undoRedoPhase = .tearingDownTab(requestID: requestID, ownerID: ownerID)
         state.undoManagerAvailability = .init()
-        return invalidateUndoOwnerEffect(
+        let invalidationEffect = invalidateUndoOwnerEffect(
             requestID: requestID,
             ownerID: ownerID,
             windowID: windowID,
             undoManagerClient: undoManagerClient,
+        )
+        guard let batchOperationID else { return invalidationEffect }
+        return invalidationEffect.cancellable(
+            id: SelectedContentTabCloseOperationCancelID(operationID: batchOperationID),
         )
     }
 
@@ -1814,7 +1890,7 @@ private extension FileManagerWindowRoutingReducer {
             targetInspector: isActiveTarget ? nil : state.inspectorState(for: tabID),
             batchOperationID: batchOperationID,
         )
-        return .run { send in
+        let alertEffect = Effect<Action>.run { send in
             let choice = await collectionAlertClient.showUnsavedNavigationAlert()
             if let batchOperationID {
                 await send(.selectedContentTabCloseAlertResponse(
@@ -1826,6 +1902,10 @@ private extension FileManagerWindowRoutingReducer {
                 await send(.contentTabCloseAlertResponse(choice))
             }
         }
+        guard let batchOperationID else { return alertEffect }
+        return alertEffect.cancellable(
+            id: SelectedContentTabCloseOperationCancelID(operationID: batchOperationID),
+        )
     }
 
     func handleContentTabCloseAlertResponse(
@@ -1863,6 +1943,10 @@ private extension FileManagerWindowRoutingReducer {
                     outcome: .failed,
                 ))
             }
+            let requiresWriteBackFailureTerminal =
+                state.content.collection.collectionSession.phase.isInflightWriteBack
+            state.pendingContentTabClose?.requiresWriteBackFailureTerminal =
+                requiresWriteBackFailureTerminal
             guard let operationID = pendingClose.batchOperationID else {
                 return .send(.content(.composer(.saveCollection)))
             }
@@ -1924,15 +2008,25 @@ private extension FileManagerWindowRoutingReducer {
         return .send(.contentTabs(.requestClose(pendingClose.tabID)))
     }
 
+    func recordPendingContentTabCloseSaveFeedback(
+        _ feedback: CollectionSaveFeedback,
+        state: inout State,
+    ) {
+        state.pendingContentTabClose?.didReceiveSaveFeedbackFailure = true
+        if feedback.stage == .saveBlocked {
+            state.pendingContentTabClose?.didReceiveSaveBlockedFeedback = true
+        }
+    }
+
     func finalizePendingContentTabCloseFailureIfReady(
         state: inout State,
     ) -> Effect<Action> {
-        guard let pendingClose = state.pendingContentTabClose else { return .none }
-        if pendingClose.didReceiveSaveCompletedFailure {
-            guard pendingClose.didReceiveWriteBackFailure,
-                  pendingClose.didReceiveSaveFeedbackFailure
-            else { return .none }
-        }
+        guard let pendingClose = state.pendingContentTabClose,
+              pendingClose.didReceiveSaveFeedbackFailure
+        else { return .none }
+        let didReceiveSaveFailureTerminals = pendingClose.didReceiveSaveCompletedFailure
+            && (!pendingClose.requiresWriteBackFailureTerminal || pendingClose.didReceiveWriteBackFailure)
+        guard pendingClose.didReceiveSaveBlockedFeedback || didReceiveSaveFailureTerminals else { return .none }
         return finishPendingContentTabCloseWithoutClosing(outcome: .failed, state: &state)
     }
 
