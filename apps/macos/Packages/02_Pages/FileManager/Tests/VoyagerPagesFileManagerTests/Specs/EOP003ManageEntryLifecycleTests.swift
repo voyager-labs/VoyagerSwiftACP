@@ -122,6 +122,96 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertEqual(activeManager?.canRedo, true)
     }
 
+    /// EOP-003-undo_entry_action: 새 operation 등록 뒤 Undo는 native와 logical의 동일한 최신 record를 이동한다.
+    /// callback queue turn 없이 request 시점 top record를 두 stack이 원자적으로 승인하는지 검증한다.
+    /// - 검증 내용: A와 B completion을 순서대로 등록한 뒤 Undo하여 logical/native projection을 확인한다.
+    /// - 사전 조건: W1/A scope가 활성화되고 A 다음 B record가 같은 tab에 완료된다.
+    /// - 기대 결과: B만 redo stack으로 이동하고 A는 native/logical undo top으로 남는다.
+    func testUndoTransactionUsesLatestRecordAfterNewCompletion() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let client = makeClient(registry: registry)
+        let windowID = UUID()
+        let tabA = ContentTabID(rawValue: "A")
+        let scope = UndoManagerScope(windowID: windowID, contentTabID: tabA.rawValue)
+        _ = client.activate(scope)
+        let generation = try XCTUnwrap(client.generation(scope))
+        let recordA = makeRecord("atomic-A")
+        let recordB = makeRecord("atomic-B")
+        let store = makeStore(
+            state: makeSingleTabState(windowID: windowID, tabID: tabA),
+            client: client,
+        )
+        // store.exhaustivity = .off: replay lifecycle보다 request turn의 native/logical top 일치를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.internal(.entryActionCompleted(
+            tabID: tabA,
+            record: recordA,
+            undoManagerGeneration: generation,
+        )))
+        await store.send(.internal(.entryActionCompleted(
+            tabID: tabA,
+            record: recordB,
+            undoManagerGeneration: generation,
+        )))
+        await store.send(.tabContent(
+            tabID: tabA,
+            action: .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))),
+        ))
+        await store.skipReceivedActions()
+
+        let operations = store.state.content.entryViewLayout.entryOperations
+        XCTAssertEqual(operations.undoRecords, [recordA])
+        XCTAssertEqual(operations.redoRecords, [recordB])
+        let manager = try XCTUnwrap(registry.undoManager(for: scope))
+        XCTAssertTrue(manager.canUndo)
+        XCTAssertTrue(manager.canRedo)
+    }
+
+    /// EOP-003-undo_entry_action: busy target의 Undo 거부는 native와 logical stack을 모두 이동시키지 않는다.
+    /// logical admission 전에 native manager가 선행 이동하지 않는 transaction 순서를 검증한다.
+    /// - 검증 내용: record target을 busy로 표시한 상태에서 Undo 후 두 stack과 manager projection을 확인한다.
+    /// - 사전 조건: W1/A scope에 undo record 한 건이 등록되고 같은 path의 rename operation이 진행 중이다.
+    /// - 기대 결과: logical record와 native undo history가 유지되고 redo history는 생성되지 않는다.
+    func testBusyTargetRejectsUndoBeforeNativeStackMoves() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let client = makeClient(registry: registry)
+        let windowID = UUID()
+        let tabA = ContentTabID(rawValue: "A")
+        let scope = UndoManagerScope(windowID: windowID, contentTabID: tabA.rawValue)
+        _ = client.activate(scope)
+        let generation = try XCTUnwrap(client.generation(scope))
+        let record = makeRecord("busy")
+        let busyPath = try XCTUnwrap(record.targets.first?.beforePath)
+        let store = makeStore(
+            state: makeSingleTabState(windowID: windowID, tabID: tabA),
+            client: client,
+        )
+        // store.exhaustivity = .off: busy lifecycle state보다 Undo 거부 시 두 stack의 불변성을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.internal(.entryActionCompleted(
+            tabID: tabA,
+            record: record,
+            undoManagerGeneration: generation,
+        )))
+        await store.send(.tabContent(
+            tabID: tabA,
+            action: .entryViewLayout(.entryOperations(.lifecycle(.operationStarted(busyPath, .rename)))),
+        ))
+        await store.send(.tabContent(
+            tabID: tabA,
+            action: .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))),
+        ))
+
+        let operations = store.state.content.entryViewLayout.entryOperations
+        XCTAssertEqual(operations.undoRecords, [record])
+        XCTAssertTrue(operations.redoRecords.isEmpty)
+        let manager = try XCTUnwrap(registry.undoManager(for: scope))
+        XCTAssertTrue(manager.canUndo)
+        XCTAssertFalse(manager.canRedo)
+    }
+
     /// EOP-003-undo_entry_action: A에서 시작한 completion은 B 전환 후 inactive A snapshot만 갱신한다.
     /// 비동기 file operation의 origin tab을 action에 고정해 active tab fallback을 금지하는 targeted child 경계를 검증한다.
     /// - 검증 내용: B로 setCurrent 후 `.tabContent(A, entryActionCompleted)`가 A의 undoRecords만 변경한다.
