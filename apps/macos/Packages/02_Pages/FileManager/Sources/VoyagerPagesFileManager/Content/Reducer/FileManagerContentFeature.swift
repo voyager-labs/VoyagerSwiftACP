@@ -90,8 +90,11 @@ public struct FileManagerContentFeature {
             case .aiChat(.cancelInFlightWork):
                 return .none
 
-            case .view(.openContextualAiChatTapped):
-                return .send(.delegate(.openContextualAiChat))
+            case .view(.newChatTapped):
+                return .send(.delegate(.newChatRequested))
+
+            case .view(.showChatHistoryTapped):
+                return .send(.delegate(.showChatHistoryRequested))
 
             case .aiChat(.delegate(.openAISettings)):
                 return .send(.delegate(.openAISettings))

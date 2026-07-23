@@ -136,7 +136,7 @@ public struct AiChatSessionsDisplayModel: Equatable, Sendable {
         unreadCompletedSessionIDs: Set<AiChatSessionID> = [],
         hiddenSessionIDs: Set<AiChatSessionID> = [],
     ) {
-        title = "Sessions"
+        title = "Chat History"
         newChatTitle = "New Chat"
         searchPlaceholder = "Search"
 

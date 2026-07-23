@@ -22,7 +22,7 @@ struct InspectorPaneView: View {
     private var header: some View {
         HStack(spacing: store.aiChat.mode == .chat ? 4 : 8) {
             if store.aiChat.mode == .sessions {
-                Text("Sessions")
+                Text("Chat History")
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
 
@@ -46,8 +46,8 @@ struct InspectorPaneView: View {
                 .buttonStyle(.borderless)
                 .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
-                .help("Back to Sessions")
-                .accessibilityLabel("Back to Sessions")
+                .help("Back to Chat History")
+                .accessibilityLabel("Back to Chat History")
 
                 Text(chatHeaderTitle)
                     .font(.system(size: 14, weight: .semibold))

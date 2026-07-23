@@ -53,7 +53,10 @@ struct MenuCommandsFeature {
     }
 
     private func routeEditCommand(_ command: MenuCommandItem.EditCommand) -> Effect<Action> {
-        routePrimaryEditCommand(command) ?? routeClipboardEditCommand(command) ?? .none
+        routePrimaryEditCommand(command)
+            ?? routeAiChatEditCommand(command)
+            ?? routeClipboardEditCommand(command)
+            ?? .none
     }
 
     private func routeFileAppCommand(_ command: MenuCommandItem.AppCommand) -> Effect<Action>? {
@@ -96,10 +99,17 @@ struct MenuCommandsFeature {
         case .requestUndo: .send(.delegate(.windowManager(.edit(.requestUndo))))
         case .requestRedo: .send(.delegate(.windowManager(.edit(.requestRedo))))
         case .toggleComposer: .send(.delegate(.windowManager(.edit(.toggleComposer))))
-        case .openContextualAiChat: .send(.delegate(.windowManager(.edit(.openContextualAiChat))))
         case .cut: .send(.delegate(.windowManager(.edit(.cut))))
         case .copy: .send(.delegate(.windowManager(.edit(.copy))))
         case .paste: .send(.delegate(.windowManager(.edit(.paste))))
+        default: nil
+        }
+    }
+
+    private func routeAiChatEditCommand(_ command: MenuCommandItem.EditCommand) -> Effect<Action>? {
+        switch command {
+        case .newChat: .send(.delegate(.windowManager(.edit(.newChat))))
+        case .showChatHistory: .send(.delegate(.windowManager(.edit(.showChatHistory))))
         default: nil
         }
     }

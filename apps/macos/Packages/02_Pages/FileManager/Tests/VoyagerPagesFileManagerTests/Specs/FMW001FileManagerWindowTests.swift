@@ -682,6 +682,29 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 }
 
 extension FMW001FileManagerWindowTests {
+    // MARK: - FMW-001-open_file_manager_window
+
+    /// FMW-001-open_file_manager_window: File Manager toolbar가 고정된 icon-only 표현을 유지한다.
+    /// toolbar의 display mode contextual menu가 앱 전용 메뉴 뒤에 노출되지 않도록 창 스타일 계약을 검증한다.
+    /// - 검증 내용: icon-only mode, 사용자 customization, configuration autosave, display mode customization 설정
+    /// - 사전 조건: 새 NSWindow에 FileManagerWindowChrome 스타일 적용
+    /// - 기대 결과: toolbar 표현과 customization 경로가 모두 고정됨
+    func testConfigureWindowStyleDisablesToolbarDisplayModeCustomization() throws {
+        let window = NSWindow(contentViewController: NSViewController())
+
+        FileManagerWindowChrome.configureWindowStyle(window)
+
+        let toolbar = try XCTUnwrap(window.toolbar)
+        XCTAssertEqual(toolbar.displayMode, .iconOnly)
+        XCTAssertFalse(toolbar.allowsUserCustomization)
+        XCTAssertFalse(toolbar.autosavesConfiguration)
+        if #available(macOS 15.0, *) {
+            XCTAssertFalse(toolbar.allowsDisplayModeCustomization)
+        }
+    }
+}
+
+extension FMW001FileManagerWindowTests {
     // MARK: - FMW-001-entry_commands
 
     /// FMW-001-entry_commands: blank-area AppKit menu container disables automatic item validation.
@@ -695,5 +718,56 @@ extension FMW001FileManagerWindowTests {
 
         // GREEN: root and nested builders share an explicit non-auto-enabling container.
         XCTAssertFalse(menu.autoenablesItems)
+    }
+}
+
+extension FMW001FileManagerWindowTests {
+    // MARK: - VOY-619-ai_chat_command_availability
+
+    /// VOY-619-ai_chat_command_availability: 활성 탭의 Inspector capability를 메뉴 projection에 반영한다.
+    /// 메뉴가 실행 불가능한 Home/AiChat 탭에서 활성 상태로 노출되지 않도록 canonical anchor capability를 검증한다.
+    /// - 검증 내용: Home/AiChat과 Directory/Collection anchor별 canUseAiChatInspector 값
+    /// - 사전 조건: 동일한 active tab의 anchor를 지원·미지원 유형으로 전환
+    /// - 기대 결과: Inspector 지원 anchor에서만 AiChat 메뉴 명령이 활성화됨
+    func testMenuCommandProjectionReflectsActiveTabInspectorCapability() throws {
+        var state = FileManagerWindowState.makeInitial(path: "/Users/test/Documents")
+        let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+
+        XCTAssertFalse(state.menuCommandProjection.isNewChatPresented)
+        XCTAssertFalse(state.menuCommandProjection.isChatHistoryPresented)
+
+        state.inspector.inspectorVisible = true
+        state.inspector.inspectorPaneExists = true
+        state.inspector.activeMode = .chat
+        state.inspector.aiChat.mode = .sessions
+        XCTAssertFalse(state.menuCommandProjection.isNewChatPresented)
+        XCTAssertTrue(state.menuCommandProjection.isChatHistoryPresented)
+
+        state.inspector.aiChat.mode = .chat
+        XCTAssertTrue(state.menuCommandProjection.isNewChatPresented)
+        XCTAssertFalse(state.menuCommandProjection.isChatHistoryPresented)
+
+        state.inspector.inspectorPaneExists = false
+        XCTAssertFalse(state.menuCommandProjection.isNewChatPresented)
+        XCTAssertFalse(state.menuCommandProjection.isChatHistoryPresented)
+
+        XCTAssertTrue(state.menuCommandProjection.canUseAiChatInspector)
+
+        state.contentTabs.tabs[id: activeTabID]?.anchor = .homeDefault
+        XCTAssertFalse(state.menuCommandProjection.canUseAiChatInspector)
+
+        state.contentTabs.tabs[id: activeTabID]?.anchor = .aiChat(sessionID: "projection-test")
+        XCTAssertFalse(state.menuCommandProjection.canUseAiChatInspector)
+
+        state.contentTabs.tabs[id: activeTabID]?.anchor = .directory(path: "/Users/test/Documents")
+        XCTAssertTrue(state.menuCommandProjection.canUseAiChatInspector)
+
+        state.contentTabs.tabs[id: activeTabID]?.anchor = .collectionFile(
+            url: URL(fileURLWithPath: "/Users/test/Test.voycoll"),
+        )
+        XCTAssertTrue(state.menuCommandProjection.canUseAiChatInspector)
+
+        state.contentTabs.tabs[id: activeTabID]?.anchor = .virtualCollection(id: "Favorite")
+        XCTAssertTrue(state.menuCommandProjection.canUseAiChatInspector)
     }
 }

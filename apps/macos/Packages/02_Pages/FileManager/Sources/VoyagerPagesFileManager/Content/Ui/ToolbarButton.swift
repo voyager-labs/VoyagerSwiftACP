@@ -109,6 +109,35 @@ struct ToolbarHoverPillButtonLabel: View {
     }
 }
 
+struct ToolbarContextMenuButton: View {
+    let systemName: String
+    let help: String
+    let primaryAction: () -> Void
+    let contextMenuTitle: String
+    let contextMenuAction: () -> Void
+
+    var body: some View {
+        Button(action: primaryAction) {
+            ToolbarHoverButtonLabel(
+                systemName: systemName,
+                isEnabled: true,
+                font: nil,
+            )
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .contextMenu {
+            Button(contextMenuTitle, action: contextMenuAction)
+        }
+        .help(help)
+        .accessibilityLabel(help)
+        .accessibilityAction(named: Text(contextMenuTitle)) {
+            contextMenuAction()
+        }
+    }
+}
+
 struct ToolbarMenuButton<Content: View>: View {
     let systemName: String
     let isEnabled: Bool

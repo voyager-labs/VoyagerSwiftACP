@@ -3454,13 +3454,13 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
-    /// ContentPane AI Chat에 .sessionsAppeared 전송 시 mode가 .sessions로 설정되고 session 목록 로드가 시작됨
-    /// Inspector AI Chat에는 아무 영향이 없음을 함께 검증한다.
-    /// - 검증 내용: content.aiChat.sessionsAppeared 후 content.aiChat.mode == .sessions,
-    ///   inspector.aiChat.mode는 변경되지 않음
+    /// ContentPane AI Chat의 늦은 .sessionsAppeared가 현재 chat mode를 덮어쓰지 않음
+    /// Inspector AI Chat과 session 목록 persistence에도 아무 영향이 없음을 함께 검증한다.
+    /// - 검증 내용: content.aiChat.sessionsAppeared 후 content.aiChat.mode == .chat,
+    ///   inspector.aiChat.mode와 persistence 호출은 변경되지 않음
     /// - 사전 조건: content.aiChat.mode == .chat, inspector.aiChat.mode == .sessions
-    /// - 기대 결과: ContentPane만 .sessions로 전환되고 Inspector는 그대로 유지됨
-    func testContentPaneSessionsAppearedDoesNotAffectInspector() async {
+    /// - 기대 결과: 늦게 도착한 lifecycle action이 navigation state를 변경하지 않음
+    func testContentPaneStaleSessionsAppearedDoesNotChangeMode() async {
         var state = FileManagerFeature.State()
         state.content.aiChat.mode = .chat
         state.content.aiChat.sessionStatus = .active
@@ -3478,12 +3478,16 @@ extension CTM005IndependentContentTabSessionTests {
             recentlyClosed: nil,
         )
         state.syncContentTabSidebarItems()
+        let listCallCount = LockIsolated(0)
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.aiChatSessionPersistenceClient.listSessions = { _, _ in [] }
+            $0.aiChatSessionPersistenceClient.listSessions = { _, _ in
+                listCallCount.withValue { $0 += 1 }
+                return []
+            }
         }
         store.exhaustivity = .off
 
@@ -3491,8 +3495,9 @@ extension CTM005IndependentContentTabSessionTests {
 
         await store.send(.content(.aiChat(.sessionsAppeared)))
 
-        XCTAssertEqual(store.state.content.aiChat.mode, .sessions)
+        XCTAssertEqual(store.state.content.aiChat.mode, .chat)
         XCTAssertEqual(store.state.inspector.aiChat.mode, inspectorModeBefore)
+        XCTAssertEqual(listCallCount.value, 0)
         await store.finish()
     }
 }
