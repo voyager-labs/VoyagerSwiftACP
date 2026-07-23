@@ -104,9 +104,6 @@ public struct ContentTabState: Equatable, Sendable {
     mutating func reconcileSelection() {
         let currentTabIDs = Set(tabs.ids)
         selectedTabIDs.formIntersection(currentTabIDs)
-        if let activeTabID, currentTabIDs.contains(activeTabID) {
-            selectedTabIDs.insert(activeTabID)
-        }
         if let selectionAnchorID, !currentTabIDs.contains(selectionAnchorID) {
             self.selectionAnchorID = nil
         }

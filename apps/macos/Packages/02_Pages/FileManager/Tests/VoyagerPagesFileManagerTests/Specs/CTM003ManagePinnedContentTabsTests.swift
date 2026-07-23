@@ -1139,7 +1139,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         )
 
         let feature = ContentTabFeature()
-        _ = feature.reduce(into: &state, action: .pinnedRecordSaveSucceeded)
+        _ = feature.reduce(into: &state, action: .pinnedRecordSaveSucceeded(tabID: activeID))
         XCTAssertEqual(state.previousActiveTabID, previousID)
         XCTAssertNil(state.pinnedRecordPersistenceError)
 
@@ -2847,7 +2847,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(state.contentTabs.tabs[id: activeTabID]?.page, .home)
         XCTAssertFalse(state.contentTabs.tabs[id: activeTabID]?.isPinned ?? true)
         XCTAssertEqual(state.content.navigation.currentPath, "Home")
-        XCTAssertEqual(state.contentTabs.selectedTabIDs, [activeTabID])
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, [])
         XCTAssertNil(state.contentTabs.selectionAnchorID)
         XCTAssertNil(state.tabContentStates[pinnedID])
         XCTAssertEqual(state.tabContentStates[activeTabID]?.navigation.currentPath, "Home")

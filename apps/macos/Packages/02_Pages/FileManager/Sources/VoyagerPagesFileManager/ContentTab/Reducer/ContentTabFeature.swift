@@ -481,7 +481,7 @@ extension ContentTabFeature {
                     try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
                     return upsertPinnedRecord(pinnedRecord, in: existingStore)
                 }
-                await send(.pinnedRecordSaveSucceeded)
+                await send(.pinnedRecordSaveSucceeded(tabID: id))
             } catch is CancellationError {
                 return
             } catch {
@@ -527,7 +527,7 @@ extension ContentTabFeature {
                     try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
                     return removePinnedRecord(id: recordID, from: existingStore)
                 }
-                await send(.pinnedRecordSaveSucceeded)
+                await send(.pinnedRecordSaveSucceeded(tabID: id))
             } catch is CancellationError {
                 return
             } catch {
@@ -582,7 +582,7 @@ extension ContentTabFeature {
                     try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
                     return upsertPinnedRecord(updatedRecord, in: existingStore)
                 }
-                await send(.pinnedRecordSaveSucceeded)
+                await send(.pinnedRecordSaveSucceeded(tabID: id))
             } catch is CancellationError {
                 return
             } catch {
