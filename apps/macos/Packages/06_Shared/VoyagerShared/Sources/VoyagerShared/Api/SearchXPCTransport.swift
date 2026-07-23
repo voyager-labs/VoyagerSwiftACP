@@ -275,7 +275,7 @@ private extension SearchXPCTransport {
         }
 
         nonisolated private func makeConnection(operationLabel: String) -> NSXPCConnection {
-            let connection = NSXPCConnection(serviceName: FilterSearchXPCServiceConstants.machServiceName)
+            let connection = NSXPCConnection(serviceName: FilterSearchXPCServiceConstants.machServiceName())
             storeConnection(connection)
             connection.remoteObjectInterface = NSXPCInterface(with: FilterSearchXPCServiceProtocol.self)
             connection.interruptionHandler = { [self] in

@@ -13,11 +13,11 @@ public struct CollectionFeature {
         Reduce { state, action in
             switch action {
             case let .openRequested(url, reopenContext, isAlreadyStale):
-                state.collectionSession.captureReopenContext(reopenContext)
-                state.collectionSession.prepareForOpeningCollection(at: url)
-                if isAlreadyStale {
-                    state.collectionSession.markInvalidatedLocally()
-                }
+                state.prepareOpenTransition(
+                    at: url,
+                    reopenContext: reopenContext,
+                    isAlreadyStale: isAlreadyStale,
+                )
                 return .none
 
             case .draftDiscardRequested:

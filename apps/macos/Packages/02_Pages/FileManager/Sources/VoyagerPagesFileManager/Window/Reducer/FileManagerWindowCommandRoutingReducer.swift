@@ -20,13 +20,12 @@ struct FileManagerWindowCommandRoutingReducer {
     typealias Action = FileManagerWindowAction
 
     nonisolated private enum CancelID: Hashable {
-        case contextualAiChatOpen
         case loadFixedLocations
         case loadHomeFavorites
     }
 
     @Dependency(\.aiConnectionsFileClient)
-    private var aiConnectionsFileClient
+    var aiConnectionsFileClient
     @Dependency(\.searchClient)
     private var searchClient
     @Dependency(\.collectionAlertClient)
@@ -42,7 +41,7 @@ struct FileManagerWindowCommandRoutingReducer {
     @Dependency(\.userDefaultsClient)
     private var userDefaultsClient
     @Dependency(\.uuid)
-    private var uuid
+    var uuid
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -163,14 +162,21 @@ struct FileManagerWindowCommandRoutingReducer {
             case let .content(.delegate(.aiChatSessionRestored(sessionID, title))):
                 return routeActiveAiChatTab(to: sessionID, title: title, state: state)
 
-            case .content(.delegate(.openContextualAiChat)):
-                return .send(.request(.openContextualAiChat))
+            case .content(.delegate(.newChatRequested)):
+                return .send(.request(.newChat))
+
+            case .content(.delegate(.showChatHistoryRequested)):
+                return .send(.request(.showChatHistory))
 
             case .content(.delegate(.openAISettings)):
                 return .send(.delegate(.openAISettings))
 
             case .inspector(.closeChat):
-                return .cancel(id: CancelID.contextualAiChatOpen)
+                state.pendingAiChatInspectorOpen = nil
+                return .cancel(id: FileManagerAiChatInspectorOpenCancelID())
+
+            case .inspector(.delegate(.newChatRequested)):
+                return .send(.request(.newChat))
 
             case .inspector(.delegate(.openAISettings)):
                 return .send(.delegate(.openAISettings))
@@ -192,6 +198,24 @@ struct FileManagerWindowCommandRoutingReducer {
                 state.fixedLocationsLoadPhase = .loaded
                 state.applyFixedLocationItems(items, hiddenLocationIDs: state.sidebar.hiddenFixedLocationItemIDs)
                 return .none
+
+            case let .internal(.aiChatNewChatInspectorOpenLoaded(requestID, setup, connectionsFile)):
+                return handleAiChatInspectorOpenCompletion(
+                    requestID: requestID,
+                    destination: .newChat,
+                    setup: setup,
+                    connectionsFile: connectionsFile,
+                    state: &state,
+                )
+
+            case let .internal(.aiChatHistoryInspectorOpenLoaded(requestID, setup, connectionsFile)):
+                return handleAiChatInspectorOpenCompletion(
+                    requestID: requestID,
+                    destination: .chatHistory,
+                    setup: setup,
+                    connectionsFile: connectionsFile,
+                    state: &state,
+                )
 
             default:
                 return .none
@@ -343,8 +367,8 @@ struct FileManagerWindowCommandRoutingReducer {
         case .saveCollection,
              .saveCollectionAs,
              .toggleComposer,
-             .openContextualAiChat,
-             .presentContextualAiChat:
+             .newChat,
+             .showChatHistory:
             handleComposerRequest(command, state: &state)
 
         case .goBack,
@@ -524,31 +548,22 @@ struct FileManagerWindowCommandRoutingReducer {
     private func handleComposerRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
         switch command {
         case .saveCollection:
-            return .send(.content(.composer(.saveCollection)))
+            .send(.content(.composer(.saveCollection)))
 
         case .saveCollectionAs:
-            return .send(.content(.composer(.saveCollectionAs)))
+            .send(.content(.composer(.saveCollectionAs)))
 
         case .toggleComposer:
-            return .send(.content(.composer(.setPresented(!state.content.composer.isPresented))))
+            .send(.content(.composer(.setPresented(!state.content.composer.isPresented))))
 
-        case .openContextualAiChat:
-            if state.inspector.inspectorVisible,
-               state.inspector.inspectorPaneExists,
-               state.inspector.activeMode == .chat
-            {
-                return .merge(
-                    .send(.inspector(.closeChat)),
-                    .cancel(id: CancelID.contextualAiChatOpen),
-                )
-            }
-            return openContextualAiChatEffect(state: state)
+        case .newChat:
+            handleAiChatInspectorRequest(destination: .newChat, state: &state)
 
-        case .presentContextualAiChat:
-            return openContextualAiChatEffect(state: state)
+        case .showChatHistory:
+            handleAiChatInspectorRequest(destination: .chatHistory, state: &state)
 
         default:
-            return .none
+            .none
         }
     }
 
@@ -580,28 +595,6 @@ struct FileManagerWindowCommandRoutingReducer {
         }
 
         return .merge(effects)
-    }
-
-    private func openContextualAiChatEffect(state: State) -> Effect<Action> {
-        guard let activeTabID = state.contentTabs.activeTabID,
-              state.supportsInspector(tabID: activeTabID)
-        else { return .none }
-
-        let content = state.content
-        // Entry opens the inspector with seeded context only so AiChat starts on Sessions.
-        // Session creation/restoration stays inside AiChat via New Chat or explicit restoreSessionID.
-        var setup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: content)
-        setup.mode = .sessions
-        return .run { [aiConnectionsFileClient, setup] send in
-            let connectionsFile: AIConnectionsFile
-            do {
-                connectionsFile = try await aiConnectionsFileClient.load()
-            } catch {
-                connectionsFile = .empty()
-            }
-            await send(.inspector(.openChat(setup, connectionsFile)))
-        }
-        .cancellable(id: CancelID.contextualAiChatOpen, cancelInFlight: true)
     }
 
     private func handleNavigationRequest(_ command: Action.WindowCommand) -> Effect<Action> {

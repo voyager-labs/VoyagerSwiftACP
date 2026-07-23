@@ -10,6 +10,8 @@ struct EntryOperationsLifecycleReducer {
 
     @Dependency(\.entryOperationsAlertClient)
     var alertClient
+    @Dependency(\.entryOperationSoundClient)
+    var soundClient
     @Dependency(\.entryThumbnailCacheClient)
     var entryThumbnailCacheClient
     @Dependency(\.trashMetadataStoreClient)
@@ -67,21 +69,30 @@ struct EntryOperationsLifecycleReducer {
 
                 case let .failure(error):
                     state.itemStates[filePath]?.lastError = error
+                }
 
+                var effects: [Effect<EntryOperationsAction>] = []
+
+                // Alert effect (existing behavior)
+                if case let .failure(error) = result {
                     if case .getInfo = kind {
-                        return .run { [alertClient] _ in
+                        effects.append(.run { [alertClient] _ in
                             await alertClient.showGetInfoFailureAlert(error.message, error.suggestion)
-                        }
-                    }
-
-                    if case .revealInFinder = kind {
-                        return .run { [alertClient] _ in
+                        })
+                    } else if case .revealInFinder = kind {
+                        effects.append(.run { [alertClient] _ in
                             await alertClient.showGetInfoFailureAlert(error.message, error.suggestion)
-                        }
+                        })
                     }
                 }
 
-                return .none
+                if case let .failure(error) = result, error != .cancelled {
+                    effects.append(.run { [soundClient] _ in
+                        await soundClient.play(.error)
+                    })
+                }
+
+                return effects.isEmpty ? .none : .merge(effects)
 
             case let .lifecycle(.pathsMutated(paths)):
                 let uniquePaths = Array(Set(paths))
@@ -101,11 +112,25 @@ struct EntryOperationsLifecycleReducer {
                 default:
                     break
                 }
-                return .none
+
+                switch record.operationKind {
+                case .moveToTrash:
+                    return .run { [soundClient] _ in
+                        await soundClient.play(.moveToTrash)
+                    }
+                case .pasteFileCopy, .pasteFileMove, .pasteFileDuplicate, .putBack:
+                    return .run { [soundClient] _ in
+                        await soundClient.play(.operationCompleted)
+                    }
+                default:
+                    return .none
+                }
 
             case .lifecycle(.emptyTrashCompleted):
                 state.restorableTrashPaths = []
-                return .none
+                return .run { [soundClient] _ in
+                    await soundClient.play(.emptyTrash)
+                }
 
             default:
                 return .none

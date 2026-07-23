@@ -198,6 +198,7 @@ private struct PinnedCollectionRestoreFixture {
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
             $0.entryLoadingClient.loadItems = { url, _ in loads.withValue { $0.append(url.path) }
                 return []
             }
@@ -1499,6 +1500,54 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertEqual(store.state.pendingContentTabClose?.tabID, tabID)
         await store.receive(\.contentTabCloseAlertResponse)
         XCTAssertNil(store.state.pendingContentTabClose)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: Collection open loading 중 dirty tab close도 unsaved alert를 표시함
+    /// Save UI 비활성화와 tab close의 미저장 보호가 독립적으로 유지되는지 검증한다.
+    /// - 검증 내용: loading 중 close 요청의 pendingContentTabClose 설정과 cancel 처리
+    /// - 사전 조건: active tab이 dirty Collection이며 다른 Collection open loading이 진행 중
+    /// - 기대 결과: tab과 draft를 유지하고 pending close를 alert cancel 후 해제
+    func testDirtyActiveCollectionCloseWhileLoadingShowsAlert() async {
+        let tabID = ContentTabID()
+        var content = makeDirtyCollectionContent()
+        content.entryViewLayout.isCollectionContentLoading = true
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/loading.voycoll")),
+                    isPinned: false,
+                    title: "Loading Collection",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.pendingCollectionOpenRequest = ContentPageCollectionOpenRequest(
+            id: UUID(608),
+            url: URL(fileURLWithPath: "/tmp/target.voycoll"),
+            sourceRoute: content.navigation.navigationState,
+        )
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state, alertChoice: .cancel)
+        XCTAssertFalse(store.state.content.canSaveCollection)
+
+        await store.send(.closeContentTabRequested(tabID))
+        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, tabID)
+        XCTAssertNil(store.state.pendingCollectionOpenRequest)
+        await store.receive(\.content.entryViewLayout.internal.setCollectionContentLoading)
+        XCTAssertFalse(store.state.content.entryViewLayout.isCollectionContentLoading)
+        await store.receive(\.contentTabCloseAlertResponse)
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
         await store.finish()
     }
 
@@ -3454,13 +3503,13 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
-    /// ContentPane AI Chat에 .sessionsAppeared 전송 시 mode가 .sessions로 설정되고 session 목록 로드가 시작됨
-    /// Inspector AI Chat에는 아무 영향이 없음을 함께 검증한다.
-    /// - 검증 내용: content.aiChat.sessionsAppeared 후 content.aiChat.mode == .sessions,
-    ///   inspector.aiChat.mode는 변경되지 않음
+    /// ContentPane AI Chat의 늦은 .sessionsAppeared가 현재 chat mode를 덮어쓰지 않음
+    /// Inspector AI Chat과 session 목록 persistence에도 아무 영향이 없음을 함께 검증한다.
+    /// - 검증 내용: content.aiChat.sessionsAppeared 후 content.aiChat.mode == .chat,
+    ///   inspector.aiChat.mode와 persistence 호출은 변경되지 않음
     /// - 사전 조건: content.aiChat.mode == .chat, inspector.aiChat.mode == .sessions
-    /// - 기대 결과: ContentPane만 .sessions로 전환되고 Inspector는 그대로 유지됨
-    func testContentPaneSessionsAppearedDoesNotAffectInspector() async {
+    /// - 기대 결과: 늦게 도착한 lifecycle action이 navigation state를 변경하지 않음
+    func testContentPaneStaleSessionsAppearedDoesNotChangeMode() async {
         var state = FileManagerFeature.State()
         state.content.aiChat.mode = .chat
         state.content.aiChat.sessionStatus = .active
@@ -3478,12 +3527,16 @@ extension CTM005IndependentContentTabSessionTests {
             recentlyClosed: nil,
         )
         state.syncContentTabSidebarItems()
+        let listCallCount = LockIsolated(0)
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.aiChatSessionPersistenceClient.listSessions = { _, _ in [] }
+            $0.aiChatSessionPersistenceClient.listSessions = { _, _ in
+                listCallCount.withValue { $0 += 1 }
+                return []
+            }
         }
         store.exhaustivity = .off
 
@@ -3491,8 +3544,9 @@ extension CTM005IndependentContentTabSessionTests {
 
         await store.send(.content(.aiChat(.sessionsAppeared)))
 
-        XCTAssertEqual(store.state.content.aiChat.mode, .sessions)
+        XCTAssertEqual(store.state.content.aiChat.mode, .chat)
         XCTAssertEqual(store.state.inspector.aiChat.mode, inspectorModeBefore)
+        XCTAssertEqual(listCallCount.value, 0)
         await store.finish()
     }
 }
@@ -3882,6 +3936,7 @@ extension CTM005IndependentContentTabSessionTests {
         state.content.aiChat.mode = .sessions
         state.content.aiChat.sessionID = oldAiSessionID
         state.content.aiChat.sessionStatus = .active
+        state.content.aiChat.emptyDraftSessionID = newAiSessionID
         state.tabContentStates = [tabID: state.content]
         state.syncContentTabSidebarItems()
 

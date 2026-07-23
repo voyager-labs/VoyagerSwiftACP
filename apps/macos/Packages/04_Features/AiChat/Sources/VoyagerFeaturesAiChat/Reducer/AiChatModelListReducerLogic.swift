@@ -14,6 +14,29 @@ struct AiChatModelListLoadBatch: Equatable {
 }
 
 extension AiChatFeature {
+    func handleSelectedModelChanged(_ handle: AiModelHandle?, state: inout State) -> Effect<Action> {
+        let resolvedHandle = state.normalizedSelectionHandle(handle)
+        guard state.selectedModelHandle != resolvedHandle else { return .none }
+        state.markPreparedTransientSessionAsTouched()
+        state.selectedModelHandle = resolvedHandle
+        state.unavailableSelectedModelHandle = nil
+        normalizeSelectionIfNeeded(&state)
+        clearRetryBlockingFailureIfNeeded(&state)
+        return .none
+    }
+
+    func handleSelectedThinkingChanged(
+        _ selectedThinking: AiThinkingSelection?,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.selectedThinking != selectedThinking else { return .none }
+        state.markPreparedTransientSessionAsTouched()
+        state.selectedThinking = selectedThinking
+        normalizeSelectionIfNeeded(&state)
+        clearRetryBlockingFailureIfNeeded(&state)
+        return .none
+    }
+
     func makeModelListLoadBatch(from file: AIConnectionsFile, state: State) -> AiChatModelListLoadBatch? {
         let preferredProviders = [
             state.selectedModelHandle?.provider,

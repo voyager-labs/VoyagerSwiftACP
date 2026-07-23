@@ -261,10 +261,8 @@ public struct EntryViewLayoutFeature {
                 return Self.updateEntriesAndReapply(&state)
 
             case .internal(.clearCollectionPresentation):
-                state.isCollectionMode = false
-                state.collectionItems = []
-                state.isCollectionContentLoading = false
-                return Self.updateEntriesAndReapply(&state)
+                state.clearCollectionPresentation()
+                return .send(.entryArrangements(.reapply))
 
             case .delegate:
                 return .none

@@ -106,6 +106,393 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(store.state.currentContext, currentContext)
     }
 
+    /// CBW-005-start_chat_conversation_session: Inspector New Chat은 입력 전까지 session을 저장하지 않는다.
+    /// 빈 composer를 여는 동작만으로 history record를 만들거나 삭제 요청을 보내지 않는지 검증합니다.
+    /// - 검증 내용: transient sessionID 준비, save/delete 미호출, history 전환
+    /// - 사전 조건: sessions mode에서 inspector가 새 대화 composer를 요청한다.
+    /// - 기대 결과: chat state는 준비되지만 persistence에는 기록이 생기지 않는다.
+    func testPrepareUnpersistedNewChatDoesNotCreateOrDeleteSession() async {
+        let newSessionID = makeCBW005SessionID("00000000-0000-0000-0000-000000000000")
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let deletedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+
+        let store = TestStore(initialState: AiChatFeature.State(mode: .sessions)) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
+                },
+                deleteSession: { sessionID in
+                    deletedSessionIDs.withValue { $0.append(sessionID) }
+                },
+            )
+        }
+
+        await store.send(.prepareUnpersistedNewChat) { state in
+            self.applyNewChatStartedState(&state, sessionID: newSessionID)
+            state.emptyDraftSessionID = nil
+            state.preparedTransientSessionID = newSessionID
+        }
+        XCTAssertEqual(store.state.preparedTransientSessionID, newSessionID)
+        XCTAssertTrue(store.state.isUntouchedPreparedTransientNewChat)
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+
+        await store.send(.backToSessionsTapped) { state in
+            state.mode = .sessions
+        }
+
+        XCTAssertEqual(store.state.sessionID, newSessionID)
+        XCTAssertNil(store.state.emptyDraftSessionID)
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+        XCTAssertTrue(deletedSessionIDs.value.isEmpty)
+    }
+
+    /// CBW-005-start_chat_conversation_session: 다른 session의 background 준비 작업은 transient marker를 무효화하지 않는다.
+    /// 현재 transient session의 pending request만 idempotent New Chat 판정을 막는지 검증합니다.
+    /// - 검증 내용: 다른 session pending 보존, 현재 session pending 차단
+    /// - 사전 조건: untouched prepared transient session과 background pending request가 존재한다.
+    /// - 기대 결과: 다른 session 작업은 허용되고 현재 session 작업만 untouched 판정을 해제한다.
+    func testPreparedTransientQueryIgnoresBackgroundWorkForOtherSessions() {
+        let transientSessionID = makeCBW005SessionID("00000000-0000-0000-0000-000000000069")
+        let otherSessionID = makeCBW005SessionID("00000000-0000-0000-0000-000000000070")
+        let models = makeProviderModels()
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: makeUUID("00000000-0000-0000-0000-000000000071"),
+            kind: .submit,
+            sessionID: otherSessionID,
+            selectedModel: models[0],
+            selectedRow: nil,
+            preparedRequest: AiChatPreparedRequest(
+                prompt: "Other request",
+                messages: [],
+                persistenceTranscriptHistory: [],
+                assistantReplacementIndex: nil,
+                historyTruncation: .init(
+                    includedMessageCount: 0,
+                    excludedMessageCount: 0,
+                    budget: 200_000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        var state = AiChatFeature.State(
+            mode: .chat,
+            sessionID: transientSessionID,
+            preparedTransientSessionID: transientSessionID,
+            backgroundPendingRequestStarts: [pendingRequest.resolutionID: pendingRequest],
+        )
+
+        XCTAssertTrue(state.isUntouchedPreparedTransientNewChat)
+
+        state.backgroundPendingRequestStarts[pendingRequest.resolutionID]?.sessionID = transientSessionID
+        XCTAssertFalse(state.isUntouchedPreparedTransientNewChat)
+    }
+
+    /// CBW-005-start_chat_conversation_session: setup과 durable New Chat은 transient provenance를 제거한다.
+    /// transient composer identity가 restored/persisted session으로 누출되지 않는지 검증합니다.
+    /// - 검증 내용: setup 및 durable New Chat 이후 marker 제거
+    /// - 사전 조건: prepared transient session이 존재한다.
+    /// - 기대 결과: 두 전이 모두 preparedTransientSessionID를 nil로 만든다.
+    func testPreparedTransientMarkerClearsForSetupAndDurableNewChat() async {
+        let existingSessionID = makeCBW005SessionID("00000000-0000-0000-0000-000000000072")
+        let store = TestStore(initialState: AiChatFeature.State(mode: .sessions)) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+            $0.aiChatSessionPersistenceClient.saveSession = { $0 }
+        }
+        // store.exhaustivity = .off: marker lifecycle과 session identity만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.prepareUnpersistedNewChat)
+        XCTAssertNotNil(store.state.preparedTransientSessionID)
+        await store.send(.draftTextChanged("Question"))
+        XCTAssertNil(store.state.preparedTransientSessionID)
+
+        await store.send(.prepareUnpersistedNewChat)
+        await store.send(.setup(AiChatSetupState(
+            sessionID: existingSessionID,
+            mode: .chat,
+            sessionStatus: .idle,
+        )))
+        XCTAssertNil(store.state.preparedTransientSessionID)
+
+        await store.send(.prepareUnpersistedNewChat)
+        XCTAssertNotNil(store.state.preparedTransientSessionID)
+        await store.send(.newChatTapped)
+        XCTAssertNil(store.state.preparedTransientSessionID)
+        await store.skipReceivedActions()
+    }
+
+    /// CBW-005-start_chat_conversation_session: pending resolver 중 Inspector New Chat은 기존 request를 background로 이관한다.
+    /// 늦게 완료된 resolver가 새 transient composer의 foreground state를 덮어쓰지 않는지 검증합니다.
+    /// - 검증 내용: pending owner 이관, late resolution의 background 실행, 새 composer 보존
+    /// - 사전 조건: 기존 session의 request context resolution이 pending 상태이다.
+    /// - 기대 결과: 새 transient session은 untouched로 유지되고 기존 request만 background에서 시작한다.
+    func testPrepareUnpersistedNewChatParksPendingResolverAndPreservesNewComposer() async {
+        let catalogRows = makeCatalogRows()
+        let currentSessionID = makeCBW005SessionID("00000000-0000-0000-0000-000000000073")
+        let transientSessionID = makeCBW005SessionID("00000000-0000-0000-0000-000000000000")
+        let resolutionID = makeUUID("00000000-0000-0000-0000-000000000074")
+        let userMessage = AiChatMessage(role: .user, content: "Pending transient switch")
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: currentSessionID,
+            selectedModel: makeProviderModels()[0],
+            selectedRow: catalogRows[0],
+            selectedThinking: .effort(.minimal),
+            customTitle: "Pending owner",
+            preparedRequest: AiChatPreparedRequest(
+                prompt: userMessage.content,
+                messages: [userMessage],
+                persistenceTranscriptHistory: [userMessage],
+                assistantReplacementIndex: nil,
+                historyTruncation: .init(
+                    includedMessageCount: 1,
+                    excludedMessageCount: 0,
+                    budget: 200_000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: currentSessionID,
+            sessionStatus: .active,
+            catalogRows: catalogRows,
+            modelListState: .loaded(makeProviderModels()),
+            selectedModelHandle: catalogRows[0].handle,
+            pendingRequestStart: pendingRequest,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+            $0.aiChatExecutionClient.execute = { _, _ in AsyncStream { $0.finish() } }
+            $0.aiChatSessionPersistenceClient.saveSession = { $0 }
+        }
+        // store.exhaustivity = .off: pending owner 이관과 새 transient foreground 보존만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.prepareUnpersistedNewChat)
+
+        XCTAssertNil(store.state.pendingRequestStart)
+        XCTAssertEqual(store.state.backgroundPendingRequestStarts[resolutionID], pendingRequest)
+        XCTAssertEqual(store.state.sessionID, transientSessionID)
+        XCTAssertEqual(store.state.preparedTransientSessionID, transientSessionID)
+        XCTAssertTrue(store.state.isUntouchedPreparedTransientNewChat)
+
+        await store.send(.requestContextResolved(resolutionID, AiChatResolvedRequestContext(
+            currentContext: .init(),
+            addedAttachments: [],
+            parts: [],
+        )))
+        await store.skipReceivedActions()
+
+        XCTAssertNil(store.state.backgroundPendingRequestStarts[resolutionID])
+        XCTAssertEqual(store.state.sessionID, transientSessionID)
+        XCTAssertEqual(store.state.transcriptHistory, [])
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertEqual(store.state.preparedTransientSessionID, transientSessionID)
+        XCTAssertTrue(store.state.isUntouchedPreparedTransientNewChat)
+        guard case let .processing(lock) = store.state.backgroundExecutionPhases.values.first else {
+            XCTFail("late resolver should start under the original background session owner")
+            return
+        }
+        XCTAssertEqual(lock.context.sessionID, currentSessionID)
+        XCTAssertEqual(lock.request.messages, [userMessage])
+    }
+
+    /// CBW-005-start_chat_conversation_session: model 선택은 prepared transient provenance를 영구 무효화한다.
+    /// 빈 화면 형태가 유지돼도 사용자 model 선택 뒤 New Chat이 idempotent로 오인되지 않는지 검증합니다.
+    /// - 검증 내용: selected model 적용과 marker 제거
+    /// - 사전 조건: untouched prepared transient session과 사용 가능한 model이 있다.
+    /// - 기대 결과: model 선택 후 marker가 nil이고 untouched query가 false이다.
+    func testPreparedTransientMarkerInvalidatesAfterModelSelection() async {
+        let catalogRows = makeCatalogRows()
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            catalogRows: catalogRows,
+            modelListState: .loaded(makeProviderModels()),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+        }
+        // store.exhaustivity = .off: model mutation 뒤 provenance 상태만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.prepareUnpersistedNewChat)
+        XCTAssertTrue(store.state.isUntouchedPreparedTransientNewChat)
+
+        await store.send(.selectedModelChanged(catalogRows[0].handle))
+
+        XCTAssertEqual(store.state.selectedModelHandle, catalogRows[0].handle)
+        XCTAssertNil(store.state.preparedTransientSessionID)
+        XCTAssertFalse(store.state.isUntouchedPreparedTransientNewChat)
+    }
+
+    /// CBW-005-start_chat_conversation_session: attachment add 후 제거해도 transient provenance는 복구되지 않는다.
+    /// composer가 다시 비어 보여도 이미 사용자 mutation이 있었음을 유지하는지 검증합니다.
+    /// - 검증 내용: attachment add/remove 성공과 marker 영구 제거
+    /// - 사전 조건: untouched prepared transient session이 있다.
+    /// - 기대 결과: attachment 제거 후 빈 상태에서도 untouched query는 false이다.
+    func testPreparedTransientMarkerStaysInvalidAfterAttachmentAddThenRemove() async throws {
+        let attachmentURL = URL(filePath: "/tmp/Transient.txt")
+        let store = TestStore(initialState: AiChatFeature.State(mode: .sessions)) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+        }
+        // store.exhaustivity = .off: attachment mutation 뒤 provenance 상태만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.prepareUnpersistedNewChat)
+        XCTAssertTrue(store.state.isUntouchedPreparedTransientNewChat)
+
+        await store.send(.attachmentPickerSelection([attachmentURL]))
+        let attachmentID = try XCTUnwrap(store.state.addedAttachments.first?.id)
+        XCTAssertNil(store.state.preparedTransientSessionID)
+
+        await store.send(.removeAddedAttachment(attachmentID))
+
+        XCTAssertTrue(store.state.addedAttachments.isEmpty)
+        XCTAssertNil(store.state.preparedTransientSessionID)
+        XCTAssertFalse(store.state.isUntouchedPreparedTransientNewChat)
+    }
+
+    /// CBW-005-start_chat_conversation_session: thinking과 folder mode 변경도 transient provenance를 무효화한다.
+    /// draft text 외 사용자 설정 mutation이 untouched identity에 포함되는지 검증합니다.
+    /// - 검증 내용: thinking 선택과 current-context folder mode 변경의 marker 제거
+    /// - 사전 조건: 각 prepared transient state에 model 또는 folder context가 준비되어 있다.
+    /// - 기대 결과: 두 mutation 모두 marker를 nil로 만든다.
+    func testPreparedTransientMarkerInvalidatesAfterThinkingAndFolderModeChanges() async {
+        let catalogRows = makeCatalogRows()
+        let thinkingSessionID = makeCBW005SessionID("00000000-0000-0000-0000-000000000075")
+        let thinkingStore = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: thinkingSessionID,
+            preparedTransientSessionID: thinkingSessionID,
+            catalogRows: catalogRows,
+            modelListState: .loaded(makeProviderModels()),
+            selectedModelHandle: catalogRows[0].handle,
+        )) {
+            AiChatFeature()
+        }
+        // store.exhaustivity = .off: thinking mutation 뒤 provenance 상태만 선별 검증합니다.
+        thinkingStore.exhaustivity = .off(showSkippedAssertions: false)
+
+        XCTAssertTrue(thinkingStore.state.isUntouchedPreparedTransientNewChat)
+        await thinkingStore.send(.selectedThinkingChanged(.effort(.minimal)))
+        XCTAssertNil(thinkingStore.state.preparedTransientSessionID)
+
+        let folderPath = "/tmp/Projects"
+        let folderSessionID = makeCBW005SessionID("00000000-0000-0000-0000-000000000076")
+        let folderContext = makeContextSnapshot(
+            references: [AiChatContextReference(
+                kind: .folder,
+                identifier: folderPath,
+                title: "Projects",
+                subtitle: folderPath,
+                metadata: ["path": folderPath],
+            )],
+            items: [],
+            attachments: [],
+        )
+        let folderStore = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: folderSessionID,
+            preparedTransientSessionID: folderSessionID,
+            currentContext: folderContext,
+        )) {
+            AiChatFeature()
+        }
+        // store.exhaustivity = .off: folder mode mutation 뒤 provenance 상태만 선별 검증합니다.
+        folderStore.exhaustivity = .off(showSkippedAssertions: false)
+
+        XCTAssertTrue(folderStore.state.isUntouchedPreparedTransientNewChat)
+        await folderStore.send(.folderStructureModeChanged(.currentContext, .includeSubfolders))
+        XCTAssertNil(folderStore.state.preparedTransientSessionID)
+    }
+
+    /// CBW-005-start_chat_conversation_session: fresh context를 적용하는 transient New Chat은 stale draft state를 먼저 비운다.
+    /// 이전 attachment와 folder mode가 새 FileManager context를 필터링하거나 변형하지 않는지 검증합니다.
+    /// - 검증 내용: overlapping item/reference 보존, stale attachment/mode 제거, 기본 folder mode 파생, save/delete 미호출
+    /// - 사전 조건: stale attachment가 fresh item 경로와 겹치고 이전 folder mode가 남아 있다.
+    /// - 기대 결과: fresh context 전체가 새 transient chat에 적용되고 persistence에는 기록이 생기지 않는다.
+    func testPrepareUnpersistedNewChatWithContextClearsStaleDraftStateBeforeApplyingContext() async {
+        let selectedPath = "/tmp/Selected.md"
+        let freshFolderPath = "/tmp/FreshFolder"
+        let staleFolderKey = makeNavigationFolderKey("/tmp/StaleFolder")
+        let freshFolderKey = makeNavigationFolderKey(freshFolderPath)
+        let freshContext = makeContextSnapshot(
+            summary: "Fresh context",
+            references: [AiChatContextReference(
+                kind: .folder,
+                identifier: freshFolderPath,
+                title: "FreshFolder",
+                subtitle: freshFolderPath,
+                metadata: ["path": freshFolderPath],
+            )],
+            items: [AiChatContextItem(
+                kind: .file,
+                identifier: selectedPath,
+                title: "Selected.md",
+                subtitle: selectedPath,
+                metadata: ["path": selectedPath],
+            )],
+            attachments: [],
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let deletedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            currentContextFolderStructureModes: [staleFolderKey: .includeSubfolders],
+            addedAttachments: [makeNavigationAttachment(path: selectedPath)],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
+                },
+                deleteSession: { sessionID in
+                    deletedSessionIDs.withValue { $0.append(sessionID) }
+                },
+            )
+        }
+        // store.exhaustivity = .off: reset된 전체 chat state 대신 context 원자성과 persistence 경계만 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.prepareUnpersistedNewChatWithContext(freshContext))
+
+        XCTAssertEqual(store.state.mode, .chat)
+        XCTAssertEqual(store.state.preparedTransientSessionID, store.state.sessionID)
+        XCTAssertTrue(store.state.isUntouchedPreparedTransientNewChat)
+        XCTAssertTrue(store.state.addedAttachments.isEmpty)
+        XCTAssertEqual(store.state.currentContext.summary, "Fresh context")
+        XCTAssertEqual(store.state.currentContext.items.map(\.identifier), [selectedPath])
+        XCTAssertEqual(store.state.currentContext.references.map(\.identifier), [freshFolderPath])
+        XCTAssertNil(store.state.currentContextFolderStructureModes[staleFolderKey])
+        XCTAssertEqual(store.state.currentContextFolderStructureModes, [freshFolderKey: .currentFolderOnly])
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+        XCTAssertTrue(deletedSessionIDs.value.isEmpty)
+    }
+
     // MARK: - CBW-005-continue_chat_conversation_session
 
     /// CBW-005-continue_chat_conversation_session: Sessions로 돌아가도 active chat data는 유지된다.
@@ -492,7 +879,6 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         }
 
         await store.send(.sessionsAppeared) { state in
-            state.mode = .sessions
             state.sessionList.isLoading = true
             state.sessionList.errorMessage = nil
         }
@@ -4542,7 +4928,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         let displayModel = AiChatSessionsDisplayModel(rows: [], now: makeFixedDate(milliseconds: 1_700_000_000_000))
 
         XCTAssertTrue(displayModel.isEmpty)
-        XCTAssertEqual(displayModel.title, "Sessions")
+        XCTAssertEqual(displayModel.title, "Chat History")
         XCTAssertEqual(displayModel.newChatTitle, "New Chat")
         XCTAssertEqual(displayModel.searchPlaceholder, "Search")
         XCTAssertEqual(displayModel.emptyTitle, "No sessions yet")
@@ -4755,8 +5141,10 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             state.sessionList.errorMessage = nil
         }
 
-        await store.send(.sessionsAppeared) { state in
+        await store.send(.backToSessionsTapped) { state in
             state.mode = .sessions
+        }
+        await store.send(.sessionsAppeared) { state in
             state.sessionList.isLoading = true
             state.sessionList.errorMessage = nil
         }
@@ -4767,9 +5155,6 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             state.sessionList.errorMessage = nil
         }
 
-        await store.send(.backToSessionsTapped) { state in
-            state.mode = .sessions
-        }
         XCTAssertEqual(store.state.executionPhase, .processing(lock))
 
         await store.send(.sessionRowTapped(sessionID)) { state in

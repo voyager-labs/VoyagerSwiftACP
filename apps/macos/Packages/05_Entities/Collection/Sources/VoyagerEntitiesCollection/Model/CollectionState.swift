@@ -187,6 +187,18 @@ public extension CollectionState {
         )
     }
 
+    mutating func prepareOpenTransition(
+        at url: URL,
+        reopenContext: CollectionContext?,
+        isAlreadyStale: Bool,
+    ) {
+        collectionSession.captureReopenContext(reopenContext)
+        collectionSession.prepareForOpeningCollection(at: url)
+        if isAlreadyStale {
+            collectionSession.markInvalidatedLocally()
+        }
+    }
+
     mutating func makeOpenRestorationPayload(
         file: VoyagerCollectionFile,
         resolved: AppliedFiltersUtils.ResolutionResult,

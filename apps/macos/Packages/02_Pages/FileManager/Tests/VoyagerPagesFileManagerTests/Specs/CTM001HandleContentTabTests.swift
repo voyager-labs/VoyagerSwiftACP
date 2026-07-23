@@ -1503,6 +1503,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 )
             }
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
             $0.continuousClock = ImmediateClock()
         }
         // 비포괄적: picker/load/open flow가 여러 child action을 방출하므로
@@ -1561,6 +1562,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             $0.collectionFileClient.load = { _ in throw TestError.loadFailed }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
         }
         // 비포괄적: 실패 경로의 alert/rollback child action보다 tab anchor 보존을 검증한다.
         store.exhaustivity = .off
@@ -1614,6 +1616,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             $0.searchClient.search = { _ in throw TestError.searchFailed }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
             $0.continuousClock = ImmediateClock()
         }
         // 비포괄적: 검색 실패 alert/rollback 세부 action보다 tab anchor 보존을 검증한다.
@@ -1912,8 +1915,6 @@ final class CTM001HandleContentTabTests: XCTestCase {
     /// - 기대 결과: 기존 metadata는 유지되고 모든 snapshot이 생성되며 regular-file pending selection은 active load 전에 존재한다.
     func testExternalTabReservation_appliesOrderedSnapshotsAtomically() async throws {
         let scenario = try ExternalTabReservationTestFixture.makeAtomicScenario()
-        var stagedState = scenario.initialState
-        XCTAssertTrue(stagedState.reserveExternalContentTabs(scenario.reservations))
         let store = TestStore(initialState: scenario.initialState) {
             FileManagerFeature()
         } withDependencies: {
@@ -1926,9 +1927,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // store.exhaustivity = .off: append 이후 canonical handoff의 navigation child action은 별도 owner가 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.reserveExternalContentTabs(scenario.reservations)) {
-            $0 = stagedState
-        }
+        await store.send(.reserveExternalContentTabs(scenario.reservations))
         await store.receive(\.contentTabs.setCurrent, scenario.fileID)
         await store.skipReceivedActions()
         await store.finish()
@@ -2010,6 +2009,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 throw TestError.loadFailed
             }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+            $0.uuid = .incrementing
             $0.entryLoadingClient.loadItems = { _, _ in
                 directoryLoads.withValue { $0 += 1 }
                 return []

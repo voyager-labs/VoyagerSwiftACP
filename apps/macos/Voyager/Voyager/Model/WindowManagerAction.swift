@@ -379,7 +379,8 @@ enum WindowManagerAction: CasePathable {
         case requestUndo
         case requestRedo
         case toggleComposer
-        case openContextualAiChat
+        case newChat
+        case showChatHistory
         case cut
         case copy
         case paste

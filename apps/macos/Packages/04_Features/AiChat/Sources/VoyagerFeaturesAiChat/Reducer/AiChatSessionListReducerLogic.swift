@@ -55,7 +55,26 @@ extension AiChatFeature {
         )
     }
 
-    func saveNewChat(_ snapshot: AiChatSessionSnapshot) -> Effect<Action> {
+    func prepareUnpersistedNewChat(
+        currentContext: AiChatCurrentContextSnapshot?,
+        state: inout State,
+    ) -> Effect<Action> {
+        movePendingRequestStartToBackgroundIfNeeded(state: &state, targetSessionID: nil)
+        let preservedExecutionPhase = state.executionPhase
+        let snapshot = startNewUnselectedChat(state: &state)
+        state.emptyDraftSessionID = nil
+        state.preparedTransientSessionID = snapshot.sessionID
+        if let currentContext {
+            applyCurrentContextSnapshot(currentContext, state: &state)
+        }
+        preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
+        return .cancel(id: CancelID.newChat(ownerID: state.cancellationOwnerID))
+    }
+
+    func saveNewChat(
+        _ snapshot: AiChatSessionSnapshot,
+        ownerID: UUID,
+    ) -> Effect<Action> {
         .run { [aiChatSessionPersistenceClient] send in
             do {
                 let persistedSnapshot = try await aiChatSessionPersistenceClient.saveSession(snapshot)
@@ -66,31 +85,25 @@ extension AiChatFeature {
                 await send(.newChatFailed(Self.newChatFailureMessage(for: error)))
             }
         }
-        .cancellable(id: CancelID.newChat, cancelInFlight: true)
+        .cancellable(id: CancelID.newChat(ownerID: ownerID), cancelInFlight: true)
     }
 
     func routeToChatSession(_ sessionID: AiChatSessionID, state: inout State) -> Effect<Action> {
-        state.sessionList.cancelRenaming()
-        state.sessionList.errorMessage = nil
-
-        if state.sessionID == sessionID {
-            if let restoreSessionID = state.restoreSessionID, restoreSessionID != sessionID {
-                state.restoreSessionID = nil
-                if state.sessionList.selectedSessionID == restoreSessionID {
-                    state.sessionList.selectedSessionID = nil
-                }
-            }
-            state.restoreOutcome = nil
-            state.restoreFailure = nil
-            if let promotedExecutionPhase = promotedNavigationExecutionPhase(for: sessionID, state: &state) {
-                state.executionPhase = promotedExecutionPhase
-            }
-            state.mode = .chat
+        if state.prepareChatPresentation(for: sessionID) {
             return .cancel(id: CancelID.restore)
         }
 
+        state.sessionList.cancelRenaming()
+        state.sessionList.errorMessage = nil
+
         if state.restoreSessionID == sessionID {
             return .none
+        }
+
+        if state.beginDeferredChatSessionRestore(for: sessionID) {
+            moveVisibleProcessingToBackgroundIfNeeded(state: &state, targetSessionID: sessionID)
+            state.currentContextFolderStructureModes = [:]
+            return restoreSession(sessionID: sessionID, state: state)
         }
 
         if state.sessionList.allRows.contains(where: { $0.sessionID == sessionID }) {
@@ -115,6 +128,7 @@ extension AiChatFeature {
         selectedSessionID: AiChatSessionID?,
         state: inout State,
     ) {
+        state.invalidatePreparedTransientSession()
         state.sessionID = sessionID
         state.emptyDraftSessionID = sessionID
         state.sessionStatus = .idle
@@ -452,6 +466,7 @@ extension AiChatFeature {
     }
 
     func applyNewChatCreated(snapshot: AiChatSessionSnapshot, state: inout State) {
+        state.invalidatePreparedTransientSession()
         applyNewSessionSnapshot(snapshot, state: &state)
         state.emptyDraftSessionID = snapshot.sessionID
         state.restoreSessionID = snapshot.sessionID
