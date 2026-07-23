@@ -21,10 +21,11 @@ struct EditMenuCommands: Commands {
     }
 
     var body: some Commands {
+        let textResponderIsEditing = isTextEditingResponder()
         let canUndoResponder = canUndoInTextResponder()
         let canRedoResponder = canRedoInTextResponder()
-        let canUndo = canUndoResponder || viewStore.canUndo
-        let canRedo = canRedoResponder || viewStore.canRedo
+        let canUndo = textResponderIsEditing ? canUndoResponder : viewStore.canUndo
+        let canRedo = textResponderIsEditing ? canRedoResponder : viewStore.canRedo
 
         let selectedCount = viewStore.selectedItemCount
         let hasSelectedItems = selectedCount > 0
@@ -51,7 +52,7 @@ struct EditMenuCommands: Commands {
         CommandGroup(replacing: .undoRedo) {
             Button("Undo") {
                 sendUndoRedoAction(
-                    canHandleByTextResponder: canUndoInTextResponder(),
+                    textResponderIsEditing: isTextEditingResponder(),
                     selector: undoSelector,
                     fallback: .requestUndo,
                 )
@@ -61,7 +62,7 @@ struct EditMenuCommands: Commands {
 
             Button("Redo") {
                 sendUndoRedoAction(
-                    canHandleByTextResponder: canRedoInTextResponder(),
+                    textResponderIsEditing: isTextEditingResponder(),
                     selector: redoSelector,
                     fallback: .requestRedo,
                 )
@@ -186,16 +187,16 @@ struct EditMenuCommands: Commands {
     }
 
     private func sendUndoRedoAction(
-        canHandleByTextResponder: Bool,
+        textResponderIsEditing: Bool,
         selector: Selector,
         fallback command: MenuCommandItem.EditCommand,
     ) {
-        if canHandleByTextResponder,
-           NSApp.sendAction(selector, to: nil, from: nil)
-        {
+        if textResponderIsEditing {
+            _ = NSApp.sendAction(selector, to: nil, from: nil)
             return
         }
 
+        guard !viewStore.isComposerPresented else { return }
         sendEditCommand(command)
     }
 }
