@@ -26,6 +26,10 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case contentTabs(ContentTabAction)
     case applyAppPreferences(AppPreferencesState)
     case applyPinnedContentTabs(ContentTabState)
+    case applyPinnedContentTabRuntimeNavigation(
+        tabID: ContentTabID,
+        navigationState: ContentPageNavigationRoute,
+    )
     case applyHiddenFixedLocationIDs(Set<FileManagerFixedLocationItem.ID>)
     case aiConnectionsFileUpdated(AIConnectionsFile)
     case reserveExternalContentTabs([ExternalContentTabReservation])
@@ -99,5 +103,9 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case openAISettings
         case requestAttachmentPicker
         case fixedLocationVisibilityChanged(Set<FileManagerFixedLocationItem.ID>)
+        case pinnedContentTabRuntimeNavigationChanged(
+            tabID: ContentTabID,
+            navigationState: ContentPageNavigationRoute,
+        )
     }
 }

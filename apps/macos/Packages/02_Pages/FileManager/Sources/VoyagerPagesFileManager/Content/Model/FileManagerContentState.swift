@@ -51,6 +51,13 @@ public struct FileManagerContentState: Equatable {
         syncComposerCollectionState()
     }
 
+    mutating func resetComposerAndClearCollectionMode() {
+        entryViewLayout.clearCollectionPresentation()
+        collection.resetSession()
+        navigation.pendingNavigation = nil
+        resetComposer()
+    }
+
     var openedCollectionURL: URL? {
         if let url = collection.collectionSession.document?.url {
             return url
@@ -67,8 +74,13 @@ public struct FileManagerContentState: Equatable {
         openedCollectionURL != nil
     }
 
-    public var canSaveCollection: Bool {
+    var hasUnsavedCollectionChanges: Bool {
         collection.canSave(isCollectionMode: isCollectionMode)
+    }
+
+    public var canSaveCollection: Bool {
+        !entryViewLayout.isCollectionContentLoading
+            && hasUnsavedCollectionChanges
     }
 
     var isOpenedCollectionDirty: Bool {

@@ -37,6 +37,7 @@ public struct FileManagerWindowState: Equatable {
     public var contentTabs: ContentTabState
     public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
     public var pendingContentTabClose: PendingContentTabClose?
+    public var pendingCollectionOpenRequest: ContentPageCollectionOpenRequest?
     var pendingAiChatInspectorOpen: FileManagerPendingAiChatInspectorOpen?
     var fixedLocationsLoadPhase: FileManagerFixedLocationsLoadPhase = .idle
     var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
@@ -52,6 +53,7 @@ public struct FileManagerWindowState: Equatable {
         backgroundInspectorAiChatStates = [:]
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
+        pendingCollectionOpenRequest = nil
         pendingAiChatInspectorOpen = nil
         if let activeTabID = contentTabs.activeTabID {
             tabContentStates[activeTabID] = content
@@ -175,6 +177,7 @@ public struct FileManagerWindowState: Equatable {
         contentTabs = externalContentTabs
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
+        pendingCollectionOpenRequest = nil
         fixedLocationsLoadPhase = .idle
         homeFavoriteItems = []
     }
@@ -485,56 +488,35 @@ extension FileManagerWindowState {
         let restoredPinnedTabs = restoredPinnedState.tabs.filter(\.isPinned)
         let restoredTabIDs = Set(restoredPinnedTabs.map(\.id))
         let currentPinnedTabs = contentTabs.tabs.filter(\.isPinned)
-        let pendingPinnedTabs = currentPinnedTabs.filter {
-            contentTabs.pendingPinnedRecordIDs.contains($0.id) && !restoredTabIDs.contains($0.id)
-        }
-        let mergedPinnedTabs = restoredPinnedTabs + pendingPinnedTabs
+        let currentPinnedTabsByID = Dictionary(uniqueKeysWithValues: currentPinnedTabs.map { ($0.id, $0) })
+        let pendingPinnedIDs = contentTabs.pendingPinnedRecordIDs
+        let synchronizedPinnedTabs = restoredPinnedTabs
+            .filter { !pendingPinnedIDs.contains($0.id) }
+            .map { currentPinnedTabsByID[$0.id] ?? $0 }
+        let pendingPinnedTabs = currentPinnedTabs.filter { pendingPinnedIDs.contains($0.id) }
+        let mergedPinnedTabs = synchronizedPinnedTabs + pendingPinnedTabs
         let mergedPinnedIDs = Set(mergedPinnedTabs.map(\.id))
         let currentUnpinnedTabs = contentTabs.tabs.filter { !$0.isPinned && !mergedPinnedIDs.contains($0.id) }
         let currentPinnedIDs = Set(currentPinnedTabs.map(\.id))
-        let previousPinnedAnchors = Dictionary(uniqueKeysWithValues: currentPinnedTabs.map { ($0.id, $0.anchor) })
-        let activeTabIDBeforeSync = contentTabs.activeTabID
 
-        let pendingPinnedIDs = Set(pendingPinnedTabs.map(\.id))
-        let pendingPinnedRecords = contentTabs.pinnedRecords.filter { pendingPinnedIDs.contains($0.key) }
+        let retainedPendingPinnedIDs = Set(pendingPinnedTabs.map(\.id))
+        let pendingPinnedRecords = contentTabs.pinnedRecords.filter { retainedPendingPinnedIDs.contains($0.key) }
 
         contentTabs.tabs = IdentifiedArrayOf(uniqueElements: mergedPinnedTabs + currentUnpinnedTabs)
         contentTabs.pinnedRecords = restoredPinnedState.pinnedRecords
-            .merging(pendingPinnedRecords) { restored, _ in restored }
-        contentTabs.pendingPinnedRecordIDs = pendingPinnedIDs
+            .merging(pendingPinnedRecords) { _, pending in pending }
+        contentTabs.pendingPinnedRecordIDs = retainedPendingPinnedIDs
         contentTabs.previousActiveTabID = nil
 
         for removedID in currentPinnedIDs.subtracting(restoredTabIDs) where contentTabs.tabs[id: removedID] == nil {
             tabContentStates[removedID] = nil
             tabInspectorStates[removedID] = nil
         }
-        let changedPinnedTabIDs = Set(
-            restoredPinnedTabs.compactMap { tab in
-                previousPinnedAnchors[tab.id].map { $0 != tab.anchor } == true ? tab.id : nil
-            },
-        )
-        for changedID in changedPinnedTabIDs {
-            tabContentStates[changedID] = nil
-            tabInspectorStates[changedID] = nil
-        }
-
         if contentTabs.tabs.isEmpty {
             contentTabs = .withHomeTab()
             restoreContentStateForActiveTab()
             restoreInspectorStateForActiveTab()
-        } else if let activeTabID = contentTabs.activeTabID,
-                  let activeTab = contentTabs.tabs[id: activeTabID]
-        {
-            let activePinnedAnchorDidChange = activeTab.isPinned
-                && activeTabID == activeTabIDBeforeSync
-                && changedPinnedTabIDs.contains(activeTabID)
-            if activePinnedAnchorDidChange {
-                tabContentStates[activeTabID] = nil
-                tabInspectorStates[activeTabID] = nil
-                restoreContentStateForActiveTab()
-                restoreInspectorStateForActiveTab()
-            }
-        } else {
+        } else if contentTabs.activeTabID.flatMap({ contentTabs.tabs[id: $0] }) == nil {
             contentTabs.activeTabID = mergedPinnedTabs.first?.id ?? currentUnpinnedTabs.first?.id
             restoreContentStateForActiveTab()
             restoreInspectorStateForActiveTab()

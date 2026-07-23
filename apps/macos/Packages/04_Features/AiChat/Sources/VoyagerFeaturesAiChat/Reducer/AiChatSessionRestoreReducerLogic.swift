@@ -235,29 +235,7 @@ extension AiChatFeature {
         for sessionID: AiChatSessionID,
         state: inout State,
     ) -> AiChatExecutionPhase? {
-        switch state.executionPhase {
-        case let .processing(lock) where lock.context.sessionID == sessionID:
-            return .processing(lock)
-        case let .completed(lock) where lock.context.sessionID == sessionID:
-            return .completed(lock)
-        case let .failed(lock, failure) where lock.context.sessionID == sessionID:
-            return .failed(lock, failure)
-        case let .cancelled(lock) where lock.context.sessionID == sessionID:
-            return .cancelled(lock)
-        case let .persistenceRecovery(lock, failure) where lock.context.sessionID == sessionID:
-            return .persistenceRecovery(lock, failure)
-        default:
-            break
-        }
-
-        guard let match = state.backgroundExecutionPhases
-            .filter({ _, phase in phase.lock?.context.sessionID == sessionID })
-            .max(by: { lhs, rhs in
-                lhs.value.navigationPromotionPriority < rhs.value.navigationPromotionPriority
-            })
-        else { return nil }
-        state.backgroundExecutionPhases[match.key] = nil
-        return match.value
+        state.takePromotedNavigationExecutionPhase(for: sessionID)
     }
 
     func applyNewSessionSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
@@ -386,7 +364,7 @@ struct AiChatRestoreContext {
     var selectedThinking: AiThinkingSelection?
 }
 
-private extension AiChatExecutionPhase {
+extension AiChatExecutionPhase {
     var navigationPromotionPriority: Int {
         switch self {
         case .processing:

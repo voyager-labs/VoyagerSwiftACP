@@ -228,7 +228,7 @@ extension ContentTabFeature {
                     try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
                     return upsertPinnedRecord(pinnedRecord, in: existingStore)
                 }
-                await send(.pinnedRecordSaveSucceeded)
+                await send(.pinnedRecordSaveSucceeded(id))
             } catch is CancellationError {
                 return
             } catch {
@@ -263,7 +263,7 @@ extension ContentTabFeature {
                     try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
                     return removePinnedRecord(id: recordID, from: existingStore)
                 }
-                await send(.pinnedRecordSaveSucceeded)
+                await send(.pinnedRecordSaveSucceeded(id))
             } catch is CancellationError {
                 return
             } catch {
@@ -277,58 +277,18 @@ extension ContentTabFeature {
         .cancellable(id: PinnedRecordPersistenceCancelID(tabID: id), cancelInFlight: true)
     }
 
-    private func updateActivePageAnchor(id: ContentTabID, newAnchor: ContentTabPageAnchor,
-                                        state: inout ContentTabState) -> Effect<ContentTabAction>
-    {
+    private func updateActivePageAnchor(
+        id: ContentTabID,
+        newAnchor: ContentTabPageAnchor,
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
         state.previousActiveTabID = nil
-        guard let tab = state.tabs[id: id] else { return .none }
+        guard state.tabs[id: id] != nil else { return .none }
         state.tabs[id: id]?.anchor = newAnchor
         state.tabs[id: id]?.page = page(for: newAnchor)
         state.tabs[id: id]?.title = title(for: newAnchor)
         state.tabs[id: id]?.iconName = iconName(for: newAnchor)
-
-        guard tab.isPinned else { return .none }
-
-        let updatedRecord = ContentTabPinnedRecord(
-            id: id.rawValue,
-            page: page(for: newAnchor),
-            anchor: newAnchor,
-            title: title(for: newAnchor),
-            iconName: iconName(for: newAnchor),
-            pinnedAt: date(),
-        )
-        guard updatedRecord.isPageAnchorCompatible else {
-            state.pinnedRecordPersistenceError = nil
-            return .none
-        }
-
-        let previousPinnedRecord = state.pinnedRecords[id]
-        state.pinnedRecords[id] = updatedRecord
-        state.pendingPinnedRecordIDs.insert(id)
-        state.pinnedRecordPersistenceError = nil
-
-        let intentID = PinnedRecordPersistenceIntent.markLatest(tabID: id)
-        let client = contentTabPinnedRecordClient
-        let defaults = userDefaultsClient
-        return .run { send in
-            do {
-                try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
-                try client.updateStore(defaults) { existingStore in
-                    try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
-                    return upsertPinnedRecord(updatedRecord, in: existingStore)
-                }
-                await send(.pinnedRecordSaveSucceeded)
-            } catch is CancellationError {
-                return
-            } catch {
-                await send(.pinnedRecordSaveFailed(
-                    tabID: id,
-                    previousIsPinned: true,
-                    previousPinnedRecord: previousPinnedRecord,
-                ))
-            }
-        }
-        .cancellable(id: PinnedRecordPersistenceCancelID(tabID: id), cancelInFlight: true)
+        return .none
     }
 }
 

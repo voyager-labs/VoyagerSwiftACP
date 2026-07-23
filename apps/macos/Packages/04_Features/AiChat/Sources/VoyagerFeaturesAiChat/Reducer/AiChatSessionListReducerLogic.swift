@@ -89,27 +89,21 @@ extension AiChatFeature {
     }
 
     func routeToChatSession(_ sessionID: AiChatSessionID, state: inout State) -> Effect<Action> {
-        state.sessionList.cancelRenaming()
-        state.sessionList.errorMessage = nil
-
-        if state.sessionID == sessionID {
-            if let restoreSessionID = state.restoreSessionID, restoreSessionID != sessionID {
-                state.restoreSessionID = nil
-                if state.sessionList.selectedSessionID == restoreSessionID {
-                    state.sessionList.selectedSessionID = nil
-                }
-            }
-            state.restoreOutcome = nil
-            state.restoreFailure = nil
-            if let promotedExecutionPhase = promotedNavigationExecutionPhase(for: sessionID, state: &state) {
-                state.executionPhase = promotedExecutionPhase
-            }
-            state.mode = .chat
+        if state.prepareChatPresentation(for: sessionID) {
             return .cancel(id: CancelID.restore)
         }
 
+        state.sessionList.cancelRenaming()
+        state.sessionList.errorMessage = nil
+
         if state.restoreSessionID == sessionID {
             return .none
+        }
+
+        if state.beginDeferredChatSessionRestore(for: sessionID) {
+            moveVisibleProcessingToBackgroundIfNeeded(state: &state, targetSessionID: sessionID)
+            state.currentContextFolderStructureModes = [:]
+            return restoreSession(sessionID: sessionID, state: state)
         }
 
         if state.sessionList.allRows.contains(where: { $0.sessionID == sessionID }) {

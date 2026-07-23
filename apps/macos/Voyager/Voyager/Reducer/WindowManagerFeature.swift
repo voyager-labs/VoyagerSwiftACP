@@ -66,6 +66,41 @@ struct WindowManagerFeature {
     @Dependency(\.uuid)
     private var uuid
 
+    private func pendingRepinPeerRuntimeNavigationEffect(
+        sourceWindowID: UUID,
+        tabID: ContentTabID,
+        state: State,
+    ) -> Effect<Action> {
+        guard let sourceWindow = state.windows[id: sourceWindowID],
+              sourceWindow.window.contentTabs.pendingPinnedRecordIDs.contains(tabID),
+              sourceWindow.window.contentTabs.tabs[id: tabID]?.isPinned == true
+        else { return .none }
+
+        let eligiblePeers = state.windows.filter { windowSession in
+            windowSession.id != sourceWindowID
+                && windowSession.window.contentTabs.tabs[id: tabID]?.isPinned == true
+                && !windowSession.window.contentTabs.pendingPinnedRecordIDs.contains(tabID)
+        }
+        let peerRoutes = eligiblePeers.map { windowSession -> ContentPageNavigationRoute? in
+            if windowSession.window.contentTabs.activeTabID == tabID {
+                return windowSession.window.content.navigation.navigationState
+            }
+            return windowSession.window.tabContentStates[tabID]?.navigation.navigationState
+        }
+        guard let firstPeerRoute = peerRoutes.first,
+              let peerRoute = firstPeerRoute,
+              peerRoutes.dropFirst().allSatisfy({ $0 == Optional(peerRoute) })
+        else { return .none }
+
+        return .send(.windows(.element(
+            id: sourceWindowID,
+            action: .window(.applyPinnedContentTabRuntimeNavigation(
+                tabID: tabID,
+                navigationState: peerRoute,
+            )),
+        )))
+    }
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -317,8 +352,44 @@ struct WindowManagerFeature {
                         },
                 )
 
-            case .windows(.element(id: _, action: .window(.contentTabs(.pinnedRecordSaveSucceeded)))):
-                return .send(.pinnedContentTabsStoreChanged)
+            case let .windows(.element(
+                id: sourceWindowID,
+                action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(
+                    tabID: tabID,
+                    navigationState: navigationState,
+                ))),
+            )):
+                return .merge(
+                    state.windows
+                        .filter { windowSession in
+                            windowSession.id != sourceWindowID
+                                && windowSession.window.contentTabs.tabs[id: tabID]?.isPinned == true
+                        }
+                        .map { windowSession in
+                            .send(.windows(.element(
+                                id: windowSession.id,
+                                action: .window(.applyPinnedContentTabRuntimeNavigation(
+                                    tabID: tabID,
+                                    navigationState: navigationState,
+                                )),
+                            )))
+                        },
+                )
+
+            case let .windows(.element(
+                id: sourceWindowID,
+                action: .window(.contentTabs(.pinnedRecordSaveSucceeded(tabID))),
+            )):
+                let reconciliationEffect = pendingRepinPeerRuntimeNavigationEffect(
+                    sourceWindowID: sourceWindowID,
+                    tabID: tabID,
+                    state: state,
+                )
+                state.windows[id: sourceWindowID]?.window.contentTabs.pendingPinnedRecordIDs.remove(tabID)
+                return .concatenate(
+                    .send(.pinnedContentTabsStoreChanged),
+                    reconciliationEffect,
+                )
 
             case .pinnedContentTabsStoreChanged:
                 let syncEffect = syncPinnedContentTabsAcrossWindows(state: &state)

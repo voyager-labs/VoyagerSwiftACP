@@ -105,18 +105,9 @@ public struct AiChatFeature {
                 return .cancel(id: CancelID.restore)
 
             case let .showSessionsForChat(sessionID):
-                state.sessionList.cancelRenaming()
-                state.sessionList.errorMessage = nil
-                state.restoreOutcome = nil
-                state.restoreFailure = nil
-                state.mode = .sessions
-                state.sessionID = sessionID
-                state.sessionList.selectedSessionID = sessionID
-                guard let restoreSessionID = state.restoreSessionID, restoreSessionID != sessionID else {
-                    return .none
-                }
-                state.restoreSessionID = nil
-                return .cancel(id: CancelID.restore)
+                return state.prepareSessionsPresentation(for: sessionID)
+                    ? .cancel(id: CancelID.restore)
+                    : .none
 
             case .returnToChatTapped:
                 if let restoreSessionID = state.restoreSessionID,

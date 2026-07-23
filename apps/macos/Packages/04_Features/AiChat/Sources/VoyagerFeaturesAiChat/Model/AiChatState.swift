@@ -192,6 +192,7 @@ public typealias AiChatCurrentContextFolderStructureModes = [
 public struct AiChatState: Equatable, Sendable {
     var cancellationOwnerID = UUID()
     public var restoreSessionID: AiChatSessionID?
+    public var deferredChatSessionRestoreID: AiChatSessionID?
     public var restoreOutcome: AiChatSessionRestoreResult?
     public var restoreFailure: AiChatSessionRestoreFailure?
     public var mode: AiChatMode
@@ -233,8 +234,111 @@ public struct AiChatState: Equatable, Sendable {
     public var availableModelsByProvider: [AiProvider: [AiProviderModel]]
     public var transcriptScrollOffsets: [AiChatSessionID: CGFloat]
 
+    /// 기존 session runtime을 보존한 채 Chat 표시 의미 상태만 준비한다.
+    @discardableResult
+    public mutating func prepareChatPresentation(for sessionID: AiChatSessionID) -> Bool {
+        guard self.sessionID == sessionID else { return false }
+
+        deferredChatSessionRestoreID = nil
+        sessionList.cancelRenaming()
+        sessionList.errorMessage = nil
+        if let restoreSessionID, restoreSessionID != sessionID {
+            self.restoreSessionID = nil
+            if sessionList.selectedSessionID == restoreSessionID {
+                sessionList.selectedSessionID = nil
+            }
+        }
+        restoreOutcome = nil
+        restoreFailure = nil
+        if let promotedExecutionPhase = takePromotedNavigationExecutionPhase(for: sessionID) {
+            executionPhase = promotedExecutionPhase
+        }
+        mode = .chat
+        return true
+    }
+
+    /// inactive cache에서 활성화 시 복원할 persisted Chat session 의도만 준비한다.
+    public mutating func prepareDeferredChatSessionRestore(for sessionID: AiChatSessionID) {
+        sessionList.cancelRenaming()
+        sessionList.errorMessage = nil
+        sessionList.selectedSessionID = sessionID
+        deferredChatSessionRestoreID = sessionID
+        restoreSessionID = nil
+        restoreOutcome = nil
+        restoreFailure = nil
+        mode = .sessions
+    }
+
+    /// 준비된 persisted Chat session 의도를 active restore lifecycle로 승격한다.
+    public mutating func beginDeferredChatSessionRestore(for sessionID: AiChatSessionID) -> Bool {
+        guard self.sessionID != sessionID,
+              restoreSessionID == nil,
+              emptyDraftSessionID != sessionID,
+              deferredChatSessionRestoreID == sessionID
+        else { return false }
+        deferredChatSessionRestoreID = nil
+        restoreSessionID = sessionID
+        sessionList.selectedSessionID = sessionID
+        restoreOutcome = nil
+        restoreFailure = nil
+        mode = .sessions
+        return true
+    }
+
+    mutating func takePromotedNavigationExecutionPhase(
+        for sessionID: AiChatSessionID,
+    ) -> AiChatExecutionPhase? {
+        switch executionPhase {
+        case let .processing(lock) where lock.context.sessionID == sessionID:
+            return .processing(lock)
+        case let .completed(lock) where lock.context.sessionID == sessionID:
+            return .completed(lock)
+        case let .failed(lock, failure) where lock.context.sessionID == sessionID:
+            return .failed(lock, failure)
+        case let .cancelled(lock) where lock.context.sessionID == sessionID:
+            return .cancelled(lock)
+        case let .persistenceRecovery(lock, failure) where lock.context.sessionID == sessionID:
+            return .persistenceRecovery(lock, failure)
+        default:
+            break
+        }
+
+        guard let match = backgroundExecutionPhases
+            .filter({ _, phase in phase.lock?.context.sessionID == sessionID })
+            .max(by: { lhs, rhs in
+                lhs.value.navigationPromotionPriority < rhs.value.navigationPromotionPriority
+            })
+        else { return nil }
+        backgroundExecutionPhases[match.key] = nil
+        return match.value
+    }
+
+    /// inactive cache에서 loaded runtime과 History route intent를 분리한다.
+    public mutating func prepareInactiveSessionsPresentation(for sessionID: AiChatSessionID) {
+        if self.sessionID == sessionID {
+            _ = prepareSessionsPresentation(for: sessionID)
+        } else {
+            prepareDeferredChatSessionRestore(for: sessionID)
+        }
+    }
+
+    public mutating func prepareSessionsPresentation(for sessionID: AiChatSessionID) -> Bool {
+        deferredChatSessionRestoreID = nil
+        sessionList.cancelRenaming()
+        sessionList.errorMessage = nil
+        restoreOutcome = nil
+        restoreFailure = nil
+        mode = .sessions
+        self.sessionID = sessionID
+        sessionList.selectedSessionID = sessionID
+        guard let restoreSessionID, restoreSessionID != sessionID else { return false }
+        self.restoreSessionID = nil
+        return true
+    }
+
     public init(
         restoreSessionID: AiChatSessionID? = nil,
+        deferredChatSessionRestoreID: AiChatSessionID? = nil,
         restoreOutcome: AiChatSessionRestoreResult? = nil,
         restoreFailure: AiChatSessionRestoreFailure? = nil,
         mode: AiChatMode = .sessions,
@@ -277,6 +381,7 @@ public struct AiChatState: Equatable, Sendable {
         transcriptScrollOffsets: [AiChatSessionID: CGFloat] = [:],
     ) {
         self.restoreSessionID = restoreSessionID
+        self.deferredChatSessionRestoreID = deferredChatSessionRestoreID
         self.restoreOutcome = restoreOutcome
         self.restoreFailure = restoreFailure
         self.mode = mode
