@@ -49,6 +49,60 @@ private actor DirectoryLoadSuspensionGate {
     }
 }
 
+private func makeCloseTestDirectoryTab(
+    id: ContentTabID,
+    path: String,
+    title: String,
+) -> ContentTabItem {
+    ContentTabItem(
+        id: id,
+        page: .directory,
+        anchor: .directory(path: path),
+        isPinned: false,
+        title: title,
+        iconName: "folder",
+    )
+}
+
+private func makeCloseTestHomeTab(id: ContentTabID) -> ContentTabItem {
+    ContentTabItem(
+        id: id,
+        page: .home,
+        anchor: .homeDefault,
+        isPinned: false,
+        title: "Home",
+        iconName: "house",
+    )
+}
+
+private func makeCloseTestDirectoryContent(path: String) -> FileManagerContentFeature.State {
+    var content = FileManagerContentFeature.State()
+    content.navigation.seedInitialFolderPath(path)
+    return content
+}
+
+private func makeCloseTestState(
+    tabs: [ContentTabItem],
+    activeTabID: ContentTabID,
+    previousActiveTabID: ContentTabID? = nil,
+    contentStates: [ContentTabID: FileManagerContentFeature.State],
+) -> FileManagerFeature.State {
+    guard let activeContent = contentStates[activeTabID] else {
+        preconditionFailure("Close test requires active content state")
+    }
+    var state = FileManagerFeature.State()
+    state.contentTabs = ContentTabState(
+        tabs: .init(uniqueElements: tabs),
+        activeTabID: activeTabID,
+        previousActiveTabID: previousActiveTabID,
+        recentlyClosed: nil,
+    )
+    state.content = activeContent
+    state.tabContentStates = contentStates
+    state.syncContentTabSidebarItems()
+    return state
+}
+
 private struct DirectoryLoadFailureRetryFixture {
     let homeID: ContentTabID
     let directoryID: ContentTabID
@@ -982,6 +1036,175 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertEqual(store.state.tabContentStates[homeID]?.navigation.currentPath, currentPath)
         XCTAssertEqual(store.state.tabContentStates[activeTabID]?.navigation.currentPath, restoredPath)
         await store.finish()
+    }
+
+    /// CTM-005-independent_content_tab_session: active tab close 시 닫힌 session의 load 취소
+    /// 탭 state 제거 전에 닫힌 active tab의 loading cancellation owner를 사용해 effect를 종료하는지 검증한다.
+    /// - 검증 내용: active tab load cancellation 1회와 fallback tab session 보존
+    /// - 사전 조건: active Directory load가 대기 중이고 fallback Home tab이 존재함
+    /// - 기대 결과: 닫힌 tab load만 취소되고 fallback tab이 active로 복원됨
+    func testActiveCloseCancelsClosedTabLoad() async {
+        let fallbackID = ContentTabID(rawValue: "fallback")
+        let activeID = ContentTabID(rawValue: "active")
+        let activePath = "/Users/test/Active"
+        let loadStarted = expectation(description: "active tab load started")
+        let loadCancelled = expectation(description: "active tab load cancelled")
+        let loadGate = AsyncStream<Void>.makeStream()
+        let cancellationCount = LockIsolated(0)
+        let state = makeCloseTestState(
+            tabs: [
+                makeCloseTestHomeTab(id: fallbackID),
+                makeCloseTestDirectoryTab(id: activeID, path: activePath, title: "Active"),
+            ],
+            activeTabID: activeID,
+            previousActiveTabID: fallbackID,
+            contentStates: [
+                fallbackID: FileManagerContentFeature.State(),
+                activeID: makeCloseTestDirectoryContent(path: activePath),
+            ],
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { _, _ in
+                loadStarted.fulfill()
+                return await withTaskCancellationHandler {
+                    for await _ in loadGate.stream {}
+                    return []
+                } onCancel: {
+                    cancellationCount.withValue { $0 += 1 }
+                    loadGate.continuation.finish()
+                    loadCancelled.fulfill()
+                }
+            }
+        }
+        // store.exhaustivity = .off: close 부수 action보다 닫힌 tab loading cancellation을 검증한다.
+        store.exhaustivity = .off
+
+        await store.sendTabContent(.entryViewLayout(.entryOperations(.loading(
+            .loadItems(path: activePath, showHidden: false),
+        ))))
+        await fulfillment(of: [loadStarted], timeout: 1)
+        await store.send(.contentTabs(.close(activeID)))
+        await fulfillment(of: [loadCancelled], timeout: 1)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(cancellationCount.value, 1)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, fallbackID)
+        XCTAssertNil(store.state.tabContentStates[activeID])
+    }
+
+    /// CTM-005-independent_content_tab_session: inactive tab close 시 닫힌 load 취소
+    /// 비활성 session 제거 전에 해당 loading owner의 effect를 종료하는지 검증한다.
+    /// - 검증 내용: inactive tab load cancellation 1회와 active session 보존
+    /// - 사전 조건: inactive Directory load가 대기 중이고 다른 Directory tab이 active임
+    /// - 기대 결과: 닫힌 inactive tab의 load와 state만 제거됨
+    func testInactiveCloseCancelsClosedTabLoad() async {
+        let activeID = ContentTabID(rawValue: "active")
+        let inactiveID = ContentTabID(rawValue: "inactive")
+        let inactivePath = "/Users/test/Inactive"
+        let loadStarted = expectation(description: "inactive tab load started")
+        let loadCancelled = expectation(description: "inactive tab load cancelled")
+        let loadGate = AsyncStream<Void>.makeStream()
+        let cancellationCount = LockIsolated(0)
+        let state = makeCloseTestState(
+            tabs: [
+                makeCloseTestDirectoryTab(id: activeID, path: "/Users/test/Active", title: "Active"),
+                makeCloseTestDirectoryTab(id: inactiveID, path: inactivePath, title: "Inactive"),
+            ],
+            activeTabID: activeID,
+            contentStates: [
+                activeID: makeCloseTestDirectoryContent(path: "/Users/test/Active"),
+                inactiveID: makeCloseTestDirectoryContent(path: inactivePath),
+            ],
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { _, _ in
+                loadStarted.fulfill()
+                return await withTaskCancellationHandler {
+                    for await _ in loadGate.stream {}
+                    return []
+                } onCancel: {
+                    cancellationCount.withValue { $0 += 1 }
+                    loadGate.continuation.finish()
+                    loadCancelled.fulfill()
+                }
+            }
+        }
+        // store.exhaustivity = .off: inactive close 부수 action보다 닫힌 tab loading cancellation을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.tabContent(
+            tabID: inactiveID,
+            action: .entryViewLayout(.entryOperations(.loading(
+                .loadItems(path: inactivePath, showHidden: false),
+            ))),
+        ))
+        await fulfillment(of: [loadStarted], timeout: 1)
+        await store.send(.contentTabs(.close(inactiveID)))
+        await fulfillment(of: [loadCancelled], timeout: 1)
+        await store.finish()
+
+        XCTAssertEqual(cancellationCount.value, 1)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertNil(store.state.tabContentStates[inactiveID])
+    }
+
+    /// CTM-005-independent_content_tab_session: inactive tab close 시 active load 보존
+    /// 닫힌 tab owner의 cancel effect가 같은 window의 active loading owner에 전파되지 않는지 검증한다.
+    /// - 검증 내용: inactive close 후 active cancellation 0회와 active load 정상 완료
+    /// - 사전 조건: active Directory load가 대기 중이고 별도 inactive tab이 존재함
+    /// - 기대 결과: active load와 session이 유지되고 inactive state만 제거됨
+    func testInactiveClosePreservesActiveTabLoad() async {
+        let activeID = ContentTabID(rawValue: "active")
+        let inactiveID = ContentTabID(rawValue: "inactive")
+        let activePath = "/Users/test/Active"
+        let loadStarted = expectation(description: "active tab load started")
+        let loadGate = AsyncStream<Void>.makeStream()
+        let cancellationCount = LockIsolated(0)
+        let state = makeCloseTestState(
+            tabs: [
+                makeCloseTestDirectoryTab(id: activeID, path: activePath, title: "Active"),
+                makeCloseTestDirectoryTab(
+                    id: inactiveID, path: "/Users/test/Inactive", title: "Inactive",
+                ),
+            ],
+            activeTabID: activeID,
+            contentStates: [
+                activeID: makeCloseTestDirectoryContent(path: activePath),
+                inactiveID: makeCloseTestDirectoryContent(path: "/Users/test/Inactive"),
+            ],
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { _, _ in
+                loadStarted.fulfill()
+                return await withTaskCancellationHandler {
+                    for await _ in loadGate.stream {}
+                    return []
+                } onCancel: {
+                    cancellationCount.withValue { $0 += 1 }
+                    loadGate.continuation.finish()
+                }
+            }
+        }
+        // store.exhaustivity = .off: inactive close 후 active loading effect 생존을 검증한다.
+        store.exhaustivity = .off
+
+        await store.sendTabContent(.entryViewLayout(.entryOperations(.loading(
+            .loadItems(path: activePath, showHidden: false),
+        ))))
+        await fulfillment(of: [loadStarted], timeout: 1)
+        await store.send(.contentTabs(.close(inactiveID)))
+        XCTAssertEqual(cancellationCount.value, 0)
+
+        loadGate.continuation.finish()
+        await store.skipReceivedActions()
+        await store.finish()
+        XCTAssertEqual(cancellationCount.value, 0)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertNil(store.state.tabContentStates[inactiveID])
     }
 
     /// CTM-005-independent_content_tab_session (VOY-578): active Directory close fallback은 snapshot 복원 후 reload함

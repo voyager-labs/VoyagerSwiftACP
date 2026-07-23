@@ -406,6 +406,15 @@ struct FileManagerWindowRoutingReducer {
                     nil
                 }
                 let shouldResyncContentNavigation = shouldRestorePreviousActiveTab
+                let closedTabLoadingCancellationEffect: Effect<Action> = if isActualRemoval {
+                    cancelLoadingEffectForClosedTab(
+                        tabID: tabID,
+                        wasActive: shouldRestorePreviousActiveTab,
+                        state: state,
+                    )
+                } else {
+                    .none
+                }
                 let aiChatLifecycleSessionIDs = aiChatLifecycleSessionIDsToPreserve(state.content.aiChat)
                 let isAiChatLifecyclePreservingTabClose = shouldResyncContentNavigation
                     && !aiChatLifecycleSessionIDs.isEmpty
@@ -462,6 +471,7 @@ struct FileManagerWindowRoutingReducer {
                     ),
                     closeInspectorForActiveAiChatEffect(state: state),
                     undoManagerLifecycleEffect,
+                    closedTabLoadingCancellationEffect,
                 )
                 return handoffEffect
 
@@ -952,6 +962,20 @@ private func clearInFlightComposerStateOnTabSwitch(state: inout ComposerFeature.
     state.activeFiltersRequestID = nil
     state.pendingSearchQuery = nil
     state.queryRenderPhase = .idle
+}
+
+private func cancelLoadingEffectForClosedTab(
+    tabID: ContentTabID,
+    wasActive: Bool,
+    state: FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    let closedContent = wasActive ? state.content : state.tabContentStates[tabID]
+    guard let closedContent else { return .none }
+    let entryOperations = closedContent.entryViewLayout.entryOperations
+    return .cancel(id: EntryOperationsLoadingCancelID.loadItems(
+        windowID: entryOperations.windowID,
+        ownerID: entryOperations.loadingCancellationOwnerID,
+    ))
 }
 
 private func activeTabHandoffEffect(
