@@ -42,10 +42,7 @@
   "sweetpad.build.xcodeWorkspacePath": "apps/macos/Voyager/Voyager.xcworkspace",
   "sweetpad.build.xcodebuildCommand": "scripts/dev/xcodebuild-branch-product.sh",
   "sweetpad.build.autoGenerateBuildServerConfig": false,
-  "sweetpad.build.derivedDataPath": "build/dev/DerivedData",
   "sweetpad.build.args": [
-    "-clonedSourcePackagesDirPath",
-    "build/dev/SourcePackages",
     "-skipPackagePluginValidation",
     "-skipMacroValidation"
   ],

@@ -50,6 +50,16 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         )
         case homeFavoritesLoaded([FileManagerHomeFavoriteItem])
         case aiChatTabTitleUpdated(sessionID: AiChatSessionID, title: String?)
+        case aiChatNewChatInspectorOpenLoaded(
+            requestID: UUID,
+            setup: AiChatSetupState,
+            connectionsFile: AIConnectionsFile,
+        )
+        case aiChatHistoryInspectorOpenLoaded(
+            requestID: UUID,
+            setup: AiChatSetupState,
+            connectionsFile: AIConnectionsFile,
+        )
     }
 
     @CasePathable
@@ -71,8 +81,8 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case requestUndo
         case requestRedo
         case toggleComposer
-        case openContextualAiChat
-        case presentContextualAiChat
+        case newChat
+        case showChatHistory
         case cut
         case copy
         case paste

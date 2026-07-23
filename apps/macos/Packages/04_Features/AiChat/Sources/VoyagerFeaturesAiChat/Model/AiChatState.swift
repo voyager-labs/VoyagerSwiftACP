@@ -190,6 +190,7 @@ public typealias AiChatCurrentContextFolderStructureModes = [
 
 @ObservableState
 public struct AiChatState: Equatable, Sendable {
+    var cancellationOwnerID = UUID()
     public var restoreSessionID: AiChatSessionID?
     public var deferredChatSessionRestoreID: AiChatSessionID?
     public var restoreOutcome: AiChatSessionRestoreResult?
@@ -197,6 +198,7 @@ public struct AiChatState: Equatable, Sendable {
     public var mode: AiChatMode
     public var sessionList: AiChatSessionListState
     public var sessionID: AiChatSessionID?
+    public var preparedTransientSessionID: AiChatSessionID?
     public var emptyDraftSessionID: AiChatSessionID?
     public var pendingEmptyDraftDeletionSessionIDs: Set<AiChatSessionID>
     public var currentSessionCustomTitle: String?
@@ -342,6 +344,7 @@ public struct AiChatState: Equatable, Sendable {
         mode: AiChatMode = .sessions,
         sessionList: AiChatSessionListState = .init(),
         sessionID: AiChatSessionID? = nil,
+        preparedTransientSessionID: AiChatSessionID? = nil,
         emptyDraftSessionID: AiChatSessionID? = nil,
         pendingEmptyDraftDeletionSessionIDs: Set<AiChatSessionID> = [],
         currentSessionCustomTitle: String? = nil,
@@ -384,6 +387,7 @@ public struct AiChatState: Equatable, Sendable {
         self.mode = mode
         self.sessionList = sessionList
         self.sessionID = sessionID
+        self.preparedTransientSessionID = preparedTransientSessionID
         self.emptyDraftSessionID = emptyDraftSessionID
         self.pendingEmptyDraftDeletionSessionIDs = pendingEmptyDraftDeletionSessionIDs
         self.currentSessionCustomTitle = currentSessionCustomTitle
@@ -475,6 +479,38 @@ public struct AiChatState: Equatable, Sendable {
 
     public var lockedModelDisplayModel: AiChatLockedModelDisplayModel? {
         displayModelBuilder.lockedModelDisplayModel
+    }
+
+    public var isUntouchedPreparedTransientNewChat: Bool {
+        guard let sessionID,
+              preparedTransientSessionID == sessionID,
+              mode == .chat,
+              sessionStatus == .idle,
+              restoreSessionID == nil,
+              restoreOutcome == nil,
+              restoreFailure == nil,
+              transcriptHistory.isEmpty,
+              draftText.isEmpty,
+              streamingAssistantDraft == nil,
+              addedAttachments.isEmpty,
+              lastRequestContext == nil,
+              executionPhase == .idle,
+              pendingRequestStart?.sessionID != sessionID,
+              !backgroundPendingRequestStarts.values.contains(where: { $0.sessionID == sessionID }),
+              !backgroundExecutionPhases.values.contains(where: { phase in
+                  phase.isProcessing && phase.lock?.context.sessionID == sessionID
+              })
+        else { return false }
+        return true
+    }
+
+    mutating func invalidatePreparedTransientSession(for sessionID: AiChatSessionID? = nil) {
+        guard sessionID == nil || preparedTransientSessionID == sessionID else { return }
+        preparedTransientSessionID = nil
+    }
+
+    mutating func markPreparedTransientSessionAsTouched() {
+        invalidatePreparedTransientSession()
     }
 
     public var hiddenEmptyDraftSessionIDs: Set<AiChatSessionID> {

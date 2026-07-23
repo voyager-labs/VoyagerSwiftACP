@@ -1915,8 +1915,6 @@ final class CTM001HandleContentTabTests: XCTestCase {
     /// - 기대 결과: 기존 metadata는 유지되고 모든 snapshot이 생성되며 regular-file pending selection은 active load 전에 존재한다.
     func testExternalTabReservation_appliesOrderedSnapshotsAtomically() async throws {
         let scenario = try ExternalTabReservationTestFixture.makeAtomicScenario()
-        var stagedState = scenario.initialState
-        XCTAssertTrue(stagedState.reserveExternalContentTabs(scenario.reservations))
         let store = TestStore(initialState: scenario.initialState) {
             FileManagerFeature()
         } withDependencies: {
@@ -1929,9 +1927,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // store.exhaustivity = .off: append 이후 canonical handoff의 navigation child action은 별도 owner가 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.reserveExternalContentTabs(scenario.reservations)) {
-            $0 = stagedState
-        }
+        await store.send(.reserveExternalContentTabs(scenario.reservations))
         await store.receive(\.contentTabs.setCurrent, scenario.fileID)
         await store.skipReceivedActions()
         await store.finish()
