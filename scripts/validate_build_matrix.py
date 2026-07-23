@@ -413,14 +413,11 @@ def check_project_config_list(
                 names = _resolve_config_names(configs, cl)
                 default = cl.get("defaultConfigurationName", "?")
 
-                if DEV_DEBUG not in names:
-                    errors.append(
-                        f"Project: missing {DEV_DEBUG} in project config list"
-                    )
-                if PROD_RELEASE not in names:
-                    errors.append(
-                        f"Project: missing {PROD_RELEASE} in project config list"
-                    )
+                for expected in ALL_VOYAGER_CONFIGS:
+                    if expected not in names:
+                        errors.append(
+                            f"Project: missing {expected} in project config list"
+                        )
                 if default != PROD_RELEASE:
                     errors.append(
                         f"Project: defaultConfigurationName is '{default}', expected '{PROD_RELEASE}'"
