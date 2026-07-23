@@ -33,6 +33,7 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case selectContentTabRange(to: ContentTabID)
         case collapseContentTabSelectionToActive
         case closeContentTab(ContentTabID)
+        case closeSelectedContentTabs
         case pinContentTab(ContentTabID)
         case unpinContentTab(ContentTabID)
         case openContentTab
