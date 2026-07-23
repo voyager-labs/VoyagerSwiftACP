@@ -212,6 +212,64 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertFalse(manager.canRedo)
     }
 
+    /// EOP-003-undo_entry_action: native history 불일치 무효화 뒤 같은 탭의 새 작업은 fresh generation으로 복구한다.
+    /// 무효화가 scope를 영구 폐쇄하지 않고 stale completion만 차단하는 generation rollover를 검증한다.
+    /// - 검증 내용: native mirror 불일치로 history를 비운 뒤 새 record 등록과 Undo를 다시 수행한다.
+    /// - 사전 조건: W1/A scope에 record A가 있고 native manager history만 외부에서 제거된다.
+    /// - 기대 결과: generation이 갱신되고 record B가 logical/native 양쪽에 등록되어 정상 Undo된다.
+    func testInvalidatedUndoScopeRecoversWithFreshGeneration() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let client = makeClient(registry: registry)
+        let windowID = UUID()
+        let tabA = ContentTabID(rawValue: "A")
+        let scope = UndoManagerScope(windowID: windowID, contentTabID: tabA.rawValue)
+        _ = client.activate(scope)
+        let initialGeneration = try XCTUnwrap(client.generation(scope))
+        let recordA = makeRecord("invalidated-A")
+        let recordB = makeRecord("recovered-B")
+        let store = makeStore(
+            state: makeSingleTabState(windowID: windowID, tabID: tabA),
+            client: client,
+        )
+        // store.exhaustivity = .off: replay lifecycle보다 invalidation 이후 generation 복구와 stack 정합성을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.internal(.entryActionCompleted(
+            tabID: tabA,
+            record: recordA,
+            undoManagerGeneration: initialGeneration,
+        )))
+        let manager = try XCTUnwrap(registry.undoManager(for: scope))
+        manager.removeAllActions()
+
+        await store.send(.tabContent(
+            tabID: tabA,
+            action: .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))),
+        ))
+        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
+        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.redoRecords.isEmpty)
+
+        let freshGeneration = try XCTUnwrap(client.generation(scope))
+        XCTAssertNotEqual(freshGeneration, initialGeneration)
+        await store.send(.internal(.entryActionCompleted(
+            tabID: tabA,
+            record: recordB,
+            undoManagerGeneration: freshGeneration,
+        )))
+        XCTAssertEqual(store.state.content.entryViewLayout.entryOperations.undoRecords, [recordB])
+        XCTAssertTrue(manager.canUndo)
+
+        await store.send(.tabContent(
+            tabID: tabA,
+            action: .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))),
+        ))
+        await store.skipReceivedActions()
+
+        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
+        XCTAssertEqual(store.state.content.entryViewLayout.entryOperations.redoRecords, [recordB])
+        XCTAssertTrue(manager.canRedo)
+    }
+
     /// EOP-003-undo_entry_action: A에서 시작한 completion은 B 전환 후 inactive A snapshot만 갱신한다.
     /// 비동기 file operation의 origin tab을 action에 고정해 active tab fallback을 금지하는 targeted child 경계를 검증한다.
     /// - 검증 내용: B로 setCurrent 후 `.tabContent(A, entryActionCompleted)`가 A의 undoRecords만 변경한다.

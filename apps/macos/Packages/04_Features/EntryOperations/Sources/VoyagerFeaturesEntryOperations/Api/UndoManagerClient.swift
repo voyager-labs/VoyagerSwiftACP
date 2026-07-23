@@ -39,7 +39,6 @@ public final class FileOperationUndoManagerRegistry {
         var undoRecordIDs: [UUID] = []
         var redoRecordIDs: [UUID] = []
         var pendingTransition: PendingTransition?
-        var isInvalidated = false
 
         init(manager: UndoManager, generation: Generation) {
             self.manager = manager
@@ -104,7 +103,7 @@ public final class FileOperationUndoManagerRegistry {
         record: EntryActionRecord,
     ) -> Bool {
         guard let entry = entries[scope], entry.generation == expectedGeneration,
-              !entry.isInvalidated, entry.pendingTransition == nil
+              entry.pendingTransition == nil
         else { return false }
 
         let handler = FileOperationUndoManagerHandler(
@@ -135,7 +134,7 @@ public final class FileOperationUndoManagerRegistry {
         guard entry.generation == expectedGeneration else {
             return .rejected(.staleGeneration)
         }
-        guard !entry.isInvalidated, entry.pendingTransition == nil else {
+        guard entry.pendingTransition == nil else {
             invalidate(entry)
             return .invalidated
         }
@@ -155,6 +154,9 @@ public final class FileOperationUndoManagerRegistry {
             entry.manager.redo()
         }
 
+        guard entry.generation == expectedGeneration else {
+            return .invalidated
+        }
         guard entry.pendingTransition?.didComplete == true else {
             invalidate(entry)
             return .invalidated
@@ -170,12 +172,9 @@ public final class FileOperationUndoManagerRegistry {
         recordID: UUID,
         handler: FileOperationUndoManagerHandler,
     ) {
-        guard let entry = entries[scope], entry.generation == generation,
-              entry.pendingTransition == PendingTransition(direction: direction, recordID: recordID)
-        else {
-            if let entry = entries[scope] {
-                invalidate(entry)
-            }
+        guard let entry = entries[scope], entry.generation == generation else { return }
+        guard entry.pendingTransition == PendingTransition(direction: direction, recordID: recordID) else {
+            invalidate(entry)
             return
         }
 
@@ -197,8 +196,8 @@ public final class FileOperationUndoManagerRegistry {
     }
 
     private func invalidate(_ entry: Entry) {
-        entry.isInvalidated = true
         clearNativeHistory(entry)
+        entry.generation = nextGeneration()
     }
 
     private func clearNativeHistory(_ entry: Entry) {
@@ -367,7 +366,7 @@ private final class FileOperationUndoManagerHandler {
     }
 
     private func complete(_ direction: FileOperationUndoDirection) {
-        guard let registry, let undoManager else { return }
+        guard let registry, undoManager != nil else { return }
         registry.completeNativeTransition(
             scope: scope,
             generation: generation,
