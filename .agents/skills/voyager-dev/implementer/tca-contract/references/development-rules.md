@@ -43,7 +43,7 @@ Use this file to accumulate Voyager-local development heuristics that are reusab
 - Make bootstrap/onAppear flows idempotent via a flag (e.g., `didBootstrap`) to prevent double initialization when view lifecycle triggers multiple appearances.
 - Normalize transient states at bootstrap — reset in-progress states (e.g., `connectInProgress` → `notVerified`, `disconnecting` → `disconnected`) to stable equivalents. Transient states from previous sessions should not persist across app launches.
 - Keep transient process/UI states from becoming durable semantic state at restore, effect-completion, cancellation, teardown, and view-disappear boundaries. Convert them to stable state or discard them at the owning reducer boundary.
-- Apply `@ObservableState` on the actual struct definition, not on a typealias. See `../../../../../rules/30-macos/02-tca-observation-lifecycle.md` for TCA observation patterns.
+- Apply `@ObservableState` on the actual struct definition, not on a typealias. See `observation-lifecycle-rule.md` for TCA observation patterns.
 - For reducers, wrappers, and child features that can all reach the same persistence client, choose one persistence owner. Route other layers through actions or delegate events instead of saving the same durable state twice.
 - When a feature defines delegate actions, every case should either be emitted by the reducer, consumed by a documented parent route, or removed. Reserved future delegate cases need a short Korean comment explaining the planned use.
 - Extract time-based and fallback behavior into named policy values or small policy types before the values become migration points. Avoid inline TTL, grace-period, retry, or cache-window arithmetic in reducer logic.

@@ -32,7 +32,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         let persistedSession = Self.session(expiresAt: initialState.sessionExpiresAt ?? referenceDate)
         let sessionClient = accountSessionClient ?? AccountSessionClient(
-            read: { persistedSession },
+            read: { _ in persistedSession },
             persist: { _ in },
             delete: { _ in },
         )
@@ -58,14 +58,18 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
 
     /// ACC-001-detect_session_expiry: capability miss만 legacy fallback 후보이고 credential·upstream 오류는 직접 반환한다.
     /// session-sync HTTP 경계가 오류 종류에 따라 fallback을 허용하는지 검증한다.
-    /// - 검증 내용: 404/405는 nil fallback signal, 401은 invalid credential, 429/503은 upstream status mapping.
+    /// - 검증 내용: 404/405는 nil fallback signal, 401은 invalid credential, 400/413/429은 terminal mapping, 503은 upstream
+    /// mapping.
     /// - 사전 조건: session-sync HTTP status code.
-    /// - 기대 결과: 401/429/503이 legacy call의 trigger로 해석되지 않는다.
+    /// - 기대 결과: 401/400/413/429/503이 legacy call의 trigger로 해석되지 않고, non-transient 상태는 retry/snapshot fallback에 들어가지
+    /// 않는다.
     func testSessionSyncFallbackBoundaryMapsOnlyCapabilityMisses() {
         XCTAssertNil(AuthNetworkClient.sessionSyncError(for: 404))
         XCTAssertNil(AuthNetworkClient.sessionSyncError(for: 405))
         XCTAssertEqual(AuthNetworkClient.sessionSyncError(for: 401), .invalidCredential)
-        XCTAssertEqual(AuthNetworkClient.sessionSyncError(for: 429), .upstream(429))
+        XCTAssertEqual(AuthNetworkClient.sessionSyncError(for: 400), .invalidResponse(400))
+        XCTAssertEqual(AuthNetworkClient.sessionSyncError(for: 413), .invalidResponse(413))
+        XCTAssertEqual(AuthNetworkClient.sessionSyncError(for: 429), .invalidResponse(429))
         XCTAssertEqual(AuthNetworkClient.sessionSyncError(for: 503), .upstream(503))
     }
 
@@ -75,11 +79,8 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
     /// - 기대 결과: in-memory session과 TTL이 무효화되며 만료 전환은 한 번만 수행된다.
     func testRuntimePersistedSessionLossInvalidatesInMemorySessionOnce() async {
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: AccountSessionClient(read: { _ in nil }, persist: { _ in },
+                                                       delete: { _ in }),
             initialState: signedInState(),
         )
         store.exhaustivity = .off
@@ -210,6 +211,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
         initialState.isComplete = true
         initialState.snapshot = staleSnapshot
         initialState.trialExpiresAt = referenceDate
+        initialState.updateEligibilityFailure = .missingReleaseIdentity
 
         let store = makeTestStore(initialState: initialState)
         // exhaustivity=.off: reducer가 다수 필드를 갱신하나 검증 대상은 regression 스펙 필드만.
@@ -224,6 +226,8 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
         XCTAssertNil(store.state.snapshot)
         XCTAssertNil(store.state.trialExpiresAt)
         XCTAssertFalse(store.state.isComplete)
+        XCTAssertNil(store.state.updateEligibilityFailure)
+        XCTAssertTrue(store.state.canStartLogin)
         XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .login)
         await store.finish()
     }
@@ -250,6 +254,8 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
         let activeResponse = AccessStatusResponse(
             hasAccess: true,
             status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
             reason: "active_entitlement",
             productKey: "core",
             source: "polar",

@@ -267,6 +267,42 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         }
         await store.finish()
     }
+}
+
+extension ACC001StartAccountSignInTests {
+    /// ACC-001-start_account_sign_in: signed-in pending 상태의 Login 선택은 진행 중인 세션 검증을 바꾸지 않고 무시한다.
+    /// - 검증 내용: handoff를 시작하지 않고 sync, persisted revalidation, refresh deadline generation을 유지한다.
+    /// - 사전 조건: access status 검증이 pending인 signed-in session.
+    /// - 기대 결과: loginTapped는 상태와 effect를 변경하지 않는다.
+    func testSignedInPendingLoginTappedIsNoOp() async {
+        nonisolated(unsafe) var handoffCallCount = 0
+        var initialState = AccountAccessFeature.State()
+        initialState.hasAccountSession = true
+        initialState.isSubmitting = true
+        initialState.syncGeneration = 7
+        initialState.revalidationGeneration = 3
+        initialState.refreshDeadlineGeneration = 8
+        initialState.sessionExpiresAt = referenceDate.addingTimeInterval(600)
+        initialState.ttlTimerActive = true
+        let store = makeTestStore(
+            signInHandoffClient: SignInHandoffClient { _ in
+                handoffCallCount += 1
+                return .awaitingCallback(state: "unexpected-handoff")
+            },
+            initialState: initialState,
+        )
+
+        XCTAssertFalse(store.state.canStartLogin)
+        await store.send(.loginTapped(context: .paywall, scope: .lifecycle))
+
+        XCTAssertEqual(handoffCallCount, 0)
+        XCTAssertTrue(store.state.hasAccountSession)
+        XCTAssertTrue(store.state.isSubmitting)
+        XCTAssertEqual(store.state.syncGeneration, 7)
+        XCTAssertEqual(store.state.revalidationGeneration, 3)
+        XCTAssertEqual(store.state.refreshDeadlineGeneration, 8)
+        await store.finish()
+    }
 
     /// ACC-001-start_account_sign_in: 인증 흐름 시작 후 callback/token 교환 전까지 auth_state가 변경되지 않는다.
     /// loginTapped 후 awaitingCallback 수신 시까지 hasAccountSession이 false로 유지되는지 검증한다.
@@ -435,15 +471,18 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         await store.finish()
     }
 
-    /// ACC-001-start_account_sign_in: callback 대기가 ticket TTL을 초과하면 sign-in 실패로 종료한다.
-    /// - 검증 내용: pending state와 progress 상태 제거
+    /// ACC-001-start_account_sign_in: callback 대기는 120초 경계에서만 sign-in 실패로 종료한다.
+    /// - 검증 내용: 119초에는 pending state를 보존하고 120초에 한 번만 pending state와 progress 상태 제거
     /// - 사전 조건: callback 대기 중 handoff와 TestClock
-    /// - 기대 결과: AccountAccessFeature.handoffCallbackTimeout(5분) 후 didSignInFail=true
-    func testAwaitingCallbackTimeoutResetsSignInState() async {
+    /// - 기대 결과: 120초 후 didSignInFail=true
+    func testAwaitingCallbackTimeoutResetsSignInStateAt120Seconds() async {
         let clock = TestClock()
         var initialState = AccountAccessFeature.State()
         initialState.isSignInInProgress = true
-        initialState.handoffTransaction = AccountAccessHandoffTransaction(context: .onboarding, scope: .onboarding)
+        initialState.handoffTransaction = AccountAccessHandoffTransaction(
+            context: .onboarding,
+            scope: .onboarding,
+        )
         let store = TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
@@ -452,12 +491,21 @@ final class ACC001StartAccountSignInTests: XCTestCase {
 
         await store.send(.signInHandoffCompleted(
             .awaitingCallback(state: "pending-state"),
-            transaction: AccountAccessHandoffTransaction(context: .onboarding, scope: .onboarding),
+            transaction: AccountAccessHandoffTransaction(
+                context: .onboarding,
+                scope: .onboarding,
+            ),
             generation: 0,
         )) { state in
             state.handoffPendingState = "pending-state"
         }
-        await clock.advance(by: AccountAccessFeature.handoffCallbackTimeout)
+        await clock.advance(by: .seconds(119))
+        XCTAssertTrue(store.state.isSignInInProgress)
+        XCTAssertFalse(store.state.didSignInFail)
+        XCTAssertEqual(store.state.handoffPendingState, "pending-state")
+        XCTAssertNotNil(store.state.handoffTransaction)
+
+        await clock.advance(by: .seconds(1))
         await store.receive(\._handoffCallbackTimedOut) { state in
             state.isSignInInProgress = false
             state.didSignInFail = true

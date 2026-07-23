@@ -249,13 +249,13 @@ final class SettingsHostPresetTests: XCTestCase {
     }
 
     @MainActor
-    func testHostPresetAuthExpiredUsesInactivePresentationFacts() {
+    func testHostPresetAuthExpiredUsesExpiredPresentationFacts() {
         let state = SettingsState.hostPreset(for: SettingsHostPreset.authExpired.scenario)
 
         XCTAssertTrue(state.accountSettings.presentation.hasAccountSession)
         XCTAssertEqual(state.accountSettings.presentation.accessStatus, .trialExpired)
         XCTAssertEqual(state.accessStatus, .trialExpired)
-        XCTAssertEqual(state.accountSettings.setEntitlementState, .entitlementInactive)
+        XCTAssertEqual(state.accountSettings.setEntitlementState, .entitlementExpired)
     }
 
     @MainActor

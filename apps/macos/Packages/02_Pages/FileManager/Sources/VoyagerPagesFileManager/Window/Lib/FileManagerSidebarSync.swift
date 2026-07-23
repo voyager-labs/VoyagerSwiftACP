@@ -49,7 +49,8 @@ struct FileManagerSidebarSync {
         sidebarView: NSView?,
     ) -> Bool {
         guard let splitView,
-              let sidebarView
+              let sidebarView,
+              splitView.arrangedSubviews.contains(sidebarView)
         else { return false }
 
         return !splitView.isSubviewCollapsed(sidebarView)

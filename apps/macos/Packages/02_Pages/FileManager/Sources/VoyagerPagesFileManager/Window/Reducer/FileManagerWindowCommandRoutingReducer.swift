@@ -327,7 +327,6 @@ struct FileManagerWindowCommandRoutingReducer {
         case .newFolder,
              .openSelectedItem,
              .quickLookSelectedItem,
-             .toggleShowHiddenFiles,
              .cut,
              .copy,
              .paste,
@@ -336,6 +335,9 @@ struct FileManagerWindowCommandRoutingReducer {
              .selectAll,
              .copyAbsolutePaths,
              .copyURLs:
+            handleEntryRequestIfAllowed(command, state: &state)
+
+        case .toggleShowHiddenFiles:
             handleEntryRequest(command, state: &state)
 
         case .saveCollection,
@@ -365,6 +367,14 @@ struct FileManagerWindowCommandRoutingReducer {
              .requestRedo:
             handleUndoRedoRequest(command)
         }
+    }
+
+    private func handleEntryRequestIfAllowed(
+        _ command: Action.WindowCommand,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard !state.content.isOrdinaryDirectoryLoading else { return .none }
+        return handleEntryRequest(command, state: &state)
     }
 
     private func toggleActiveContentTabPin(state: State) -> Effect<Action> {
@@ -446,11 +456,15 @@ struct FileManagerWindowCommandRoutingReducer {
     private func handleEntryRequestSelection(_ command: Action.WindowCommand, state: State) -> Effect<Action>? {
         switch command {
         case .openSelectedItem:
-            guard !state.content.entryViewLayout.selectedIds.isEmpty else { return .none }
+            guard !state.content.isOrdinaryDirectoryLoading,
+                  !state.content.entryViewLayout.selectedIds.isEmpty
+            else { return .none }
             return .send(.content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))))
 
         case .quickLookSelectedItem:
-            guard !state.content.entryViewLayout.selectedIds.isEmpty else { return .none }
+            guard !state.content.isOrdinaryDirectoryLoading,
+                  !state.content.entryViewLayout.selectedIds.isEmpty
+            else { return .none }
             return .send(.content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))))
 
         case .selectAll:

@@ -13,6 +13,8 @@ import XCTest
 
 @MainActor
 final class ACC001ExchangeHandoffTokenTests: XCTestCase {
+    private struct TerminalCommitFailure: Error {}
+
     private let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
 
     private static let validTicket = "exchange-ticket-001"
@@ -164,14 +166,18 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
     private func makeTestStore(
         accountSessionClient: AccountSessionClient = .testValue,
         authNetworkClient: AuthNetworkClient = .testValue,
+        signInHandoffClient: SignInHandoffClient = .testValue,
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
+        continuousClock: TestClock<Duration> = TestClock(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
             $0.accountSessionClient = accountSessionClient
             $0.authNetworkClient = authNetworkClient
+            $0.signInHandoffClient = signInHandoffClient
             $0.date = .constant(referenceDate)
+            $0.continuousClock = continuousClock
         }
     }
 
@@ -183,7 +189,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
             expiresAt: expiresAt,
         )
         return AccountSessionClient(
-            read: { session },
+            read: { _ in session },
             persist: { _ in },
             delete: { _ in },
         )
@@ -198,6 +204,50 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         state.handoffPendingState = pendingState
         state.handoffTransaction = AccountAccessHandoffTransaction(context: .onboarding, scope: .onboarding)
         return state
+    }
+
+    private func terminalCommitSessionClient(
+        probe: PersistenceCancellationProbe,
+        session: AccountSession,
+    ) -> AccountSessionClient {
+        AccountSessionClient(
+            read: { _ in session },
+            persist: { _ in },
+            prepareHandoffPersistence: { handoffSession in await probe.prepare(handoffSession) },
+            commitHandoffPersistence: { _ in try await probe.commit() },
+            delete: { _ in },
+            discardPersistedSession: { _ in await probe.discard() },
+        )
+    }
+
+    private func ordinaryHandoffCommitFailureFixture() async throws -> (
+        temporaryHome: TemporaryHomeFixture,
+        tokenStore: AccountTokenFileStore,
+        sessionClient: AccountSessionClient,
+        canonicalToken: AccountTokensFile,
+    ) {
+        let temporaryHome = try TemporaryHomeFixture()
+        let tokenStore = AccountTokenFileStore.withCustomHome(homeURL: temporaryHome.homeURL)
+        let canonicalToken = AccountTokensFile(
+            updatedAtMs: 1,
+            accessToken: "canonical-access-token",
+            accessTokenExpiresAtMs: 1_700_003_600_000,
+            accessTokenExpiresIn: 3_600_000,
+            refreshToken: "canonical-refresh-token",
+            refreshTokenExpiresAtMs: 1_702_592_000_000,
+            sessionBindingID: UUID(),
+        )
+        try await tokenStore.write(canonicalToken)
+        let liveClient = AccountSessionClient.live(store: tokenStore)
+        let sessionClient = AccountSessionClient(
+            read: liveClient.read,
+            persist: liveClient.persist,
+            prepareHandoffPersistence: liveClient.prepareHandoffPersistence,
+            commitHandoffPersistence: { _ in throw TerminalCommitFailure() },
+            delete: liveClient.delete,
+            discardPersistedSession: liveClient.discardPersistedSession,
+        )
+        return (temporaryHome, tokenStore, sessionClient, canonicalToken)
     }
 
     private func claimedHandoffAction(
@@ -224,6 +274,13 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
     /// - 기대 결과: hasAccountSession=true, isSignInInProgress=false, didSignInFail=false, fetchGeneration=1
     func testExchangeSuccessSetsLoggedIn() {
         let persistedSessionExpiry = Date(timeIntervalSince1970: 1_700_003_600)
+        let sessionBindingID = UUID()
+        let persistedSession = AccountSession(
+            accessToken: "persisted-access-token",
+            status: .coreLicenseActive,
+            expiresAt: persistedSessionExpiry,
+            sessionBindingID: sessionBindingID,
+        )
         var state = awaitingCallbackState()
         state.handoffPendingState = nil
         state.handoffExchangeState = Self.validState
@@ -236,7 +293,10 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
                 action: ._handoffExchangeCompleted(
                     state: Self.validState,
                     generation: 0,
-                    result: .success(persistedSessionExpiry),
+                    result: .success(AccountAccessHandoffCompletion(
+                        expiresAt: persistedSession.expiresAt,
+                        sessionBindingID: persistedSession.sessionBindingID,
+                    )),
                 ),
             )
         }
@@ -245,7 +305,41 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         XCTAssertFalse(state.isSignInInProgress)
         XCTAssertFalse(state.didSignInFail)
         XCTAssertEqual(state.sessionExpiresAt, persistedSessionExpiry)
+        XCTAssertEqual(state.sessionBindingID, sessionBindingID)
         XCTAssertTrue(state.ttlTimerActive)
+    }
+
+    /// ACC-001-exchange_handoff_token: 이전 generation의 handoff 완료는 새 handoff 상태를 변경하지 않는다.
+    /// 늦게 도착한 canonical session이 새 handoff의 binding과 expiry를 덮어쓰지 않는지 검증한다.
+    /// - 검증 내용: generation과 pending state guard가 실패하면 sessionExpiresAt과 sessionBindingID를 변경하지 않는다.
+    /// - 사전 조건: generation=2의 새 handoff exchange가 진행 중이고 generation=1 완료 action이 도착한다.
+    /// - 기대 결과: 새 handoff의 state와 기존 session expiry/binding이 그대로 유지된다.
+    func testStaleExchangeCompletionPreservesCurrentSessionBinding() {
+        let currentBinding = UUID()
+        let staleBinding = UUID()
+        let currentExpiry = referenceDate.addingTimeInterval(3600)
+        var state = awaitingCallbackState()
+        state.handoffGeneration = 2
+        state.handoffPendingState = nil
+        state.handoffExchangeState = "new-handoff-state"
+        state.sessionExpiresAt = currentExpiry
+        state.sessionBindingID = currentBinding
+
+        _ = AccountAccessFeature().reduce(
+            into: &state,
+            action: ._handoffExchangeCompleted(
+                state: Self.validState,
+                generation: 1,
+                result: .success(AccountAccessHandoffCompletion(
+                    expiresAt: referenceDate.addingTimeInterval(7200),
+                    sessionBindingID: staleBinding,
+                )),
+            ),
+        )
+
+        XCTAssertEqual(state.handoffExchangeState, "new-handoff-state")
+        XCTAssertEqual(state.sessionExpiresAt, currentExpiry)
+        XCTAssertEqual(state.sessionBindingID, currentBinding)
     }
 
     /// ACC-001-exchange_handoff_token: 이전 generation의 claim completion은 새 handoff exchange를 시작하지 않는다.
@@ -284,7 +378,9 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         )
         await store.finish()
     }
+}
 
+extension ACC001ExchangeHandoffTokenTests {
     /// ACC-001-exchange_handoff_token: terminal commit authorization 뒤 termination은 disk transaction을 취소하지 않는다.
     /// - 검증 내용: authorization이 시작한 blocked terminal commit은 termination 뒤에도 끝나며 rollback되지 않는다.
     /// - 사전 조건: onboarding handoff가 authorization을 수락하고 commitHandoffPersistence가 gate에서 대기한다.
@@ -297,14 +393,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
             refreshToken: "termination-refresh-token",
             expiresAt: referenceDate.addingTimeInterval(3600),
         )
-        let sessionClient = AccountSessionClient(
-            read: { persistedSession },
-            persist: { _ in },
-            prepareHandoffPersistence: { session in await probe.prepare(session) },
-            commitHandoffPersistence: { _ in try await probe.commit() },
-            delete: { _ in },
-            discardPersistedSession: { _ in await probe.discard() },
-        )
+        let sessionClient = terminalCommitSessionClient(probe: probe, session: persistedSession)
         let store = makeTestStore(
             accountSessionClient: sessionClient,
             authNetworkClient: AuthNetworkClient(
@@ -366,7 +455,7 @@ extension ACC001ExchangeHandoffTokenTests {
             expiresAt: referenceDate.addingTimeInterval(3600),
         )
         let sessionClient = AccountSessionClient(
-            read: { persistedSession },
+            read: { _ in persistedSession },
             persist: { session in try await probe.persist(session) },
             delete: { _ in },
             discardPersistedSession: { _ in await probe.discard() },
@@ -418,9 +507,11 @@ extension ACC001ExchangeHandoffTokenTests {
             expiresAt: referenceDate.addingTimeInterval(3600),
         )
         let sessionClient = AccountSessionClient(
-            read: { persistedSession },
+            read: { _ in persistedSession },
             persist: { _ in },
-            prepareHandoffPersistence: { session in await probe.prepareAndWait(session) },
+            prepareHandoffPersistence: { session in
+                await probe.prepareAndWait(session)
+            },
             commitHandoffPersistence: { _ in },
             delete: { _ in },
             discardPersistedSession: { _ in await probe.discard() },
@@ -466,7 +557,7 @@ extension ACC001ExchangeHandoffTokenTests {
             expiresAt: referenceDate.addingTimeInterval(3600),
         )
         let sessionClient = AccountSessionClient(
-            read: { persistedSession },
+            read: { _ in persistedSession },
             persist: { _ in },
             prepareHandoffPersistence: { session in await probe.prepare(session) },
             commitHandoffPersistence: { _ in try await probe.commit() },
@@ -518,7 +609,7 @@ extension ACC001ExchangeHandoffTokenTests {
             expiresAt: referenceDate.addingTimeInterval(3600),
         )
         let sessionClient = AccountSessionClient(
-            read: { persistedSession },
+            read: { _ in persistedSession },
             persist: { session in try await probe.persist(session) },
             delete: { _ in },
             discardPersistedSession: { _ in
@@ -574,6 +665,55 @@ extension ACC001ExchangeHandoffTokenTests {
 }
 
 extension ACC001ExchangeHandoffTokenTests {
+    /// ACC-001-exchange_handoff_token: ordinary handoff terminal commit 실패는 staging을 rollback하고 canonical credential을
+    /// 보존한다.
+    /// - 검증 내용: authorization 뒤 commit failure가 signed-out/sign-in-failed 상태와 staging/marker 정리로 끝난다.
+    /// - 사전 조건: callback 대기 중 ordinary handoff와 기존 canonical token, 실패하는 commitHandoffPersistence.
+    /// - 기대 결과: 새 candidate는 저장되지 않고 기존 canonical token은 그대로 읽힌다.
+    func testOrdinaryHandoffCommitFailureRollsBackStagingAndPreservesCanonicalCredential() async throws {
+        let fixture = try await ordinaryHandoffCommitFailureFixture()
+        let candidateSession = AccountSession(
+            accessToken: "candidate-access-token",
+            status: .coreLicenseActive,
+            refreshToken: "candidate-refresh-token",
+            expiresAt: referenceDate.addingTimeInterval(7200),
+            sessionBindingID: UUID(),
+        )
+        let store = makeTestStore(
+            accountSessionClient: fixture.sessionClient,
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in candidateSession },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in DeviceBindingResponse(ok: true) },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: awaitingCallbackState(),
+        )
+
+        await store.send(claimedHandoffAction()) { state in
+            state.handoffPendingState = nil
+            state.handoffExchangeState = Self.validState
+        }
+        await store.receive(\._handoffCommitAuthorized) { state in
+            state.isSignInInProgress = false
+        }
+        await store.receive(\._handoffExchangeCompleted) { state in
+            state.didSignInFail = true
+            state.handoffExchangeState = nil
+            state.handoffTransaction = nil
+        }
+
+        XCTAssertFalse(store.state.hasAccountSession)
+        XCTAssertTrue(store.state.didSignInFail)
+        let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: fixture.temporaryHome.homeURL)
+        let markerURL = AccountTokenFSLocation.rollbackMarkerFileURL(homeDirectoryURL: fixture.temporaryHome.homeURL)
+        XCTAssertFalse(fixture.temporaryHome.snapshotFile(at: stagingURL).exists)
+        XCTAssertFalse(fixture.temporaryHome.snapshotFile(at: markerURL).exists)
+        let canonicalToken = try await fixture.tokenStore.read()
+        XCTAssertEqual(canonicalToken, fixture.canonicalToken)
+        await store.finish()
+    }
+
     /// ACC-001-exchange_handoff_token: 네트워크 오류 시 didSignInFail=true로 전환된다.
     /// exchangeAppHandoff가 networkFailure를 throw할 때 인증 실패 상태로 전환되는지 검증한다.
     /// - 검증 내용: exchangeAppHandoff 실패 시 didSignInFail=true

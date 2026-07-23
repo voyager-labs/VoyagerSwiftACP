@@ -105,6 +105,7 @@ public struct SessionLapseGuardView: View {
     static let accountButtonTitle = "Open account"
     static let retryButtonTitle = "Retry"
     static let webPricingButtonTitle = "View pricing"
+    static let eligibleDownloadButtonTitle = "Download eligible version"
 
     public init(store: StoreOf<AccountAccessFeature>) {
         self.store = store
@@ -166,14 +167,19 @@ public struct SessionLapseGuardView: View {
                                     .multilineTextAlignment(.center)
                             }
 
-                            Button(Self.primaryButtonTitle(for: accessUnlockPrimaryCTA)) {
-                                viewStore.send(Self.primaryButtonAction(for: accessUnlockPrimaryCTA))
+                            if let primaryButtonAction = Self.primaryButtonAction(for: accessUnlockPrimaryCTA) {
+                                Button(Self.primaryButtonTitle(for: accessUnlockPrimaryCTA)) {
+                                    viewStore.send(primaryButtonAction)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.large)
+                                .disabled(isSignInInProgress)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                            .disabled(isSignInInProgress)
 
-                            if isSignInInProgress {
+                            if Self.shouldShowProgress(
+                                accessUnlockPrimaryCTA: accessUnlockPrimaryCTA,
+                                isSignInInProgress: isSignInInProgress,
+                            ) {
                                 ProgressView()
                                     .controlSize(.small)
                             }
@@ -206,7 +212,11 @@ public struct SessionLapseGuardView: View {
             return "Access required to continue."
         case .retry:
             return "Could not verify access."
-        case .login, .next, .pending:
+        case .eligibleDownload:
+            return "Download an eligible version to continue."
+        case .pending:
+            return "Checking access..."
+        case .login, .next:
             break
         }
         if didSignInFail {
@@ -223,12 +233,14 @@ public struct SessionLapseGuardView: View {
             retryButtonTitle
         case .webPricing:
             webPricingButtonTitle
+        case .eligibleDownload:
+            eligibleDownloadButtonTitle
         case .login, .next, .pending:
             loginButtonTitle
         }
     }
 
-    static func primaryButtonAction(for accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA) -> AccountAccessAction {
+    static func primaryButtonAction(for accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA) -> AccountAccessAction? {
         switch accessUnlockPrimaryCTA {
         case .account:
             .openAccountTapped
@@ -236,9 +248,20 @@ public struct SessionLapseGuardView: View {
             .retryTapped
         case .webPricing:
             .openPricingTapped
-        case .login, .next, .pending:
+        case .eligibleDownload:
+            .openEligibleDownloadTapped
+        case .login, .next:
             .loginTapped(context: .paywall, scope: .lifecycle)
+        case .pending:
+            nil
         }
+    }
+
+    static func shouldShowProgress(
+        accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA,
+        isSignInInProgress: Bool,
+    ) -> Bool {
+        accessUnlockPrimaryCTA == .pending || isSignInInProgress
     }
 
     public static func shouldShow(

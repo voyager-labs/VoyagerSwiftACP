@@ -8,6 +8,8 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>VOYAGER_RELEASED_AT</key>
+	<string>$(VOYAGER_RELEASED_AT)</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -75,6 +77,8 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Voyager uses Finder automation to reveal selected items in Finder.</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

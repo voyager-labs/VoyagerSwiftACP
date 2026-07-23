@@ -1,0 +1,27 @@
+name: validate-agent-harness
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  structural-validation:
+    name: Validate agent harness contracts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate changed harness contracts
+        shell: bash
+        env:
+          BASE_REF: origin/${{ github.base_ref || 'develop' }}
+        run: |
+          set -euo pipefail
+          python3 -m scripts.validate_harness --base-ref "${BASE_REF}"
+          python3 -m scripts.verify_plan --base-ref "${BASE_REF}"

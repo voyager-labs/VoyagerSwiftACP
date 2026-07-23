@@ -21,6 +21,7 @@ public struct EntryOperationsAlertClient: Sendable {
     ) async -> EntryOperationsReplaceAlertResponse
     public var showGetInfoFailureAlert: @Sendable (_ message: String, _ suggestion: String?) async -> Void
     public var showRenameExtensionChangeAlert: @Sendable (_ oldName: String, _ newName: String) async -> Bool
+    public var showTagMutationFailureAlert: @Sendable (_ failures: [TagMutationFailure]) async -> Void
 
     nonisolated public init(
         showTrashFileAlert: @escaping @Sendable (_ fileName: String, _ hasMoreFiles: Bool) async -> Bool,
@@ -34,6 +35,7 @@ public struct EntryOperationsAlertClient: Sendable {
         showGetInfoFailureAlert: @escaping @Sendable (_ message: String, _ suggestion: String?) async -> Void,
         showRenameExtensionChangeAlert: @escaping @Sendable (_ oldName: String, _ newName: String) async
             -> Bool = { _, _ in true },
+        showTagMutationFailureAlert: @escaping @Sendable (_ failures: [TagMutationFailure]) async -> Void = { _ in },
     ) {
         self.showTrashFileAlert = showTrashFileAlert
         self.showRenameConflictAlert = showRenameConflictAlert
@@ -42,6 +44,7 @@ public struct EntryOperationsAlertClient: Sendable {
         self.showReplaceAlert = showReplaceAlert
         self.showGetInfoFailureAlert = showGetInfoFailureAlert
         self.showRenameExtensionChangeAlert = showRenameExtensionChangeAlert
+        self.showTagMutationFailureAlert = showTagMutationFailureAlert
     }
 }
 
@@ -95,6 +98,11 @@ extension EntryOperationsAlertClient: DependencyKey {
                     )
                 }
             },
+            showTagMutationFailureAlert: { failures in
+                await MainActor.run {
+                    EntryOperationsAlertPresenter.showTagMutationFailureAlert(failures: failures)
+                }
+            },
         )
     }
 
@@ -107,6 +115,7 @@ extension EntryOperationsAlertClient: DependencyKey {
             showReplaceAlert: { _, _ in .stop },
             showGetInfoFailureAlert: { _, _ in },
             showRenameExtensionChangeAlert: { _, _ in true },
+            showTagMutationFailureAlert: { _ in },
         )
     }
 

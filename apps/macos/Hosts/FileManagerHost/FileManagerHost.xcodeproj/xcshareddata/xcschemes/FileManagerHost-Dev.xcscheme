@@ -54,6 +54,11 @@
       </BuildableProductRunnable>
       <EnvironmentVariables>
          <EnvironmentVariable
+            key = "INJECTION_PROJECT_ROOT"
+            value = "$(SRCROOT)/../.."
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
             key = "FILE_MANAGER_HOST_SMOKE"
             value = "1"
             isEnabled = "NO">

@@ -59,11 +59,9 @@
 		A70000000000000000000011 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
 		7E17C1212F24CB7500F6BD2B /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 7E17C1202F24CB7500F6BD2B /* Sentry */; };
-		7E1974712E8BDC0700D041D3 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1974702E8BDC0700D041D3 /* InjectionNext */; };
 		7E6AF6AD2E8BABD8005DC7D3 /* Inject in Frameworks */ = {isa = PBXBuildFile; productRef = 7E6AF6AC2E8BABD8005DC7D3 /* Inject */; };
 		7E9D64952E8CDDC8006CB69F /* SwiftDotenv in Frameworks */ = {isa = PBXBuildFile; productRef = 7E9D64942E8CDDC8006CB69F /* SwiftDotenv */; };
 		7EEC64512E8CE684004ACEA5 /* SwiftDotenv in Frameworks */ = {isa = PBXBuildFile; productRef = 7EEC64502E8CE684004ACEA5 /* SwiftDotenv */; };
-		7EEC64532E8CE6E3004ACEA5 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = 7EEC64522E8CE6E3004ACEA5 /* InjectionNext */; };
 		A018A998CD9F45ABB1050941 /* StructuredQueries in Frameworks */ = {isa = PBXBuildFile; productRef = 319E52B31FBB4D8FA03D33B9 /* StructuredQueries */; };
 		A332223B67D84E9E9BA1DFB7 /* system_property_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = A68896D2BA838902604FD30A /* system_property_registry.json */; };
 		A63E25704AD24423A15E5733 /* property_condition_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = 60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */; };
@@ -236,7 +234,6 @@
 				6CFB7B382E9D48B40005FDF6 /* ComposableArchitecture in Frameworks */,
 				6C57FBA92F02111500D85C72 /* Sparkle in Frameworks */,
 				7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */,
-				7E1974712E8BDC0700D041D3 /* InjectionNext in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -293,7 +290,6 @@
 				6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */,
 				6C8A20C933C9C3F600B2B9B1 /* Sentry in Frameworks */,
 				7E9D64952E8CDDC8006CB69F /* SwiftDotenv in Frameworks */,
-				7EEC64532E8CE6E3004ACEA5 /* InjectionNext in Frameworks */,
 				A018A998CD9F45ABB1050941 /* StructuredQueries in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -411,7 +407,6 @@
 				F21000000000000000000014 /* Dependencies */,
 				F21000000000000000000012 /* OrderedCollections */,
 				7E6AF6AC2E8BABD8005DC7D3 /* Inject */,
-				7E1974702E8BDC0700D041D3 /* InjectionNext */,
 				7EEC64502E8CE684004ACEA5 /* SwiftDotenv */,
 				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
 				7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */,
@@ -516,7 +511,6 @@
 				F20000000000000000000047 /* VoyagerEntitiesAi */,
 				7E17C1202F24CB7500F6BD2B /* Sentry */,
 				7E9D64942E8CDDC8006CB69F /* SwiftDotenv */,
-				7EEC64522E8CE6E3004ACEA5 /* InjectionNext */,
 				6C727A2E2F0DF4AA0012D44A /* Logging */,
 				319E52B31FBB4D8FA03D33B9 /* StructuredQueries */,
 			);
@@ -654,7 +648,6 @@
 				F21000000000000000000004 /* XCRemoteSwiftPackageReference "swift-dependencies" */,
 				F21000000000000000000005 /* XCRemoteSwiftPackageReference "swift-clocks" */,
 				7E6AF6AB2E8BABD8005DC7D3 /* XCRemoteSwiftPackageReference "Inject" */,
-				7E19746F2E8BDC0700D041D3 /* XCRemoteSwiftPackageReference "InjectionNext" */,
 				7E9D64932E8CDDC8006CB69F /* XCRemoteSwiftPackageReference "swift-dotenv" */,
 				6CFB7B362E9D48B40005FDF6 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */,
 				F21000000000000000000016 /* XCRemoteSwiftPackageReference "swift-concurrency-extras" */,
@@ -1080,11 +1073,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.8.0;
-				"OTHER_LDFLAGS[arch=*]" = (
-					"-Xlinker",
-					"-interposable",
-				);
+				MARKETING_VERSION = 0.8.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.dev;
 				PRODUCT_MODULE_NAME = Voyager;
 				PRODUCT_NAME = "$(TARGET_NAME)$(VOYAGER_APP_SUFFIX)";
@@ -1103,6 +1092,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 				VOYAGER_CALLBACK_SCHEME = voyager-dev;
+				VOYAGER_RELEASED_AT = 1970-01-01T00:00:00Z;
 			};
 			name = Debug;
 		};
@@ -1140,7 +1130,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.8.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1153,6 +1143,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 				VOYAGER_CALLBACK_SCHEME = voyager;
+				VOYAGER_RELEASED_AT = "";
 			};
 			name = Release;
 		};
@@ -1167,7 +1158,7 @@
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.8.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1190,7 +1181,7 @@
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.8.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1212,7 +1203,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.8.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1233,7 +1224,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.8.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1280,7 +1271,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.8.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1334,7 +1325,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.8.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1360,7 +1351,7 @@
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.8.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1383,7 +1374,7 @@
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.8.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1411,7 +1402,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.8.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.FilterSearchXPC;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1439,7 +1430,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.8.0;
+				MARKETING_VERSION = 0.8.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.FilterSearchXPC;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1687,14 +1678,6 @@
 				minimumVersion = 9.2.0;
 			};
 		};
-		7E19746F2E8BDC0700D041D3 /* XCRemoteSwiftPackageReference "InjectionNext" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/johnno1962/InjectionNext";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.4.3;
-			};
-		};
 		7E6AF6AB2E8BABD8005DC7D3 /* XCRemoteSwiftPackageReference "Inject" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/krzysztofzablocki/Inject.git";
@@ -1787,11 +1770,6 @@
 			package = 7E17C11F2F24CB7500F6BD2B /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
 			productName = Sentry;
 		};
-		7E1974702E8BDC0700D041D3 /* InjectionNext */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 7E19746F2E8BDC0700D041D3 /* XCRemoteSwiftPackageReference "InjectionNext" */;
-			productName = InjectionNext;
-		};
 		7E6AF6AC2E8BABD8005DC7D3 /* Inject */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 7E6AF6AB2E8BABD8005DC7D3 /* XCRemoteSwiftPackageReference "Inject" */;
@@ -1806,11 +1784,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7E9D64932E8CDDC8006CB69F /* XCRemoteSwiftPackageReference "swift-dotenv" */;
 			productName = SwiftDotenv;
-		};
-		7EEC64522E8CE6E3004ACEA5 /* InjectionNext */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 7E19746F2E8BDC0700D041D3 /* XCRemoteSwiftPackageReference "InjectionNext" */;
-			productName = InjectionNext;
 		};
 		F20000000000000000000011 /* VoyagerPagesOnboarding */ = {
 			isa = XCSwiftPackageProductDependency;

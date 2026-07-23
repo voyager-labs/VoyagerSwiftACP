@@ -143,14 +143,17 @@ final class FileManagerWindowManagerTests: XCTestCase {
         let firstID = UUID()
         let secondID = UUID()
 
-        let store = makeStore(initialState: makeState(
+        var initialState = makeState(
             focusedID: firstID,
             windows: [(firstID, Spec.firstPath), (secondID, Spec.secondPath)],
-        ))
+        )
+        initialState.lastUsedWindowIDs = [firstID, secondID]
+        let store = makeStore(initialState: initialState)
 
         await store.send(.event(.windowClosed(firstID))) {
             $0.windows.remove(id: firstID)
             $0.focusedWindowID = secondID
+            $0.lastUsedWindowIDs = [secondID]
         }
     }
 
@@ -347,6 +350,177 @@ final class FileManagerWindowManagerTests: XCTestCase {
             }
             return id == focusedID
         }
+    }
+
+    /// 등록은 native activation을 한 번 요청하지만 didBecomeKey 전에는 waiter를 완료하지 않는다.
+    func test_activationTrackerWaitsForDidBecomeKeyAfterRegistration() async {
+        let windowID = UUID()
+        let tracker = FileManagerWindowActivationTracker()
+        let requestStarted = expectation(description: "activation requests started")
+        requestStarted.expectedFulfillmentCount = 2
+        var activationCount = 0
+
+        let firstRequest = Task { @MainActor in
+            requestStarted.fulfill()
+            return await tracker.request(windowID)
+        }
+        let secondRequest = Task { @MainActor in
+            requestStarted.fulfill()
+            return await tracker.request(windowID)
+        }
+        await fulfillment(of: [requestStarted], timeout: 1)
+
+        XCTAssertEqual(tracker.pendingWindowIDs, [windowID])
+        tracker.consumeRegistration(for: windowID) {
+            activationCount += 1
+        }
+        tracker.consumeRegistration(for: windowID) {
+            activationCount += 1
+        }
+
+        XCTAssertEqual(activationCount, 1)
+        XCTAssertEqual(tracker.pendingWindowIDs, [windowID], "didBecomeKey 전에는 waiter가 pending이어야 한다")
+
+        tracker.complete(windowID, result: .becameKey)
+        let results = await (firstRequest.value, secondRequest.value)
+
+        XCTAssertEqual(results.0, .becameKey)
+        XCTAssertEqual(results.1, .becameKey)
+        XCTAssertTrue(tracker.pendingWindowIDs.isEmpty)
+    }
+
+    /// waiter 설치 중 동기 didBecomeKey가 발생해도 요청은 정확히 한 번 완료된다.
+    func test_activationTrackerInstallsWaiterBeforeSynchronousActivationCallback() async {
+        let windowID = UUID()
+        let tracker = FileManagerWindowActivationTracker()
+        var activationCount = 0
+
+        let result = await tracker.request(windowID) {
+            activationCount += 1
+            tracker.complete(windowID, result: .becameKey)
+        }
+
+        XCTAssertEqual(result, .becameKey)
+        XCTAssertEqual(activationCount, 1)
+        XCTAssertTrue(tracker.pendingWindowIDs.isEmpty)
+    }
+
+    /// request가 MainActor에 도착하기 전에 discard되면 다음 request가 tombstone을 소비하고 즉시 종료한다.
+    func test_activationTrackerConsumesPreDiscardOnNextRequest() async {
+        let windowID = UUID()
+        let tracker = FileManagerWindowActivationTracker()
+        let requestCompleted = expectation(description: "pre-discarded request completed")
+        let result = LockIsolated<FileManagerWindowActivationResult?>(nil)
+        var activationCount = 0
+
+        tracker.discard(windowID)
+        let request = Task { @MainActor in
+            let activationResult = await tracker.request(windowID) {
+                activationCount += 1
+            }
+            result.setValue(activationResult)
+            requestCompleted.fulfill()
+        }
+
+        await fulfillment(of: [requestCompleted], timeout: 1)
+        if result.value == nil {
+            request.cancel()
+        }
+        await request.value
+
+        XCTAssertEqual(result.value, .discarded)
+        XCTAssertEqual(activationCount, 0)
+        XCTAssertTrue(tracker.pendingWindowIDs.isEmpty)
+        XCTAssertTrue(tracker.discardedWindowIDs.isEmpty)
+    }
+
+    /// discardAll이 사이에 실행돼도 이전 pre-discard tombstone은 후속 request까지 보존한다.
+    func test_activationTrackerPreservesPreDiscardAcrossDiscardAll() async {
+        let preDiscardedWindowID = UUID()
+        let closeAllWindowID = UUID()
+        let tracker = FileManagerWindowActivationTracker()
+
+        tracker.discard(preDiscardedWindowID)
+        tracker.discardAll([closeAllWindowID])
+
+        let result = await tracker.request(preDiscardedWindowID)
+
+        XCTAssertEqual(result, .discarded)
+        XCTAssertEqual(tracker.discardedWindowIDs, [closeAllWindowID])
+        XCTAssertTrue(tracker.pendingWindowIDs.isEmpty)
+    }
+
+    /// tombstone은 새 등록과 request 소비로 제거되고 closeAll 및 상한으로 누적을 제한한다.
+    func test_activationTrackerCleansDiscardedLifecycleTombstones() {
+        let staleWindowID = UUID()
+        let registeredWindowID = UUID()
+        let closeAllWindowID = UUID()
+        let tracker = FileManagerWindowActivationTracker()
+
+        tracker.discard(staleWindowID)
+        tracker.discard(registeredWindowID)
+        tracker.consumeRegistration(for: registeredWindowID) {}
+
+        XCTAssertEqual(tracker.discardedWindowIDs, [staleWindowID])
+
+        tracker.discardAll([closeAllWindowID])
+
+        XCTAssertEqual(tracker.discardedWindowIDs, [staleWindowID, closeAllWindowID])
+
+        for _ in 0 ... FileManagerWindowActivationTracker.discardedWindowLimit {
+            tracker.discard(UUID())
+        }
+
+        XCTAssertEqual(tracker.discardedWindowIDs.count, FileManagerWindowActivationTracker.discardedWindowLimit)
+    }
+
+    /// close 계열 discard와 task cancellation은 pending activation을 discarded로 완료한다.
+    func test_activationTrackerReturnsDiscardedOnDiscardAndCancellation() async {
+        let firstWindowID = UUID()
+        let secondWindowID = UUID()
+        let tracker = FileManagerWindowActivationTracker()
+        let requestStarted = expectation(description: "discard requests started")
+        requestStarted.expectedFulfillmentCount = 2
+
+        let firstRequest = Task { @MainActor in
+            requestStarted.fulfill()
+            return await tracker.request(firstWindowID)
+        }
+        let secondRequest = Task { @MainActor in
+            requestStarted.fulfill()
+            return await tracker.request(secondWindowID)
+        }
+        await fulfillment(of: [requestStarted], timeout: 1)
+
+        XCTAssertEqual(Set(tracker.pendingWindowIDs), Set([firstWindowID, secondWindowID]))
+
+        tracker.discard(firstWindowID)
+        tracker.discardAll()
+        let discardedResults = await (firstRequest.value, secondRequest.value)
+
+        XCTAssertEqual(discardedResults.0, .discarded)
+        XCTAssertEqual(discardedResults.1, .discarded)
+        XCTAssertTrue(tracker.pendingWindowIDs.isEmpty)
+
+        let cancelledWindowID = UUID()
+        let cancellationStarted = expectation(description: "cancelled request started")
+        let cancellationCompletionCount = LockIsolated(0)
+        let cancelledRequest = Task { @MainActor in
+            cancellationStarted.fulfill()
+            let result = await tracker.request(cancelledWindowID)
+            cancellationCompletionCount.withValue { $0 += 1 }
+            return result
+        }
+        await fulfillment(of: [cancellationStarted], timeout: 1)
+        XCTAssertEqual(tracker.pendingWindowIDs, [cancelledWindowID])
+        cancelledRequest.cancel()
+
+        let cancelledResult = await cancelledRequest.value
+        tracker.complete(cancelledWindowID, result: .becameKey)
+
+        XCTAssertEqual(cancelledResult, .discarded)
+        XCTAssertEqual(cancellationCompletionCount.value, 1)
+        XCTAssertTrue(tracker.pendingWindowIDs.isEmpty)
     }
 }
 

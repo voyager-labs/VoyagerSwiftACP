@@ -9,13 +9,49 @@ struct EntryContextMenuTagSpec {
     let selection: EntryContextMenuTagSelection
 }
 
+struct EntryContextMenuTarget {
+    let selectedIds: Set<EntryModel.ID>
+    let entries: [EntryModel]
+
+    static func resolve(
+        displayEntries: [EntryModel],
+        selectedIds: Set<EntryModel.ID>,
+        rowEntry: EntryModel?,
+    ) -> Self {
+        let visibleIDs = Set(displayEntries.map(\.id))
+        let validSelectedIDs = selectedIds.intersection(visibleIDs)
+        let targetIDs: Set<EntryModel.ID> = if let rowEntry, !validSelectedIDs.contains(rowEntry.id) {
+            [rowEntry.id]
+        } else {
+            validSelectedIDs
+        }
+
+        return .init(
+            selectedIds: targetIDs,
+            entries: displayEntries.filter { targetIDs.contains($0.id) },
+        )
+    }
+
+    func isCurrent(
+        displayEntries: [EntryModel],
+        selectedIds: Set<EntryModel.ID>,
+    ) -> Bool {
+        guard !entries.isEmpty, selectedIds == self.selectedIds else { return false }
+        let visibleIDs = Set(displayEntries.map(\.id))
+        return selectedIds.isSubset(of: visibleIDs)
+    }
+
+    func containsBusyEntry(itemStates: [String: ItemOperationState]) -> Bool {
+        entries.contains { itemStates[$0.fullPath]?.isBusy == true }
+    }
+}
+
 enum EntryContextMenuTagSelection {
     case on
     case off
     case mixed
 }
 
-/// 더 좋은 구조 생각
 struct EntryContextMenuSpec {
     let selectedCount: Int
     let rowEntryPathForOpenInNewWindow: String?
@@ -23,9 +59,11 @@ struct EntryContextMenuSpec {
     let showCompress: Bool
     let showExtract: Bool
     let isTrashFolder: Bool
+    let canPutBack: Bool
     let openWithApplications: [ApplicationInfo]
     let showOpenWith: Bool
-    let tags: [EntryContextMenuTagSpec]
+    let paletteTags: [EntryContextMenuTagSpec]
+    let knownTags: [EntryContextMenuTagSpec]
 }
 
 enum EntryContextMenuSpecFactory {
@@ -35,6 +73,7 @@ enum EntryContextMenuSpecFactory {
         selectedEntries: [EntryModel],
         rowEntry: EntryModel?,
         isTrashFolder: Bool,
+        restorableTrashPaths: Set<String>,
         canPaste: Bool,
         favoriteTags: [Tag],
         openWithApplications: [ApplicationInfo],
@@ -48,6 +87,8 @@ enum EntryContextMenuSpecFactory {
         }
         let showOpenWith = selectedEntries.contains { !$0.isFolder }
         let (showCompress, showExtract) = resolveCompressExtract(selectedEntries: selectedEntries)
+        let favoriteNames = favoriteTags.map(\.name)
+        let selectedTagNames = selectedEntries.flatMap { $0.facets.tags?.map(\.name) ?? [] }
 
         return .init(
             selectedCount: effectiveSelectedCount,
@@ -56,9 +97,21 @@ enum EntryContextMenuSpecFactory {
             showCompress: showCompress,
             showExtract: showExtract,
             isTrashFolder: isTrashFolder,
+            canPutBack: isTrashFolder
+                && !selectedEntries.isEmpty
+                && selectedEntries.allSatisfy { restorableTrashPaths.contains($0.fullPath) },
             openWithApplications: openWithApplications,
             showOpenWith: showOpenWith,
-            tags: resolveTags(selectedEntries: selectedEntries, favoriteTags: favoriteTags),
+            paletteTags: resolveTags(
+                names: stableDeduplicated(favoriteTags.prefix(7).map(\.name)),
+                selectedEntries: selectedEntries,
+                favoriteTags: favoriteTags,
+            ),
+            knownTags: resolveTags(
+                names: stableDeduplicated(favoriteNames + selectedTagNames),
+                selectedEntries: selectedEntries,
+                favoriteTags: favoriteTags,
+            ),
         )
     }
 
@@ -69,11 +122,11 @@ enum EntryContextMenuSpecFactory {
     }
 
     private static func resolveTags(
+        names: [String],
         selectedEntries: [EntryModel],
         favoriteTags: [Tag],
     ) -> [EntryContextMenuTagSpec] {
-        favoriteTags.map { favoriteTag in
-            let tagName = favoriteTag.name
+        names.map { tagName in
             let taggedCount = selectedEntries.reduce(into: 0) { count, entry in
                 if entry.facets.tags?.contains(where: { $0.name == tagName }) == true {
                     count += 1
@@ -105,5 +158,10 @@ enum EntryContextMenuSpecFactory {
                 selection: selection,
             )
         }
+    }
+
+    private static func stableDeduplicated(_ names: [String]) -> [String] {
+        var seen: Set<String> = []
+        return names.filter { seen.insert($0).inserted }
     }
 }

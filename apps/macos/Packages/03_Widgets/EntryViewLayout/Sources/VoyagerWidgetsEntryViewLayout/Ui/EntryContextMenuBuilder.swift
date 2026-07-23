@@ -1,6 +1,7 @@
 @preconcurrency import AppKit
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 enum EntryContextMenuBuilder {
@@ -12,13 +13,18 @@ enum EntryContextMenuBuilder {
         let showCompress: Bool
         let showExtract: Bool
         let isTrashFolder: Bool
+        let canPutBack: Bool
         let openWithApplications: [ApplicationInfo]
         let showOpenWith: Bool
-        let tags: [EntryContextMenuTagSpec]
+        let paletteTags: [EntryContextMenuTagSpec]
+        let knownTags: [EntryContextMenuTagSpec]
+        let canPerformEntryCommands: Bool
     }
 
     static func makeMenu(configuration: Configuration) -> NSMenu {
         let menu = NSMenu()
+        menu.autoenablesItems = false
+        menu.delegate = configuration.target
 
         addOpenItems(to: menu, configuration: configuration)
         addInfoItems(to: menu, target: configuration.target)
@@ -29,15 +35,22 @@ enum EntryContextMenuBuilder {
         addTagsItems(to: menu, configuration: configuration)
         addTrashItems(to: menu, configuration: configuration)
 
+        if !configuration.canPerformEntryCommands {
+            menu.items.forEach { $0.isEnabled = false }
+        }
+
         return menu
     }
 
     private static func addOpenItems(to menu: NSMenu, configuration: Configuration) {
-        menu.addItem(menuItem(
+        let open = menuItem(
             title: "Open",
             action: #selector(EntryContextMenuCoordinator.contextMenuOpenSelectedItem),
             target: configuration.target,
-        ))
+        )
+        open.keyEquivalent = keyEquivalent(for: NSDownArrowFunctionKey)
+        open.keyEquivalentModifierMask = .command
+        menu.addItem(open)
 
         if let path = configuration.rowEntryPathForOpenInNewWindow {
             let openInNewWindow = menuItem(
@@ -55,20 +68,26 @@ enum EntryContextMenuBuilder {
             menu.addItem(openWithItem)
         }
 
-        menu.addItem(menuItem(
+        let quickLook = menuItem(
             title: "Quick Look",
             action: #selector(EntryContextMenuCoordinator.contextMenuQuickLookSelectedItem),
             target: configuration.target,
-        ))
+        )
+        quickLook.keyEquivalent = " "
+        quickLook.keyEquivalentModifierMask = []
+        menu.addItem(quickLook)
         menu.addItem(NSMenuItem.separator())
     }
 
     private static func addInfoItems(to menu: NSMenu, target: EntryContextMenuCoordinator) {
-        menu.addItem(menuItem(
+        let getInfo = menuItem(
             title: "Get Info",
             action: #selector(EntryContextMenuCoordinator.contextMenuGetInfoForSelectedItems),
             target: target,
-        ))
+        )
+        getInfo.keyEquivalent = "i"
+        getInfo.keyEquivalentModifierMask = .command
+        menu.addItem(getInfo)
         menu.addItem(menuItem(
             title: "Share…",
             action: #selector(EntryContextMenuCoordinator.contextMenuShareSelectedItems),
@@ -83,26 +102,38 @@ enum EntryContextMenuBuilder {
     }
 
     private static func addClipboardItems(to menu: NSMenu, configuration: Configuration) {
-        menu.addItem(menuItem(
+        let copy = menuItem(
             title: "Copy",
             action: #selector(EntryContextMenuCoordinator.contextMenuCopySelectedItems),
             target: configuration.target,
-        ))
-        menu.addItem(menuItem(
+        )
+        copy.keyEquivalent = "c"
+        copy.keyEquivalentModifierMask = .command
+        menu.addItem(copy)
+        let copyAbsolutePaths = menuItem(
             title: "Copy Absolute Paths",
             action: #selector(EntryContextMenuCoordinator.contextMenuCopySelectedAbsolutePaths),
             target: configuration.target,
-        ))
-        menu.addItem(menuItem(
-            title: "Copy URLs",
+        )
+        copyAbsolutePaths.keyEquivalent = "c"
+        copyAbsolutePaths.keyEquivalentModifierMask = [.command, .option]
+        menu.addItem(copyAbsolutePaths)
+        let copyURLs = menuItem(
+            title: configuration.selectedCount == 1 ? "Copy URL" : "Copy URLs",
             action: #selector(EntryContextMenuCoordinator.contextMenuCopySelectedURLs),
             target: configuration.target,
-        ))
-        menu.addItem(menuItem(
+        )
+        copyURLs.keyEquivalent = "u"
+        copyURLs.keyEquivalentModifierMask = [.command, .option]
+        menu.addItem(copyURLs)
+        let cut = menuItem(
             title: "Cut",
             action: #selector(EntryContextMenuCoordinator.contextMenuCutSelectedItems),
             target: configuration.target,
-        ))
+        )
+        cut.keyEquivalent = "x"
+        cut.keyEquivalentModifierMask = .command
+        menu.addItem(cut)
 
         let pasteItem = menuItem(
             title: "Paste",
@@ -110,7 +141,17 @@ enum EntryContextMenuBuilder {
             target: configuration.target,
         )
         pasteItem.isEnabled = configuration.canPaste
+        pasteItem.keyEquivalent = "v"
+        pasteItem.keyEquivalentModifierMask = .command
         menu.addItem(pasteItem)
+        let selectAll = menuItem(
+            title: "Select All",
+            action: #selector(EntryContextMenuCoordinator.contextMenuSelectAll),
+            target: configuration.target,
+        )
+        selectAll.keyEquivalent = "a"
+        selectAll.keyEquivalentModifierMask = .command
+        menu.addItem(selectAll)
         menu.addItem(NSMenuItem.separator())
     }
 
@@ -120,16 +161,20 @@ enum EntryContextMenuBuilder {
             action: #selector(EntryContextMenuCoordinator.contextMenuStartRename),
             target: configuration.target,
         )
+        renameItem.keyEquivalent = "\r"
         renameItem.isEnabled = configuration.selectedCount == 1
         menu.addItem(renameItem)
     }
 
     private static func addDuplicateItems(to menu: NSMenu, target: EntryContextMenuCoordinator) {
-        menu.addItem(menuItem(
+        let duplicate = menuItem(
             title: "Duplicate",
             action: #selector(EntryContextMenuCoordinator.contextMenuDuplicateSelectedItems),
             target: target,
-        ))
+        )
+        duplicate.keyEquivalent = "d"
+        duplicate.keyEquivalentModifierMask = .command
+        menu.addItem(duplicate)
         menu.addItem(menuItem(
             title: "Make Alias",
             action: #selector(EntryContextMenuCoordinator.contextMenuCreateAliasForSelectedItems),
@@ -159,32 +204,45 @@ enum EntryContextMenuBuilder {
     }
 
     private static func addTagsItems(to menu: NSMenu, configuration: Configuration) {
-        guard !configuration.tags.isEmpty else { return }
+        guard configuration.selectedCount > 0 else { return }
 
-        let sectionTitle = NSMenuItem(title: "Tags…", action: nil, keyEquivalent: "")
-        sectionTitle.isEnabled = false
-        menu.addItem(sectionTitle)
-        for tag in configuration.tags {
-            let item = menuItem(
-                title: tag.name,
-                action: #selector(EntryContextMenuCoordinator.contextMenuToggleTag(_:)),
-                target: configuration.target,
-            )
-            item.representedObject = tag.name
-            item.state = selectionStateValue(tag.selection)
-            item.image = ColorDotImageFactory.make(color: TagColor(colorCode: tag.colorCode).nsColor)
-            menu.addItem(item)
+        let tagsItem = menuItem(
+            title: "Tags…",
+            action: #selector(EntryContextMenuCoordinator.contextMenuShowTags(_:)),
+            target: configuration.target,
+        )
+        tagsItem.representedObject = configuration.knownTags
+
+        if !configuration.paletteTags.isEmpty {
+            let palette = MainActor.assumeIsolated {
+                EntryFavoriteTagsPaletteView(
+                    tags: configuration.paletteTags,
+                    isEnabled: configuration.canPerformEntryCommands,
+                    onSelect: { tag in
+                        let mode: TagMutationRequest.Mode = tag.selection == .on ? .remove : .add
+                        configuration.target.performTagMutation(name: tag.name, mode: mode)
+                    },
+                )
+            }
+            let paletteItem = NSMenuItem()
+            paletteItem.isEnabled = configuration.canPerformEntryCommands
+            paletteItem.view = palette
+            menu.addItem(paletteItem)
         }
+
+        menu.addItem(tagsItem)
         menu.addItem(NSMenuItem.separator())
     }
 
     private static func addTrashItems(to menu: NSMenu, configuration: Configuration) {
         if configuration.isTrashFolder {
-            menu.addItem(menuItem(
+            let putBack = menuItem(
                 title: "Put Back",
                 action: #selector(EntryContextMenuCoordinator.contextMenuPutBackSelectedItems),
                 target: configuration.target,
-            ))
+            )
+            putBack.isEnabled = configuration.canPutBack
+            menu.addItem(putBack)
             menu.addItem(menuItem(
                 title: "Delete Immediately",
                 action: #selector(EntryContextMenuCoordinator.contextMenuDeleteSelectedItemsImmediately),
@@ -197,16 +255,20 @@ enum EntryContextMenuBuilder {
                 target: configuration.target,
             ))
         } else {
-            menu.addItem(menuItem(
+            let moveToTrash = menuItem(
                 title: "Move to Trash",
                 action: #selector(EntryContextMenuCoordinator.contextMenuMoveSelectedItemsToTrash),
                 target: configuration.target,
-            ))
+            )
+            moveToTrash.keyEquivalent = keyEquivalent(for: NSBackspaceCharacter)
+            moveToTrash.keyEquivalentModifierMask = .command
+            menu.addItem(moveToTrash)
         }
     }
 
     private static func buildOpenWithMenu(configuration: Configuration) -> NSMenu {
         let menu = NSMenu()
+        menu.autoenablesItems = false
 
         menu.addItem(menuItem(
             title: "Other…",
@@ -231,17 +293,13 @@ enum EntryContextMenuBuilder {
         return menu
     }
 
-    private static func selectionStateValue(_ selection: EntryContextMenuTagSelection) -> NSControl.StateValue {
-        switch selection {
-        case .on: .on
-        case .off: .off
-        case .mixed: .mixed
-        }
-    }
-
     private static func menuItem(title: String, action: Selector, target: AnyObject) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = target
         return item
+    }
+
+    private static func keyEquivalent(for character: Int) -> String {
+        UnicodeScalar(character).map(String.init) ?? ""
     }
 }

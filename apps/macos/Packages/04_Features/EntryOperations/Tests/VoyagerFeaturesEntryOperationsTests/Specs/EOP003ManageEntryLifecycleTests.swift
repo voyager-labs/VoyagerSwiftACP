@@ -4,6 +4,8 @@ import VoyagerEntitiesEntry
 @testable import VoyagerFeaturesEntryOperations
 import XCTest
 
+private typealias EntryLoadSuspensionGate = EntryOperationsLoadSuspensionGate
+
 @MainActor
 final class EOP003ManageEntryLifecycleTests: XCTestCase {
     // MARK: - EOP-003-move_entries_to_trash
@@ -40,6 +42,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: sourcePath))
         XCTAssertTrue(FileManager.default.fileExists(atPath: trashPath))
         XCTAssertEqual(store.state.undoRecords.count, 1)
+        XCTAssertTrue(store.state.restorableTrashPaths.contains(trashPath))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
@@ -171,6 +174,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: trashPath.path))
         XCTAssertEqual(store.state.pendingEmptyTrashItemCount, 0)
         XCTAssertEqual(store.state.emptyTrashCompletedCount, 0)
+        XCTAssertTrue(store.state.restorableTrashPaths.isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
@@ -636,77 +640,426 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertEqual(store.state.undoRecords.first?.id, record.id)
         XCTAssertTrue(store.state.redoRecords.isEmpty)
     }
+
+    // MARK: - EOP-003-load_entry_items
+
+    /// EOP-003-load_entry_items (VOY-578): Directory 실패와 성공한 빈 결과를 별도 completion으로 처리함
+    /// 일반 Directory load 실패 후 retry가 빈 Directory로 성공하는 lifecycle 계약을 검증한다.
+    /// - 검증 내용: 실패는 itemsLoadFailed로 transient state를 정리하고 retry 성공은 itemsLoaded([])를 방출함
+    /// - 사전 조건: 기존 item과 reload/rename state가 있고 loader는 continuation으로 실패 후 빈 배열을 반환함
+    /// - 기대 결과: 실패 직후 item/loading/reloading/rename state가 비고, retry의 빈 성공은 정상 completion으로 종료됨
+    func testDirectoryLoadFailureClearsTransientStateThenEmptyRetrySucceeds() async {
+        await verifyLoadFailureRetry()
+    }
+
+    /// EOP-003-load_entry_items (VOY-578): 취소된 Recents 응답은 최신 항목을 덮어쓰지 않음
+    /// 취소를 무시하는 Recents loader가 늦게 완료돼도 stale itemsLoaded를 방출하지 않는지 검증한다.
+    /// - 검증 내용: Recents load 보류 후 replacement Directory load 완료, Recents 재개 뒤 최신 항목 유지
+    /// - 사전 조건: Recents dependency가 continuation에서 대기하고 같은 cancellation ID의 Directory load가 뒤따름
+    /// - 기대 결과: 취소된 Recents 응답은 itemsLoaded를 보내지 않고 replacement 항목이 유지됨
+    func testCancelledRecentItemsResponseDoesNotOverwriteLatestItems() async {
+        let preservedLatest = await EntryOperationsTestSupport.cancelledLoadPreservesLatest(.recents)
+        XCTAssertTrue(preservedLatest)
+    }
+
+    /// EOP-003-load_entry_items (VOY-578): 취소된 Tag 응답은 최신 항목을 덮어쓰지 않음
+    /// 취소를 무시하는 Tag loader가 늦게 완료돼도 stale itemsLoaded를 방출하지 않는지 검증한다.
+    /// - 검증 내용: Tag load 보류 후 replacement Directory load 완료, Tag 재개 뒤 최신 항목 유지
+    /// - 사전 조건: Tag dependency가 continuation에서 대기하고 같은 cancellation ID의 Directory load가 뒤따름
+    /// - 기대 결과: 취소된 Tag 응답은 itemsLoaded를 보내지 않고 replacement 항목이 유지됨
+    func testCancelledTagItemsResponseDoesNotOverwriteLatestItems() async {
+        let preservedLatest = await EntryOperationsTestSupport.cancelledLoadPreservesLatest(.tag)
+        XCTAssertTrue(preservedLatest)
+    }
+
+    /// EOP-003-load_entry_items (VOY-578): 취소된 Computer 성공 응답은 최신 항목을 덮어쓰지 않음
+    /// 취소를 무시하는 Computer loader가 성공으로 늦게 완료돼도 stale itemsLoaded를 방출하지 않는지 검증한다.
+    /// - 검증 내용: Computer load 보류 후 replacement Directory load 완료, 성공 재개 뒤 최신 항목 유지
+    /// - 사전 조건: Computer dependency가 continuation에서 대기하고 같은 cancellation ID의 Directory load가 뒤따름
+    /// - 기대 결과: 취소된 Computer 성공 응답은 itemsLoaded를 보내지 않고 replacement 항목이 유지됨
+    func testCancelledComputerItemsSuccessDoesNotOverwriteLatestItems() async {
+        let preservedLatest = await EntryOperationsTestSupport.cancelledLoadPreservesLatest(.computerSuccess)
+        XCTAssertTrue(preservedLatest)
+    }
+
+    /// EOP-003-load_entry_items (VOY-578): 취소된 Computer 오류 응답은 빈 항목 fallback을 방출하지 않음
+    /// 취소를 무시하는 Computer loader가 오류로 늦게 완료돼도 stale 빈 itemsLoaded를 방출하지 않는지 검증한다.
+    /// - 검증 내용: Computer load 보류 후 replacement Directory load 완료, 오류 재개 뒤 최신 항목 유지
+    /// - 사전 조건: Computer dependency가 continuation에서 대기하고 같은 cancellation ID의 Directory load가 뒤따름
+    /// - 기대 결과: 취소된 Computer 오류 fallback은 itemsLoaded를 보내지 않고 replacement 항목이 유지됨
+    func testCancelledComputerItemsFailureDoesNotClearLatestItems() async {
+        let preservedLatest = await EntryOperationsTestSupport.cancelledLoadPreservesLatest(.computerFailure)
+        XCTAssertTrue(preservedLatest)
+    }
 }
 
-private func makeFailingDeleteClient(error: FileOpError) -> EntryFileOpsClient {
-    let live = EntryFileOpsClient.liveValue
-    return EntryFileOpsClient(
-        createFolder: { parentURL, folderName in try await live.createFolder(parentURL, folderName) },
-        pasteFile: { sourceURL, destinationURL in try await live.pasteFile(sourceURL, destinationURL) },
-        moveFile: { sourceURL, destinationURL in try await live.moveFile(sourceURL, destinationURL) },
-        renameFile: { sourceURL, destinationURL in try await live.renameFile(sourceURL, destinationURL) },
-        createAlias: { sourceURL, aliasURL in try await live.createAlias(sourceURL, aliasURL) },
-        moveToTrashAndReturnURL: { url in try await live.moveToTrashAndReturnURL(url) },
-        deleteImmediately: { _ in throw error },
-        putBackFromTrash: { trashURL, originalPath in try await live.putBackFromTrash(trashURL, originalPath) },
-        compressItems: { urls in try await live.compressItems(urls) },
-        extractCompressedFile: { url in try await live.extractCompressedFile(url) },
-        getTags: { url in try await live.getTags(url) },
-        setTags: { url, tags in try await live.setTags(url, tags) },
-        toggleTag: { url, tag in try await live.toggleTag(url, tag) },
-        fileExists: { path in live.fileExists(path) },
-        saveDragPaths: { _ in },
-        loadDragPaths: { [] },
-        saveDragWithOption: { _ in },
-        loadDragWithOption: { false },
-        clipboardChangeCount: { 0 },
-        loadClipboardCutSessionId: { nil },
-        saveClipboardCutSessionId: { _ in },
-        loadClipboardPaths: { ([], .copy) },
-        postFileSystemChanged: { _ in },
-    )
+extension EOP003ManageEntryLifecycleTests {
+    // MARK: - EOP-003-load_entry_items
+
+    /// EOP-003-load_entry_items: 모든 loaded list는 Trash metadata projection을 새로 읽는다.
+    /// - 검증 내용: itemsLoaded 후 저장된 trash path가 restorableTrashPaths로 투영된다.
+    /// - 사전 조건: metadata store에 하나의 Trash record가 있고 loaded item 목록은 비어 있다.
+    /// - 기대 결과: lifecycle load completion이 해당 Trash path만 state에 저장한다.
+    func testItemsLoadedRefreshesRestorableTrashPaths() async {
+        let trashPath = "/tmp/.Trash/entry.txt"
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init())
+        await store.dependencies.trashMetadataStoreClient.save(TrashMetadata(
+            trashPath: trashPath,
+            originalPath: "/tmp/entry.txt",
+            deletedDate: .distantPast,
+        ))
+        // RED: itemsLoaded never refreshed the menu eligibility projection.
+        await store.send(.loading(.itemsLoaded([])))
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded) {
+            $0.restorableTrashPaths = [trashPath]
+        }
+        // GREEN: every successful list load refreshes the restorable Trash-path projection.
+        XCTAssertEqual(store.state.restorableTrashPaths, [trashPath])
+    }
+
+    // MARK: - EOP-003-move_entries_to_trash
+
+    /// EOP-003-move_entries_to_trash: 성공한 Put Back은 metadata와 capability projection을 함께 제거한다.
+    /// - 검증 내용: putBack 성공 뒤 restorableTrashPaths와 metadata store가 비어 있다.
+    /// - 사전 조건: fake Trash의 실제 파일과 일치하는 metadata 및 restorable path가 있다.
+    /// - 기대 결과: 원래 경로로 파일이 돌아오고 metadata와 eligibility가 제거된다.
+    func testPutBackSuccessRemovesRestorableMetadata() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let recorder = FileOpsRecorder()
+        let trashRoot = sandbox.root.appendingPathComponent(".Trash")
+        let sourcePath = sandbox.fileURL.path
+        let record = try prepareTrashRecord(sourceURL: sandbox.fileURL, trashRoot: trashRoot)
+        guard let trashPath = record.targets.first?.afterPath else {
+            XCTFail("Expected a Trash path")
+            return
+        }
+        var initialState = EntryOperationsState()
+        initialState.restorableTrashPaths = [trashPath]
+        let store = EntryOperationsTestSupport.makeStore(initialState: initialState) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder, trashRoot: trashRoot)
+        }
+        await store.dependencies.trashMetadataStoreClient.save(TrashMetadata(
+            trashPath: trashPath,
+            originalPath: sourcePath,
+            deletedDate: .distantPast,
+        ))
+        // RED: a successful restore left the metadata eligibility path stale.
+        // store.exhaustivity = .off: put-back emits per-path lifecycle actions before the final action record.
+        store.exhaustivity = .off
+        await store.send(.trash(.putBackFromTrash(paths: [trashPath])))
+        await store.finish()
+        await store.skipReceivedActions()
+        // GREEN: reducer removal and lifecycle projection removal agree after restore.
+        let remainingMetadata = await store.dependencies.trashMetadataStoreClient.find(trashPath)
+        XCTAssertNil(remainingMetadata)
+        XCTAssertFalse(store.state.restorableTrashPaths.contains(trashPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sourcePath))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: trashPath))
+    }
 }
 
-private func makeFailingTrashClient(recorder: FileOpsRecorder) -> EntryFileOpsClient {
-    let live = EntryFileOpsClient.liveValue
-    return EntryFileOpsClient(
-        createFolder: { parentURL, folderName in try await live.createFolder(parentURL, folderName) },
-        pasteFile: { sourceURL, destinationURL in try await live.pasteFile(sourceURL, destinationURL) },
-        moveFile: { sourceURL, destinationURL in try await live.moveFile(sourceURL, destinationURL) },
-        renameFile: { sourceURL, destinationURL in try await live.renameFile(sourceURL, destinationURL) },
-        createAlias: { sourceURL, aliasURL in try await live.createAlias(sourceURL, aliasURL) },
-        moveToTrashAndReturnURL: { _ in
-            throw FileOpError.system(message: "trash unavailable")
-        },
-        deleteImmediately: { url in
-            try await live.deleteImmediately(url)
-            recorder.recordDelete(path: url)
-        },
-        putBackFromTrash: { trashURL, originalPath in try await live.putBackFromTrash(trashURL, originalPath) },
-        compressItems: { urls in try await live.compressItems(urls) },
-        extractCompressedFile: { url in try await live.extractCompressedFile(url) },
-        getTags: { url in try await live.getTags(url) },
-        setTags: { url, tags in try await live.setTags(url, tags) },
-        toggleTag: { url, tag in try await live.toggleTag(url, tag) },
-        fileExists: { path in live.fileExists(path) },
-        saveDragPaths: { _ in },
-        loadDragPaths: { [] },
-        saveDragWithOption: { _ in },
-        loadDragWithOption: { false },
-        clipboardChangeCount: { 0 },
-        loadClipboardCutSessionId: { nil },
-        saveClipboardCutSessionId: { _ in },
-        loadClipboardPaths: { ([], .copy) },
-        postFileSystemChanged: { _ in },
-    )
+private extension EOP003ManageEntryLifecycleTests {
+    func verifyLoadFailureRetry() async {
+        let staleEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/stale.txt", name: "stale.txt")
+        let gate = EntryLoadSuspensionGate()
+        var initialState = EntryOperationsState()
+        initialState.items = [staleEntry]
+        initialState.isReloading = true
+        initialState.renamingItemId = staleEntry.id
+        initialState.renamingText = staleEntry.name
+        initialState.renamingItem = staleEntry
+        let store = EntryOperationsTestSupport.makeStore(initialState: initialState) {
+            $0.entryLoadingClient.loadItems = { _, _ in try await gate.wait() }
+        }
+        await store.send(.loading(.loadItems(path: "/tmp", showHidden: false))) { $0.isLoading = true }
+        await gate.waitUntilWaiting()
+        await gate.resume(with: .failure)
+        await store.receive(\.loading.itemsLoadFailed) {
+            $0.items = []
+            $0.isLoading = false
+            $0.isReloading = false
+            $0.renamingItemId = nil
+            $0.renamingText = ""
+            $0.renamingItem = nil
+        }
+        await store.send(.loading(.loadItems(path: "/tmp", showHidden: false))) { $0.isLoading = true }
+        await gate.waitUntilWaiting()
+        await gate.resume(with: .entries([]))
+        await store.receive(\.loading.itemsLoaded, []) {
+            $0.isLoading = false
+        }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
+    }
 }
 
-private func prepareTrashRecord(sourceURL: URL, trashRoot: URL) throws -> EntryActionRecord {
-    try FileManager.default.createDirectory(at: trashRoot, withIntermediateDirectories: true)
-    let trashURL = trashRoot.appendingPathComponent(sourceURL.lastPathComponent)
-    try FileManager.default.moveItem(at: sourceURL, to: trashURL)
-    return EntryActionRecord(
-        operationKind: .moveToTrash,
-        targets: [.init(beforePath: sourceURL.path, afterPath: trashURL.path)],
-    )
+// MARK: - VOY-610-entry-sound
+
+private actor SoundRecorder {
+    var playedSounds: [EntryOperationSound] = []
+
+    func record(_ sound: EntryOperationSound) {
+        playedSounds.append(sound)
+    }
+}
+
+extension EOP003ManageEntryLifecycleTests {
+    /// VOY-610-entry-sound: moveToTrash batch completion이 EntryOperationSound.moveToTrash를 정확히 한 번 요청한다.
+    /// 사용자가 하나 이상의 Entry를 Trash로 이동한 후 batch가 완료되면 drag-to-trash 사운드가 재생된다.
+    /// - 검증 내용: entryActionCompleted(.moveToTrash) → .moveToTrash sound
+    /// - 사전 조건: recorder가 주입된 TestStore
+    /// - 기대 결과: recorder.playedSounds에 [.moveToTrash]가 기록된다
+    func testMoveToTrashBatchPlaysFinderTrashSoundOnce() async {
+        let recorder = SoundRecorder()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOperationSoundClient = EntryOperationSoundClient(play: { sound in
+                await recorder.record(sound)
+            })
+        }
+        let record = EntryActionRecord(
+            operationKind: .moveToTrash,
+            targets: [.init(beforePath: "/a/file.txt", afterPath: "/.Trash/file.txt")],
+        )
+
+        // store.exhaustivity = .off: sound play is a fire-and-forget .run effect
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.entryActionCompleted(record)))
+        await store.finish()
+
+        let sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds, [.moveToTrash])
+    }
+
+    /// VOY-610-entry-sound: emptyTrashCompleted가 EntryOperationSound.emptyTrash를 정확히 한 번 요청한다.
+    /// 사용자가 Trash 비우기를 완료하면 empty-trash 사운드가 재생된다.
+    /// - 검증 내용: emptyTrashCompleted → .emptyTrash sound
+    /// - 사전 조건: recorder가 주입된 TestStore
+    /// - 기대 결과: recorder.playedSounds에 [.emptyTrash]가 기록된다
+    func testEmptyTrashCompletedPlaysFinderEmptyTrashSoundOnce() async {
+        let recorder = SoundRecorder()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOperationSoundClient = EntryOperationSoundClient(play: { sound in
+                await recorder.record(sound)
+            })
+        }
+
+        // store.exhaustivity = .off: sound play is a fire-and-forget .run effect
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.emptyTrashCompleted))
+        await store.finish()
+
+        let sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds, [.emptyTrash])
+    }
+
+    /// VOY-610-entry-sound: pasteFileCopy/pasteFileMove/pasteFileDuplicate/putBack batch 완료가
+    /// EntryOperationSound.operationCompleted를 batch당 정확히 1회 요청한다.
+    /// 다중 파일 복사/이동에서도 사운드는 batch 완료 시 1회만 재생된다.
+    /// - 검증 내용: entryActionCompleted for pasteFileCopy/pasteFileMove/pasteFileDuplicate/putBack →
+    /// .operationCompleted sound (batch당 1회)
+    /// - 사전 조건: recorder가 주입된 TestStore
+    /// - 기대 결과: 각 batch마다 recorder.playedSounds에 .operationCompleted가 1회 기록된다
+    func testBatchCompletionsPlayOperationCompletedSound() async {
+        let recorder = SoundRecorder()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOperationSoundClient = EntryOperationSoundClient(play: { sound in
+                await recorder.record(sound)
+            })
+        }
+
+        store.exhaustivity = .off
+
+        let copyRecord = EntryActionRecord(
+            operationKind: .pasteFileCopy,
+            targets: [
+                .init(beforePath: "/a/src1.txt", afterPath: "/b/dst1.txt"),
+                .init(beforePath: "/a/src2.txt", afterPath: "/b/dst2.txt"),
+            ],
+        )
+        await store.send(.lifecycle(.entryActionCompleted(copyRecord)))
+        await store.finish()
+
+        var sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds, [.operationCompleted], "pasteFileCopy batch should play operationCompleted once")
+
+        let moveRecord = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [.init(beforePath: "/a/src.txt", afterPath: "/b/dst.txt")],
+        )
+        await store.send(.lifecycle(.entryActionCompleted(moveRecord)))
+        await store.finish()
+        sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds, [.operationCompleted, .operationCompleted])
+
+        let duplicateRecord = EntryActionRecord(
+            operationKind: .pasteFileDuplicate,
+            targets: [.init(beforePath: "/a/src.txt", afterPath: "/a/src copy.txt")],
+        )
+        await store.send(.lifecycle(.entryActionCompleted(duplicateRecord)))
+        await store.finish()
+        sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds, [.operationCompleted, .operationCompleted, .operationCompleted])
+
+        let putBackRecord = EntryActionRecord(
+            operationKind: .putBack,
+            targets: [.init(beforePath: "/.Trash/file.txt", afterPath: "/original/file.txt")],
+        )
+        await store.send(.lifecycle(.entryActionCompleted(putBackRecord)))
+        await store.finish()
+        sounds = await recorder.playedSounds
+        XCTAssertEqual(
+            sounds,
+            [.operationCompleted, .operationCompleted, .operationCompleted, .operationCompleted],
+        )
+    }
+
+    /// VOY-610-entry-sound: non-cancel 오류는 .error 사운드를 요청하고 .cancelled는 무음이다.
+    /// 사용자의 파일 작업이 실패하면 preferred alert 사운드가 재생되지만, 취소는 무음이다.
+    /// - 검증 내용: operationFinished(.failure(.system)) → .error sound, operationFinished(.failure(.cancelled)) → 무음
+    /// - 사전 조건: recorder가 주입된 TestStore
+    /// - 기대 결과: .system 오류 사운드가 기록되고 .cancelled는 기록되지 않는다
+    func testFailuresPlayPreferredAlertExceptCancellation() async {
+        let recorder = SoundRecorder()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOperationSoundClient = EntryOperationSoundClient(play: { sound in
+                await recorder.record(sound)
+            })
+        }
+
+        // store.exhaustivity = .off: sound play is a fire-and-forget .run effect
+        store.exhaustivity = .off
+
+        // system error → .error sound
+        await store.send(.lifecycle(.operationFinished(
+            "/a/file.txt",
+            .pasteFileCopy,
+            .failure(.system(message: "disk full")),
+        )))
+        await store.finish()
+
+        var sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds, [.error], "system error should play error sound")
+
+        // cancelled → no sound
+        await store.send(.lifecycle(.operationFinished("/a/file.txt", .pasteFileCopy, .failure(.cancelled))))
+        await store.finish()
+
+        sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds, [.error], "cancelled should NOT produce sound")
+    }
+
+    /// VOY-610-entry-sound: 두 개의 연속 entryActionCompleted batch가 각각 sound client에 도달한다.
+    /// reducer는 모든 batch 완료를 sound client에 전달하며, throttle은 SoundPlayer live value에서만 적용된다.
+    /// - 검증 내용: 연속 entryActionCompleted 2회 → recorder에 2개의 sound
+    /// - 사전 조건: recorder가 주입된 TestStore
+    /// - 기대 결과: recorder.playedSounds.count가 2 (reducer는 throttle 없이 모든 요청을 전달)
+    func testRapidBatchCompletionsReachSoundClient() async {
+        let recorder = SoundRecorder()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOperationSoundClient = EntryOperationSoundClient(play: { sound in
+                await recorder.record(sound)
+            })
+        }
+
+        store.exhaustivity = .off
+
+        let batch1 = EntryActionRecord(
+            operationKind: .pasteFileCopy,
+            targets: [.init(beforePath: "/a/src.txt", afterPath: "/b/dst.txt")],
+        )
+        await store.send(.lifecycle(.entryActionCompleted(batch1)))
+        await store.finish()
+
+        let batch2 = EntryActionRecord(
+            operationKind: .pasteFileCopy,
+            targets: [.init(beforePath: "/c/src.txt", afterPath: "/d/dst.txt")],
+        )
+        await store.send(.lifecycle(.entryActionCompleted(batch2)))
+        await store.finish()
+
+        let sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds.count, 2, "Both batches should request sound; throttle is in live value only")
+    }
+
+    /// VOY-610-entry-sound: operationFinished(.success)는 모든 종류에서 무음이며,
+    /// entryActionCompleted에서도 createFolder/createAlias/rename/setTags는 사운드를 생성하지 않는다.
+    /// 완료 사운드는 pasteFileCopy/Move/Duplicate/putBack batch에서만 재생된다.
+    /// - 검증 내용: operationFinished(.success) for excluded kinds → 0 sound,
+    ///   entryActionCompleted for createFolder/createAlias/rename/setTags → 0 sound
+    /// - 사전 조건: recorder가 주입된 TestStore
+    /// - 기대 결과: recorder.playedSounds가 비어 있다
+    func testExcludedOperationKindsProduceNoSound() async {
+        let recorder = SoundRecorder()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOperationSoundClient = EntryOperationSoundClient(play: { sound in
+                await recorder.record(sound)
+            })
+        }
+
+        store.exhaustivity = .off
+
+        let excludedKinds: [OperationKind] = [
+            .createFolder,
+            .rename,
+            .setTags,
+            .compress,
+            .extract,
+            .openDefault,
+            .revealInFinder,
+        ]
+        for kind in excludedKinds {
+            await store.send(.lifecycle(.operationFinished("/a/file.txt", kind, .success(()))))
+            await store.finish()
+        }
+
+        let undoableNonSoundableKinds: [OperationKind] = [
+            .createFolder,
+            .createAlias,
+            .rename,
+            .setTags,
+        ]
+        for kind in undoableNonSoundableKinds {
+            let record = EntryActionRecord(
+                operationKind: kind,
+                targets: [.init(beforePath: nil, afterPath: "/a/file.txt")],
+            )
+            await store.send(.lifecycle(.entryActionCompleted(record)))
+            await store.finish()
+        }
+
+        let sounds = await recorder.playedSounds
+        XCTAssertTrue(sounds.isEmpty, "Excluded operation kinds should produce no sound")
+    }
+
+    /// VOY-610-entry-sound: moveToTrash batch completion이 정확히 한 번 요청하고
+    /// entryActionCompleted의 기존 상태 업데이트(restorableTrashPaths)는 유지된다.
+    /// - 검증 내용: sound 요청과 state 업데이트가 모두 정상 동작
+    /// - 사전 조건: recorder가 주입된 TestStore
+    /// - 기대 결과: recorder.playedSounds에 [.moveToTrash]가 있고, state.restorableTrashPaths가 갱신된다
+    func testMoveToTrashSoundPreservesStateUpdate() async {
+        let recorder = SoundRecorder()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOperationSoundClient = EntryOperationSoundClient(play: { sound in
+                await recorder.record(sound)
+            })
+        }
+
+        let record = EntryActionRecord(
+            operationKind: .moveToTrash,
+            targets: [.init(beforePath: "/a/file.txt", afterPath: "/.Trash/file.txt")],
+        )
+
+        // store.exhaustivity = .off: sound play is a fire-and-forget .run effect
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.entryActionCompleted(record)))
+        await store.finish()
+
+        let sounds = await recorder.playedSounds
+        XCTAssertEqual(sounds, [.moveToTrash])
+
+        XCTAssertTrue(store.state.restorableTrashPaths.contains("/.Trash/file.txt"))
+    }
 }

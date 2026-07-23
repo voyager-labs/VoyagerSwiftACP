@@ -1,10 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "instructions": [
-    ".agents/rules/00-core/*.md",
-    ".agents/rules/10-routing/*.md",
-    ".agents/rules/99-agent/01-agent-harness-artifacts.md"
-  ],
+  "instructions": [".agents/rules/*.md"],
   "plugin": [
     ".agents/skills/common/internal/sisyphus-wiki/plugins/sisyphus-wiki.js",
     ".agents/skills/common/vendor/ponytail/.opencode/plugins/ponytail.mjs",

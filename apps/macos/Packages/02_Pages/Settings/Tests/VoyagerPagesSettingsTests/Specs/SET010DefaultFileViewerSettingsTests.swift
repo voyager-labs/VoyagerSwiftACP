@@ -302,6 +302,22 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         XCTAssertEqual(DefaultFileViewerClient.liveValue.appBundleID, DefaultFileViewerClient.voyagerBundleID)
     }
 
+    /// 실제 앱 신원은 Dev와 Prod를 구분하고, SettingsHost는 배포 앱으로 fallback한다.
+    func testResolveVoyagerBundleIDPreservesRuntimeAppIdentity() {
+        XCTAssertEqual(
+            DefaultFileViewerClient.resolveVoyagerBundleID(mainBundleID: "fm.voyager.Voyager.dev"),
+            "fm.voyager.Voyager.dev",
+        )
+        XCTAssertEqual(
+            DefaultFileViewerClient.resolveVoyagerBundleID(mainBundleID: "fm.voyager.Voyager"),
+            "fm.voyager.Voyager",
+        )
+        XCTAssertEqual(
+            DefaultFileViewerClient.resolveVoyagerBundleID(mainBundleID: "fm.voyager.SettingsHost"),
+            "fm.voyager.Voyager",
+        )
+    }
+
     /// 진단은 UserDefaults 캐시가 아니라 주입된 defaultsStore에서 NSFileViewer를 읽는다.
     func testDiagnoseReadsNSFileViewerFromDefaultsStore() async {
         let values = SET010DefaultsRecorder(initialValue: DefaultFileViewerClient.voyagerBundleID)

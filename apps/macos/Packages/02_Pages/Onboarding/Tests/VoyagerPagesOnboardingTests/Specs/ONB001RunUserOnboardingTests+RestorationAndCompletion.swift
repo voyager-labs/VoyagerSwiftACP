@@ -198,7 +198,7 @@ extension ONB001RunUserOnboardingTests {
                 saveRecorder: saveRecorder,
             )
             $0.accountSessionClient = AccountSessionClient(
-                read: { AccountSession(accessToken: "test-token", status: .coreLicenseActive) },
+                read: { _ in AccountSession(accessToken: "test-token", status: .coreLicenseActive) },
                 persist: { _ in },
                 delete: { _ in },
             )

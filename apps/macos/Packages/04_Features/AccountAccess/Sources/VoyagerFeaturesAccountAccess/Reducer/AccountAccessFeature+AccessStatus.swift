@@ -4,18 +4,43 @@ import Foundation
 import VoyagerShared
 
 extension AccountAccessFeature {
+    private struct CachedSnapshotRestoreContext {
+        let generation: UInt64
+        let binding: UUID?
+        let currentStateSessionExpiry: Date?
+        let currentDeviceID: String?
+    }
+
+    static var gatewayEnvironment: GatewayEnvironment {
+        GatewayEnvironment(rawValue: EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL") ?? "")
+    }
+
     func sessionSyncEffect(
         intent: SessionSyncIntent,
         reason _: SyncReason,
         generation: UInt64,
+        binding: UUID?,
+        currentStateSessionExpiry: Date?,
     ) -> Effect<Action> {
         let retryDelays = intent == .refresh ? [Duration.seconds(5)] : Self.sessionSyncRetryDelays
-        return .run { [authNetwork, continuousClock, deviceIdentityClient, retryDelays, snapshotClient] send in
+        return .run { [
+            authNetwork,
+            continuousClock,
+            date,
+            deviceIdentityClient,
+            retryDelays,
+            sessionClient,
+            snapshotClient,
+        ] send in
             let device: DeviceBindingRequest
             do {
                 device = try Self.sessionSyncDevice(deviceIdentityClient)
             } catch {
-                await send(._sessionSyncCompleted(generation: generation, result: .failure(.upstream(0))))
+                await send(._sessionSyncCompleted(
+                    generation: generation,
+                    binding: binding,
+                    result: .failure(.upstream(0)),
+                ))
                 return
             }
 
@@ -28,22 +53,44 @@ extension AccountAccessFeature {
                         device: device,
                         requestID: requestID,
                     )
-                    await send(._sessionSyncCompleted(generation: generation, result: .success(result)))
+                    await send(._sessionSyncCompleted(
+                        generation: generation,
+                        binding: binding,
+                        result: .success(result),
+                    ))
                     return
                 } catch let error as SessionSyncError {
                     guard case .upstream = error else {
-                        await send(._sessionSyncCompleted(generation: generation, result: .failure(error)))
+                        await send(._sessionSyncCompleted(
+                            generation: generation,
+                            binding: binding,
+                            result: .failure(error),
+                        ))
                         return
                     }
                     guard retryIndex < retryDelays.count else {
-                        guard let action = await Self.cachedSnapshotRestoreAction(snapshotClient, generation)
+                        guard let action = await Self.cachedSnapshotRestoreAction(
+                            snapshotClient,
+                            sessionClient,
+                            now: { date.now },
+                            context: CachedSnapshotRestoreContext(
+                                generation: generation,
+                                binding: binding,
+                                currentStateSessionExpiry: currentStateSessionExpiry,
+                                currentDeviceID: device.deviceId,
+                            ),
+                        )
                         else { return }
                         await send(action)
                         return
                     }
                 } catch {
                     guard !AuthNetworkClient.isCancellationError(error) else { return }
-                    await send(._sessionSyncCompleted(generation: generation, result: .failure(.upstream(0))))
+                    await send(._sessionSyncCompleted(
+                        generation: generation,
+                        binding: binding,
+                        result: .failure(.upstream(0)),
+                    ))
                     return
                 }
 
@@ -69,11 +116,29 @@ extension AccountAccessFeature {
 
     private static func cachedSnapshotRestoreAction(
         _ snapshotClient: AccessStatusSnapshotClient,
-        _ generation: UInt64,
+        _ sessionClient: AccountSessionClient,
+        now: @Sendable () -> Date,
+        context: CachedSnapshotRestoreContext,
     ) async -> Action? {
-        let snapshot = await snapshotClient.load()
+        let envelope = await snapshotClient.load(context.binding, gatewayEnvironment)
         guard !Task.isCancelled else { return nil }
-        return ._cachedSnapshotRestored(generation: generation, snapshot: snapshot)
+        let persistedSession = try? await sessionClient.read(now())
+        guard !Task.isCancelled else { return nil }
+        let admission = TrustedFallbackSnapshotPolicy.validatedAdmission(.init(
+            envelope: envelope,
+            persistedSession: persistedSession,
+            expectedBinding: context.binding,
+            currentStateSessionExpiry: context.currentStateSessionExpiry,
+            gatewayBinding: gatewayEnvironment.binding,
+            currentDeviceID: context.currentDeviceID,
+            now: now(),
+        ))
+        return ._cachedSnapshotRestored(
+            generation: context.generation,
+            binding: context.binding,
+            snapshot: admission?.snapshot,
+            validUntil: admission?.validUntil,
+        )
     }
 
     func invalidateSessionSync(_ state: inout State) {
@@ -85,7 +150,7 @@ extension AccountAccessFeature {
         guard state.hasAccountSession, !state.isSignInInProgress, state.deviceBindingFailure == nil else {
             return .none
         }
-        return .send(.sessionSyncRequested(intent: .validate, reason: .manual))
+        return revalidateCurrentPersistedSession(&state, reason: .manual)
     }
 
     func requestSessionSync(
@@ -109,19 +174,56 @@ extension AccountAccessFeature {
             return .none
         }
 
+        state.updateEligibilityFailure = nil
         state.syncGeneration += 1
         state.inFlightSyncReason = reason
         state.isSubmitting = true
         state.errorMessage = nil
-        return sessionSyncEffect(intent: intent, reason: reason, generation: state.syncGeneration)
+        let requestGeneration = state.syncGeneration
+        let binding = state.sessionBindingID
+        return .run { [snapshotClient] send in
+            let mutationGeneration = await snapshotClient.activate(binding, Self.gatewayEnvironment)
+            guard !Task.isCancelled else { return }
+            await send(._sessionSyncActivationCompleted(AccountAccessSessionSyncActivationCompletion(
+                requestGeneration: requestGeneration,
+                binding: binding,
+                intent: intent,
+                reason: reason,
+                mutationGeneration: mutationGeneration,
+            )))
+        }
+        .cancellable(id: CancelID.sessionSync, cancelInFlight: true)
+    }
+
+    func handleSessionSyncActivationCompleted(
+        _ state: inout State,
+        completion: AccountAccessSessionSyncActivationCompletion,
+    ) -> Effect<Action> {
+        guard completion.requestGeneration == state.syncGeneration,
+              completion.binding == state.sessionBindingID,
+              state.hasAccountSession,
+              !state.isSessionExpired
+        else {
+            return .none
+        }
+
+        state.syncGeneration = max(state.syncGeneration, UInt64(clamping: completion.mutationGeneration))
+        return sessionSyncEffect(
+            intent: completion.intent,
+            reason: completion.reason,
+            generation: state.syncGeneration,
+            binding: completion.binding,
+            currentStateSessionExpiry: state.sessionExpiresAt,
+        )
     }
 
     func handleSessionSyncCompleted(
         _ state: inout State,
         generation: UInt64,
+        binding: UUID?,
         result: Result<SessionSyncResult, SessionSyncError>,
     ) -> Effect<Action> {
-        guard generation == state.syncGeneration else {
+        guard generation == state.syncGeneration, binding == state.sessionBindingID else {
             return .none
         }
 
@@ -165,6 +267,9 @@ extension AccountAccessFeature {
             currentPeriodEnd: result.accessStatus.currentPeriodEnd,
             sessionExpiresAt: state.sessionExpiresAt,
             fetchedAt: syncedAt,
+            ownershipStatus: result.accessStatus.ownershipStatus,
+            updateStatus: result.accessStatus.updateStatus,
+            updatesThrough: result.accessStatus.updatesThrough,
         )
 
         state.isSubmitting = false
@@ -201,7 +306,7 @@ extension AccountAccessFeature {
             syncedAt: syncedAt,
             deviceBindingOutcome: result.deviceBindingOutcome,
         )
-        return .merge(completion, refreshDeadline)
+        return .concatenate(completion, refreshDeadline)
     }
 
     private func handleCompleteSessionSync(
@@ -214,30 +319,59 @@ extension AccountAccessFeature {
         state.lastCompleteSyncAt = syncedAt
 
         guard accessStatus.isActive else {
-            state.snapshot = snapshot
+            state.snapshot = nil
             state.deviceBindingRetryCount = 0
             state.isComplete = false
             state.errorMessage = errorMessageForStatus(accessStatus)
-            return saveRecoverySnapshot(snapshot)
+            return .concatenate(
+                removeTrustedSnapshot(
+                    binding: state.sessionBindingID,
+                    generation: Int(state.syncGeneration),
+                ),
+                .send(.delegate(.recoveryRequired(.snapshot(snapshot)))),
+            )
         }
 
         switch deviceBindingOutcome {
         case .bound, .alreadyBound:
+            guard let deviceID = try? deviceIdentityClient.deviceId(), !deviceID.isEmpty else {
+                return handleDeviceBindingFailure(&state, snapshot: snapshot, error: .invalidDevicePayload)
+            }
             let verifiedSnapshot = AccessStatusSnapshot.fetchResult(
                 status: snapshot.status,
                 currentPeriodEnd: snapshot.currentPeriodEnd,
                 sessionExpiresAt: snapshot.sessionExpiresAt,
                 fetchedAt: syncedAt,
+                sessionBindingID: state.sessionBindingID,
+                gatewayBinding: Self.gatewayEnvironment.binding,
+                deviceID: deviceID,
                 deviceBindingVerifiedAt: syncedAt,
+                ownershipStatus: snapshot.ownershipStatus,
+                updateStatus: snapshot.updateStatus,
+                updatesThrough: snapshot.updatesThrough,
             )
+            if let failure = updateEligibilityFailure(for: verifiedSnapshot, now: syncedAt) {
+                return handleUpdateEligibilityFailure(&state, snapshot: verifiedSnapshot, failure: failure)
+            }
             state.snapshot = verifiedSnapshot
             state.deviceBindingRetryCount = 0
             state.isComplete = verifiedSnapshot.hasSession
             state.errorMessage = nil
-            return saveVerifiedSnapshot(verifiedSnapshot)
+            state.updateEligibilityFailure = nil
+            return saveVerifiedSnapshot(
+                verifiedSnapshot,
+                binding: state.sessionBindingID,
+                generation: Int(state.syncGeneration),
+            )
 
         case .deviceLimitReached:
-            return handleDeviceBindingFailure(&state, snapshot: snapshot, error: .seatCapacityExceeded)
+            return .concatenate(
+                removeTrustedSnapshot(
+                    binding: state.sessionBindingID,
+                    generation: Int(state.syncGeneration),
+                ),
+                handleDeviceBindingFailure(&state, snapshot: snapshot, error: .seatCapacityExceeded),
+            )
 
         case .notAttempted:
             return handleDeviceBindingFailure(&state, snapshot: snapshot, error: .serverFailure)
@@ -317,27 +451,32 @@ extension AccountAccessFeature {
         switch error {
         case .invalidCredential:
             .unauthorized
-        case .storageFailure, .capabilityMiss:
+        case .storageFailure, .capabilityMiss, .invalidResponse:
             .notConfigured
         case .upstream:
             .networkFailure
         }
     }
 
-    private func saveRecoverySnapshot(_ snapshot: AccessStatusSnapshot) -> Effect<Action> {
-        .run { [snapshotClient] send in
-            await snapshotClient.save(snapshot)
-            try Task.checkCancellation()
-            await send(.delegate(.recoveryRequired(.snapshot(snapshot))))
+    private func removeTrustedSnapshot(
+        binding: UUID?,
+        generation: Int,
+    ) -> Effect<Action> {
+        .run { [snapshotClient] _ in
+            guard !Task.isCancelled else { return }
+            await snapshotClient.remove(binding, Self.gatewayEnvironment, generation)
         }
-        .cancellable(id: CancelID.sessionSync, cancelInFlight: true)
     }
 
-    private func saveVerifiedSnapshot(_ snapshot: AccessStatusSnapshot) -> Effect<Action> {
+    private func saveVerifiedSnapshot(
+        _ snapshot: AccessStatusSnapshot,
+        binding: UUID?,
+        generation: Int,
+    ) -> Effect<Action> {
         .run { [snapshotClient] send in
             do {
                 try Task.checkCancellation()
-                await snapshotClient.save(snapshot)
+                await snapshotClient.save(snapshot, binding, Self.gatewayEnvironment, generation)
                 try Task.checkCancellation()
                 await send(.delegate(.unlocked(snapshot)))
             } catch is CancellationError {
@@ -349,16 +488,19 @@ extension AccountAccessFeature {
         .cancellable(id: CancelID.sessionSync, cancelInFlight: true)
     }
 
-    /// 캐시된 snapshot의 최대 허용 보관 기간.
-    /// 네트워크 장애 시 이 기간을 초과한 snapshot은 만료되지 않았더라도 신뢰하지 않는다 (entitlement bypass 방지).
-    private static let cachedSnapshotMaxAge: TimeInterval = 7 * 24 * 60 * 60 // 7일
-
     func handleCachedSnapshotRestored(
         _ state: inout State,
         generation: UInt64,
+        binding: UUID?,
         snapshot: AccessStatusSnapshot?,
+        validUntil: Date?,
     ) -> Effect<Action> {
-        guard generation == state.syncGeneration else {
+        guard
+            generation == state.syncGeneration,
+            binding == state.sessionBindingID,
+            state.hasAccountSession,
+            !state.isSessionExpired
+        else {
             return .none
         }
 
@@ -369,48 +511,78 @@ extension AccountAccessFeature {
         state.status = .networkFailure
         state.errorMessage = errorMessage(for: AccessError.networkFailure)
 
-        // 계약 (entitlement_access_flow.md): 조회 실패는 error 축에서 처리.
-        // failure handler가 이미 status=.networkFailure + errorMessage를 기록했으므로
-        // 캐시가 없거나 만료된 snapshot은 거부하고 state를 그대로 둔다.
-        guard let snapshot else {
+        let now = date.now
+        guard
+            let snapshot,
+            let validUntil,
+            validUntil.timeIntervalSinceReferenceDate.isFinite,
+            validUntil > now,
+            let currentSessionExpiry = state.sessionExpiresAt,
+            currentSessionExpiry.timeIntervalSinceReferenceDate.isFinite,
+            currentSessionExpiry > now
+        else {
+            state.snapshot = nil
+            state.trialExpiresAt = nil
             return .send(.delegate(.recoveryRequired(.accessFailure(
                 error: .networkFailure,
                 sessionExpiresAt: state.sessionExpiresAt,
             ))))
         }
 
-        let now = date.now
-        let isSessionExpired = snapshot.sessionExpiresAt.map { now >= $0 } ?? true
-        let isStale = snapshot.isExpired(now: now)
-            || isSessionExpired
-            || now.timeIntervalSince(snapshot.fetchedAt) > Self.cachedSnapshotMaxAge
-        if isStale {
-            return .send(.delegate(.recoveryRequired(.snapshot(snapshot))))
-        }
-
-        // entitlement 축: 캐시된 access status로 복원. 기존 정책 미변경.
         state.status = snapshot.status
         state.snapshot = snapshot
-        state.isComplete = snapshot.isActive && snapshot.isDeviceBindingVerified && snapshot.hasSession
-        state.errorMessage = "일시적인 네트워크 오류"
-        state.deviceBindingFailure = snapshot.isActive && !snapshot.isDeviceBindingVerified ? .retryable : nil
-
-        // session 축: snapshot 기반으로 signed-in semantics 설정.
-        // handleHydrateLaunchSnapshot와 동일한 ownership path를 따르되,
-        // networkFailure fallback 경로이므로 새로운 session sync는 시작하지 않는다.
-        // sessionExpiresAt == nil이면 hasAccountSession=false (가짜 세션 주입 금지).
-        state.hasAccountSession = snapshot.hasSession
-        state.sessionExpiresAt = snapshot.sessionExpiresAt
-
-        // bootstrap 완료 표시: 캐시 복원으로 초기 상태가 확정되었으므로
-        // 이후 handleOnAppear가 중복 session read/fetch를 수행하지 않도록 차단.
-        state.didBootstrap = true
-
-        if state.isComplete {
-            return .send(.delegate(.unlocked(snapshot)))
+        state.trialExpiresAt = snapshot.currentPeriodEnd
+        if let failure = updateEligibilityFailure(for: snapshot, now: now) {
+            return handleUpdateEligibilityFailure(&state, snapshot: snapshot, failure: failure)
         }
+        state.isComplete = true
+        state.errorMessage = "일시적인 네트워크 오류"
+        state.updateEligibilityFailure = nil
+        return .send(.delegate(.unlocked(snapshot)))
+    }
 
-        return .send(.delegate(.recoveryRequired(.snapshot(snapshot))))
+    private func updateEligibilityFailure(
+        for snapshot: AccessStatusSnapshot,
+        now: Date,
+    ) -> UpdateEligibilityFailure? {
+        UpdateEligibilityEvaluator.evaluate(
+            releaseIdentity: releaseIdentityClient.resolve(now),
+            hasAccess: snapshot.status.isActive,
+            ownershipStatus: snapshot.ownershipStatus,
+            updateStatus: snapshot.updateStatus,
+            updatesThrough: snapshot.updatesThrough,
+        )
+    }
+
+    private func handleUpdateEligibilityFailure(
+        _ state: inout State,
+        snapshot: AccessStatusSnapshot,
+        failure: UpdateEligibilityFailure,
+    ) -> Effect<Action> {
+        state.snapshot = snapshot
+        state.isComplete = false
+        state.deviceBindingFailure = nil
+        state.deviceBindingRetryCount = 0
+        state.updateEligibilityFailure = failure
+        state.errorMessage = updateEligibilityMessage(for: failure)
+        return .merge(
+            removeTrustedSnapshot(
+                binding: state.sessionBindingID,
+                generation: Int(state.syncGeneration),
+            ),
+            .send(.delegate(.recoveryRequired(.updateEligibility(snapshot: snapshot, failure: failure)))),
+        )
+    }
+
+    private func updateEligibilityMessage(for failure: UpdateEligibilityFailure) -> String {
+        switch failure {
+        case .missingReleaseIdentity, .invalidReleaseIdentity:
+            "This Voyager build cannot verify its release identity. Download an eligible version to continue."
+        case .missingUpdatesThrough, .invalidUpdatesThrough, .invalidAccessTuple:
+            "Your account did not return valid update eligibility. Retry or check your account."
+        case .buildReleasedAfterUpdatesThrough:
+            "This Voyager version is newer than your update eligibility. Download an eligible version to continue."
+        }
     }
 
     func errorMessage(for error: AccessError) -> String {

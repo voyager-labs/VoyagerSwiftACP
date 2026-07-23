@@ -18,6 +18,8 @@ struct OnboardingAccessProjection: Equatable {
     var isBlocked: Bool
     var primaryCTA: PrimaryCTA
     var snapshot: AccessStatusSnapshot?
+    var entitlementState: EntitlementState
+    var updateEligibilityFailure: UpdateEligibilityFailure?
 
     init(
         hasAccountSession: Bool = false,
@@ -36,6 +38,8 @@ struct OnboardingAccessProjection: Equatable {
         isBlocked: Bool = true,
         primaryCTA: PrimaryCTA = .login,
         snapshot: AccessStatusSnapshot? = nil,
+        entitlementState: EntitlementState = .unknown,
+        updateEligibilityFailure: UpdateEligibilityFailure? = nil,
     ) {
         self.hasAccountSession = hasAccountSession
         self.isSignInInProgress = isSignInInProgress
@@ -53,6 +57,8 @@ struct OnboardingAccessProjection: Equatable {
         self.isBlocked = isBlocked
         self.primaryCTA = primaryCTA
         self.snapshot = snapshot
+        self.entitlementState = entitlementState
+        self.updateEligibilityFailure = updateEligibilityFailure
     }
 
     init(accountAccess: AccountAccessFeature.State) {
@@ -73,7 +79,41 @@ struct OnboardingAccessProjection: Equatable {
             isBlocked: accountAccess.accountAccessStepState == .blocked,
             primaryCTA: PrimaryCTA(accountAccess.accessUnlockPrimaryCTA),
             snapshot: accountAccess.snapshot,
+            entitlementState: EntitlementState(accountAccess.status),
+            updateEligibilityFailure: accountAccess.updateEligibilityFailure,
         )
+    }
+
+    enum EntitlementState: Equatable {
+        case unknown
+        case unavailable
+        case active
+        case none
+        case expired
+        case revoked
+        case refunded
+
+        init(_ status: AccessStatus?) {
+            guard let status else {
+                self = .unknown
+                return
+            }
+
+            switch status {
+            case .coreLicenseActive, .trialActive, .internalTestActive:
+                self = .active
+            case .none:
+                self = .none
+            case .trialExpired:
+                self = .expired
+            case .revoked:
+                self = .revoked
+            case .refunded:
+                self = .refunded
+            case .networkFailure:
+                self = .unavailable
+            }
+        }
     }
 
     enum PrimaryCTA: Equatable {
@@ -83,6 +123,7 @@ struct OnboardingAccessProjection: Equatable {
         case webPricing
         case next
         case pending
+        case eligibleDownload
 
         init(_ primaryCTA: AccessUnlockPrimaryCTA) {
             switch primaryCTA {
@@ -98,6 +139,8 @@ struct OnboardingAccessProjection: Equatable {
                 self = .next
             case .pending:
                 self = .pending
+            case .eligibleDownload:
+                self = .eligibleDownload
             }
         }
     }
@@ -111,6 +154,7 @@ enum OnboardingAccessIntent: Equatable {
     case openPricing
     case openAccount
     case openAccessHelp
+    case openEligibleDownload
 
     var accountAccessAction: AccountAccessAction {
         switch self {
@@ -128,6 +172,8 @@ enum OnboardingAccessIntent: Equatable {
             .openAccountTapped
         case .openAccessHelp:
             .openAccessHelpTapped
+        case .openEligibleDownload:
+            .openEligibleDownloadTapped
         }
     }
 }

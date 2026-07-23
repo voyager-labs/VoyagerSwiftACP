@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Dependencies
 @testable import Voyager
 import VoyagerFeaturesAccountAccess
+import VoyagerFeaturesExternalFileRouter
 import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
 @testable import VoyagerPagesSettings
@@ -89,9 +90,9 @@ final class EntitlementAccessFlowTests: XCTestCase {
 
     /// ACC-002-handle_entitlement_change: trial 만료는 이미 열린 gate를 다시 잠근다.
     /// 활성 trial 결과 뒤 만료 entitlement snapshot이 lifecycle guard로 재투영되는지를 검증한다.
-    /// - 검증 내용: trial active는 granted를 유지하고 trial expired sync 결과는 recoveryRequired와 inactive projection으로 전환한다.
+    /// - 검증 내용: trial active는 granted를 유지하고 trial expired sync 결과는 recoveryRequired와 expired projection으로 전환한다.
     /// - 사전 조건: verified trial snapshot으로 granted 상태이며 다음 sync generation은 1이다.
-    /// - 기대 결과: access status는 trialExpired, gate는 recoveryRequired, Settings entitlement axis는 inactive다.
+    /// - 기대 결과: access status는 trialExpired, gate는 recoveryRequired, Settings entitlement axis는 entitlementExpired다.
     func testTrialUnlocksThenExpiryRelocksCanonicalGate() async {
         let activeSnapshot = AccessStatusSnapshot(
             status: .trialActive,
@@ -120,17 +121,17 @@ final class EntitlementAccessFlowTests: XCTestCase {
 
         XCTAssertEqual(store.state.lifecycle.accountAccess.status, .trialExpired)
         XCTAssertEqual(store.state.lifecycle.accessGatePhase, .recoveryRequired)
-        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementInactive)
+        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementExpired)
         await store.finish()
     }
 
     // FLOW-PATH: entitlement_change
 
     /// ACC-002-handle_entitlement_change: entitlement 변경은 gate와 Settings 상태를 같은 canonical child에서 다시 계산한다.
-    /// active entitlement가 inactive 상태로 바뀔 때 surface projection이 stale active로 남지 않는지 검증한다.
-    /// - 검증 내용: inactive sync completion이 lifecycle recovery delegate와 Settings inactive projection을 발행한다.
+    /// active entitlement가 revoked 상태로 바뀔 때 surface projection이 stale active로 남지 않는지 검증한다.
+    /// - 검증 내용: revoked sync completion이 lifecycle recovery delegate와 Settings revoked projection을 발행한다.
     /// - 사전 조건: core license가 granted 상태이고 entitlement refresh generation은 1이다.
-    /// - 기대 결과: gate는 recoveryRequired이며 Settings entitlement axis는 entitlementInactive다.
+    /// - 기대 결과: gate는 recoveryRequired이며 Settings entitlement axis는 entitlementRevoked다.
     func testEntitlementChangeReprojectsGateAndSettingsState() async {
         let revokedSyncResult = makeSyncResult(status: "revoked", hasAccess: false)
         var initialState = AppRootFeature.State()
@@ -152,7 +153,7 @@ final class EntitlementAccessFlowTests: XCTestCase {
 
         XCTAssertEqual(store.state.lifecycle.accessGatePhase, .recoveryRequired)
         XCTAssertEqual(store.state.lifecycle.accountAccess.status, .revoked)
-        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementInactive)
+        XCTAssertEqual(store.state.settings.accountSettings.setEntitlementState, .entitlementRevoked)
         await store.finish()
     }
 
@@ -194,6 +195,10 @@ final class EntitlementAccessFlowTests: XCTestCase {
         var initialState = AppRootFeature.State()
         initialState.lifecycle.accountAccess.isSignInInProgress = true
         initialState.lifecycle.accountAccess.handoffExchangeState = "login-state"
+        initialState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
+            context: .onboarding,
+            scope: .onboarding,
+        )
         let store = AccountAccessFlowTestSupport.makeRootStore(initialState: initialState)
         // store.exhaustivity = .off: login completion은 refresh deadline과 canonical Settings projection을 함께 생성함.
         store.exhaustivity = .off
@@ -205,7 +210,10 @@ final class EntitlementAccessFlowTests: XCTestCase {
         await store.send(.lifecycle(.accountAccess(._handoffExchangeCompleted(
             state: "login-state",
             generation: 0,
-            result: .success(AccountAccessFlowTestSupport.validSession.expiresAt),
+            result: .success(AccountAccessHandoffCompletion(
+                expiresAt: AccountAccessFlowTestSupport.validSession.expiresAt,
+                sessionBindingID: AccountAccessFlowTestSupport.validSession.sessionBindingID,
+            )),
         ))))
         await store.receive(\.lifecycle.accountAccess.sessionSyncRequested)
 
@@ -225,7 +233,7 @@ final class EntitlementAccessFlowTests: XCTestCase {
                 directFetchCount.withValue { $0 += 1 }
                 return AccessStatusResponse(hasAccess: false, status: "trial_expired", productKey: "trial")
             }
-            $0.accountSessionClient.read = { nil }
+            $0.accountSessionClient.read = { _ in nil }
             $0.date = .constant(Date(timeIntervalSince1970: 0))
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.onboardingWindowClient.isRequired = { true }
@@ -305,6 +313,35 @@ final class EntitlementAccessFlowTests: XCTestCase {
         await store.finish()
     }
 
+    func testUpdateEligibilityRecoveryReusesGateAndBlocksExternalRouteFlush() async {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            fetchedAt: now,
+            updatesThrough: now.addingTimeInterval(-1),
+        )
+        let store = TestStore(initialState: AppLifecycleFeature.State()) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.isRequired = { false }
+        }
+
+        await store.send(.accountAccess(.delegate(.recoveryRequired(.updateEligibility(
+            snapshot: snapshot,
+            failure: .buildReleasedAfterUpdatesThrough(
+                releasedAt: now,
+                updatesThrough: now.addingTimeInterval(-1),
+            ),
+        ))))) {
+            $0.accessGatePhase = .recoveryRequired
+        }
+        await store.receive(\.delegate.openInitialWindowIfNeeded)
+
+        XCTAssertFalse(store.state.didStartHelper)
+        XCTAssertFalse(store.state.isExternalRouteFlushAllowed)
+        await store.finish()
+    }
+
     func testPresentedAccountAccessNilOutsideGuardPhases() {
         let phases: [AppLifecycleAccessGatePhase] = [
             .unresolved,
@@ -358,6 +395,91 @@ final class EntitlementAccessFlowTests: XCTestCase {
         await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
 
         XCTAssertEqual(store.state.pendingExternalURLs, [deepLink])
+        await store.finish()
+    }
+
+    /// ACC-002-check_entitlement_status: 복구 단계는 외부 파일 batch를 보존하며 account 복구 창을 연다.
+    /// 외부 파일 cold-launch 중 복구가 필요해도 queue를 소비하지 않고 복구 UI 진입점을 보장한다.
+    /// - 검증 내용: recoveryRequired의 초기 창 delegate 전달과 external-open queue 불변성을 함께 확인한다.
+    /// - 사전 조건: pending external-open batch가 있고 access gate는 recoveryRequired다.
+    /// - 기대 결과: 초기 창 요청은 전달되고 queue와 active batch 상태는 그대로 유지된다.
+    func testOpenInitialWindowPreservesExternalBatchQueueDuringRecovery() async throws {
+        let batchID = UUID(400)
+        let itemID = UUID(401)
+        let url = try XCTUnwrap(URL(string: "file:///tmp/recovery-item"))
+        let request = ExternalFileRouterBatchRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: itemID, index: 0, url: url, source: .systemOpenEvent, mode: .open),
+            ],
+        )
+        var initialState = AppRootFeature.State()
+        initialState.externalOpenBatchQueue = [
+            .init(request: request, requiresInitialWindowFallback: true),
+        ]
+        initialState.lifecycle.accessGatePhase = .recoveryRequired
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.continuousClock = ImmediateClock()
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: recovery 창 생성 mechanics는 WindowManager owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
+        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
+
+        XCTAssertEqual(store.state.externalOpenBatchQueue.map(\.request.batchID), [batchID])
+        XCTAssertNil(store.state.activeExternalOpenBatch)
+        await store.finish()
+    }
+
+    /// ACC-002-check_entitlement_status: 이미 복구 단계인 앱은 새 외부 파일 batch를 보존하며 복구 창을 연다.
+    /// lifecycle 전이 이후 도착한 시스템 열기 요청도 account 복구 UI 진입점을 잃지 않는지 검증한다.
+    /// - 검증 내용: direct external-open ingress가 초기 창 delegate를 예약하고 queue를 소비하지 않는지 확인한다.
+    /// - 사전 조건: launch가 끝났고 access gate는 recoveryRequired이며 열린 File Manager 창이 없다.
+    /// - 기대 결과: 초기 창 요청은 한 번 전달되고 외부 파일 batch는 inactive queue에 그대로 남는다.
+    func testExternalBatchIngressOpensRecoveryWindowWhenAlreadyRecoveryRequired() async throws {
+        let url = try XCTUnwrap(URL(string: "file:///tmp/recovery-direct-item"))
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.accessGatePhase = .recoveryRequired
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.continuousClock = ImmediateClock()
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: recovery 창 생성 mechanics는 WindowManager owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.receiveExternalFileBatch(
+            [url],
+            source: .systemOpenEvent,
+            mode: .open,
+        ))
+
+        XCTAssertEqual(store.state.externalOpenBatchQueue.count, 1)
+        XCTAssertEqual(store.state.externalOpenBatchQueue[0].request.items.map(\.url), [url])
+        XCTAssertNil(store.state.activeExternalOpenBatch)
+        XCTAssertTrue(store.state.isExternalURLFlushDelegateScheduled)
+
+        await store.receive(\.lifecycle.delegate.openInitialWindowIfNeeded)
+        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
+
+        XCTAssertEqual(store.state.externalOpenBatchQueue.count, 1)
+        XCTAssertNil(store.state.activeExternalOpenBatch)
         await store.finish()
     }
 
@@ -427,8 +549,11 @@ final class EntitlementAccessFlowTests: XCTestCase {
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.onboardingWindowClient.isRequired = { false }
             $0.accountSessionClient.delete = { _ in }
-            $0.accessStatusSnapshotClient.save = { _ in }
-            $0.accessStatusSnapshotClient.remove = {}
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                load: { nil },
+                save: { _ in },
+                remove: {},
+            )
             $0.notificationCenterClient.notifications = { _, _ in
                 AsyncStream { $0.finish() }
             }
@@ -442,7 +567,12 @@ final class EntitlementAccessFlowTests: XCTestCase {
         await store.send(.lifecycle(.accountAccess(.delegate(.unlocked(snapshot))))) {
             $0.lifecycle.accessGatePhase = .granted
         }
-        await store.receive(\.externalFileRouter.receive)
+        await store.receive { action in
+            guard case let .externalFileRouter(.receiveTracked(url, requestID: _)) = action else {
+                return false
+            }
+            return url == deepLink
+        }
 
         XCTAssertTrue(store.state.pendingExternalURLs.isEmpty)
         await store.finish()

@@ -11,10 +11,65 @@ import XCTest
 final class AuthSessionFlowTests: XCTestCase {
     // FLOW-PATH: happy_path
 
+    func testRootExchangeCompletionDismissesSessionLapseGuard() async {
+        let state = "guard-recovery-state"
+        let session = AccountAccessFlowTestSupport.validSession
+        let syncResult = SessionSyncResult(
+            sessionStatus: .unchanged,
+            syncStatus: .complete,
+            accessStatus: AccessStatusResponse(
+                hasAccess: true,
+                status: "active",
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
+            ),
+            deviceBindingOutcome: .bound,
+            connectedDeviceAvailability: .available,
+            sessionExpiresAt: session.expiresAt,
+        )
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.accessGatePhase = .recoveryRequired
+        initialState.lifecycle.accountAccess.isSignInInProgress = true
+        initialState.lifecycle.accountAccess.handoffExchangeState = state
+        initialState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
+            context: .paywall,
+            scope: .lifecycle,
+        )
+        let store = AccountAccessFlowTestSupport.makeRootStore(
+            initialState: initialState,
+            exchangeSession: session,
+            syncResult: syncResult,
+        )
+        // root projection의 부수 액션은 이 exchange-completion-to-unlock flow 검증 범위 밖이다.
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.accountAccess(._handoffExchangeCompleted(
+            state: state,
+            generation: 0,
+            result: .success(AccountAccessHandoffCompletion(
+                expiresAt: session.expiresAt,
+                sessionBindingID: UUID(),
+            )),
+        ))))
+        await store.receive(\.lifecycle.accountAccess.sessionSyncRequested)
+        await store.receive(\.lifecycle.accountAccess._sessionSyncActivationCompleted)
+        await store.receive(\.lifecycle.accountAccess._sessionSyncCompleted)
+        await store.receive(\.lifecycle.accountAccess.delegate)
+
+        XCTAssertEqual(store.state.lifecycle.accessGatePhase, .granted)
+        XCTAssertNil(store.state.lifecycle.presentedAccountAccess)
+        await store.skipInFlightEffects()
+    }
+
     func testLoginHandoffCreatesCanonicalSessionAndStartsEntitlementValidation() async {
         var initialState = AppRootFeature.State()
         initialState.lifecycle.accountAccess.isSignInInProgress = true
         initialState.lifecycle.accountAccess.handoffExchangeState = "handoff-state"
+        initialState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
+            context: .onboarding,
+            scope: .onboarding,
+        )
         let store = AccountAccessFlowTestSupport.makeRootStore(initialState: initialState)
         // store.exhaustivity = .off: root, lifecycle, and AccountAccess effect chain is the flow boundary.
         store.exhaustivity = .off
@@ -22,7 +77,10 @@ final class AuthSessionFlowTests: XCTestCase {
         await store.send(.lifecycle(.accountAccess(._handoffExchangeCompleted(
             state: "handoff-state",
             generation: 0,
-            result: .success(AccountAccessFlowTestSupport.validSession.expiresAt),
+            result: .success(AccountAccessHandoffCompletion(
+                expiresAt: AccountAccessFlowTestSupport.validSession.expiresAt,
+                sessionBindingID: AccountAccessFlowTestSupport.validSession.sessionBindingID,
+            )),
         ))))
         await store.receive(\.lifecycle.accountAccess.sessionSyncRequested)
 
@@ -105,13 +163,20 @@ final class AuthSessionFlowTests: XCTestCase {
         reauthenticationState.lifecycle.accountAccess.isSessionExpired = true
         reauthenticationState.lifecycle.accountAccess.isSignInInProgress = true
         reauthenticationState.lifecycle.accountAccess.handoffExchangeState = "reauthentication-state"
+        reauthenticationState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
+            context: .paywall,
+            scope: .lifecycle,
+        )
         let reauthenticationStore = AccountAccessFlowTestSupport.makeRootStore(initialState: reauthenticationState)
         reauthenticationStore.exhaustivity = .off
 
         await reauthenticationStore.send(.lifecycle(.accountAccess(._handoffExchangeCompleted(
             state: "reauthentication-state",
             generation: 0,
-            result: .success(AccountAccessFlowTestSupport.validSession.expiresAt),
+            result: .success(AccountAccessHandoffCompletion(
+                expiresAt: AccountAccessFlowTestSupport.validSession.expiresAt,
+                sessionBindingID: AccountAccessFlowTestSupport.validSession.sessionBindingID,
+            )),
         ))))
         await reauthenticationStore.receive(\.lifecycle.accountAccess.sessionSyncRequested)
 
@@ -147,6 +212,10 @@ final class AuthSessionFlowTests: XCTestCase {
         var initialState = AppRootFeature.State()
         initialState.lifecycle.accountAccess.isSignInInProgress = true
         initialState.lifecycle.accountAccess.handoffExchangeState = "failed-state"
+        initialState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
+            context: .onboarding,
+            scope: .onboarding,
+        )
         let store = AccountAccessFlowTestSupport.makeRootStore(initialState: initialState)
         // store.exhaustivity = .off: handoff failure의 Settings projection은 flow assertion 범위 밖임.
         store.exhaustivity = .off
@@ -172,6 +241,10 @@ final class AuthSessionFlowTests: XCTestCase {
         var initialState = AppRootFeature.State()
         initialState.lifecycle.accountAccess.isSignInInProgress = true
         initialState.lifecycle.accountAccess.handoffPendingState = "latest-state"
+        initialState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
+            context: .paywall,
+            scope: .lifecycle,
+        )
         let store = AccountAccessFlowTestSupport.makeRootStore(initialState: initialState)
         store.exhaustivity = .off
 
@@ -184,6 +257,10 @@ final class AuthSessionFlowTests: XCTestCase {
         var acceptedState = AppRootFeature.State()
         acceptedState.lifecycle.accountAccess.isSignInInProgress = true
         acceptedState.lifecycle.accountAccess.handoffExchangeState = "latest-state"
+        acceptedState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
+            context: .paywall,
+            scope: .lifecycle,
+        )
         let acceptedStore = AccountAccessFlowTestSupport.makeRootStore(initialState: acceptedState)
         acceptedStore.exhaustivity = .off
 
@@ -191,7 +268,10 @@ final class AuthSessionFlowTests: XCTestCase {
         await acceptedStore.send(.lifecycle(.accountAccess(._handoffExchangeCompleted(
             state: "latest-state",
             generation: 0,
-            result: .success(AccountAccessFlowTestSupport.validSession.expiresAt),
+            result: .success(AccountAccessHandoffCompletion(
+                expiresAt: AccountAccessFlowTestSupport.validSession.expiresAt,
+                sessionBindingID: AccountAccessFlowTestSupport.validSession.sessionBindingID,
+            )),
         ))))
         await acceptedStore.receive(\.lifecycle.accountAccess.sessionSyncRequested)
 

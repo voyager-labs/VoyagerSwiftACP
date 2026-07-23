@@ -87,6 +87,12 @@ final class SettingsHostFeatureTests: XCTestCase {
         let syncCallCount = LockIsolated(0)
         let store = makeStore(
             initialState: initialState,
+            persistedSession: AccountSession(
+                accessToken: "test-access-token",
+                status: .coreLicenseActive,
+                refreshToken: "test-refresh-token",
+                expiresAt: .sessionExpiryPast,
+            ),
             syncSession: { _, _ in
                 syncCallCount.withValue { $0 += 1 }
                 throw SessionSyncError.capabilityMiss
@@ -119,6 +125,7 @@ final class SettingsHostFeatureTests: XCTestCase {
     @MainActor
     private func makeStore(
         initialState: SettingsHostState = .init(),
+        persistedSession: AccountSession? = nil,
         syncSession: @escaping @Sendable (
             SessionSyncIntent,
             DeviceBindingRequest,
@@ -127,8 +134,13 @@ final class SettingsHostFeatureTests: XCTestCase {
         TestStore(initialState: initialState) {
             SettingsHostFeature()
         } withDependencies: {
-            $0.accountSessionClient = .testValue
+            $0.accountSessionClient = AccountSessionClient(
+                read: { _ in persistedSession },
+                persist: { _ in },
+                delete: { _ in },
+            )
             $0.accessStatusSnapshotClient = .testValue
+            $0.date = .constant(.sessionExpiryPast)
             $0.authNetworkClient = AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { throw AccessError.notConfigured },

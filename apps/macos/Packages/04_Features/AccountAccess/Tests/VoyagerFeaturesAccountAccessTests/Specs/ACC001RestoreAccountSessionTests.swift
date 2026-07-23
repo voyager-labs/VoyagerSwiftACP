@@ -1,3 +1,4 @@
+import Clocks
 import Combine
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
@@ -53,6 +54,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         authNetworkClient: AuthNetworkClient = .testValue,
         snapshotClient: AccessStatusSnapshotClient = .testValue,
         notificationCenterClient: NotificationCenterClient? = nil,
+        clock: TestClock<Duration> = TestClock(),
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         let notificationCenterClient = notificationCenterClient ?? Self.makeNotificationCenterClient()
@@ -64,6 +66,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             $0.accessStatusSnapshotClient = snapshotClient
             $0.notificationCenterClient = notificationCenterClient
             $0.date = .constant(referenceDate)
+            $0.continuousClock = clock
         }
     }
 
@@ -108,7 +111,10 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             state.isSessionExpired = false
             state.didBootstrap = true
             state.fetchGeneration = 1
+            state.lastCompleteSyncAt = snapshot.fetchedAt
+            state.syncGeneration = 1
             state.ttlTimerActive = true
+            state.refreshDeadlineGeneration = 1
         }
 
         XCTAssertTrue(store.state.hasAccountSession, "session 존재 → hasAccountSession=true")
@@ -125,7 +131,15 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             .signedIn,
             "session 존재 → derived accountAccessAuthAxis=.signedIn",
         )
-        await store.skipInFlightEffects()
+        await store.send(.appWillTerminate) { state in
+            state.fetchGeneration = 2
+            state.syncGeneration = 2
+            state.revalidationGeneration = 1
+            state.handoffGeneration = 1
+            state.ttlTimerActive = false
+            state.refreshDeadlineGeneration = 2
+        }
+        await store.finish()
     }
 
     /// ACC-001-restore_account_session: complete session sync는 freshness를 기록한다.
@@ -200,12 +214,66 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
     // fetchRetryCount delta 검증은 ACC002 네트워크 실패/재시도 테스트에서 담당.
 
     /// ACC-001-restore_account_session: session 만료 후 자동 갱신 성공 시 logged_in을 유지한다.
-    /// T6 token refresh logic 구현 후 활성화되는 테스트로 현재는 skip 처리한다.
-    /// - 검증 내용: T6 refresh logic이 session 만료 후 자동 갱신 성공 시 logged_in 유지 확인
-    /// - 사전 조건: T6 refresh logic 구현 완료
-    /// - 기대 결과: 자동 갱신 성공 시 logged_in 유지
-    func testExpiredSessionRefreshSuccessStaysLoggedIn() throws {
-        throw XCTSkip("Requires T6 token refresh logic")
+    /// - 검증 내용: 만료 access와 recoverable refresh credential은 refresh intent 하나만 선택한다.
+    /// - 사전 조건: access token은 만료됐고 refresh credential은 유효하다.
+    /// - 기대 결과: rotated completion 후 logged_in을 유지한다.
+    func testExpiredSessionRefreshSuccessStaysLoggedIn() async {
+        nonisolated(unsafe) var receivedIntent: SessionSyncIntent?
+        let binding = UUID()
+        let expiredSession = AccountSession(
+            accessToken: "expired-access-token",
+            status: .none,
+            refreshToken: "refresh-token",
+            expiresAt: referenceDate.addingTimeInterval(-60),
+            sessionBindingID: binding,
+        )
+        let rotatedExpiry = referenceDate.addingTimeInterval(3600)
+        let clock = TestClock()
+        let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: { _ in expiredSession },
+                persist: { _ in },
+                delete: { _ in },
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in throw DeviceBindingError.notConfigured },
+                refreshToken: { throw AccessError.notConfigured },
+                syncSession: { intent, _ in
+                    receivedIntent = intent
+                    return SessionSyncResult(
+                        sessionStatus: .rotated,
+                        syncStatus: .complete,
+                        accessStatus: AccessStatusResponse(
+                            hasAccess: true,
+                            status: "active",
+                            ownershipStatus: "owned",
+                            updateStatus: "active",
+                            updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
+                        ),
+                        deviceBindingOutcome: .bound,
+                        connectedDeviceAvailability: .available,
+                        sessionExpiresAt: rotatedExpiry,
+                    )
+                },
+            ),
+            clock: clock,
+        )
+        store.exhaustivity = .off
+
+        await store.send(.onAppear)
+        await store.receive(\._onAppearSessionRestored)
+        await store.receive(\.sessionSyncRequested)
+        await store.receive(\._sessionSyncActivationCompleted)
+        await store.receive(\._sessionSyncCompleted)
+        await store.receive(\.delegate.unlocked)
+
+        XCTAssertEqual(receivedIntent, .refresh)
+        XCTAssertTrue(store.state.hasAccountSession)
+        XCTAssertFalse(store.state.isSessionExpired)
+        XCTAssertEqual(store.state.sessionExpiresAt, rotatedExpiry)
+        await store.skipInFlightEffects()
     }
 
     /// ACC-001-restore_account_session: 만료된 session 복원 실패 시 session_expired로 전환된다.
@@ -222,11 +290,8 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         let callbackURL = try XCTUnwrap(URL(string: "voyager://auth/callback"))
 
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: AccountSessionClient(read: { _ in nil }, persist: { _ in },
+                                                       delete: { _ in }),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
@@ -234,6 +299,8 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
                     return AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "core",
                         source: "polar",
@@ -259,6 +326,9 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             state.hasAccountSession = false
             state.isSessionExpired = true
             state.fetchGeneration = 1
+            state.syncGeneration = 1
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
         }
         await store.receive(\.delegate.recoveryRequired)
 
@@ -339,7 +409,10 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             state.isSessionExpired = false
             state.didBootstrap = true
             state.fetchGeneration = 1
+            state.lastCompleteSyncAt = signedInSnapshot.fetchedAt
+            state.syncGeneration = 1
             state.ttlTimerActive = true
+            state.refreshDeadlineGeneration = 1
         }
 
         await store.send(.hydrateLaunchSnapshot(loggedOutSnapshot)) { state in
@@ -351,7 +424,10 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             state.isSessionExpired = false
             state.didBootstrap = true
             state.fetchGeneration = 2
+            state.lastCompleteSyncAt = loggedOutSnapshot.fetchedAt
+            state.syncGeneration = 2
             state.ttlTimerActive = false
+            state.refreshDeadlineGeneration = 2
         }
 
         await store.finish()
@@ -378,12 +454,51 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
     }
 
     /// ACC-001-restore_account_session: 자동 갱신 중 네트워크 오류 시 기존 session이 유지된다.
-    /// T6 token refresh logic 구현 후 활성화되는 테스트로 현재는 skip 처리한다.
-    /// - 검증 내용: T6 refresh logic이 네트워크 오류 시 기존 session 유지 확인
-    /// - 사전 조건: T6 refresh logic 구현 완료
-    /// - 기대 결과: 네트워크 오류 시에도 기존 session 유지
-    func testNetworkErrorDuringRefreshMaintainsSession() throws {
-        throw XCTSkip("Requires T6 token refresh logic")
+    /// - 검증 내용: 일시적 refresh 오류는 credential/session authority를 삭제하지 않는다.
+    /// - 사전 조건: access token은 만료됐고 refresh credential은 유효하다.
+    /// - 기대 결과: network failure 뒤에도 logged_in을 유지한다.
+    func testNetworkErrorDuringRefreshMaintainsSession() async {
+        nonisolated(unsafe) var receivedIntent: SessionSyncIntent?
+        let expiredSession = AccountSession(
+            accessToken: "expired-access-token",
+            status: .none,
+            refreshToken: "refresh-token",
+            expiresAt: referenceDate.addingTimeInterval(-60),
+        )
+        let clock = TestClock()
+        let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: { _ in expiredSession },
+                persist: { _ in },
+                delete: { _ in },
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in throw DeviceBindingError.notConfigured },
+                refreshToken: { throw AccessError.notConfigured },
+                syncSession: { intent, _ in
+                    receivedIntent = intent
+                    throw SessionSyncError.upstream(503)
+                },
+            ),
+            clock: clock,
+        )
+        store.exhaustivity = .off
+
+        await store.send(.onAppear)
+        await store.receive(\._onAppearSessionRestored)
+        await store.receive(\.sessionSyncRequested)
+        await Task.yield()
+        await clock.advance(by: .seconds(5))
+        await store.receive(\._cachedSnapshotRestored)
+        await store.receive(\.delegate.recoveryRequired)
+
+        XCTAssertEqual(receivedIntent, .refresh)
+        XCTAssertTrue(store.state.hasAccountSession)
+        XCTAssertFalse(store.state.isSessionExpired)
+        XCTAssertEqual(store.state.sessionExpiresAt, expiredSession.expiresAt)
+        await store.finish()
     }
 
     /// VOY-397 regression: onAppear에서 session 복원이 nil일 때 이전에 persist된 active entitlement fact가 모두 제거된다.
@@ -407,11 +522,8 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         initialState.trialExpiresAt = referenceDate
 
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: AccountSessionClient(read: { _ in nil }, persist: { _ in },
+                                                       delete: { _ in }),
             initialState: initialState,
         )
         // exhaustivity=.off: reducer가 다수 필드를 갱신하나 검증 대상은 regression 스펙 필드만.
@@ -453,17 +565,16 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         let activeResponse = AccessStatusResponse(
             hasAccess: true,
             status: "active",
+            ownershipStatus: "owned",
+            updateStatus: "active",
             reason: "active_entitlement",
             productKey: "core",
             source: "polar",
         )
 
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: AccountSessionClient(read: { _ in nil }, persist: { _ in },
+                                                       delete: { _ in }),
             initialState: initialState,
         )
         store.exhaustivity = .off
@@ -523,6 +634,8 @@ extension ACC001RestoreAccountSessionTests {
 
         await store.send(.appWillTerminate) { state in
             state.fetchGeneration = 2
+            state.syncGeneration = 1
+            state.revalidationGeneration = 1
             state.isSubmitting = false
             state.isSignInInProgress = false
             state.handoffPendingState = nil
@@ -531,6 +644,8 @@ extension ACC001RestoreAccountSessionTests {
             state.deviceBindingFailure = nil
             state.deviceBindingRetryCount = 0
             state.errorMessage = nil
+            state.handoffGeneration = 1
+            state.refreshDeadlineGeneration = 1
         }
         await store.send(.deviceBindingResponse(
             generation: 1,
@@ -654,7 +769,7 @@ extension ACC001RestoreAccountSessionTests {
 
         let store = makeTestStore(
             accountSessionClient: AccountSessionClient(
-                read: { throw AccessError.notConfigured },
+                read: { _ in throw AccessError.notConfigured },
                 persist: { _ in },
                 delete: { _ in },
             ),
@@ -665,6 +780,8 @@ extension ACC001RestoreAccountSessionTests {
                     return AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "core",
                         source: "polar",
@@ -688,6 +805,9 @@ extension ACC001RestoreAccountSessionTests {
             state.hasAccountSession = false
             state.isSessionExpired = true
             state.fetchGeneration = 1
+            state.syncGeneration = 1
+            state.revalidationGeneration = 1
+            state.refreshDeadlineGeneration = 1
         }
         await store.receive(\.delegate.recoveryRequired)
 

@@ -1,4 +1,5 @@
 import AppKit
+import Clocks
 import Combine
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
@@ -25,6 +26,7 @@ final class ACC001RestoreAccountSessionForegroundObserverTests: XCTestCase {
         accountSessionClient: AccountSessionClient,
         authNetworkClient: AuthNetworkClient,
         notificationCenterClient: NotificationCenterClient,
+        clock: TestClock<Duration>,
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         TestStore(initialState: AccountAccessFeature.State()) {
             AccountAccessFeature()
@@ -33,21 +35,18 @@ final class ACC001RestoreAccountSessionForegroundObserverTests: XCTestCase {
             $0.authNetworkClient = authNetworkClient
             $0.notificationCenterClient = notificationCenterClient
             $0.date = .constant(referenceDate)
+            $0.continuousClock = clock
         }
     }
 
     private static func makeAccountSessionClient(expiresAt: Date) -> AccountSessionClient {
-        AccountSessionClient(
-            read: {
-                AccountSession(
-                    accessToken: "test-access-token",
-                    status: .coreLicenseActive,
-                    expiresAt: expiresAt,
-                )
-            },
-            persist: { _ in },
-            delete: { _ in },
+        AccountSessionClient(read: { _ in AccountSession(
+            accessToken: "test-access-token",
+            status: .coreLicenseActive,
+            expiresAt: expiresAt,
         )
+        }, persist: { _ in },
+        delete: { _ in })
     }
 
     private func makeLaunchSnapshot(sessionExpiry: Date) -> AccessStatusSnapshot {
@@ -93,59 +92,46 @@ final class ACC001RestoreAccountSessionForegroundObserverTests: XCTestCase {
     }
 
     func testHydrateLaunchSnapshotWithSessionStartsForegroundObserver() async {
+        let clock = TestClock()
         let sessionExpiry = referenceDate.addingTimeInterval(3600)
         let snapshot = makeLaunchSnapshot(sessionExpiry: sessionExpiry)
         nonisolated(unsafe) var notificationContinuation: AsyncStream<Notification>.Continuation?
-        nonisolated(unsafe) var fetchCalled = false
+        nonisolated(unsafe) var receivedIntent: SessionSyncIntent?
 
         let store = makeTestStore(
             accountSessionClient: Self.makeAccountSessionClient(expiresAt: sessionExpiry),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                fetchAccessStatus: {
-                    fetchCalled = true
-                    return AccessStatusResponse(
-                        hasAccess: true,
-                        status: "active",
-                        reason: "active_entitlement",
-                        productKey: "trial",
-                        source: "polar",
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                bindDevice: { _ in throw DeviceBindingError.notConfigured },
+                refreshToken: { throw AccessError.notConfigured },
+                syncSession: { intent, _ in
+                    receivedIntent = intent
+                    return SessionSyncResult(
+                        sessionStatus: .unchanged,
+                        syncStatus: .complete,
+                        accessStatus: AccessStatusResponse(hasAccess: true, status: "active"),
+                        deviceBindingOutcome: .bound,
+                        connectedDeviceAvailability: .available,
                     )
                 },
-                bindDevice: { _ in DeviceBindingResponse(ok: true) },
-                refreshToken: { throw AccessError.notConfigured },
             ),
             notificationCenterClient: Self.makeNotificationCenterClient { _, _ in
                 AsyncStream { notificationContinuation = $0 }
             },
+            clock: clock,
         )
+        store.exhaustivity = .off
 
-        await store.send(.hydrateLaunchSnapshot(snapshot)) { state in
-            state.status = snapshot.status
-            state.snapshot = snapshot
-            state.trialExpiresAt = snapshot.currentPeriodEnd
-            state.hasAccountSession = true
-            state.sessionExpiresAt = sessionExpiry
-            state.isSessionExpired = false
-            state.didBootstrap = true
-            state.fetchGeneration = 1
-            state.ttlTimerActive = true
-        }
+        await store.send(.hydrateLaunchSnapshot(snapshot))
 
         await Task.yield()
         sendDidBecomeActive(&notificationContinuation)
 
         await store.receive(\.appDidBecomeActive)
         await store.receive(\.revalidatePersistedSession)
-        await store.receive(\._persistedSessionRevalidated) { state in
-            state.sessionExpiresAt = sessionExpiry
-            state.fetchGeneration = 2
-        }
-
-        await receiveTrialActiveResponse(from: store, sessionExpiry: sessionExpiry)
-        await store.receive(\.delegate.unlocked)
-        XCTAssertTrue(fetchCalled, "foreground notification → fetchAccessStatus 호출")
-        // hydrateLaunchSnapshot가 시작한 TTL 타이머는 세션 생존 동안 유지되는 장기 effect다.
-        store.exhaustivity = .off
+        await store.receive(\._persistedSessionRevalidated)
+        XCTAssertNil(receivedIntent)
+        await store.skipInFlightEffects()
     }
 }

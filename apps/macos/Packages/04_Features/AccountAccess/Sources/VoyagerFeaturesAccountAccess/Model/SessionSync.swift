@@ -68,6 +68,7 @@ public struct SessionSyncResult: Equatable, Sendable {
 
 public enum SessionSyncError: Error, Equatable, Sendable {
     case invalidCredential
+    case invalidResponse(Int)
     case storageFailure
     case upstream(Int)
     case capabilityMiss

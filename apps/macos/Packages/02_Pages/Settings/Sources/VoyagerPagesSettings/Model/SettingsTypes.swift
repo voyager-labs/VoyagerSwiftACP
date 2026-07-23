@@ -31,7 +31,7 @@ public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
         case .appearance:
             "paintbrush"
         case .ai:
-            "cpu"
+            "sparkle"
         case .account:
             "person.crop.circle"
         }

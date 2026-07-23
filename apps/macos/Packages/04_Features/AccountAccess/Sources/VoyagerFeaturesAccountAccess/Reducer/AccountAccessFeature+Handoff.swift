@@ -11,7 +11,10 @@ extension AccountAccessFeature {
             return .none
         }
 
-        let transaction = AccountAccessHandoffTransaction(context: context, scope: scope)
+        let transaction = AccountAccessHandoffTransaction(
+            context: context,
+            scope: scope,
+        )
         state.isSignInInProgress = true
         state.didSignInFail = false
         state.handoffGeneration &+= 1
@@ -142,7 +145,9 @@ extension AccountAccessFeature {
         _ state: inout State,
         pendingState: String,
     ) -> Effect<Action> {
-        guard state.handoffPendingState == pendingState else {
+        guard state.handoffTransaction != nil,
+              state.handoffPendingState == pendingState
+        else {
             return .none
         }
 
@@ -212,9 +217,10 @@ extension AccountAccessFeature {
         _ state: inout State,
         pendingState: String,
         generation: UInt64,
-        result: Result<Date?, AppHandoffExchangeError>,
+        result: Result<AccountAccessHandoffCompletion, AppHandoffExchangeError>,
     ) -> Effect<Action> {
-        guard state.handoffGeneration == generation,
+        guard state.handoffTransaction != nil,
+              state.handoffGeneration == generation,
               state.handoffExchangeState == pendingState
         else { return .none }
         let scope = handoffScope(state)
@@ -222,13 +228,14 @@ extension AccountAccessFeature {
         state.handoffTransaction = nil
 
         switch result {
-        case let .success(sessionExpiresAt):
+        case let .success(completion):
             state.isSignInInProgress = false
             state.hasAccountSession = true
             state.didSignInFail = false
             state.isSessionExpired = false
             resetSessionRetryBudget(&state)
-            state.sessionExpiresAt = sessionExpiresAt
+            state.sessionExpiresAt = completion.expiresAt
+            state.sessionBindingID = completion.sessionBindingID
             state.ttlTimerActive = true
             state.fetchGeneration += 1
             invalidateSessionSync(&state)
@@ -245,7 +252,9 @@ extension AccountAccessFeature {
             state.didSignInFail = true
             state.hasAccountSession = false
             state.handoffPendingState = nil
-            return .cancel(id: CancelID.handoffCallbackTimeout(scope))
+            return .merge(
+                .cancel(id: CancelID.handoffCallbackTimeout(scope)),
+            )
         }
     }
 
@@ -255,7 +264,8 @@ extension AccountAccessFeature {
         generation: UInt64,
         session: AccountSession,
     ) -> Effect<Action> {
-        guard state.handoffGeneration == generation,
+        guard state.handoffTransaction != nil,
+              state.handoffGeneration == generation,
               state.handoffExchangeState == pendingState
         else {
             return .none
@@ -271,9 +281,18 @@ extension AccountAccessFeature {
                 await send(._handoffExchangeCompleted(
                     state: pendingState,
                     generation: generation,
-                    result: .success(session.expiresAt),
+                    result: .success(AccountAccessHandoffCompletion(
+                        expiresAt: session.expiresAt,
+                        sessionBindingID: session.sessionBindingID,
+                    )),
                 ))
             } catch {
+                do {
+                    try await sessionClient.discardPersistedSession(session)
+                } catch {
+                    await send(._handoffPersistenceRollbackFailed(generation: generation))
+                    return
+                }
                 await send(._handoffExchangeCompleted(
                     state: pendingState,
                     generation: generation,

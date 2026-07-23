@@ -23,6 +23,10 @@ final class ContentPaneContextMenuCoordinator: NSObject {
             sortKey: store.state.entryViewLayout.entryArrangements.sortKey,
             sortOrder: store.state.entryViewLayout.entryArrangements.sortOrder,
             groupKey: store.state.entryViewLayout.entryArrangements.groupKey,
+            canPaste: !store.state.entryViewLayout.entryOperations.clipboardItems.isEmpty,
+            itemCount: store.state.entryViewLayout.entries.count,
+            canPerformEntryCommands: !store.state.entryViewLayout.entryOperations.isLoading
+                || store.state.entryViewLayout.isCollectionMode,
         )
     }
 
@@ -37,6 +41,7 @@ final class ContentPaneContextMenuCoordinator: NSObject {
 
     @objc
     func contextMenuCreateNewFolder() {
+        guard configuration.canPerformEntryCommands else { return }
         store.send(
             .entryViewLayout(
                 .entryOperations(
@@ -59,7 +64,8 @@ final class ContentPaneContextMenuCoordinator: NSObject {
 
     @objc
     func contextMenuSetSortKey(_ sender: NSMenuItem) {
-        guard let rawValue = sender.representedObject as? String,
+        guard configuration.canChangeSort,
+              let rawValue = sender.representedObject as? String,
               let key = SortKey(rawValue: rawValue)
         else { return }
         store.send(.entryViewLayout(.entryArrangements(.setSortKey(key))))
@@ -67,7 +73,8 @@ final class ContentPaneContextMenuCoordinator: NSObject {
 
     @objc
     func contextMenuSetSortOrder(_ sender: NSMenuItem) {
-        guard let rawValue = sender.representedObject as? String,
+        guard configuration.canChangeSort,
+              let rawValue = sender.representedObject as? String,
               let order = VoyagerShared.SortOrder(rawValue: rawValue)
         else { return }
         store.send(.entryViewLayout(.entryArrangements(.setSortOrder(order))))
@@ -75,7 +82,8 @@ final class ContentPaneContextMenuCoordinator: NSObject {
 
     @objc
     func contextMenuSetGroupKey(_ sender: NSMenuItem) {
-        guard let rawValue = sender.representedObject as? String,
+        guard configuration.canChangeGroup,
+              let rawValue = sender.representedObject as? String,
               let key = GroupKey(rawValue: rawValue)
         else { return }
         store.send(.entryViewLayout(.entryArrangements(.setGroupKey(key))))
@@ -83,6 +91,7 @@ final class ContentPaneContextMenuCoordinator: NSObject {
 
     @objc
     func contextMenuEmptyTrash() {
+        guard configuration.canPerformEntryCommands else { return }
         store.send(
             .entryViewLayout(
                 .entryOperations(
@@ -90,5 +99,19 @@ final class ContentPaneContextMenuCoordinator: NSObject {
                 ),
             ),
         )
+    }
+
+    @objc
+    func contextMenuPaste() {
+        guard configuration.canPasteItems else { return }
+        store.send(.entryViewLayout(.delegate(.executeCommand(.clipboard(
+            .pasteItems(destinationPath: store.state.navigation.currentPath),
+        )))))
+    }
+
+    @objc
+    func contextMenuSelectAll() {
+        guard configuration.canSelectAll else { return }
+        store.send(.view(.selectAllEntries))
     }
 }

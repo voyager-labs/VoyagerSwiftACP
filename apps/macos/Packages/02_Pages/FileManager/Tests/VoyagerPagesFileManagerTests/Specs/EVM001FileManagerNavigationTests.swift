@@ -438,15 +438,21 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
     /// `fixtures/fixtures/` 하위 디렉토리의 절대 경로를 반환.
     private static func fixtureDir(_ subpath: String) -> String {
-        try! resolveRepoRoot()
-            .appendingPathComponent("fixtures/fixtures")
+        guard let root = try? resolveRepoRoot() else {
+            XCTFail("Repository fixture root could not be resolved")
+            return FileManager.default.temporaryDirectory.path
+        }
+        return root.appendingPathComponent("fixtures/fixtures")
             .appendingPathComponent(subpath).path
     }
 
     /// `fixtures/fixtures/` 하위 파일의 절대 경로를 반환.
     private static func fixturePath(_ subpath: String) -> String {
-        try! resolveRepoRoot()
-            .appendingPathComponent("fixtures/fixtures")
+        guard let root = try? resolveRepoRoot() else {
+            XCTFail("Repository fixture root could not be resolved")
+            return FileManager.default.temporaryDirectory.appendingPathComponent(subpath).path
+        }
+        return root.appendingPathComponent("fixtures/fixtures")
             .appendingPathComponent(subpath).path
     }
 
@@ -567,12 +573,8 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.finish()
     }
 
-    /// EVM-001-reload_directory_page_on_external_change: tags route entry operation 완료 시 tag reload forwarding
-    /// FileManager content entry operation lifecycle bridge가 navigation route별 reload/restore boundary를 지키는지 검증.
-    /// - 검증 내용: tags route에서 entry operation 완료 액션이 tag loader로 전달되는지 검증
-    /// - 사전 조건: FileManagerContentState와 EntryOperations lifecycle bridge harness 구성
-    /// - 기대 결과: route에 맞는 forwarding 또는 no-op/restore 동작 발생
-    func testOperationFinishedTriggersContentReloadForTags() async {
+    /// EVM-001-reload_directory_page_on_external_change: 개별 setTags 완료는 최종 record 전에는 reload하지 않는다.
+    func testSetTagsOperationFinishedDoesNotReloadBeforeFinalRecord() async {
         var initialState = makeInitialState()
         initialState.content.navigation.navigationState = .tags("Work")
 
@@ -587,13 +589,78 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             .success(()),
         ))))
 
+        await store.finish()
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: setTags의 최종 성공 record는 일반 folder를 한 번 reload한다.
+    func testSetTagsEntryActionCompletedReloadsFolderOnce() async {
+        let folderPath = "/tmp/voyager"
+        let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+        let record = EntryActionRecord(
+            operationKind: .setTags,
+            targets: [.init(beforePath: "/tmp/voyager/file.txt", afterPath: "/tmp/voyager/file.txt")],
+        )
+
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
         await store.receive { action in
-            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadTagItems(
-                tagName,
-                showHidden,
-            ))))) =
+            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(path, showHidden))))) =
                 action else { return false }
-            return tagName == "Work" && showHidden == false
+            return path == folderPath && !showHidden
+        }
+        await store.finish()
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: collection setTags 최종 record는 성공 target만 stale 처리 후 refresh한다.
+    func testSetTagsEntryActionCompletedRefreshesOnlySuccessfulCollectionTargets() async {
+        let store = TestStore(initialState: makeCollectionInitialState()) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+        let record = EntryActionRecord(
+            operationKind: .setTags,
+            targets: [
+                .init(beforePath: "/tmp/a.txt", afterPath: "/tmp/a.txt"),
+                .init(beforePath: "/tmp/b.txt", afterPath: "/tmp/b.txt"),
+            ],
+        )
+
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+        await store.receive { action in
+            guard case let .forwarded(.collection(.externalPathsChanged(paths))) = action else { return false }
+            return paths == ["/tmp/a.txt", "/tmp/b.txt"]
+        }
+        await store.receive { action in
+            guard case .forwarded(.view(.refreshStaleCollection)) = action else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: collection setTags undo/redo도 최종 성공 target만 같은 refresh seam으로
+    /// 전달한다.
+    func testSetTagsUndoAndRedoRefreshOnlySuccessfulCollectionTargets() async {
+        let store = TestStore(initialState: makeCollectionInitialState()) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+        let record = EntryActionRecord(
+            operationKind: .setTags,
+            targets: [.init(beforePath: "/tmp/a.txt", afterPath: "/tmp/a.txt")],
+        )
+
+        for direction in [EntryActionDirection.undo, .redo] {
+            await store.send(.bridge(.undoRedo(.entryActionApplied(direction: direction, record: record))))
+            await store.receive { action in
+                guard case let .forwarded(.collection(.externalPathsChanged(paths))) = action else { return false }
+                return paths == ["/tmp/a.txt"]
+            }
+            await store.receive { action in
+                guard case .forwarded(.view(.refreshStaleCollection)) = action else { return false }
+                return true
+            }
         }
         await store.finish()
     }
@@ -626,6 +693,21 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             .success(()),
         ))))
         await store.finish()
+    }
+
+    private func makeCollectionInitialState() -> LifecycleBridgeHarness.State {
+        var state = makeInitialState()
+        state.content.navigation.navigationState = .collection(
+            ContentPageCollectionNavigation(
+                kind: .temporary,
+                context: CollectionContext(query: "test", scopes: [], conditions: []),
+                sortKey: .name,
+                sortOrder: .ascending,
+                viewLayout: .list,
+            ),
+        )
+        state.content.entryViewLayout.isCollectionMode = true
+        return state
     }
 
     /// EVM-001-reload_directory_page_on_external_change: empty trash 완료 시 window close delegate forwarding

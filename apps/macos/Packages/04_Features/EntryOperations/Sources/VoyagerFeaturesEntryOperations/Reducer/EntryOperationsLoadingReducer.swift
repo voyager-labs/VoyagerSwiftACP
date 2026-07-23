@@ -34,9 +34,13 @@ public struct EntryOperationsLoadingReducer {
                     let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
                     do {
                         let items = try await entryLoadingClient.loadItems(url, showHidden)
+                        try Task.checkCancellation()
                         await send(.loading(.itemsLoaded(items)))
+                    } catch is CancellationError {
+                        return
                     } catch {
-                        await send(.loading(.itemsLoaded([])))
+                        guard !Task.isCancelled else { return }
+                        await send(.loading(.itemsLoadFailed))
                     }
                 }
                 .cancellable(
@@ -48,6 +52,7 @@ public struct EntryOperationsLoadingReducer {
                 state.isLoading = true
                 return .run { [entryLoadingClient, workspaceClient] send in
                     let recentItems = await entryLoadingClient.loadRecentItems(showHidden, workspaceClient)
+                    guard !Task.isCancelled else { return }
                     await send(.loading(.itemsLoaded(recentItems)))
                 }
                 .cancellable(
@@ -59,6 +64,7 @@ public struct EntryOperationsLoadingReducer {
                 state.isLoading = true
                 return .run { [entryLoadingClient, workspaceClient] send in
                     let taggedItems = await entryLoadingClient.loadFilesWithTag(tagName, showHidden, workspaceClient)
+                    guard !Task.isCancelled else { return }
                     await send(.loading(.itemsLoaded(taggedItems)))
                 }
                 .cancellable(
@@ -71,8 +77,12 @@ public struct EntryOperationsLoadingReducer {
                 return .run { [entryLoadingClient] send in
                     do {
                         let computerItems = try await entryLoadingClient.loadComputerItems()
+                        try Task.checkCancellation()
                         await send(.loading(.itemsLoaded(computerItems)))
+                    } catch is CancellationError {
+                        return
                     } catch {
+                        guard !Task.isCancelled else { return }
                         await send(.loading(.itemsLoaded([])))
                     }
                 }
@@ -92,6 +102,15 @@ public struct EntryOperationsLoadingReducer {
                         return .send(.edit(.cancelRename))
                     }
                 }
+                return .none
+
+            case .loading(.itemsLoadFailed):
+                state.loadingContext.items = []
+                state.isLoading = false
+                state.isReloading = false
+                state.renamingItemId = nil
+                state.renamingText = ""
+                state.renamingItem = nil
                 return .none
 
             default:

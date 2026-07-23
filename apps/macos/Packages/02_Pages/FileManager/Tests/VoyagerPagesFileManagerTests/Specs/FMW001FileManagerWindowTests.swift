@@ -19,6 +19,153 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         }
     }
 
+    private func makeSelectedState(
+        isLoading: Bool,
+        isCollectionMode: Bool,
+    ) -> FileManagerWindowState {
+        var state = FileManagerWindowState()
+        state.content.entryViewLayout.selectedIds = ["selected-entry"]
+        state.content.entryViewLayout.entryOperations.isLoading = isLoading
+        state.content.entryViewLayout.isCollectionMode = isCollectionMode
+        state.content.navigation.navigationState = .folder("/tmp")
+        return state
+    }
+
+    private var entryCommands: [FileManagerWindowAction.WindowCommand] {
+        [
+            .newFolder,
+            .openSelectedItem,
+            .quickLookSelectedItem,
+            .cut,
+            .copy,
+            .paste,
+            .duplicate,
+            .makeAlias,
+            .selectAll,
+            .copyAbsolutePaths,
+            .copyURLs,
+        ]
+    }
+
+    // MARK: - VOY-578-entry_commands
+
+    // MARK: - VOY-150-context_menu_loading_capability
+
+    /// VOY-150-context_menu_loading_capability: AppKit 빈 영역 메뉴는 loading capability를 New Folder와 Empty Trash에 적용한다.
+    /// 일반 Directory loading 중 stale 메뉴 command가 실행되지 않도록 두 항목의 실제 AppKit enablement가 projection과 일치해야 한다.
+    /// - 검증 내용: normal/loading 및 Trash/non-Trash configuration에서 메뉴 항목의 isEnabled 상태.
+    /// - 사전 조건: ContentPaneContextMenuBuilder에 ordinary Directory와 Trash의 loading capability configuration을 각각 전달한다.
+    /// - 기대 결과: ordinary Directory loading만 New Folder와 Empty Trash가 비활성화되고, normal 상태는 활성 상태를 유지한다.
+    func testAppKitBlankAreaMenuAppliesLoadingCapabilityToNewFolderAndEmptyTrash() {
+        assertPrimaryMenuItem(title: "New Folder", isTrashFolder: false, canPerformEntryCommands: true, isEnabled: true)
+        assertPrimaryMenuItem(title: "Empty Trash", isTrashFolder: true, canPerformEntryCommands: true, isEnabled: true)
+        assertPrimaryMenuItem(
+            title: "New Folder",
+            isTrashFolder: false,
+            canPerformEntryCommands: false,
+            isEnabled: false,
+        )
+        assertPrimaryMenuItem(
+            title: "Empty Trash",
+            isTrashFolder: true,
+            canPerformEntryCommands: false,
+            isEnabled: false,
+        )
+    }
+
+    /// FMW-001-entry_commands: 빈 영역 메뉴는 loading 중 Paste와 Select All을 비활성화한다.
+    /// 빈 영역 메뉴도 app menu 및 키 입력과 같은 capability projection을 사용해 stale clipboard나 selection 동작을 노출하지 않아야 한다.
+    /// - 검증 내용: context menu configuration의 capability와 item count가 Paste, Select All, Sort, Group 활성 정책에 반영된다.
+    /// - 사전 조건: 일반 Directory loading 중이고 clipboard에는 항목이 있으나 표시 항목은 없다.
+    /// - 기대 결과: Paste, Select All, Sort, Group mutation은 모두 비활성화된다.
+    func testEmptyAreaMenuUsesLoadingCapabilityForPasteAndSelectAll() {
+        let configuration = ContentPaneContextMenuBuilder.Configuration(
+            isTrashFolder: false,
+            viewLayout: .list,
+            sortKey: .name,
+            sortOrder: .ascending,
+            groupKey: .none,
+            canPaste: true,
+            itemCount: 0,
+            canPerformEntryCommands: false,
+        )
+
+        XCTAssertFalse(configuration.canPasteItems)
+        XCTAssertFalse(configuration.canSelectAll)
+        XCTAssertFalse(configuration.canChangeSort)
+        XCTAssertFalse(configuration.canChangeGroup)
+    }
+
+    /// VOY-578-entry_commands: 일반 Directory loading 중 모든 전역 entry 명령 차단
+    /// stale 선택이 유지되어도 menu capability와 최종 routing이 함께 명령 실행을 막는지 검증한다.
+    /// - 검증 내용: capability false 및 11개 entry command의 하위 action 미방출
+    /// - 사전 조건: 일반 Directory mode, entry loading 중, stale 선택 ID 유지
+    /// - 기대 결과: 모든 entry command가 no-op으로 종료
+    func testOrdinaryDirectoryLoadingDisablesAndBlocksAllEntryCommands() async {
+        let state = makeSelectedState(isLoading: true, isCollectionMode: false)
+        XCTAssertFalse(state.menuCommandProjection.canPerformEntryCommands)
+        let store = makeStore(initialState: state)
+
+        for command in entryCommands {
+            await store.send(.request(command))
+        }
+        await store.finish()
+    }
+
+    /// VOY-578-entry_commands: 일반 Directory 정상 상태의 전역 entry 명령 유지
+    /// loading이 아닐 때 기존 entry 명령 routing이 모두 보존되는지 검증한다.
+    /// - 검증 내용: capability true 및 11개 entry command의 기존 하위 action 전달
+    /// - 사전 조건: 일반 Directory mode, entry loading 아님, 선택 ID 존재
+    /// - 기대 결과: 모든 entry command가 대응하는 하위 reducer로 전달
+    func testNormalDirectoryAllowsAllEntryCommands() async {
+        let state = makeSelectedState(isLoading: false, isCollectionMode: false)
+        XCTAssertTrue(state.menuCommandProjection.canPerformEntryCommands)
+
+        for command in entryCommands {
+            await assertEntryCommand(command, routesFrom: state)
+        }
+    }
+
+    /// VOY-578-entry_commands: Collection loading의 전역 entry 명령 정책 유지
+    /// Collection loading은 ordinary Directory loading guard에 포함되지 않는지 검증한다.
+    /// - 검증 내용: capability true 및 11개 entry command의 기존 하위 action 전달
+    /// - 사전 조건: Collection mode, entry loading 중, 선택 ID 존재
+    /// - 기대 결과: 모든 entry command가 대응하는 하위 reducer로 전달
+    func testCollectionLoadingAllowsAllEntryCommands() async {
+        let state = makeSelectedState(isLoading: true, isCollectionMode: true)
+        XCTAssertTrue(state.menuCommandProjection.canPerformEntryCommands)
+
+        for command in entryCommands {
+            await assertEntryCommand(command, routesFrom: state)
+        }
+    }
+
+    /// VOY-578-entry_commands: 일반 Directory loading 중 비-entry 명령 보존
+    /// entry command guard가 hidden files, undo/redo, navigation, layout, tab, composer 명령까지 막지 않는지 검증한다.
+    /// - 검증 내용: 각 비-entry command가 기존 하위 reducer action을 방출
+    /// - 사전 조건: 일반 Directory mode, entry loading 중
+    /// - 기대 결과: 명령 범주별 기존 routing 유지
+    func testOrdinaryDirectoryLoadingPreservesNonEntryCommands() async {
+        let state = makeSelectedState(isLoading: true, isCollectionMode: false)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.toggleShowHiddenFiles))
+        await store.receive(\.content.view.toggleShowHiddenFilesAndReload)
+        await store.send(.request(.requestUndo))
+        await store.receive(\.content.entryViewLayout.entryOperations.undoRedo.requestUndo)
+        await store.send(.request(.requestRedo))
+        await store.receive(\.content.entryViewLayout.entryOperations.undoRedo.requestRedo)
+        await store.send(.request(.goBack))
+        await store.receive(\.navigation.view.goBack)
+        await store.send(.request(.setViewLayout(.grid)))
+        await store.receive(\.content.view.changeLayout)
+        await store.send(.request(.openNewContentTab))
+        await store.receive(\.contentTabs.open)
+        await store.send(.request(.toggleComposer))
+        await store.receive(\.content.composer.view.setPresented)
+        await store.finish()
+    }
+
     // MARK: - FMW-001-toggle_sidebar
 
     /// FMW-001-toggle_sidebar: 사이드바 토글 명령 라우팅
@@ -145,6 +292,58 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         await store.finish()
     }
 
+    /// FMW-001-open_selected_item: 일반 Directory loading 중 Open 비활성 및 no-op
+    /// 이전 Directory 선택이 남아 있어도 새 Directory 로딩 중에는 전역 Open이 실행되지 않는지 검증한다.
+    /// - 검증 내용: menu projection 비활성 및 request(.openSelectedItem) 최종 routing 차단
+    /// - 사전 조건: 일반 Directory mode, entry loading 중, stale 선택 ID 유지
+    /// - 기대 결과: canOpen false이고 하위 reducer action 없이 종료
+    func testOrdinaryDirectoryLoadingDisablesAndBlocksOpenSelectedItem() async {
+        let state = makeSelectedState(isLoading: true, isCollectionMode: false)
+        XCTAssertFalse(state.menuCommandProjection.canOpen)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.openSelectedItem))
+        await store.finish()
+    }
+
+    /// FMW-001-open_selected_item: 일반 상태에서 Open 허용 및 routing
+    /// 로딩 중이 아닌 기존 선택 항목의 전역 Open 동작이 유지되는지 검증한다.
+    /// - 검증 내용: menu projection 활성 및 request(.openSelectedItem) 하위 routing
+    /// - 사전 조건: 일반 Directory mode, entry loading 아님, 선택 ID 존재
+    /// - 기대 결과: canOpen true이고 openSelectedItem command가 entry view layout으로 전달됨
+    func testNormalDirectoryAllowsOpenSelectedItem() async {
+        let state = makeSelectedState(isLoading: false, isCollectionMode: false)
+        XCTAssertTrue(state.menuCommandProjection.canOpen)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.openSelectedItem))
+        await store.receive {
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))) = $0
+            else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
+    /// FMW-001-open_selected_item: Collection loading 중 Open 정책 유지
+    /// Collection loading은 ordinary Directory loading 차단 정책에 포함되지 않는지 검증한다.
+    /// - 검증 내용: menu projection 활성 및 request(.openSelectedItem) 하위 routing
+    /// - 사전 조건: Collection mode, entry loading 중, 선택 ID 존재
+    /// - 기대 결과: canOpen true이고 openSelectedItem command가 entry view layout으로 전달됨
+    func testCollectionLoadingAllowsOpenSelectedItem() async {
+        let state = makeSelectedState(isLoading: true, isCollectionMode: true)
+        XCTAssertTrue(state.menuCommandProjection.canOpen)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.openSelectedItem))
+        await store.receive {
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))) = $0
+            else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
     // MARK: - FMW-001-quick_look_selected_item
 
     /// FMW-001-quick_look_selected_item: 선택 항목 없을 때 quickLookSelectedItem no-op
@@ -156,6 +355,58 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         let store = makeStore()
 
         await store.send(.request(.quickLookSelectedItem))
+        await store.finish()
+    }
+
+    /// FMW-001-quick_look_selected_item: 일반 Directory loading 중 Quick Look 비활성 및 no-op
+    /// 이전 Directory 선택이 남아 있어도 새 Directory 로딩 중에는 전역 Quick Look이 실행되지 않는지 검증한다.
+    /// - 검증 내용: menu projection 비활성 및 request(.quickLookSelectedItem) 최종 routing 차단
+    /// - 사전 조건: 일반 Directory mode, entry loading 중, stale 선택 ID 유지
+    /// - 기대 결과: canQuickLook false이고 하위 reducer action 없이 종료
+    func testOrdinaryDirectoryLoadingDisablesAndBlocksQuickLookSelectedItem() async {
+        let state = makeSelectedState(isLoading: true, isCollectionMode: false)
+        XCTAssertFalse(state.menuCommandProjection.canQuickLook)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.quickLookSelectedItem))
+        await store.finish()
+    }
+
+    /// FMW-001-quick_look_selected_item: 일반 상태에서 Quick Look 허용 및 routing
+    /// 로딩 중이 아닌 기존 선택 항목의 전역 Quick Look 동작이 유지되는지 검증한다.
+    /// - 검증 내용: menu projection 활성 및 request(.quickLookSelectedItem) 하위 routing
+    /// - 사전 조건: 일반 Directory mode, entry loading 아님, 선택 ID 존재
+    /// - 기대 결과: canQuickLook true이고 quickLookSelectedItem command가 entry view layout으로 전달됨
+    func testNormalDirectoryAllowsQuickLookSelectedItem() async {
+        let state = makeSelectedState(isLoading: false, isCollectionMode: false)
+        XCTAssertTrue(state.menuCommandProjection.canQuickLook)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.quickLookSelectedItem))
+        await store.receive {
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))) = $0
+            else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
+    /// FMW-001-quick_look_selected_item: Collection loading 중 Quick Look 정책 유지
+    /// Collection loading은 ordinary Directory loading 차단 정책에 포함되지 않는지 검증한다.
+    /// - 검증 내용: menu projection 활성 및 request(.quickLookSelectedItem) 하위 routing
+    /// - 사전 조건: Collection mode, entry loading 중, 선택 ID 존재
+    /// - 기대 결과: canQuickLook true이고 quickLookSelectedItem command가 entry view layout으로 전달됨
+    func testCollectionLoadingAllowsQuickLookSelectedItem() async {
+        let state = makeSelectedState(isLoading: true, isCollectionMode: true)
+        XCTAssertTrue(state.menuCommandProjection.canQuickLook)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.quickLookSelectedItem))
+        await store.receive {
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))) = $0
+            else { return false }
+            return true
+        }
         await store.finish()
     }
 
@@ -320,6 +571,88 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         XCTAssertEqual(window.frame.height, 720, accuracy: 0.5)
     }
 
+    private func assertEntryCommand(
+        _ command: FileManagerWindowAction.WindowCommand,
+        routesFrom state: FileManagerWindowState,
+    ) async {
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(command))
+        await store.receive { action in
+            matchesEntryCommandAction(command, action) || matchesAdditionalEntryCommandAction(command, action)
+        }
+        await store.finish()
+    }
+
+    private func assertPrimaryMenuItem(
+        title: String,
+        isTrashFolder: Bool,
+        canPerformEntryCommands: Bool,
+        isEnabled: Bool,
+    ) {
+        let configuration = ContentPaneContextMenuBuilder.Configuration(
+            isTrashFolder: isTrashFolder,
+            viewLayout: .list,
+            sortKey: .name,
+            sortOrder: .ascending,
+            groupKey: .none,
+            canPaste: true,
+            itemCount: 1,
+            canPerformEntryCommands: canPerformEntryCommands,
+        )
+        let item = ContentPaneContextMenuBuilder.makePrimaryMenuItem(configuration: configuration, target: self)
+
+        XCTAssertEqual(item.title, title)
+        XCTAssertEqual(item.isEnabled, isEnabled)
+    }
+
+    private func matchesEntryCommandAction(
+        _ command: FileManagerWindowAction.WindowCommand,
+        _ action: FileManagerWindowAction,
+    ) -> Bool {
+        switch (command, action) {
+        case (.newFolder, .content(.entryViewLayout(.entryOperations(.edit(.createNewFolder))))),
+             (
+                 .openSelectedItem,
+                 .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))),
+             ),
+             (
+                 .quickLookSelectedItem,
+                 .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))),
+             ),
+             (.cut, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.cutSelectedItems)))))),
+             (.copy, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedItems)))))),
+             (.paste, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.pasteItems)))))):
+            true
+
+        default:
+            false
+        }
+    }
+
+    private func matchesAdditionalEntryCommandAction(
+        _ command: FileManagerWindowAction.WindowCommand,
+        _ action: FileManagerWindowAction,
+    ) -> Bool {
+        switch (command, action) {
+        case (.duplicate, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.duplicateSelectedItems)))))),
+             (
+                 .makeAlias,
+                 .content(.entryViewLayout(.delegate(.executeCommand(.mutation(.createAliasForSelectedItems))))),
+             ),
+             (.selectAll, .content(.view(.selectAllEntries))),
+             (
+                 .copyAbsolutePaths,
+                 .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedAbsolutePaths))))),
+             ),
+             (.copyURLs, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedURLs)))))):
+            true
+
+        default:
+            false
+        }
+    }
+
     /// FMW-001-open_file_manager_window: provider가 없으면 저장된 autosave frame을 복원한다.
     /// 앱 재실행 후 첫 File Manager Window가 이전에 저장한 창 크기를 복원하는지 검증한다.
     /// - 검증 내용: applyInitialFrame이 provider nil 상태에서 autosave frame을 window frame으로 복원하는지 확인
@@ -345,5 +678,22 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         XCTAssertEqual(window.frame.width, 1240, accuracy: 0.5)
         XCTAssertEqual(window.frame.height, 760, accuracy: 0.5)
+    }
+}
+
+extension FMW001FileManagerWindowTests {
+    // MARK: - FMW-001-entry_commands
+
+    /// FMW-001-entry_commands: blank-area AppKit menu container disables automatic item validation.
+    /// loading capability가 false인 item을 responder chain이 다시 활성화하면 stale callback guard가 우회될 수 있다.
+    /// - 검증 내용: root와 nested builder가 공유하는 container의 autoenablesItems 상태.
+    /// - 사전 조건: menu item registry resource를 초기화하지 않는 bare menu container다.
+    /// - 기대 결과: container가 false를 반환해 명시적 capability를 보존한다.
+    func testBlankAreaMenuContainerDisablesAutomaticValidation() {
+        // RED: menu containers inherited AppKit auto-enablement.
+        let menu = ContentPaneContextMenuBuilder.makeMenuContainer()
+
+        // GREEN: root and nested builders share an explicit non-auto-enabling container.
+        XCTAssertFalse(menu.autoenablesItems)
     }
 }

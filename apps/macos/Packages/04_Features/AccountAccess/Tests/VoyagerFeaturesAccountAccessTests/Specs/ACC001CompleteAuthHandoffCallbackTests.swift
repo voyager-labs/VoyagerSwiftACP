@@ -15,9 +15,12 @@ import XCTest
 private let activeAccessStatusResponse = AccessStatusResponse(
     hasAccess: true,
     status: "active",
+    ownershipStatus: "owned",
+    updateStatus: "active",
     reason: "active_entitlement",
     productKey: "core",
     source: "polar",
+    updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
 )
 
 @MainActor
@@ -28,6 +31,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     private static let validState = "xyz789"
     private static let validContext = "onboarding"
     private static let persistedSessionExpiry = Date(timeIntervalSince1970: 1_700_003_600)
+    private static let canonicalSessionBindingID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1))
     nonisolated private static let completeSessionSync = SessionSyncResult(
         sessionStatus: .unchanged,
         syncStatus: .complete,
@@ -116,12 +120,10 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             status: .none,
             refreshToken: "persisted-refresh-token",
             expiresAt: Self.persistedSessionExpiry,
+            sessionBindingID: Self.canonicalSessionBindingID,
         )
-        return AccountSessionClient(
-            read: { session },
-            persist: { _ in },
-            delete: { _ in },
-        )
+        return AccountSessionClient(read: { _ in session }, persist: { _ in },
+                                    delete: { _ in })
     }
 
     /// handoffPendingState가 설정된 signInInProgress 상태 (callback 대기 중)
@@ -293,6 +295,8 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "core",
                         source: "polar",
@@ -323,11 +327,13 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             state.hasAccountSession = true
             state.didSignInFail = false
             state.sessionExpiresAt = Self.persistedSessionExpiry
+            state.sessionBindingID = Self.canonicalSessionBindingID
             state.ttlTimerActive = true
             state.refreshDeadlineGeneration = 1
             state.fetchGeneration = 1
             state.syncGeneration = 1
         }
+        XCTAssertEqual(store.state.sessionBindingID, Self.canonicalSessionBindingID)
 
         XCTAssertTrue(exchangeCalled, "유효한 흐름의 callback 정상 처리 → exchange 호출")
         await store.receive(\.sessionSyncRequested) { state in
@@ -335,14 +341,21 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             state.inFlightSyncReason = .login
             state.isSubmitting = true
         }
+        await store.receive(\._sessionSyncActivationCompleted)
         await store.receive(\._sessionSyncCompleted) { state in
             state.inFlightSyncReason = nil
             state.status = .coreLicenseActive
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 fetchedAt: self.referenceDate,
+                sessionBindingID: Self.canonicalSessionBindingID,
+                gatewayBinding: GatewayEnvironment(rawValue: "").binding,
+                deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true
@@ -380,6 +393,8 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "core",
                         source: "polar",
@@ -446,6 +461,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             state.hasAccountSession = true
             state.didSignInFail = false
             state.sessionExpiresAt = Self.persistedSessionExpiry
+            state.sessionBindingID = Self.canonicalSessionBindingID
             state.ttlTimerActive = true
             state.refreshDeadlineGeneration = 1
             state.fetchGeneration = 1
@@ -458,14 +474,21 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             state.inFlightSyncReason = .login
             state.isSubmitting = true
         }
+        await store.receive(\._sessionSyncActivationCompleted)
         await store.receive(\._sessionSyncCompleted) { state in
             state.inFlightSyncReason = nil
             state.status = .coreLicenseActive
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 fetchedAt: self.referenceDate,
+                sessionBindingID: Self.canonicalSessionBindingID,
+                gatewayBinding: GatewayEnvironment(rawValue: "").binding,
+                deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true
@@ -595,11 +618,8 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     func testOnboardingHostTargetRejectsVoyagerCallback() async {
         nonisolated(unsafe) var exchangeCalled = false
         let store = makeTestStore(
-            accountSessionClient: AccountSessionClient(
-                read: { nil },
-                persist: { _ in },
-                delete: { _ in },
-            ),
+            accountSessionClient: AccountSessionClient(read: { _ in nil }, persist: { _ in },
+                                                       delete: { _ in }),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in
                     exchangeCalled = true
@@ -609,6 +629,8 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "core",
                         source: "polar",
@@ -665,6 +687,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.hasAccountSession = true
             state.didSignInFail = false
             state.sessionExpiresAt = Self.persistedSessionExpiry
+            state.sessionBindingID = Self.canonicalSessionBindingID
             state.ttlTimerActive = true
             state.refreshDeadlineGeneration = 1
             state.fetchGeneration = 1
@@ -677,14 +700,21 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.inFlightSyncReason = .login
             state.isSubmitting = true
         }
+        await store.receive(\._sessionSyncActivationCompleted)
         await store.receive(\._sessionSyncCompleted) { state in
             state.inFlightSyncReason = nil
             state.status = .coreLicenseActive
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 fetchedAt: self.referenceDate,
+                sessionBindingID: Self.canonicalSessionBindingID,
+                gatewayBinding: GatewayEnvironment(rawValue: "").binding,
+                deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true
@@ -742,6 +772,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.hasAccountSession = true
             state.didSignInFail = false
             state.sessionExpiresAt = Self.persistedSessionExpiry
+            state.sessionBindingID = Self.canonicalSessionBindingID
             state.ttlTimerActive = true
             state.refreshDeadlineGeneration = 1
             state.fetchGeneration = 1
@@ -752,14 +783,21 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.inFlightSyncReason = .login
             state.isSubmitting = true
         }
+        await store.receive(\._sessionSyncActivationCompleted)
         await store.receive(\._sessionSyncCompleted) { state in
             state.inFlightSyncReason = nil
             state.status = .coreLicenseActive
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 fetchedAt: self.referenceDate,
+                sessionBindingID: Self.canonicalSessionBindingID,
+                gatewayBinding: GatewayEnvironment(rawValue: "").binding,
+                deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true
@@ -790,12 +828,14 @@ extension ACC001CompleteAuthHandoffCallbackTests {
         let tokenStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
         let liveAccountSessionClient = AccountSessionClient.live(store: tokenStore)
         nonisolated(unsafe) var persistedSessionExpiresAt: Date?
+        nonisolated(unsafe) var persistedSessionBindingID: UUID?
         let accountSessionClient = AccountSessionClient(
             read: liveAccountSessionClient.read,
             persist: liveAccountSessionClient.persist,
             prepareHandoffPersistence: { session in
                 let persistedSession = try await liveAccountSessionClient.prepareHandoffPersistence(session)
                 persistedSessionExpiresAt = persistedSession.expiresAt
+                persistedSessionBindingID = persistedSession.sessionBindingID
                 return persistedSession
             },
             commitHandoffPersistence: liveAccountSessionClient.commitHandoffPersistence,
@@ -838,6 +878,8 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.syncGeneration = 1
             XCTAssertNotNil(persistedSessionExpiresAt)
             state.sessionExpiresAt = persistedSessionExpiresAt
+            XCTAssertNotNil(persistedSessionBindingID)
+            state.sessionBindingID = persistedSessionBindingID
         }
         XCTAssertNotNil(store.state.sessionExpiresAt)
         await store.receive(\.sessionSyncRequested) { state in
@@ -845,14 +887,21 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.inFlightSyncReason = .login
             state.isSubmitting = true
         }
+        await store.receive(\._sessionSyncActivationCompleted)
         await store.receive(\._sessionSyncCompleted) { state in
             state.inFlightSyncReason = nil
             state.status = .coreLicenseActive
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 fetchedAt: self.referenceDate,
+                sessionBindingID: persistedSessionBindingID,
+                gatewayBinding: GatewayEnvironment(rawValue: "").binding,
+                deviceID: "test-device-id",
                 sessionExpiresAt: state.sessionExpiresAt,
                 deviceBindingVerifiedAt: self.referenceDate,
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true
@@ -888,6 +937,8 @@ extension ACC001CompleteAuthHandoffCallbackTests {
                     AccessStatusResponse(
                         hasAccess: true,
                         status: "active",
+                        ownershipStatus: "owned",
+                        updateStatus: "active",
                         reason: "active_entitlement",
                         productKey: "core",
                         source: "polar",
@@ -921,6 +972,7 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.hasAccountSession = true
             state.didSignInFail = false
             state.sessionExpiresAt = Self.persistedSessionExpiry
+            state.sessionBindingID = Self.canonicalSessionBindingID
             state.ttlTimerActive = true
             state.refreshDeadlineGeneration = 1
             state.fetchGeneration = 1
@@ -932,14 +984,21 @@ extension ACC001CompleteAuthHandoffCallbackTests {
             state.inFlightSyncReason = .login
             state.isSubmitting = true
         }
+        await store.receive(\._sessionSyncActivationCompleted)
         await store.receive(\._sessionSyncCompleted) { state in
             state.inFlightSyncReason = nil
             state.status = .coreLicenseActive
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 fetchedAt: self.referenceDate,
+                sessionBindingID: Self.canonicalSessionBindingID,
+                gatewayBinding: GatewayEnvironment(rawValue: "").binding,
+                deviceID: "test-device-id",
                 sessionExpiresAt: Self.persistedSessionExpiry,
                 deviceBindingVerifiedAt: self.referenceDate,
+                ownershipStatus: "owned",
+                updateStatus: "active",
+                updatesThrough: Date(timeIntervalSince1970: 2_000_000_000),
             )
             state.isSubmitting = false
             state.isComplete = true

@@ -12,19 +12,19 @@ Two related ceremonies in one document. Shell-freeze is the typical trigger for 
 
 ## Canonical neighbors
 
-- `../../../reviewer/boundary/references/public-boundary-spec.md` — public surface rules, deep import rules, entity cross-reference
-- `../../../reviewer/boundary/references/layer-and-segment-rules.md` — FSD layer contracts, `06_Shared` contract, dependency direction
+- `../../../reviewer/review/references/public-boundary-spec.md` — public surface rules, deep import rules, entity cross-reference
+- `../../../reviewer/review/references/layer-and-segment-rules.md` — FSD layer contracts, `06_Shared` contract, dependency direction
 - `reuse-discovery-spec.md` — reuse-first ordering, candidate table format, search workflow
-- `../../../reviewer/architecture-gate/references/decision-matrix.md` — Reuse Score model, thresholds, output contract
+- `../../../reviewer/review/references/decision-matrix.md` — Reuse Score model, thresholds, output contract
 - `../../scaffold/references/package-extraction-posture.md` — extraction readiness checks, modularization direction
 
 ## Non-goals
 
 This reference does NOT cover:
 
-- Reuse scoring or the Reuse Score formula (see `../../../reviewer/architecture-gate/references/decision-matrix.md`)
-- Public boundary principles or deep import rules (see `../../../reviewer/boundary/references/public-boundary-spec.md`)
-- `06_Shared` layer contract or what shared code may reference (see `../../../reviewer/boundary/references/layer-and-segment-rules.md`)
+- Reuse scoring or the Reuse Score formula (see `../../../reviewer/review/references/decision-matrix.md`)
+- Public boundary principles or deep import rules (see `../../../reviewer/review/references/public-boundary-spec.md`)
+- `06_Shared` layer contract or what shared code may reference (see `../../../reviewer/review/references/layer-and-segment-rules.md`)
 - Reuse search workflow or candidate discovery (see `reuse-discovery-spec.md`)
 - Extraction readiness checks (see `../../scaffold/references/package-extraction-posture.md`)
 

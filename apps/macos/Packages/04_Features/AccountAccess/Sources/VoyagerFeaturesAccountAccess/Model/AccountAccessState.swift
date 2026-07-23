@@ -11,7 +11,10 @@ public struct AccountAccessHandoffTransaction: Equatable, Sendable {
     public let context: AppHandoffContext
     public let scope: AccountAccessHandoffScope
 
-    public init(context: AppHandoffContext, scope: AccountAccessHandoffScope) {
+    public init(
+        context: AppHandoffContext,
+        scope: AccountAccessHandoffScope,
+    ) {
         self.context = context
         self.scope = scope
     }
@@ -85,9 +88,12 @@ public struct AccountAccessState: Equatable {
     public var consecutiveRefreshFailures: Int = 0
     /// 현재 세션의 access token 만료 시각. Refresh deadline이 이 값을 기준으로 계산된다.
     public var sessionExpiresAt: Date?
+    /// 현재 credential의 stable binding. 비동기 sync completion은 이 값을 함께 검증한다.
+    public var sessionBindingID: UUID?
 
     /// 세션 만료 여부. true이면 중복 _sessionExpiredDetected를 무시한다 (dedup guard).
     public var isSessionExpired: Bool = false
+    public var updateEligibilityFailure: UpdateEligibilityFailure?
 
     public init() {}
 
@@ -127,6 +133,9 @@ public struct AccountAccessState: Equatable {
         if let deviceBindingFailure {
             return deviceBindingFailure.stepState
         }
+        if updateEligibilityFailure != nil {
+            return .blocked
+        }
         if isComplete, status?.isActive == true {
             return .complete
         }
@@ -148,7 +157,8 @@ public struct AccountAccessState: Equatable {
     // MARK: - ONB-002 Affordances
 
     public var canStartLogin: Bool {
-        accountAccessAuthAxis == .signedOut || accountAccessAuthAxis == .signInFailed
+        accountAccessAuthAxis == .signedOut
+            || accountAccessAuthAxis == .signInFailed
     }
 
     public var canRefreshAccess: Bool {
@@ -181,6 +191,9 @@ public struct AccountAccessState: Equatable {
         if isComplete, status?.isActive == true {
             return .next
         }
+        if updateEligibilityFailure != nil {
+            return .eligibleDownload
+        }
         if let deviceBindingFailure {
             return primaryCTA(for: deviceBindingFailure)
         }
@@ -209,10 +222,12 @@ public struct AccountAccessState: Equatable {
         handoffPendingState = nil
         handoffExchangeState = nil
         errorMessage = nil
+        updateEligibilityFailure = nil
         deviceBindingFailure = nil
         deviceBindingRetryCount = 0
         hasAccountSession = snapshot.hasSession
         sessionExpiresAt = snapshot.sessionExpiresAt
+        sessionBindingID = nil
         isSessionExpired = false
         didBootstrap = true
         fetchGeneration += 1
@@ -245,6 +260,7 @@ public struct AccountAccessState: Equatable {
         deviceBindingRetryCount = 0
         hasAccountSession = sessionExpiresAt != nil
         self.sessionExpiresAt = sessionExpiresAt
+        sessionBindingID = nil
         isSessionExpired = false
         isComplete = false
         didBootstrap = true
@@ -252,6 +268,7 @@ public struct AccountAccessState: Equatable {
         lastCompleteSyncAt = nil
         syncGeneration += 1
         inFlightSyncReason = nil
+        updateEligibilityFailure = nil
     }
 
     private static func errorMessage(for error: AccessError) -> String {

@@ -1,4 +1,5 @@
 // swift-tools-version:6.0
+import Foundation
 import PackageDescription
 
 let kPackage = Package(
@@ -40,6 +41,9 @@ let kPackage = Package(
                 .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
             ],
+            linkerSettings: ProcessInfo.processInfo.environment["RUNNING_VIA_INJECTION_NEXT"] == nil
+                ? []
+                : [.unsafeFlags(["-Xlinker", "-interposable"], .when(configuration: .debug))],
         ),
         .testTarget(
             name: "VoyagerWidgetsEntryViewLayoutTests",

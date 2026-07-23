@@ -1,7 +1,11 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
@@ -551,11 +555,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
-    /// pinned 저장 성공 이벤트는 전역 pinned store를 다시 읽어 열린 모든 window로 fan-out한다.
-    /// pinned sidebar가 window마다 어긋나지 않도록 WindowManager 레벨 동기화 액션을 검증한다.
+    /// pinned 저장 성공 이벤트는 external marker 여부와 무관하게 열린 모든 window로 fan-out한다.
+    /// pinned sidebar가 window마다 어긋나지 않고 external unpinned tab이 보존되는지 검증한다.
     /// - 검증 내용: child pinnedRecordSaveSucceeded → pinnedContentTabsStoreChanged → 모든 window applyPinnedContentTabs
-    /// - 사전 조건: 열린 window 2개, global pinned store 1개
-    /// - 기대 결과: 두 window 모두 동일한 pinned tab 상태 수신
+    /// - 사전 조건: 일반 window와 active external marker window, global pinned store 1개
+    /// - 기대 결과: 두 window 모두 동일한 pinned tab을 받고 external window의 unpinned tab은 유지
     func testPinnedRecordSaveSucceededSyncsPinnedTabsAcrossOpenWindows() async {
         let firstID = UUID()
         let secondID = UUID()
@@ -574,6 +578,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             WindowSessionState(id: firstID, window: .makeInitial(path: "/Users/test/A")),
             WindowSessionState(id: secondID, window: .makeInitial(path: "/Users/test/B")),
         ]
+        initialState.externalWindowBatchIDs[secondID] = UUID()
 
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
@@ -619,6 +624,12 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         XCTAssertEqual(store.state.windows[id: firstID]?.window.contentTabs.tabs.first?.id.rawValue, "global-pin")
         XCTAssertEqual(store.state.windows[id: secondID]?.window.contentTabs.tabs.first?.id.rawValue, "global-pin")
+        XCTAssertEqual(
+            store.state.windows[id: secondID]?.window.contentTabs.tabs.contains {
+                !$0.isPinned && $0.anchor == .directory(path: "/Users/test/B")
+            },
+            true,
+        )
     }
 
     /// live sync는 bootstrap cleanup과 달리 파일 존재 검증으로 열린 pinned tab을 갑자기 제거하지 않는다.
@@ -1906,6 +1917,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.uuid = .constant(windowID)
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.fileManagerBuiltInCollectionClient = .liveValue
+            $0.builtInCollectionClient = .liveValue
             $0.collectionFileClient = .liveValue
             $0.contentTabPinnedRecordClient = pinnedRecordClient
             $0.fileManagerClient = fileManagerClient
@@ -1990,6 +2002,1677 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(tabs?.count, 1)
         XCTAssertEqual(tabs?.first?.page, .home)
         XCTAssertFalse(tabs?.contains(where: \.isPinned) ?? true)
+    }
+
+    // MARK: - External Open Placement
+
+    /// key/resign/close/new-window lifecycle에서 focused state와 runtime MRU가 서로 다른 계약을 유지한다.
+    func testWindowLifecycleMaintainsRuntimeMRUIndependentlyFromFocus() async {
+        let firstID = UUID()
+        let secondID = UUID()
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            Self.makeWindow(id: firstID, tabCount: 1),
+            Self.makeWindow(id: secondID, tabCount: 1),
+        ]
+        let newWindowID = UUID(100)
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(newWindowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: 새 창 bootstrap effect는 MRU lifecycle assertion 범위가 아니다.
+        store.exhaustivity = .off
+
+        await store.send(.event(.windowBecameKey(firstID))) {
+            $0.focusedWindowID = firstID
+            $0.lastUsedWindowIDs = [firstID]
+        }
+        await store.send(.event(.windowBecameKey(secondID))) {
+            $0.focusedWindowID = secondID
+            $0.lastUsedWindowIDs = [secondID, firstID]
+        }
+        await store.send(.event(.windowResignedKey(secondID))) {
+            $0.focusedWindowID = nil
+        }
+        await store.send(.event(.windowClosed(secondID))) {
+            $0.windows.remove(id: secondID)
+            $0.lastUsedWindowIDs = [firstID]
+        }
+        await store.send(.file(.newWindow(path: "/new"))) {
+            $0.windows.append(.init(id: newWindowID, window: .makeInitial(path: "/new")))
+            $0.focusedWindowID = newWindowID
+            $0.lastUsedWindowIDs = [newWindowID, firstID]
+        }
+    }
+
+    /// preferred window가 commit 전에 닫히면 frozen MRU의 다음 생존 window만 선택한다.
+    func testPlacementRevalidatesPreferredMRUAfterClose() async {
+        let closedID = UUID()
+        let survivingID = UUID()
+        let unrelatedID = UUID()
+        let itemID = UUID()
+        let batchID = UUID()
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            Self.makeWindow(id: survivingID, tabCount: 19),
+            Self.makeWindow(id: unrelatedID, tabCount: 1),
+        ]
+        initialState.lastUsedWindowIDs = [unrelatedID, survivingID]
+        let request = ExternalOpenPlacementRequest(
+            batchID: batchID,
+            itemIDs: [itemID],
+            preferredWindowIDs: [closedID, survivingID],
+        )
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+        }
+
+        await store.send(.placement(.plan(request)))
+        await store.receive { action in
+            guard case let .delegate(.externalOpenPlacementCompleted(completion)) = action,
+                  case let .success(plan) = completion.result
+            else {
+                return false
+            }
+            return plan.batchID == batchID
+                && plan.windows.count == 1
+                && plan.windows[0].windowID == survivingID
+                && !plan.windows[0].isNewWindow
+                && plan.windows[0].items.map(\.itemID) == [itemID]
+        }
+    }
+
+    /// preferred snapshot이 비어도 focused live window가 있으면 새 window 대신 해당 window를 재사용한다.
+    func testPlacementUsesFocusedLiveWindowWhenPreferredSnapshotIsEmpty() async {
+        let firstID = UUID()
+        let focusedID = UUID()
+        let itemID = UUID()
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            Self.makeWindow(id: firstID, tabCount: 1),
+            Self.makeWindow(id: focusedID, tabCount: 19),
+        ]
+        initialState.focusedWindowID = focusedID
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+        }
+
+        await store.send(.placement(.plan(.init(
+            batchID: UUID(),
+            itemIDs: [itemID],
+            preferredWindowIDs: [],
+        ))))
+        await store.receive { action in
+            guard case let .delegate(.externalOpenPlacementCompleted(completion)) = action,
+                  case let .success(plan) = completion.result
+            else {
+                return false
+            }
+            return plan.windows.count == 1
+                && plan.windows[0].windowID == focusedID
+                && !plan.windows[0].isNewWindow
+                && plan.windows[0].items.map(\.itemID) == [itemID]
+        }
+    }
+
+    /// preferred snapshot과 focus가 비어도 live MRU의 첫 window를 재사용한다.
+    func testPlacementUsesLiveMRUWhenPreferredSnapshotAndFocusAreEmpty() async {
+        let firstID = UUID()
+        let mostRecentID = UUID()
+        let itemID = UUID()
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            Self.makeWindow(id: firstID, tabCount: 1),
+            Self.makeWindow(id: mostRecentID, tabCount: 19),
+        ]
+        initialState.lastUsedWindowIDs = [mostRecentID, firstID]
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+        }
+
+        await store.send(.placement(.plan(.init(
+            batchID: UUID(),
+            itemIDs: [itemID],
+            preferredWindowIDs: [],
+        ))))
+        await store.receive { action in
+            guard case let .delegate(.externalOpenPlacementCompleted(completion)) = action,
+                  case let .success(plan) = completion.result
+            else {
+                return false
+            }
+            return plan.windows.count == 1
+                && plan.windows[0].windowID == mostRecentID
+                && !plan.windows[0].isNewWindow
+                && plan.windows[0].items.map(\.itemID) == [itemID]
+        }
+    }
+
+    /// preferred snapshot, focus, live MRU가 모두 비어도 첫 live state window를 재사용한다.
+    func testPlacementUsesFirstLiveWindowWhenRuntimeHistoryIsEmpty() async {
+        let firstID = UUID()
+        let secondID = UUID()
+        let itemID = UUID()
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            Self.makeWindow(id: firstID, tabCount: 19),
+            Self.makeWindow(id: secondID, tabCount: 1),
+        ]
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+        }
+
+        await store.send(.placement(.plan(.init(
+            batchID: UUID(),
+            itemIDs: [itemID],
+            preferredWindowIDs: [],
+        ))))
+        await store.receive { action in
+            guard case let .delegate(.externalOpenPlacementCompleted(completion)) = action,
+                  case let .success(plan) = completion.result
+            else {
+                return false
+            }
+            return plan.windows.count == 1
+                && plan.windows[0].windowID == firstID
+                && !plan.windows[0].isNewWindow
+                && plan.windows[0].items.map(\.itemID) == [itemID]
+        }
+    }
+
+    /// preferred snapshot과 live MRU의 교집합이 없으면 기존 unrelated window 대신 새 window를 사용한다.
+    func testPlacementCreatesNewWindowWhenPreferredMRUHasNoSurvivor() async {
+        let closedID = UUID()
+        let unrelatedID = UUID()
+        let itemIDs = [UUID(), UUID()]
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [Self.makeWindow(id: unrelatedID, tabCount: 1)]
+        initialState.lastUsedWindowIDs = [unrelatedID]
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+        }
+
+        await store.send(.placement(.plan(.init(
+            batchID: UUID(),
+            itemIDs: itemIDs,
+            preferredWindowIDs: [closedID],
+        ))))
+        await store.receive { action in
+            guard case let .delegate(.externalOpenPlacementCompleted(completion)) = action,
+                  case let .success(plan) = completion.result
+            else {
+                return false
+            }
+            return plan.windows.count == 1
+                && plan.windows[0].windowID != unrelatedID
+                && plan.windows[0].isNewWindow
+                && plan.windows[0].items.map(\.itemID) == itemIDs
+        }
+    }
+
+    /// preferred existing window 하나만 free slot을 소비하고 older MRU에는 spill하지 않는다.
+    func testPlacementUsesOnlyOnePreferredExistingWindowBeforeOverflow() async {
+        let preferredID = UUID()
+        let olderID = UUID()
+        let itemIDs = (0 ..< 22).map { _ in UUID() }
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            Self.makeWindow(id: preferredID, tabCount: 19),
+            Self.makeWindow(id: olderID, tabCount: 1),
+        ]
+        initialState.lastUsedWindowIDs = [preferredID, olderID]
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+        }
+
+        await store.send(.placement(.plan(.init(
+            batchID: UUID(),
+            itemIDs: itemIDs,
+            preferredWindowIDs: [preferredID, olderID],
+        ))))
+        await store.receive { action in
+            guard case let .delegate(.externalOpenPlacementCompleted(completion)) = action,
+                  case let .success(plan) = completion.result
+            else {
+                return false
+            }
+            return plan.windows.map(\.windowID).first == preferredID
+                && !plan.windows.map(\.windowID).contains(olderID)
+                && plan.windows.map(\.items.count) == [1, 20, 1]
+                && plan.windows.flatMap(\.items).map(\.itemID) == itemIDs
+                && Set(plan.windows.flatMap(\.items).map(\.tabID)).count == itemIDs.count
+        }
+    }
+
+    /// free 0/1/20과 valid 20/21/40/41 경계에서 overflow chunk 수와 크기가 항상 최소다.
+    func testPlacementBoundaryMatrixUsesMinimalChunks() async {
+        let scenarios = [
+            PlacementBoundaryScenario(free: 0, valid: 20, expected: [20]),
+            PlacementBoundaryScenario(free: 0, valid: 21, expected: [20, 1]),
+            PlacementBoundaryScenario(free: 0, valid: 40, expected: [20, 20]),
+            PlacementBoundaryScenario(free: 0, valid: 41, expected: [20, 20, 1]),
+            PlacementBoundaryScenario(free: 1, valid: 20, expected: [1, 19]),
+            PlacementBoundaryScenario(free: 1, valid: 21, expected: [1, 20]),
+            PlacementBoundaryScenario(free: 1, valid: 40, expected: [1, 20, 19]),
+            PlacementBoundaryScenario(free: 1, valid: 41, expected: [1, 20, 20]),
+            PlacementBoundaryScenario(free: 20, valid: 20, expected: [20]),
+            PlacementBoundaryScenario(free: 20, valid: 21, expected: [20, 1]),
+            PlacementBoundaryScenario(free: 20, valid: 40, expected: [20, 20]),
+            PlacementBoundaryScenario(free: 20, valid: 41, expected: [20, 20, 1]),
+        ]
+
+        for scenario in scenarios {
+            let preferredID = UUID()
+            let itemIDs = (0 ..< scenario.valid).map { _ in UUID() }
+            var initialState = WindowManagerFeature.State()
+            initialState.windows = [
+                Self.makeWindow(id: preferredID, tabCount: ContentTabConstants.maxTabs - scenario.free),
+            ]
+            initialState.lastUsedWindowIDs = [preferredID]
+            let store = TestStore(initialState: initialState) {
+                WindowManagerFeature()
+            } withDependencies: {
+                $0.uuid = .incrementing
+            }
+
+            await store.send(.placement(.plan(.init(
+                batchID: UUID(),
+                itemIDs: itemIDs,
+                preferredWindowIDs: [preferredID],
+            ))))
+            await store.receive { action in
+                guard case let .delegate(.externalOpenPlacementCompleted(completion)) = action,
+                      case let .success(plan) = completion.result
+                else {
+                    return false
+                }
+                return plan.windows.map(\.items.count) == scenario.expected
+                    && plan.windows.allSatisfy { !$0.items.isEmpty && $0.items.count <= 20 }
+                    && plan.windows.flatMap(\.items).map(\.itemID) == itemIDs
+            }
+        }
+    }
+
+    /// probe가 진행되는 동안 preferred window에 tab이 추가되면 placement는 live free capacity를 다시 계산한다.
+    func testPlacementRecalculatesCapacityAfterTabsAddedDuringProbe() async {
+        let preferredID = UUID()
+        let itemIDs = [UUID(), UUID()]
+        let request = ExternalOpenPlacementRequest(
+            batchID: UUID(),
+            itemIDs: itemIDs,
+            preferredWindowIDs: [preferredID],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [Self.makeWindow(id: preferredID, tabCount: 18)]
+        initialState.lastUsedWindowIDs = [preferredID]
+        initialState.windows[id: preferredID]?.window.contentTabs.tabs.append(ContentTabItem(
+            id: ContentTabID(rawValue: "added-during-probe"),
+            page: .directory,
+            anchor: .directory(path: "/added-during-probe"),
+            isPinned: false,
+        ))
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+        }
+
+        await store.send(.placement(.plan(request)))
+        await store.receive { action in
+            guard case let .delegate(.externalOpenPlacementCompleted(completion)) = action,
+                  case let .success(plan) = completion.result
+            else {
+                return false
+            }
+            return plan.windows.map(\.items.count) == [1, 1]
+                && plan.windows.first?.windowID == preferredID
+                && plan.windows.flatMap(\.items).map(\.itemID) == itemIDs
+        }
+    }
+
+    /// uuid dependency가 만든 window/tab ID는 commit 전에 모두 유일해야 한다.
+    func testPlacementRejectsDuplicateAllocatedIDsBeforeMutation() async {
+        let duplicateID = UUID()
+        let initialState = WindowManagerFeature.State()
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(duplicateID)
+        }
+
+        await store.send(.placement(.plan(.init(
+            batchID: UUID(),
+            itemIDs: [UUID(), UUID()],
+            preferredWindowIDs: [],
+        ))))
+        await store.receive { action in
+            guard case let .delegate(.externalOpenPlacementCompleted(completion)) = action,
+                  case let .failure(failure) = completion.result
+            else {
+                return false
+            }
+            return failure == .duplicateAllocatedID(duplicateID)
+        }
+        XCTAssertEqual(store.state, initialState)
+    }
+
+    /// duplicate item ID와 maxTabs 초과 live state는 mutation 없이 fail-closed한다.
+    func testPlacementRejectsDuplicateItemsAndImpossibleCapacityBeforeMutation() async {
+        let duplicateItemID = UUID()
+        let duplicateState = WindowManagerFeature.State()
+        let duplicateStore = TestStore(initialState: duplicateState) {
+            WindowManagerFeature()
+        }
+        await duplicateStore.send(.placement(.plan(.init(
+            batchID: UUID(),
+            itemIDs: [duplicateItemID, duplicateItemID],
+            preferredWindowIDs: [],
+        ))))
+        await duplicateStore.receive { action in
+            guard case let .delegate(.externalOpenPlacementCompleted(completion)) = action,
+                  case let .failure(failure) = completion.result
+            else {
+                return false
+            }
+            return failure == .duplicateItemID(duplicateItemID)
+        }
+        XCTAssertEqual(duplicateStore.state, duplicateState)
+
+        let impossibleID = UUID()
+        var impossibleState = WindowManagerFeature.State()
+        impossibleState.windows = [Self.makeWindow(id: impossibleID, tabCount: 21)]
+        impossibleState.lastUsedWindowIDs = [impossibleID]
+        let impossibleStore = TestStore(initialState: impossibleState) {
+            WindowManagerFeature()
+        }
+        await impossibleStore.send(.placement(.plan(.init(
+            batchID: UUID(),
+            itemIDs: [UUID()],
+            preferredWindowIDs: [impossibleID],
+        ))))
+        await impossibleStore.receive { action in
+            guard case let .delegate(.externalOpenPlacementCompleted(completion)) = action,
+                  case let .failure(failure) = completion.result
+            else {
+                return false
+            }
+            return failure == .invalidExistingTabCount(windowID: impossibleID, count: 21)
+        }
+        XCTAssertEqual(impossibleStore.state, impossibleState)
+    }
+
+    /// valid item이 없으면 ID를 소비하거나 window placement를 만들지 않는다.
+    func testPlacementWithZeroValidItemsCreatesNothing() async {
+        let existingID = UUID()
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [Self.makeWindow(id: existingID, tabCount: 1)]
+        initialState.lastUsedWindowIDs = [existingID]
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(existingID)
+        }
+        let batchID = UUID()
+
+        await store.send(.placement(.plan(.init(
+            batchID: batchID,
+            itemIDs: [],
+            preferredWindowIDs: [existingID],
+        ))))
+        await store.receive { action in
+            guard case let .delegate(.externalOpenPlacementCompleted(completion)) = action,
+                  case let .success(plan) = completion.result
+            else {
+                return false
+            }
+            return plan == .init(batchID: batchID, windows: [])
+        }
+        XCTAssertEqual(store.state, initialState)
+    }
+
+    /// placement failure delegate는 요청을 만든 batch identity를 보존한다.
+    func testPlacementFailureDelegateCarriesOriginatingBatchID() async {
+        let batchID = UUID()
+        let duplicateItemID = UUID()
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        }
+
+        await store.send(.placement(.plan(.init(
+            batchID: batchID,
+            itemIDs: [duplicateItemID, duplicateItemID],
+            preferredWindowIDs: [],
+        ))))
+        await store.receive { action in
+            guard case let .delegate(.externalOpenPlacementCompleted(completion)) = action else {
+                return false
+            }
+            return completion.batchID == batchID
+                && completion.result == .failure(.duplicateItemID(duplicateItemID))
+        }
+    }
+
+    /// authorization이 없는 stale apply는 window state와 native open을 변경하지 않는다.
+    func testUnauthorizedPlacementApplicationDoesNotMutateOrOpenWindow() async {
+        let batchID = UUID()
+        let itemID = UUID()
+        let windowID = UUID()
+        let tabID = ContentTabID(rawValue: "unauthorized-apply")
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: itemID, tabID: tabID)],
+                ),
+            ],
+        )
+        let openedWindowIDs = LockIsolated<[UUID]>([])
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.fileManagerWindowClient.open = { id in
+                openedWindowIDs.withValue { $0.append(id) }
+            }
+        }
+        // store.exhaustivity = .off: unauthorized command가 child effect를 전혀 만들지 않는 경계만 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.apply(
+            plan: plan,
+            reservationsByItemID: [
+                itemID: .init(id: tabID, anchor: .directory(path: "/tmp/unauthorized-apply")),
+            ],
+        )))
+        await store.finish()
+
+        XCTAssertTrue(store.state.windows.isEmpty)
+        XCTAssertTrue(store.state.externalWindowBatchIDs.isEmpty)
+        XCTAssertTrue(openedWindowIDs.value.isEmpty)
+    }
+
+    /// reservation tab identity가 commit 전에 달라지면 mutation 없이 batch-scoped failure를 보낸다.
+    func testPlacementApplicationValidationFailureEmitsBatchScopedTerminal() async {
+        let batchID = UUID()
+        let itemID = UUID()
+        let windowID = UUID()
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: itemID, tabID: ContentTabID(rawValue: "planned-tab"))],
+                ),
+            ],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedExternalOpenBatchID = batchID
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        }
+
+        await store.send(.placement(.apply(
+            plan: plan,
+            reservationsByItemID: [
+                itemID: .init(
+                    id: ContentTabID(rawValue: "raced-tab"),
+                    anchor: .directory(path: "/tmp/race"),
+                ),
+            ],
+        ))) {
+            $0.authorizedExternalOpenBatchID = nil
+        }
+        await store.receive(
+            \.delegate.externalOpenApplyCompleted,
+            .init(batchID: batchID, result: .failure(.validationFailed)),
+        )
+
+        initialState.authorizedExternalOpenBatchID = nil
+        XCTAssertEqual(store.state, initialState)
+    }
+
+    /// 기존 mounted window의 external reservation은 state commit 후 canonical tab handoff로 활성화된다.
+    /// Directory load가 장기 실행 중이어도 apply terminal은 load 완료를 기다리지 않는 경계를 검증한다.
+    /// - 검증 내용: ordered append, old→new active 전환, suspended load 전 terminal 1회다.
+    /// - 사전 조건: seed tab이 active인 기존 window와 Directory reservation 하나다.
+    /// - 기대 결과: 마지막 preallocated tab이 active가 되고 apply completion은 load gate가 닫힌 동안 도착한다.
+    func testPlacementApplicationActivatesExistingWindowWithoutAwaitingDirectoryLoad() async throws {
+        let batchID = UUID()
+        let windowID = UUID()
+        let itemID = UUID()
+        let tabID = ContentTabID(rawValue: "existing-window-external")
+        var existingWindow = FileManagerWindowFeature.State.makeInitial(path: "/seed")
+        existingWindow.content.entryViewLayout.entryOperations.windowID = windowID
+        existingWindow.content.composer.cancellationOwnerID = windowID
+        existingWindow.syncActiveTabContentState()
+        let previousActiveID = try XCTUnwrap(existingWindow.contentTabs.activeTabID)
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [.init(id: windowID, window: existingWindow)]
+        initialState.authorizedExternalOpenBatchID = batchID
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: false,
+                    items: [.init(itemID: itemID, tabID: tabID)],
+                ),
+            ],
+        )
+        let loadGate = WindowBootstrapSuspensionGate()
+        let loadStarted = expectation(description: "destination load started")
+        let terminalReceived = expectation(description: "apply terminal received")
+        let terminalCount = LockIsolated(0)
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.externalOpenApplyCompleted(.init(
+                        batchID: batchID,
+                        result: .success(plan),
+                    ))) = action {
+                        terminalCount.withValue { $0 += 1 }
+                        terminalReceived.fulfill()
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { url, _ in
+                XCTAssertEqual(url.path, "/external")
+                loadStarted.fulfill()
+                await loadGate.wait()
+                return []
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { $0.finish() }
+            }
+        }
+        // store.exhaustivity = .off: child navigation action보다 WindowManager commit/terminal 경계를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.apply(
+            plan: plan,
+            reservationsByItemID: [
+                itemID: .init(id: tabID, anchor: .directory(path: "/external")),
+            ],
+        )))
+        await fulfillment(of: [loadStarted, terminalReceived], timeout: 1)
+        await store.skipReceivedActions()
+
+        let committedWindow = try XCTUnwrap(store.state.windows[id: windowID]?.window)
+        XCTAssertEqual(committedWindow.contentTabs.tabs.map(\.id), [previousActiveID, tabID])
+        XCTAssertEqual(committedWindow.contentTabs.activeTabID, tabID)
+        XCTAssertEqual(committedWindow.contentTabs.previousActiveTabID, previousActiveID)
+        XCTAssertEqual(terminalCount.value, 1)
+
+        await loadGate.open()
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
+    /// 새 external no-Home window의 active Collection은 canonical open을 정확히 한 번 시작한다.
+    /// Collection load가 장기 실행 중이어도 apply terminal은 load 완료를 기다리지 않는 경계를 검증한다.
+    /// - 검증 내용: active Collection load 1회, suspended load 전 terminal 1회, 모든 tab의 window context 보존이다.
+    /// - 사전 조건: Directory와 active Collection reservation으로 구성된 새 window 하나다.
+    /// - 기대 결과: Collection open이 시작되고 terminal은 load gate가 닫힌 동안 도착한다.
+    func testPlacementApplicationStartsNewWindowCollectionOpenWithoutAwaitingLoad() async throws {
+        enum TestError: Error {
+            case loadFailed
+        }
+
+        let batchID = UUID()
+        let windowID = UUID()
+        let directoryItemID = UUID()
+        let collectionItemID = UUID()
+        let directoryTabID = ContentTabID(rawValue: "new-window-directory")
+        let collectionTabID = ContentTabID(rawValue: "new-window-collection")
+        let collectionURL = URL(fileURLWithPath: "/tmp/new-window-active.voycoll")
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: true,
+                    items: [
+                        .init(itemID: directoryItemID, tabID: directoryTabID),
+                        .init(itemID: collectionItemID, tabID: collectionTabID),
+                    ],
+                ),
+            ],
+        )
+        let loadGate = WindowBootstrapSuspensionGate()
+        let loadStarted = expectation(description: "collection load started")
+        let terminalReceived = expectation(description: "apply terminal received")
+        let openedURLs = LockIsolated<[URL]>([])
+        let terminalCount = LockIsolated(0)
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedExternalOpenBatchID = batchID
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.externalOpenApplyCompleted(.init(
+                        batchID: batchID,
+                        result: .success(plan),
+                    ))) = action {
+                        terminalCount.withValue { $0 += 1 }
+                        terminalReceived.fulfill()
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.collectionFileClient.load = { url in
+                openedURLs.withValue { $0.append(url) }
+                loadStarted.fulfill()
+                await loadGate.wait()
+                throw TestError.loadFailed
+            }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: child Collection action보다 새 window commit/open/terminal 경계를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.apply(
+            plan: plan,
+            reservationsByItemID: [
+                directoryItemID: .init(id: directoryTabID, anchor: .directory(path: "/tmp")),
+                collectionItemID: .init(id: collectionTabID, anchor: .collectionFile(url: collectionURL)),
+            ],
+        )))
+        await fulfillment(of: [loadStarted, terminalReceived], timeout: 1)
+        await store.skipReceivedActions()
+
+        let committedWindow = try XCTUnwrap(store.state.windows[id: windowID]?.window)
+        XCTAssertEqual(committedWindow.contentTabs.tabs.map(\.id), [directoryTabID, collectionTabID])
+        XCTAssertEqual(committedWindow.contentTabs.activeTabID, collectionTabID)
+        XCTAssertEqual(committedWindow.contentTabs.previousActiveTabID, directoryTabID)
+        XCTAssertTrue(committedWindow.tabContentStates.values.allSatisfy { content in
+            content.entryViewLayout.entryOperations.windowID == windowID
+                && content.composer.cancellationOwnerID == windowID
+        })
+        XCTAssertEqual(openedURLs.value, [collectionURL])
+        XCTAssertEqual(terminalCount.value, 1)
+
+        await loadGate.open()
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
+    /// external placement 적용은 reservation 첫 항목부터 overflow window를 만들고 bootstrap 대상으로 등록하지 않는다.
+    func testPlacementApplicationCreatesNoHomeOverflowWindowsOutsideBootstrap() async {
+        let batchID = UUID()
+        let firstWindowID = UUID()
+        let secondWindowID = UUID()
+        let itemIDs = (0 ..< 21).map { _ in UUID() }
+        let tabIDs = (0 ..< 21).map { ContentTabID(rawValue: "external-tab-\($0)") }
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: firstWindowID,
+                    isNewWindow: true,
+                    items: zip(itemIDs.prefix(20), tabIDs.prefix(20)).map {
+                        .init(itemID: $0.0, tabID: $0.1)
+                    },
+                ),
+                .init(
+                    windowID: secondWindowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: itemIDs[20], tabID: tabIDs[20])],
+                ),
+            ],
+        )
+        let reservationsByItemID = Dictionary(
+            uniqueKeysWithValues: zip(itemIDs, tabIDs).enumerated().map { index, pair in
+                (
+                    pair.0,
+                    ExternalContentTabReservation(
+                        id: pair.1,
+                        anchor: .directory(path: "/external/\(index)"),
+                    ),
+                )
+            },
+        )
+        let openedIDs = LockIsolated<[UUID]>([])
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedExternalOpenBatchID = batchID
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.open = { id in openedIDs.withValue { $0.append(id) } }
+            $0.fileManagerWindowClient.activate = { _ in .becameKey }
+        }
+        // store.exhaustivity = .off: window별 초기화 child action보다 외부 window 생성 경계와 bootstrap 제외를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.apply(
+            plan: plan,
+            reservationsByItemID: reservationsByItemID,
+        )))
+        await store.finish()
+
+        XCTAssertEqual(store.state.windows.map(\.id), [firstWindowID, secondWindowID])
+        XCTAssertEqual(store.state.windows.map(\.window.contentTabs.tabs.count), [20, 1])
+        XCTAssertTrue(store.state.windows.allSatisfy { window in
+            window.window.content.entryViewLayout.entryOperations.windowID == window.id
+                && window.window.content.composer.cancellationOwnerID == window.id
+                && window.window.tabContentStates.values.allSatisfy { content in
+                    content.entryViewLayout.entryOperations.windowID == window.id
+                        && content.composer.cancellationOwnerID == window.id
+                }
+        })
+        XCTAssertTrue(store.state.windows.allSatisfy { window in
+            !window.window.contentTabs.tabs.contains(where: { $0.page == .home || $0.isPinned })
+        })
+        XCTAssertTrue(store.state.defaultWindowBootstrapWindowIDs.isEmpty)
+        XCTAssertNil(store.state.defaultWindowBootstrapRequestID)
+        XCTAssertEqual(
+            store.state.externalWindowBatchIDs,
+            [firstWindowID: batchID, secondWindowID: batchID],
+        )
+        XCTAssertEqual(Set(openedIDs.value), Set([firstWindowID, secondWindowID]))
+    }
+
+    /// 다른 batch identity의 external no-Home window는 늦은 default bootstrap completion이 변경하지 않는다.
+    func testLateBootstrapCompletionSkipsExternalWindowWithBatchIdentity() async throws {
+        let externalBatchID = UUID()
+        let bootstrapRequestID = UUID()
+        let windowID = UUID()
+        let externalTabID = ContentTabID(rawValue: "external-stale-bootstrap-guard")
+        let externalWindow = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(reservations: [
+            .init(id: externalTabID, anchor: .directory(path: "/external/stable")),
+        ]))
+        let stalePinnedState = ContentTabState.restoringPinnedRecords(from: ContentTabPinnedRecordStore(records: [
+            ContentTabPinnedRecord(
+                id: "stale-pin",
+                page: .directory,
+                anchor: .directory(path: "/stale/pinned"),
+                title: "Stale",
+                iconName: "folder",
+                pinnedAt: Date(timeIntervalSince1970: 1),
+            ),
+        ])).state
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [.init(id: windowID, window: externalWindow)]
+        initialState.externalWindowBatchIDs = [windowID: externalBatchID]
+        initialState.defaultWindowBootstrapRequestID = bootstrapRequestID
+        initialState.defaultWindowBootstrapWindowIDs = [windowID]
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        }
+
+        await store.send(.defaultWindowBootstrapCompleted(
+            requestID: bootstrapRequestID,
+            contentTabs: stalePinnedState,
+        )) {
+            $0.defaultWindowBootstrapRequestID = nil
+            $0.defaultWindowBootstrapWindowIDs = []
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.windows[id: windowID]?.window, externalWindow)
+        XCTAssertEqual(store.state.externalWindowBatchIDs[windowID], externalBatchID)
+        XCTAssertEqual(store.state.windows[id: windowID]?.window.contentTabs.tabs.map(\.id), [externalTabID])
+        XCTAssertFalse(store.state.windows[id: windowID]?.window.contentTabs.tabs.contains(where: {
+            $0.page == .home || $0.isPinned
+        }) ?? true)
+    }
+
+    /// matching cancel은 batch가 만든 새 window만 rollback하고 기존 reservation과 unrelated state는 보존한다.
+    /// 늦은 windowClosed callback과 stale cancel은 추가 native close나 state 변경을 만들지 않는다.
+    func testPlacementCancellationRollsBackOnlyOwnedNewWindows() async {
+        let batchID = UUID()
+        let otherBatchID = UUID()
+        let existingWindowID = UUID()
+        let newWindowID = UUID()
+        let unrelatedWindowID = UUID()
+        let existingItemID = UUID()
+        let newItemID = UUID()
+        let unrelatedBootstrapRequestID = UUID()
+        let existingTabID = ContentTabID(rawValue: "cancel-preserved-existing")
+        let newTabID = ContentTabID(rawValue: "cancel-removed-new")
+        let existingWindow = FileManagerWindowFeature.State.makeInitial(path: "/existing")
+        let unrelatedWindow = FileManagerWindowFeature.State.makeInitial(path: "/unrelated")
+        let originalExistingTabIDs = existingWindow.contentTabs.tabs.map(\.id)
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: existingWindowID,
+                    isNewWindow: false,
+                    items: [.init(itemID: existingItemID, tabID: existingTabID)],
+                ),
+                .init(
+                    windowID: newWindowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: newItemID, tabID: newTabID)],
+                ),
+            ],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            .init(id: existingWindowID, window: existingWindow),
+            .init(id: unrelatedWindowID, window: unrelatedWindow),
+        ]
+        initialState.focusedWindowID = unrelatedWindowID
+        initialState.lastUsedWindowIDs = [unrelatedWindowID, existingWindowID]
+        initialState.defaultWindowBootstrapRequestID = unrelatedBootstrapRequestID
+        initialState.defaultWindowBootstrapWindowIDs = [unrelatedWindowID]
+        initialState.externalWindowBatchIDs[unrelatedWindowID] = otherBatchID
+        initialState.authorizedExternalOpenBatchID = batchID
+
+        let openStarted = expectation(description: "owned native open started")
+        let openCancelled = expectation(description: "owned native open cancelled")
+        let nativeCloseCalled = expectation(description: "owned native window closed")
+        let openGate = AsyncStream<Void>.makeStream()
+        let closedWindowIDs = LockIsolated<[UUID]>([])
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.fileManagerWindowClient.open = { id in
+                XCTAssertEqual(id, newWindowID)
+                openStarted.fulfill()
+                await withTaskCancellationHandler {
+                    for await _ in openGate.stream {
+                        break
+                    }
+                } onCancel: {
+                    openCancelled.fulfill()
+                }
+            }
+            $0.fileManagerWindowClient.close = { id in
+                closedWindowIDs.withValue { $0.append(id) }
+                nativeCloseCalled.fulfill()
+            }
+        }
+        // store.exhaustivity = .off: child navigation보다 batch-owned rollback 경계와 native close를 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.apply(
+            plan: plan,
+            reservationsByItemID: [
+                existingItemID: .init(id: existingTabID, anchor: .directory(path: "/existing/reserved")),
+                newItemID: .init(id: newTabID, anchor: .directory(path: "/new")),
+            ],
+        )))
+        await fulfillment(of: [openStarted], timeout: 1)
+        XCTAssertEqual(
+            store.state.retainedExternalOpenPlacementOwnership,
+            .init(batchID: batchID, newWindowIDs: [newWindowID]),
+        )
+        await store.send(.event(.windowBecameKey(newWindowID)))
+
+        await store.send(.placement(.cancel(batchID: batchID)))
+        await fulfillment(of: [openCancelled, nativeCloseCalled], timeout: 1)
+
+        XCTAssertEqual(store.state.windows.map(\.id), [existingWindowID, unrelatedWindowID])
+        XCTAssertEqual(
+            store.state.windows[id: existingWindowID]?.window.contentTabs.tabs.map(\.id),
+            originalExistingTabIDs + [existingTabID],
+        )
+        XCTAssertEqual(store.state.windows[id: unrelatedWindowID]?.window, unrelatedWindow)
+        XCTAssertEqual(store.state.externalWindowBatchIDs, [unrelatedWindowID: otherBatchID])
+        XCTAssertNil(store.state.retainedExternalOpenPlacementOwnership)
+        XCTAssertEqual(store.state.defaultWindowBootstrapRequestID, unrelatedBootstrapRequestID)
+        XCTAssertEqual(store.state.defaultWindowBootstrapWindowIDs, [unrelatedWindowID])
+        XCTAssertEqual(store.state.focusedWindowID, unrelatedWindowID)
+        XCTAssertEqual(store.state.lastUsedWindowIDs, [unrelatedWindowID, existingWindowID])
+        XCTAssertNil(store.state.authorizedExternalOpenBatchID)
+        XCTAssertNil(store.state.externalOpenActivationAttempt)
+        XCTAssertEqual(closedWindowIDs.value, [newWindowID])
+
+        await store.send(.event(.windowClosed(newWindowID)))
+        await store.send(.placement(.cancel(batchID: batchID)))
+        await store.finish()
+
+        XCTAssertEqual(store.state.windows.map(\.id), [existingWindowID, unrelatedWindowID])
+        XCTAssertEqual(store.state.externalWindowBatchIDs, [unrelatedWindowID: otherBatchID])
+        XCTAssertEqual(closedWindowIDs.value, [newWindowID])
+        openGate.continuation.finish()
+    }
+
+    /// authorization이 없는 stale activate는 native activation을 시작하지 않는다.
+    func testUnauthorizedPlacementActivationDoesNotCallNativeClient() async throws {
+        let batchID = UUID()
+        let windowID = UUID()
+        let tabID = ContentTabID(rawValue: "unauthorized-activation")
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: false,
+                    items: [.init(itemID: UUID(), tabID: tabID)],
+                ),
+            ],
+        )
+        let window = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(reservations: [
+            .init(id: tabID, anchor: .directory(path: "/tmp/unauthorized-activation")),
+        ]))
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [.init(id: windowID, window: window)]
+        let activatedWindowIDs = LockIsolated<[UUID]>([])
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.fileManagerWindowClient.activate = { id in
+                activatedWindowIDs.withValue { $0.append(id) }
+                return .becameKey
+            }
+        }
+        // store.exhaustivity = .off: unauthorized command의 native boundary no-op만 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.activate(plan)))
+        await store.finish()
+
+        XCTAssertNil(store.state.externalOpenActivationAttempt)
+        XCTAssertTrue(activatedWindowIDs.value.isEmpty)
+    }
+
+    /// native activation이 becameKey를 반환하기 전에는 batch terminal delegate를 보내지 않는다.
+    func testPlacementActivationCompletesOnlyAfterBecameKeyResult() async throws {
+        let batchID = UUID()
+        let windowID = UUID()
+        let tabID = ContentTabID(rawValue: "awaited-native-activation")
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: UUID(), tabID: tabID)],
+                ),
+            ],
+        )
+        let window = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(reservations: [
+            .init(id: tabID, anchor: .directory(path: "/awaited-native")),
+        ]))
+        let attempt = ExternalOpenActivationAttempt(
+            batchID: batchID,
+            plan: plan,
+            windowID: windowID,
+            excludedWindowIDs: [],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [.init(id: windowID, window: window)]
+        initialState.externalWindowBatchIDs = [windowID: batchID]
+        initialState.retainedExternalOpenPlacementOwnership = .init(
+            batchID: batchID,
+            newWindowIDs: [windowID],
+        )
+        initialState.authorizedExternalOpenBatchID = batchID
+        let activationStarted = expectation(description: "native activation started")
+        let activationGate = AsyncStream<FileManagerWindowActivationResult>.makeStream()
+        let completionCount = LockIsolated(0)
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.externalOpenActivationCompleted(batchID: batchID)) = action {
+                        completionCount.withValue { $0 += 1 }
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.fileManagerWindowClient.activate = { id in
+                XCTAssertEqual(id, windowID)
+                activationStarted.fulfill()
+                for await result in activationGate.stream {
+                    return result
+                }
+                return .discarded
+            }
+        }
+
+        await store.send(.placement(.activate(plan))) {
+            $0.externalOpenActivationAttempt = attempt
+        }
+        await fulfillment(of: [activationStarted], timeout: 1)
+        XCTAssertEqual(completionCount.value, 0)
+
+        activationGate.continuation.yield(.becameKey)
+        activationGate.continuation.finish()
+        await store.receive { action in
+            action.isActivationResult(attempt, .becameKey)
+        } assert: {
+            $0.authorizedExternalOpenBatchID = nil
+            $0.externalOpenActivationAttempt = nil
+        }
+        await store.receive(\.delegate.externalOpenActivationCompleted, batchID)
+
+        XCTAssertEqual(
+            store.state.retainedExternalOpenPlacementOwnership,
+            .init(batchID: batchID, newWindowIDs: [windowID]),
+        )
+        XCTAssertEqual(completionCount.value, 1)
+    }
+
+    /// 실제 focus가 A로 이동한 뒤 도착한 B activation result는 focus와 MRU를 되돌리지 않는다.
+    func testLateActivationResultDoesNotOverwriteActualFocusAndMRU() async throws {
+        let batchID = UUID()
+        let firstWindowID = UUID()
+        let finalWindowID = UUID()
+        let firstTabID = ContentTabID(rawValue: "actual-focus-first")
+        let finalTabID = ContentTabID(rawValue: "late-result-final")
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: firstWindowID,
+                    isNewWindow: false,
+                    items: [.init(itemID: UUID(), tabID: firstTabID)],
+                ),
+                .init(
+                    windowID: finalWindowID,
+                    isNewWindow: false,
+                    items: [.init(itemID: UUID(), tabID: finalTabID)],
+                ),
+            ],
+        )
+        let firstWindow = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(reservations: [
+            .init(id: firstTabID, anchor: .directory(path: "/actual-focus")),
+        ]))
+        let finalWindow = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(reservations: [
+            .init(id: finalTabID, anchor: .directory(path: "/late-result")),
+        ]))
+        let attempt = ExternalOpenActivationAttempt(
+            batchID: batchID,
+            plan: plan,
+            windowID: finalWindowID,
+            excludedWindowIDs: [],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            .init(id: firstWindowID, window: firstWindow),
+            .init(id: finalWindowID, window: finalWindow),
+        ]
+        initialState.authorizedExternalOpenBatchID = batchID
+        initialState.externalOpenActivationAttempt = attempt
+        let keyEventCount = LockIsolated(0)
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .event(.windowBecameKey) = action {
+                        keyEventCount.withValue { $0 += 1 }
+                    }
+                    return .none
+                }
+            }
+        }
+
+        await store.send(.event(.windowBecameKey(finalWindowID))) {
+            $0.focusedWindowID = finalWindowID
+            $0.lastUsedWindowIDs = [finalWindowID]
+        }
+        await store.send(.event(.windowResignedKey(finalWindowID))) {
+            $0.focusedWindowID = nil
+        }
+        await store.send(.event(.windowBecameKey(firstWindowID))) {
+            $0.focusedWindowID = firstWindowID
+            $0.lastUsedWindowIDs = [firstWindowID, finalWindowID]
+        }
+
+        await store.send(.externalOpenActivationResult(attempt: attempt, result: .becameKey)) {
+            $0.authorizedExternalOpenBatchID = nil
+            $0.externalOpenActivationAttempt = nil
+        }
+        await store.receive(\.delegate.externalOpenActivationCompleted, batchID)
+        await store.finish()
+
+        XCTAssertEqual(store.state.focusedWindowID, firstWindowID)
+        XCTAssertEqual(store.state.lastUsedWindowIDs, [firstWindowID, finalWindowID])
+        XCTAssertEqual(keyEventCount.value, 2)
+    }
+
+    /// B activation request 전에 B가 닫히면 tombstone을 소비하고 최신 state의 A를 재시도한 뒤 terminal을 한 번 보낸다.
+    func testPlacementActivationRetriesPreviousSurvivorAfterDiscard() async throws {
+        let batchID = UUID()
+        let firstWindowID = UUID()
+        let finalWindowID = UUID()
+        let firstTabID = ContentTabID(rawValue: "first-survivor")
+        let finalTabID = ContentTabID(rawValue: "discarded-final")
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: firstWindowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: UUID(), tabID: firstTabID)],
+                ),
+                .init(
+                    windowID: finalWindowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: UUID(), tabID: finalTabID)],
+                ),
+            ],
+        )
+        let firstWindow = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(reservations: [
+            .init(id: firstTabID, anchor: .directory(path: "/first")),
+        ]))
+        let finalWindow = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(reservations: [
+            .init(id: finalTabID, anchor: .directory(path: "/final")),
+        ]))
+        let finalAttempt = ExternalOpenActivationAttempt(
+            batchID: batchID,
+            plan: plan,
+            windowID: finalWindowID,
+            excludedWindowIDs: [],
+        )
+        let firstAttempt = ExternalOpenActivationAttempt(
+            batchID: batchID,
+            plan: plan,
+            windowID: firstWindowID,
+            excludedWindowIDs: [finalWindowID],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            .init(id: firstWindowID, window: firstWindow),
+            .init(id: finalWindowID, window: finalWindow),
+        ]
+        initialState.externalWindowBatchIDs = [firstWindowID: batchID, finalWindowID: batchID]
+        initialState.authorizedExternalOpenBatchID = batchID
+        let tracker = FileManagerWindowActivationTracker()
+        let finalRequestGate = WindowBootstrapSuspensionGate()
+        let activatedIDs = LockIsolated<[UUID]>([])
+        let firstStarted = expectation(description: "fallback activation started")
+        let completionCount = LockIsolated(0)
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.externalOpenActivationCompleted(batchID: batchID)) = action {
+                        completionCount.withValue { $0 += 1 }
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.fileManagerWindowClient.activate = { id in
+                activatedIDs.withValue { $0.append(id) }
+                if id == finalWindowID {
+                    await finalRequestGate.wait()
+                    return await tracker.request(id)
+                }
+                XCTAssertEqual(id, firstWindowID)
+                return await tracker.request(id) {
+                    firstStarted.fulfill()
+                }
+            }
+        }
+
+        await store.send(.placement(.activate(plan))) {
+            $0.externalOpenActivationAttempt = finalAttempt
+        }
+        await finalRequestGate.waitUntilWaiting()
+        await store.send(.event(.windowClosed(finalWindowID))) {
+            $0.windows.remove(id: finalWindowID)
+            $0.externalWindowBatchIDs[finalWindowID] = nil
+        }
+        tracker.discard(finalWindowID)
+        await finalRequestGate.open()
+
+        await store.receive { action in
+            action.isActivationResult(finalAttempt, .discarded)
+        } assert: {
+            $0.externalOpenActivationAttempt = firstAttempt
+        }
+        await fulfillment(of: [firstStarted], timeout: 1)
+        XCTAssertEqual(completionCount.value, 0)
+
+        tracker.complete(firstWindowID, result: .becameKey)
+        await store.receive { action in
+            action.isActivationResult(firstAttempt, .becameKey)
+        } assert: {
+            $0.authorizedExternalOpenBatchID = nil
+            $0.externalOpenActivationAttempt = nil
+        }
+        await store.receive(\.delegate.externalOpenActivationCompleted, batchID)
+        await store.finish()
+
+        XCTAssertEqual(activatedIDs.value, [finalWindowID, firstWindowID])
+        XCTAssertEqual(completionCount.value, 1)
+    }
+
+    /// becameKey 결과 도착 전에 target이 사라지면 missing window를 focus하지 않고 이전 survivor를 재시도한다.
+    func testPlacementActivationRetriesWhenBecameKeyTargetVanishes() async throws {
+        let batchID = UUID()
+        let firstWindowID = UUID()
+        let finalWindowID = UUID()
+        let firstTabID = ContentTabID(rawValue: "became-key-first")
+        let finalTabID = ContentTabID(rawValue: "became-key-vanished")
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: firstWindowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: UUID(), tabID: firstTabID)],
+                ),
+                .init(
+                    windowID: finalWindowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: UUID(), tabID: finalTabID)],
+                ),
+            ],
+        )
+        let firstWindow = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(reservations: [
+            .init(id: firstTabID, anchor: .directory(path: "/first")),
+        ]))
+        let finalWindow = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(reservations: [
+            .init(id: finalTabID, anchor: .directory(path: "/final")),
+        ]))
+        let finalAttempt = ExternalOpenActivationAttempt(
+            batchID: batchID,
+            plan: plan,
+            windowID: finalWindowID,
+            excludedWindowIDs: [],
+        )
+        let firstAttempt = ExternalOpenActivationAttempt(
+            batchID: batchID,
+            plan: plan,
+            windowID: firstWindowID,
+            excludedWindowIDs: [finalWindowID],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            .init(id: firstWindowID, window: firstWindow),
+            .init(id: finalWindowID, window: finalWindow),
+        ]
+        initialState.externalWindowBatchIDs = [firstWindowID: batchID, finalWindowID: batchID]
+        initialState.authorizedExternalOpenBatchID = batchID
+        let finalStarted = expectation(description: "vanishing target activation started")
+        let finalGate = AsyncStream<FileManagerWindowActivationResult>.makeStream()
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.fileManagerWindowClient.activate = { id in
+                guard id == finalWindowID else { return .becameKey }
+                finalStarted.fulfill()
+                for await result in finalGate.stream {
+                    return result
+                }
+                return .discarded
+            }
+        }
+
+        await store.send(.placement(.activate(plan))) {
+            $0.externalOpenActivationAttempt = finalAttempt
+        }
+        await fulfillment(of: [finalStarted], timeout: 1)
+        await store.send(.event(.windowClosed(finalWindowID))) {
+            $0.windows.remove(id: finalWindowID)
+            $0.externalWindowBatchIDs[finalWindowID] = nil
+        }
+        finalGate.continuation.yield(.becameKey)
+        finalGate.continuation.finish()
+        await store.receive { action in
+            action.isActivationResult(finalAttempt, .becameKey)
+        } assert: {
+            $0.externalOpenActivationAttempt = firstAttempt
+        }
+        await store.receive { action in
+            action.isActivationResult(firstAttempt, .becameKey)
+        } assert: {
+            $0.authorizedExternalOpenBatchID = nil
+            $0.externalOpenActivationAttempt = nil
+        }
+        await store.receive(\.delegate.externalOpenActivationCompleted, batchID)
+    }
+
+    /// 마지막 reserved tab만 닫히면 이전 successful candidate를 정확히 한 번 활성화한다.
+    func testPlacementActivationFallsBackWhenFinalTabClosesButWindowSurvives() async throws {
+        let batchID = UUID()
+        let firstWindowID = UUID()
+        let finalWindowID = UUID()
+        let firstTabID = ContentTabID(rawValue: "first-tab-survivor")
+        let closedFinalTabID = ContentTabID(rawValue: "closed-final-tab")
+        let replacementTabID = ContentTabID(rawValue: "replacement-tab")
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: firstWindowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: UUID(), tabID: firstTabID)],
+                ),
+                .init(
+                    windowID: finalWindowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: UUID(), tabID: closedFinalTabID)],
+                ),
+            ],
+        )
+        let firstWindow = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(reservations: [
+            .init(id: firstTabID, anchor: .directory(path: "/first")),
+        ]))
+        let survivingFinalWindow = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(reservations: [
+            .init(id: replacementTabID, anchor: .directory(path: "/replacement")),
+        ]))
+        let attempt = ExternalOpenActivationAttempt(
+            batchID: batchID,
+            plan: plan,
+            windowID: firstWindowID,
+            excludedWindowIDs: [],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            .init(id: firstWindowID, window: firstWindow),
+            .init(id: finalWindowID, window: survivingFinalWindow),
+        ]
+        initialState.externalWindowBatchIDs = [firstWindowID: batchID, finalWindowID: batchID]
+        initialState.authorizedExternalOpenBatchID = batchID
+        let activatedIDs = LockIsolated<[UUID]>([])
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.fileManagerWindowClient.activate = { id in
+                activatedIDs.withValue { $0.append(id) }
+                return .becameKey
+            }
+        }
+
+        await store.send(.placement(.activate(plan))) {
+            $0.externalOpenActivationAttempt = attempt
+        }
+        await store.receive { action in
+            action.isActivationResult(attempt, .becameKey)
+        } assert: {
+            $0.authorizedExternalOpenBatchID = nil
+            $0.externalOpenActivationAttempt = nil
+        }
+        await store.receive(\.delegate.externalOpenActivationCompleted, batchID)
+
+        XCTAssertEqual(activatedIDs.value, [firstWindowID])
+        XCTAssertNotNil(store.state.windows[id: finalWindowID])
+    }
+
+    /// 모든 successful candidate가 닫히면 key event 없이 terminal을 정확히 한 번 보낸다.
+    func testPlacementActivationWithoutSurvivorSendsOneTerminalAndNoKeyEvent() async {
+        let windowID = UUID()
+        let plan = ExternalOpenPlacementPlan(
+            batchID: UUID(),
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: true,
+                    items: [.init(itemID: UUID(), tabID: ContentTabID(rawValue: "closed"))],
+                ),
+            ],
+        )
+        let activatedIDs = LockIsolated<[UUID]>([])
+        let terminalCount = LockIsolated(0)
+        let keyEventCount = LockIsolated(0)
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedExternalOpenBatchID = plan.batchID
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    switch action {
+                    case .delegate(.externalOpenActivationCompleted(batchID: plan.batchID)):
+                        terminalCount.withValue { $0 += 1 }
+                    case .event(.windowBecameKey):
+                        keyEventCount.withValue { $0 += 1 }
+                    default:
+                        break
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.fileManagerWindowClient.activate = { id in
+                activatedIDs.withValue { $0.append(id) }
+                return .becameKey
+            }
+            $0.fileManagerWindowClient.open = { _ in
+                XCTFail("생존 candidate가 없으면 window를 만들지 않아야 한다")
+            }
+        }
+
+        await store.send(.placement(.activate(plan))) {
+            $0.authorizedExternalOpenBatchID = nil
+        }
+        await store.receive(\.delegate.externalOpenActivationCompleted, plan.batchID)
+        await store.finish()
+
+        XCTAssertTrue(activatedIDs.value.isEmpty)
+        XCTAssertEqual(terminalCount.value, 1)
+        XCTAssertEqual(keyEventCount.value, 0)
+        XCTAssertTrue(store.state.windows.isEmpty)
+    }
+
+    /// 현재 activation attempt와 다른 늦은 결과는 state와 terminal을 변경하지 않는다.
+    func testStalePlacementActivationResultIsIgnored() async {
+        let batchID = UUID()
+        let currentWindowID = UUID()
+        let staleWindowID = UUID()
+        let plan = ExternalOpenPlacementPlan(batchID: batchID, windows: [])
+        let currentAttempt = ExternalOpenActivationAttempt(
+            batchID: batchID,
+            plan: plan,
+            windowID: currentWindowID,
+            excludedWindowIDs: [],
+        )
+        let staleAttempt = ExternalOpenActivationAttempt(
+            batchID: batchID,
+            plan: plan,
+            windowID: staleWindowID,
+            excludedWindowIDs: [],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedExternalOpenBatchID = batchID
+        initialState.externalOpenActivationAttempt = currentAttempt
+        let terminalCount = LockIsolated(0)
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.externalOpenActivationCompleted) = action {
+                        terminalCount.withValue { $0 += 1 }
+                    }
+                    return .none
+                }
+            }
+        }
+
+        await store.send(.externalOpenActivationResult(attempt: staleAttempt, result: .becameKey))
+        await store.finish()
+
+        XCTAssertEqual(store.state.externalOpenActivationAttempt, currentAttempt)
+        XCTAssertEqual(terminalCount.value, 0)
+    }
+
+    /// tracked folder command는 실제 native open이 반환된 뒤에만 terminal을 보낸다.
+    func testTrackedFolderCompletesOnlyAfterNativeOpenReturns() async {
+        await assertTrackedNativeOpenCompletion(
+            command: .openWindow(requestID: UUID(900), path: "/tmp/folder", selectEntryID: nil),
+            requestID: UUID(900),
+        )
+    }
+
+    /// tracked fallback command는 default bootstrap과 무관하게 실제 native open 직후 terminal을 보낸다.
+    func testTrackedFallbackCompletesOnlyAfterNativeOpenReturns() async {
+        await assertTrackedNativeOpenCompletion(
+            command: .openInitialWindow(requestID: UUID(901)),
+            requestID: UUID(901),
+        )
+    }
+
+    /// gate revocation 뒤 queue에 남은 tracked command는 window를 만들지 않고 stale terminal 하나로 종료한다.
+    func testRevokedTrackedSingletonCommandIsNoOpAndTerminates() async {
+        let requestID = UUID(902)
+        let openedIDs = LockIsolated<[UUID]>([])
+        let terminalCount = LockIsolated(0)
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.trackedSingletonCompleted(requestID: requestID)) = action {
+                        terminalCount.withValue { $0 += 1 }
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.fileManagerWindowClient.open = { id in openedIDs.withValue { $0.append(id) } }
+        }
+        // store.exhaustivity = .off: revoked command의 no-mutation과 정확히 한 terminal만 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.trackedSingleton(.openWindow(
+            requestID: requestID,
+            path: "/tmp/revoked",
+            selectEntryID: nil,
+        )))
+        await store.receive(\.delegate.trackedSingletonCompleted, requestID)
+        await store.finish()
+
+        XCTAssertTrue(store.state.windows.isEmpty)
+        XCTAssertTrue(openedIDs.value.isEmpty)
+        XCTAssertEqual(terminalCount.value, 1)
+    }
+
+    /// onboarding block은 tracked command를 mutate하지 않고 terminal 하나로 종료한다.
+    func testTrackedSingletonBlockedByOnboardingTerminatesWithoutWindow() async {
+        let requestID = UUID(904)
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedTrackedSingletonRequestID = requestID
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { true }
+        }
+
+        await store.send(.trackedSingleton(.openWindow(
+            requestID: requestID,
+            path: "/tmp/onboarding-blocked",
+            selectEntryID: nil,
+        ))) {
+            $0.authorizedTrackedSingletonRequestID = nil
+        }
+        await store.receive(\.delegate.trackedSingletonCompleted, requestID)
+        XCTAssertTrue(store.state.windows.isEmpty)
+    }
+
+    /// existing fallback window는 새 창을 만들지 않고 tracked terminal 하나로 종료한다.
+    func testTrackedFallbackWithExistingWindowTerminatesWithoutDuplicate() async {
+        let requestID = UUID(905)
+        let windowID = UUID(906)
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [.init(id: windowID, window: .makeInitial(path: "/existing"))]
+        initialState.authorizedTrackedSingletonRequestID = requestID
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        }
+
+        await store.send(.trackedSingleton(.openInitialWindow(requestID: requestID))) {
+            $0.authorizedTrackedSingletonRequestID = nil
+        }
+        await store.receive(\.delegate.trackedSingletonCompleted, requestID)
+        XCTAssertEqual(Array(store.state.windows.ids), [windowID])
+    }
+
+    private func assertTrackedNativeOpenCompletion(
+        command: WindowManagerAction.TrackedSingletonCommand,
+        requestID: UUID,
+    ) async {
+        let windowID = UUID(903)
+        let openStarted = expectation(description: "native open started")
+        let terminalReceived = expectation(description: "tracked terminal received")
+        let openGate = AsyncStream<Void>.makeStream()
+        let terminalCount = LockIsolated(0)
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedTrackedSingletonRequestID = requestID
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.trackedSingletonCompleted(requestID: requestID)) = action {
+                        terminalCount.withValue { $0 += 1 }
+                        terminalReceived.fulfill()
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
+            $0.fileManagerWindowClient.open = { _ in
+                openStarted.fulfill()
+                for await _ in openGate.stream {
+                    break
+                }
+            }
+        }
+        // store.exhaustivity = .off: child 초기화 action보다 native open/terminal 순서만 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.trackedSingleton(command))
+        await fulfillment(of: [openStarted], timeout: 1)
+        XCTAssertEqual(terminalCount.value, 0)
+
+        openGate.continuation.yield(())
+        openGate.continuation.finish()
+        await fulfillment(of: [terminalReceived], timeout: 1)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(terminalCount.value, 1)
+    }
+
+    private struct PlacementBoundaryScenario {
+        let free: Int
+        let valid: Int
+        let expected: [Int]
+    }
+
+    private static func makeWindow(id: UUID, tabCount: Int) -> WindowSessionState {
+        var window = FileManagerWindowFeature.State.makeInitial(path: "/window-\(id.uuidString)")
+        let tabs = (0 ..< tabCount).map { index in
+            ContentTabItem(
+                id: ContentTabID(rawValue: "\(id.uuidString)-tab-\(index)"),
+                page: .directory,
+                anchor: .directory(path: "/window-\(id.uuidString)/\(index)"),
+                isPinned: false,
+                title: nil,
+                iconName: nil,
+            )
+        }
+        window.contentTabs = ContentTabState(
+            tabs: .init(uniqueElements: tabs),
+            activeTabID: tabs.first?.id,
+        )
+        return WindowSessionState(id: id, window: window)
     }
 
     private static func assertFinderFavoritesSeeded(
@@ -2093,4 +3776,15 @@ private enum WindowManagerBuiltInCollectionTestRegistry {
 private struct BuiltInSeedLifecycleMetric: Equatable {
     let name: String
     let tags: [String: String]?
+}
+
+@MainActor
+private extension WindowManagerAction {
+    func isActivationResult(
+        _ expectedAttempt: ExternalOpenActivationAttempt,
+        _ expectedResult: FileManagerWindowActivationResult,
+    ) -> Bool {
+        guard case let .externalOpenActivationResult(attempt, result) = self else { return false }
+        return attempt == expectedAttempt && result == expectedResult
+    }
 }

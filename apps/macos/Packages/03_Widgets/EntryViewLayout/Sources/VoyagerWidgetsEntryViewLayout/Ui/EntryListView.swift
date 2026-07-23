@@ -33,10 +33,38 @@ public struct EntryListViewRepresentable: NSViewRepresentable {
 }
 
 final class EntryListSelectionRowView: NSTableRowView {
+    private var tableView: NSTableView? {
+        var view: NSView? = self
+        while let currentView = view {
+            if let tableView = currentView as? NSTableView {
+                return tableView
+            }
+            view = currentView.superview
+        }
+        return nil
+    }
+
     override var isEmphasized: Bool {
         didSet {
             super.isEmphasized = true
         }
+    }
+
+    override func drawBackground(in dirtyRect: NSRect) {
+        guard !isSelected else {
+            super.drawBackground(in: dirtyRect)
+            return
+        }
+
+        guard let tableView,
+              tableView.row(for: self) % 2 == 1 else { return }
+
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let backgroundColor = isDark
+            ? NSColor.white.withAlphaComponent(0.035)
+            : NSColor.black.withAlphaComponent(0.055)
+        backgroundColor.setFill()
+        dirtyRect.fill()
     }
 }
 
@@ -86,7 +114,24 @@ public final class EntryListView: NSView {
         }
     }
 
-    let scrollView = NSScrollView()
+    final class EntryListScrollView: NSScrollView {
+        override func tile() {
+            super.tile()
+
+            guard let headerClipView = subviews
+                .compactMap({ $0 as? NSClipView })
+                .first(where: { $0.documentView is NSTableHeaderView })
+            else { return }
+
+            headerClipView.drawsBackground = false
+            headerClipView.backgroundColor = NSColor.clear
+            for subview in headerClipView.subviews where !(subview is NSTableHeaderView) {
+                subview.isHidden = true
+            }
+        }
+    }
+
+    let scrollView = EntryListScrollView()
     let tableView = EntryListTableView()
     private var availableColumns: [EntryListColumn: NSTableColumn] = [:]
 
@@ -108,6 +153,10 @@ public final class EntryListView: NSView {
         scrollView.layer?.backgroundColor = NSColor.clear.cgColor
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.drawsBackground = false
+        scrollView.contentView.wantsLayer = true
+        scrollView.contentView.layer?.backgroundColor = NSColor.clear.cgColor
+        scrollView.contentView.drawsBackground = false
+        scrollView.contentView.backgroundColor = NSColor.clear
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
         scrollView.automaticallyAdjustsContentInsets = false
@@ -116,12 +165,13 @@ public final class EntryListView: NSView {
 
         tableView.wantsLayer = true
         tableView.layer?.backgroundColor = NSColor.clear.cgColor
+        tableView.backgroundColor = NSColor.clear
         tableView.headerView = NSTableHeaderView()
         tableView.allowsColumnReordering = true
         tableView.allowsColumnResizing = true
         tableView.allowsMultipleSelection = true
         tableView.allowsEmptySelection = true
-        tableView.usesAlternatingRowBackgroundColors = true
+        tableView.usesAlternatingRowBackgroundColors = false
         tableView.intercellSpacing = NSSize(width: 4, height: 0)
         tableView.registerForDraggedTypes([.fileURL])
         tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
