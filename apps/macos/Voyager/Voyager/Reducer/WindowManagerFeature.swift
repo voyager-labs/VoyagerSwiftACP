@@ -359,15 +359,26 @@ struct WindowManagerFeature {
                         },
                 )
 
-            case .windows(.element(id: _, action: .window(.contentTabs(.pinnedRecordSaveSucceeded)))),
-                 .windows(.element(
-                     id: _,
-                     action: .window(.performSelectedContentTabCloseMutation(
-                         operationID: _,
-                         tabID: _,
-                         action: .pinnedRecordSaveSucceeded,
-                     )),
-                 )):
+            case let .windows(.element(
+                id: sourceWindowID,
+                action: .window(.contentTabs(.pinnedRecordSaveSucceeded(tabID, intentID))),
+            )):
+                guard state.windows[id: sourceWindowID]?.window.contentTabs
+                    .isCurrentPinnedRecordPersistenceIntent(tabID: tabID, intentID: intentID) == true
+                else { return .none }
+                return .send(.pinnedContentTabsStoreChanged)
+
+            case let .windows(.element(
+                id: sourceWindowID,
+                action: .window(.performSelectedContentTabCloseMutation(
+                    operationID: _,
+                    tabID: _,
+                    action: .pinnedRecordSaveSucceeded(tabID, intentID),
+                )),
+            )):
+                guard state.windows[id: sourceWindowID]?.window.contentTabs
+                    .isCurrentPinnedRecordPersistenceIntent(tabID: tabID, intentID: intentID) == true
+                else { return .none }
                 return .send(.pinnedContentTabsStoreChanged)
 
             case .pinnedContentTabsStoreChanged:

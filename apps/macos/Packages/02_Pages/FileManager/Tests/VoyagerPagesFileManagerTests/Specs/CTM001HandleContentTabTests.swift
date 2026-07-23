@@ -871,7 +871,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             guard case let .performSelectedContentTabCloseMutation(
                 receivedOperationID,
                 receivedTabID,
-                .pinnedRecordSaveSucceeded(successID),
+                .pinnedRecordSaveSucceeded(successID, _),
             ) = action else { return false }
             return receivedOperationID == operationID && receivedTabID == tabID && successID == tabID
         }
@@ -917,7 +917,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             guard case let .performSelectedContentTabCloseMutation(
                 receivedOperationID,
                 tabID,
-                .pinnedRecordSaveFailed(failedID, _, _, _),
+                .pinnedRecordSaveFailed(failedID, _, _, _, _),
             ) = action else { return false }
             return receivedOperationID == operationID && tabID == fixture.tabD && failedID == fixture.tabD
         }
@@ -3089,11 +3089,17 @@ final class CTM001HandleContentTabTests: XCTestCase {
         await store.send(.navigation(.internal(.setNavigationState(.folder("/unrelated"))))) {
             $0.content.navigation.navigationState = .folder("/unrelated")
         }
-        await store.send(.contentTabs(.pinnedRecordSaveSucceeded(tabID: fixture.tabB))) {
+        let successIntentID = store.state.contentTabs.markLatestPinnedRecordPersistenceIntent(for: fixture.tabB)
+        await store.send(.contentTabs(.pinnedRecordSaveSucceeded(
+            tabID: fixture.tabB,
+            intentID: successIntentID,
+        ))) {
             $0.contentTabs.pinnedRecordPersistenceError = nil
         }
+        let failureIntentID = store.state.contentTabs.markLatestPinnedRecordPersistenceIntent(for: fixture.tabD)
         await store.send(.contentTabs(.pinnedRecordSaveFailed(
             tabID: fixture.tabD,
+            intentID: failureIntentID,
             previousIsPinned: true,
             previousPinnedRecord: nil,
             previousTabIndex: nil,
@@ -3107,15 +3113,27 @@ final class CTM001HandleContentTabTests: XCTestCase {
     }
 
     /// CTM-001-close_selected_content_tabs: 시작과 Save surface는 batch 관련 busy state를 공유함
-    /// save/write-back/pin persistence 중에는 시작을 막고 진행 중 batch에서는 Save/Save As와 menu Save를 차단하는지 검증한다.
-    /// - 검증 내용: canStart gate, command routing no-op, menu canSaveCollection false
-    /// - 사전 조건: 선택 tab 3개와 saving/write-back/pending pin 세 시작 상태 및 dirty batch 상태
-    /// - 기대 결과: busy 상태는 coordinator를 만들지 않고 batch 중 Save command와 menu capability가 모두 비활성화된다.
+    /// save/open/refresh/write-back/pin persistence 중에는 시작을 막고 진행 중 batch에서는 모든 Save surface를 차단하는지 검증한다.
+    /// - 검증 내용: canStart gate, command/content routing no-op, menu·Composer canSaveCollection false
+    /// - 사전 조건: 선택 tab 3개와 saving/open/refresh/write-back/pending pin 시작 상태 및 dirty batch 상태
+    /// - 기대 결과: busy 상태는 coordinator를 만들지 않고 batch 중 Save command·직접 액션·capability가 모두 비활성화된다.
     func testCloseSelectedContentTabs_blocksStartAndSaveSurfacesWhileBusy() async throws {
         let fixture = makeSelectedContentTabCloseFixture()
         let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000453"))
         var savingState = fixture.state
         savingState.content.collection.isSaving = true
+        var openingState = fixture.state
+        openingState.content.collection.collectionSession.phase = .reopening(
+            kind: .definition,
+            base: .ready,
+            inflight: .none,
+        )
+        var refreshingState = fixture.state
+        refreshingState.content.collection.collectionSession.phase = .opened(
+            kind: .hydratedSnapshot,
+            base: .stale,
+            inflight: .refreshingHydratedSnapshot,
+        )
         var writeBackState = fixture.state
         writeBackState.content.collection.collectionSession.phase = .opened(
             kind: .hydratedSnapshot,
@@ -3125,7 +3143,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         var pinState = fixture.state
         pinState.contentTabs.pendingPinnedRecordIDs = [fixture.tabD]
 
-        for initialState in [savingState, writeBackState, pinState] {
+        for initialState in [savingState, openingState, refreshingState, writeBackState, pinState] {
             XCTAssertFalse(initialState.canStartSelectedContentTabClose)
             XCTAssertFalse(initialState.contentTabRowInteractionSurface.isCloseEnabled)
             XCTAssertFalse(initialState.menuCommandProjection.canCloseSelectedContentTabs)
@@ -3140,6 +3158,10 @@ final class CTM001HandleContentTabTests: XCTestCase {
         batchState.content = makeDirtySelectedCloseContentState()
         XCTAssertTrue(batchState.content.canSaveCollection)
         XCTAssertFalse(batchState.menuCommandProjection.canSaveCollection)
+        XCTAssertFalse(FileManagerContentChromePropsBuilder.makeContentOverlayProps(
+            from: batchState,
+            fileManagerClient: .testValue,
+        ).canSaveCollection)
         for command in [
             FileManagerWindowAction.WindowCommand.saveCollection,
             .saveCollectionAs,
@@ -3148,11 +3170,16 @@ final class CTM001HandleContentTabTests: XCTestCase {
             await store.send(.request(command))
             XCTAssertEqual(store.state, batchState)
         }
+        let contentStore = TestStore(initialState: batchState) { FileManagerFeature() }
+        await contentStore.send(.content(.composer(.view(.saveCollection))))
+        await contentStore.send(.content(.composer(.view(.saveCollectionAs))))
+        await contentStore.finish()
+        XCTAssertEqual(contentStore.state, batchState)
     }
 
     /// CTM-001-close_selected_content_tabs: selected inactive busy owner만 batch 시작을 차단함
-    /// 실행 대상 retained content의 save/write-back은 거부하되 선택되지 않은 inactive owner는 무관한지 검증한다.
-    /// - 검증 내용: selected inactive saving/write-back no-start와 unselected inactive busy start 허용
+    /// 실행 대상 retained content의 save/open/refresh/write-back은 거부하되 선택되지 않은 inactive owner는 무관한지 검증한다.
+    /// - 검증 내용: selected inactive busy no-start와 unselected inactive busy start 허용
     /// - 사전 조건: active C, selected A/B/C, unselected D와 각 inactive retained content
     /// - 기대 결과: A가 busy면 coordinator가 없고 D만 busy면 frozen selected coordinator가 생성된다.
     func testCloseSelectedContentTabs_selectedInactiveBusyControlsStartGate() throws {
@@ -3160,6 +3187,18 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000453"))
         var savingContent = FileManagerContentFeature.State()
         savingContent.collection.isSaving = true
+        var openingContent = FileManagerContentFeature.State()
+        openingContent.collection.collectionSession.phase = .reopening(
+            kind: .definition,
+            base: .ready,
+            inflight: .none,
+        )
+        var refreshingContent = FileManagerContentFeature.State()
+        refreshingContent.collection.collectionSession.phase = .opened(
+            kind: .hydratedSnapshot,
+            base: .stale,
+            inflight: .refreshingHydratedSnapshot,
+        )
         var writeBackContent = FileManagerContentFeature.State()
         writeBackContent.collection.collectionSession.phase = .opened(
             kind: .hydratedSnapshot,
@@ -3167,7 +3206,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             inflight: .writingBackRefreshedSnapshot,
         )
 
-        for busyContent in [savingContent, writeBackContent] {
+        for busyContent in [savingContent, openingContent, refreshingContent, writeBackContent] {
             var state = fixture.state
             state.tabContentStates[fixture.tabA] = busyContent
             XCTAssertFalse(state.canStartSelectedContentTabClose)

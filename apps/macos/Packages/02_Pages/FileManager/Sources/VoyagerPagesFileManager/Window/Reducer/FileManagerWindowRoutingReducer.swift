@@ -1536,6 +1536,7 @@ private extension FileManagerWindowRoutingReducer {
         action: ContentTabAction,
         state: inout State,
     ) -> Effect<Action> {
+        guard !action.isStalePinnedRecordPersistenceResult(in: state.contentTabs) else { return .none }
         switch action {
         case .requestClose:
             return prepareContentTabTeardown(
@@ -1558,14 +1559,14 @@ private extension FileManagerWindowRoutingReducer {
                 )),
             )
 
-        case let .pinnedRecordSaveSucceeded(successTabID) where successTabID == tabID:
+        case let .pinnedRecordSaveSucceeded(successTabID, _) where successTabID == tabID:
             return .send(.selectedContentTabCloseItemCompleted(
                 operationID: operationID,
                 tabID: tabID,
                 outcome: .unpinned,
             ))
 
-        case let .pinnedRecordSaveFailed(failedTabID, _, _, _) where failedTabID == tabID:
+        case let .pinnedRecordSaveFailed(failedTabID, _, _, _, _) where failedTabID == tabID:
             return .send(.selectedContentTabCloseItemCompleted(
                 operationID: operationID,
                 tabID: tabID,

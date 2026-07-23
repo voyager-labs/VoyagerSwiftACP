@@ -570,7 +570,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     /// - 검증 내용: child pinnedRecordSaveSucceeded → pinnedContentTabsStoreChanged → 모든 window applyPinnedContentTabs
     /// - 사전 조건: 일반 window와 active external marker window, global pinned store 1개
     /// - 기대 결과: 두 window 모두 동일한 pinned tab을 받고 external window의 unpinned tab은 유지
-    func testPinnedRecordSaveSucceededSyncsPinnedTabsAcrossOpenWindows() async {
+    func testPinnedRecordSaveSucceededSyncsPinnedTabsAcrossOpenWindows() async throws {
         let firstID = UUID()
         let secondID = UUID()
         let pinnedStore = ContentTabPinnedRecordStore(records: [
@@ -589,6 +589,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             WindowSessionState(id: secondID, window: .makeInitial(path: "/Users/test/B")),
         ]
         initialState.externalWindowBatchIDs[secondID] = UUID()
+        let globalPinID = ContentTabID(rawValue: "global-pin")
+        let persistenceIntentID = try XCTUnwrap(initialState.windows[id: firstID]?.window.contentTabs
+            .markLatestPinnedRecordPersistenceIntent(for: globalPinID))
 
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
@@ -610,7 +613,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.send(.windows(.element(
             id: firstID,
-            action: .window(.contentTabs(.pinnedRecordSaveSucceeded(tabID: ContentTabID(rawValue: "global-pin")))),
+            action: .window(.contentTabs(.pinnedRecordSaveSucceeded(
+                tabID: globalPinID,
+                intentID: persistenceIntentID,
+            ))),
         )))
         await store.receive(\.pinnedContentTabsStoreChanged)
         await store.receive { action in
@@ -786,11 +792,142 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
+    /// 다른 window의 동일 tab ID persistence effect가 source window의 batch terminal을 취소하지 않는다.
+    /// - 검증 내용: stale terminal sync 차단, window-local cancellation, batch 완료, current sync
+    /// - 사전 조건: source가 pinned tab batch-unpin 중이고 다른 window가 같은 tab ID pin effect를 동시에 실행
+    /// - 기대 결과: stale terminal은 무시되고 두 effect가 모두 완료되며 source batch가 정리된다.
+    func testBatchPinnedRecordSaveSucceeded_otherWindowSameTabIntentDoesNotStallSource() async {
+        let sourceWindowID = UUID()
+        let otherWindowID = UUID()
+        let operationID = UUID()
+        let sharedTabID = ContentTabID(rawValue: "shared-pinned-tab")
+
+        var sourceWindow = FileManagerWindowFeature.State.makeInitial(path: "/Users/test/Source")
+        sourceWindow.contentTabs.tabs.append(ContentTabItem(
+            id: sharedTabID,
+            page: .directory,
+            anchor: .directory(path: "/Users/test/Shared"),
+            isPinned: true,
+            title: "Shared",
+            iconName: "folder",
+        ))
+        sourceWindow.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
+            operationID: operationID,
+            orderedTargetIDs: [sharedTabID],
+            currentTabID: sharedTabID,
+            originalActiveTabID: sourceWindow.contentTabs.activeTabID,
+            preferredFallbackIDs: sourceWindow.contentTabs.tabs.map(\.id),
+        )
+        sourceWindow.pendingContentTabClose = PendingContentTabClose(
+            tabID: sharedTabID,
+            batchOperationID: operationID,
+        )
+        sourceWindow.contentTabs.pendingPinnedRecordIDs.insert(sharedTabID)
+        let staleSourceIntentID = sourceWindow.contentTabs.markLatestPinnedRecordPersistenceIntent(for: sharedTabID)
+        let currentSourceIntentID = sourceWindow.contentTabs.markLatestPinnedRecordPersistenceIntent(for: sharedTabID)
+
+        var otherWindow = FileManagerWindowFeature.State.makeInitial(path: "/Users/test/Other")
+        otherWindow.contentTabs.tabs.append(ContentTabItem(
+            id: sharedTabID,
+            page: .directory,
+            anchor: .directory(path: "/Users/test/Shared"),
+            isPinned: false,
+            title: "Shared",
+            iconName: "folder",
+        ))
+
+        XCTAssertTrue(sourceWindow.contentTabs.isCurrentPinnedRecordPersistenceIntent(
+            tabID: sharedTabID,
+            intentID: currentSourceIntentID,
+        ))
+
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            WindowSessionState(id: sourceWindowID, window: sourceWindow),
+            WindowSessionState(id: otherWindowID, window: otherWindow),
+        ]
+        let syncCount = LockIsolated(0)
+        let persistedStore = LockIsolated(ContentTabPinnedRecordStore())
+        let persistenceStarted = expectation(description: "same-ID window-local persistence effects started")
+        persistenceStarted.expectedFulfillmentCount = 2
+        let persistenceRelease = DispatchSemaphore(value: 0)
+        let store = Store(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .pinnedContentTabsStoreChanged = action {
+                        syncCount.withValue { $0 += 1 }
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 453))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in persistedStore.value }
+            $0.contentTabPinnedRecordClient.updateStore = { _, transform in
+                persistenceStarted.fulfill()
+                persistenceRelease.wait()
+                try Task.checkCancellation()
+                try persistedStore.withValue { currentStore in
+                    currentStore = try transform(currentStore)
+                }
+            }
+        }
+
+        await store.send(.windows(.element(
+            id: sourceWindowID,
+            action: .window(.performSelectedContentTabCloseMutation(
+                operationID: operationID,
+                tabID: sharedTabID,
+                action: .pinnedRecordSaveSucceeded(tabID: sharedTabID, intentID: staleSourceIntentID),
+            )),
+        ))).finish()
+        XCTAssertEqual(syncCount.value, 0)
+        store.withState { state in
+            XCTAssertEqual(
+                state.windows[id: sourceWindowID]?.window.pendingSelectedContentTabClose?.currentTabID,
+                sharedTabID,
+            )
+            XCTAssertEqual(
+                state.windows[id: sourceWindowID]?.window.contentTabs.pendingPinnedRecordIDs,
+                [sharedTabID],
+            )
+        }
+
+        let sourceTask = store.send(.windows(.element(
+            id: sourceWindowID,
+            action: .window(.performSelectedContentTabCloseMutation(
+                operationID: operationID,
+                tabID: sharedTabID,
+                action: .unpin(sharedTabID),
+            )),
+        )))
+        let otherTask = store.send(.windows(.element(
+            id: otherWindowID,
+            action: .window(.contentTabs(.pin(sharedTabID))),
+        )))
+        await fulfillment(of: [persistenceStarted], timeout: 1)
+        persistenceRelease.signal()
+        persistenceRelease.signal()
+        await sourceTask.finish()
+        await otherTask.finish()
+
+        XCTAssertEqual(syncCount.value, 2)
+        store.withState { state in
+            XCTAssertNil(state.windows[id: sourceWindowID]?.window.pendingSelectedContentTabClose)
+            XCTAssertNil(state.windows[id: sourceWindowID]?.window.pendingContentTabClose)
+            XCTAssertEqual(
+                state.windows[id: sourceWindowID]?.window.contentTabs.pendingPinnedRecordIDs.isEmpty,
+                true,
+            )
+        }
+    }
+
     /// live sync는 bootstrap cleanup과 달리 파일 존재 검증으로 열린 pinned tab을 갑자기 제거하지 않는다.
     /// - 검증 내용: deleted directory record가 store에 있어도 sync fan-out state에는 유지되고 saveStore compaction이 호출되지 않음
     /// - 사전 조건: 열린 window 1개, global pinned store에 현재 존재하지 않는 directory record 1개
     /// - 기대 결과: applyPinnedContentTabs가 deleted-pin을 포함하고, live sync 중 saveStore 미호출
-    func testPinnedRecordSaveSucceededSyncPreservesDeletedDirectoryRecord() async {
+    func testPinnedRecordSaveSucceededSyncPreservesDeletedDirectoryRecord() async throws {
         let windowID = UUID()
         let saveStoreCalled = LockIsolated(false)
         let pinnedStore = ContentTabPinnedRecordStore(records: [
@@ -807,6 +944,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         initialState.windows = [
             WindowSessionState(id: windowID, window: .makeInitial(path: "/Users/test/A")),
         ]
+        let deletedPinID = ContentTabID(rawValue: "deleted-pin")
+        let persistenceIntentID = try XCTUnwrap(initialState.windows[id: windowID]?.window.contentTabs
+            .markLatestPinnedRecordPersistenceIntent(for: deletedPinID))
 
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
@@ -826,7 +966,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.send(.windows(.element(
             id: windowID,
-            action: .window(.contentTabs(.pinnedRecordSaveSucceeded(tabID: ContentTabID(rawValue: "deleted-pin")))),
+            action: .window(.contentTabs(.pinnedRecordSaveSucceeded(
+                tabID: deletedPinID,
+                intentID: persistenceIntentID,
+            ))),
         )))
         await store.receive(\.pinnedContentTabsStoreChanged)
         await store.receive { action in

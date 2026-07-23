@@ -26,6 +26,9 @@ public struct FileManagerFeature {
         Reduce { state, action in
             switch action {
             case let .content(contentAction):
+                guard state.pendingSelectedContentTabClose == nil
+                    || !contentAction.isComposerSaveRequest
+                else { return .none }
                 return FileManagerContentFeature()
                     .reduce(into: &state.content, action: contentAction)
                     .map(Action.content)
@@ -76,6 +79,7 @@ public struct FileManagerFeature {
                       let pending = state.pendingSelectedContentTabClose,
                       pending.operationID == operationID,
                       pending.currentTabID == tabID,
+                      !contentTabAction.isStalePinnedRecordPersistenceResult(in: state.contentTabs),
                       contentTabAction.isCorrelatedSelectedContentTabCloseMutation(for: tabID)
                 else { return .none }
                 let childEffect = ContentTabFeature().reduce(
@@ -133,6 +137,18 @@ public struct FileManagerFeature {
     }
 }
 
+private extension FileManagerContentAction {
+    var isComposerSaveRequest: Bool {
+        switch self {
+        case .composer(.view(.saveCollection)),
+             .composer(.view(.saveCollectionAs)):
+            true
+        default:
+            false
+        }
+    }
+}
+
 extension ContentTabAction {
     var isSelectionAllowedDuringBatchClose: Bool {
         switch self {
@@ -142,6 +158,16 @@ extension ContentTabAction {
              .pinnedRecordSaveSucceeded,
              .pinnedRecordSaveFailed:
             true
+        default:
+            false
+        }
+    }
+
+    func isStalePinnedRecordPersistenceResult(in state: ContentTabState) -> Bool {
+        switch self {
+        case let .pinnedRecordSaveSucceeded(tabID, intentID),
+             let .pinnedRecordSaveFailed(tabID, intentID, _, _, _):
+            !state.isCurrentPinnedRecordPersistenceIntent(tabID: tabID, intentID: intentID)
         default:
             false
         }
@@ -158,9 +184,9 @@ extension ContentTabAction {
             id == tabID
         case let .updateActivePageAnchor(id, _):
             id == tabID
-        case let .pinnedRecordSaveSucceeded(id):
+        case let .pinnedRecordSaveSucceeded(id, _):
             id == tabID
-        case let .pinnedRecordSaveFailed(id, _, _, _):
+        case let .pinnedRecordSaveFailed(id, _, _, _, _):
             id == tabID
         default:
             false

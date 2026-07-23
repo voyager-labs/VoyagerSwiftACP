@@ -63,6 +63,7 @@ public struct ContentTabState: Equatable, Sendable {
     public var pinnedRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
     public var pendingPinnedRecordIDs: Set<ContentTabID> = []
     public var pinnedRecordPersistenceError: String?
+    let pinnedRecordPersistenceScopeID = UUID()
     public internal(set) var selectedTabIDs: Set<ContentTabID> = []
     var selectionAnchorID: ContentTabID?
 
@@ -117,6 +118,24 @@ public struct ContentTabState: Equatable, Sendable {
         }
         selectedTabIDs = [activeTabID]
         selectionAnchorID = activeTabID
+    }
+
+    public func markLatestPinnedRecordPersistenceIntent(for tabID: ContentTabID) -> UUID {
+        PinnedRecordPersistenceIntent.markLatest(
+            scopeID: pinnedRecordPersistenceScopeID,
+            tabID: tabID,
+        )
+    }
+
+    public func isCurrentPinnedRecordPersistenceIntent(
+        tabID: ContentTabID,
+        intentID: UUID,
+    ) -> Bool {
+        PinnedRecordPersistenceIntent.isCurrent(
+            scopeID: pinnedRecordPersistenceScopeID,
+            tabID: tabID,
+            intentID: intentID,
+        )
     }
 }
 

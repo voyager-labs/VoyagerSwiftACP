@@ -651,7 +651,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[tabID] = Self.pinnedRecord(id: tabID, anchor: directoryAnchor)
             $0.pendingPinnedRecordIDs.insert(tabID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(tabID)
+        }
         await store.finish()
     }
 
@@ -697,7 +699,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             )
             $0.pendingPinnedRecordIDs.insert(tabID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(tabID)
+        }
         await store.finish()
 
         XCTAssertEqual(store.state.tabs.count, 1)
@@ -899,7 +903,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[unpinnedID] = Self.pinnedRecord(id: unpinnedID, anchor: sameAnchor)
             $0.pendingPinnedRecordIDs.insert(unpinnedID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(unpinnedID)
+        }
         await store.finish()
     }
 
@@ -1028,7 +1034,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pendingPinnedRecordIDs.insert(firstID)
             $0.pinnedRecordPersistenceError = nil
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(firstID)
+        }
         XCTAssertEqual(savedStores.stores().count, 1)
         XCTAssertEqual(savedStores.stores()[0].records, [firstSnapshotAtPin])
 
@@ -1041,7 +1049,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pendingPinnedRecordIDs.insert(firstID)
             $0.pinnedRecordPersistenceError = nil
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(firstID)
+        }
         XCTAssertEqual(savedStores.stores().count, 2)
         XCTAssertEqual(savedStores.stores()[1].records, [firstSnapshotAfterNav])
 
@@ -1052,7 +1062,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pendingPinnedRecordIDs.insert(secondID)
             $0.pinnedRecordPersistenceError = nil
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(secondID)
+        }
         XCTAssertEqual(savedStores.stores().count, 3)
         XCTAssertEqual(savedStores.stores()[2].records, [firstSnapshotAfterNav, secondSnapshot])
 
@@ -1139,14 +1151,20 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         )
 
         let feature = ContentTabFeature()
-        _ = feature.reduce(into: &state, action: .pinnedRecordSaveSucceeded(tabID: activeID))
+        let successIntentID = state.markLatestPinnedRecordPersistenceIntent(for: activeID)
+        _ = feature.reduce(
+            into: &state,
+            action: .pinnedRecordSaveSucceeded(tabID: activeID, intentID: successIntentID),
+        )
         XCTAssertEqual(state.previousActiveTabID, previousID)
         XCTAssertNil(state.pinnedRecordPersistenceError)
 
+        let failureIntentID = state.markLatestPinnedRecordPersistenceIntent(for: activeID)
         _ = feature.reduce(
             into: &state,
             action: .pinnedRecordSaveFailed(
                 tabID: activeID,
+                intentID: failureIntentID,
                 previousIsPinned: false,
                 previousPinnedRecord: nil,
                 previousTabIndex: nil,
@@ -1227,7 +1245,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[firstID] = firstRecord
             $0.pendingPinnedRecordIDs.insert(firstID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(firstID)
+        }
         await store.send(.pin(secondID)) {
             $0.tabs[id: secondID]?.isPinned = true
             $0.pinnedRecords[secondID] = secondRecord
@@ -1310,13 +1330,17 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[firstID] = firstRecord
             $0.pendingPinnedRecordIDs.insert(firstID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(firstID)
+        }
         await store.send(.pin(secondID)) {
             $0.tabs[id: secondID]?.isPinned = true
             $0.pinnedRecords[secondID] = secondRecord
             $0.pendingPinnedRecordIDs.insert(secondID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(secondID)
+        }
         await store.finish()
 
         XCTAssertEqual(recorder.stores().map { $0.records.map(\.id).sorted() }, [
@@ -1332,16 +1356,55 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     /// - 기대 결과: 오래된 intent는 거부되고 최신 intent만 통과
     func testPinThenUnpin_rejectsOlderPinPersistenceIntentForSameTab() throws {
         let tabID = ContentTabID()
-        let olderIntent = PinnedRecordPersistenceIntent.markLatest(tabID: tabID)
-        let latestIntent = PinnedRecordPersistenceIntent.markLatest(tabID: tabID)
+        let scopeID = UUID()
+        let olderIntent = PinnedRecordPersistenceIntent.markLatest(scopeID: scopeID, tabID: tabID)
+        let latestIntent = PinnedRecordPersistenceIntent.markLatest(scopeID: scopeID, tabID: tabID)
 
         XCTAssertThrowsError(try PinnedRecordPersistenceIntent.checkCurrent(
+            scopeID: scopeID,
             tabID: tabID,
             intentID: olderIntent,
         )) { error in
             XCTAssertTrue(error is CancellationError)
         }
-        XCTAssertNoThrow(try PinnedRecordPersistenceIntent.checkCurrent(tabID: tabID, intentID: latestIntent))
+        XCTAssertNoThrow(try PinnedRecordPersistenceIntent.checkCurrent(
+            scopeID: scopeID,
+            tabID: tabID,
+            intentID: latestIntent,
+        ))
+    }
+
+    /// CTM-003-pin_content_tab_s: 같은 tab의 stale 성공 terminal은 최신 persistence pending을 해제하지 않음
+    /// 이전 intent 완료가 선택 탭 일괄 닫기 시작 gate를 조기 개방하는 경합을 방지한다.
+    /// - 검증 내용: stale 성공 무시 후 pending/gate 유지, 최신 성공 후 pending 해제와 gate 복구
+    /// - 사전 조건: 동일 tab에 older/latest intent가 연속 발급되고 최신 pin persistence가 pending
+    /// - 기대 결과: older terminal은 상태를 바꾸지 않고 latest terminal만 pending을 정리한다.
+    func testPinnedRecordSaveSucceeded_staleIntentKeepsLatestPendingAndBatchCloseGateBlocked() {
+        let tabID = ContentTabID()
+        var contentTabState = ContentTabState()
+        contentTabState.pendingPinnedRecordIDs = [tabID]
+        let olderIntent = contentTabState.markLatestPinnedRecordPersistenceIntent(for: tabID)
+        let latestIntent = contentTabState.markLatestPinnedRecordPersistenceIntent(for: tabID)
+        let feature = ContentTabFeature()
+
+        _ = feature.reduce(
+            into: &contentTabState,
+            action: .pinnedRecordSaveSucceeded(tabID: tabID, intentID: olderIntent),
+        )
+
+        XCTAssertEqual(contentTabState.pendingPinnedRecordIDs, [tabID])
+        var windowState = FileManagerFeature.State()
+        windowState.contentTabs = contentTabState
+        XCTAssertFalse(windowState.canStartSelectedContentTabClose)
+
+        _ = feature.reduce(
+            into: &contentTabState,
+            action: .pinnedRecordSaveSucceeded(tabID: tabID, intentID: latestIntent),
+        )
+
+        XCTAssertTrue(contentTabState.pendingPinnedRecordIDs.isEmpty)
+        windowState.contentTabs = contentTabState
+        XCTAssertTrue(windowState.canStartSelectedContentTabClose)
     }
 
     /// CTM-003-pin_content_tab_s: 다른 window의 persisted pinned record를 보존하며 현재 window pin 저장
@@ -1395,7 +1458,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[currentID] = currentRecord
             $0.pendingPinnedRecordIDs.insert(currentID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(currentID)
+        }
         await store.finish()
 
         XCTAssertEqual(recorder.stores(), [
@@ -1502,7 +1567,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.contentTabs.pendingPinnedRecordIDs.insert(tabID)
             $0.syncContentTabSidebarItems()
         }
-        await store.receive(\.contentTabs.pinnedRecordSaveSucceeded)
+        await store.receive(\.contentTabs.pinnedRecordSaveSucceeded) {
+            $0.contentTabs.pendingPinnedRecordIDs.remove(tabID)
+        }
         await store.finish()
     }
 
@@ -1815,7 +1882,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await successStore.send(.pin(targetID)) {
             Self.expectPinnedState(&$0, targetID: targetID, targetAnchor: targetAnchor)
         }
-        await successStore.receive(\.pinnedRecordSaveSucceeded)
+        await successStore.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(targetID)
+        }
         await successStore.finish()
         Self.assertSelection(successStore.state, targetID: targetID, anchorID: anchorID)
 

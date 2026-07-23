@@ -362,6 +362,8 @@ public struct PendingContentTabClose: Equatable {
 
 private func isSelectedContentTabCloseBusy(_ content: FileManagerContentFeature.State) -> Bool {
     content.collection.isSaving
+        || content.collection.collectionSession.phase.isOpening
+        || content.collection.collectionSession.phase.isInflightRefresh
         || content.collection.collectionSession.phase.isInflightWriteBack
 }
 

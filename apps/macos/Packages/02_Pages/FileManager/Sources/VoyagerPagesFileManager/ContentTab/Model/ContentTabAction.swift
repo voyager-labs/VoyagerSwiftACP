@@ -44,9 +44,10 @@ public enum ContentTabAction: Sendable {
     case pin(ContentTabID)
     case unpin(ContentTabID)
     case updateActivePageAnchor(ContentTabID, ContentTabPageAnchor)
-    case pinnedRecordSaveSucceeded(tabID: ContentTabID)
+    case pinnedRecordSaveSucceeded(tabID: ContentTabID, intentID: UUID)
     case pinnedRecordSaveFailed(
         tabID: ContentTabID,
+        intentID: UUID,
         previousIsPinned: Bool,
         previousPinnedRecord: ContentTabPinnedRecord?,
         previousTabIndex: Int?,

@@ -68,11 +68,24 @@ public struct ContentTabFeature {
             case let .updateActivePageAnchor(id, newAnchor):
                 return updateActivePageAnchor(id: id, newAnchor: newAnchor, state: &state)
 
-            case .pinnedRecordSaveSucceeded:
+            case let .pinnedRecordSaveSucceeded(tabID, intentID):
+                guard state.isCurrentPinnedRecordPersistenceIntent(tabID: tabID, intentID: intentID) else {
+                    return .none
+                }
+                state.pendingPinnedRecordIDs.remove(tabID)
                 state.pinnedRecordPersistenceError = nil
                 return .none
 
-            case let .pinnedRecordSaveFailed(tabID, previousIsPinned, previousPinnedRecord, previousTabIndex):
+            case let .pinnedRecordSaveFailed(
+                tabID,
+                intentID,
+                previousIsPinned,
+                previousPinnedRecord,
+                previousTabIndex,
+            ):
+                guard state.isCurrentPinnedRecordPersistenceIntent(tabID: tabID, intentID: intentID) else {
+                    return .none
+                }
                 if let previousTabIndex, let tab = state.tabs[id: tabID] {
                     let selectedTabIDs = state.selectedTabIDs
                     let selectionAnchorID = state.selectionAnchorID
@@ -471,29 +484,42 @@ extension ContentTabFeature {
         state.pendingPinnedRecordIDs.insert(id)
         state.pinnedRecordPersistenceError = nil
 
-        let intentID = PinnedRecordPersistenceIntent.markLatest(tabID: id)
+        let persistenceScopeID = state.pinnedRecordPersistenceScopeID
+        let intentID = state.markLatestPinnedRecordPersistenceIntent(for: id)
         let client = contentTabPinnedRecordClient
         let defaults = userDefaultsClient
         return .run { send in
             do {
-                try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
+                try PinnedRecordPersistenceIntent.checkCurrent(
+                    scopeID: persistenceScopeID,
+                    tabID: id,
+                    intentID: intentID,
+                )
                 try client.updateStore(defaults) { existingStore in
-                    try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
+                    try PinnedRecordPersistenceIntent.checkCurrent(
+                        scopeID: persistenceScopeID,
+                        tabID: id,
+                        intentID: intentID,
+                    )
                     return upsertPinnedRecord(pinnedRecord, in: existingStore)
                 }
-                await send(.pinnedRecordSaveSucceeded(tabID: id))
+                await send(.pinnedRecordSaveSucceeded(tabID: id, intentID: intentID))
             } catch is CancellationError {
                 return
             } catch {
                 await send(.pinnedRecordSaveFailed(
                     tabID: id,
+                    intentID: intentID,
                     previousIsPinned: false,
                     previousPinnedRecord: nil,
                     previousTabIndex: nil,
                 ))
             }
         }
-        .cancellable(id: PinnedRecordPersistenceCancelID(tabID: id), cancelInFlight: true)
+        .cancellable(
+            id: PinnedRecordPersistenceCancelID(scopeID: persistenceScopeID, tabID: id),
+            cancelInFlight: true,
+        )
     }
 
     private func unpin(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {
@@ -517,29 +543,42 @@ extension ContentTabFeature {
         state.pinnedRecordPersistenceError = nil
 
         let recordID = id.rawValue
-        let intentID = PinnedRecordPersistenceIntent.markLatest(tabID: id)
+        let persistenceScopeID = state.pinnedRecordPersistenceScopeID
+        let intentID = state.markLatestPinnedRecordPersistenceIntent(for: id)
         let client = contentTabPinnedRecordClient
         let defaults = userDefaultsClient
         return .run { send in
             do {
-                try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
+                try PinnedRecordPersistenceIntent.checkCurrent(
+                    scopeID: persistenceScopeID,
+                    tabID: id,
+                    intentID: intentID,
+                )
                 try client.updateStore(defaults) { existingStore in
-                    try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
+                    try PinnedRecordPersistenceIntent.checkCurrent(
+                        scopeID: persistenceScopeID,
+                        tabID: id,
+                        intentID: intentID,
+                    )
                     return removePinnedRecord(id: recordID, from: existingStore)
                 }
-                await send(.pinnedRecordSaveSucceeded(tabID: id))
+                await send(.pinnedRecordSaveSucceeded(tabID: id, intentID: intentID))
             } catch is CancellationError {
                 return
             } catch {
                 await send(.pinnedRecordSaveFailed(
                     tabID: id,
+                    intentID: intentID,
                     previousIsPinned: true,
                     previousPinnedRecord: previousPinnedRecord,
                     previousTabIndex: previousTabIndex,
                 ))
             }
         }
-        .cancellable(id: PinnedRecordPersistenceCancelID(tabID: id), cancelInFlight: true)
+        .cancellable(
+            id: PinnedRecordPersistenceCancelID(scopeID: persistenceScopeID, tabID: id),
+            cancelInFlight: true,
+        )
     }
 
     private func updateActivePageAnchor(id: ContentTabID, newAnchor: ContentTabPageAnchor,
@@ -572,29 +611,42 @@ extension ContentTabFeature {
         state.pendingPinnedRecordIDs.insert(id)
         state.pinnedRecordPersistenceError = nil
 
-        let intentID = PinnedRecordPersistenceIntent.markLatest(tabID: id)
+        let persistenceScopeID = state.pinnedRecordPersistenceScopeID
+        let intentID = state.markLatestPinnedRecordPersistenceIntent(for: id)
         let client = contentTabPinnedRecordClient
         let defaults = userDefaultsClient
         return .run { send in
             do {
-                try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
+                try PinnedRecordPersistenceIntent.checkCurrent(
+                    scopeID: persistenceScopeID,
+                    tabID: id,
+                    intentID: intentID,
+                )
                 try client.updateStore(defaults) { existingStore in
-                    try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
+                    try PinnedRecordPersistenceIntent.checkCurrent(
+                        scopeID: persistenceScopeID,
+                        tabID: id,
+                        intentID: intentID,
+                    )
                     return upsertPinnedRecord(updatedRecord, in: existingStore)
                 }
-                await send(.pinnedRecordSaveSucceeded(tabID: id))
+                await send(.pinnedRecordSaveSucceeded(tabID: id, intentID: intentID))
             } catch is CancellationError {
                 return
             } catch {
                 await send(.pinnedRecordSaveFailed(
                     tabID: id,
+                    intentID: intentID,
                     previousIsPinned: true,
                     previousPinnedRecord: previousPinnedRecord,
                     previousTabIndex: nil,
                 ))
             }
         }
-        .cancellable(id: PinnedRecordPersistenceCancelID(tabID: id), cancelInFlight: true)
+        .cancellable(
+            id: PinnedRecordPersistenceCancelID(scopeID: persistenceScopeID, tabID: id),
+            cancelInFlight: true,
+        )
     }
 }
 
@@ -645,26 +697,36 @@ extension ContentTabFeature {
 }
 
 struct PinnedRecordPersistenceCancelID: Hashable {
+    let scopeID: UUID
     let tabID: ContentTabID
 }
 
 enum PinnedRecordPersistenceIntent {
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var latestIntentIDs: [ContentTabID: UUID] = [:]
+    private struct Key: Hashable {
+        let scopeID: UUID
+        let tabID: ContentTabID
+    }
 
-    static func markLatest(tabID: ContentTabID) -> UUID {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var latestIntentIDs: [Key: UUID] = [:]
+
+    static func markLatest(scopeID: UUID, tabID: ContentTabID) -> UUID {
         let intentID = UUID()
         lock.lock()
-        latestIntentIDs[tabID] = intentID
+        latestIntentIDs[Key(scopeID: scopeID, tabID: tabID)] = intentID
         lock.unlock()
         return intentID
     }
 
-    static func checkCurrent(tabID: ContentTabID, intentID: UUID) throws {
+    static func isCurrent(scopeID: UUID, tabID: ContentTabID, intentID: UUID) -> Bool {
         lock.lock()
-        let isCurrent = latestIntentIDs[tabID] == intentID
+        let isCurrent = latestIntentIDs[Key(scopeID: scopeID, tabID: tabID)] == intentID
         lock.unlock()
-        if !isCurrent {
+        return isCurrent
+    }
+
+    static func checkCurrent(scopeID: UUID, tabID: ContentTabID, intentID: UUID) throws {
+        if !isCurrent(scopeID: scopeID, tabID: tabID, intentID: intentID) {
             throw CancellationError()
         }
         try Task.checkCancellation()
