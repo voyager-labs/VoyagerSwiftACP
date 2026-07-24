@@ -17,11 +17,16 @@
 		B40000000000000000000056 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = B40000000000000000000057 /* VoyagerShared */; };
 		B40000000000000000000058 /* Clocks in Frameworks */ = {isa = PBXBuildFile; productRef = B40000000000000000000059 /* Clocks */; };
 		B40000000000000000000061 /* IdentifiedCollections in Frameworks */ = {isa = PBXBuildFile; productRef = B40000000000000000000062 /* IdentifiedCollections */; };
+		B40000000000000000000070 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = B40000000000000000000072 /* InjectionNext */; };
+		B40000000000000000000080 /* system_property_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = B40000000000000000000082 /* system_property_registry.json */; };
+		B40000000000000000000081 /* property_condition_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = B40000000000000000000083 /* property_condition_registry.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		B40000000000000000000004 /* ComposerHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ComposerHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B40000000000000000000043 /* ComposerHostTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ComposerHostTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B40000000000000000000082 /* system_property_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = system_property_registry.json; path = ../../../../shared/system_property_registry.json; sourceTree = SOURCE_ROOT; };
+		B40000000000000000000083 /* property_condition_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = property_condition_registry.json; path = ../../../../shared/property_condition_registry.json; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -65,6 +70,7 @@
 				B40000000000000000000034 /* VoyagerShared in Frameworks */,
 				B40000000000000000000036 /* ComposableArchitecture in Frameworks */,
 				B40000000000000000000058 /* Clocks in Frameworks */,
+				B40000000000000000000070 /* InjectionNext in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -83,6 +89,8 @@
 		B40000000000000000000002 = {
 			isa = PBXGroup;
 			children = (
+				B40000000000000000000082 /* system_property_registry.json */,
+				B40000000000000000000083 /* property_condition_registry.json */,
 				B40000000000000000000005 /* ComposerHost */,
 				B40000000000000000000045 /* Tests */,
 				B40000000000000000000003 /* Products */,
@@ -126,6 +134,7 @@
 				B40000000000000000000035 /* VoyagerShared */,
 				B40000000000000000000037 /* ComposableArchitecture */,
 				B40000000000000000000059 /* Clocks */,
+				B40000000000000000000072 /* InjectionNext */,
 			);
 			productName = ComposerHost;
 			productReference = B40000000000000000000004 /* ComposerHost.app */;
@@ -211,6 +220,7 @@
 				B40000000000000000000026 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */,
 				B40000000000000000000060 /* XCRemoteSwiftPackageReference "swift-clocks" */,
 				B40000000000000000000063 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
+				B40000000000000000000071 /* XCRemoteSwiftPackageReference "InjectionNext" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B40000000000000000000003 /* Products */;
@@ -228,6 +238,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B40000000000000000000080 /* system_property_registry.json in Resources */,
+				B40000000000000000000081 /* property_condition_registry.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -258,7 +270,7 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		B40000000000000000000011 /* Debug */ = {
+		B40000000000000000000011 /* Dev-Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
@@ -275,9 +287,9 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
 			};
-			name = Debug;
+			name = Dev-Debug;
 		};
-		B40000000000000000000012 /* Release */ = {
+		B40000000000000000000012 /* Dev-Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
@@ -290,9 +302,9 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_VERSION = 6.0;
 			};
-			name = Release;
+			name = Dev-Release;
 		};
-		B40000000000000000000014 /* Debug */ = {
+		B40000000000000000000014 /* Dev-Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = dev;
@@ -322,9 +334,9 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 			};
-			name = Debug;
+			name = Dev-Debug;
 		};
-		B40000000000000000000015 /* Release */ = {
+		B40000000000000000000015 /* Dev-Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = dev;
@@ -354,9 +366,9 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 			};
-			name = Release;
+			name = Dev-Release;
 		};
-		B40000000000000000000053 /* Debug */ = {
+		B40000000000000000000053 /* Dev-Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -375,9 +387,9 @@
 				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ComposerHost.app/Contents/MacOS/ComposerHost";
 			};
-			name = Debug;
+			name = Dev-Debug;
 		};
-		B40000000000000000000054 /* Release */ = {
+		B40000000000000000000054 /* Dev-Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -396,7 +408,7 @@
 				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ComposerHost.app/Contents/MacOS/ComposerHost";
 			};
-			name = Release;
+			name = Dev-Release;
 		};
 /* End XCBuildConfiguration section */
 
@@ -404,29 +416,29 @@
 		B40000000000000000000010 /* Build configuration list for PBXProject "ComposerHost" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B40000000000000000000011 /* Debug */,
-				B40000000000000000000012 /* Release */,
+				B40000000000000000000011 /* Dev-Debug */,
+				B40000000000000000000012 /* Dev-Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Dev-Release;
 		};
 		B40000000000000000000013 /* Build configuration list for PBXNativeTarget "ComposerHost" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B40000000000000000000014 /* Debug */,
-				B40000000000000000000015 /* Release */,
+				B40000000000000000000014 /* Dev-Debug */,
+				B40000000000000000000015 /* Dev-Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Dev-Release;
 		};
 		B40000000000000000000055 /* Build configuration list for PBXNativeTarget "ComposerHostTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B40000000000000000000053 /* Debug */,
-				B40000000000000000000054 /* Release */,
+				B40000000000000000000053 /* Dev-Debug */,
+				B40000000000000000000054 /* Dev-Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Dev-Release;
 		};
 /* End XCConfigurationList section */
 
@@ -508,6 +520,11 @@
 			package = B40000000000000000000063 /* XCRemoteSwiftPackageReference "swift-identified-collections" */;
 			productName = IdentifiedCollections;
 		};
+		B40000000000000000000072 /* InjectionNext */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B40000000000000000000071 /* XCRemoteSwiftPackageReference "InjectionNext" */;
+			productName = InjectionNext;
+		};
 /* End XCSwiftPackageProductDependency section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -533,6 +550,14 @@
 			requirement = {
 				kind = exactVersion;
 				version = 1.1.1;
+			};
+		};
+		B40000000000000000000071 /* XCRemoteSwiftPackageReference "InjectionNext" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/johnno1962/InjectionNext";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.1;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

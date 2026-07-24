@@ -1,5 +1,5 @@
 {
-  "originHash" : "a8acf5a994cd6d7cff5efe5bf65ed8f1b12c7f8bcf43252d6af60654c2c601df",
+  "originHash" : "54cdb6eaeb46e9f1d266ab64ad24708adca8734b71c6b944e37d9174bc7757df",
   "pins" : [
     {
       "identity" : "combine-schedulers",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "dcccb979a2183b8df3334237e3dc1ae2b4116a86",
         "version" : "1.2.0"
+      }
+    },
+    {
+      "identity" : "injectionnext",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/johnno1962/InjectionNext",
+      "state" : {
+        "revision" : "2bb9fd51d7afd1f58e3000f09071bd3bdad9c527",
+        "version" : "2.0.1"
       }
     },
     {
