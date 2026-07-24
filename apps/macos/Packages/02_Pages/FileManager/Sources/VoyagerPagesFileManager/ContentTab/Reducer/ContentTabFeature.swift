@@ -103,6 +103,21 @@ public struct ContentTabFeature {
                 state.pendingPinnedRecordIDs.remove(tabID)
                 state.pinnedRecordPersistenceError = "pinned_record_save_failed"
                 return .none
+
+            case let .pinnedRecordSaveNotApplied(tabID, intentID, _, rollback):
+                guard state.isCurrentPinnedRecordPersistenceIntent(tabID: tabID, intentID: intentID) else {
+                    return .none
+                }
+                restorePinnedRecordSnapshot(
+                    tabID: tabID,
+                    previousIsPinned: rollback.previousIsPinned,
+                    previousPinnedRecord: rollback.previousPinnedRecord,
+                    previousTabIndex: rollback.previousTabIndex,
+                    state: &state,
+                )
+                state.pendingPinnedRecordIDs.remove(tabID)
+                state.pinnedRecordPersistenceError = nil
+                return .none
             }
         }
     }
@@ -488,6 +503,7 @@ extension ContentTabFeature {
         let intentID = state.markLatestPinnedRecordPersistenceIntent(for: id)
         let client = contentTabPinnedRecordClient
         let defaults = userDefaultsClient
+        let generation = client.reserveMutationGeneration(id)
         return .run { send in
             do {
                 try PinnedRecordPersistenceIntent.checkCurrent(
@@ -495,7 +511,7 @@ extension ContentTabFeature {
                     tabID: id,
                     intentID: intentID,
                 )
-                try client.updateStore(defaults) { existingStore in
+                let disposition = try await client.updateStoreGuarded(generation, defaults) { existingStore in
                     try PinnedRecordPersistenceIntent.checkCurrent(
                         scopeID: persistenceScopeID,
                         tabID: id,
@@ -503,9 +519,32 @@ extension ContentTabFeature {
                     )
                     return upsertPinnedRecord(pinnedRecord, in: existingStore)
                 }
-                await send(.pinnedRecordSaveSucceeded(tabID: id, intentID: intentID))
+                switch disposition {
+                case .applied:
+                    await send(.pinnedRecordSaveSucceeded(tabID: id, intentID: intentID))
+                case .superseded:
+                    await send(.pinnedRecordSaveNotApplied(
+                        tabID: id,
+                        intentID: intentID,
+                        reason: .superseded,
+                        rollback: ContentTabPinnedRecordRollbackSnapshot(
+                            previousIsPinned: false,
+                            previousPinnedRecord: nil,
+                            previousTabIndex: nil,
+                        ),
+                    ))
+                }
             } catch is CancellationError {
-                return
+                await send(.pinnedRecordSaveNotApplied(
+                    tabID: id,
+                    intentID: intentID,
+                    reason: .cancelled,
+                    rollback: ContentTabPinnedRecordRollbackSnapshot(
+                        previousIsPinned: false,
+                        previousPinnedRecord: nil,
+                        previousTabIndex: nil,
+                    ),
+                ))
             } catch {
                 await send(.pinnedRecordSaveFailed(
                     tabID: id,
@@ -547,6 +586,7 @@ extension ContentTabFeature {
         let intentID = state.markLatestPinnedRecordPersistenceIntent(for: id)
         let client = contentTabPinnedRecordClient
         let defaults = userDefaultsClient
+        let generation = client.reserveMutationGeneration(id)
         return .run { send in
             do {
                 try PinnedRecordPersistenceIntent.checkCurrent(
@@ -554,7 +594,7 @@ extension ContentTabFeature {
                     tabID: id,
                     intentID: intentID,
                 )
-                try client.updateStore(defaults) { existingStore in
+                let disposition = try await client.updateStoreGuarded(generation, defaults) { existingStore in
                     try PinnedRecordPersistenceIntent.checkCurrent(
                         scopeID: persistenceScopeID,
                         tabID: id,
@@ -562,9 +602,32 @@ extension ContentTabFeature {
                     )
                     return removePinnedRecord(id: recordID, from: existingStore)
                 }
-                await send(.pinnedRecordSaveSucceeded(tabID: id, intentID: intentID))
+                switch disposition {
+                case .applied:
+                    await send(.pinnedRecordSaveSucceeded(tabID: id, intentID: intentID))
+                case .superseded:
+                    await send(.pinnedRecordSaveNotApplied(
+                        tabID: id,
+                        intentID: intentID,
+                        reason: .superseded,
+                        rollback: ContentTabPinnedRecordRollbackSnapshot(
+                            previousIsPinned: true,
+                            previousPinnedRecord: previousPinnedRecord,
+                            previousTabIndex: previousTabIndex,
+                        ),
+                    ))
+                }
             } catch is CancellationError {
-                return
+                await send(.pinnedRecordSaveNotApplied(
+                    tabID: id,
+                    intentID: intentID,
+                    reason: .cancelled,
+                    rollback: ContentTabPinnedRecordRollbackSnapshot(
+                        previousIsPinned: true,
+                        previousPinnedRecord: previousPinnedRecord,
+                        previousTabIndex: previousTabIndex,
+                    ),
+                ))
             } catch {
                 await send(.pinnedRecordSaveFailed(
                     tabID: id,
@@ -615,6 +678,7 @@ extension ContentTabFeature {
         let intentID = state.markLatestPinnedRecordPersistenceIntent(for: id)
         let client = contentTabPinnedRecordClient
         let defaults = userDefaultsClient
+        let generation = client.reserveMutationGeneration(id)
         return .run { send in
             do {
                 try PinnedRecordPersistenceIntent.checkCurrent(
@@ -622,7 +686,7 @@ extension ContentTabFeature {
                     tabID: id,
                     intentID: intentID,
                 )
-                try client.updateStore(defaults) { existingStore in
+                let disposition = try await client.updateStoreGuarded(generation, defaults) { existingStore in
                     try PinnedRecordPersistenceIntent.checkCurrent(
                         scopeID: persistenceScopeID,
                         tabID: id,
@@ -630,9 +694,32 @@ extension ContentTabFeature {
                     )
                     return upsertPinnedRecord(updatedRecord, in: existingStore)
                 }
-                await send(.pinnedRecordSaveSucceeded(tabID: id, intentID: intentID))
+                switch disposition {
+                case .applied:
+                    await send(.pinnedRecordSaveSucceeded(tabID: id, intentID: intentID))
+                case .superseded:
+                    await send(.pinnedRecordSaveNotApplied(
+                        tabID: id,
+                        intentID: intentID,
+                        reason: .superseded,
+                        rollback: ContentTabPinnedRecordRollbackSnapshot(
+                            previousIsPinned: true,
+                            previousPinnedRecord: previousPinnedRecord,
+                            previousTabIndex: nil,
+                        ),
+                    ))
+                }
             } catch is CancellationError {
-                return
+                await send(.pinnedRecordSaveNotApplied(
+                    tabID: id,
+                    intentID: intentID,
+                    reason: .cancelled,
+                    rollback: ContentTabPinnedRecordRollbackSnapshot(
+                        previousIsPinned: true,
+                        previousPinnedRecord: previousPinnedRecord,
+                        previousTabIndex: nil,
+                    ),
+                ))
             } catch {
                 await send(.pinnedRecordSaveFailed(
                     tabID: id,
@@ -647,6 +734,29 @@ extension ContentTabFeature {
             id: PinnedRecordPersistenceCancelID(scopeID: persistenceScopeID, tabID: id),
             cancelInFlight: true,
         )
+    }
+}
+
+private func restorePinnedRecordSnapshot(
+    tabID: ContentTabID,
+    previousIsPinned: Bool,
+    previousPinnedRecord: ContentTabPinnedRecord?,
+    previousTabIndex: Int?,
+    state: inout ContentTabState,
+) {
+    if let previousTabIndex, let tab = state.tabs[id: tabID] {
+        let selectedTabIDs = state.selectedTabIDs
+        let selectionAnchorID = state.selectionAnchorID
+        state.tabs.remove(id: tabID)
+        state.tabs.insert(tab, at: min(previousTabIndex, state.tabs.endIndex))
+        state.selectedTabIDs = selectedTabIDs
+        state.selectionAnchorID = selectionAnchorID
+    }
+    state.tabs[id: tabID]?.isPinned = previousIsPinned
+    if let previousPinnedRecord {
+        state.pinnedRecords[tabID] = previousPinnedRecord
+    } else {
+        state.pinnedRecords.removeValue(forKey: tabID)
     }
 }
 

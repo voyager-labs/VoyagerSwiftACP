@@ -39,6 +39,47 @@ private actor WindowBootstrapSuspensionGate {
     }
 }
 
+private actor PinnedRecordMutationGate {
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var isWaiting = false
+
+    func wait() async {
+        isWaiting = true
+        let waiters = entryWaiters
+        entryWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        await withCheckedContinuation { releaseContinuation = $0 }
+    }
+
+    func waitUntilWaiting() async {
+        guard !isWaiting else { return }
+        await withCheckedContinuation { entryWaiters.append($0) }
+    }
+
+    func open() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+}
+
+private actor PinnedRecordMutationSignal {
+    private var isSignaled = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isSignaled else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func signal() {
+        isSignaled = true
+        let continuations = waiters
+        waiters.removeAll()
+        continuations.forEach { $0.resume() }
+    }
+}
+
 /// 윈도우 관리자 계약 — 포커스 윈도우로의 명령 팬아웃과 미사용 시 no-op를 검증.
 private func pinnedTabIDs(_ contentTabs: ContentTabState?) -> [String] {
     contentTabs?.tabs.filter(\.isPinned).map(\.id.rawValue) ?? []
@@ -792,25 +833,44 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
-    /// 다른 window의 동일 tab ID persistence effect가 source window의 batch terminal을 취소하지 않는다.
-    /// - 검증 내용: stale terminal sync 차단, window-local cancellation, batch 완료, current sync
-    /// - 사전 조건: source가 pinned tab batch-unpin 중이고 다른 window가 같은 tab ID pin effect를 동시에 실행
-    /// - 기대 결과: stale terminal은 무시되고 두 effect가 모두 완료되며 source batch가 정리된다.
+    /// 다른 window의 최신 동일 tab pin이 오래된 source batch-unpin durable write보다 우선한다.
+    /// - 검증 내용: latest persisted record, 양 window 수렴, winner fan-out 1회, stale batch 종료/authoritative sync 없음
+    /// - 사전 조건: source unpin generation을 정지한 뒤 다른 window가 같은 tab ID의 newer anchor를 pin
+    /// - 기대 결과: newer pin만 durable 적용되고 stale source는 rollback 후 cancelled-not-closed로 batch를 종료한다.
     func testBatchPinnedRecordSaveSucceeded_otherWindowSameTabIntentDoesNotStallSource() async {
         let sourceWindowID = UUID()
         let otherWindowID = UUID()
         let operationID = UUID()
         let sharedTabID = ContentTabID(rawValue: "shared-pinned-tab")
+        let oldAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/OldShared")
+        let newAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/NewShared")
+        let oldRecord = ContentTabPinnedRecord(
+            id: sharedTabID.rawValue,
+            page: .directory,
+            anchor: oldAnchor,
+            title: "Old Shared",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 452),
+        )
+        let newRecord = ContentTabPinnedRecord(
+            id: sharedTabID.rawValue,
+            page: .directory,
+            anchor: newAnchor,
+            title: "New Shared",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 453),
+        )
 
         var sourceWindow = FileManagerWindowFeature.State.makeInitial(path: "/Users/test/Source")
         sourceWindow.contentTabs.tabs.append(ContentTabItem(
             id: sharedTabID,
             page: .directory,
-            anchor: .directory(path: "/Users/test/Shared"),
+            anchor: oldAnchor,
             isPinned: true,
-            title: "Shared",
+            title: "Old Shared",
             iconName: "folder",
         ))
+        sourceWindow.contentTabs.pinnedRecords[sharedTabID] = oldRecord
         sourceWindow.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
             operationID: operationID,
             orderedTargetIDs: [sharedTabID],
@@ -822,23 +882,15 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             tabID: sharedTabID,
             batchOperationID: operationID,
         )
-        sourceWindow.contentTabs.pendingPinnedRecordIDs.insert(sharedTabID)
-        let staleSourceIntentID = sourceWindow.contentTabs.markLatestPinnedRecordPersistenceIntent(for: sharedTabID)
-        let currentSourceIntentID = sourceWindow.contentTabs.markLatestPinnedRecordPersistenceIntent(for: sharedTabID)
 
         var otherWindow = FileManagerWindowFeature.State.makeInitial(path: "/Users/test/Other")
         otherWindow.contentTabs.tabs.append(ContentTabItem(
             id: sharedTabID,
             page: .directory,
-            anchor: .directory(path: "/Users/test/Shared"),
+            anchor: newAnchor,
             isPinned: false,
-            title: "Shared",
+            title: "New Shared",
             iconName: "folder",
-        ))
-
-        XCTAssertTrue(sourceWindow.contentTabs.isCurrentPinnedRecordPersistenceIntent(
-            tabID: sharedTabID,
-            intentID: currentSourceIntentID,
         ))
 
         var initialState = WindowManagerFeature.State()
@@ -847,10 +899,13 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             WindowSessionState(id: otherWindowID, window: otherWindow),
         ]
         let syncCount = LockIsolated(0)
-        let persistedStore = LockIsolated(ContentTabPinnedRecordStore())
-        let persistenceStarted = expectation(description: "same-ID window-local persistence effects started")
-        persistenceStarted.expectedFulfillmentCount = 2
-        let persistenceRelease = DispatchSemaphore(value: 0)
+        let sourceAuthoritativeTerminalCount = LockIsolated(0)
+        let persistedStore = LockIsolated(ContentTabPinnedRecordStore(records: [oldRecord]))
+        let latestGenerations = LockIsolated<[ContentTabID: UUID]>([:])
+        let sourceGeneration = LockIsolated<UUID?>(nil)
+        let sourceGate = PinnedRecordMutationGate()
+        let winnerGate = PinnedRecordMutationGate()
+        let winnerCommitted = PinnedRecordMutationSignal()
         let store = Store(initialState: initialState) {
             CombineReducers {
                 WindowManagerFeature()
@@ -858,40 +913,48 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                     if case .pinnedContentTabsStoreChanged = action {
                         syncCount.withValue { $0 += 1 }
                     }
+                    if case let .windows(.element(
+                        id: id,
+                        action: .window(.performSelectedContentTabCloseMutation(
+                            operationID: _,
+                            tabID: _,
+                            action: .pinnedRecordSaveSucceeded,
+                        )),
+                    )) = action, id == sourceWindowID {
+                        sourceAuthoritativeTerminalCount.withValue { $0 += 1 }
+                    }
                     return .none
                 }
             }
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 453))
             $0.contentTabPinnedRecordClient.loadStore = { _ in persistedStore.value }
-            $0.contentTabPinnedRecordClient.updateStore = { _, transform in
-                persistenceStarted.fulfill()
-                persistenceRelease.wait()
+            $0.contentTabPinnedRecordClient.reserveMutationGeneration = { tabID in
+                let generation = ContentTabPinnedRecordMutationGeneration(tabID: tabID)
+                latestGenerations.withValue { $0[tabID] = generation.value }
+                sourceGeneration.withValue {
+                    if $0 == nil { $0 = generation.value }
+                }
+                return generation
+            }
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { generation, _, transform in
+                if generation.value == sourceGeneration.value {
+                    await sourceGate.wait()
+                } else {
+                    await winnerGate.wait()
+                }
                 try Task.checkCancellation()
+                guard latestGenerations.value[generation.tabID] == generation.value else {
+                    return .superseded
+                }
                 try persistedStore.withValue { currentStore in
                     currentStore = try transform(currentStore)
                 }
+                if generation.value != sourceGeneration.value {
+                    await winnerCommitted.signal()
+                }
+                return .applied
             }
-        }
-
-        await store.send(.windows(.element(
-            id: sourceWindowID,
-            action: .window(.performSelectedContentTabCloseMutation(
-                operationID: operationID,
-                tabID: sharedTabID,
-                action: .pinnedRecordSaveSucceeded(tabID: sharedTabID, intentID: staleSourceIntentID),
-            )),
-        ))).finish()
-        XCTAssertEqual(syncCount.value, 0)
-        store.withState { state in
-            XCTAssertEqual(
-                state.windows[id: sourceWindowID]?.window.pendingSelectedContentTabClose?.currentTabID,
-                sharedTabID,
-            )
-            XCTAssertEqual(
-                state.windows[id: sourceWindowID]?.window.contentTabs.pendingPinnedRecordIDs,
-                [sharedTabID],
-            )
         }
 
         let sourceTask = store.send(.windows(.element(
@@ -902,23 +965,38 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 action: .unpin(sharedTabID),
             )),
         )))
+        await sourceGate.waitUntilWaiting()
+
         let otherTask = store.send(.windows(.element(
             id: otherWindowID,
             action: .window(.contentTabs(.pin(sharedTabID))),
         )))
-        await fulfillment(of: [persistenceStarted], timeout: 1)
-        persistenceRelease.signal()
-        persistenceRelease.signal()
+        await winnerGate.waitUntilWaiting()
+        await winnerGate.open()
+        await winnerCommitted.wait()
+        await sourceGate.open()
         await sourceTask.finish()
         await otherTask.finish()
 
-        XCTAssertEqual(syncCount.value, 2)
+        XCTAssertEqual(persistedStore.value, ContentTabPinnedRecordStore(records: [newRecord]))
+        XCTAssertEqual(syncCount.value, 1)
+        XCTAssertEqual(sourceAuthoritativeTerminalCount.value, 0)
         store.withState { state in
             XCTAssertNil(state.windows[id: sourceWindowID]?.window.pendingSelectedContentTabClose)
             XCTAssertNil(state.windows[id: sourceWindowID]?.window.pendingContentTabClose)
             XCTAssertEqual(
                 state.windows[id: sourceWindowID]?.window.contentTabs.pendingPinnedRecordIDs.isEmpty,
                 true,
+            )
+            XCTAssertEqual(state.windows[id: sourceWindowID]?.window.contentTabs.tabs[id: sharedTabID]?.isPinned, true)
+            XCTAssertEqual(
+                state.windows[id: sourceWindowID]?.window.contentTabs.tabs[id: sharedTabID]?.anchor,
+                newAnchor,
+            )
+            XCTAssertEqual(state.windows[id: otherWindowID]?.window.contentTabs.tabs[id: sharedTabID]?.isPinned, true)
+            XCTAssertEqual(
+                state.windows[id: otherWindowID]?.window.contentTabs.tabs[id: sharedTabID]?.anchor,
+                newAnchor,
             )
         }
     }

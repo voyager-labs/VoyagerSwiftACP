@@ -2,6 +2,21 @@ import ComposableArchitecture
 import Foundation
 import VoyagerShared
 
+public struct ContentTabPinnedRecordMutationGeneration: Equatable, Sendable {
+    let tabID: ContentTabID
+    let value: UUID
+
+    init(tabID: ContentTabID, value: UUID = UUID()) {
+        self.tabID = tabID
+        self.value = value
+    }
+}
+
+public enum ContentTabPinnedRecordMutationDisposition: Equatable, Sendable {
+    case applied
+    case superseded
+}
+
 public struct ContentTabPinnedRecordClient: Sendable {
     public var loadStore: @Sendable (UserDefaultsClient) throws -> ContentTabPinnedRecordStore
     public var saveStore: @Sendable (ContentTabPinnedRecordStore, UserDefaultsClient) throws -> Void
@@ -13,6 +28,12 @@ public struct ContentTabPinnedRecordClient: Sendable {
         UserDefaultsClient,
         @escaping @Sendable (ContentTabPinnedRecordStore) throws -> ContentTabPinnedRecordStore,
     ) throws -> ContentTabPinnedRecordStore
+    public var reserveMutationGeneration: @Sendable (ContentTabID) -> ContentTabPinnedRecordMutationGeneration
+    public var guardedUpdateStore: (@Sendable (
+        ContentTabPinnedRecordMutationGeneration,
+        UserDefaultsClient,
+        @escaping @Sendable (ContentTabPinnedRecordStore) throws -> ContentTabPinnedRecordStore,
+    ) async throws -> ContentTabPinnedRecordMutationDisposition)?
 
     nonisolated public init(
         loadStore: @escaping @Sendable (UserDefaultsClient) throws -> ContentTabPinnedRecordStore,
@@ -25,6 +46,14 @@ public struct ContentTabPinnedRecordClient: Sendable {
             UserDefaultsClient,
             @escaping @Sendable (ContentTabPinnedRecordStore) throws -> ContentTabPinnedRecordStore,
         ) throws -> ContentTabPinnedRecordStore)? = nil,
+        reserveMutationGeneration: (@Sendable (
+            ContentTabID,
+        ) -> ContentTabPinnedRecordMutationGeneration)? = nil,
+        guardedUpdateStore: (@Sendable (
+            ContentTabPinnedRecordMutationGeneration,
+            UserDefaultsClient,
+            @escaping @Sendable (ContentTabPinnedRecordStore) throws -> ContentTabPinnedRecordStore,
+        ) async throws -> ContentTabPinnedRecordMutationDisposition)? = nil,
     ) {
         let resolvedUpdateStoreAndLoad = updateStoreAndLoad ?? { userDefaultsClient, transform in
             let store = try loadStore(userDefaultsClient)
@@ -35,12 +64,32 @@ public struct ContentTabPinnedRecordClient: Sendable {
             return updatedStore
         }
 
+        let resolvedUpdateStore = updateStore ?? { userDefaultsClient, transform in
+            _ = try resolvedUpdateStoreAndLoad(userDefaultsClient, transform)
+        }
+
         self.loadStore = loadStore
         self.saveStore = saveStore
         self.updateStoreAndLoad = resolvedUpdateStoreAndLoad
-        self.updateStore = updateStore ?? { userDefaultsClient, transform in
-            _ = try resolvedUpdateStoreAndLoad(userDefaultsClient, transform)
+        self.updateStore = resolvedUpdateStore
+        self.reserveMutationGeneration = reserveMutationGeneration ?? {
+            ContentTabPinnedRecordMutationGeneration(tabID: $0)
         }
+        self.guardedUpdateStore = guardedUpdateStore
+    }
+
+    public func updateStoreGuarded(
+        _ generation: ContentTabPinnedRecordMutationGeneration,
+        _ userDefaultsClient: UserDefaultsClient,
+        _ transform: @escaping @Sendable (
+            ContentTabPinnedRecordStore,
+        ) throws -> ContentTabPinnedRecordStore,
+    ) async throws -> ContentTabPinnedRecordMutationDisposition {
+        if let guardedUpdateStore {
+            return try await guardedUpdateStore(generation, userDefaultsClient, transform)
+        }
+        try updateStore(userDefaultsClient, transform)
+        return .applied
     }
 }
 
@@ -68,6 +117,16 @@ extension ContentTabPinnedRecordClient: DependencyKey {
                 userDefaultsClient.setObject(data, Self.storageKey)
                 return updatedStore
             },
+            reserveMutationGeneration: { tabID in
+                Self.storageLock.lock()
+                defer { Self.storageLock.unlock() }
+                let generation = ContentTabPinnedRecordMutationGeneration(tabID: tabID)
+                Self.latestMutationGenerations[tabID] = generation.value
+                return generation
+            },
+            guardedUpdateStore: { generation, userDefaultsClient, transform in
+                try Self.updateStoreGuardedValue(generation, userDefaultsClient, transform)
+            },
         )
     }
 
@@ -85,6 +144,7 @@ extension ContentTabPinnedRecordClient: DependencyKey {
 
     nonisolated private static let storageKey = "fileManager.pinnedContentTabs.v1"
     nonisolated private static let storageLock = NSLock()
+    nonisolated(unsafe) private static var latestMutationGenerations: [ContentTabID: UUID] = [:]
 
     private static func loadStoreValue(_ userDefaultsClient: UserDefaultsClient) throws -> ContentTabPinnedRecordStore {
         guard let data = userDefaultsClient.object(storageKey) as? Data else {
@@ -95,6 +155,37 @@ extension ContentTabPinnedRecordClient: DependencyKey {
         } catch {
             return ContentTabPinnedRecordStore()
         }
+    }
+
+    private static func updateStoreGuardedValue(
+        _ generation: ContentTabPinnedRecordMutationGeneration,
+        _ userDefaultsClient: UserDefaultsClient,
+        _ transform: @escaping @Sendable (
+            ContentTabPinnedRecordStore,
+        ) throws -> ContentTabPinnedRecordStore,
+    ) throws -> ContentTabPinnedRecordMutationDisposition {
+        storageLock.lock()
+        defer { storageLock.unlock() }
+
+        try Task.checkCancellation()
+        guard latestMutationGenerations[generation.tabID] == generation.value else {
+            return .superseded
+        }
+        let store = try loadStoreValue(userDefaultsClient)
+        try Task.checkCancellation()
+        let updatedStore = try transform(store)
+        try Task.checkCancellation()
+        guard latestMutationGenerations[generation.tabID] == generation.value else {
+            return .superseded
+        }
+        guard updatedStore != store else { return .applied }
+        let data = try JSONEncoder().encode(updatedStore)
+        try Task.checkCancellation()
+        guard latestMutationGenerations[generation.tabID] == generation.value else {
+            return .superseded
+        }
+        userDefaultsClient.setObject(data, storageKey)
+        return .applied
     }
 }
 

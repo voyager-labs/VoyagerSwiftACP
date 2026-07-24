@@ -594,6 +594,145 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(defaultsRecorder.writeCount(), 0)
     }
 
+    /// CTM-003-pin_content_tab_s: app-global 동일 tab mutation은 최신 generation만 durable store에 반영한다.
+    /// window scope와 무관한 generation 예약이 오래된 transform 실행과 write를 함께 차단하는지 검증한다.
+    /// - 검증 내용: stale disposition/transform 미실행, latest disposition/write, 최종 persisted anchor
+    /// - 사전 조건: 동일 ContentTabID에 old/new generation을 순서대로 예약
+    /// - 기대 결과: old는 superseded이고 new만 applied되어 newer record 하나가 저장됨
+    func testPinnedRecordClient_guardedMutationLatestGlobalGenerationWins() async throws {
+        let tabID = ContentTabID(rawValue: "shared-global-generation")
+        let oldRecord = Self.pinnedRecord(id: tabID, anchor: .directory(path: "/old"))
+        let newRecord = Self.pinnedRecord(id: tabID, anchor: .directory(path: "/new"))
+        let defaultsRecorder = try PinnedRecordDefaultsRecorder(store: ContentTabPinnedRecordStore())
+        let defaults = defaultsRecorder.client()
+        let client = ContentTabPinnedRecordClient.liveValue
+        let oldTransformCalled = LockIsolated(false)
+
+        let oldGeneration = client.reserveMutationGeneration(tabID)
+        let newGeneration = client.reserveMutationGeneration(tabID)
+        let oldDisposition = try await client.updateStoreGuarded(oldGeneration, defaults) { store in
+            oldTransformCalled.withValue { $0 = true }
+            return upsertPinnedRecord(oldRecord, in: store)
+        }
+        let newDisposition = try await client.updateStoreGuarded(newGeneration, defaults) { store in
+            upsertPinnedRecord(newRecord, in: store)
+        }
+
+        XCTAssertEqual(oldDisposition, .superseded)
+        XCTAssertFalse(oldTransformCalled.value)
+        XCTAssertEqual(newDisposition, .applied)
+        XCTAssertEqual(try client.loadStore(defaults), ContentTabPinnedRecordStore(records: [newRecord]))
+        XCTAssertEqual(defaultsRecorder.writeCount(), 1)
+    }
+
+    /// CTM-003-pin_content_tab_s: superseded pin은 optimistic state를 기존 snapshot으로 복구한다.
+    /// global winner가 다른 window에 있을 때 local terminal이 pending을 남기지 않는지 검증한다.
+    /// - 검증 내용: superseded typed terminal과 isPinned/record/pending rollback
+    /// - 사전 조건: unpinned tab의 pin effect가 guarded client에서 superseded disposition을 반환
+    /// - 기대 결과: local tab은 unpinned로 복구되고 pending/error가 모두 정리됨
+    func testPin_supersededGlobalMutationRollsBackLocalOptimisticState() async {
+        let tabID = ContentTabID(rawValue: "superseded-local-pin")
+        let anchor: ContentTabPageAnchor = .directory(path: "/Users/test/Superseded")
+        let store = TestStore(
+            initialState: ContentTabState(
+                tabs: [
+                    ContentTabItem(
+                        id: tabID,
+                        page: .directory,
+                        anchor: anchor,
+                        isPinned: false,
+                        title: "Superseded",
+                        iconName: "folder",
+                    ),
+                ],
+                activeTabID: tabID,
+            ),
+        ) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, _ in .superseded }
+        }
+
+        await store.send(.pin(tabID)) {
+            $0.tabs[id: tabID]?.isPinned = true
+            $0.pinnedRecords[tabID] = Self.pinnedRecord(
+                id: tabID,
+                anchor: anchor,
+                title: "Superseded",
+                iconName: "folder",
+            )
+            $0.pendingPinnedRecordIDs.insert(tabID)
+        }
+        await store.receive { action in
+            guard case let .pinnedRecordSaveNotApplied(receivedTabID, _, reason, _) = action else {
+                return false
+            }
+            return receivedTabID == tabID && reason == .superseded
+        } assert: {
+            $0.tabs[id: tabID]?.isPinned = false
+            $0.pinnedRecords.removeValue(forKey: tabID)
+            $0.pendingPinnedRecordIDs.remove(tabID)
+        }
+        await store.finish()
+
+        XCTAssertNil(store.state.pinnedRecordPersistenceError)
+    }
+
+    /// CTM-003-pin_content_tab_s: durable commit 전 cancellation도 local non-applied terminal을 전달한다.
+    /// cancellation이 optimistic state와 pending을 고립시키지 않는지 검증한다.
+    /// - 검증 내용: cancelled typed terminal과 pin rollback/pending cleanup
+    /// - 사전 조건: guarded client가 durable mutation 전에 CancellationError 발생
+    /// - 기대 결과: local tab은 기존 unpinned snapshot으로 복구되고 pending이 제거됨
+    func testPin_cancelledBeforeCommitRollsBackLocalOptimisticState() async {
+        let tabID = ContentTabID(rawValue: "cancelled-local-pin")
+        let anchor: ContentTabPageAnchor = .directory(path: "/Users/test/Cancelled")
+        let store = TestStore(
+            initialState: ContentTabState(
+                tabs: [
+                    ContentTabItem(
+                        id: tabID,
+                        page: .directory,
+                        anchor: anchor,
+                        isPinned: false,
+                        title: "Cancelled",
+                        iconName: "folder",
+                    ),
+                ],
+                activeTabID: tabID,
+            ),
+        ) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, _ in
+                throw CancellationError()
+            }
+        }
+
+        await store.send(.pin(tabID)) {
+            $0.tabs[id: tabID]?.isPinned = true
+            $0.pinnedRecords[tabID] = Self.pinnedRecord(
+                id: tabID,
+                anchor: anchor,
+                title: "Cancelled",
+                iconName: "folder",
+            )
+            $0.pendingPinnedRecordIDs.insert(tabID)
+        }
+        await store.receive { action in
+            guard case let .pinnedRecordSaveNotApplied(receivedTabID, _, reason, _) = action else {
+                return false
+            }
+            return receivedTabID == tabID && reason == .cancelled
+        } assert: {
+            $0.tabs[id: tabID]?.isPinned = false
+            $0.pinnedRecords.removeValue(forKey: tabID)
+            $0.pendingPinnedRecordIDs.remove(tabID)
+        }
+        await store.finish()
+    }
+
     /// CTM-003-seed_built_in_pinned_content_tabs: completion key는 built-in item별로 분리된다.
     /// Window bootstrap이 후속 task에서 독립 flag를 읽고 쓸 수 있도록 exact key 계약을 검증한다.
     /// - 검증 내용: Recents/All Tags SettingsKeys 문자열과 상호 distinct 여부

@@ -16,6 +16,17 @@ public struct ContentTabDuplicateRequest: Equatable, Sendable {
     }
 }
 
+public enum ContentTabPinnedRecordSaveNonAppliedReason: Equatable, Sendable {
+    case superseded
+    case cancelled
+}
+
+public struct ContentTabPinnedRecordRollbackSnapshot: Equatable, Sendable {
+    let previousIsPinned: Bool
+    let previousPinnedRecord: ContentTabPinnedRecord?
+    let previousTabIndex: Int?
+}
+
 @CasePathable
 public enum ContentTabAction: Sendable {
     case open(ContentTabPageAnchor)
@@ -51,5 +62,11 @@ public enum ContentTabAction: Sendable {
         previousIsPinned: Bool,
         previousPinnedRecord: ContentTabPinnedRecord?,
         previousTabIndex: Int?,
+    )
+    case pinnedRecordSaveNotApplied(
+        tabID: ContentTabID,
+        intentID: UUID,
+        reason: ContentTabPinnedRecordSaveNonAppliedReason,
+        rollback: ContentTabPinnedRecordRollbackSnapshot,
     )
 }
