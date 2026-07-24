@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Shared macOS test command for human/CI use.
-# Agent verification uses XcodeBuildMCP, NOT this script.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
