@@ -62,10 +62,12 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
         }
         await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.aiChat.setup)
         await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.aiChat.providerConnectionsUpdated)
-        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.aiChat.prepareUnpersistedNewChat)
         await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.setInspectorVisible) {
             $0.windows[id: fixture.focusedUUID]?.window.inspector.inspectorVisible = true
         }
+        await store.receive(
+            \.windows[id: fixture.focusedUUID].window.internal.applyInspectorNewChatSeed,
+        )
 
         guard let firstSessionID = store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.sessionID
         else {
@@ -98,10 +100,10 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
         await store.receive { action in
             guard case let .windows(.element(
                 id: id,
-                action: .window(.inspector(.aiChat(.prepareUnpersistedNewChatWithContext(snapshot)))),
+                action: .window(.internal(.applyInspectorNewChatSeed(application))),
             )) = action
             else { return false }
-            return id == fixture.focusedUUID && snapshot == fixture.expectedSetup.currentContext
+            return id == fixture.focusedUUID && application.snapshot == fixture.expectedSetup.currentContext
         }
 
         XCTAssertEqual(store.state.windows[id: fixture.focusedUUID]?.window.inspector.inspectorVisible, true)

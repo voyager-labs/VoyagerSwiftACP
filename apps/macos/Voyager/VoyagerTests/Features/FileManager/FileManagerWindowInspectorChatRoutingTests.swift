@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 @testable import Voyager
 import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesContentPageNavigation
@@ -12,6 +13,596 @@ import XCTest
 
 @MainActor
 final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
+    /// Inspector pending seed 완료 전 draft 변경은 late completion에 의해 지워지지 않는다.
+    /// - 검증 내용: draft 보존, transient preparation 없음, pending 정리, save 0회
+    /// - 사전 조건: Inspector New Chat seed가 model catalog를 기다리는 중이다.
+    /// - 기대 결과: completion은 no-op이고 사용자 draft가 유지된다.
+    func testPendingInspectorNewChatIgnoresLateCatalogAfterDraftMutation() async throws {
+        try await assertPendingInspectorSeedMutationIsIgnored(.draft)
+    }
+
+    /// Inspector pending seed 완료 전 attachment 변경은 late completion에 의해 지워지지 않는다.
+    /// - 검증 내용: attachment 보존, transient preparation 없음, pending 정리, save 0회
+    /// - 사전 조건: Inspector New Chat seed가 model catalog를 기다리는 중이다.
+    /// - 기대 결과: completion은 no-op이고 사용자 attachment가 유지된다.
+    func testPendingInspectorNewChatIgnoresLateCatalogAfterAttachmentMutation() async throws {
+        try await assertPendingInspectorSeedMutationIsIgnored(.attachment)
+    }
+
+    /// Inspector pending seed 완료 전 model 변경은 late completion에 의해 덮어써지지 않는다.
+    /// - 검증 내용: explicit model 보존, transient preparation 없음, pending 정리, save 0회
+    /// - 사전 조건: Inspector New Chat seed가 model catalog를 기다리는 중이다.
+    /// - 기대 결과: completion은 no-op이고 사용자 model 선택이 유지된다.
+    func testPendingInspectorNewChatIgnoresLateCatalogAfterModelMutation() async throws {
+        try await assertPendingInspectorSeedMutationIsIgnored(.model)
+    }
+
+    /// Inspector pending seed 완료 전 thinking 변경은 late completion에 의해 덮어써지지 않는다.
+    /// - 검증 내용: explicit thinking 보존, transient preparation 없음, pending 정리, save 0회
+    /// - 사전 조건: Inspector New Chat seed가 model catalog를 기다리는 중이다.
+    /// - 기대 결과: completion은 no-op이고 사용자 thinking 선택이 유지된다.
+    func testPendingInspectorNewChatIgnoresLateCatalogAfterThinkingMutation() async throws {
+        try await assertPendingInspectorSeedMutationIsIgnored(.thinking)
+    }
+
+    func testClosedInspectorNewChatWaitsForCatalogThenUsesWindowLastWithoutSaving() async {
+        let model = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            thinkingCapability: .effort(values: [.high], defaultValue: nil),
+        )
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.lastExplicitAiChatSelection = FileManagerAiChatSelection(
+            modelHandle: model.id,
+            thinking: .effort(.high),
+        )
+        let connectionsFile: AIConnectionsFile = .testFixture(
+            lastUsedProviderId: .openai,
+            providers: [.testFixture(provider: .openai, authMethod: .apiKey)],
+        )
+        let saveCount = LockIsolated(0)
+        let store = makeStore(
+            initialState: initialState,
+            uuid: makeUUID("00000000-0000-0000-0000-000000000089"),
+            connectionsFile: connectionsFile,
+            aiProviderModels: [model],
+            savedSessionCount: saveCount,
+        )
+
+        await store.send(.request(.newChat))
+        await store.receive { action in
+            guard case let .internal(.applyInspectorNewChatSeed(application)) = action,
+                  let seed = application.seed
+            else {
+                return false
+            }
+            return seed == AiChatNewChatSelectionSeed(
+                modelHandle: model.id,
+                selectedThinking: .effort(.high),
+            )
+        }
+
+        XCTAssertTrue(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.aiChat.selectedModelHandle, model.id)
+        XCTAssertEqual(store.state.inspector.aiChat.selectedThinking, .effort(.high))
+        XCTAssertNil(store.state.pendingAiChatInspectorOpen)
+        XCTAssertNil(store.state.pendingAiChatNewChat)
+        XCTAssertEqual(saveCount.value, 0)
+    }
+
+    func testVisibleInspectorNewChatUsesWindowLastBeforePersistedDefaultWithoutSaving() async {
+        let windowModel = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            thinkingCapability: .effort(values: [.high], defaultValue: nil),
+        )
+        let persistedModel = makeAiModel(
+            provider: .anthropic,
+            rawValue: "claude-haiku",
+            thinkingCapability: .unsupported(reason: .init(message: "Unsupported")),
+        )
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.inspector.inspectorVisible = true
+        initialState.inspector.activeMode = .chat
+        initialState.inspector.aiChat = AiChatFeature.State(
+            mode: .sessions,
+            modelListState: .loaded([windowModel, persistedModel]),
+        )
+        initialState.lastExplicitAiChatSelection = FileManagerAiChatSelection(
+            modelHandle: windowModel.id,
+            thinking: .effort(.high),
+        )
+        let saveCount = LockIsolated(0)
+        let store = makeStore(
+            initialState: initialState,
+            uuid: makeUUID("00000000-0000-0000-0000-000000000090"),
+            connectionsFile: .empty(),
+            defaultSettings: makeDefaultSettings(model: persistedModel, thinking: .none),
+            savedSessionCount: saveCount,
+        )
+
+        await store.send(.request(.newChat))
+        await store.receive { action in
+            guard case let .internal(.applyInspectorNewChatSeed(application)) = action,
+                  let seed = application.seed
+            else {
+                return false
+            }
+            return seed == AiChatNewChatSelectionSeed(
+                modelHandle: windowModel.id,
+                selectedThinking: .effort(.high),
+            )
+        }
+
+        XCTAssertEqual(store.state.inspector.aiChat.selectedModelHandle, windowModel.id)
+        XCTAssertEqual(store.state.inspector.aiChat.selectedThinking, .effort(.high))
+        XCTAssertEqual(saveCount.value, 0)
+    }
+
+    func testInspectorHeaderFallsBackToPersistedModelAndDropsIncompatibleThinking() async {
+        let invalidWindowModel = makeAiModel(
+            provider: .openai,
+            rawValue: "missing",
+            thinkingCapability: .effort(values: [.high], defaultValue: nil),
+        )
+        let persistedModel = makeAiModel(
+            provider: .anthropic,
+            rawValue: "claude-haiku",
+            thinkingCapability: .unsupported(reason: .init(message: "Unsupported")),
+        )
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.inspector.inspectorVisible = true
+        initialState.inspector.activeMode = .chat
+        initialState.inspector.aiChat = AiChatFeature.State(
+            mode: .sessions,
+            modelListState: .loaded([persistedModel]),
+        )
+        initialState.lastExplicitAiChatSelection = FileManagerAiChatSelection(
+            modelHandle: invalidWindowModel.id,
+            thinking: .effort(.high),
+        )
+        let store = makeStore(
+            initialState: initialState,
+            uuid: makeUUID("00000000-0000-0000-0000-000000000091"),
+            connectionsFile: .empty(),
+            defaultSettings: makeDefaultSettings(model: persistedModel, thinking: .effort("high")),
+        )
+
+        await store.send(.inspector(.sessionHeaderNewChatTapped))
+        await store.receive(\.inspector.delegate.newChatRequested)
+        await store.receive(\.request.newChat)
+        await store.receive { action in
+            guard case let .internal(.applyInspectorNewChatSeed(application)) = action,
+                  let seed = application.seed
+            else {
+                return false
+            }
+            return seed.modelHandle == persistedModel.id && seed.selectedThinking == nil
+        }
+
+        XCTAssertEqual(store.state.inspector.aiChat.selectedModelHandle, persistedModel.id)
+        XCTAssertNil(store.state.inspector.aiChat.selectedThinking)
+    }
+
+    func testContentHistoryNewChatUsesLatestDefaultOnceWithoutMutatingCurrentDraft() async throws {
+        let firstModel = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            thinkingCapability: .effort(values: [.high], defaultValue: nil),
+        )
+        let nextModel = makeAiModel(
+            provider: .anthropic,
+            rawValue: "claude-haiku",
+            thinkingCapability: .unsupported(reason: .init(message: "Unsupported")),
+        )
+        let firstSettings = makeDefaultSettings(model: firstModel, thinking: .providerDefault)
+        let nextSettings = makeDefaultSettings(model: nextModel, thinking: .none)
+        let settings = LockIsolated(firstSettings)
+        let saveCount = LockIsolated(0)
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        let activeTabID = try XCTUnwrap(initialState.contentTabs.activeTabID)
+        initialState.contentTabs.tabs[id: activeTabID]?.anchor = .aiChat(sessionID: "history")
+        initialState.content.aiChat = AiChatFeature.State(
+            mode: .sessions,
+            sessionID: makeSessionID("00000000-0000-0000-0000-000000000092"),
+            draftText: "Existing draft",
+            modelListState: .loaded([firstModel, nextModel]),
+            selectedModelHandle: firstModel.id,
+            selectedThinking: .effort(.high),
+        )
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+            $0.aiChatDefaultSettingsClient.load = { settings.value }
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                saveCount.withValue { $0 += 1 }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: Content에서 window seed pipeline과 durable save 경계만 선별 검증한다.
+        store.exhaustivity = .off
+
+        settings.withValue { $0 = nextSettings }
+        XCTAssertEqual(store.state.content.aiChat.draftText, "Existing draft")
+        XCTAssertEqual(store.state.content.aiChat.selectedModelHandle, firstModel.id)
+
+        await store.send(.content(.view(.aiChatNewChatTapped)))
+        await store.receive(\.content.delegate.durableNewChatRequested)
+        await store.receive { action in
+            guard case let .internal(.applyContentNewChatSeed(application)) = action,
+                  let seed = application.seed
+            else { return false }
+            return seed.modelHandle == nextModel.id && seed.selectedThinking == nil
+        }
+        await store.receive(\.content.aiChat.newChatCreated)
+
+        XCTAssertEqual(store.state.content.aiChat.selectedModelHandle, nextModel.id)
+        XCTAssertNil(store.state.content.aiChat.selectedThinking)
+        XCTAssertTrue(store.state.content.aiChat.draftText.isEmpty)
+        XCTAssertEqual(saveCount.value, 1)
+    }
+
+    func testPendingContentNewChatIgnoresLateCatalogAfterSessionNavigation() async throws {
+        let model = makeAiModel(
+            provider: .anthropic,
+            rawValue: "claude-haiku",
+            thinkingCapability: .unsupported(reason: .init(message: "Unsupported")),
+        )
+        let requestID = makeUUID("00000000-0000-0000-0000-000000000094")
+        let originalSessionID = makeSessionID("00000000-0000-0000-0000-000000000095")
+        let navigatedSessionID = makeSessionID("00000000-0000-0000-0000-000000000096")
+        let defaultSettings = makeDefaultSettings(model: model, thinking: .none)
+        let saveCount = LockIsolated(0)
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        let activeTabID = try XCTUnwrap(initialState.contentTabs.activeTabID)
+        initialState.contentTabs.tabs[id: activeTabID]?.anchor = .aiChat(
+            sessionID: originalSessionID.rawValue.uuidString,
+        )
+        initialState.content.aiChat = AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(selectedSessionID: originalSessionID),
+            sessionID: originalSessionID,
+            modelListState: .loading,
+            modelListRequestID: requestID,
+            modelListProviderOrder: [.anthropic],
+            modelListPendingProviders: [.anthropic],
+        )
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+            $0.aiChatDefaultSettingsClient.load = { defaultSettings }
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                saveCount.withValue { $0 += 1 }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: pending durable seed와 session navigation provenance만 선별 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.view(.aiChatNewChatTapped)))
+        await store.receive(\.content.delegate.durableNewChatRequested)
+        await store.receive(\.internal.aiChatNewChatDefaultsLoaded)
+
+        await store.send(.content(.aiChat(.showSessionsForChat(navigatedSessionID))))
+        await store.send(.content(.aiChat(.modelListLoaded(
+            requestID: requestID,
+            provider: .anthropic,
+            models: [model],
+        ))))
+
+        XCTAssertEqual(store.state.content.aiChat.sessionID, navigatedSessionID)
+        XCTAssertEqual(store.state.content.aiChat.sessionList.selectedSessionID, navigatedSessionID)
+        XCTAssertEqual(store.state.content.aiChat.mode, .sessions)
+        XCTAssertEqual(saveCount.value, 0)
+    }
+
+    func testFinalContentSeedApplicationRevalidatesActiveAnchorBeforeChildMutation() async throws {
+        let model = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            thinkingCapability: .effort(values: [.high], defaultValue: nil),
+        )
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000097")
+        let saveCount = LockIsolated(0)
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        let activeTabID = try XCTUnwrap(initialState.contentTabs.activeTabID)
+        let expectedAnchor = ContentTabPageAnchor.aiChat(sessionID: sessionID.rawValue.uuidString)
+        initialState.contentTabs.tabs[id: activeTabID]?.anchor = expectedAnchor
+        initialState.content.aiChat = AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(selectedSessionID: sessionID),
+            sessionID: sessionID,
+            modelListState: .loaded([model]),
+        )
+        let provenance = initialState.content.aiChat.newChatPreparationProvenance
+        let seed = AiChatNewChatSelectionSeed(modelHandle: model.id, selectedThinking: .effort(.high))
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                saveCount.withValue { $0 += 1 }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: final parent gate의 tab/anchor provenance만 선별 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.updateActivePageAnchor(activeTabID, .homeDefault)))
+        await store.send(.internal(.applyContentNewChatSeed(.init(
+            tabID: activeTabID,
+            expectedAnchor: expectedAnchor,
+            sessionID: nil,
+            provenance: provenance,
+            seed: seed,
+        ))))
+
+        XCTAssertEqual(store.state.contentTabs.tabs[id: activeTabID]?.anchor, .homeDefault)
+        XCTAssertEqual(store.state.content.aiChat.sessionID, sessionID)
+        XCTAssertEqual(store.state.content.aiChat.sessionList.selectedSessionID, sessionID)
+        XCTAssertEqual(saveCount.value, 0)
+    }
+
+    func testPendingInspectorNewChatIgnoresStaleCatalogCompletion() async throws {
+        let requestID = makeUUID("00000000-0000-0000-0000-000000000093")
+        let staleRequestID = makeUUID("00000000-0000-0000-0000-000000000094")
+        let model = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            thinkingCapability: .effort(values: [.high], defaultValue: nil),
+        )
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.inspector.inspectorVisible = true
+        initialState.inspector.activeMode = .chat
+        initialState.inspector.aiChat = AiChatFeature.State(
+            mode: .sessions,
+            modelListState: .loading,
+            modelListRequestID: requestID,
+            modelListProvider: .openai,
+            modelListProviderOrder: [.openai],
+            modelListPendingProviders: [.openai],
+        )
+        let store = makeStore(
+            initialState: initialState,
+            uuid: makeUUID("00000000-0000-0000-0000-000000000095"),
+            connectionsFile: .empty(),
+            defaultSettings: makeDefaultSettings(model: model, thinking: .effort("high")),
+        )
+
+        await store.send(.request(.newChat))
+        let pending = try XCTUnwrap(store.state.pendingAiChatNewChat)
+        await store.send(.inspector(.aiChat(.modelListLoaded(
+            requestID: staleRequestID,
+            provider: .openai,
+            models: [model],
+        ))))
+        XCTAssertEqual(store.state.pendingAiChatNewChat?.requestID, pending.requestID)
+        XCTAssertNil(store.state.inspector.aiChat.sessionID)
+
+        await store.send(.inspector(.aiChat(.modelListLoaded(
+            requestID: requestID,
+            provider: .openai,
+            models: [model],
+        ))))
+        await store.receive { action in
+            guard case let .internal(.applyInspectorNewChatSeed(application)) = action,
+                  let seed = application.seed
+            else {
+                return false
+            }
+            return seed.modelHandle == model.id && seed.selectedThinking == .effort(.high)
+        }
+
+        XCTAssertNil(store.state.pendingAiChatNewChat)
+        XCTAssertEqual(store.state.inspector.aiChat.selectedModelHandle, model.id)
+    }
+
+    private enum PendingInspectorSeedMutation {
+        case draft
+        case attachment
+        case model
+        case thinking
+    }
+
+    private func assertPendingInspectorSeedMutationIsIgnored(
+        _ mutation: PendingInspectorSeedMutation,
+    ) async throws {
+        let requestID = makeUUID("00000000-0000-0000-0000-000000000098")
+        let seededModel = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            thinkingCapability: .effort(values: [.high], defaultValue: nil),
+        )
+        let alternateModel = makeAiModel(
+            provider: .anthropic,
+            rawValue: "claude-haiku",
+            thinkingCapability: .unsupported(reason: .init(message: "Unsupported")),
+        )
+        var aiChat = AiChatFeature.State(
+            mode: .sessions,
+            modelListState: .loaded([seededModel, alternateModel]),
+            selectedModelHandle: seededModel.id,
+            selectedThinking: .effort(.high),
+        )
+        aiChat.modelListState = .loading
+        aiChat.modelListRequestID = requestID
+        aiChat.modelListProvider = .openai
+        aiChat.modelListProviderOrder = [.openai]
+        aiChat.modelListPendingProviders = [.openai]
+
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.inspector.inspectorVisible = true
+        initialState.inspector.activeMode = .chat
+        initialState.inspector.aiChat = aiChat
+        let saveCount = LockIsolated(0)
+        let store = makeStore(
+            initialState: initialState,
+            uuid: makeUUID("00000000-0000-0000-0000-000000000099"),
+            connectionsFile: .empty(),
+            defaultSettings: makeDefaultSettings(model: seededModel, thinking: .effort("high")),
+            savedSessionCount: saveCount,
+        )
+        // store.exhaustivity = .off: mutation provenance와 late completion no-op만 선별 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.request(.newChat))
+        await store.receive(\.internal.aiChatNewChatDefaultsLoaded)
+
+        switch mutation {
+        case .draft:
+            await store.send(.inspector(.aiChat(.draftTextChanged("User draft"))))
+        case .attachment:
+            await store.send(.inspector(.aiChat(.attachmentPickerSelection([
+                URL(fileURLWithPath: "/tmp/inspector-pending.txt"),
+            ]))))
+        case .model:
+            await store.send(.inspector(.aiChat(.selectedModelChanged(nil))))
+        case .thinking:
+            await store.send(.inspector(.aiChat(.selectedThinkingChanged(nil))))
+        }
+
+        await store.send(.inspector(.aiChat(.modelListLoaded(
+            requestID: requestID,
+            provider: .openai,
+            models: [seededModel, alternateModel],
+        ))))
+        await store.finish()
+
+        switch mutation {
+        case .draft:
+            XCTAssertEqual(store.state.inspector.aiChat.draftText, "User draft")
+        case .attachment:
+            XCTAssertEqual(store.state.inspector.aiChat.addedAttachments.count, 1)
+        case .model:
+            XCTAssertNil(store.state.inspector.aiChat.selectedModelHandle)
+        case .thinking:
+            XCTAssertNil(store.state.inspector.aiChat.selectedThinking)
+        }
+        XCTAssertNil(store.state.inspector.aiChat.preparedTransientSessionID)
+        XCTAssertNil(store.state.pendingAiChatNewChat)
+        XCTAssertEqual(saveCount.value, 0)
+    }
+
+    func testContentExplicitModelSelectionCapturesPostReductionNormalizedPair() async {
+        let effortModel = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            thinkingCapability: .effort(values: [.high], defaultValue: nil),
+        )
+        let noThinkingModel = makeAiModel(
+            provider: .anthropic,
+            rawValue: "claude-haiku",
+            thinkingCapability: .unsupported(reason: .init(message: "Unsupported")),
+        )
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.content.aiChat = AiChatFeature.State(
+            modelListState: .loaded([effortModel, noThinkingModel]),
+            selectedModelHandle: effortModel.id,
+            selectedThinking: .effort(.high),
+        )
+        let store = makeSelectionStore(initialState: initialState)
+
+        await store.send(.content(.aiChat(.selectedModelChanged(noThinkingModel.id))))
+
+        XCTAssertEqual(store.state.content.aiChat.selectedModelHandle, noThinkingModel.id)
+        XCTAssertNil(store.state.content.aiChat.selectedThinking)
+        XCTAssertEqual(
+            store.state.lastExplicitAiChatSelection,
+            FileManagerAiChatSelection(modelHandle: noThinkingModel.id, thinking: nil),
+        )
+    }
+
+    func testInspectorExplicitThinkingSelectionUpdatesSharedWindowPair() async {
+        let model = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            thinkingCapability: .effort(values: [.high], defaultValue: nil),
+        )
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.inspector.aiChat = AiChatFeature.State(
+            modelListState: .loaded([model]),
+            selectedModelHandle: model.id,
+        )
+        let store = makeSelectionStore(initialState: initialState)
+
+        await store.send(.inspector(.aiChat(.selectedThinkingChanged(.effort(.high)))))
+
+        XCTAssertEqual(
+            store.state.lastExplicitAiChatSelection,
+            FileManagerAiChatSelection(modelHandle: model.id, thinking: .effort(.high)),
+        )
+    }
+
+    func testPassiveAndBackgroundAiChatActionsDoNotReplaceExplicitSelection() async {
+        let model = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            thinkingCapability: .effort(values: [.high], defaultValue: nil),
+        )
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.content.aiChat = AiChatFeature.State(
+            modelListState: .loaded([model]),
+            selectedModelHandle: model.id,
+        )
+        let expected = FileManagerAiChatSelection(modelHandle: model.id, thinking: .effort(.high))
+        initialState.lastExplicitAiChatSelection = expected
+        let store = makeSelectionStore(initialState: initialState)
+
+        await store.send(.content(.aiChat(.setup(.init(
+            catalogRows: [],
+            selectedModelHandle: nil,
+            selectedThinking: nil,
+        )))))
+        await store.send(.content(.aiChat(.providerConnectionsUpdated(.empty()))))
+        await store.send(.content(.aiChat(.currentContextChanged(.init(summary: "Updated")))))
+        await store.send(.content(.aiChat(.modelListLoadFailed(
+            requestID: UUID(),
+            provider: .openai,
+            failure: .init(message: "Failed"),
+        ))))
+        await store.send(.backgroundAiChat(.selectedModelChanged(nil)))
+        await store.send(.backgroundInspectorAiChat(.selectedThinkingChanged(nil)))
+
+        XCTAssertEqual(store.state.lastExplicitAiChatSelection, expected)
+    }
+
+    func testFreshWindowsStartWithoutSelectionAndRemainIsolated() async {
+        let openAIModel = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            thinkingCapability: .effort(values: [.high], defaultValue: nil),
+        )
+        let anthropicModel = makeAiModel(
+            provider: .anthropic,
+            rawValue: "claude-sonnet",
+            thinkingCapability: .effort(values: [.medium], defaultValue: nil),
+        )
+        var firstState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        firstState.content.aiChat = AiChatFeature.State(modelListState: .loaded([openAIModel]))
+        var secondState = FileManagerFeature.State.makeInitial(path: "/Users/test/Downloads")
+        secondState.content.aiChat = AiChatFeature.State(modelListState: .loaded([anthropicModel]))
+        let firstStore = makeSelectionStore(initialState: firstState)
+        let secondStore = makeSelectionStore(initialState: secondState)
+
+        XCTAssertNil(firstStore.state.lastExplicitAiChatSelection)
+        XCTAssertNil(secondStore.state.lastExplicitAiChatSelection)
+
+        await firstStore.send(.content(.aiChat(.selectedModelChanged(openAIModel.id))))
+        await secondStore.send(.content(.aiChat(.selectedModelChanged(anthropicModel.id))))
+
+        XCTAssertEqual(
+            firstStore.state.lastExplicitAiChatSelection,
+            FileManagerAiChatSelection(modelHandle: openAIModel.id, thinking: nil),
+        )
+        XCTAssertEqual(
+            secondStore.state.lastExplicitAiChatSelection,
+            FileManagerAiChatSelection(modelHandle: anthropicModel.id, thinking: nil),
+        )
+    }
+
     func testShowChatHistoryOpensClosedInspectorWithCurrentContext() async {
         let selectedEntry = makeEntry(name: "Draft.md", fullPath: "/Users/test/Documents/Draft.md")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
@@ -59,10 +650,12 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await store.receive(\.inspector.delegate.newChatRequested)
         await store.receive(\.request.newChat)
         await store.receive { action in
-            guard case let .inspector(.aiChat(.prepareUnpersistedNewChatWithContext(snapshot))) = action else {
+            guard case let .internal(.applyInspectorNewChatSeed(application)) = action,
+                  application.seed == nil
+            else {
                 return false
             }
-            return snapshot == expectedContext
+            return application.snapshot == expectedContext
         }
 
         XCTAssertTrue(store.state.inspector.inspectorVisible)
@@ -107,10 +700,12 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
 
         await store.send(.request(.newChat))
         await store.receive { action in
-            guard case let .inspector(.aiChat(.prepareUnpersistedNewChatWithContext(snapshot))) = action else {
+            guard case let .internal(.applyInspectorNewChatSeed(application)) = action,
+                  application.seed == nil
+            else {
                 return false
             }
-            return snapshot == expectedContext
+            return application.snapshot == expectedContext
         }
 
         XCTAssertTrue(store.state.inspector.inspectorVisible)
@@ -255,7 +850,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         )
 
         await store.send(.request(.newChat))
-        await store.receive(\.inspector.aiChat.prepareUnpersistedNewChatWithContext)
+        await store.receive(\.internal.applyInspectorNewChatSeed)
 
         XCTAssertTrue(store.state.inspector.inspectorVisible)
         XCTAssertEqual(store.state.inspector.aiChat.mode, .chat)
@@ -374,6 +969,10 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
             return requestID == replacementOpen.requestID
         }
         await store.receive(\.inspector.openNewChat)
+        await store.receive(\.inspector.aiChat.setup)
+        await store.receive(\.inspector.aiChat.providerConnectionsUpdated)
+        await store.receive(\.inspector.setInspectorVisible)
+        await store.receive(\.internal.applyInspectorNewChatSeed)
 
         XCTAssertNil(store.state.pendingAiChatInspectorOpen)
         XCTAssertEqual(store.state.contentTabs.activeTabID, secondTabID)
@@ -395,10 +994,10 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await assertOpenNewChat(on: store, expectedSetup: expectedSetup, expectedConnectionsFile: .empty())
         await assertAiChatSetup(on: store, expectedSetup: expectedSetup)
         await assertProviderConnectionsUpdated(on: store, expectedFile: .empty())
-        await store.receive(\.inspector.aiChat.prepareUnpersistedNewChat)
         await store.receive(\.inspector.setInspectorVisible) {
             $0.inspector.inspectorVisible = true
         }
+        await store.receive(\.internal.applyInspectorNewChatSeed)
 
         assertUnconnectedCurrentContextContract(
             store.state.inspector.aiChat,
@@ -682,10 +1281,10 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await assertOpenNewChat(on: store, expectedSetup: expectedSetup, expectedConnectionsFile: connectionsFile)
         await assertAiChatSetup(on: store, expectedSetup: expectedSetup)
         await assertProviderConnectionsUpdated(on: store, expectedFile: connectionsFile)
-        await store.receive(\.inspector.aiChat.prepareUnpersistedNewChat)
         await store.receive(\.inspector.setInspectorVisible) {
             $0.inspector.inspectorVisible = true
         }
+        await store.receive(\.internal.applyInspectorNewChatSeed)
 
         assertUnconnectedCurrentContextContract(
             store.state.inspector.aiChat,
@@ -852,11 +1451,40 @@ private extension FileManagerWindowInspectorChatRoutingTests {
         )
     }
 
+    private func makeSelectionStore(
+        initialState: FileManagerFeature.State,
+    ) -> TestStore<FileManagerFeature.State, FileManagerFeature.Action> {
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        }
+        // store.exhaustivity = .off: FileManager와 AiChat 통합 상태 중 window-local selection 계약만 선별 검증한다.
+        store.exhaustivity = .off
+        return store
+    }
+
+    private func makeAiModel(
+        provider: AiProvider,
+        rawValue: String,
+        thinkingCapability: AiModelThinkingCapability,
+    ) -> AiProviderModel {
+        AiProviderModel(
+            id: AiModelHandle(provider: provider, rawValue: rawValue),
+            provider: provider,
+            rawModelID: rawValue,
+            displayName: rawValue,
+            providerDisplayName: ProviderDescriptor.descriptor(for: provider)?.displayName ?? provider.rawValue,
+            thinkingCapability: thinkingCapability,
+            unavailableReason: nil,
+        )
+    }
+
     private func makeStore(
         initialState: FileManagerFeature.State,
         uuid: UUID,
         connectionsFile: AIConnectionsFile,
         aiProviderModels: [AiProviderModel] = [],
+        defaultSettings: AiChatDefaultSettings = .default,
+        savedSessionCount: LockIsolated<Int>? = nil,
     ) -> TestStore<FileManagerFeature.State, FileManagerFeature.Action> {
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
@@ -864,7 +1492,11 @@ private extension FileManagerWindowInspectorChatRoutingTests {
             $0.uuid = .constant(uuid)
             $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
             $0.aiConnectionsFileClient.load = { connectionsFile }
-            $0.aiChatSessionPersistenceClient.saveSession = { $0 }
+            $0.aiChatDefaultSettingsClient.load = { defaultSettings }
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSessionCount?.withValue { $0 += 1 }
+                return snapshot
+            }
             $0.aiProviderModelListClient = AiProviderModelListClient(loadModels: { provider, _ in
                 aiProviderModels.filter { $0.provider == provider }
             })
@@ -1025,6 +1657,20 @@ private extension FileManagerWindowInspectorChatRoutingTests {
             return AiChatSessionID(rawValue: UUID())
         }
         return AiChatSessionID(rawValue: uuid)
+    }
+
+    private func makeDefaultSettings(
+        model: AiProviderModel,
+        thinking: PersistedAIThinkingSelection,
+    ) -> AiChatDefaultSettings {
+        AiChatDefaultSettings(
+            provider: PersistedAIProviderSelection(rawValue: model.provider.rawValue),
+            model: PersistedAIModelSelection(
+                providerRawValue: model.provider.rawValue,
+                modelRawValue: model.rawModelID,
+            ),
+            thinking: thinking,
+        )
     }
 
     private func makeEntry(name: String, fullPath: String) -> EntryModel {

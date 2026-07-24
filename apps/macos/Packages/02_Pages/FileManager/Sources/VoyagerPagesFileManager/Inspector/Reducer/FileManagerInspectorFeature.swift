@@ -49,9 +49,7 @@ public struct FileManagerInspectorFeature {
                 return .send(.delegate(.newChatRequested))
 
             case .newChatRequested:
-                state.inspectorVisible = true
-                state.activeMode = .chat
-                return .send(.aiChat(.prepareUnpersistedNewChat))
+                return .send(.delegate(.newChatRequested))
 
             case .sessionHeaderBackTapped, .showChatHistoryRequested:
                 state.inspectorVisible = true
@@ -69,7 +67,6 @@ public struct FileManagerInspectorFeature {
                         state: &state,
                         presentInspector: false,
                     ),
-                    .send(.aiChat(.prepareUnpersistedNewChat)),
                     .send(.setInspectorVisible(true)),
                 )
 
