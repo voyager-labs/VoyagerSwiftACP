@@ -8,7 +8,9 @@ enum ConditionPropertyPickerDisplay {
         let defaults: Set<String>
         let categories: [String: String]
         let labels: [String: String]
+        let types: [String: String]
         let selectedKey: String?
+        let searchText: String
     }
 
     static func recommendedProperties(
@@ -62,7 +64,7 @@ enum ConditionPropertyPickerDisplay {
             properties: configuration.properties,
             existingKeys: configuration.existingKeys,
             editingKey: configuration.editingKey,
-            searchText: "",
+            searchText: configuration.searchText,
             labels: configuration.labels,
         )
         let recommended = recommendedProperties(from: filtered, defaults: configuration.defaults)
@@ -71,41 +73,59 @@ enum ConditionPropertyPickerDisplay {
             .mapValues { $0.filter { !recommendedKeys.contains($0) } }
             .filter { !$0.value.isEmpty }
 
-        let recommendedItems = recommended.map { propertyMenuItem(
-            key: $0,
-            labels: configuration.labels,
-            selectedKey: configuration.selectedKey,
-            onSelect: onSelect,
-        )
+        let recommendedItems = recommended.map {
+            propertyMenuItem(
+                key: $0,
+                configuration: configuration,
+                onSelect: onSelect,
+            )
         }
         let categoryItems = grouped.keys.sorted().map { categoryKey in
             ComposerNativeMenuItem.submenu(
                 title: categoryTitle(for: categoryKey),
-                items: (grouped[categoryKey] ?? []).map { propertyMenuItem(
-                    key: $0,
-                    labels: configuration.labels,
-                    selectedKey: configuration.selectedKey,
-                    onSelect: onSelect,
-                )
+                items: (grouped[categoryKey] ?? []).map {
+                    propertyMenuItem(
+                        key: $0,
+                        configuration: configuration,
+                        onSelect: onSelect,
+                    )
                 },
-            )
+            ).withImage(ConditionPropertyIcon.iconName(forCategory: categoryKey))
         }
 
-        return recommendedItems + (recommendedItems.isEmpty || categoryItems.isEmpty ? [] : [.separator()]) +
-            categoryItems
+        if filtered.isEmpty {
+            return [
+                ComposerNativeMenuItem(
+                    title: "No properties found",
+                    isSelected: false,
+                    isEnabled: false,
+                    action: {},
+                ).withImage("magnifyingglass"),
+            ]
+        }
+
+        let separator: [ComposerNativeMenuItem] =
+            (recommendedItems.isEmpty || categoryItems.isEmpty) ? [] : [.separator()]
+
+        return recommendedItems + separator + categoryItems
     }
 
     private static func propertyMenuItem(
         key: String,
-        labels: [String: String],
-        selectedKey: String?,
+        configuration: NativeMenuConfiguration,
         onSelect: @escaping (String) -> Void,
     ) -> ComposerNativeMenuItem {
-        .init(
-            title: labels[key] ?? key,
-            isSelected: key == selectedKey,
+        ComposerNativeMenuItem(
+            title: configuration.labels[key] ?? key,
+            isSelected: key == configuration.selectedKey,
             isEnabled: true,
             action: { onSelect(key) },
+        ).withImage(
+            ConditionPropertyIcon.iconName(
+                forKey: key,
+                category: configuration.categories[key],
+                type: configuration.types[key],
+            ),
         )
     }
 }

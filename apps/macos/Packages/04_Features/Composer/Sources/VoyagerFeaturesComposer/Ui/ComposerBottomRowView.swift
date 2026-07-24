@@ -1,9 +1,12 @@
 import AppKit
 import ComposableArchitecture
+import HotSwiftUI
 import SwiftUI
 import VoyagerShared
 
 struct ComposerBottomRowView: View {
+    @ObserveInjection private var injection
+
     let store: StoreOf<ComposerFeature>
     let favorites: [ScopeFavoriteItem]
     let historyPaths: [String]

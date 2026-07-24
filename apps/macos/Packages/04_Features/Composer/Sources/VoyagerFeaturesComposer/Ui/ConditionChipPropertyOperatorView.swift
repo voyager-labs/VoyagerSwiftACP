@@ -36,20 +36,7 @@ struct ConditionChipPropertyOperatorView: View {
                             store.send(.view(.setPropertyPickerPresented(true)))
                             propertyPickerStore.send(.onAppear)
                         },
-                        menuItems: {
-                            ConditionPropertyPickerDisplay.nativeMenuItems(
-                                configuration: .init(
-                                    properties: propertyStore.properties,
-                                    existingKeys: propertyStore.existingKeys,
-                                    editingKey: propertyStore.editingConditionKey,
-                                    defaults: propertyStore.propertyDefaults,
-                                    categories: propertyStore.propertyCategories,
-                                    labels: propertyStore.propertyLabels,
-                                    selectedKey: condition.property.key,
-                                ),
-                                onSelect: { propertyPickerStore.send(.propertyTapped($0)) },
-                            )
-                        },
+                        menuItems: { [] },
                         onDismiss: {
                             propertyPickerStore.send(.setPresented(false))
                         },
@@ -58,8 +45,27 @@ struct ConditionChipPropertyOperatorView: View {
                             category: nil,
                             type: condition.property.type.rawValue,
                         ),
+                        showsBorder: false,
+                        searchableItems: { searchText in
+                            ConditionPropertyPickerDisplay.nativeMenuItems(
+                                configuration: .init(
+                                    properties: propertyStore.properties,
+                                    existingKeys: propertyStore.existingKeys,
+                                    editingKey: propertyStore.editingConditionKey,
+                                    defaults: propertyStore.propertyDefaults,
+                                    categories: propertyStore.propertyCategories,
+                                    labels: propertyStore.propertyLabels,
+                                    types: propertyStore.propertyTypes,
+                                    selectedKey: condition.property.key,
+                                    searchText: searchText,
+                                ),
+                                onSelect: { propertyPickerStore.send(.propertyTapped($0)) },
+                            )
+                        },
+                        searchPlaceholder: "Search attributes",
                     )
                     .frame(minHeight: 22)
+                    .fixedSize(horizontal: true, vertical: false)
                 }
             },
         )
@@ -92,8 +98,10 @@ struct ConditionChipPropertyOperatorView: View {
                     onDismiss: {
                         store.send(.view(.setOperatorMenuPresented(false)))
                     },
+                    showsBorder: false,
                 )
                 .frame(minHeight: 22)
+                .fixedSize(horizontal: true, vertical: false)
             }
         }
     }
