@@ -80,6 +80,32 @@ private actor PinnedRecordMutationSignal {
     }
 }
 
+private enum PinnedRecordTerminalOrder {
+    case staleAppliedFirst
+    case winnerAppliedFirst
+
+    var expectedSyncCount: Int {
+        switch self {
+        case .staleAppliedFirst: 1
+        case .winnerAppliedFirst: 2
+        }
+    }
+
+    var expectedSourceApplyCount: Int {
+        switch self {
+        case .staleAppliedFirst: 1
+        case .winnerAppliedFirst: 3
+        }
+    }
+
+    var expectedOtherApplyCount: Int {
+        switch self {
+        case .staleAppliedFirst: 1
+        case .winnerAppliedFirst: 2
+        }
+    }
+}
+
 /// 윈도우 관리자 계약 — 포커스 윈도우로의 명령 팬아웃과 미사용 시 no-op를 검증.
 private func pinnedTabIDs(_ contentTabs: ContentTabState?) -> [String] {
     contentTabs?.tabs.filter(\.isPinned).map(\.id.rawValue) ?? []
@@ -656,7 +682,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             id: firstID,
             action: .window(.contentTabs(.pinnedRecordSaveSucceeded(
                 tabID: globalPinID,
-                intentID: persistenceIntentID,
+                context: ContentTabPinnedRecordTerminalContext(
+                    intentID: persistenceIntentID,
+                    generation: ContentTabPinnedRecordMutationGeneration(tabID: globalPinID),
+                ),
             ))),
         )))
         await store.receive(\.pinnedContentTabsStoreChanged)
@@ -833,11 +862,23 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
-    /// 다른 window의 최신 동일 tab pin이 오래된 source batch-unpin durable write보다 우선한다.
-    /// - 검증 내용: latest persisted record, 양 window 수렴, winner fan-out 1회, stale batch 종료/authoritative sync 없음
-    /// - 사전 조건: source unpin generation을 정지한 뒤 다른 window가 같은 tab ID의 newer anchor를 pin
-    /// - 기대 결과: newer pin만 durable 적용되고 stale source는 rollback 후 cancelled-not-closed로 batch를 종료한다.
-    func testBatchPinnedRecordSaveSucceeded_otherWindowSameTabIntentDoesNotStallSource() async {
+    /// 늦은 G1 applied success는 G2 generation 예약 뒤 authoritative fan-out이나 unpinned 완료를 만들지 않는다.
+    /// - 검증 내용: G1 terminal 시점 fan-out 0·batch cancelled, G2 success 뒤 fan-out 1과 window별 apply 1회
+    /// - 사전 조건: G1 durable unpin commit 뒤 terminal 정지, 같은 tab의 G2 pin generation 예약
+    /// - 기대 결과: persisted G2와 양 window G2 anchor 수렴, source coordinator/pending/deferred 정리, selection 보존
+    func testPinnedRecordTerminalOrder_staleAppliedSuccessThenWinnerConverges() async {
+        await verifyPinnedRecordTerminalOrder(.staleAppliedFirst)
+    }
+
+    /// G2 success fan-out 뒤 G1 superseded terminal은 rollback 후 authoritative reload를 한 번 더 수행한다.
+    /// - 검증 내용: G2 fan-out 완료 시 1회, G1 non-applied reconciliation 뒤 2회와 source/other apply 3/2회
+    /// - 사전 조건: G1 guarded mutation 정지 중 같은 tab의 G2 pin이 먼저 commit·success
+    /// - 기대 결과: persisted G2와 양 window G2 anchor 수렴, source coordinator/pending/deferred 정리, selection 보존
+    func testPinnedRecordTerminalOrder_winnerThenSupersededRollbackConverges() async {
+        await verifyPinnedRecordTerminalOrder(.winnerAppliedFirst)
+    }
+
+    private func verifyPinnedRecordTerminalOrder(_ order: PinnedRecordTerminalOrder) async {
         let sourceWindowID = UUID()
         let otherWindowID = UUID()
         let operationID = UUID()
@@ -871,6 +912,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             iconName: "folder",
         ))
         sourceWindow.contentTabs.pinnedRecords[sharedTabID] = oldRecord
+        sourceWindow.contentTabs.selectedTabIDs = [sharedTabID]
+        sourceWindow.contentTabs.selectionAnchorID = sharedTabID
         sourceWindow.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
             operationID: operationID,
             orderedTargetIDs: [sharedTabID],
@@ -892,6 +935,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             title: "New Shared",
             iconName: "folder",
         ))
+        otherWindow.contentTabs.selectedTabIDs = [sharedTabID]
+        otherWindow.contentTabs.selectionAnchorID = sharedTabID
 
         var initialState = WindowManagerFeature.State()
         initialState.windows = [
@@ -899,12 +944,13 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             WindowSessionState(id: otherWindowID, window: otherWindow),
         ]
         let syncCount = LockIsolated(0)
-        let sourceAuthoritativeTerminalCount = LockIsolated(0)
+        let applyCounts = LockIsolated<[UUID: Int]>([:])
         let persistedStore = LockIsolated(ContentTabPinnedRecordStore(records: [oldRecord]))
         let latestGenerations = LockIsolated<[ContentTabID: UUID]>([:])
         let sourceGeneration = LockIsolated<UUID?>(nil)
         let sourceGate = PinnedRecordMutationGate()
         let winnerGate = PinnedRecordMutationGate()
+        let sourceCommitted = PinnedRecordMutationSignal()
         let winnerCommitted = PinnedRecordMutationSignal()
         let store = Store(initialState: initialState) {
             CombineReducers {
@@ -914,14 +960,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                         syncCount.withValue { $0 += 1 }
                     }
                     if case let .windows(.element(
-                        id: id,
-                        action: .window(.performSelectedContentTabCloseMutation(
-                            operationID: _,
-                            tabID: _,
-                            action: .pinnedRecordSaveSucceeded,
-                        )),
-                    )) = action, id == sourceWindowID {
-                        sourceAuthoritativeTerminalCount.withValue { $0 += 1 }
+                        id: windowID,
+                        action: .window(.applyPinnedContentTabs),
+                    )) = action {
+                        applyCounts.withValue { $0[windowID, default: 0] += 1 }
                     }
                     return .none
                 }
@@ -937,10 +979,14 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 }
                 return generation
             }
+            $0.contentTabPinnedRecordClient.isCurrentMutationGeneration = { generation in
+                latestGenerations.value[generation.tabID] == generation.value
+            }
             $0.contentTabPinnedRecordClient.guardedUpdateStore = { generation, _, transform in
-                if generation.value == sourceGeneration.value {
+                let isSource = generation.value == sourceGeneration.value
+                if isSource, order == .winnerAppliedFirst {
                     await sourceGate.wait()
-                } else {
+                } else if !isSource {
                     await winnerGate.wait()
                 }
                 try Task.checkCancellation()
@@ -950,7 +996,12 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 try persistedStore.withValue { currentStore in
                     currentStore = try transform(currentStore)
                 }
-                if generation.value != sourceGeneration.value {
+                if isSource {
+                    await sourceCommitted.signal()
+                    if order == .staleAppliedFirst {
+                        await sourceGate.wait()
+                    }
+                } else {
                     await winnerCommitted.signal()
                 }
                 return .applied
@@ -965,39 +1016,73 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 action: .unpin(sharedTabID),
             )),
         )))
-        await sourceGate.waitUntilWaiting()
+        switch order {
+        case .staleAppliedFirst:
+            await sourceCommitted.wait()
+            await sourceGate.waitUntilWaiting()
+        case .winnerAppliedFirst:
+            await sourceGate.waitUntilWaiting()
+        }
 
         let otherTask = store.send(.windows(.element(
             id: otherWindowID,
             action: .window(.contentTabs(.pin(sharedTabID))),
         )))
         await winnerGate.waitUntilWaiting()
-        await winnerGate.open()
-        await winnerCommitted.wait()
-        await sourceGate.open()
-        await sourceTask.finish()
-        await otherTask.finish()
+
+        switch order {
+        case .staleAppliedFirst:
+            await sourceGate.open()
+            await sourceTask.finish()
+            XCTAssertEqual(syncCount.value, 0)
+            XCTAssertEqual(applyCounts.value[sourceWindowID, default: 0], 0)
+            XCTAssertEqual(applyCounts.value[otherWindowID, default: 0], 0)
+            store.withState { state in
+                XCTAssertNil(state.windows[id: sourceWindowID]?.window.pendingSelectedContentTabClose)
+                XCTAssertNil(state.windows[id: sourceWindowID]?.window.pendingContentTabClose)
+                XCTAssertFalse(state.windows[id: sourceWindowID]?.window.contentTabs.tabs[id: sharedTabID]?
+                    .isPinned ?? true)
+            }
+            await winnerGate.open()
+            await winnerCommitted.wait()
+            await otherTask.finish()
+        case .winnerAppliedFirst:
+            await winnerGate.open()
+            await winnerCommitted.wait()
+            await otherTask.finish()
+            XCTAssertEqual(syncCount.value, 1)
+            XCTAssertEqual(applyCounts.value[sourceWindowID, default: 0], 1)
+            XCTAssertEqual(applyCounts.value[otherWindowID, default: 0], 1)
+            await sourceGate.open()
+            await sourceTask.finish()
+        }
 
         XCTAssertEqual(persistedStore.value, ContentTabPinnedRecordStore(records: [newRecord]))
-        XCTAssertEqual(syncCount.value, 1)
-        XCTAssertEqual(sourceAuthoritativeTerminalCount.value, 0)
+        XCTAssertEqual(syncCount.value, order.expectedSyncCount)
+        XCTAssertEqual(
+            applyCounts.value[sourceWindowID, default: 0],
+            order.expectedSourceApplyCount,
+        )
+        XCTAssertEqual(
+            applyCounts.value[otherWindowID, default: 0],
+            order.expectedOtherApplyCount,
+        )
         store.withState { state in
-            XCTAssertNil(state.windows[id: sourceWindowID]?.window.pendingSelectedContentTabClose)
-            XCTAssertNil(state.windows[id: sourceWindowID]?.window.pendingContentTabClose)
-            XCTAssertEqual(
-                state.windows[id: sourceWindowID]?.window.contentTabs.pendingPinnedRecordIDs.isEmpty,
-                true,
-            )
-            XCTAssertEqual(state.windows[id: sourceWindowID]?.window.contentTabs.tabs[id: sharedTabID]?.isPinned, true)
-            XCTAssertEqual(
-                state.windows[id: sourceWindowID]?.window.contentTabs.tabs[id: sharedTabID]?.anchor,
-                newAnchor,
-            )
-            XCTAssertEqual(state.windows[id: otherWindowID]?.window.contentTabs.tabs[id: sharedTabID]?.isPinned, true)
-            XCTAssertEqual(
-                state.windows[id: otherWindowID]?.window.contentTabs.tabs[id: sharedTabID]?.anchor,
-                newAnchor,
-            )
+            let source = state.windows[id: sourceWindowID]?.window
+            let other = state.windows[id: otherWindowID]?.window
+            XCTAssertNil(source?.pendingSelectedContentTabClose)
+            XCTAssertNil(source?.pendingContentTabClose)
+            XCTAssertNil(source?.deferredPinnedContentTabs)
+            XCTAssertEqual(source?.contentTabs.pendingPinnedRecordIDs.isEmpty, true)
+            XCTAssertEqual(other?.contentTabs.pendingPinnedRecordIDs.isEmpty, true)
+            XCTAssertEqual(source?.contentTabs.tabs[id: sharedTabID]?.isPinned, true)
+            XCTAssertEqual(source?.contentTabs.tabs[id: sharedTabID]?.anchor, newAnchor)
+            XCTAssertEqual(other?.contentTabs.tabs[id: sharedTabID]?.isPinned, true)
+            XCTAssertEqual(other?.contentTabs.tabs[id: sharedTabID]?.anchor, newAnchor)
+            XCTAssertEqual(source?.contentTabs.selectedTabIDs, [sharedTabID])
+            XCTAssertEqual(source?.contentTabs.selectionAnchorID, sharedTabID)
+            XCTAssertEqual(other?.contentTabs.selectedTabIDs, [sharedTabID])
+            XCTAssertEqual(other?.contentTabs.selectionAnchorID, sharedTabID)
         }
     }
 
@@ -1046,7 +1131,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             id: windowID,
             action: .window(.contentTabs(.pinnedRecordSaveSucceeded(
                 tabID: deletedPinID,
-                intentID: persistenceIntentID,
+                context: ContentTabPinnedRecordTerminalContext(
+                    intentID: persistenceIntentID,
+                    generation: ContentTabPinnedRecordMutationGeneration(tabID: deletedPinID),
+                ),
             ))),
         )))
         await store.receive(\.pinnedContentTabsStoreChanged)

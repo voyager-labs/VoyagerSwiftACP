@@ -16,6 +16,9 @@ struct SelectedContentTabCloseOperationCancelID: Hashable {
 
 @Reducer
 struct FileManagerWindowRoutingReducer {
+    typealias State = FileManagerWindowState
+    typealias Action = FileManagerWindowAction
+
     @Dependency(\.collectionAlertClient)
     var collectionAlertClient
     @Dependency(\.fileManagerClient)
@@ -28,11 +31,10 @@ struct FileManagerWindowRoutingReducer {
     var aiConnectionsFileClient
     @Dependency(\.undoManagerClient)
     var undoManagerClient
+    @Dependency(\.contentTabPinnedRecordClient)
+    var contentTabPinnedRecordClient
     @Dependency(\.uuid)
     var uuid
-
-    typealias State = FileManagerWindowState
-    typealias Action = FileManagerWindowAction
 
     private func cannotPinCollectionFeedbackEffect() -> Effect<Action> {
         let collectionAlertClient = collectionAlertClient
@@ -1536,9 +1538,7 @@ private extension FileManagerWindowRoutingReducer {
         action: ContentTabAction,
         state: inout State,
     ) -> Effect<Action> {
-        guard !action.isStalePinnedRecordPersistenceResult(in: state.contentTabs)
-            || action.isPinnedRecordSaveNotApplied
-        else { return .none }
+        guard !action.isStalePinnedRecordPersistenceResult(in: state.contentTabs) else { return .none }
         switch action {
         case .requestClose:
             return prepareContentTabTeardown(
@@ -1561,14 +1561,16 @@ private extension FileManagerWindowRoutingReducer {
                 )),
             )
 
-        case let .pinnedRecordSaveSucceeded(successTabID, _) where successTabID == tabID:
+        case let .pinnedRecordSaveSucceeded(successTabID, context) where successTabID == tabID:
             return .send(.selectedContentTabCloseItemCompleted(
                 operationID: operationID,
                 tabID: tabID,
-                outcome: .unpinned,
+                outcome: contentTabPinnedRecordClient.isCurrentMutationGeneration(context.generation)
+                    ? .unpinned
+                    : .cancelled,
             ))
 
-        case let .pinnedRecordSaveFailed(failedTabID, _, _, _, _) where failedTabID == tabID:
+        case let .pinnedRecordSaveFailed(failedTabID, _, _) where failedTabID == tabID:
             return .send(.selectedContentTabCloseItemCompleted(
                 operationID: operationID,
                 tabID: tabID,

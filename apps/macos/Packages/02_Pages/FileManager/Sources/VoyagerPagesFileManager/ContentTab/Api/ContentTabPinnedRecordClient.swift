@@ -3,10 +3,10 @@ import Foundation
 import VoyagerShared
 
 public struct ContentTabPinnedRecordMutationGeneration: Equatable, Sendable {
-    let tabID: ContentTabID
-    let value: UUID
+    public let tabID: ContentTabID
+    public let value: UUID
 
-    init(tabID: ContentTabID, value: UUID = UUID()) {
+    public init(tabID: ContentTabID, value: UUID = UUID()) {
         self.tabID = tabID
         self.value = value
     }
@@ -29,6 +29,7 @@ public struct ContentTabPinnedRecordClient: Sendable {
         @escaping @Sendable (ContentTabPinnedRecordStore) throws -> ContentTabPinnedRecordStore,
     ) throws -> ContentTabPinnedRecordStore
     public var reserveMutationGeneration: @Sendable (ContentTabID) -> ContentTabPinnedRecordMutationGeneration
+    public var isCurrentMutationGeneration: @Sendable (ContentTabPinnedRecordMutationGeneration) -> Bool
     public var guardedUpdateStore: (@Sendable (
         ContentTabPinnedRecordMutationGeneration,
         UserDefaultsClient,
@@ -49,6 +50,9 @@ public struct ContentTabPinnedRecordClient: Sendable {
         reserveMutationGeneration: (@Sendable (
             ContentTabID,
         ) -> ContentTabPinnedRecordMutationGeneration)? = nil,
+        isCurrentMutationGeneration: (@Sendable (
+            ContentTabPinnedRecordMutationGeneration,
+        ) -> Bool)? = nil,
         guardedUpdateStore: (@Sendable (
             ContentTabPinnedRecordMutationGeneration,
             UserDefaultsClient,
@@ -75,6 +79,7 @@ public struct ContentTabPinnedRecordClient: Sendable {
         self.reserveMutationGeneration = reserveMutationGeneration ?? {
             ContentTabPinnedRecordMutationGeneration(tabID: $0)
         }
+        self.isCurrentMutationGeneration = isCurrentMutationGeneration ?? { _ in true }
         self.guardedUpdateStore = guardedUpdateStore
     }
 
@@ -123,6 +128,11 @@ extension ContentTabPinnedRecordClient: DependencyKey {
                 let generation = ContentTabPinnedRecordMutationGeneration(tabID: tabID)
                 Self.latestMutationGenerations[tabID] = generation.value
                 return generation
+            },
+            isCurrentMutationGeneration: { generation in
+                Self.storageLock.lock()
+                defer { Self.storageLock.unlock() }
+                return Self.latestMutationGenerations[generation.tabID] == generation.value
             },
             guardedUpdateStore: { generation, userDefaultsClient, transform in
                 try Self.updateStoreGuardedValue(generation, userDefaultsClient, transform)

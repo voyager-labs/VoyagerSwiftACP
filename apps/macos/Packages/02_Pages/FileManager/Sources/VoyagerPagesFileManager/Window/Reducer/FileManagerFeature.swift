@@ -79,8 +79,7 @@ public struct FileManagerFeature {
                       let pending = state.pendingSelectedContentTabClose,
                       pending.operationID == operationID,
                       pending.currentTabID == tabID,
-                      !contentTabAction.isStalePinnedRecordPersistenceResult(in: state.contentTabs)
-                      || contentTabAction.isPinnedRecordSaveNotApplied,
+                      !contentTabAction.isStalePinnedRecordPersistenceResult(in: state.contentTabs),
                       contentTabAction.isCorrelatedSelectedContentTabCloseMutation(for: tabID)
                 else { return .none }
                 let childEffect = ContentTabFeature().reduce(
@@ -167,18 +166,13 @@ extension ContentTabAction {
 
     func isStalePinnedRecordPersistenceResult(in state: ContentTabState) -> Bool {
         switch self {
-        case let .pinnedRecordSaveSucceeded(tabID, intentID),
-             let .pinnedRecordSaveFailed(tabID, intentID, _, _, _),
-             let .pinnedRecordSaveNotApplied(tabID, intentID, _, _):
-            !state.isCurrentPinnedRecordPersistenceIntent(tabID: tabID, intentID: intentID)
+        case let .pinnedRecordSaveSucceeded(tabID, context),
+             let .pinnedRecordSaveFailed(tabID, context, _),
+             let .pinnedRecordSaveNotApplied(tabID, context, _, _):
+            !state.isCurrentPinnedRecordPersistenceIntent(tabID: tabID, intentID: context.intentID)
         default:
             false
         }
-    }
-
-    var isPinnedRecordSaveNotApplied: Bool {
-        if case .pinnedRecordSaveNotApplied = self { return true }
-        return false
     }
 
     func isCorrelatedSelectedContentTabCloseMutation(for tabID: ContentTabID) -> Bool {
@@ -194,7 +188,7 @@ extension ContentTabAction {
             id == tabID
         case let .pinnedRecordSaveSucceeded(id, _):
             id == tabID
-        case let .pinnedRecordSaveFailed(id, _, _, _, _):
+        case let .pinnedRecordSaveFailed(id, _, _):
             id == tabID
         case let .pinnedRecordSaveNotApplied(id, _, _, _):
             id == tabID

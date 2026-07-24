@@ -917,7 +917,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             guard case let .performSelectedContentTabCloseMutation(
                 receivedOperationID,
                 tabID,
-                .pinnedRecordSaveFailed(failedID, _, _, _, _),
+                .pinnedRecordSaveFailed(failedID, _, _),
             ) = action else { return false }
             return receivedOperationID == operationID && tabID == fixture.tabD && failedID == fixture.tabD
         }
@@ -3092,17 +3092,25 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let successIntentID = store.state.contentTabs.markLatestPinnedRecordPersistenceIntent(for: fixture.tabB)
         await store.send(.contentTabs(.pinnedRecordSaveSucceeded(
             tabID: fixture.tabB,
-            intentID: successIntentID,
+            context: ContentTabPinnedRecordTerminalContext(
+                intentID: successIntentID,
+                generation: ContentTabPinnedRecordMutationGeneration(tabID: fixture.tabB),
+            ),
         ))) {
             $0.contentTabs.pinnedRecordPersistenceError = nil
         }
         let failureIntentID = store.state.contentTabs.markLatestPinnedRecordPersistenceIntent(for: fixture.tabD)
         await store.send(.contentTabs(.pinnedRecordSaveFailed(
             tabID: fixture.tabD,
-            intentID: failureIntentID,
-            previousIsPinned: true,
-            previousPinnedRecord: nil,
-            previousTabIndex: nil,
+            context: ContentTabPinnedRecordTerminalContext(
+                intentID: failureIntentID,
+                generation: ContentTabPinnedRecordMutationGeneration(tabID: fixture.tabD),
+            ),
+            rollback: ContentTabPinnedRecordRollbackSnapshot(
+                previousIsPinned: true,
+                previousPinnedRecord: nil,
+                previousTabIndex: nil,
+            ),
         ))) {
             $0.contentTabs.pendingPinnedRecordIDs.remove(fixture.tabD)
             $0.contentTabs.pinnedRecordPersistenceError = "pinned_record_save_failed"

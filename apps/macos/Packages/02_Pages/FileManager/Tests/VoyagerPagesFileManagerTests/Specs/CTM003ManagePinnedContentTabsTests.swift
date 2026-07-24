@@ -609,7 +609,10 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let oldTransformCalled = LockIsolated(false)
 
         let oldGeneration = client.reserveMutationGeneration(tabID)
+        XCTAssertTrue(client.isCurrentMutationGeneration(oldGeneration))
         let newGeneration = client.reserveMutationGeneration(tabID)
+        XCTAssertFalse(client.isCurrentMutationGeneration(oldGeneration))
+        XCTAssertTrue(client.isCurrentMutationGeneration(newGeneration))
         let oldDisposition = try await client.updateStoreGuarded(oldGeneration, defaults) { store in
             oldTransformCalled.withValue { $0 = true }
             return upsertPinnedRecord(oldRecord, in: store)
@@ -630,9 +633,13 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     /// - 검증 내용: superseded typed terminal과 isPinned/record/pending rollback
     /// - 사전 조건: unpinned tab의 pin effect가 guarded client에서 superseded disposition을 반환
     /// - 기대 결과: local tab은 unpinned로 복구되고 pending/error가 모두 정리됨
-    func testPin_supersededGlobalMutationRollsBackLocalOptimisticState() async {
+    func testPin_supersededGlobalMutationRollsBackLocalOptimisticState() async throws {
         let tabID = ContentTabID(rawValue: "superseded-local-pin")
         let anchor: ContentTabPageAnchor = .directory(path: "/Users/test/Superseded")
+        let generation = try ContentTabPinnedRecordMutationGeneration(
+            tabID: tabID,
+            value: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000453")),
+        )
         let store = TestStore(
             initialState: ContentTabState(
                 tabs: [
@@ -651,6 +658,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             ContentTabFeature()
         } withDependencies: {
             $0.date = .constant(Self.pinnedAt)
+            $0.contentTabPinnedRecordClient.reserveMutationGeneration = { _ in generation }
             $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, _ in .superseded }
         }
 
@@ -665,16 +673,17 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pendingPinnedRecordIDs.insert(tabID)
         }
         await store.receive { action in
-            guard case let .pinnedRecordSaveNotApplied(receivedTabID, _, reason, _) = action else {
+            guard case let .pinnedRecordSaveNotApplied(receivedTabID, context, reason, _) = action else {
                 return false
             }
-            return receivedTabID == tabID && reason == .superseded
+            return receivedTabID == tabID
+                && context.generation == generation
+                && reason == .superseded
         } assert: {
             $0.tabs[id: tabID]?.isPinned = false
             $0.pinnedRecords.removeValue(forKey: tabID)
             $0.pendingPinnedRecordIDs.remove(tabID)
         }
-        await store.finish()
 
         XCTAssertNil(store.state.pinnedRecordPersistenceError)
     }
@@ -1293,7 +1302,13 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let successIntentID = state.markLatestPinnedRecordPersistenceIntent(for: activeID)
         _ = feature.reduce(
             into: &state,
-            action: .pinnedRecordSaveSucceeded(tabID: activeID, intentID: successIntentID),
+            action: .pinnedRecordSaveSucceeded(
+                tabID: activeID,
+                context: ContentTabPinnedRecordTerminalContext(
+                    intentID: successIntentID,
+                    generation: ContentTabPinnedRecordMutationGeneration(tabID: activeID),
+                ),
+            ),
         )
         XCTAssertEqual(state.previousActiveTabID, previousID)
         XCTAssertNil(state.pinnedRecordPersistenceError)
@@ -1303,10 +1318,15 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             into: &state,
             action: .pinnedRecordSaveFailed(
                 tabID: activeID,
-                intentID: failureIntentID,
-                previousIsPinned: false,
-                previousPinnedRecord: nil,
-                previousTabIndex: nil,
+                context: ContentTabPinnedRecordTerminalContext(
+                    intentID: failureIntentID,
+                    generation: ContentTabPinnedRecordMutationGeneration(tabID: activeID),
+                ),
+                rollback: ContentTabPinnedRecordRollbackSnapshot(
+                    previousIsPinned: false,
+                    previousPinnedRecord: nil,
+                    previousTabIndex: nil,
+                ),
             ),
         )
         XCTAssertEqual(state.previousActiveTabID, previousID)
@@ -1528,7 +1548,13 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         _ = feature.reduce(
             into: &contentTabState,
-            action: .pinnedRecordSaveSucceeded(tabID: tabID, intentID: olderIntent),
+            action: .pinnedRecordSaveSucceeded(
+                tabID: tabID,
+                context: ContentTabPinnedRecordTerminalContext(
+                    intentID: olderIntent,
+                    generation: ContentTabPinnedRecordMutationGeneration(tabID: tabID),
+                ),
+            ),
         )
 
         XCTAssertEqual(contentTabState.pendingPinnedRecordIDs, [tabID])
@@ -1538,12 +1564,67 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         _ = feature.reduce(
             into: &contentTabState,
-            action: .pinnedRecordSaveSucceeded(tabID: tabID, intentID: latestIntent),
+            action: .pinnedRecordSaveSucceeded(
+                tabID: tabID,
+                context: ContentTabPinnedRecordTerminalContext(
+                    intentID: latestIntent,
+                    generation: ContentTabPinnedRecordMutationGeneration(tabID: tabID),
+                ),
+            ),
         )
 
         XCTAssertTrue(contentTabState.pendingPinnedRecordIDs.isEmpty)
         windowState.contentTabs = contentTabState
         XCTAssertTrue(windowState.canStartSelectedContentTabClose)
+    }
+
+    /// CTM-003-unpin_content_tab_s: wrapper로 도착한 stale-local non-applied terminal은 완전한 no-op이다.
+    /// 최신 intent의 optimistic 상태와 선택 닫기 coordinator를 오래된 rollback이 종료하지 못하게 한다.
+    /// - 검증 내용: stale non-applied 처리 전후 전체 window state equality와 downstream action 부재
+    /// - 사전 조건: 같은 tab의 최신 intent와 matching selected-close coordinator가 존재
+    /// - 기대 결과: pending pin, batch, pending close, tab state가 모두 유지된다.
+    func testSelectedClose_staleLocalNonAppliedTerminalIsIgnored() async throws {
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000454"))
+        let tabID = ContentTabID(rawValue: "stale-non-applied")
+        var initialState = FileManagerFeature.State()
+        initialState.contentTabs.pendingPinnedRecordIDs = [tabID]
+        let staleIntent = initialState.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)
+        _ = initialState.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)
+        initialState.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
+            operationID: operationID,
+            orderedTargetIDs: [tabID],
+            currentTabID: tabID,
+            originalActiveTabID: initialState.contentTabs.activeTabID,
+            preferredFallbackIDs: initialState.contentTabs.tabs.map(\.id),
+        )
+        initialState.pendingContentTabClose = PendingContentTabClose(
+            tabID: tabID,
+            batchOperationID: operationID,
+        )
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        }
+
+        await store.send(.performSelectedContentTabCloseMutation(
+            operationID: operationID,
+            tabID: tabID,
+            action: .pinnedRecordSaveNotApplied(
+                tabID: tabID,
+                context: ContentTabPinnedRecordTerminalContext(
+                    intentID: staleIntent,
+                    generation: ContentTabPinnedRecordMutationGeneration(tabID: tabID),
+                ),
+                reason: .superseded,
+                rollback: ContentTabPinnedRecordRollbackSnapshot(
+                    previousIsPinned: true,
+                    previousPinnedRecord: nil,
+                    previousTabIndex: nil,
+                ),
+            ),
+        ))
+
+        XCTAssertEqual(store.state, initialState)
+        await store.finish()
     }
 
     /// CTM-003-pin_content_tab_s: 다른 window의 persisted pinned record를 보존하며 현재 window pin 저장
