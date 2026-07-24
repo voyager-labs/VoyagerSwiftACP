@@ -139,6 +139,10 @@ run = "python3 -m scripts.validate_harness"
 description = "계획 Markdown 구조 검증"
 run = "python3 -m scripts.verify_plan"
 
+[tasks.storybook]
+description = "Storybook 개발 서버 실행 (기본 포트: 6006)"
+run = "cd apps/storybook && pnpm storybook \"$@\""
+
 # ── CodeGraph ─────────────────────────────────────────────────
 
 [tasks.codegraph-init]

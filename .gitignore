@@ -116,6 +116,7 @@ apps/backend/alembic.ini.bak
 .codegraph/
 
 node_modules/
+storybook-static/
 
 # Voyager runtime credentials
 /.voyager/
