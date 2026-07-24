@@ -10,8 +10,6 @@ struct EntryUndoRedoOperationsReducer { typealias State = EntryOperationsState
 
     @Dependency(\.entryFileOpsClient)
     var entryFileOpsClient
-    @Dependency(\.undoManagerClient)
-    var undoManagerClient
     @Dependency(\.trashMetadataStoreClient)
     var trashMetadataStoreClient
 
@@ -29,20 +27,7 @@ struct EntryUndoRedoOperationsReducer { typealias State = EntryOperationsState
                     return .none
                 }
                 state.appendUndoRecord(record)
-
-                let windowID = state.windowID
-                return .run { [record] send in
-                    await undoManagerClient.registerUndo(
-                        windowID,
-                        record,
-                        { record in
-                            await send(.undoRedo(.undoEntryAction(record)))
-                        },
-                        { record in
-                            await send(.undoRedo(.redoEntryAction(record)))
-                        },
-                    )
-                }
+                return .none
 
             case .undoRedo(.requestUndo):
                 guard let record = state.latestUndoRecord else {
@@ -54,10 +39,7 @@ struct EntryUndoRedoOperationsReducer { typealias State = EntryOperationsState
                     return .none
                 }
 
-                let windowID = state.windowID
-                return .run { _ in
-                    await undoManagerClient.undo(windowID)
-                }
+                return .none
 
             case .undoRedo(.requestRedo):
                 guard let record = state.latestRedoRecord else {
@@ -69,10 +51,7 @@ struct EntryUndoRedoOperationsReducer { typealias State = EntryOperationsState
                     return .none
                 }
 
-                let windowID = state.windowID
-                return .run { _ in
-                    await undoManagerClient.redo(windowID)
-                }
+                return .none
 
             case let .undoRedo(.undoEntryAction(record: record)):
                 guard let latestRecord = state.latestUndoRecord, latestRecord.id == record.id else {

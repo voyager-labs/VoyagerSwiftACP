@@ -250,12 +250,12 @@ final class FMW003PendingSelectionTests: XCTestCase {
         ]))
         XCTAssertEqual(store.state.tabContentStates[tabID]?.pendingSelectEntryID, filePath)
         await store.receive(\.contentTabs.setCurrent, tabID)
-        await store.receive(\.content.internal.applyNavigationState, .folder(directoryPath))
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.loadItems)
-        await store.receive(\.content.entryViewLayout.entryOperations.loading.itemsLoaded)
+        await store.receiveTabContent(\.internal.applyNavigationState, .folder(directoryPath))
+        await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
         await store.receive { action in
-            guard case .content(.entryViewLayout(.delegate(.selectionChanged))) = action else { return false }
+            guard case .tabContent(_, .entryViewLayout(.delegate(.selectionChanged))) = action else { return false }
             return true
         }
         await store.finish()

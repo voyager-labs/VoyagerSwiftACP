@@ -480,12 +480,7 @@ extension WindowManagerFeature {
             state.defaultWindowBootstrapWindowIDs.remove(windowID)
         }
 
-        var effects: [Effect<Action>] = application.existingWindowActivations.map { activation in
-            Effect.send(.windows(.element(
-                id: activation.windowID,
-                action: .window(.contentTabs(.setCurrent(activation.tabID))),
-            )))
-        }
+        var effects = externalOpenActivationEffects(application.existingWindowActivations)
         effects.append(contentsOf: application.newWindowIDs.flatMap { windowID in
             [
                 appPreferencesEffect(for: windowID, preferences: state.appPreferences),
@@ -509,6 +504,23 @@ extension WindowManagerFeature {
             result: .success(plan),
         )))))
         return .concatenate(effects)
+    }
+
+    private func externalOpenActivationEffects(
+        _ activations: [ExternalOpenPlacementApplication.ExistingWindowActivation],
+    ) -> [Effect<Action>] {
+        activations.flatMap { activation in
+            [
+                .send(.windows(.element(
+                    id: activation.windowID,
+                    action: .window(.activateExternalContentTabUndoScopes(activation.tabIDs)),
+                ))),
+                .send(.windows(.element(
+                    id: activation.windowID,
+                    action: .window(.contentTabs(.setCurrent(activation.activeTabID))),
+                ))),
+            ]
+        }
     }
 
     func sendCommandToFocusedWindow(

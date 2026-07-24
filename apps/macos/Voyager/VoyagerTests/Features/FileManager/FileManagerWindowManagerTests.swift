@@ -419,10 +419,10 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.receive { action in
             guard case let .windows(.element(
                 id: id,
-                action: .window(.inspector(.aiChat(.prepareTransientNewChatWithContext(_, seed)))),
+                action: .window(.internal(.applyInspectorNewChatSeed(application))),
             )) = action else { return false }
             return id == firstID
-                && seed == AiChatNewChatSelectionSeed(
+                && application.seed == AiChatNewChatSelectionSeed(
                     modelHandle: openAIModel.id,
                     selectedThinking: .effort(.high),
                 )
@@ -445,10 +445,10 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.receive { action in
             guard case let .windows(.element(
                 id: id,
-                action: .window(.inspector(.aiChat(.prepareTransientNewChatWithContext(_, seed)))),
+                action: .window(.internal(.applyInspectorNewChatSeed(application))),
             )) = action else { return false }
             return id == secondID
-                && seed == AiChatNewChatSelectionSeed(
+                && application.seed == AiChatNewChatSelectionSeed(
                     modelHandle: anthropicModel.id,
                     selectedThinking: AiThinkingSelection.none,
                 )
@@ -518,10 +518,10 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.receive { action in
             guard case let .windows(.element(
                 id: id,
-                action: .window(.inspector(.aiChat(.prepareTransientNewChatWithContext(_, seed)))),
+                action: .window(.internal(.applyInspectorNewChatSeed(application))),
             )) = action else { return false }
             return id == recreatedID
-                && seed == AiChatNewChatSelectionSeed(
+                && application.seed == AiChatNewChatSelectionSeed(
                     modelHandle: persistedModel.id,
                     selectedThinking: AiThinkingSelection.none,
                 )

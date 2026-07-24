@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryOperations
 
 public enum FileManagerWindowActivationResult: Sendable, Equatable {
     case becameKey
@@ -229,31 +230,24 @@ private func configureFileManagerWindowTabbingPolicyIfNeeded() {
 }
 
 @MainActor
-public func resolveFileManagerUndoManager(windowID: UUID?) -> UndoManager? {
-    if let windowID, let controller = fileManagerWindowControllersByID[windowID] {
-        return controller.windowUndoManager
-    }
-
-    if let keyWindow = NSApp.keyWindow,
-       let controller = fileManagerWindowControllers.first(where: { $0.window === keyWindow })
-    {
-        return controller.windowUndoManager
-    }
-
-    return (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager
-}
-
-@MainActor
-public func makeFileManagerWindowClientLive() -> FileManagerWindowClient {
+public func makeFileManagerWindowClientLive(
+    fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
+) -> FileManagerWindowClient {
     .init(
         open: { id in
             await MainActor.run {
-                fileManagerWindowOpen(windowID: id)
+                fileManagerWindowOpen(
+                    windowID: id,
+                    fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+                )
             }
         },
         openTab: { id in
             await MainActor.run {
-                fileManagerWindowOpenTab(windowID: id)
+                fileManagerWindowOpenTab(
+                    windowID: id,
+                    fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+                )
             }
         },
         activate: { id in
@@ -334,7 +328,10 @@ public func requestFileManagerNewTab(path: String?) {
 }
 
 @MainActor
-private func fileManagerWindowOpen(windowID: UUID) {
+private func fileManagerWindowOpen(
+    windowID: UUID,
+    fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
+) {
     configureFileManagerWindowTabbingPolicyIfNeeded()
 
     if let existing = fileManagerWindowControllersByID[windowID] {
@@ -347,18 +344,20 @@ private func fileManagerWindowOpen(windowID: UUID) {
         return
     }
 
-    let undoManager = UndoManager()
     let controller = makeManagedWindowController(
         windowID: windowID,
         fileManagerStore: fileManagerStore,
-        undoManager: undoManager,
+        fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
     )
     registerFileManagerWindowController(controller)
     controller.showWindow(nil as Any?)
 }
 
 @MainActor
-private func fileManagerWindowOpenTab(windowID: UUID) {
+private func fileManagerWindowOpenTab(
+    windowID: UUID,
+    fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
+) {
     configureFileManagerWindowTabbingPolicyIfNeeded()
 
     if let existing = fileManagerWindowControllersByID[windowID] {
@@ -369,7 +368,10 @@ private func fileManagerWindowOpenTab(windowID: UUID) {
     guard let keyWindow = NSApp.keyWindow,
           fileManagerWindowControllers.contains(where: { $0.window === keyWindow })
     else {
-        fileManagerWindowOpen(windowID: windowID)
+        fileManagerWindowOpen(
+            windowID: windowID,
+            fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+        )
         return
     }
 
@@ -378,11 +380,10 @@ private func fileManagerWindowOpenTab(windowID: UUID) {
         return
     }
 
-    let undoManager = UndoManager()
     let controller = makeManagedWindowController(
         windowID: windowID,
         fileManagerStore: fileManagerStore,
-        undoManager: undoManager,
+        fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
     )
     registerFileManagerWindowController(controller)
 
@@ -463,12 +464,12 @@ private func currentFileManagerWindowSize() -> NSSize? {
 private func makeManagedWindowController(
     windowID: UUID,
     fileManagerStore: StoreOf<FileManagerFeature>,
-    undoManager: UndoManager,
+    fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
 ) -> FileManagerWindowCoordinator {
     FileManagerWindowCoordinator(
         windowID: windowID,
         store: fileManagerStore,
-        windowUndoManager: undoManager,
+        fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
         path: nil,
         sessionLapseGuardStore: fileManagerSessionLapseProvider?.resolveStore(),
         sessionLapseGuardState: fileManagerSessionLapseProvider?.resolveState,

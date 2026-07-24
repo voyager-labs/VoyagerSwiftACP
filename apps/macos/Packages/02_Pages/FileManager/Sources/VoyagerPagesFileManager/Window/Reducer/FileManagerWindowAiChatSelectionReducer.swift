@@ -9,9 +9,10 @@ struct FileManagerWindowAiChatSelectionReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case .content(.aiChat(.selectedModelChanged)),
-                 .content(.aiChat(.selectedThinkingChanged)):
-                state.lastExplicitAiChatSelection = selection(from: state.content.aiChat)
+            case let .tabContent(tabID, .aiChat(.selectedModelChanged)),
+                 let .tabContent(tabID, .aiChat(.selectedThinkingChanged)):
+                guard let contentState = fileManagerContentState(for: tabID, state: state) else { return .none }
+                state.lastExplicitAiChatSelection = selection(from: contentState.aiChat)
 
             case .inspector(.aiChat(.selectedModelChanged)),
                  .inspector(.aiChat(.selectedThinkingChanged)):

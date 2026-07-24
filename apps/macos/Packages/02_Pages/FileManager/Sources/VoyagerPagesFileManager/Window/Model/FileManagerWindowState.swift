@@ -248,6 +248,10 @@ public extension FileManagerWindowState {
 }
 
 extension FileManagerWindowState {
+    var windowID: UUID? {
+        content.entryViewLayout.entryOperations.windowID
+    }
+
     var activeTabInspectorStateMissing: Bool {
         guard let activeTabID = contentTabs.activeTabID,
               supportsInspector(tabID: activeTabID)
