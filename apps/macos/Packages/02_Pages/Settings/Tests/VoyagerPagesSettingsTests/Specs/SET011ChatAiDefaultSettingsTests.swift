@@ -40,6 +40,20 @@ private final class CollectionSettingsIsolationSpy: @unchecked Sendable {
 
 private enum ChatSettingsTestError: Error { case failed }
 
+private extension AiProviderConnectionResult {
+    static func connectSuccess(
+        provider: AiProvider,
+        file: AIConnectionsFile,
+    ) -> Self {
+        AiProviderConnectionResult(
+            provider: provider,
+            state: .connected,
+            reason: .none,
+            updatedFile: file,
+        )
+    }
+}
+
 private actor ChatModelRequestController {
     let latestModels: [AiProviderModel]
     private var requestCount = 0
@@ -647,6 +661,61 @@ extension SET011ChatAiDefaultSettingsTests {
 
     // MARK: - SET-011-select_default_chat_ai_provider
 
+    /// SET-011-select_default_chat_ai_provider: 선택된 provider 재연결은 model catalog를 즉시 새로고침한다.
+    /// 같은 Settings 화면에서 OpenAI를 다시 연결한 뒤 stale catalog가 최신 모델로 회복되는지 검증한다.
+    /// - 검증 내용: row connectionResponse, fresh request ID, cancellation-safe catalog refresh, Chat persistence 격리
+    /// - 사전 조건: OpenAI가 Chat 기본 provider이고 stale model, failed catalog, reconnecting row 상태다.
+    /// - 기대 결과: catalog가 UUID(0) loading 후 최신 모델로 loaded되고 Chat 기본 설정은 저장되지 않는다.
+    func testReconnectingSelectedProviderRefreshesChatModelCatalogWithoutPersistenceMutation() async {
+        let staleSettings = AiChatDefaultSettings(
+            provider: PersistedAIProviderSelection(rawValue: AiProvider.openai.rawValue),
+            model: PersistedAIModelSelection(
+                providerRawValue: AiProvider.openai.rawValue,
+                modelRawValue: "old-model",
+            ),
+            thinking: .providerDefault,
+        )
+        let updatedFile = AIConnectionsFile.singleProvider(.openai, state: .connected)
+        let model = Self.openAIModel
+        let chatSpy = ChatDefaultSettingsSpy(loaded: staleSettings)
+        let store = Self.reconnectingOpenAIStore(
+            staleSettings: staleSettings,
+            updatedFile: updatedFile,
+            model: model,
+            chatSpy: chatSpy,
+        )
+        let requestID = UUID(0)
+
+        XCTAssertTrue(store.state.chatSelectedProviderIsUnavailable)
+        XCTAssertTrue(store.state.chatSelectedModelIsUnavailable)
+
+        await store.send(.row(.element(
+            id: .openai,
+            action: .connectionResponse(.connectSuccess(provider: .openai, file: updatedFile)),
+        ))) { state in
+            state.rows[id: .openai]?.connectionState = .connected
+            state.rows[id: .openai]?.statusReason = .none
+            state.rows[id: .openai]?.flowState = .idle
+            state.chatModelCatalogPhase = .loading
+            state.chatModelRequestID = requestID
+            state.chatModelLoadError = nil
+        }
+        await store.receive(.delegate(.connectionsFileUpdated(updatedFile)))
+        await store.receive(.chatModelsLoaded(
+            provider: .openai,
+            requestID: requestID,
+            models: [model],
+        )) { state in
+            state.chatModelsByProvider[.openai] = [model]
+            state.chatModelCatalogPhase = .loaded
+            state.chatModelRequestID = nil
+        }
+        await store.finish()
+
+        XCTAssertTrue(chatSpy.saved.isEmpty)
+        XCTAssertEqual(chatSpy.resetCount, 0)
+    }
+
     /// SET-011-select_default_chat_ai_provider: same-provider 재요청 취소는 failure action을 보내지 않는다.
     /// 첫 model request를 확실히 suspend한 뒤 같은 provider 재선택으로 취소해 effect cancellation 경계를 검증한다.
     /// - 검증 내용: fresh UUID generation, cancelInFlight, CancellationError no-action, latest success acceptance
@@ -687,6 +756,42 @@ extension SET011ChatAiDefaultSettingsTests {
 }
 
 private extension SET011ChatAiDefaultSettingsTests {
+    static func reconnectingOpenAIStore(
+        staleSettings: AiChatDefaultSettings,
+        updatedFile: AIConnectionsFile,
+        model: AiProviderModel,
+        chatSpy: ChatDefaultSettingsSpy,
+    ) -> TestStore<AiSettingsState, AiSettingsAction> {
+        TestStore(initialState: AiSettingsState(
+            didBootstrap: true,
+            rows: [
+                AiConnectionRowState(
+                    provider: .openai,
+                    connectionState: .connectInProgress,
+                    flowState: .connecting,
+                ),
+            ],
+            chatDefaultSettings: staleSettings,
+            chatModelCatalogPhase: .failed,
+            chatModelLoadError: "stale failure",
+        )) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiChatDefaultSettingsClient = AiChatDefaultSettingsClient(
+                load: { chatSpy.loaded },
+                save: { chatSpy.save($0) },
+                reset: { chatSpy.reset() },
+            )
+            $0.aiConnectionsFileClient.load = { updatedFile }
+            $0.aiProviderModelListClient.loadModels = { provider, credential in
+                XCTAssertEqual(provider, .openai)
+                XCTAssertNotNil(credential)
+                return [model]
+            }
+            $0.uuid = .incrementing
+        }
+    }
+
     static func connectedOpenAIAutosaveStore(
         chatSpy: ChatDefaultSettingsSpy,
         models: [AiProviderModel],

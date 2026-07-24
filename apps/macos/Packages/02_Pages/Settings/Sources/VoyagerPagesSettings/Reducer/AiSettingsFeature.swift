@@ -110,9 +110,24 @@ public struct AiSettingsFeature {
                     state: &state,
                     client: collectionSearchSettingsClient,
                 )
-                Self.invalidateChatCatalogIfDisconnected(result: result, state: &state)
+                let chatEffect: Effect<Action>
+                if result.state == .connected,
+                   result.provider == state.chatSelectedProvider
+                {
+                    state.rows[id: result.provider]?.connectionState = .connected
+                    chatEffect = Self.refreshChatModelsAfterBootstrapEffect(
+                        state: &state,
+                        providerModelListClient: providerModelListClient,
+                        connectionsFileClient: connectionsFileClient,
+                        makeRequestID: { uuid() },
+                    )
+                } else {
+                    Self.invalidateChatCatalogIfDisconnected(result: result, state: &state)
+                    chatEffect = .none
+                }
                 return .merge(
                     saveEffect,
+                    chatEffect,
                     .send(.delegate(.connectionsFileUpdated(result.updatedFile))),
                 )
 
