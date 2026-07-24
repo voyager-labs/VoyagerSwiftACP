@@ -66,10 +66,10 @@ mise run macos-launch -- --scheme Voyager-Dev --configuration Dev-Debug --env VO
 mise run macos-launch -- --scheme SettingsHost-Dev --configuration Dev-Debug
 
 # Composer만 독립 window에서 deterministic preset으로 실행
-mise run macos-launch -- --scheme ComposerHost-Dev --configuration Debug
+mise run macos-launch -- --scheme ComposerHost-Dev --configuration Dev-Debug
 
 # ComposerHost fixture/store/view 조립 smoke 검증
-mise run macos-launch -- --scheme ComposerHost-Dev --configuration Debug --env COMPOSER_HOST_SMOKE=1
+mise run macos-launch -- --scheme ComposerHost-Dev --configuration Dev-Debug --env COMPOSER_HOST_SMOKE=1
 
 # 빌드만 확인
 mise run macos-launch -- --scheme Voyager-Dev --configuration Dev-Debug --no-launch
