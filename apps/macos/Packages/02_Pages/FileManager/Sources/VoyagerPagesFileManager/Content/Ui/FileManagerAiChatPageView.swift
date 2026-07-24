@@ -200,7 +200,7 @@ private struct AiChatPageHeaderView: View {
 
             if viewState.mode == .sessions {
                 Button {
-                    store.send(.aiChat(.newChatTapped))
+                    store.send(.view(.aiChatNewChatTapped))
                 } label: {
                     newChatButtonLabel
                 }

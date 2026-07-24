@@ -25,6 +25,23 @@ struct FileManagerPendingAiChatInspectorOpen: Equatable {
     var destination: FileManagerAiChatInspectorDestination
 }
 
+struct FileManagerPendingAiChatNewChat: Equatable {
+    var requestID: UUID
+    var tabID: ContentTabID
+    var target: FileManagerAiChatNewChatTarget
+    var windowLast: AiChatNewChatSelectionCandidate?
+    var persistedDefault: AiChatPersistedSelectionCandidate?
+    var didLoadPersistedDefault: Bool
+    var requiresCatalogRefresh: Bool
+    var didObserveCatalogRefresh: Bool
+    var expectedModelListRequestID: UUID?
+}
+
+struct FileManagerAiChatSelection: Equatable {
+    var modelHandle: AiModelHandle
+    var thinking: AiThinkingSelection?
+}
+
 @ObservableState
 public struct FileManagerWindowState: Equatable {
     public var content: FileManagerContentFeature.State
@@ -38,7 +55,9 @@ public struct FileManagerWindowState: Equatable {
     public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
     public var pendingContentTabClose: PendingContentTabClose?
     public var pendingCollectionOpenRequest: ContentPageCollectionOpenRequest?
+    var lastExplicitAiChatSelection: FileManagerAiChatSelection?
     var pendingAiChatInspectorOpen: FileManagerPendingAiChatInspectorOpen?
+    var pendingAiChatNewChat: FileManagerPendingAiChatNewChat?
     var fixedLocationsLoadPhase: FileManagerFixedLocationsLoadPhase = .idle
     var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
 
@@ -54,7 +73,9 @@ public struct FileManagerWindowState: Equatable {
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
         pendingCollectionOpenRequest = nil
+        lastExplicitAiChatSelection = nil
         pendingAiChatInspectorOpen = nil
+        pendingAiChatNewChat = nil
         if let activeTabID = contentTabs.activeTabID {
             tabContentStates[activeTabID] = content
         }
@@ -178,6 +199,9 @@ public struct FileManagerWindowState: Equatable {
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
         pendingCollectionOpenRequest = nil
+        lastExplicitAiChatSelection = nil
+        pendingAiChatInspectorOpen = nil
+        pendingAiChatNewChat = nil
         fixedLocationsLoadPhase = .idle
         homeFavoriteItems = []
     }

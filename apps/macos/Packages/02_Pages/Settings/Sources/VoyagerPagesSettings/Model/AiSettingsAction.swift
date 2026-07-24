@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesAiProviderConnection
@@ -20,6 +21,13 @@ public enum AiSettingsAction: CasePathable, Equatable, Sendable {
     case collectionSearchModelChanged(CollectionSearchAIModelPreference)
     case collectionSearchThinkingChanged(CollectionSearchAIThinkingPreference)
     case collectionSearchResetTapped
+
+    case chatModelsLoaded(provider: AiProvider, requestID: UUID, models: [AiProviderModel])
+    case chatModelsFailed(provider: AiProvider, requestID: UUID, message: String)
+    case chatProviderChanged(PersistedAIProviderSelection)
+    case chatModelChanged(PersistedAIModelSelection)
+    case chatThinkingChanged(AiThinkingSelection?)
+    case chatResetTapped
 
     @CasePathable
     public enum Delegate: CasePathable, Equatable, Sendable {

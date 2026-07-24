@@ -10,6 +10,22 @@ import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
+public struct FileManagerContentNewChatSeedApplication: Equatable, Sendable {
+    let tabID: ContentTabID
+    let expectedAnchor: ContentTabPageAnchor
+    let sessionID: AiChatSessionID?
+    let provenance: AiChatNewChatPreparationProvenance
+    let seed: AiChatNewChatSelectionSeed?
+}
+
+public struct FileManagerInspectorNewChatSeedApplication: Equatable, Sendable {
+    let tabID: ContentTabID
+    let snapshot: AiChatCurrentContextSnapshot
+    let provenance: AiChatNewChatPreparationProvenance
+    let applicationProvenance: AiChatNewChatPreparationProvenance
+    let seed: AiChatNewChatSelectionSeed?
+}
+
 @CasePathable
 public enum FileManagerWindowAction: CasePathable, Sendable {
     case delegate(Delegate)
@@ -68,6 +84,13 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
             setup: AiChatSetupState,
             connectionsFile: AIConnectionsFile,
         )
+        case aiChatNewChatDefaultsLoaded(
+            requestID: UUID,
+            candidate: AiChatPersistedSelectionCandidate?,
+        )
+        case homeAiChatNewChatSeedRequested(sessionID: AiChatSessionID)
+        case applyContentNewChatSeed(FileManagerContentNewChatSeedApplication)
+        case applyInspectorNewChatSeed(FileManagerInspectorNewChatSeedApplication)
     }
 
     @CasePathable

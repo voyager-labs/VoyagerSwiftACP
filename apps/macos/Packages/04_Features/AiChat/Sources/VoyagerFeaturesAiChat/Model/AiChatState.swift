@@ -35,6 +35,14 @@ public enum AiChatMode: Equatable, Sendable {
     case chat
 }
 
+struct AiChatNewChatPreparationMutationTracker: Equatable {
+    var value: UInt64 = 0
+
+    static func == (_: Self, _: Self) -> Bool {
+        true
+    }
+}
+
 public enum AiChatSessionRowMergeResult: Equatable, Sendable {
     case rejected
     case unchanged
@@ -191,6 +199,7 @@ public typealias AiChatCurrentContextFolderStructureModes = [
 @ObservableState
 public struct AiChatState: Equatable, Sendable {
     var cancellationOwnerID = UUID()
+    var newChatPreparationMutationTracker = AiChatNewChatPreparationMutationTracker()
     public var restoreSessionID: AiChatSessionID?
     public var deferredChatSessionRestoreID: AiChatSessionID?
     public var restoreOutcome: AiChatSessionRestoreResult?
@@ -650,5 +659,63 @@ public struct AiChatState: Equatable, Sendable {
 
     static func thinkingLabel(for selection: AiThinkingSelection) -> String {
         AiChatStateSelection.thinkingLabel(for: selection)
+    }
+}
+
+public extension AiChatState {
+    var newChatPreparationProvenance: AiChatNewChatPreparationProvenance {
+        AiChatNewChatPreparationProvenance(
+            ownerID: cancellationOwnerID,
+            mutationRevision: newChatPreparationMutationTracker.value,
+            restoreSessionID: restoreSessionID,
+            deferredChatSessionRestoreID: deferredChatSessionRestoreID,
+            restoreOutcome: restoreOutcome,
+            restoreFailure: restoreFailure,
+            mode: mode,
+            selectedHistorySessionID: sessionList.selectedSessionID,
+            sessionID: sessionID,
+            preparedTransientSessionID: preparedTransientSessionID,
+            emptyDraftSessionID: emptyDraftSessionID,
+            currentSessionCustomTitle: currentSessionCustomTitle,
+            sessionStatus: sessionStatus,
+            currentContext: currentContext,
+            currentContextFolderStructureModes: currentContextFolderStructureModes,
+            addedAttachments: addedAttachments,
+            transcriptHistory: transcriptHistory,
+            draftText: draftText,
+            streamingAssistantDraft: streamingAssistantDraft,
+            selectedModelHandle: selectedModelHandle,
+            selectedThinking: selectedThinking,
+            unavailableSelectedModelHandle: unavailableSelectedModelHandle,
+            pendingRequestStart: pendingRequestStart,
+            executionPhase: executionPhase,
+        )
+    }
+
+    func matchesInspectorNewChatPreparationProvenance(
+        _ provenance: AiChatNewChatPreparationProvenance,
+    ) -> Bool {
+        let current = newChatPreparationProvenance
+        return current.ownerID == provenance.ownerID
+            && current.mutationRevision == provenance.mutationRevision
+            && current.restoreSessionID == provenance.restoreSessionID
+            && current.deferredChatSessionRestoreID == provenance.deferredChatSessionRestoreID
+            && current.restoreOutcome == provenance.restoreOutcome
+            && current.restoreFailure == provenance.restoreFailure
+            && current.mode == provenance.mode
+            && current.selectedHistorySessionID == provenance.selectedHistorySessionID
+            && current.sessionID == provenance.sessionID
+            && current.preparedTransientSessionID == provenance.preparedTransientSessionID
+            && current.emptyDraftSessionID == provenance.emptyDraftSessionID
+            && current.currentSessionCustomTitle == provenance.currentSessionCustomTitle
+            && current.sessionStatus == provenance.sessionStatus
+            && current.currentContext == provenance.currentContext
+            && current.currentContextFolderStructureModes == provenance.currentContextFolderStructureModes
+            && current.addedAttachments == provenance.addedAttachments
+            && current.transcriptHistory == provenance.transcriptHistory
+            && current.draftText == provenance.draftText
+            && current.streamingAssistantDraft == provenance.streamingAssistantDraft
+            && current.pendingRequestStart == provenance.pendingRequestStart
+            && current.executionPhase == provenance.executionPhase
     }
 }
