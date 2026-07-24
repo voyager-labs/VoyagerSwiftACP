@@ -73,7 +73,9 @@ final class ChatAiSettingsFlowTests: XCTestCase {
 
         await fileManagerStore.send(.request(.newChat))
         await fileManagerStore.receive { action in
-            guard case let .inspector(.aiChat(.prepareTransientNewChatWithContext(_, seed))) = action else {
+            guard case let .internal(.applyInspectorNewChatSeed(application)) = action,
+                  let seed = application.seed
+            else {
                 return false
             }
             return seed == AiChatNewChatSelectionSeed(
