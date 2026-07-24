@@ -152,43 +152,7 @@ extension ComposerHostSandbox {
     ]
 
     static func makeRegistryClient() -> RegistryClient {
-        let properties = registryProperties
-        let operatorDefinitions = registryOperatorDefinitions
-        let propertyEntries = properties.map(\.entry)
-        let labelsByKey = Dictionary(uniqueKeysWithValues: properties.map { ($0.key, $0.label) })
-        let typesByKey = Dictionary(uniqueKeysWithValues: properties.map { ($0.key, $0.type.rawValue) })
-        let unitSpecsByKey = Dictionary(uniqueKeysWithValues: properties.compactMap { property in
-            property.unitSpec.map { (property.key, $0) }
-        })
-        let operatorCodesByKey = Dictionary(uniqueKeysWithValues: properties.map { ($0.key, $0.operatorCodes) })
-        let contractsByKey = Dictionary(uniqueKeysWithValues: properties.map { ($0.key, $0.contracts) })
-        let canonicalConditionPropertiesByKey = Dictionary(uniqueKeysWithValues: properties.map {
-            ($0.key, $0.conditionProperty)
-        })
-        let conditionPropertiesByKey = Dictionary(uniqueKeysWithValues: properties.flatMap { property in
-            ([property.key] + registryPropertyAliases[property.key, default: []])
-                .map { ($0, property.conditionProperty) }
-        })
-        let resolver = ComposerHostRegistryResolver(
-            conditionPropertiesByKey: conditionPropertiesByKey,
-            contractsByKey: contractsByKey,
-            operatorDefinitions: operatorDefinitions,
-        )
-
-        return .init(
-            allProperties: { propertyEntries },
-            labelForKey: { labelsByKey[$0] ?? $0 },
-            propertyTypeString: { typesByKey[$0] ?? "unknown" },
-            propertyUnitSpec: { unitSpecsByKey[$0] },
-            operatorCodes: { operatorCodesByKey[$0] ?? [] },
-            operatorDefinition: { operatorDefinitions[$0] ?? .init(uiLabel: $0) },
-            resolvePropertyKey: { key in
-                let canonicalKey = ComposerHostFixtureConditionNormalization.canonicalPropertyKey(key)
-                guard canonicalConditionPropertiesByKey[canonicalKey] != nil else { return .unknown(key) }
-                return canonicalKey == key ? .canonical(canonicalKey) : .legacy(original: key, normalized: canonicalKey)
-            },
-            resolveCondition: resolver.resolveCondition,
-        )
+        RegistryClient.live(snapshot: RegistrySnapshot.load())
     }
 
     static func makeSearchClient(

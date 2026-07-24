@@ -57,6 +57,10 @@ private final class ComposerHostAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
         true
     }
+
+    func applicationDidFinishLaunching(_: Notification) {
+        NSApp.activate(ignoringOtherApps: true)
+    }
 }
 
 private struct ComposerHostWindowContent: View {
