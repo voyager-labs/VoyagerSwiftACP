@@ -60,13 +60,12 @@ public struct FileManagerInspectorFeature {
                 return openChat(setup: setup, connectionsFile: connectionsFile, state: &state)
 
             case let .openNewChat(setup, connectionsFile):
+                state.inspectorVisible = false
+                state.activeMode = .chat
                 return .concatenate(
-                    openChat(
-                        setup: setup,
-                        connectionsFile: connectionsFile,
-                        state: &state,
-                        presentInspector: false,
-                    ),
+                    .send(.aiChat(.setup(setup))),
+                    .send(.aiChat(.prepareUnpersistedNewChatWithContext(setup.currentContext))),
+                    .send(.aiChat(.providerConnectionsUpdated(connectionsFile))),
                     .send(.setInspectorVisible(true)),
                 )
 

@@ -119,6 +119,14 @@ public struct AiChatFeature {
                 guard state.newChatPreparationProvenance == provenance else { return .none }
                 return prepareUnpersistedNewChat(currentContext: snapshot, seed: seed, state: &state)
 
+            case let .applyNewChatSelectionSeedIfCurrent(provenance, seed):
+                guard state.newChatPreparationProvenance == provenance else { return .none }
+                state.selectedModelHandle = seed?.modelHandle
+                state.selectedThinking = seed?.selectedThinking
+                state.unavailableSelectedModelHandle = nil
+                normalizeSelectionIfNeeded(&state)
+                return .none
+
             case .showSessionsTapped:
                 state.sessionList.cancelRenaming()
                 state.sessionList.errorMessage = nil
@@ -358,7 +366,14 @@ public struct AiChatFeature {
                 return handleSelectedThinkingChanged(selectedThinking, state: &state)
 
             case let .currentContextChanged(snapshot):
+                let previousContext = state.currentContext
+                let previousFolderStructureModes = state.currentContextFolderStructureModes
                 applyCurrentContextSnapshot(snapshot, state: &state)
+                if state.currentContext != previousContext
+                    || state.currentContextFolderStructureModes != previousFolderStructureModes
+                {
+                    state.markPreparedTransientSessionAsTouched()
+                }
                 return .none
 
             case let .draftTextChanged(text):

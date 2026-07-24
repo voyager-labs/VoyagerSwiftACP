@@ -346,6 +346,121 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         stream.finish()
     }
 
+    /// CBW-005-start_chat_conversation_session: seed-only completion은 touched transient payload와 identity를 보존한다.
+    /// 비동기 seed 적용 뒤 첫 submit이 기존 transient ID로 request와 request-start snapshot을 한 번만 만드는지 검증합니다.
+    /// - 검증 내용: draft/context/attachment/identity 보존, seed 선택 적용, execute/save 각 1회
+    /// - 사전 조건: 사용자 payload가 있는 touched transient와 current provenance가 있다.
+    /// - 기대 결과: seed-only completion은 선택만 갱신하고 첫 submit은 같은 ID로 정확히 한 번 시작·저장된다.
+    func testGuardedSeedOnlyCompletionPreservesTouchedTransientAndSubmitsOnce() async {
+        let fixture = makeGuardedSeedOnlyFixture()
+        let store = fixture.store
+
+        let staleProvenance = store.state.newChatPreparationProvenance
+        await store.send(.selectedThinkingChanged(.effort(.low)))
+        await store.send(.applyNewChatSelectionSeedIfCurrent(
+            provenance: staleProvenance,
+            seed: fixture.seed,
+        ))
+        assertGuardedSeedOnlyPayload(
+            fixture,
+            selectedModelHandle: fixture.models[0].id,
+            selectedThinking: .effort(.low),
+        )
+
+        let provenance = store.state.newChatPreparationProvenance
+        await store.send(.applyNewChatSelectionSeedIfCurrent(
+            provenance: provenance,
+            seed: fixture.seed,
+        ))
+        assertGuardedSeedOnlyPayload(
+            fixture,
+            selectedModelHandle: fixture.seed.modelHandle,
+            selectedThinking: fixture.seed.selectedThinking,
+        )
+        XCTAssertTrue(fixture.savedSnapshots.value.isEmpty)
+
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store)
+        await store.receive(\.sessionSnapshotUpdated)
+
+        XCTAssertEqual(fixture.stream.requests.count, 1)
+        XCTAssertEqual(fixture.savedSnapshots.value.count, 1)
+        XCTAssertEqual(fixture.savedSnapshots.value.first?.sessionID, fixture.sessionID)
+        fixture.stream.finish()
+    }
+
+    private struct GuardedSeedOnlyFixture {
+        let store: TestStore<AiChatFeature.State, AiChatFeature.Action>
+        let models: [AiProviderModel]
+        let sessionID: AiChatSessionID
+        let context: AiChatCurrentContextSnapshot
+        let attachment: AiChatAttachmentDraft
+        let seed: AiChatNewChatSelectionSeed
+        let stream: AiChatExecutionStreamDriver
+        let savedSnapshots: LockIsolated<[AiChatSessionSnapshot]>
+    }
+
+    private func makeGuardedSeedOnlyFixture() -> GuardedSeedOnlyFixture {
+        let models = makeThinkingCapableProviderModels()
+        let sessionID = makeCBW005SessionID("77777777-7777-7777-7777-777777777777")
+        let context = makeContextSnapshot(summary: "User context")
+        let attachment = makeCBW005Attachment(path: "/tmp/User.txt")
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: models[1].id,
+            selectedThinking: .effort(.low),
+        )
+        let stream = AiChatExecutionStreamDriver()
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            currentContext: context,
+            addedAttachments: [attachment],
+            draftText: "User question",
+            catalogRows: makeCatalogRows(),
+            modelListState: .loaded(models),
+            selectedModelHandle: models[0].id,
+            selectedThinking: .effort(.high),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: seed-only payload 보존과 최초 request-start 경계만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+        return GuardedSeedOnlyFixture(
+            store: store,
+            models: models,
+            sessionID: sessionID,
+            context: context,
+            attachment: attachment,
+            seed: seed,
+            stream: stream,
+            savedSnapshots: savedSnapshots,
+        )
+    }
+
+    private func assertGuardedSeedOnlyPayload(
+        _ fixture: GuardedSeedOnlyFixture,
+        selectedModelHandle: AiModelHandle?,
+        selectedThinking: AiThinkingSelection?,
+    ) {
+        XCTAssertEqual(fixture.store.state.sessionID, fixture.sessionID)
+        XCTAssertEqual(fixture.store.state.draftText, "User question")
+        XCTAssertEqual(fixture.store.state.currentContext, fixture.context)
+        XCTAssertEqual(fixture.store.state.addedAttachments, [fixture.attachment])
+        XCTAssertEqual(fixture.store.state.selectedModelHandle, selectedModelHandle)
+        XCTAssertEqual(fixture.store.state.selectedThinking, selectedThinking)
+    }
+
     /// CBW-005-start_chat_conversation_session: queued transient seed action은 변경된 child provenance를 재검증한다.
     /// FileManager validation 이후 child action 적용 전에 사용자 입력이 바뀌는 race를 검증합니다.
     /// - 검증 내용: attachment mutation 뒤 late preparation action no-op, save 0회

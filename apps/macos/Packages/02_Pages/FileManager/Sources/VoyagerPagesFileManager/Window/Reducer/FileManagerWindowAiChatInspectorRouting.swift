@@ -23,28 +23,7 @@ extension FileManagerWindowCommandRoutingReducer {
         }
 
         if isInspectorChatPresented(state) {
-            state.pendingAiChatInspectorOpen = nil
-            let destinationEffect: Effect<Action>
-            switch destination {
-            case .newChat:
-                destinationEffect = beginAiChatNewChatSeedResolution(
-                    target: .inspector(
-                        snapshot: FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: state.content),
-                        provenance: state.inspector.aiChat.newChatPreparationProvenance,
-                    ),
-                    state: &state,
-                )
-            case .chatHistory:
-                state.pendingAiChatNewChat = nil
-                destinationEffect = .send(.inspector(.showChatHistoryRequested))
-            }
-            return .concatenate(
-                .cancel(id: FileManagerAiChatInspectorOpenCancelID()),
-                destination == .chatHistory
-                    ? .cancel(id: FileManagerAiChatNewChatSeedCancelID())
-                    : .none,
-                destinationEffect,
-            )
+            return switchPresentedAiChatInspectorDestination(destination, state: &state)
         }
 
         if let pendingOpen = state.pendingAiChatInspectorOpen,
@@ -57,6 +36,43 @@ extension FileManagerWindowCommandRoutingReducer {
         }
 
         return openAiChatInspectorEffect(state: &state, destination: destination)
+    }
+
+    private func switchPresentedAiChatInspectorDestination(
+        _ destination: FileManagerAiChatInspectorDestination,
+        state: inout State,
+    ) -> Effect<Action> {
+        state.pendingAiChatInspectorOpen = nil
+        let destinationEffect: Effect<Action>
+        switch destination {
+        case .newChat:
+            let snapshot = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: state.content)
+            let preparationEffect = AiChatFeature().reduce(
+                into: &state.inspector.aiChat,
+                action: .prepareUnpersistedNewChatWithContext(snapshot),
+            )
+            state.syncActiveTabInspectorState()
+            destinationEffect = .concatenate(
+                preparationEffect.map { .inspector(.aiChat($0)) },
+                beginAiChatNewChatSeedResolution(
+                    target: .inspector(
+                        snapshot: snapshot,
+                        provenance: state.inspector.aiChat.newChatPreparationProvenance,
+                    ),
+                    state: &state,
+                ),
+            )
+        case .chatHistory:
+            state.pendingAiChatNewChat = nil
+            destinationEffect = .send(.inspector(.showChatHistoryRequested))
+        }
+        return .concatenate(
+            .cancel(id: FileManagerAiChatInspectorOpenCancelID()),
+            destination == .chatHistory
+                ? .cancel(id: FileManagerAiChatNewChatSeedCancelID())
+                : .none,
+            destinationEffect,
+        )
     }
 
     func handleAiChatInspectorOpenCompletion(
@@ -306,8 +322,7 @@ extension FileManagerWindowCommandRoutingReducer {
         guard state.contentTabs.activeTabID == application.tabID,
               isValid(target: target, tabID: application.tabID, state: state)
         else { return .none }
-        let childAction = AiChatAction.prepareUnpersistedNewChatWithContextIfCurrent(
-            application.snapshot,
+        let childAction = AiChatAction.applyNewChatSelectionSeedIfCurrent(
             provenance: application.applicationProvenance,
             seed: application.seed,
         )

@@ -57,6 +57,10 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
         provenance: AiChatNewChatPreparationProvenance,
         seed: AiChatNewChatSelectionSeed?,
     )
+    case applyNewChatSelectionSeedIfCurrent(
+        provenance: AiChatNewChatPreparationProvenance,
+        seed: AiChatNewChatSelectionSeed?,
+    )
     case showSessionsTapped
     case showSessionsForChat(AiChatSessionID)
     case returnToChatTapped
