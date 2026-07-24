@@ -1,134 +1,56 @@
-# CodeGraph — Semantic Code Intelligence
+# CodeGraph — OMO Semantic Code Intelligence
 
-CodeGraph provides symbol-level code understanding: definitions, references, call graphs, and impact analysis. It indexes the entire project into `.codegraph/` for fast queries.
+OMO exposes CodeGraph through one MCP tool: `codegraph_explore`. It returns current, line-numbered source grouped by file together with call paths and blast-radius information.
 
-## When to Use
+## Use it for
 
-- Find where a symbol (function, type, variable) is defined
-- Find all callers or callees of a function
-- Trace the call path from entry point to target
-- Analyze what breaks if a symbol changes
-- Explore module/package structure
-- Get full context about a feature in one call
+- Definitions and source for named symbols
+- Callers, callees, and multi-hop call paths
+- Change-impact analysis
+- Feature and module exploration
+- Cross-project queries when another project is indexed
 
-## Prerequisite: Index Health
-
-Before any CodeGraph query, check index state:
+## Tool shape
 
 ```yaml
-codegraph_status()
+codegraph_explore(
+  query: "FileManagerReducer callers impact",
+  maxFiles: 12,
+  projectPath: "/optional/other/project"
+)
 ```
 
-If the index is stale or missing after file changes, trigger re-index by running any codegraph query on changed files. The index auto-creates on first use.
+- `query` accepts natural language, symbol names, file names, or endpoints of a flow.
+- `maxFiles` caps returned source files.
+- `projectPath` selects another indexed project. Omit it for the current workspace.
 
-## Cross-Project Queries
-
-All CodeGraph tools accept an optional `projectPath` parameter to query a different project that has `.codegraph/` initialized:
+## Query patterns
 
 ```yaml
-# Query a different project
-codegraph_search(query: "AuthReducer", projectPath: "/path/to/other/project")
-codegraph_node(symbol: "AuthReducer", includeCode: true, projectPath: "/path/to/other/project")
+# Definition and source
+codegraph_explore(query: "FileManagerReducer")
+
+# Callers and impact
+codegraph_explore(query: "Who calls FileManagerReducer and what depends on it?")
+
+# Call path
+codegraph_explore(query: "AppReducer FileManagerReducer call path")
+
+# Module context
+codegraph_explore(query: "FileManagerReducer SearchClient FileIndex")
 ```
 
-Omit `projectPath` to query the current project (default).
+## Operating rules
 
-## MCP Tools
+1. Call CodeGraph before reading indexed code manually.
+2. Treat returned source as already read; do not reopen the same files.
+3. Name both endpoints for flow questions instead of reconstructing a path with grep.
+4. Follow any staleness banner. Read only files explicitly reported as pending re-index.
+5. If CodeGraph reports that the project is not indexed, stop calling it for that project and use local tools. Do not initialize the index on the user's behalf.
 
-### Search & Locate
+## Boundaries
 
-```yaml
-# Search symbols by name (returns locations only)
-codegraph_search(query: "FileManagerReducer")
-
-# Search with kind filter
-codegraph_search(query: "auth", kind: "function")  # function, method, class, interface, type, variable
-
-# Search across files
-codegraph_files(path: "apps/macos/Packages")       # list files under path
-codegraph_files(pattern: "**/*.swift")              # glob pattern
-```
-
-### Get Definition & Source
-
-```yaml
-# Get symbol details + source code
-codegraph_node(symbol: "FileManagerReducer", includeCode: true)
-
-# Get symbol details without source (signature only)
-codegraph_node(symbol: "FileManagerReducer", includeCode: false)
-```
-
-### References & Call Graph
-
-```yaml
-# Who calls this function? (all callers)
-codegraph_callers(symbol: "FileManagerReducer", limit: 20)
-
-# What does this function call? (all callees)
-codegraph_callees(symbol: "FileManagerReducer", limit: 20)
-
-# Trace call path from A to B
-codegraph_trace(from: "AppReducer", to: "FileManagerReducer")
-```
-
-### Impact Analysis
-
-```yaml
-# What breaks if I change this symbol?
-codegraph_impact(symbol: "FileManagerReducer", depth: 2)
-
-# Higher depth = broader impact surface
-codegraph_impact(symbol: "FileManagerReducer", depth: 3)
-```
-
-### Context & Exploration
-
-```yaml
-# Get full context about a task in one call (recommended for complex queries)
-codegraph_context(task: "How does file search work in Voyager?", includeCode: true, maxNodes: 20)
-
-# Control result size with maxNodes (default: 20)
-codegraph_context(task: "Quick overview of X", maxNodes: 10)
-
-# Explore multiple related symbols grouped by file
-codegraph_explore(query: "FileManagerReducer SearchReducer FileIndex", maxFiles: 12)
-```
-
-## Workflow Patterns
-
-### Pattern: Understand a feature
-
-```yaml
-1. codegraph_context(task: "Explain feature X")
-2. codegraph_node(symbol: "keySymbol", includeCode: true)  # drill into key definition
-3. codegraph_callers(symbol: "keySymbol")                   # who uses it
-```
-
-### Pattern: Assess change impact
-
-```yaml
-1. codegraph_impact(symbol: "symbolToChange", depth: 2)
-2. codegraph_callers(symbol: "symbolToChange")              # direct callers
-3. codegraph_trace(from: "AppReducer", to: "symbolToChange") # how it's reached
-```
-
-### Pattern: Find implementation of a concept
-
-```yaml
-1. codegraph_search(query: "search")
-2. codegraph_context(task: "How is search implemented?")
-3. codegraph_explore(query: "SearchReducer SearchView SearchClient")
-```
-
-## Limitations
-
-- Dynamic dispatch (protocols with multiple conformances) may show incomplete call graphs
-- CodeGraph index can become stale after large refactors — re-check with `codegraph_status`
-- Very large codebases may need `limit` parameter to cap results
-
-## Relationship to Other Tools
-
-- Use **ast-grep** when CodeGraph can't find a pattern (e.g., TCA reducer composition, string literals)
-- Use **XcodeBuildMCP** to verify CodeGraph findings compile correctly
-- See `codegraph-usage` skill for Voyager-specific examples and deeper guides
+- Use the OMO `ast-grep` skill for structural syntax patterns and codemods.
+- Use LSP rename for semantic renames.
+- Use repository verification commands to prove compilation and tests.
+- CodeGraph supplements compiler evidence; it does not replace it.

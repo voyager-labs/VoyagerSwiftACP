@@ -30,14 +30,7 @@ Layer 1 passing while Layer 3 fails is the most common integration problem. `swi
 
 ## Command surfaces
 
-Use the capability matrix in `.agents/skills/code-tooling/SKILL.md`: package-local layers use `xcrun swift`; simulator consumers use a supported XcodeBuildMCP operation; macOS consumers use existing `mise` tasks while no macOS MCP operation is exposed. Load `xcodebuild-mcp.md` only for supported simulator operations.
-
-### Simulator consumer commands
-
-```
-XcodeBuildMCP_build_sim          # with configured workspace/scheme/simulator defaults
-XcodeBuildMCP_test_sim           # with focused test filters when the simulator scope supports them
-```
+Use the capability matrix in `.agents/skills/code-tooling/SKILL.md`: package-local layers use `xcrun swift`, and macOS consumers use the repository's `mise` tasks. If another platform has no repository-defined executor, stop and report the missing verification route.
 
 ### Package-local SwiftPM route
 
@@ -48,17 +41,17 @@ xcrun swift build --package-path apps/macos/Packages/<Package>
 xcrun swift test --package-path apps/macos/Packages/<Package>
 ```
 
-For a macOS consumer boundary, use `mise run macos-build` and `mise run macos-test`; for a simulator consumer, use the supported XcodeBuildMCP route. Use the narrowest available route that proves the changed product is linked and imported. Expand to the full app or host build when product exposure, target membership, or dependency removal can affect multiple consumers.
+For a macOS consumer boundary, use `mise run macos-build` and `mise run macos-test`. Use the narrowest repository-defined route that proves the changed product is linked and imported. Expand to the full app or host build when product exposure, target membership, or dependency removal can affect multiple consumers.
 
 ## Phase 1: Pre-change baseline
 
 ### 1.1 Capture build baseline
 
-Run the matrix-selected consumer build route before the change: `mise run macos-build` for the macOS development scheme, or a supported XcodeBuildMCP simulator build after session-default inspection. Record pass/fail and the first errors in task evidence.
+Run `mise run macos-build` before the change for the macOS development scheme. Record pass/fail and the first errors in task evidence.
 
 ### 1.2 Capture test baseline
 
-Run the matrix-selected consumer test route before the change: `mise run macos-test` for the macOS development scheme, or a supported focused XcodeBuildMCP simulator test after session-default inspection. Record total tests, failures, and failing test names in task evidence.
+Run `mise run macos-test` before the change for the macOS development scheme. Record total tests, failures, and failing test names in task evidence.
 
 ### 1.3 Save baseline state
 
@@ -96,7 +89,7 @@ This checks the package's own test suite. If the package has no tests, skip this
 
 ### 3.3 Layer 3: Consumer build (integration boundary)
 
-For macOS consumers, run `mise run macos-build`. For simulator consumers, run the matrix-selected supported XcodeBuildMCP build operation after session-default inspection.
+For macOS consumers, run `mise run macos-build`. For another platform, use its repository-defined consumer build task or stop and report the missing route.
 
 **Common failure modes at this layer:**
 
@@ -111,7 +104,7 @@ For macOS consumers, run `mise run macos-build`. For simulator consumers, run th
 
 ### 3.4 Layer 4: Consumer tests
 
-For macOS consumers, run `mise run macos-test`. For simulator consumers, run the matrix-selected supported XcodeBuildMCP test operation after session-default inspection.
+For macOS consumers, run `mise run macos-test`. For another platform, use its repository-defined consumer test task or stop and report the missing route.
 
 Run focused tests first when the change scope is narrow, then expand to the full suite.
 

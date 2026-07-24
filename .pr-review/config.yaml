@@ -109,8 +109,10 @@ path_instructions:
       ## Local-only artifacts
 
       The following paths are local agent/runtime artifacts:
+      - .omo/**
       - .omx/**
       - .sisyphus/**
+      - .codegraph/**
 
       They must not be tracked, staged, committed, or included in PRs.
       If these appear in a PR, leave a high-severity repository hygiene comment.
@@ -137,7 +139,6 @@ tools:
     languages: [swift, typescript, tsx, python]
   codegraph:
     enabled: true
-    status_command: "mise run codegraph-status"
   lsp:
     enabled: true
   swiftlint:

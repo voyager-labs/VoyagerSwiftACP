@@ -50,8 +50,8 @@ targets:
 1. mise exec -- periphery scan > periphery-results.txt
 2. Review results, categorize by severity
 3. Remove confirmed unused code
-4. XcodeBuildMCP_build_sim()  # verify nothing breaks
-5. XcodeBuildMCP_test_sim()   # verify tests still pass
+4. mise run macos-build  # verify nothing breaks
+5. mise run macos-test   # verify tests still pass
 ```
 
 ### Pattern: Verify new code is referenced
@@ -72,5 +72,5 @@ targets:
 
 ## Relationship to Other Tools
 
-- Use **CodeGraph** `codegraph_impact` to understand usage before removing code Periphery flags
-- Use **XcodeBuildMCP** to verify compilation after removing unused code
+- Use **CodeGraph** `codegraph_explore` to understand callers and impact before removing code Periphery flags
+- Use the repository's `mise run macos-build` and `mise run macos-test` tasks after removing unused code
