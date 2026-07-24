@@ -35,18 +35,21 @@ extension AiChatFeature {
         }
     }
 
-    func startNewUnselectedChat(state: inout State) -> AiChatSessionSnapshot {
+    func startNewUnselectedChat(
+        seed: AiChatNewChatSelectionSeed?,
+        state: inout State,
+    ) -> AiChatSessionSnapshot {
         let sessionID = AiChatSessionID(rawValue: uuid())
-        prepareEmptyDraftChatSession(sessionID, selectedSessionID: nil, state: &state)
+        prepareEmptyDraftChatSession(sessionID, selectedSessionID: nil, seed: seed, state: &state)
 
         return AiChatSessionSnapshot(
             sessionID: sessionID,
             status: .idle,
             customTitle: nil,
-            provider: nil,
-            model: nil,
-            selectedModelRow: nil,
-            selectedThinking: nil,
+            provider: seed?.modelHandle.provider,
+            model: seed?.modelHandle,
+            selectedModelRow: state.resolvedModelRow(for: seed?.modelHandle),
+            selectedThinking: seed?.selectedThinking,
             transcriptHistory: [],
             lastRequestID: nil,
             lastRunID: nil,
@@ -55,13 +58,24 @@ extension AiChatFeature {
         )
     }
 
+    func startNewChat(
+        seed: AiChatNewChatSelectionSeed?,
+        state: inout State,
+    ) -> Effect<Action> {
+        let preservedExecutionPhase = state.executionPhase
+        let snapshot = startNewUnselectedChat(seed: seed, state: &state)
+        preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
+        return saveNewChat(snapshot, ownerID: state.cancellationOwnerID)
+    }
+
     func prepareUnpersistedNewChat(
         currentContext: AiChatCurrentContextSnapshot?,
+        seed: AiChatNewChatSelectionSeed?,
         state: inout State,
     ) -> Effect<Action> {
         movePendingRequestStartToBackgroundIfNeeded(state: &state, targetSessionID: nil)
         let preservedExecutionPhase = state.executionPhase
-        let snapshot = startNewUnselectedChat(state: &state)
+        let snapshot = startNewUnselectedChat(seed: seed, state: &state)
         state.emptyDraftSessionID = nil
         state.preparedTransientSessionID = snapshot.sessionID
         if let currentContext {
@@ -69,6 +83,39 @@ extension AiChatFeature {
         }
         preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
         return .cancel(id: CancelID.newChat(ownerID: state.cancellationOwnerID))
+    }
+
+    func prepareTransientNewChat(
+        sessionID: AiChatSessionID,
+        seed: AiChatNewChatSelectionSeed?,
+        state: inout State,
+    ) -> Effect<Action> {
+        movePendingRequestStartToBackgroundIfNeeded(state: &state, targetSessionID: nil)
+        let preservedExecutionPhase = state.executionPhase
+        prepareEmptyDraftChatSession(sessionID, selectedSessionID: nil, seed: seed, state: &state)
+        state.emptyDraftSessionID = nil
+        state.preparedTransientSessionID = sessionID
+        preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
+        return .cancel(id: CancelID.newChat(ownerID: state.cancellationOwnerID))
+    }
+
+    func startNewChatIfCurrent(
+        provenance: AiChatNewChatPreparationProvenance,
+        seed: AiChatNewChatSelectionSeed?,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.newChatPreparationProvenance == provenance else { return .none }
+        return startNewChat(seed: seed, state: &state)
+    }
+
+    func prepareTransientNewChatIfCurrent(
+        sessionID: AiChatSessionID,
+        provenance: AiChatNewChatPreparationProvenance,
+        seed: AiChatNewChatSelectionSeed?,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.newChatPreparationProvenance == provenance else { return .none }
+        return prepareTransientNewChat(sessionID: sessionID, seed: seed, state: &state)
     }
 
     func saveNewChat(
@@ -119,13 +166,14 @@ extension AiChatFeature {
             return restoreSession(sessionID: sessionID, state: state)
         }
 
-        prepareEmptyDraftChatSession(sessionID, selectedSessionID: sessionID, state: &state)
+        prepareEmptyDraftChatSession(sessionID, selectedSessionID: sessionID, seed: nil, state: &state)
         return .cancel(id: CancelID.restore)
     }
 
     func prepareEmptyDraftChatSession(
         _ sessionID: AiChatSessionID,
         selectedSessionID: AiChatSessionID?,
+        seed: AiChatNewChatSelectionSeed?,
         state: inout State,
     ) {
         state.invalidatePreparedTransientSession()
@@ -149,8 +197,8 @@ extension AiChatFeature {
         state.addedAttachments = []
         state.currentContextFolderStructureModes = [:]
         state.executionPhase = .idle
-        state.selectedModelHandle = nil
-        state.selectedThinking = nil
+        state.selectedModelHandle = seed?.modelHandle
+        state.selectedThinking = seed?.selectedThinking
         state.unavailableSelectedModelHandle = nil
     }
 
@@ -466,8 +514,14 @@ extension AiChatFeature {
     }
 
     func applyNewChatCreated(snapshot: AiChatSessionSnapshot, state: inout State) {
+        let selectedModelHandle = state.selectedModelHandle
+        let selectedThinking = state.selectedThinking
+        let unavailableSelectedModelHandle = state.unavailableSelectedModelHandle
         state.invalidatePreparedTransientSession()
         applyNewSessionSnapshot(snapshot, state: &state)
+        state.selectedModelHandle = selectedModelHandle
+        state.selectedThinking = selectedThinking
+        state.unavailableSelectedModelHandle = unavailableSelectedModelHandle
         state.emptyDraftSessionID = snapshot.sessionID
         state.restoreSessionID = snapshot.sessionID
         state.restoreOutcome = nil

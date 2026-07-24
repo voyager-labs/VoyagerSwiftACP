@@ -31,8 +31,32 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case onAppear
     case sessionsAppeared
     case newChatTapped
+    case newChatTappedWithSeed(AiChatNewChatSelectionSeed)
+    case newChatTappedIfCurrent(
+        provenance: AiChatNewChatPreparationProvenance,
+        seed: AiChatNewChatSelectionSeed?,
+    )
     case prepareUnpersistedNewChat
+    case prepareUnpersistedNewChatWithSeed(AiChatNewChatSelectionSeed)
+    case prepareTransientNewChat(
+        sessionID: AiChatSessionID,
+        seed: AiChatNewChatSelectionSeed?,
+    )
+    case prepareTransientNewChatIfCurrent(
+        sessionID: AiChatSessionID,
+        provenance: AiChatNewChatPreparationProvenance,
+        seed: AiChatNewChatSelectionSeed?,
+    )
     case prepareUnpersistedNewChatWithContext(AiChatCurrentContextSnapshot)
+    case prepareTransientNewChatWithContext(
+        AiChatCurrentContextSnapshot,
+        AiChatNewChatSelectionSeed,
+    )
+    case prepareUnpersistedNewChatWithContextIfCurrent(
+        AiChatCurrentContextSnapshot,
+        provenance: AiChatNewChatPreparationProvenance,
+        seed: AiChatNewChatSelectionSeed?,
+    )
     case showSessionsTapped
     case showSessionsForChat(AiChatSessionID)
     case returnToChatTapped
@@ -112,5 +136,23 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
         case openAISettings
         case requestAttachmentPicker
         case clearCurrentContextSelection
+    }
+}
+
+public extension AiChatAction {
+    static func newChatTapped(seed: AiChatNewChatSelectionSeed?) -> Self {
+        seed.map(newChatTappedWithSeed) ?? .newChatTapped
+    }
+
+    static func prepareUnpersistedNewChat(seed: AiChatNewChatSelectionSeed?) -> Self {
+        seed.map(prepareUnpersistedNewChatWithSeed) ?? .prepareUnpersistedNewChat
+    }
+
+    static func prepareUnpersistedNewChatWithContext(
+        _ snapshot: AiChatCurrentContextSnapshot,
+        seed: AiChatNewChatSelectionSeed?,
+    ) -> Self {
+        guard let seed else { return .prepareUnpersistedNewChatWithContext(snapshot) }
+        return .prepareTransientNewChatWithContext(snapshot, seed)
     }
 }

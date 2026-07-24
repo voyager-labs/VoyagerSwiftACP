@@ -50,6 +50,520 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
 
     // MARK: - CBW-005-start_chat_conversation_session
 
+    /// CBW-005-start_chat_conversation_session: 유효한 window-last 선택은 persisted default보다 우선한다.
+    /// 새 대화 seed가 가장 최근 window 선택을 먼저 복원하는 precedence를 검증합니다.
+    /// - 검증 내용: window-last model/thinking 우선 선택
+    /// - 사전 조건: window와 persisted 후보가 모두 loaded catalog에서 유효하다.
+    /// - 기대 결과: window 후보가 direct initialization seed로 반환된다.
+    func testNewChatSelectionSeedPrefersValidWindowCandidateOverPersistedDefault() {
+        let models = makeThinkingCapableProviderModels()
+        let windowCandidate = AiChatNewChatSelectionCandidate(
+            modelHandle: models[1].id,
+            selectedThinking: .effort(.minimal),
+        )
+        let persistedCandidate = makePersistedSelectionCandidate(
+            model: models[0],
+            thinking: .effort("high"),
+        )
+
+        let seed = AiChatNewChatSelectionSeedResolver.resolve(
+            windowLast: windowCandidate,
+            persistedDefault: persistedCandidate,
+            catalog: models,
+        )
+
+        XCTAssertEqual(seed, AiChatNewChatSelectionSeed(
+            modelHandle: models[1].id,
+            selectedThinking: .effort(.minimal),
+        ))
+    }
+
+    /// CBW-005-start_chat_conversation_session: 무효한 window-last 선택은 유효한 persisted default로 fallback한다.
+    /// catalog에서 사라진 window model이 저장 기본값까지 차단하지 않는지 검증합니다.
+    /// - 검증 내용: invalid window 이후 persisted model/thinking 해석
+    /// - 사전 조건: window model은 catalog에 없고 persisted 후보는 유효하다.
+    /// - 기대 결과: persisted 후보가 direct initialization seed로 반환된다.
+    func testNewChatSelectionSeedFallsBackFromInvalidWindowToValidPersistedDefault() {
+        let models = makeThinkingCapableProviderModels()
+        let windowCandidate = AiChatNewChatSelectionCandidate(
+            modelHandle: makeUnresolvableModelHandle(),
+            selectedThinking: .effort(.high),
+        )
+        let persistedCandidate = makePersistedSelectionCandidate(
+            model: models[1],
+            thinking: .effort("low"),
+        )
+
+        let seed = AiChatNewChatSelectionSeedResolver.resolve(
+            windowLast: windowCandidate,
+            persistedDefault: persistedCandidate,
+            catalog: models,
+        )
+
+        XCTAssertEqual(seed, AiChatNewChatSelectionSeed(
+            modelHandle: models[1].id,
+            selectedThinking: .effort(.low),
+        ))
+    }
+
+    /// CBW-005-start_chat_conversation_session: window-last가 없으면 유효한 persisted default를 사용한다.
+    /// 새 window가 저장된 사용자의 기본 model/thinking intent를 복원하는지 검증합니다.
+    /// - 검증 내용: nil window 이후 persisted 후보 선택
+    /// - 사전 조건: window 후보는 없고 persisted 후보는 loaded catalog에서 유효하다.
+    /// - 기대 결과: persisted 후보가 direct initialization seed로 반환된다.
+    func testNewChatSelectionSeedUsesValidPersistedDefaultWhenWindowCandidateIsNil() {
+        let models = makeThinkingCapableProviderModels()
+        let persistedCandidate = makePersistedSelectionCandidate(
+            model: models[0],
+            thinking: .effort("medium"),
+        )
+
+        let seed = AiChatNewChatSelectionSeedResolver.resolve(
+            windowLast: nil,
+            persistedDefault: persistedCandidate,
+            catalog: models,
+        )
+
+        XCTAssertEqual(seed, AiChatNewChatSelectionSeed(
+            modelHandle: models[0].id,
+            selectedThinking: .effort(.medium),
+        ))
+    }
+
+    /// CBW-005-start_chat_conversation_session: window와 persisted model이 모두 무효면 runtime 선택을 만들지 않는다.
+    /// stale 저장 intent가 catalog 밖 model을 runtime state로 승격하지 않는지 검증합니다.
+    /// - 검증 내용: 두 후보의 model availability 검증
+    /// - 사전 조건: window와 persisted model이 모두 loaded catalog에 없다.
+    /// - 기대 결과: resolver는 nil을 반환한다.
+    func testNewChatSelectionSeedReturnsNilWhenWindowAndPersistedCandidatesAreInvalid() {
+        let models = makeThinkingCapableProviderModels()
+        let windowCandidate = AiChatNewChatSelectionCandidate(
+            modelHandle: makeUnresolvableModelHandle(),
+            selectedThinking: .effort(.high),
+        )
+        let persistedCandidate = AiChatPersistedSelectionCandidate(
+            providerRawValue: AiProvider.anthropic.rawValue,
+            modelProviderRawValue: AiProvider.anthropic.rawValue,
+            modelRawValue: "removed-model",
+            thinking: .effort("minimal"),
+        )
+
+        let seed = AiChatNewChatSelectionSeedResolver.resolve(
+            windowLast: windowCandidate,
+            persistedDefault: persistedCandidate,
+            catalog: models,
+        )
+
+        XCTAssertNil(seed)
+    }
+
+    /// CBW-005-start_chat_conversation_session: 유효한 model의 호환되지 않는 thinking은 provider default로 정규화한다.
+    /// thinking 오류가 유효한 window model 자체를 fallback시키지 않는지 검증합니다.
+    /// - 검증 내용: AiThinkingSelectionPolicy 기반 thinking normalization
+    /// - 사전 조건: window model은 유효하지만 token budget thinking을 지원하지 않고 persisted 후보도 유효하다.
+    /// - 기대 결과: window model과 nil thinking을 가진 seed가 반환된다.
+    func testNewChatSelectionSeedKeepsValidWindowModelAndNormalizesInvalidThinkingToNil() {
+        let models = makeThinkingCapableProviderModels()
+        let windowCandidate = AiChatNewChatSelectionCandidate(
+            modelHandle: models[0].id,
+            selectedThinking: .tokenBudget(4096),
+        )
+        let persistedCandidate = makePersistedSelectionCandidate(
+            model: models[1],
+            thinking: .effort("low"),
+        )
+
+        let seed = AiChatNewChatSelectionSeedResolver.resolve(
+            windowLast: windowCandidate,
+            persistedDefault: persistedCandidate,
+            catalog: models,
+        )
+
+        XCTAssertEqual(seed, AiChatNewChatSelectionSeed(
+            modelHandle: models[0].id,
+            selectedThinking: nil,
+        ))
+    }
+
+    /// CBW-005-start_chat_conversation_session: 후보가 없으면 catalog의 default/recommended model도 자동 선택하지 않는다.
+    /// catalog metadata가 명시적 사용자 선택 정책을 우회하지 않는지 검증합니다.
+    /// - 검증 내용: no-candidate resolver 결과
+    /// - 사전 조건: default/recommended row에 대응하는 loaded model catalog만 존재한다.
+    /// - 기대 결과: resolver는 nil을 반환한다.
+    func testNewChatSelectionSeedDoesNotAutoSelectCatalogModel() {
+        let models = makeThinkingCapableProviderModels()
+
+        let seed = AiChatNewChatSelectionSeedResolver.resolve(
+            windowLast: nil,
+            persistedDefault: nil,
+            catalog: models,
+        )
+
+        XCTAssertNil(seed)
+    }
+
+    /// CBW-005-start_chat_conversation_session: durable New Chat은 seed 선택을 최초 snapshot과 runtime에 함께 적용한다.
+    /// 새 대화를 저장할 때 선택 상태와 durable snapshot이 같은 model/thinking을 소유하는지 검증합니다.
+    /// - 검증 내용: seeded state 초기화, selected model row 포함 snapshot 1회 저장
+    /// - 사전 조건: loaded catalog에서 resolve된 seed와 deterministic persistence recorder가 있다.
+    /// - 기대 결과: runtime과 저장 snapshot이 같은 seed를 가지며 save는 한 번 호출된다.
+    func testDurableNewChatPersistsResolvedSelectionSeedOnce() async {
+        let models = makeThinkingCapableProviderModels()
+        let catalogRows = makeCatalogRows()
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: models[1].id,
+            selectedThinking: .effort(.minimal),
+        )
+        let newSessionID = makeCBW005SessionID("00000000-0000-0000-0000-000000000000")
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let expectedSnapshot = AiChatSessionSnapshot(
+            sessionID: newSessionID,
+            status: .idle,
+            customTitle: nil,
+            provider: seed.modelHandle.provider,
+            model: seed.modelHandle,
+            selectedModelRow: catalogRows[1],
+            selectedThinking: seed.selectedThinking,
+            transcriptHistory: [],
+            lastRequestID: nil,
+            lastRunID: nil,
+            lastRequestContext: nil,
+            updatedAtMs: fixedTimestampMs,
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: seed와 persistence ownership만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.newChatTapped(seed: seed))
+        await store.receive(.newChatCreated(expectedSnapshot))
+
+        XCTAssertEqual(savedSnapshots.value, [expectedSnapshot])
+        XCTAssertEqual(store.state.selectedModelHandle, seed.modelHandle)
+        XCTAssertEqual(store.state.selectedThinking, seed.selectedThinking)
+        XCTAssertNil(store.state.unavailableSelectedModelHandle)
+    }
+
+    /// CBW-005-start_chat_conversation_session: New Chat 저장 완료는 저장 중 변경된 최신 selection을 되돌리지 않는다.
+    /// seed snapshot의 비동기 acknowledgment가 이후 사용자 model/thinking 선택보다 늦게 도착하는 경쟁을 검증합니다.
+    /// - 검증 내용: `.newChatCreated`가 최신 runtime selection을 보존
+    /// - 사전 조건: seed A snapshot 저장 중 같은 draft에서 selection B가 적용되어 있다.
+    /// - 기대 결과: 저장 완료 후에도 model/thinking B가 유지된다.
+    func testDurableNewChatSaveAcknowledgmentPreservesNewerRuntimeSelection() async {
+        let models = makeThinkingCapableProviderModels()
+        let catalogRows = makeCatalogRows()
+        let sessionID = makeCBW005SessionID("68686868-6868-6868-6868-686868686868")
+        let seededSnapshot = makeCBW005Snapshot(
+            sessionID: sessionID,
+            transcriptHistory: [],
+            status: .idle,
+            model: catalogRows[0],
+            selectedThinking: .effort(.high),
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            emptyDraftSessionID: sessionID,
+            sessionStatus: .idle,
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: models[1].id,
+            selectedThinking: .effort(.minimal),
+        )) {
+            AiChatFeature()
+        }
+        // store.exhaustivity = .off: save acknowledgment 이후 최신 selection 보존만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.newChatCreated(seededSnapshot))
+
+        XCTAssertEqual(store.state.selectedModelHandle, models[1].id)
+        XCTAssertEqual(store.state.selectedThinking, .effort(.minimal))
+    }
+
+    /// CBW-005-start_chat_conversation_session: explicit-ID transient New Chat은 첫 request-start까지 저장하지 않는다.
+    /// Home placeholder identity와 seed가 preparation부터 최초 제출 persistence까지 유지되는지 검증합니다.
+    /// - 검증 내용: explicit session ID와 seed 적용, preparation save 0회, 첫 submit request-start save 1회
+    /// - 사전 조건: Home에서 만든 placeholder ID, loaded catalog, resolve된 seed가 있다.
+    /// - 기대 결과: prepared transient와 최초 저장 snapshot이 같은 explicit ID를 사용하고 save는 정확히 한 번 호출된다.
+    func testExplicitIDTransientNewChatPersistsOnceOnFirstRequestStart() async {
+        let models = makeThinkingCapableProviderModels()
+        let sessionID = makeCBW005SessionID("79797979-7979-7979-7979-797979797979")
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: models[0].id,
+            selectedThinking: .effort(.high),
+        )
+        let stream = AiChatExecutionStreamDriver()
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            catalogRows: makeCatalogRows(),
+            modelListState: .loaded(models),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: transient seed와 zero-save 경계만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.prepareTransientNewChat(sessionID: sessionID, seed: seed))
+
+        XCTAssertEqual(store.state.sessionID, sessionID)
+        XCTAssertEqual(store.state.selectedModelHandle, seed.modelHandle)
+        XCTAssertEqual(store.state.selectedThinking, seed.selectedThinking)
+        XCTAssertEqual(store.state.preparedTransientSessionID, sessionID)
+        XCTAssertNil(store.state.emptyDraftSessionID)
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+
+        await store.send(.draftTextChanged("Home question"))
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store)
+        await store.receive(\.sessionSnapshotUpdated)
+
+        XCTAssertEqual(savedSnapshots.value.count, 1)
+        XCTAssertEqual(savedSnapshots.value.first?.sessionID, sessionID)
+        stream.finish()
+    }
+
+    /// CBW-005-start_chat_conversation_session: queued transient seed action은 변경된 child provenance를 재검증한다.
+    /// FileManager validation 이후 child action 적용 전에 사용자 입력이 바뀌는 race를 검증합니다.
+    /// - 검증 내용: attachment mutation 뒤 late preparation action no-op, save 0회
+    /// - 사전 조건: explicit Home session과 captured pristine provenance가 있다.
+    /// - 기대 결과: attachment와 기존 selection/session이 유지되고 transient preparation은 실행되지 않는다.
+    func testGuardedExplicitIDTransientNewChatIgnoresMutationBeforeChildApplication() async {
+        let models = makeThinkingCapableProviderModels()
+        let sessionID = makeCBW005SessionID("78787878-7878-7878-7878-787878787878")
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: models[0].id,
+            selectedThinking: .effort(.high),
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            catalogRows: makeCatalogRows(),
+            modelListState: .loaded(models),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: child action 적용 직전 provenance race만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        let provenance = store.state.newChatPreparationProvenance
+        await store.send(.attachmentPickerSelection([URL(fileURLWithPath: "/tmp/queued-home.txt")]))
+        XCTAssertEqual(store.state.addedAttachments.count, 1)
+
+        await store.send(.prepareTransientNewChatIfCurrent(
+            sessionID: sessionID,
+            provenance: provenance,
+            seed: seed,
+        ))
+
+        XCTAssertEqual(store.state.sessionID, sessionID)
+        XCTAssertEqual(store.state.addedAttachments.count, 1)
+        XCTAssertNil(store.state.selectedModelHandle)
+        XCTAssertNil(store.state.preparedTransientSessionID)
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+    }
+
+    /// CBW-005-start_chat_conversation_session: queued durable seed action은 session navigation provenance를 재검증한다.
+    /// Parent validation 이후 Content history session이 바뀌는 race에서 unintended durable session 생성을 차단합니다.
+    /// - 검증 내용: session navigation 뒤 guarded durable New Chat no-op, save 0회
+    /// - 사전 조건: sessions mode의 기존 session과 captured provenance가 있다.
+    /// - 기대 결과: navigation 대상 session/mode가 유지되고 새 session 생성과 persistence가 발생하지 않는다.
+    func testGuardedDurableNewChatIgnoresSessionNavigationBeforeChildApplication() async {
+        let models = makeThinkingCapableProviderModels()
+        let originalSessionID = makeCBW005SessionID("76767676-7676-7676-7676-767676767676")
+        let navigatedSessionID = makeCBW005SessionID("75757575-7575-7575-7575-757575757575")
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: models[0].id,
+            selectedThinking: .effort(.high),
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(selectedSessionID: originalSessionID),
+            sessionID: originalSessionID,
+            catalogRows: makeCatalogRows(),
+            modelListState: .loaded(models),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: durable child action 적용 직전 session provenance race만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        let provenance = store.state.newChatPreparationProvenance
+        await store.send(.showSessionsForChat(navigatedSessionID))
+        await store.send(.newChatTappedIfCurrent(provenance: provenance, seed: seed))
+
+        XCTAssertEqual(store.state.sessionID, navigatedSessionID)
+        XCTAssertEqual(store.state.sessionList.selectedSessionID, navigatedSessionID)
+        XCTAssertEqual(store.state.mode, .sessions)
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+    }
+
+    /// CBW-005-start_chat_conversation_session: context 포함 transient New Chat도 같은 seed를 저장 없이 표시한다.
+    /// FileManager context 주입 경로가 seed나 transient provenance를 잃지 않는지 검증합니다.
+    /// - 검증 내용: context+seed runtime 초기화, prepared transient marker, save 0회
+    /// - 사전 조건: fresh context, loaded catalog, resolve된 seed가 있다.
+    /// - 기대 결과: context와 seed가 함께 표시되고 persistence는 호출되지 않는다.
+    func testTransientNewChatWithContextAppliesResolvedSelectionSeedWithoutSaving() async {
+        let models = makeThinkingCapableProviderModels()
+        let context = makeContextSnapshot(summary: "Seeded context")
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: models[1].id,
+            selectedThinking: .effort(.low),
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            catalogRows: makeCatalogRows(),
+            modelListState: .loaded(models),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: context 적용과 transient seed의 zero-save 경계만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        let provenance = store.state.newChatPreparationProvenance
+        await store.send(.prepareUnpersistedNewChatWithContextIfCurrent(
+            context,
+            provenance: provenance,
+            seed: seed,
+        ))
+
+        XCTAssertEqual(store.state.currentContext, context)
+        XCTAssertEqual(store.state.selectedModelHandle, seed.modelHandle)
+        XCTAssertEqual(store.state.selectedThinking, seed.selectedThinking)
+        XCTAssertEqual(store.state.preparedTransientSessionID, store.state.sessionID)
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+    }
+
+    /// CBW-005-start_chat_conversation_session: stale provenance의 context transient 준비는 사용자 mutation을 지우지 않는다.
+    /// Parent validation 이후 child action 적용 전 draft가 바뀌는 race를 검증합니다.
+    /// - 검증 내용: stale context preparation no-op, draft/context/selection 보존, save 0회
+    /// - 사전 조건: pristine provenance 캡처 뒤 사용자가 draft를 변경한다.
+    /// - 기대 결과: transient session을 준비하지 않고 mutation 이전 context를 유지한다.
+    func testGuardedContextTransientNewChatIgnoresDraftMutationBeforeApplication() async {
+        let models = makeThinkingCapableProviderModels()
+        let originalContext = makeContextSnapshot(summary: "Original context")
+        let replacementContext = makeContextSnapshot(summary: "Replacement context")
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: models[1].id,
+            selectedThinking: .effort(.low),
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            currentContext: originalContext,
+            catalogRows: makeCatalogRows(),
+            modelListState: .loaded(models),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: child 적용 시점의 stale provenance no-op만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        let provenance = store.state.newChatPreparationProvenance
+        await store.send(.draftTextChanged("User draft"))
+        await store.send(.prepareUnpersistedNewChatWithContextIfCurrent(
+            replacementContext,
+            provenance: provenance,
+            seed: seed,
+        ))
+
+        XCTAssertEqual(store.state.currentContext, originalContext)
+        XCTAssertEqual(store.state.draftText, "User draft")
+        XCTAssertNil(store.state.selectedModelHandle)
+        XCTAssertNil(store.state.preparedTransientSessionID)
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+    }
+
+    /// CBW-005-restore_chat_conversation_session: 성공한 restore는 현재 New Chat 후보보다 snapshot 선택을 우선한다.
+    /// window/default 후보와 다른 저장 selection이 snapshot-first로 복원되는지 검증합니다.
+    /// - 검증 내용: restored model/thinking이 기존 runtime 후보를 덮어씀
+    /// - 사전 조건: runtime은 첫 model을 가리키고 저장 snapshot은 두 번째 model을 가진다.
+    /// - 기대 결과: restore 완료 후 snapshot model/thinking이 유지된다.
+    func testSuccessfulRestoreKeepsSnapshotSelectionWhenNewChatCandidateDiffers() async {
+        let models = makeThinkingCapableProviderModels()
+        let catalogRows = makeCatalogRows()
+        let sessionID = makeCBW005SessionID("67676767-6767-6767-6767-676767676767")
+        let restoredSnapshot = makeCBW005Snapshot(
+            sessionID: sessionID,
+            transcriptHistory: restoredTranscript,
+            model: catalogRows[1],
+            selectedThinking: .effort(.minimal),
+        )
+        let row = makeCBW005SessionSummary(sessionID: sessionID)
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(allRows: [row], rows: [row]),
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: models[0].id,
+            selectedThinking: .effort(.high),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in restoredSnapshot }
+        }
+        // store.exhaustivity = .off: restore 결과의 snapshot-first selection만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.sessionRowTapped(sessionID))
+        await store.receive(\.restoreOutcome)
+
+        XCTAssertEqual(store.state.selectedModelHandle, restoredSnapshot.model)
+        XCTAssertEqual(store.state.selectedThinking, restoredSnapshot.selectedThinking)
+        XCTAssertEqual(store.state.transcriptHistory, restoredSnapshot.transcriptHistory)
+    }
+
     /// CBW-005-start_chat_conversation_session: New Chat은 durable 빈 session을 만들고 chat mode로 진입한다.
     /// 새 대화가 이전 transcript/model runtime을 비우고 저장 가능한 unselected snapshot을 생성하는지 검증합니다.
     /// - 검증 내용: sessionID 생성, transcript/runtime reset, durable snapshot 저장
@@ -1148,6 +1662,18 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             $0.uuid = .incrementing
             $0.aiChatSessionPersistenceClient = makeCBW005LoadOnlyPersistence(persistence)
         }
+    }
+
+    private func makePersistedSelectionCandidate(
+        model: AiProviderModel,
+        thinking: AiChatPersistedThinkingSelection,
+    ) -> AiChatPersistedSelectionCandidate {
+        AiChatPersistedSelectionCandidate(
+            providerRawValue: model.provider.rawValue,
+            modelProviderRawValue: model.provider.rawValue,
+            modelRawValue: model.rawModelID,
+            thinking: thinking,
+        )
     }
 
     private func applyNewChatStartedState(
