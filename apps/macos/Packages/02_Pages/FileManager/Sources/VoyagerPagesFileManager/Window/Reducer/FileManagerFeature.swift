@@ -30,6 +30,8 @@ public struct FileManagerFeature {
             ContentTabFeature()
         }
 
+        FileManagerWindowAiChatSelectionReducer()
+
         FileManagerWindowNavigationReducer()
         FileManagerWindowLifecycleReducer()
         FileManagerWindowPreferencesReducer()
