@@ -16,7 +16,7 @@ Before adding code, discover whether equivalent or near-equivalent functions, va
     - `lsp_symbols` for type/function names
     - `lsp_find_references` for call graph and usage density
 2. Run pattern discovery:
-    - `ast_grep_search` for reducer/view/effect patterns
+    - Load the OMO `ast-grep` skill and use its `sg`/helper workflow for reducer/view/effect patterns
     - `grep` for naming variants and domain keywords
 3. Run similarity pass:
     - Find same responsibility with different names
