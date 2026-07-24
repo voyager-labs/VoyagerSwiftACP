@@ -28,6 +28,9 @@ V2_HEADINGS = [
     "Stop Conditions",
     "Verification",
 ]
+
+SPEC_TEST_FILENAME = re.compile(r"[A-Z]{2,4}\d{3}[A-Za-z0-9]*Tests\.swift")
+FLOW_TEST_FILENAME = re.compile(r"[A-Za-z0-9]*FlowTests\.swift")
 PLAN_SECTIONS = ["TL;DR", "Context", "Work Objectives", "TODOs"]
 PLAN_QUALITY_SECTIONS = ["TDD Evidence", "Test Ownership", "Commit Strategy"]
 PLAN_TODO_FIELDS = ["What to do", "Must NOT do", "Acceptance", "QA", "Commit"]
@@ -211,6 +214,28 @@ def validate_harness(root: Path, paths: set[str], mode: str) -> list[Diagnostic]
             )
             continue
         if path_string.startswith(LOCAL_ARTIFACT_PREFIXES):
+            continue
+        if (
+            mode != "all"
+            and path_string.startswith("apps/macos/")
+            and "/Tests/" in path_string
+            and path.suffix == ".swift"
+            and re.search(r"\bXCTestCase\b|@Test\b", path.read_text(encoding="utf-8"))
+            and not (
+                "/Specs/" in path_string and SPEC_TEST_FILENAME.fullmatch(path.name)
+            )
+            and not (
+                "/Flows/" in path_string and FLOW_TEST_FILENAME.fullmatch(path.name)
+            )
+        ):
+            diagnostics.append(
+                Diagnostic(
+                    path_string,
+                    1,
+                    "HARNESS_MACOS_TEST_TOPOLOGY",
+                    "macOS test classes must be spec-owner suites in Specs/ or flow suites in Flows/",
+                )
+            )
             continue
         if (
             path_string.startswith(".agents/rules/")
