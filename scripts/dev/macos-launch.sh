@@ -12,7 +12,7 @@
 # 사용법:
 #   scripts/dev/macos-launch.sh \
 #     --scheme Voyager-Dev \
-#     --configuration Debug \
+#     --configuration Dev-Debug \
 #     [--workspace <path>]   \
 #     [--derived-data <path>] \
 #     [--injection-next] \
@@ -21,11 +21,11 @@
 #
 # 예시:
 #   # Voyager Dev Debug 빌드 후 실행
-#   scripts/dev/macos-launch.sh --scheme Voyager-Dev --configuration Debug \
+#   scripts/dev/macos-launch.sh --scheme Voyager-Dev --configuration Dev-Debug \
 #     --env VOYAGER_PROJECT_ROOT="$(pwd)"
 #
 #   # 빌드만 (런치하지 않음)
-#   scripts/dev/macos-launch.sh --scheme Voyager-Dev --configuration Debug --no-launch
+#   scripts/dev/macos-launch.sh --scheme Voyager-Dev --configuration Dev-Debug --no-launch
 
 set -euo pipefail
 

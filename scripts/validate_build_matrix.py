@@ -112,10 +112,10 @@ PROD_RELEASE_SIZE_SETTINGS = {
 TEST_TARGETS = {"VoyagerTests", "VoyagerUITests", "VoyagerHelperTests"}
 
 # Host project names
-HOST_PROJECTS = {"OnboardingHost", "SettingsHost", "FileManagerHost"}
+HOST_PROJECTS = {"OnboardingHost", "SettingsHost", "FileManagerHost", "ComposerHost"}
 
 # Host project test targets
-HOST_TEST_TARGETS = {"SettingsHostTests"}
+HOST_TEST_TARGETS = {"SettingsHostTests", "ComposerHostTests"}
 
 # Scheme files directory
 SCHEMES_DIR = Path("apps/macos/Voyager/Voyager.xcodeproj/xcshareddata/xcschemes")
@@ -844,7 +844,7 @@ def check_host_project(
             )
 
         for config_name in expected:
-            if config_name in names:
+            if config_name in names and not is_test:
                 check_app_env(target_configs, target_name, config_name, errors, prefix)
 
 

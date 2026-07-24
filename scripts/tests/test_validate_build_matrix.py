@@ -393,6 +393,27 @@ class CheckHostProjectTests(unittest.TestCase):
                 f"Expected legacy/missing error, got: {errors}",
             )
 
+    def test_host_test_target_does_not_require_app_env(self) -> None:
+        _reset_cfg_counter()
+        configs = [_make_cfg(DEV_DEBUG), _make_cfg(DEV_RELEASE)]
+        config_list = _make_cl(
+            [config.get_id() for config in configs],
+            [DEV_DEBUG, DEV_RELEASE],
+        )
+        with mock.patch("scripts.validate_build_matrix._load_pbxproj") as mock_load:
+            mock_proj = mock.MagicMock()
+            mock_proj.objects.get_objects_in_section.side_effect = lambda section: {
+                "XCBuildConfiguration": configs,
+                "XCConfigurationList": [config_list],
+                "PBXNativeTarget": [_make_target("ComposerHostTests")],
+            }.get(section, [])
+            mock_load.return_value = mock_proj
+            errors: list[str] = []
+
+            check_host_project(Path("dummy.pbxproj"), "ComposerHost", errors)
+
+        self.assertEqual(errors, [])
+
 
 class CheckSchemeFilesTests(unittest.TestCase):
     """Tests for check_scheme_files."""
