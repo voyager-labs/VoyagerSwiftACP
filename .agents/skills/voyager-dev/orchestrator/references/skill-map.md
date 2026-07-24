@@ -21,6 +21,7 @@ Use this map from `../SKILL.md` to route work into role entry points. The parent
 ## Routing rules
 
 - Load `../SKILL.md` first; role entry points refine, not replace, the orchestrator workflow.
+- Before adding any macOS automated test, route through `../../implementer/spec-test-authoring/SKILL.md` to identify a spec-owner or canonical-flow owner. Do not design standalone component, infrastructure, contract, or UI test suites.
 - Prefer the narrowest role that owns the current task shape.
 - Load multiple role entry points when work crosses boundaries, but keep one orchestrator decision record.
 - When a Voyager package change also reorganizes package internals, load `../../../fsd-package-segmentation/SKILL.md`; when it changes products, targets, dependencies, or consumers, load `../../../code-tooling/references/package-integration.md` before final verification.
