@@ -256,11 +256,11 @@
 				"--scheme",
 				"ComposerHost-Dev",
 				"--configuration",
-				"Debug",
+				"Dev-Debug",
 				"--env",
 				"VOYAGER_PROJECT_ROOT=${workspaceFolder}"
 			],
-			"label": "ComposerHost Dev: Launch (Debug)",
+			"label": "ComposerHost Dev: Launch (Dev-Debug)",
 			"options": {
 				"cwd": "${workspaceFolder}"
 			}
@@ -272,11 +272,11 @@
 				"--scheme",
 				"ComposerHost-Dev",
 				"--configuration",
-				"Release",
+				"Dev-Release",
 				"--env",
 				"VOYAGER_PROJECT_ROOT=${workspaceFolder}"
 			],
-			"label": "ComposerHost Dev: Launch (Release)",
+			"label": "ComposerHost Dev: Launch (Dev-Release)",
 			"options": {
 				"cwd": "${workspaceFolder}"
 			}
