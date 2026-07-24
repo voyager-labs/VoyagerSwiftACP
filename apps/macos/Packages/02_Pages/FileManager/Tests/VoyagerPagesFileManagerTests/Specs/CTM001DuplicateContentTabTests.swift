@@ -38,11 +38,12 @@ final class CTM001DuplicateContentTabTests: XCTestCase {
         XCTAssertEqual(state.previousActiveTabID, sourceID)
     }
 
-    /// CTM-001-duplicate_unpinned_source: selected source 복제는 기존 선택을 보존하고 active duplicate를 선택함
-    /// - 검증 내용: duplicate가 새 identity로 활성화되면 기존 선택/anchor와 active-selection invariant를 함께 유지함
+    /// CTM-001-duplicate_unpinned_source: selected source 복제는 기존 explicit selection을 보존함
+    /// duplicate가 새 identity로 활성화되어도 selected identity와 anchor가 독립적으로 유지되는지 확인함
+    /// - 검증 내용: duplicate 활성화 뒤 기존 selection/anchor와 runtime metadata 보존
     /// - 사전 조건: selected/anchored unpinned Directory source와 active sibling tab
-    /// - 기대 결과: source/sibling/active duplicate가 선택되고 anchor 및 나머지 runtime metadata도 보존됨
-    func testDuplicate_selectedSourcePreservesSelectionAndSelectsActiveDuplicate() {
+    /// - 기대 결과: source만 선택되고 sibling/active duplicate는 선택되지 않으며 anchor가 보존됨
+    func testDuplicate_selectedSourcePreservesSelectionWithoutSelectingActiveDuplicate() {
         let sourceID = ContentTabID(rawValue: "source")
         let siblingID = ContentTabID(rawValue: "sibling")
         let duplicateID = ContentTabID(rawValue: "duplicate")
@@ -78,9 +79,9 @@ final class CTM001DuplicateContentTabTests: XCTestCase {
             action: .duplicate(sourceID: sourceID, duplicateID: duplicateID),
         )
 
-        XCTAssertEqual(state.selectedTabIDs, Set([sourceID, siblingID, duplicateID]))
+        XCTAssertEqual(state.selectedTabIDs, [sourceID])
         XCTAssertEqual(state.selectionAnchorID, sourceID)
-        XCTAssertTrue(state.selectedTabIDs.contains(duplicateID))
+        XCTAssertFalse(state.selectedTabIDs.contains(duplicateID))
         XCTAssertEqual(state.activeTabID, duplicateID)
         XCTAssertEqual(state.previousActiveTabID, siblingID)
         XCTAssertEqual(state.pinnedRecordPersistenceError, pinnedErrorBefore)
@@ -616,10 +617,7 @@ extension CTM001DuplicateContentTabTests {
         XCTAssertNil(store.state.contentTabs.tabs[id: duplicateID])
         XCTAssertNil(store.state.tabContentStates[duplicateID])
         XCTAssertNil(store.state.tabInspectorStates[duplicateID])
-        XCTAssertEqual(
-            store.state.contentTabs.selectedTabIDs,
-            Set([sourceID, activeBeforePendingID, pendingTabID]),
-        )
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [sourceID])
         XCTAssertNil(store.state.contentTabs.selectionAnchorID)
 
         // Source/target row 유지
@@ -674,8 +672,8 @@ extension CTM001DuplicateContentTabTests {
         await store.skipReceivedActions(strict: false)
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
-        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [duplicateID])
-        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, duplicateID)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [])
+        XCTAssertNil(store.state.contentTabs.selectionAnchorID)
         await store.finish()
     }
 

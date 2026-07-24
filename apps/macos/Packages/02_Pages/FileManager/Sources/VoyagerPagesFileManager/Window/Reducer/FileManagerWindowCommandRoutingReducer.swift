@@ -399,18 +399,36 @@ struct FileManagerWindowCommandRoutingReducer {
     }
 
     private func handleRequestedCommand(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
+        if state.pendingSelectedContentTabClose != nil {
+            switch command {
+            case .openNewContentTab,
+                 .closeActiveContentTab,
+                 .closeSelectedContentTabs,
+                 .toggleActiveContentTabPin,
+                 .restoreLastClosedContentTab,
+                 .duplicateContentTab,
+                 .duplicateActiveContentTab,
+                 .duplicateSelectedContentTabs,
+                 .saveCollection,
+                 .saveCollectionAs:
+                return .none
+            default:
+                break
+            }
+        }
+
         switch command {
         case .openNewContentTab:
             guard state.contentTabs.tabs.count < ContentTabConstants.maxTabs else { return .none }
-            return .concatenate(
-                .send(.contentTabs(.open(.homeDefault))),
-                .send(.contentTabs(.collapseSelectionToActive)),
-            )
+            return .send(.contentTabs(.open(.homeDefault)))
 
         case .closeActiveContentTab:
             return state.contentTabs.activeTabID
                 .map { Effect<Action>.send(.closeContentTabRequested($0)) }
                 ?? Effect<Action>.none
+
+        case .closeSelectedContentTabs:
+            return .send(.requestCloseSelectedContentTabs)
 
         case .toggleActiveContentTabPin:
             return toggleActiveContentTabPin(state: state)

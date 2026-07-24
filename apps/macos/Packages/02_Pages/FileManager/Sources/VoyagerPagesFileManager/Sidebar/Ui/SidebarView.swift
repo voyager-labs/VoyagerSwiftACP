@@ -46,9 +46,61 @@ struct ContentTabDuplicatePresentation: Equatable {
     }
 }
 
+struct ContentTabClosePresentation: Equatable {
+    enum Command: Equatable {
+        case closeContentTab(ContentTabID)
+        case closeSelectedContentTabs
+        case unpinContentTab(ContentTabID)
+    }
+
+    let title: String
+    let accessibilityIdentifier: String
+    let isEnabled: Bool
+    let command: Command
+
+    init(
+        clickedTabID: ContentTabID,
+        isPinned: Bool,
+        validSelectedTabIDs: Set<ContentTabID>,
+        isEnabled: Bool,
+    ) {
+        if validSelectedTabIDs.count > 1, validSelectedTabIDs.contains(clickedTabID) {
+            title = "Close \(validSelectedTabIDs.count) Tabs"
+            accessibilityIdentifier = "close-selected-content-tabs"
+            command = .closeSelectedContentTabs
+        } else if isPinned {
+            title = "Unpin"
+            accessibilityIdentifier = "unpin-content-tab-\(clickedTabID)"
+            command = .unpinContentTab(clickedTabID)
+        } else {
+            title = "Close"
+            accessibilityIdentifier = "close-content-tab-\(clickedTabID)"
+            command = .closeContentTab(clickedTabID)
+        }
+        self.isEnabled = isEnabled
+    }
+
+    var usesUnpinCommand: Bool {
+        if case .unpinContentTab = command { return true }
+        return false
+    }
+
+    var delegateAction: FileManagerSidebarAction.Delegate {
+        switch command {
+        case let .closeContentTab(tabID):
+            .closeContentTab(tabID)
+        case .closeSelectedContentTabs:
+            .closeSelectedContentTabs
+        case let .unpinContentTab(tabID):
+            .unpinContentTab(tabID)
+        }
+    }
+}
+
 struct SidebarView: View {
     let sidebarStore: StoreOf<FileManagerSidebarFeature>
     let contentTabStore: StoreOf<ContentTabFeature>
+    let interactionStore: Store<ContentTabRowInteractionSurface, FileManagerSidebarAction>
     let workspaceClient: WorkspaceClient
 
     @Environment(\.colorScheme)
@@ -386,6 +438,12 @@ struct SidebarView: View {
             currentTabIDs: Array(contentTabStore.tabs.ids),
             tabCount: contentTabStore.tabs.count,
         )
+        let closePresentation = ContentTabClosePresentation(
+            clickedTabID: item.id,
+            isPinned: item.isPinned,
+            validSelectedTabIDs: interactionStore.validSelectedTabIDs,
+            isEnabled: interactionStore.isCloseEnabled,
+        )
         return ContentTabSidebarRow(
             item: item,
             reorderDragSource: reorderDragSource,
@@ -393,6 +451,7 @@ struct SidebarView: View {
             isDropTarget: sidebarEntryDropTarget == .contentTab(item.id),
             isSelected: contentTabSelectionPresentation.isSelected(item.id),
             duplicatePresentation: duplicatePresentation,
+            closePresentation: closePresentation,
             onActivate: {
                 sidebarStore.send(.delegate(.selectContentTab(item.id)))
             },
@@ -409,10 +468,13 @@ struct SidebarView: View {
                 sidebarStore.send(.delegate(.pinContentTab(item.id)))
             },
             onUnpin: {
-                sidebarStore.send(.delegate(.unpinContentTab(item.id)))
+                sidebarStore.send(.delegate(closePresentation.delegateAction))
             },
             onClose: {
                 sidebarStore.send(.delegate(.closeContentTab(item.id)))
+            },
+            onContextMenuClose: {
+                sidebarStore.send(.delegate(closePresentation.delegateAction))
             },
             onHover: { isHovered in
                 contentTabHoveredItemID = isHovered ? item.id : nil
@@ -463,6 +525,7 @@ private struct ContentTabSidebarRow: View {
     let isDropTarget: Bool
     let isSelected: Bool
     let duplicatePresentation: ContentTabDuplicatePresentation
+    let closePresentation: ContentTabClosePresentation
     let onActivate: () -> Void
     let onToggleSelection: () -> Void
     let onSelectRange: () -> Void
@@ -470,6 +533,7 @@ private struct ContentTabSidebarRow: View {
     let onPin: () -> Void
     let onUnpin: () -> Void
     let onClose: () -> Void
+    let onContextMenuClose: () -> Void
     let onHover: (Bool) -> Void
 
     @Environment(\.colorScheme)
@@ -489,13 +553,17 @@ private struct ContentTabSidebarRow: View {
             duplicateTitle: duplicatePresentation.title,
             duplicateAccessibilityIdentifier: duplicatePresentation.accessibilityIdentifier,
             isDuplicateEnabled: duplicatePresentation.isEnabled,
+            closeTitle: closePresentation.title,
+            closeAccessibilityIdentifier: closePresentation.accessibilityIdentifier,
+            isCloseEnabled: closePresentation.isEnabled,
+            usesUnpinCommand: closePresentation.usesUnpinCommand,
             onActivate: handlePrimaryAction,
             onToggleSelection: handleToggleSelection,
             onSelectRange: handleSelectRange,
             onDuplicate: onDuplicate,
             onPin: onPin,
             onUnpin: onUnpin,
-            onClose: onClose,
+            onClose: onContextMenuClose,
         )
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 8)
@@ -566,6 +634,10 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
     let duplicateTitle: String
     let duplicateAccessibilityIdentifier: String
     let isDuplicateEnabled: Bool
+    let closeTitle: String
+    let closeAccessibilityIdentifier: String
+    let isCloseEnabled: Bool
+    let usesUnpinCommand: Bool
     let onActivate: () -> Void
     let onToggleSelection: () -> Void
     let onSelectRange: () -> Void
@@ -609,6 +681,10 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
             onClose: onClose,
             duplicateTitle: duplicateTitle,
             isDuplicateEnabled: isDuplicateEnabled,
+            closeTitle: closeTitle,
+            closeAccessibilityIdentifier: closeAccessibilityIdentifier,
+            isCloseEnabled: isCloseEnabled,
+            usesUnpinCommand: usesUnpinCommand,
         )
     }
 
@@ -658,6 +734,10 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     private var duplicateTitle = "Duplicate"
     private var duplicateAccessibilityIdentifier = ""
     private var isDuplicateEnabled = true
+    private var closeTitle = "Close"
+    private var closeAccessibilityIdentifier = ""
+    private var isCloseEnabled = true
+    private var usesUnpinCommand = false
     private var isPinned = false
 
     var dragSessionStartOverride: (([NSDraggingItem], NSEvent) -> Void)?
@@ -693,6 +773,10 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         onClose: @escaping () -> Void,
         duplicateTitle: String = "Duplicate",
         isDuplicateEnabled: Bool = true,
+        closeTitle: String? = nil,
+        closeAccessibilityIdentifier: String = "",
+        isCloseEnabled: Bool? = nil,
+        usesUnpinCommand: Bool? = nil,
     ) {
         self.reorderDragSource = reorderDragSource
         self.onActivate = onActivate
@@ -705,6 +789,10 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         self.duplicateTitle = duplicateTitle
         self.duplicateAccessibilityIdentifier = duplicateAccessibilityIdentifier
         self.isDuplicateEnabled = isDuplicateEnabled
+        self.closeTitle = closeTitle ?? (isPinned ? "Unpin" : "Close")
+        self.closeAccessibilityIdentifier = closeAccessibilityIdentifier
+        self.isCloseEnabled = isCloseEnabled ?? isEnabled
+        self.usesUnpinCommand = usesUnpinCommand ?? isPinned
         self.isPinned = isPinned
         self.isEnabled = isEnabled
         presentationView.rootView = rootView
@@ -953,12 +1041,18 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         duplicateItem.identifier = NSUserInterfaceItemIdentifier(duplicateAccessibilityIdentifier)
         duplicateItem.isEnabled = isDuplicateEnabled && onDuplicate != nil
         menu.addItem(duplicateItem)
-        if isPinned {
-            menu.addItem(menuItem(title: "Unpin", action: #selector(unpin)))
+        let closeItem: NSMenuItem
+        if usesUnpinCommand {
+            closeItem = menuItem(title: closeTitle, action: #selector(unpin))
         } else {
-            menu.addItem(menuItem(title: "Pin", action: #selector(pin)))
-            menu.addItem(menuItem(title: "Close", action: #selector(close)))
+            if !isPinned {
+                menu.addItem(menuItem(title: "Pin", action: #selector(pin)))
+            }
+            closeItem = menuItem(title: closeTitle, action: #selector(close))
         }
+        closeItem.identifier = NSUserInterfaceItemIdentifier(closeAccessibilityIdentifier)
+        closeItem.isEnabled = isCloseEnabled
+        menu.addItem(closeItem)
         return menu
     }
 
@@ -978,10 +1072,12 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     }
 
     @objc private func unpin() {
+        guard isCloseEnabled else { return }
         onUnpin()
     }
 
     @objc private func close() {
+        guard isCloseEnabled else { return }
         onClose()
     }
 }

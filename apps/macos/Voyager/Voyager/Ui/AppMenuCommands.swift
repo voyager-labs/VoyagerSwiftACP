@@ -34,7 +34,7 @@ struct AppMenuCommands: Commands {
                 send(.app(.newTab))
             }
             .keyboardShortcut("t", modifiers: .command)
-            .disabled(!viewStore.hasFocusedWindow)
+            .disabled(!viewStore.canOpenNewContentTab)
 
             Button("New Folder") {
                 send(.app(.newFolder))
@@ -81,14 +81,14 @@ struct AppMenuCommands: Commands {
                     send(.app(.closeTab))
                 }
                 .keyboardShortcut("w", modifiers: .command)
-                .disabled(!viewStore.hasFocusedWindow)
+                .disabled(!viewStore.canCloseTab)
             }
 
             Button(viewStore.pinTabTitle) {
                 send(.app(.togglePinTab))
             }
             .keyboardShortcut("p", modifiers: .command)
-            .disabled(!viewStore.hasFocusedWindow)
+            .disabled(!viewStore.canToggleActiveContentTabPin)
 
             if viewStore.selectedContentTabCount > 1 {
                 Button(viewStore.duplicateContentTabTitle) {

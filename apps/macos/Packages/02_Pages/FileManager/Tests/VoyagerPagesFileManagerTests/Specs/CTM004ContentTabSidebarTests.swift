@@ -709,13 +709,10 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             guard case .contentTabs(.open(.homeDefault)) = action else { return false }
             return true
         }
-        await store.receive { action in
-            guard case .contentTabs(.collapseSelectionToActive) = action else { return false }
-            return true
-        }
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
         XCTAssertEqual(store.state.contentTabs.tabs.last?.anchor, .homeDefault)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [])
         XCTAssertEqual(store.state.content.homeFavoriteItems.map(\.title), ["Projects"])
         XCTAssertEqual(store.state.content.homeLocationItems.map(\.title), [
             "iCloud Drive",
@@ -771,11 +768,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             guard case .contentTabs(.open(.homeDefault)) = action else { return false }
             return true
         }
-        await store.receive { action in
-            guard case .contentTabs(.collapseSelectionToActive) = action else { return false }
-            return true
-        }
 
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [])
         XCTAssertEqual(locationsLoadCount.value, 0, "tab lifecycle에서는 fixed Locations를 재조회하지 않아야 함")
         XCTAssertEqual(store.state.content.homeLocationItems.map(\.title), [
             "iCloud Drive",
@@ -846,10 +840,6 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             guard case let .contentTabs(.setCurrent(id)) = action else { return false }
             return id == directoryID
         }
-        await store.receive { action in
-            guard case .contentTabs(.collapseSelectionToActive) = action else { return false }
-            return true
-        }
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, directoryID, "active tab must switch to Directory")
         XCTAssertEqual(store.state.content.navigation.currentPath, directoryPath)
@@ -860,12 +850,9 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             guard case let .contentTabs(.setCurrent(id)) = action else { return false }
             return id == homeID
         }
-        await store.receive { action in
-            guard case .contentTabs(.collapseSelectionToActive) = action else { return false }
-            return true
-        }
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, homeID, "active tab must switch back to Home")
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [])
         XCTAssertEqual(ContentTabProjection.activePageAnchor(from: store.state.contentTabs), .homeDefault)
         XCTAssertEqual(store.state.content.navigation.currentPath, homeSessionPath)
         XCTAssertEqual(store.state.tabContentStates[directoryID]?.navigation.currentPath, directoryPath)
@@ -954,6 +941,45 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(state.sidebar.contentTabSidebarItems.count, 1)
         XCTAssertEqual(state.sidebar.contentTabSidebarItems[0].id, homeID)
         XCTAssertEqual(state.sidebar.contentTabSidebarItems[0].pageType, .home)
+    }
+
+    /// CTM-004-sidebar_projection_content_tabs: batch fallback active는 explicit selection과 독립적으로 표시됨
+    /// 일부 close 실패 뒤 fallback이 바뀌어도 Sidebar active projection이 selection membership을 암묵 변경하지 않는지 검증한다.
+    /// - 검증 내용: fallback active row 하나만 isActive이고 selectedTabIDs는 failed survivor identity만 유지함
+    /// - 사전 조건: A가 fallback active, B만 failed survivor로 selected인 두 tab 상태
+    /// - 기대 결과: A row만 active이고 selectedTabIDs는 B 하나로 유지된다.
+    func testSidebarProjection_batchFallbackDoesNotSelectActiveTab() {
+        let fallbackID = ContentTabID(rawValue: "batch-fallback")
+        let failedID = ContentTabID(rawValue: "batch-failed")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: fallbackID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Fallback",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: failedID,
+                    page: .directory,
+                    anchor: .directory(path: "/failed"),
+                    isPinned: false,
+                    title: "Failed",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: fallbackID,
+        )
+        state.contentTabs.selectedTabIDs = [failedID]
+
+        state.syncContentTabSidebarItems()
+
+        XCTAssertEqual(state.sidebar.contentTabSidebarItems.filter(\.isActive).map(\.id), [fallbackID])
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, [failedID])
+        XCTAssertFalse(state.contentTabs.selectedTabIDs.contains(fallbackID))
     }
 
     // MARK: - CTM-004-content_tab_reorder_drop_contract
@@ -4573,6 +4599,209 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         await store.send(.sidebar(.delegate(.entryDropRequested(request))))
         XCTAssertEqual(store.state, initialState, "rejected drop must preserve Window state", file: file, line: line)
         await store.finish()
+    }
+
+    private func assertBulkCloseMenuPresentation(
+        clickedID: ContentTabID,
+        validSelectedTabIDs: Set<ContentTabID>,
+        isPinned: Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) throws {
+        let presentation = ContentTabClosePresentation(
+            clickedTabID: clickedID,
+            isPinned: isPinned,
+            validSelectedTabIDs: validSelectedTabIDs,
+            isEnabled: true,
+        )
+        XCTAssertEqual(presentation.title, "Close 3 Tabs", file: file, line: line)
+        XCTAssertEqual(
+            presentation.accessibilityIdentifier,
+            "close-selected-content-tabs",
+            file: file,
+            line: line,
+        )
+        guard case .closeSelectedContentTabs = presentation.command else {
+            return XCTFail("selected clicked row should project bulk close", file: file, line: line)
+        }
+        guard case .closeSelectedContentTabs = presentation.delegateAction else {
+            return XCTFail("bulk close should map to the semantic Sidebar delegate", file: file, line: line)
+        }
+
+        let button = ContentTabSidebarButton(frame: .zero)
+        button.update(
+            rootView: AnyView(EmptyView()),
+            accessibilityLabel: "Selected Content Tab",
+            accessibilityValue: "Selected",
+            duplicateAccessibilityIdentifier: "duplicate-selected-content-tabs",
+            isPinned: isPinned,
+            isEnabled: true,
+            reorderDragSource: nil,
+            onActivate: {},
+            onToggleSelection: {},
+            onSelectRange: {},
+            onDuplicate: {},
+            onPin: {},
+            onUnpin: {},
+            onClose: {},
+            closeTitle: presentation.title,
+            closeAccessibilityIdentifier: presentation.accessibilityIdentifier,
+            isCloseEnabled: presentation.isEnabled,
+            usesUnpinCommand: presentation.usesUnpinCommand,
+        )
+
+        let closeItem = try XCTUnwrap(button.menu?.items.last, file: file, line: line)
+        XCTAssertEqual(closeItem.title, "Close 3 Tabs", file: file, line: line)
+        XCTAssertEqual(closeItem.identifier?.rawValue, "close-selected-content-tabs", file: file, line: line)
+        XCTAssertTrue(closeItem.isEnabled, file: file, line: line)
+    }
+
+    private func assertSingleCloseFallbackPresentations(
+        clickedID: ContentTabID,
+        selectedIDs: Set<ContentTabID>,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        let nonMember = ContentTabClosePresentation(
+            clickedTabID: ContentTabID(rawValue: "close-non-member"),
+            isPinned: false,
+            validSelectedTabIDs: selectedIDs,
+            isEnabled: true,
+        )
+        XCTAssertEqual(nonMember.title, "Close", file: file, line: line)
+        guard case .closeContentTab = nonMember.command else {
+            return XCTFail("non-member row should keep clicked-row Close", file: file, line: line)
+        }
+
+        let pinnedSingle = ContentTabClosePresentation(
+            clickedTabID: clickedID,
+            isPinned: true,
+            validSelectedTabIDs: [clickedID],
+            isEnabled: true,
+        )
+        XCTAssertEqual(pinnedSingle.title, "Unpin", file: file, line: line)
+        XCTAssertTrue(pinnedSingle.usesUnpinCommand, file: file, line: line)
+        guard case .unpinContentTab = pinnedSingle.command else {
+            return XCTFail("single pinned row should keep Unpin", file: file, line: line)
+        }
+    }
+
+    private func makeCloseDisabledWindowStates() -> [FileManagerWindowState] {
+        let operationID = UUID()
+        var batchState = FileManagerWindowState()
+        batchState.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
+            operationID: operationID,
+            orderedTargetIDs: [],
+            originalActiveTabID: nil,
+            preferredFallbackIDs: [],
+        )
+
+        var singleState = FileManagerWindowState()
+        singleState.pendingContentTabClose = PendingContentTabClose(tabID: ContentTabID())
+
+        var teardownState = FileManagerWindowState()
+        teardownState.pendingContentTabTeardown = PendingContentTabTeardown(
+            requestID: operationID,
+            tabID: ContentTabID(),
+            ownerID: operationID,
+        )
+
+        var closingState = FileManagerWindowState()
+        closingState.isClosing = true
+        return [batchState, singleState, teardownState, closingState]
+    }
+
+    // MARK: - CTM-004-sidebar_close_selected_content_tabs
+
+    /// CTM-004-sidebar_close_selected_content_tabs: selected ordinary와 pinned row는 bulk Close label을 사용함
+    /// 사용자가 여러 Content Tab을 선택한 뒤 selection member를 우클릭하는 두 presentation 경로를 검증한다.
+    /// - 검증 내용: typed close projection과 native NSMenu가 clicked row의 pin 상태와 무관하게 valid selection count를 반영함
+    /// - 사전 조건: clicked row를 포함한 3개 valid selection, stale selection 하나, ordinary/pinned ContentTabSidebarButton
+    /// - 기대 결과: 두 menu 모두 `Close 3 Tabs`와 bulk identifier/delegate를 노출하고 non-member/single pinned fallback은 유지됨
+    func testSidebarCloseMenu_selectedOrdinaryAndPinnedRowsUseBulkClosePresentation() throws {
+        let clickedID = ContentTabID(rawValue: "close-selected-clicked")
+        let selectedIDs: Set<ContentTabID> = [
+            clickedID,
+            ContentTabID(rawValue: "close-selected-peer-a"),
+            ContentTabID(rawValue: "close-selected-peer-b"),
+        ]
+        var windowState = FileManagerWindowState()
+        windowState.contentTabs = ContentTabState(
+            tabs: .init(uniqueElements: selectedIDs.map { id in
+                ContentTabItem(
+                    id: id,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                )
+            }),
+            activeTabID: clickedID,
+        )
+        windowState.contentTabs.selectedTabIDs = selectedIDs.union([
+            ContentTabID(rawValue: "close-selected-stale"),
+        ])
+        let interactionSurface = windowState.contentTabRowInteractionSurface
+        XCTAssertEqual(interactionSurface.validSelectedTabIDs, selectedIDs)
+
+        _ = NSApplication.shared
+        try assertBulkCloseMenuPresentation(
+            clickedID: clickedID,
+            validSelectedTabIDs: interactionSurface.validSelectedTabIDs,
+            isPinned: false,
+        )
+        try assertBulkCloseMenuPresentation(
+            clickedID: clickedID,
+            validSelectedTabIDs: interactionSurface.validSelectedTabIDs,
+            isPinned: true,
+        )
+
+        assertSingleCloseFallbackPresentations(
+            clickedID: clickedID,
+            selectedIDs: selectedIDs,
+        )
+    }
+
+    /// CTM-004-sidebar_close_selected_content_tabs: unavailable close command는 native menu callback을 차단함
+    /// pending close lifecycle에서 Sidebar context menu가 보이더라도 실행할 수 없는 상태를 검증한다.
+    /// - 검증 내용: Window-owned projection, close NSMenuItem enabled state, programmatic target-action callback count
+    /// - 사전 조건: batch/single/teardown/closing Window states와 close callback recorder
+    /// - 기대 결과: 모든 lifecycle state가 unavailable이고 disabled callback은 호출되지 않음
+    func testSidebarCloseMenu_disabledPresentationBlocksCloseCallback() throws {
+        let blockedStates = makeCloseDisabledWindowStates()
+
+        XCTAssertTrue(blockedStates.allSatisfy { !$0.contentTabRowInteractionSurface.isCloseEnabled })
+
+        _ = NSApplication.shared
+        let button = ContentTabSidebarButton(frame: .zero)
+        var closeActionCount = 0
+        button.update(
+            rootView: AnyView(EmptyView()),
+            accessibilityLabel: "Unavailable Content Tab",
+            accessibilityValue: "Selected",
+            duplicateAccessibilityIdentifier: "duplicate-unavailable-content-tab",
+            isPinned: false,
+            isEnabled: true,
+            reorderDragSource: nil,
+            onActivate: {},
+            onToggleSelection: {},
+            onSelectRange: {},
+            onDuplicate: {},
+            onPin: {},
+            onUnpin: {},
+            onClose: { closeActionCount += 1 },
+            closeTitle: "Close 2 Tabs",
+            closeAccessibilityIdentifier: "close-selected-content-tabs",
+            isCloseEnabled: false,
+            usesUnpinCommand: false,
+        )
+
+        let closeItem = try XCTUnwrap(button.menu?.items.last)
+        XCTAssertFalse(closeItem.isEnabled)
+        let action = try XCTUnwrap(closeItem.action)
+        XCTAssertTrue(NSApp.sendAction(action, to: closeItem.target, from: closeItem))
+        XCTAssertEqual(closeActionCount, 0)
     }
 
     // MARK: - CTM-004-sidebar_duplicate_routing

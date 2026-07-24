@@ -11,9 +11,13 @@ public struct FileManagerWindowMenuCommandProjection: Equatable, Sendable {
     public let canGoForward: Bool
     public let canGoToEnclosingDirectory: Bool
     public let canSaveCollection: Bool
+    public let canOpenNewContentTab: Bool
+    public let canToggleActiveContentTabPin: Bool
     public let isActiveContentTabPinned: Bool
     public let canRestoreLastClosedTab: Bool
     public let selectedContentTabCount: Int
+    public let canCloseSelectedContentTabs: Bool
+    public let canCloseActiveContentTab: Bool
     public let canDuplicateSelectedContentTabs: Bool
     public let canDuplicateActiveContentTab: Bool
     public let sidebarVisible: Bool
@@ -35,7 +39,12 @@ public extension FileManagerWindowState {
         let activeContentTab = contentTabs.activeTabID.flatMap { contentTabs.tabs[id: $0] }
         let canPerformEntryCommands = !content.isOrdinaryDirectoryLoading
         let selectedContentTabCount = contentTabs.selectedTabCount
+        let canCloseContentTabs = pendingSelectedContentTabClose == nil
+            && pendingContentTabClose == nil
+            && pendingContentTabTeardown == nil
+        let isBatchCloseIdle = pendingSelectedContentTabClose == nil
         let canDuplicateContentTabs = contentTabs.tabs.count < ContentTabConstants.maxTabs
+            && isBatchCloseIdle
             && pendingContentTabClose == nil
             && pendingContentTabTeardown == nil
 
@@ -46,11 +55,20 @@ public extension FileManagerWindowState {
             canGoBack: content.navigation.canGoBack,
             canGoForward: content.navigation.canGoForward,
             canGoToEnclosingDirectory: content.navigation.canGoToEnclosingDirectory,
-            canSaveCollection: content.canSaveCollection,
+            canSaveCollection: content.canSaveCollection && isBatchCloseIdle,
+            canOpenNewContentTab: contentTabs.tabs.count < ContentTabConstants.maxTabs && isBatchCloseIdle,
+            canToggleActiveContentTabPin: activeContentTab != nil
+                && isBatchCloseIdle
+                && pendingContentTabClose == nil,
             isActiveContentTabPinned: activeContentTab?.isPinned == true,
             canRestoreLastClosedTab: ContentTabProjection.restoreCandidate(from: contentTabs) != nil && contentTabs.tabs
-                .count < ContentTabConstants.maxTabs && pendingContentTabClose == nil,
+                .count < ContentTabConstants.maxTabs && isBatchCloseIdle && pendingContentTabClose == nil,
             selectedContentTabCount: selectedContentTabCount,
+            canCloseSelectedContentTabs: selectedContentTabCount > 1 && canStartSelectedContentTabClose,
+            canCloseActiveContentTab: selectedContentTabCount <= 1
+                && activeContentTab != nil
+                && activeContentTab?.isPinned != true
+                && canCloseContentTabs,
             canDuplicateSelectedContentTabs: selectedContentTabCount > 1 && canDuplicateContentTabs,
             canDuplicateActiveContentTab: selectedContentTabCount <= 1 && activeContentTab != nil
                 && canDuplicateContentTabs,
@@ -73,7 +91,9 @@ public extension FileManagerWindowState {
 
 extension FileManagerWindowState {
     func validatedUndoRedoTarget(for direction: EntryActionDirection) -> UndoManagerRecordIdentity? {
-        guard undoRedoPhase == .idle else { return nil }
+        guard undoRedoPhase == .idle,
+              pendingSelectedContentTabClose == nil
+        else { return nil }
 
         let managerTarget: UndoManagerRecordIdentity?
         switch direction {

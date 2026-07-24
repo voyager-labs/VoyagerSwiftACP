@@ -19,9 +19,13 @@ struct MenuCommandsState: Equatable {
     var canGoToEnclosingDirectory: Bool
 
     var canSaveCollection: Bool
+    var canOpenNewContentTab: Bool
+    var canToggleActiveContentTabPin: Bool
     var isActiveContentTabPinned: Bool
     var canRestoreLastClosedTab: Bool
     var selectedContentTabCount: Int
+    var canCloseSelectedContentTabs: Bool
+    var canCloseActiveContentTab: Bool
     var canDuplicateSelectedContentTabs: Bool
     var canDuplicateActiveContentTab: Bool
 
@@ -34,11 +38,15 @@ struct MenuCommandsState: Equatable {
     }
 
     var closeTabTitle: String {
-        "Close Tab"
+        selectedContentTabCount > 1 ? "Close \(selectedContentTabCount) Tabs" : "Close Tab"
     }
 
     var showsCloseTabCommand: Bool {
-        !isActiveContentTabPinned
+        selectedContentTabCount > 1 || !isActiveContentTabPinned
+    }
+
+    var canCloseTab: Bool {
+        selectedContentTabCount > 1 ? canCloseSelectedContentTabs : canCloseActiveContentTab
     }
 
     var pinTabTitle: String {
@@ -68,9 +76,13 @@ struct MenuCommandsState: Equatable {
         canGoForward = false
         canGoToEnclosingDirectory = false
         canSaveCollection = false
+        canOpenNewContentTab = false
+        canToggleActiveContentTabPin = false
         isActiveContentTabPinned = false
         canRestoreLastClosedTab = false
         selectedContentTabCount = 0
+        canCloseSelectedContentTabs = false
+        canCloseActiveContentTab = false
         canDuplicateSelectedContentTabs = false
         canDuplicateActiveContentTab = false
         sidebarVisible = false
@@ -90,6 +102,7 @@ struct MenuCommandsState: Equatable {
         self.init()
 
         guard let focusedID = state.windowManager.focusedWindowID,
+              !state.windowManager.closingWindowIDs.contains(focusedID),
               let window = state.windowManager.windows[id: focusedID]
         else {
             return
@@ -106,9 +119,13 @@ struct MenuCommandsState: Equatable {
         canGoForward = projection.canGoForward
         canGoToEnclosingDirectory = projection.canGoToEnclosingDirectory
         canSaveCollection = projection.canSaveCollection
+        canOpenNewContentTab = projection.canOpenNewContentTab
+        canToggleActiveContentTabPin = projection.canToggleActiveContentTabPin
         isActiveContentTabPinned = projection.isActiveContentTabPinned
         canRestoreLastClosedTab = projection.canRestoreLastClosedTab
         selectedContentTabCount = projection.selectedContentTabCount
+        canCloseSelectedContentTabs = projection.canCloseSelectedContentTabs
+        canCloseActiveContentTab = projection.canCloseActiveContentTab
         canDuplicateSelectedContentTabs = projection.canDuplicateSelectedContentTabs
         canDuplicateActiveContentTab = projection.canDuplicateActiveContentTab
         sidebarVisible = projection.sidebarVisible

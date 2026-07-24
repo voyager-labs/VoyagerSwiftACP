@@ -95,11 +95,14 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
     /// VOY-578-entry_commands: 일반 Directory loading 중 비-entry 명령 보존
     /// entry command guard가 hidden files, undo/redo, navigation, layout, tab, composer 명령까지 막지 않는지 검증한다.
-    /// - 검증 내용: undo/redo unavailable no-op과 나머지 비-entry command의 기존 하위 reducer action 방출
-    /// - 사전 조건: 일반 Directory mode, entry loading 중
-    /// - 기대 결과: 명령 범주별 기존 routing 유지
-    func testOrdinaryDirectoryLoadingPreservesNonEntryCommands() async {
-        let state = makeSelectedState(isLoading: true, isCollectionMode: false)
+    /// - 검증 내용: undo/redo unavailable no-op, 기존 하위 action 방출, 새 tab routing 뒤 명시 selection 보존
+    /// - 사전 조건: 일반 Directory mode, entry loading 중, active tab의 명시 selection/anchor 유지
+    /// - 기대 결과: 명령 범주별 기존 routing을 유지하고 새 tab open이 기존 selection을 축소하지 않음
+    func testOrdinaryDirectoryLoadingPreservesNonEntryCommands() async throws {
+        var state = makeSelectedState(isLoading: true, isCollectionMode: false)
+        let selectedTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+        state.contentTabs.selectedTabIDs = [selectedTabID]
+        state.contentTabs.selectionAnchorID = selectedTabID
         let store = makeStore(initialState: state)
 
         await store.send(.request(.toggleShowHiddenFiles))
@@ -112,7 +115,8 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         await store.receive(\.content.view.changeLayout)
         await store.send(.request(.openNewContentTab))
         await store.receive(\.contentTabs.open, .homeDefault)
-        await store.receive(\.contentTabs.collapseSelectionToActive)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [selectedTabID])
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, selectedTabID)
         await store.send(.request(.toggleComposer))
         await store.receive(\.content.composer.view.setPresented)
         await store.finish()

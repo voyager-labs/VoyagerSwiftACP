@@ -1259,9 +1259,104 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
-    func testInactiveAiChatTabCloseMovesLifecycleOwnerToBackground() async {
-        let homeID = ContentTabID()
-        let aiChatID = ContentTabID()
+    private struct MixedBatchAiCloseStateContext {
+        let pinnedID: ContentTabID
+        let ordinaryID: ContentTabID
+        let homeID: ContentTabID
+        let aiChatID: ContentTabID
+        let aiSessionID: AiChatSessionID
+        let requestLock: AiChatRequestLock
+    }
+
+    private struct MixedBatchAiCloseFixture {
+        let pinnedID: ContentTabID
+        let ordinaryID: ContentTabID
+        let homeID: ContentTabID
+        let aiChatID: ContentTabID
+        let aiSessionID: AiChatSessionID
+        let requestLock: AiChatRequestLock
+        let operationID: UUID
+        let state: FileManagerFeature.State
+    }
+
+    private func makeMixedBatchContentTabItem(
+        id: ContentTabID,
+        page: ContentTabPage,
+        anchor: ContentTabPageAnchor,
+        isPinned: Bool,
+        title: String,
+    ) -> ContentTabItem {
+        let iconName = switch page {
+        case .home: "house"
+        case .aiChat: "message"
+        default: "folder"
+        }
+        return ContentTabItem(
+            id: id,
+            page: page,
+            anchor: anchor,
+            isPinned: isPinned,
+            title: title,
+            iconName: iconName,
+        )
+    }
+
+    private func makeMixedBatchAiCloseState(
+        context: MixedBatchAiCloseStateContext,
+    ) -> FileManagerFeature.State {
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath("/Users/test/HomeSession")
+        var aiChatContent = FileManagerContentFeature.State()
+        aiChatContent.navigation.navigationState = .aiChat(context.aiSessionID.rawValue.uuidString)
+        aiChatContent.aiChat.sessionID = context.aiSessionID
+        aiChatContent.aiChat.sessionStatus = .active
+        aiChatContent.aiChat.executionPhase = .processing(context.requestLock)
+
+        let tabs = [
+            makeMixedBatchContentTabItem(
+                id: context.pinnedID,
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Pinned"),
+                isPinned: true,
+                title: "Pinned",
+            ),
+            makeMixedBatchContentTabItem(
+                id: context.ordinaryID,
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Ordinary"),
+                isPinned: false,
+                title: "Ordinary",
+            ),
+            makeMixedBatchContentTabItem(
+                id: context.homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+            ),
+            makeMixedBatchContentTabItem(
+                id: context.aiChatID,
+                page: .aiChat,
+                anchor: .aiChat(sessionID: context.aiSessionID.rawValue.uuidString),
+                isPinned: false,
+                title: "Chat",
+            ),
+        ]
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(tabs: .init(uniqueElements: tabs), activeTabID: context.homeID)
+        state.content = homeContent
+        state.tabContentStates = [context.homeID: homeContent, context.aiChatID: aiChatContent]
+        state.contentTabs.selectedTabIDs = [context.pinnedID, context.ordinaryID, context.aiChatID]
+        state.contentTabs.selectionAnchorID = context.aiChatID
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    private func makeMixedBatchAiCloseFixture() throws -> MixedBatchAiCloseFixture {
+        let pinnedID = ContentTabID(rawValue: "mixed-pinned")
+        let ordinaryID = ContentTabID(rawValue: "mixed-ordinary")
+        let homeID = ContentTabID(rawValue: "mixed-home")
+        let aiChatID = ContentTabID(rawValue: "mixed-ai")
         let aiSessionID = AiChatSessionID(rawValue: UUID())
         let providerMessage = AiChatMessage(role: .user, content: "latest provider prompt")
         let preservedMessage = AiChatMessage(role: .user, content: "older preserved prompt")
@@ -1270,57 +1365,95 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
             requestMessages: [providerMessage],
             persistenceTranscriptHistory: [preservedMessage, providerMessage],
         )
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000453"))
 
-        var homeContent = FileManagerContentFeature.State()
-        homeContent.navigation.seedInitialFolderPath("/Users/test/HomeSession")
-
-        var aiChatContent = FileManagerContentFeature.State()
-        aiChatContent.navigation.navigationState = .aiChat(aiSessionID.rawValue.uuidString)
-        aiChatContent.aiChat.sessionID = aiSessionID
-        aiChatContent.aiChat.sessionStatus = .active
-        aiChatContent.aiChat.executionPhase = .processing(requestLock)
-
-        var state = FileManagerFeature.State()
-        state.contentTabs = ContentTabState(
-            tabs: [
-                ContentTabItem(
-                    id: homeID,
-                    page: .home,
-                    anchor: .homeDefault,
-                    isPinned: false,
-                    title: "Home",
-                    iconName: "house",
-                ),
-                ContentTabItem(
-                    id: aiChatID,
-                    page: .aiChat,
-                    anchor: .aiChat(sessionID: aiSessionID.rawValue.uuidString),
-                    isPinned: false,
-                    title: "Chat",
-                    iconName: "message",
-                ),
-            ],
-            activeTabID: homeID,
-            recentlyClosed: nil,
+        let stateContext = MixedBatchAiCloseStateContext(
+            pinnedID: pinnedID,
+            ordinaryID: ordinaryID,
+            homeID: homeID,
+            aiChatID: aiChatID,
+            aiSessionID: aiSessionID,
+            requestLock: requestLock,
         )
-        state.content = homeContent
-        state.tabContentStates = [homeID: homeContent, aiChatID: aiChatContent]
-        state.syncContentTabSidebarItems()
+        let state = makeMixedBatchAiCloseState(context: stateContext)
+        return MixedBatchAiCloseFixture(
+            pinnedID: pinnedID,
+            ordinaryID: ordinaryID,
+            homeID: homeID,
+            aiChatID: aiChatID,
+            aiSessionID: aiSessionID,
+            requestLock: requestLock,
+            operationID: operationID,
+            state: state,
+        )
+    }
 
-        let store = TestStore(initialState: state) {
-            FileManagerFeature()
+    private func makeMixedBatchAiCloseStore(
+        fixture: MixedBatchAiCloseFixture,
+        cancelActionCount: LockIsolated<Int>,
+    ) -> TestStore<FileManagerFeature.State, FileManagerWindowAction> {
+        var state = fixture.state
+        state.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
+            operationID: fixture.operationID,
+            orderedTargetIDs: [fixture.pinnedID, fixture.ordinaryID, fixture.aiChatID],
+            cursor: 2,
+            currentTabID: fixture.aiChatID,
+            originalActiveTabID: fixture.homeID,
+            preferredFallbackIDs: [fixture.homeID],
+        )
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: fixture.aiChatID,
+            batchOperationID: fixture.operationID,
+        )
+        return TestStore(initialState: state) {
+            CombineReducers {
+                FileManagerFeature()
+                Reduce { _, action in
+                    switch action {
+                    case .content(.aiChat(.cancelTapped)),
+                         .inspector(.aiChat(.cancelTapped)),
+                         .backgroundAiChat(.cancelTapped),
+                         .backgroundInspectorAiChat(.cancelTapped):
+                        cancelActionCount.withValue { $0 += 1 }
+                    default:
+                        break
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.uuid = .constant(fixture.operationID)
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in }
         }
+    }
+
+    /// CTM-005-independent_content_tab_session: mixed batch는 AI processing owner를 background로 넘기고 취소하지 않음
+    /// interaction settlement는 CTM001 owner에 맡기고 CTM005는 AI lifecycle 소유권만 검증한다.
+    /// - 검증 내용: AI processing owner background 이동과 모든 cancelTapped action 0회
+    /// - 사전 조건: pinned, ordinary, processing AI tab이 선택되고 Home은 active non-target임
+    /// - 기대 결과: AI processing은 background owner에서 유지되고 generation cancel action은 발생하지 않음
+    func testInactiveAiChatTabCloseMovesLifecycleOwnerToBackground() async throws {
+        let fixture = try makeMixedBatchAiCloseFixture()
+        let cancelActionCount = LockIsolated(0)
+        let store = makeMixedBatchAiCloseStore(
+            fixture: fixture,
+            cancelActionCount: cancelActionCount,
+        )
+        // store.exhaustivity = .off: 모든 Task 3 lifecycle terminal은 receive하고
+        // AI 내부 background projection diff만 최종 state로 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.contentTabs(.close(aiChatID)))
+        await store.send(.performSelectedContentTabCloseMutation(
+            operationID: fixture.operationID,
+            tabID: fixture.aiChatID,
+            action: .commitClose(fixture.aiChatID),
+        ))
 
-        XCTAssertEqual(store.state.contentTabs.activeTabID, homeID)
-        XCTAssertNil(store.state.tabContentStates[aiChatID])
         XCTAssertEqual(
-            store.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase,
-            .processing(requestLock),
+            store.state.backgroundAiChatStates[fixture.aiSessionID]?.aiChat.executionPhase,
+            .processing(fixture.requestLock),
         )
-        XCTAssertEqual(store.state.content.navigation.currentPath, "/Users/test/HomeSession")
+        XCTAssertEqual(cancelActionCount.value, 0)
         await store.finish()
     }
 
@@ -1357,6 +1490,106 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.contentTabs(.close(directoryID)))
         await store.receive(\.delegate.closeWindow)
         await store.finish()
+    }
+
+    /// CTM-005-independent_content_tab_session: batch의 마지막 actual tab은 기존 window-close handoff를 정확히 한 번 사용함
+    /// 실제 survivor가 없는 fallback 경계에서 별도 fallback tab을 만들지 않고 Phase 1 last-tab 정책을 재사용하는지 검증한다.
+    /// - 검증 내용: 두 ordinary item의 request/commit/removed와 closeWindow delegate 1회
+    /// - 사전 조건: A/C 두 tab 모두 선택되고 C가 active-last target임
+    /// - 기대 결과: C는 Home reset 상태로 남고 selection/coordinator는 clear되며 closeWindow가 정확히 한 번 발생한다.
+    func testSelectedBatchLastActualTabRequestsWindowCloseExactlyOnce() async throws {
+        let firstID = ContentTabID(rawValue: "batch-last-first")
+        let activeID = ContentTabID(rawValue: "batch-last-active")
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000453"))
+        let closeWindowCount = LockIsolated(0)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: firstID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/First"),
+                    isPinned: false,
+                    title: "First",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: activeID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Active"),
+                    isPinned: false,
+                    title: "Active",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: activeID,
+        )
+        state.contentTabs.selectedTabIDs = [firstID, activeID]
+        state.contentTabs.selectionAnchorID = activeID
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            CombineReducers {
+                FileManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.closeWindow) = action {
+                        closeWindowCount.withValue { $0 += 1 }
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.uuid = .constant(operationID)
+            $0.date = .constant(Date(timeIntervalSince1970: 453))
+        }
+        // store.exhaustivity = .off: 두 item lifecycle과 closeWindow는 모두 receive하고
+        // Home handoff projection은 최종 state로 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.requestCloseSelectedContentTabs)
+        await store.receive(\.processNextSelectedContentTabClose, operationID)
+        await store.receive { action in
+            guard case let .performSelectedContentTabCloseMutation(_, tabID, .requestClose(requestedID)) = action
+            else { return false }
+            return tabID == firstID && requestedID == firstID
+        }
+        await store.receive { action in
+            guard case let .performSelectedContentTabCloseMutation(_, tabID, .commitClose(committedID)) = action
+            else { return false }
+            return tabID == firstID && committedID == firstID
+        }
+        await store.receive { action in
+            guard case let .selectedContentTabCloseItemCompleted(_, tabID, outcome) = action else { return false }
+            return tabID == firstID && outcome == .removed
+        }
+
+        await store.receive(\.processNextSelectedContentTabClose, operationID)
+        await store.receive { action in
+            guard case let .performSelectedContentTabCloseMutation(_, tabID, .requestClose(requestedID)) = action
+            else { return false }
+            return tabID == activeID && requestedID == activeID
+        }
+        await store.receive { action in
+            guard case let .performSelectedContentTabCloseMutation(_, tabID, .commitClose(committedID)) = action
+            else { return false }
+            return tabID == activeID && committedID == activeID
+        }
+        await store.receive(\.delegate.closeWindow)
+        await store.receive { action in
+            guard case let .selectedContentTabCloseItemCompleted(_, tabID, outcome) = action else { return false }
+            return tabID == activeID && outcome == .removed
+        }
+        await store.receive(\.processNextSelectedContentTabClose, operationID)
+
+        XCTAssertNil(store.state.pendingSelectedContentTabClose)
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 1)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: activeID]?.anchor, .homeDefault)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [])
+        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, activeID)
+        XCTAssertEqual(closeWindowCount.value, 1)
+        await store.finish()
+        XCTAssertEqual(closeWindowCount.value, 1)
     }
 
     func testRestoringCollectionTabReappliesClosedNavigationRoute() async {
@@ -1613,7 +1846,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
     }
 
     /// CTM-444-collection_dirty_close: save 실패 시 tab이 유지됨
-    /// pending 상태에서 saveCompleted(.failure) 수신 시 pending만 해제되고 tab은 닫히지 않는지 검증한다.
+    /// pending 상태에서 save failure feedback과 write-back failure를 모두 수신한 뒤 pending이 해제되고 tab은 유지되는지 검증한다.
     /// - 검증 내용: pendingContentTabClose 해제, tab 유지
     /// - 사전 조건: pendingContentTabClose가 설정된 dirty collection tab
     /// - 기대 결과: pending이 nil이지만 tab은 contentTabs에 그대로 존재
@@ -1654,6 +1887,8 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
             isRetryable: true,
         )
         await store.send(.content(.collection(.delegate(.saveFeedback(feedback)))))
+        XCTAssertNotNil(store.state.pendingContentTabClose)
+        await store.send(.content(.collection(.writeBackFailed)))
 
         XCTAssertNil(store.state.pendingContentTabClose)
         XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
@@ -10920,8 +11155,8 @@ extension CTM005IndependentContentTabSessionTests {
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, 3)
         XCTAssertEqual(store.state.contentTabs.activeTabID, homeID)
-        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [homeID])
-        XCTAssertEqual(store.state.contentTabs.selectionAnchorID, homeID)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [pinID, homeID])
+        XCTAssertNil(store.state.contentTabs.selectionAnchorID)
         XCTAssertEqual(store.state.contentTabs.tabs.first?.id, pinID)
         XCTAssertEqual(store.state.contentTabs.tabs.last?.id, homeID)
         let duplicate = store.state.contentTabs.tabs[1]

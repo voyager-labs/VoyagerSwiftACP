@@ -105,6 +105,10 @@ enum FileManagerWindowSplitLayout {
             SidebarView(
                 sidebarStore: store.scope(state: \.sidebar, action: \.sidebar),
                 contentTabStore: store.scope(state: \.contentTabs, action: \.contentTabs),
+                interactionStore: store.scope(
+                    state: \.contentTabRowInteractionSurface,
+                    action: \.sidebar,
+                ),
                 workspaceClient: workspaceClient,
             )
             .environment(\.fileManagerKeyCommandFocusCoordinator, keyCommandFocusCoordinator),

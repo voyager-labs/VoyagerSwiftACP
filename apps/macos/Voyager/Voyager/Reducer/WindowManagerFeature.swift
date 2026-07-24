@@ -126,13 +126,21 @@ struct WindowManagerFeature {
                 return handleWindowCommand(action, state: &state)
 
             case .file(.closeTab):
-                return sendCommandToFocusedWindow(state, .closeActiveContentTab)
+                return sendCloseTabCommandToFocusedWindow(state)
 
             case .file(.togglePinTab):
-                return sendCommandToFocusedWindow(state, .toggleActiveContentTabPin)
+                return sendContentTabCommandToFocusedWindow(
+                    state,
+                    .toggleActiveContentTabPin,
+                    capability: \.canToggleActiveContentTabPin,
+                )
 
             case .file(.restoreLastClosedTab):
-                return sendCommandToFocusedWindow(state, .restoreLastClosedContentTab)
+                return sendContentTabCommandToFocusedWindow(
+                    state,
+                    .restoreLastClosedContentTab,
+                    capability: \.canRestoreLastClosedTab,
+                )
 
             case .file(.duplicateTab):
                 return sendDuplicateTabCommandToFocusedWindow(state)
@@ -351,7 +359,72 @@ struct WindowManagerFeature {
                         },
                 )
 
-            case .windows(.element(id: _, action: .window(.contentTabs(.pinnedRecordSaveSucceeded)))):
+            case let .windows(.element(
+                id: sourceWindowID,
+                action: .window(.contentTabs(.pinnedRecordSaveSucceeded(tabID, context))),
+            )):
+                guard isCurrentPinnedRecordTerminal(
+                    sourceWindowID: sourceWindowID,
+                    tabID: tabID,
+                    context: context,
+                    state: state,
+                ), contentTabPinnedRecordClient.isCurrentMutationGeneration(context.generation)
+                else { return .none }
+                return .send(.pinnedContentTabsStoreChanged)
+
+            case let .windows(.element(
+                id: sourceWindowID,
+                action: .window(.performSelectedContentTabCloseMutation(
+                    operationID: _,
+                    tabID: tabID,
+                    action: .pinnedRecordSaveSucceeded(_, context),
+                )),
+            )):
+                guard isCurrentPinnedRecordTerminal(
+                    sourceWindowID: sourceWindowID,
+                    tabID: tabID,
+                    context: context,
+                    state: state,
+                ), contentTabPinnedRecordClient.isCurrentMutationGeneration(context.generation)
+                else { return .none }
+                return .send(.pinnedContentTabsStoreChanged)
+
+            case let .windows(.element(
+                id: sourceWindowID,
+                action: .window(.contentTabs(.pinnedRecordSaveFailed(tabID, context, _))),
+            )), let .windows(.element(
+                id: sourceWindowID,
+                action: .window(.contentTabs(.pinnedRecordSaveNotApplied(tabID, context, _, _))),
+            )):
+                guard isCurrentPinnedRecordTerminal(
+                    sourceWindowID: sourceWindowID,
+                    tabID: tabID,
+                    context: context,
+                    state: state,
+                ) else { return .none }
+                return .send(.pinnedContentTabsStoreChanged)
+
+            case let .windows(.element(
+                id: sourceWindowID,
+                action: .window(.performSelectedContentTabCloseMutation(
+                    operationID: _,
+                    tabID: tabID,
+                    action: .pinnedRecordSaveFailed(_, context, _),
+                )),
+            )), let .windows(.element(
+                id: sourceWindowID,
+                action: .window(.performSelectedContentTabCloseMutation(
+                    operationID: _,
+                    tabID: tabID,
+                    action: .pinnedRecordSaveNotApplied(_, context, _, _),
+                )),
+            )):
+                guard isCurrentPinnedRecordTerminal(
+                    sourceWindowID: sourceWindowID,
+                    tabID: tabID,
+                    context: context,
+                    state: state,
+                ) else { return .none }
                 return .send(.pinnedContentTabsStoreChanged)
 
             case .pinnedContentTabsStoreChanged:
@@ -407,6 +480,18 @@ struct WindowManagerFeature {
 }
 
 private extension WindowManagerFeature {
+    func isCurrentPinnedRecordTerminal(
+        sourceWindowID: State.WindowID,
+        tabID: ContentTabID,
+        context: ContentTabPinnedRecordTerminalContext,
+        state: State,
+    ) -> Bool {
+        state.windows[id: sourceWindowID]?.window.contentTabs.isCurrentPinnedRecordPersistenceIntent(
+            tabID: tabID,
+            intentID: context.intentID,
+        ) == true
+    }
+
     func startExternalOpenActivation(
         plan: ExternalOpenPlacementPlan,
         excluding excludedWindowIDs: Set<State.WindowID>,
@@ -527,7 +612,11 @@ private extension WindowManagerFeature {
         case let .file(.openCollectionFile(url)):
             return openCollectionWindowSession(url: url, state: &state)
         case .file(.newTab):
-            return sendCommandToFocusedWindow(state, .openNewContentTab)
+            return sendContentTabCommandToFocusedWindow(
+                state,
+                .openNewContentTab,
+                capability: \.canOpenNewContentTab,
+            )
         case .window(.closeFocusedWindow):
             guard let id = state.focusedWindowID else { return .none }
             return closeWindow(id, state: &state)
@@ -850,16 +939,10 @@ private extension WindowManagerFeature {
         windowID: WindowManagerState.WindowID,
         tabID: ContentTabID,
     ) -> Effect<Action> {
-        .concatenate(
-            .send(.windows(.element(
-                id: windowID,
-                action: .window(.contentTabs(.setCurrent(tabID))),
-            ))),
-            .send(.windows(.element(
-                id: windowID,
-                action: .window(.contentTabs(.collapseSelectionToActive)),
-            ))),
-        )
+        .send(.windows(.element(
+            id: windowID,
+            action: .window(.contentTabs(.setCurrent(tabID))),
+        )))
     }
 
     private func sendCommandToFocusedWindow(
@@ -869,6 +952,37 @@ private extension WindowManagerFeature {
         guard let id = state.focusedWindowID,
               !state.closingWindowIDs.contains(id)
         else { return .none }
+        return .send(.windows(.element(id: id, action: .window(.request(command)))))
+    }
+
+    private func sendContentTabCommandToFocusedWindow(
+        _ state: State,
+        _ command: FileManagerWindowAction.WindowCommand,
+        capability: KeyPath<FileManagerWindowMenuCommandProjection, Bool>,
+    ) -> Effect<Action> {
+        guard let id = state.focusedWindowID,
+              !state.closingWindowIDs.contains(id),
+              let window = state.windows[id: id],
+              window.window.menuCommandProjection[keyPath: capability]
+        else { return .none }
+        return .send(.windows(.element(id: id, action: .window(.request(command)))))
+    }
+
+    private func sendCloseTabCommandToFocusedWindow(_ state: State) -> Effect<Action> {
+        guard let id = state.focusedWindowID,
+              !state.closingWindowIDs.contains(id),
+              let window = state.windows[id: id]
+        else { return .none }
+
+        let projection = window.window.menuCommandProjection
+        let command: FileManagerWindowAction.WindowCommand
+        if projection.selectedContentTabCount > 1 {
+            guard projection.canCloseSelectedContentTabs else { return .none }
+            command = .closeSelectedContentTabs
+        } else {
+            guard projection.canCloseActiveContentTab else { return .none }
+            command = .closeActiveContentTab
+        }
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }
 

@@ -16,6 +16,30 @@ public struct ContentTabDuplicateRequest: Equatable, Sendable {
     }
 }
 
+public enum ContentTabPinnedRecordSaveNonAppliedReason: Equatable, Sendable {
+    case superseded
+    case cancelled
+}
+
+public struct ContentTabPinnedRecordRollbackSnapshot: Equatable, Sendable {
+    let previousIsPinned: Bool
+    let previousPinnedRecord: ContentTabPinnedRecord?
+    let previousTabIndex: Int?
+}
+
+public struct ContentTabPinnedRecordTerminalContext: Equatable, Sendable {
+    public let intentID: UUID
+    public let generation: ContentTabPinnedRecordMutationGeneration
+
+    public init(
+        intentID: UUID,
+        generation: ContentTabPinnedRecordMutationGeneration,
+    ) {
+        self.intentID = intentID
+        self.generation = generation
+    }
+}
+
 @CasePathable
 public enum ContentTabAction: Sendable {
     case open(ContentTabPageAnchor)
@@ -44,11 +68,19 @@ public enum ContentTabAction: Sendable {
     case pin(ContentTabID)
     case unpin(ContentTabID)
     case updateActivePageAnchor(ContentTabID, ContentTabPageAnchor)
-    case pinnedRecordSaveSucceeded
+    case pinnedRecordSaveSucceeded(
+        tabID: ContentTabID,
+        context: ContentTabPinnedRecordTerminalContext,
+    )
     case pinnedRecordSaveFailed(
         tabID: ContentTabID,
-        previousIsPinned: Bool,
-        previousPinnedRecord: ContentTabPinnedRecord?,
-        previousTabIndex: Int?,
+        context: ContentTabPinnedRecordTerminalContext,
+        rollback: ContentTabPinnedRecordRollbackSnapshot,
+    )
+    case pinnedRecordSaveNotApplied(
+        tabID: ContentTabID,
+        context: ContentTabPinnedRecordTerminalContext,
+        reason: ContentTabPinnedRecordSaveNonAppliedReason,
+        rollback: ContentTabPinnedRecordRollbackSnapshot,
     )
 }
