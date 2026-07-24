@@ -18,6 +18,7 @@ post-merge:
   commands:
     submodules:
       run: |
+        mise trust -y "$PWD/mise.toml"
         git submodule update --init --recursive
         mise run docs-setup
 
