@@ -13,12 +13,12 @@ import XCTest
 final class ChatSessionRestoreFlowTests: XCTestCase {
     // FLOW-PATH: reopen_last_inspector_chat
 
-    /// CBW chat_session_restore: toolbar_reopen_restores_exact_session
+    /// CBW chat_session_restore: open_chat_reentry_restores_exact_session
     /// 닫힌 Inspector Chat을 다시 열 때 마지막 durable session을 새 대화로 교체하지 않는지 검증한다.
     /// - 검증 내용: exact session ID, persisted transcript, persisted request context 복원
     /// - 사전 조건: active tab Inspector에 durable active session이 남아 있고 Inspector는 닫혀 있다.
-    /// - 기대 결과: toolbar 진입이 같은 session을 복원하고 새 transient session을 만들지 않는다.
-    func testToolbarReopenRestoresExactPersistedSession() async throws {
+    /// - 기대 결과: Open Chat 진입이 같은 session을 복원하고 새 transient session을 만들지 않는다.
+    func testOpenChatReentryRestoresExactPersistedSession() async throws {
         let sessionID = try AiChatSessionID(rawValue: XCTUnwrap(
             UUID(uuidString: "00000000-0000-0000-0000-000000000647"),
         ))
@@ -62,8 +62,7 @@ final class ChatSessionRestoreFlowTests: XCTestCase {
         // Inspector 재열기 결과만 검증하며 provider catalog 후속 action은 이 흐름의 소유 범위가 아니다.
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        let activeTabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
-        await store.send(.tabContent(tabID: activeTabID, action: .view(.newChatTapped)))
+        await store.send(.request(.reopenChat))
         await store.skipReceivedActions()
         await store.finish()
 
@@ -108,8 +107,7 @@ final class ChatSessionRestoreFlowTests: XCTestCase {
         // persisted restore와 fallback 최종 상태만 검증하며 provider 후속 action은 이 흐름의 소유 범위가 아니다.
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        let activeTabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
-        await store.send(.tabContent(tabID: activeTabID, action: .view(.newChatTapped)))
+        await store.send(.request(.reopenChat))
         await store.skipReceivedActions()
         await store.finish()
 
@@ -154,8 +152,7 @@ final class ChatSessionRestoreFlowTests: XCTestCase {
         // candidate 배제 후 New Chat 최종 상태만 검증하며 catalog 후속 action은 이 흐름의 소유 범위가 아니다.
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        let activeTabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
-        await store.send(.tabContent(tabID: activeTabID, action: .view(.newChatTapped)))
+        await store.send(.request(.reopenChat))
         await store.skipReceivedActions()
         await store.finish()
 
@@ -194,8 +191,7 @@ final class ChatSessionRestoreFlowTests: XCTestCase {
         // 최초 진입의 최종 사용자 상태만 검증하며 provider catalog 후속 action은 이 흐름의 소유 범위가 아니다.
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        let activeTabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
-        await store.send(.tabContent(tabID: activeTabID, action: .view(.newChatTapped)))
+        await store.send(.request(.reopenChat))
         await store.skipReceivedActions()
         await store.finish()
 
@@ -208,7 +204,7 @@ final class ChatSessionRestoreFlowTests: XCTestCase {
     // FLOW-PATH: history_close_new_chat
 
     /// CBW chat_session_restore: history_close_reopens_new_chat
-    /// Chat History 화면에서 Inspector를 닫은 뒤 toolbar로 재진입하면 마지막 chat을 자동 복원하지 않는지 검증한다.
+    /// Chat History 화면에서 Inspector를 닫은 뒤 Open Chat으로 재진입하면 마지막 chat을 자동 복원하지 않는지 검증한다.
     /// - 검증 내용: History mode 제외, 새 transient session, 빈 transcript
     /// - 사전 조건: active Directory 탭의 Inspector가 sessions mode에서 닫혀 있다.
     /// - 기대 결과: 재진입은 History나 이전 session이 아니라 New Chat을 표시한다.
@@ -244,8 +240,7 @@ final class ChatSessionRestoreFlowTests: XCTestCase {
         // History-close 재진입의 목적지와 session 교체만 검증한다.
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        let activeTabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
-        await store.send(.tabContent(tabID: activeTabID, action: .view(.newChatTapped)))
+        await store.send(.request(.reopenChat))
         await store.skipReceivedActions()
         await store.finish()
 
@@ -326,7 +321,7 @@ final class ChatSessionRestoreFlowTests: XCTestCase {
     // FLOW-PATH: content_tab_isolation
 
     /// CBW chat_session_restore: content_tabs_keep_inspector_sessions_isolated
-    /// Collection 탭 B에서 toolbar를 열 때 Directory 탭 A의 retained session이 유출되지 않는지 검증한다.
+    /// Collection 탭 B에서 Open Chat을 실행할 때 Directory 탭 A의 retained session이 유출되지 않는지 검증한다.
     /// - 검증 내용: active B의 새 session, A snapshot의 exact session과 transcript 보존
     /// - 사전 조건: Directory A에는 marker transcript가 있는 durable session, Collection B에는 session이 없다.
     /// - 기대 결과: B는 New Chat을 표시하고 A의 tab-scoped Inspector state는 변경되지 않는다.
@@ -387,7 +382,7 @@ final class ChatSessionRestoreFlowTests: XCTestCase {
         // 탭 B의 결과와 탭 A snapshot 격리만 검증한다.
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.tabContent(tabID: tabB, action: .view(.newChatTapped)))
+        await store.send(.request(.reopenChat))
         await store.skipReceivedActions()
         await store.finish()
 
