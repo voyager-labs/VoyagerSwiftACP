@@ -310,6 +310,13 @@ build_notarize() {
   log "Creating Sparkle zip..."
   "${SCRIPT_DIR}/create-sparkle-zip.sh"
 
+  log "Verifying optimized release artifacts..."
+  "${SCRIPT_DIR}/verify-release-artifacts.sh" \
+    "${BUILD_DIR}/Voyager.xcarchive" \
+    "${BUILD_DIR}/export/Voyager.app" \
+    "${BUILD_DIR}/Voyager-${VERSION}.zip" \
+    "${BUILD_DIR}/Voyager.dmg"
+
   log "Generating Sparkle appcast..."
   "${SCRIPT_DIR}/generate-sparkle-appcast.sh"
 
