@@ -96,6 +96,18 @@ XPC_MACH_SERVICE_NAME_MAP: dict[str, str] = {
     PROD_RELEASE: "fm.voyager.Voyager.FilterSearchXPC",
 }
 
+SHIPPING_TARGETS = {"Voyager", "VoyagerHelper", "FilterSearchXPC"}
+PROD_RELEASE_SIZE_SETTINGS = {
+    "COPY_PHASE_STRIP": "YES",
+    "DEAD_CODE_STRIPPING": "YES",
+    "DEPLOYMENT_POSTPROCESSING": "YES",
+    "ENABLE_PREVIEWS": "NO",
+    "STRIP_INSTALLED_PRODUCT": "YES",
+    "STRIP_STYLE": "all",
+    "SWIFT_COMPILATION_MODE": "wholemodule",
+    "SWIFT_OPTIMIZATION_LEVEL": "-Osize",
+}
+
 # Test targets (non-Prod, Dev-Debug only)
 TEST_TARGETS = {"VoyagerTests", "VoyagerUITests", "VoyagerHelperTests"}
 
@@ -625,6 +637,26 @@ def check_xpc_mach_service_name(
         )
 
 
+def check_prod_release_size_settings(
+    target_configs: dict[str, Any],
+    target_name: str,
+    errors: list[str],
+    prefix: str = "",
+) -> None:
+    if target_name not in SHIPPING_TARGETS:
+        return
+    for setting_key, expected_value in PROD_RELEASE_SIZE_SETTINGS.items():
+        check_build_setting(
+            target_name,
+            PROD_RELEASE,
+            target_configs,
+            setting_key,
+            expected_value,
+            errors,
+            prefix,
+        )
+
+
 def check_target_config_settings(
     configs: list[Any],
     config_lists: list[Any],
@@ -662,6 +694,12 @@ def check_target_config_settings(
             check_xpc_mach_service_name(
                 target_configs, target_name, config_name, errors, prefix
             )
+        check_prod_release_size_settings(
+            target_configs,
+            target_name,
+            errors,
+            prefix,
+        )
 
 
 def check_host_project(
