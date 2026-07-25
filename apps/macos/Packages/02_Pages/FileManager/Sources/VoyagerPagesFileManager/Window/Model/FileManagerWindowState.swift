@@ -37,6 +37,34 @@ enum FileManagerFixedLocationsLoadPhase: Equatable {
     case loaded
 }
 
+enum FileManagerAiChatInspectorDestination: Equatable {
+    case newChat
+    case chatHistory
+}
+
+struct FileManagerPendingAiChatInspectorOpen: Equatable {
+    var requestID: UUID
+    var tabID: ContentTabID
+    var destination: FileManagerAiChatInspectorDestination
+}
+
+struct FileManagerPendingAiChatNewChat: Equatable {
+    var requestID: UUID
+    var tabID: ContentTabID
+    var target: FileManagerAiChatNewChatTarget
+    var windowLast: AiChatNewChatSelectionCandidate?
+    var persistedDefault: AiChatPersistedSelectionCandidate?
+    var didLoadPersistedDefault: Bool
+    var requiresCatalogRefresh: Bool
+    var didObserveCatalogRefresh: Bool
+    var expectedModelListRequestID: UUID?
+}
+
+struct FileManagerAiChatSelection: Equatable {
+    var modelHandle: AiModelHandle
+    var thinking: AiThinkingSelection?
+}
+
 @ObservableState
 public struct FileManagerWindowState: Equatable {
     public var content: FileManagerContentFeature.State
@@ -51,13 +79,17 @@ public struct FileManagerWindowState: Equatable {
     public var pendingContentTabClose: PendingContentTabClose?
     public var pendingSelectedContentTabClose: PendingSelectedContentTabClose?
     public var deferredPinnedContentTabs: ContentTabState?
+    public var deferredPinnedContentTabsMode: PinnedContentTabsApplicationMode?
     public var pendingContentTabTeardown: PendingContentTabTeardown?
     public var isClosing: Bool
     public var pendingDirectoryReloadTabIDs: Set<ContentTabID>
-    public var windowID: UUID?
     public var undoManagerAvailability: UndoManagerAvailability
     public var undoRedoPhase: FileManagerUndoRedoPhase
     public var sidebarEntryDropOperations: EntryOperationsState
+    public var pendingCollectionOpenRequest: ContentPageCollectionOpenRequest?
+    var lastExplicitAiChatSelection: FileManagerAiChatSelection?
+    var pendingAiChatInspectorOpen: FileManagerPendingAiChatInspectorOpen?
+    var pendingAiChatNewChat: FileManagerPendingAiChatNewChat?
     var fixedLocationsLoadPhase: FileManagerFixedLocationsLoadPhase = .idle
     var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
 
@@ -74,13 +106,17 @@ public struct FileManagerWindowState: Equatable {
         pendingContentTabClose = nil
         pendingSelectedContentTabClose = nil
         deferredPinnedContentTabs = nil
+        deferredPinnedContentTabsMode = nil
         pendingContentTabTeardown = nil
         isClosing = false
         pendingDirectoryReloadTabIDs = []
-        windowID = nil
         undoManagerAvailability = .init()
         undoRedoPhase = .idle
         sidebarEntryDropOperations = .init()
+        pendingCollectionOpenRequest = nil
+        lastExplicitAiChatSelection = nil
+        pendingAiChatInspectorOpen = nil
+        pendingAiChatNewChat = nil
         if let activeTabID = contentTabs.activeTabID {
             tabContentStates[activeTabID] = content
         }
@@ -207,15 +243,19 @@ public struct FileManagerWindowState: Equatable {
         pendingContentTabClose = nil
         pendingSelectedContentTabClose = nil
         deferredPinnedContentTabs = nil
+        deferredPinnedContentTabsMode = nil
         pendingContentTabTeardown = nil
         isClosing = false
         pendingDirectoryReloadTabIDs = []
-        windowID = initialWindowID
         undoManagerAvailability = .init()
         undoRedoPhase = .idle
         var sidebarEntryDropOperations = EntryOperationsState()
         sidebarEntryDropOperations.windowID = initialWindowID
         self.sidebarEntryDropOperations = sidebarEntryDropOperations
+        pendingCollectionOpenRequest = nil
+        lastExplicitAiChatSelection = nil
+        pendingAiChatInspectorOpen = nil
+        pendingAiChatNewChat = nil
         fixedLocationsLoadPhase = .idle
         homeFavoriteItems = []
     }
@@ -403,6 +443,21 @@ public extension FileManagerWindowState {
 }
 
 extension FileManagerWindowState {
+    var windowID: UUID? {
+        get {
+            content.entryViewLayout.entryOperations.windowID
+        }
+        set {
+            content.entryViewLayout.entryOperations.windowID = newValue
+            content.composer.cancellationOwnerID = newValue
+            for tabID in tabContentStates.keys {
+                tabContentStates[tabID]?.entryViewLayout.entryOperations.windowID = newValue
+                tabContentStates[tabID]?.composer.cancellationOwnerID = newValue
+            }
+            sidebarEntryDropOperations.windowID = newValue
+        }
+    }
+
     var activeTabInspectorStateMissing: Bool {
         guard let activeTabID = contentTabs.activeTabID,
               supportsInspector(tabID: activeTabID)
@@ -662,39 +717,53 @@ extension FileManagerWindowState {
         content.homeLocationItems = sidebar.allFixedLocationItems
     }
 
-    mutating func applyPinnedContentTabs(_ restoredPinnedState: ContentTabState) {
+    mutating func applyPinnedContentTabs(
+        _ restoredPinnedState: ContentTabState,
+        mode: PinnedContentTabsApplicationMode = .preservingRuntime,
+    ) {
         let recentlyClosed = contentTabs.recentlyClosed
         let restoredPinnedTabs = restoredPinnedState.tabs.filter(\.isPinned)
         let restoredTabIDs = Set(restoredPinnedTabs.map(\.id))
         let currentPinnedTabs = contentTabs.tabs.filter(\.isPinned)
-        let pendingPinnedTabs = currentPinnedTabs.filter {
-            contentTabs.pendingPinnedRecordIDs.contains($0.id) && !restoredTabIDs.contains($0.id)
-        }
-        let mergedPinnedTabs = restoredPinnedTabs + pendingPinnedTabs
+        let currentPinnedTabsByID = Dictionary(uniqueKeysWithValues: currentPinnedTabs.map { ($0.id, $0) })
+        let previousPinnedAnchors = Dictionary(uniqueKeysWithValues: currentPinnedTabs.map { ($0.id, $0.anchor) })
+        let activeTabIDBeforeSync = contentTabs.activeTabID
+        let pendingPinnedIDs = contentTabs.pendingPinnedRecordIDs
+        let synchronizedPinnedTabs = restoredPinnedTabs
+            .filter { !pendingPinnedIDs.contains($0.id) }
+            .map { restoredTab in
+                let hasRuntimeState = tabContentStates[restoredTab.id] != nil
+                    || tabInspectorStates[restoredTab.id] != nil
+                guard mode == .preservingRuntime,
+                      restoredTab.id != activeTabIDBeforeSync || hasRuntimeState,
+                      let currentTab = currentPinnedTabsByID[restoredTab.id]
+                else { return restoredTab }
+                return currentTab
+            }
+        let pendingPinnedTabs = currentPinnedTabs.filter { pendingPinnedIDs.contains($0.id) }
+        let mergedPinnedTabs = synchronizedPinnedTabs + pendingPinnedTabs
         let mergedPinnedIDs = Set(mergedPinnedTabs.map(\.id))
         let currentUnpinnedTabs = contentTabs.tabs.filter { !$0.isPinned && !mergedPinnedIDs.contains($0.id) }
         let currentPinnedIDs = Set(currentPinnedTabs.map(\.id))
-        let previousPinnedAnchors = Dictionary(uniqueKeysWithValues: currentPinnedTabs.map { ($0.id, $0.anchor) })
-        let activeTabIDBeforeSync = contentTabs.activeTabID
 
-        let pendingPinnedIDs = Set(pendingPinnedTabs.map(\.id))
-        let pendingPinnedRecords = contentTabs.pinnedRecords.filter { pendingPinnedIDs.contains($0.key) }
+        let retainedPendingPinnedIDs = Set(pendingPinnedTabs.map(\.id))
+        let pendingPinnedRecords = contentTabs.pinnedRecords.filter { retainedPendingPinnedIDs.contains($0.key) }
 
         contentTabs.tabs = IdentifiedArrayOf(uniqueElements: mergedPinnedTabs + currentUnpinnedTabs)
         contentTabs.pinnedRecords = restoredPinnedState.pinnedRecords
-            .merging(pendingPinnedRecords) { restored, _ in restored }
-        contentTabs.pendingPinnedRecordIDs = pendingPinnedIDs
+            .merging(pendingPinnedRecords) { _, pending in pending }
+        contentTabs.pendingPinnedRecordIDs = retainedPendingPinnedIDs
         contentTabs.previousActiveTabID = nil
 
         for removedID in currentPinnedIDs.subtracting(restoredTabIDs) where contentTabs.tabs[id: removedID] == nil {
             tabContentStates[removedID] = nil
             tabInspectorStates[removedID] = nil
         }
-        let changedPinnedTabIDs = Set(
-            restoredPinnedTabs.compactMap { tab in
+        let changedPinnedTabIDs = mode == .authoritative
+            ? Set(restoredPinnedTabs.compactMap { tab in
                 previousPinnedAnchors[tab.id].map { $0 != tab.anchor } == true ? tab.id : nil
-            },
-        )
+            })
+            : []
         for changedID in changedPinnedTabIDs {
             tabContentStates[changedID] = nil
             tabInspectorStates[changedID] = nil
@@ -705,14 +774,9 @@ extension FileManagerWindowState {
             restoreContentStateForActiveTab()
             restoreInspectorStateForActiveTab()
         } else if let activeTabID = contentTabs.activeTabID,
-                  let activeTab = contentTabs.tabs[id: activeTabID]
+                  contentTabs.tabs[id: activeTabID] != nil
         {
-            let activePinnedAnchorDidChange = activeTab.isPinned
-                && activeTabID == activeTabIDBeforeSync
-                && changedPinnedTabIDs.contains(activeTabID)
-            if activePinnedAnchorDidChange {
-                tabContentStates[activeTabID] = nil
-                tabInspectorStates[activeTabID] = nil
+            if activeTabID == activeTabIDBeforeSync, changedPinnedTabIDs.contains(activeTabID) {
                 restoreContentStateForActiveTab()
                 restoreInspectorStateForActiveTab()
             }

@@ -76,24 +76,27 @@ public enum FileManagerHostFixture {
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
         materialConfiguration: MaterialConfiguration? = nil,
     ) -> FileManagerWindowCoordinator {
-        let state = FileManagerHostFixtureStateFactory.makeState()
-        let undoManager = UndoManager()
+        let windowID = UUID()
+        let state = FileManagerHostFixtureStateFactory.makeState(windowID: windowID)
+        let fileOperationUndoManagerRegistry = FileOperationUndoManagerRegistry()
+        let fileOperationUndoManagerClient = FileOperationUndoManagerClient.live(
+            registry: fileOperationUndoManagerRegistry,
+        )
         let workspaceClient = WorkspaceClient.fileManagerHostFixture(oneDriveIcon: oneDriveIcon)
         let store = Store(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
             FileManagerHostFixtureDependencies.apply(
                 to: &$0,
-                undoManager: undoManager,
+                fileOperationUndoManagerClient: fileOperationUndoManagerClient,
                 workspaceClient: workspaceClient,
             )
         }
 
         return FileManagerWindowCoordinator(
-            windowID: UUID(),
+            windowID: windowID,
             store: store,
-            entryOperationsUndoManager: undoManager,
-            path: nil,
+            fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
             workspaceClient: workspaceClient,
             sessionLapseGuardStore: FileManagerHostFixture.makeSessionLapseGuardStore(
                 for: preset.scenario.sessionLapse,
@@ -133,8 +136,16 @@ public enum FileManagerHostFixture {
 
 @MainActor
 private enum FileManagerHostFixtureStateFactory {
-    static func makeState() -> FileManagerFeature.State {
+    static func makeState(windowID: UUID) -> FileManagerFeature.State {
         var state = FileManagerFeature.State.makeInitial(path: nil)
+        for tabID in state.contentTabs.tabs.ids {
+            state.tabContentStates[tabID]?.entryViewLayout.entryOperations.windowID = windowID
+        }
+        if let activeTabID = state.contentTabs.activeTabID,
+           let activeContent = state.tabContentStates[activeTabID]
+        {
+            state.content = activeContent
+        }
         state.sidebar.sidebarVisible = true
         state.sidebar.sidebarWidth = 220
         state.content.entryViewLayout.currentPath = FileManagerHostFixtureSampleData.path
@@ -151,7 +162,7 @@ private enum FileManagerHostFixtureStateFactory {
 private enum FileManagerHostFixtureDependencies {
     static func apply(
         to dependencies: inout DependencyValues,
-        undoManager: UndoManager,
+        fileOperationUndoManagerClient: FileOperationUndoManagerClient,
         workspaceClient: WorkspaceClient,
     ) {
         dependencies.userDefaultsClient = .previewValue
@@ -167,7 +178,7 @@ private enum FileManagerHostFixtureDependencies {
         dependencies.entryQuickLookClient = .previewValue
         dependencies.entryFileOpsClient = .previewValue
         dependencies.entryOperationsAlertClient = .previewValue
-        dependencies.undoManagerClient = .live(undoManager: undoManager)
+        dependencies.fileOperationUndoManagerClient = fileOperationUndoManagerClient
         dependencies.registryClient = .testValue
         dependencies.collectionFileClient = .testValue
         dependencies.collectionAlertClient = .previewValue

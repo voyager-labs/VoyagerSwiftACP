@@ -19,7 +19,7 @@ struct WindowManagerFeature {
     typealias State = WindowManagerState
     typealias Action = WindowManagerAction
 
-    nonisolated private enum CancelID: Hashable {
+    nonisolated enum CancelID: Hashable {
         case defaultWindowBootstrap
         case windowOpen(State.WindowID)
         case externalOpenBatch(UUID)
@@ -39,14 +39,12 @@ struct WindowManagerFeature {
     }
 
     @Dependency(\.onboardingWindowClient)
-    private var onboardingWindowClient
+    var onboardingWindowClient
 
     @Dependency(\.fileManagerWindowClient)
-    private var fileManagerWindowClient
+    var fileManagerWindowClient
     @Dependency(\.attachmentPickerClient)
     private var attachmentPickerClient
-    @Dependency(\.undoManagerClient)
-    private var undoManagerClient
 
     @Dependency(\.fileManagerBuiltInCollectionClient)
     private var fileManagerBuiltInCollectionClient
@@ -79,16 +77,15 @@ struct WindowManagerFeature {
             case let .lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: flag)):
                 guard !flag else { return .none }
 
-                let reopenWindowID = state.focusedWindowID
-                    .flatMap { isWindowReady($0, state: state) ? $0 : nil }
-                    ?? state.lastUsedWindowIDs.first(where: { isWindowReady($0, state: state) })
-                    ?? state.windows.ids.first(where: { isWindowReady($0, state: state) })
-                guard let reopenWindowID else {
-                    let hasPendingWindow = state.pendingWindowOpenIDs.contains { id in
-                        state.windows[id: id] != nil && !state.closingWindowIDs.contains(id)
-                    }
-                    guard !hasPendingWindow else { return .none }
+                if state.windows.isEmpty {
                     return .send(.file(.newWindow(path: nil)))
+                }
+
+                guard let reopenWindowID = state.focusedWindowID
+                    ?? state.lastUsedWindowIDs.first(where: { state.windows[id: $0] != nil })
+                    ?? state.windows.first?.id
+                else {
+                    return .none
                 }
 
                 state.focusedWindowID = reopenWindowID
@@ -196,8 +193,11 @@ struct WindowManagerFeature {
             case .edit(.toggleComposer):
                 return sendCommandToFocusedWindow(state, .toggleComposer)
 
-            case .edit(.openContextualAiChat):
-                return sendCommandToFocusedWindow(state, .openContextualAiChat)
+            case .edit(.newChat):
+                return sendCommandToFocusedWindow(state, .newChat)
+
+            case .edit(.showChatHistory):
+                return sendCommandToFocusedWindow(state, .showChatHistory)
 
             case .edit(.cut):
                 return sendCommandToFocusedWindow(state, .cut)
@@ -224,9 +224,7 @@ struct WindowManagerFeature {
                 return sendCommandToFocusedWindow(state, .copyURLs)
 
             case let .event(.windowBecameKey(id)):
-                guard state.windows[id: id] != nil,
-                      !state.closingWindowIDs.contains(id)
-                else { return .none }
+                guard state.windows[id: id] != nil else { return .none }
                 state.focusedWindowID = id
                 state.moveWindowToMRUFront(id)
                 return .none
@@ -236,23 +234,6 @@ struct WindowManagerFeature {
                     state.focusedWindowID = nil
                 }
                 return .none
-
-            case let .event(.windowClosed(id)):
-                guard state.windows[id: id] != nil else {
-                    return .run { [fileManagerWindowClient] _ in
-                        await fileManagerWindowClient.finalizeClose(id)
-                    }
-                }
-                guard !state.invalidatingWindowIDs.contains(id) else { return .none }
-                state.closingWindowIDs.insert(id)
-                state.invalidatingWindowIDs.insert(id)
-                return .run { [undoManagerClient, fileManagerWindowClient] send in
-                    let result = await undoManagerClient.invalidateWindow(id)
-                    if result.succeeded {
-                        await fileManagerWindowClient.finalizeClose(id)
-                    }
-                    await send(.windowInvalidationFinished(id: id, result: result))
-                }
 
             case let .windowOpenCompleted(id, shouldBootstrapDefaultWindow, isRegistered):
                 guard state.pendingWindowOpenIDs.contains(id),
@@ -279,13 +260,25 @@ struct WindowManagerFeature {
                 guard result.succeeded else { return .none }
                 return finalizeWindowRemoval(id, state: &state)
 
+            case let .event(.windowClosed(id)):
+                let wasFocused = state.focusedWindowID == id
+                state.windows.remove(id: id)
+                state.lastUsedWindowIDs.removeAll { $0 == id }
+                state.defaultWindowBootstrapWindowIDs.remove(id)
+                state.externalWindowBatchIDs[id] = nil
+                if wasFocused {
+                    state.focusedWindowID = state.lastUsedWindowIDs.first(where: { state.windows[id: $0] != nil })
+                }
+                guard state.defaultWindowBootstrapWindowIDs.isEmpty,
+                      state.defaultWindowBootstrapRequestID != nil
+                else { return .none }
+                state.defaultWindowBootstrapRequestID = nil
+                return .cancel(id: CancelID.defaultWindowBootstrap)
+
             case let .event(.focusWindow(path)):
                 return .run { _ in
                     await fileManagerWindowClient.focusPath(path)
                 }
-
-            case let .windows(.element(id: id, action: .window(.delegate(.closeWindow)))):
-                return closeWindow(id, state: &state)
 
             case let .trackedSingleton(command):
                 return handleTrackedSingletonCommand(command, state: &state)
@@ -293,9 +286,6 @@ struct WindowManagerFeature {
             case let .trackedSingletonNativeOpenCompleted(requestID):
                 guard state.authorizedTrackedSingletonRequestID == requestID else { return .none }
                 state.authorizedTrackedSingletonRequestID = nil
-                if state.trackedSingletonWindow?.requestID == requestID {
-                    state.trackedSingletonWindow?.terminalOutcomeEmitted = true
-                }
                 return trackedSingletonCompletionEffect(requestID)
 
             case let .placement(.plan(request)):
@@ -315,7 +305,11 @@ struct WindowManagerFeature {
 
             case let .placement(.activate(plan)):
                 guard state.authorizedExternalOpenBatchID == plan.batchID else { return .none }
-                return startExternalOpenActivation(plan: plan, excluding: [], state: &state)
+                return startExternalOpenActivation(
+                    plan: plan,
+                    excluding: [],
+                    state: &state,
+                )
 
             case let .placement(.cancel(batchID)):
                 return cancelExternalOpenPlacement(batchID: batchID, state: &state)
@@ -327,6 +321,7 @@ struct WindowManagerFeature {
                 switch result {
                 case .discarded:
                     return retryExternalOpenActivation(after: attempt, state: &state)
+
                 case .becameKey:
                     let survivingWindowID = ExternalOpenPlacementApplication.lastSurvivingWindowID(
                         for: attempt.plan,
@@ -479,7 +474,7 @@ struct WindowManagerFeature {
     }
 }
 
-private extension WindowManagerFeature {
+extension WindowManagerFeature {
     func isCurrentPinnedRecordTerminal(
         sourceWindowID: State.WindowID,
         tabID: ContentTabID,
@@ -492,386 +487,7 @@ private extension WindowManagerFeature {
         ) == true
     }
 
-    func startExternalOpenActivation(
-        plan: ExternalOpenPlacementPlan,
-        excluding excludedWindowIDs: Set<State.WindowID>,
-        state: inout State,
-    ) -> Effect<Action> {
-        guard let windowID = ExternalOpenPlacementApplication.lastSurvivingWindowID(
-            for: plan,
-            state: state,
-            excluding: excludedWindowIDs,
-        ) else {
-            state.authorizedExternalOpenBatchID = nil
-            state.externalOpenActivationAttempt = nil
-            return .send(.delegate(.externalOpenActivationCompleted(batchID: plan.batchID)))
-        }
-
-        let attempt = ExternalOpenActivationAttempt(
-            batchID: plan.batchID,
-            plan: plan,
-            windowID: windowID,
-            excludedWindowIDs: excludedWindowIDs,
-        )
-        state.externalOpenActivationAttempt = attempt
-        return .run { [fileManagerWindowClient] send in
-            let result = await fileManagerWindowClient.activate(windowID)
-            await send(.externalOpenActivationResult(attempt: attempt, result: result))
-        }
-        .cancellable(id: CancelID.externalOpenBatch(plan.batchID), cancelInFlight: false)
-    }
-
-    func retryExternalOpenActivation(
-        after attempt: ExternalOpenActivationAttempt,
-        state: inout State,
-    ) -> Effect<Action> {
-        var excludedWindowIDs = attempt.excludedWindowIDs
-        excludedWindowIDs.insert(attempt.windowID)
-        return startExternalOpenActivation(
-            plan: attempt.plan,
-            excluding: excludedWindowIDs,
-            state: &state,
-        )
-    }
-
-    func retainExternalOpenPlacementOwnership(
-        _ batchID: UUID,
-        _ newWindowIDs: [State.WindowID],
-        state: inout State,
-    ) {
-        if newWindowIDs.isEmpty {
-            if state.retainedExternalOpenPlacementOwnership?.batchID == batchID {
-                state.retainedExternalOpenPlacementOwnership = nil
-            }
-        } else {
-            state.retainedExternalOpenPlacementOwnership = .init(
-                batchID: batchID,
-                newWindowIDs: newWindowIDs,
-            )
-        }
-    }
-
-    func cancelExternalOpenPlacement(
-        batchID: UUID,
-        state: inout State,
-    ) -> Effect<Action> {
-        if state.authorizedExternalOpenBatchID == batchID { state.authorizedExternalOpenBatchID = nil }
-        if state.externalOpenActivationAttempt?.batchID == batchID { state.externalOpenActivationAttempt = nil }
-        var effects: [Effect<Action>] = [.cancel(id: CancelID.externalOpenBatch(batchID))]
-        guard let ownership = state.retainedExternalOpenPlacementOwnership,
-              ownership.batchID == batchID
-        else { return .concatenate(effects) }
-        state.retainedExternalOpenPlacementOwnership = nil
-        let ownedWindowIDs = ownership.newWindowIDs.filter { state.externalWindowBatchIDs[$0] == batchID }
-        for windowID in ownedWindowIDs {
-            effects.append(closeWindow(windowID, state: &state))
-        }
-        return .concatenate(effects)
-    }
-
-    func handleTrackedSingletonCommand(
-        _ command: Action.TrackedSingletonCommand,
-        state: inout State,
-    ) -> Effect<Action> {
-        switch command {
-        case let .revoke(requestID):
-            return revokeTrackedSingleton(requestID: requestID, state: &state)
-
-        case let .openInitialWindow(requestID):
-            guard state.authorizedTrackedSingletonRequestID == requestID else {
-                return trackedSingletonCompletionEffect(requestID)
-            }
-            guard state.windows.isEmpty else {
-                state.authorizedTrackedSingletonRequestID = nil
-                return trackedSingletonCompletionEffect(requestID)
-            }
-            return openTrackedWindowSession(
-                requestID: requestID,
-                path: nil,
-                selectEntryID: nil,
-                state: &state,
-            )
-
-        case let .openWindow(requestID, path, selectEntryID):
-            guard state.authorizedTrackedSingletonRequestID == requestID else {
-                return trackedSingletonCompletionEffect(requestID)
-            }
-            return openTrackedWindowSession(
-                requestID: requestID,
-                path: path,
-                selectEntryID: selectEntryID,
-                state: &state,
-            )
-        }
-    }
-
-    func handleWindowCommand(_ action: Action, state: inout State) -> Effect<Action> {
-        switch action {
-        case let .file(.newWindow(path, selectEntryID)):
-            return openWindowSession(path: path, selectEntryID: selectEntryID, state: &state)
-        case let .file(.openCollectionFile(url)):
-            return openCollectionWindowSession(url: url, state: &state)
-        case .file(.newTab):
-            return sendContentTabCommandToFocusedWindow(
-                state,
-                .openNewContentTab,
-                capability: \.canOpenNewContentTab,
-            )
-        case .window(.closeFocusedWindow):
-            guard let id = state.focusedWindowID else { return .none }
-            return closeWindow(id, state: &state)
-        case .window(.closeAllWindows):
-            let openWindowIDs = state.windows.ids.filter { !state.closingWindowIDs.contains($0) }
-            guard !openWindowIDs.isEmpty else { return .none }
-            let pendingWindowOpenIDs = openWindowIDs.filter { state.pendingWindowOpenIDs.contains($0) }
-            let externalBatchIDs = Set(openWindowIDs.compactMap { state.externalWindowBatchIDs[$0] })
-            let trackedRequestIDs: Set<UUID> = Set(openWindowIDs.compactMap { windowID -> UUID? in
-                guard state.trackedSingletonWindow?.windowID == windowID else { return nil }
-                return state.trackedSingletonWindow?.requestID
-            })
-            state.closingWindowIDs.formUnion(openWindowIDs)
-            state.focusedWindowID = nil
-            state.lastUsedWindowIDs.removeAll()
-            state.defaultWindowBootstrapRequestID = nil
-            state.defaultWindowBootstrapWindowIDs.removeAll()
-            state.authorizedExternalOpenBatchID = nil
-            state.externalOpenActivationAttempt = nil
-            state.retainedExternalOpenPlacementOwnership = nil
-            var cancellationEffects: [Effect<Action>] = [.cancel(id: CancelID.defaultWindowBootstrap)]
-            cancellationEffects.append(contentsOf: pendingWindowOpenIDs.map { .cancel(id: CancelID.windowOpen($0)) })
-            cancellationEffects.append(contentsOf: externalBatchIDs.map { .cancel(id: CancelID.externalOpenBatch($0)) })
-            cancellationEffects.append(contentsOf: trackedRequestIDs.map { requestID in
-                Effect<Action>.cancel(id: CancelID.trackedSingletonNativeOpen(requestID))
-            })
-            let closeAllEffect = Effect<Action>.run { [fileManagerWindowClient] send in
-                await fileManagerWindowClient.closeAll()
-                let registeredWindowIDs = await fileManagerWindowClient.registeredWindowIDs()
-                for id in pendingWindowOpenIDs where !registeredWindowIDs.contains(id) {
-                    await fileManagerWindowClient.finalizeClose(id)
-                    await send(.pendingWindowCloseFinalized(id: id))
-                }
-            }
-            return .concatenate(.merge(cancellationEffects), closeAllEffect)
-        default:
-            return .none
-        }
-    }
-
-    private func openTrackedWindowSession(
-        requestID: UUID,
-        path: String?,
-        selectEntryID: String?,
-        state: inout State,
-    ) -> Effect<Action> {
-        guard state.authorizedTrackedSingletonRequestID == requestID else {
-            return trackedSingletonCompletionEffect(requestID)
-        }
-        guard !onboardingWindowClient.showIfNeeded() else {
-            state.authorizedTrackedSingletonRequestID = nil
-            return trackedSingletonCompletionEffect(requestID)
-        }
-        let windowSession = makeWindowSession(path: path, selectEntryID: selectEntryID)
-        state.windows.append(windowSession)
-        state.focusedWindowID = windowSession.id
-        state.moveWindowToMRUFront(windowSession.id)
-        state.pendingWindowOpenIDs.insert(windowSession.id)
-        state.trackedSingletonWindow = .init(requestID: requestID, windowID: windowSession.id)
-        return .concatenate(
-            windowIDChangedEffect(for: windowSession.id),
-            appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
-            .run { [fileManagerWindowClient, id = windowSession.id] send in
-                await fileManagerWindowClient.open(id)
-                guard !Task.isCancelled else { return }
-                let registeredWindowIDs = await fileManagerWindowClient.registeredWindowIDs()
-                guard !Task.isCancelled else { return }
-                await send(.windowOpenCompleted(
-                    id: id,
-                    shouldBootstrapDefaultWindow: path == nil,
-                    isRegistered: registeredWindowIDs.contains(id),
-                ))
-                guard !Task.isCancelled else { return }
-                await send(.trackedSingletonNativeOpenCompleted(requestID: requestID))
-            },
-        )
-        .cancellable(id: CancelID.trackedSingletonNativeOpen(requestID), cancelInFlight: true)
-    }
-
-    private func revokeTrackedSingleton(
-        requestID: UUID,
-        state: inout State,
-    ) -> Effect<Action> {
-        let wasAuthorized = state.authorizedTrackedSingletonRequestID == requestID
-        if wasAuthorized { state.authorizedTrackedSingletonRequestID = nil }
-        var effects: [Effect<Action>] = [.cancel(id: CancelID.trackedSingletonNativeOpen(requestID))]
-        guard let trackedWindow = state.trackedSingletonWindow,
-              trackedWindow.requestID == requestID
-        else {
-            if wasAuthorized { effects.append(trackedSingletonCompletionEffect(requestID)) }
-            return .concatenate(effects)
-        }
-        state.trackedSingletonWindow = nil
-        effects.append(closeWindow(trackedWindow.windowID, state: &state))
-        if !trackedWindow.terminalOutcomeEmitted {
-            effects.append(trackedSingletonCompletionEffect(requestID))
-        }
-        return .concatenate(effects)
-    }
-
-    private func trackedSingletonCompletionEffect(_ requestID: UUID) -> Effect<Action> {
-        .send(.delegate(.trackedSingletonCompleted(requestID: requestID)))
-    }
-
-    private func openWindowSession(
-        path: String?,
-        selectEntryID: String?,
-        state: inout State,
-    ) -> Effect<Action> {
-        if onboardingWindowClient.showIfNeeded() { return .none }
-        let windowSession = makeWindowSession(path: path, selectEntryID: selectEntryID)
-        state.windows.append(windowSession)
-        state.focusedWindowID = windowSession.id
-        state.moveWindowToMRUFront(windowSession.id)
-        state.pendingWindowOpenIDs.insert(windowSession.id)
-        return .concatenate(
-            windowIDChangedEffect(for: windowSession.id),
-            appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
-            windowOpenEffect(for: windowSession.id, shouldBootstrapDefaultWindow: path == nil),
-        )
-    }
-
-    private func openCollectionWindowSession(url: URL, state: inout State) -> Effect<Action> {
-        if onboardingWindowClient.showIfNeeded() { return .none }
-        let windowSession = makeWindowSession(path: nil)
-        state.windows.append(windowSession)
-        state.focusedWindowID = windowSession.id
-        state.moveWindowToMRUFront(windowSession.id)
-        state.pendingWindowOpenIDs.insert(windowSession.id)
-        return .concatenate(
-            windowIDChangedEffect(for: windowSession.id),
-            .send(.windows(.element(
-                id: windowSession.id,
-                action: .window(.navigation(.view(.openCollectionFile(url)))),
-            ))),
-            appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
-            windowOpenEffect(for: windowSession.id, shouldBootstrapDefaultWindow: true),
-        )
-    }
-
-    private func windowOpenEffect(
-        for id: State.WindowID,
-        shouldBootstrapDefaultWindow: Bool,
-    ) -> Effect<Action> {
-        .run { [fileManagerWindowClient] send in
-            await fileManagerWindowClient.open(id)
-            guard !Task.isCancelled else { return }
-            let registeredWindowIDs = await fileManagerWindowClient.registeredWindowIDs()
-            guard !Task.isCancelled else { return }
-            await send(.windowOpenCompleted(
-                id: id,
-                shouldBootstrapDefaultWindow: shouldBootstrapDefaultWindow,
-                isRegistered: registeredWindowIDs.contains(id),
-            ))
-        }
-        .cancellable(id: CancelID.windowOpen(id))
-    }
-
-    private func closeWindow(_ id: State.WindowID, state: inout State) -> Effect<Action> {
-        guard state.windows[id: id] != nil, !state.closingWindowIDs.contains(id) else { return .none }
-        state.closingWindowIDs.insert(id)
-        if state.focusedWindowID == id {
-            state.focusedWindowID = state.lastUsedWindowIDs.first(where: {
-                $0 != id && isWindowReady($0, state: state)
-            }) ?? state.windows.ids.first(where: {
-                $0 != id && isWindowReady($0, state: state)
-            })
-        }
-        guard state.pendingWindowOpenIDs.contains(id) else {
-            return .run { [fileManagerWindowClient] _ in await fileManagerWindowClient.close(id) }
-        }
-        return .concatenate(
-            .cancel(id: CancelID.windowOpen(id)),
-            .run { [fileManagerWindowClient] send in
-                await fileManagerWindowClient.close(id)
-                let registeredWindowIDs = await fileManagerWindowClient.registeredWindowIDs()
-                guard !registeredWindowIDs.contains(id) else { return }
-                await fileManagerWindowClient.finalizeClose(id)
-                await send(.pendingWindowCloseFinalized(id: id))
-            },
-        )
-    }
-
-    private func finalizePendingWindowClose(
-        _ id: State.WindowID,
-        state: inout State,
-        preservingTrackedNativeOpen: Bool = false,
-    ) -> Effect<Action> {
-        guard state.closingWindowIDs.contains(id), state.pendingWindowOpenIDs.contains(id) else { return .none }
-        return finalizeWindowRemoval(
-            id,
-            state: &state,
-            preservingTrackedNativeOpen: preservingTrackedNativeOpen,
-        )
-    }
-
-    private func finalizeWindowRemoval(
-        _ id: State.WindowID,
-        state: inout State,
-        preservingTrackedNativeOpen: Bool = false,
-    ) -> Effect<Action> {
-        let wasFocused = state.focusedWindowID == id
-        let trackedWindow = state.trackedSingletonWindow.flatMap { $0.windowID == id ? $0 : nil }
-        let activationAttempt = state.externalOpenActivationAttempt.flatMap { $0.windowID == id ? $0 : nil }
-        state.windows.remove(id: id)
-        state.pendingWindowOpenIDs.remove(id)
-        state.closingWindowIDs.remove(id)
-        state.invalidatingWindowIDs.remove(id)
-        state.lastUsedWindowIDs.removeAll { $0 == id }
-        state.defaultWindowBootstrapWindowIDs.remove(id)
-        state.externalWindowBatchIDs[id] = nil
-        if var ownership = state.retainedExternalOpenPlacementOwnership {
-            ownership.newWindowIDs.removeAll { $0 == id }
-            state.retainedExternalOpenPlacementOwnership = ownership.newWindowIDs.isEmpty ? nil : ownership
-        }
-        if wasFocused {
-            state.focusedWindowID = state.lastUsedWindowIDs.first(where: { isWindowReady($0, state: state) })
-                ?? state.windows.ids.first(where: { isWindowReady($0, state: state) })
-        }
-        var effects: [Effect<Action>] = []
-        if let trackedWindow, !preservingTrackedNativeOpen {
-            state.trackedSingletonWindow = nil
-            effects.append(.cancel(id: CancelID.trackedSingletonNativeOpen(trackedWindow.requestID)))
-            if state.authorizedTrackedSingletonRequestID == trackedWindow.requestID {
-                state.authorizedTrackedSingletonRequestID = nil
-            }
-            if !trackedWindow.terminalOutcomeEmitted {
-                effects.append(trackedSingletonCompletionEffect(trackedWindow.requestID))
-            }
-        }
-        if let activationAttempt, state.authorizedExternalOpenBatchID == activationAttempt.batchID {
-            state.externalOpenActivationAttempt = nil
-            effects.append(retryExternalOpenActivation(after: activationAttempt, state: &state))
-        }
-        if state.defaultWindowBootstrapWindowIDs.isEmpty, state.defaultWindowBootstrapRequestID != nil {
-            state.defaultWindowBootstrapRequestID = nil
-            effects.append(.cancel(id: CancelID.defaultWindowBootstrap))
-        }
-        return effects.isEmpty ? .none : .merge(effects)
-    }
-
-    private func isWindowReady(_ id: State.WindowID, state: State) -> Bool {
-        state.windows[id: id] != nil
-            && !state.closingWindowIDs.contains(id)
-            && !state.pendingWindowOpenIDs.contains(id)
-    }
-
-    private func windowIDChangedEffect(for id: UUID) -> Effect<Action> {
-        .send(.windows(.element(
-            id: id,
-            action: .window(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(id)))))),
-        )))
-    }
-
-    private func appPreferencesEffect(
+    func appPreferencesEffect(
         for id: UUID,
         preferences: AppPreferencesFeature.State,
     ) -> Effect<Action> {
@@ -886,45 +502,43 @@ private extension WindowManagerFeature {
         reservationsByItemID: [UUID: ExternalContentTabReservation],
         state: inout State,
     ) -> Effect<Action> {
-        let existingWindowIDs = plan.windows.filter { !$0.isNewWindow }.map(\.windowID)
-        guard existingWindowIDs.allSatisfy({ isWindowReady($0, state: state) }),
-              let application = ExternalOpenPlacementApplication.apply(
-                  plan,
-                  reservationsByItemID: reservationsByItemID,
-                  to: state.windows,
-              )
-        else {
+        guard let application = ExternalOpenPlacementApplication.apply(
+            plan,
+            reservationsByItemID: reservationsByItemID,
+            to: state.windows,
+        ) else {
             state.authorizedExternalOpenBatchID = nil
             return .send(.delegate(.externalOpenApplyCompleted(.init(
                 batchID: plan.batchID,
                 result: .failure(.validationFailed),
             ))))
         }
+
         state.windows = application.windows
         retainExternalOpenPlacementOwnership(plan.batchID, application.newWindowIDs, state: &state)
         for windowID in application.newWindowIDs {
             state.externalWindowBatchIDs[windowID] = plan.batchID
-            state.pendingWindowOpenIDs.insert(windowID)
-            state.moveWindowToMRUFront(windowID)
         }
-        if let focusedWindowID = application.newWindowIDs.last { state.focusedWindowID = focusedWindowID }
         for windowID in plan.windows.map(\.windowID) {
             state.defaultWindowBootstrapWindowIDs.remove(windowID)
         }
-        var effects: [Effect<Action>] = application.existingWindowActivations.map { activation in
-            activateExternalContentTab(
-                windowID: activation.windowID,
-                tabID: activation.tabID,
-            )
-        }
+
+        var effects = externalOpenActivationEffects(application.existingWindowActivations)
         effects.append(contentsOf: application.newWindowIDs.flatMap { windowID in
             [
                 appPreferencesEffect(for: windowID, preferences: state.appPreferences),
-                windowOpenEffect(for: windowID, shouldBootstrapDefaultWindow: false),
-                .send(.windows(.element(id: windowID, action: .window(.resyncActiveCollectionNavigation)))),
+                Effect.run { [fileManagerWindowClient] _ in
+                    await fileManagerWindowClient.open(windowID)
+                },
+                Effect.send(.windows(.element(
+                    id: windowID,
+                    action: .window(.resyncActiveCollectionNavigation),
+                ))),
             ]
         })
-        if state.defaultWindowBootstrapWindowIDs.isEmpty, state.defaultWindowBootstrapRequestID != nil {
+        if state.defaultWindowBootstrapWindowIDs.isEmpty,
+           state.defaultWindowBootstrapRequestID != nil
+        {
             state.defaultWindowBootstrapRequestID = nil
             effects.append(.cancel(id: CancelID.defaultWindowBootstrap))
         }
@@ -935,17 +549,7 @@ private extension WindowManagerFeature {
         return .concatenate(effects)
     }
 
-    private func activateExternalContentTab(
-        windowID: WindowManagerState.WindowID,
-        tabID: ContentTabID,
-    ) -> Effect<Action> {
-        .send(.windows(.element(
-            id: windowID,
-            action: .window(.contentTabs(.setCurrent(tabID))),
-        )))
-    }
-
-    private func sendCommandToFocusedWindow(
+    func sendCommandToFocusedWindow(
         _ state: State,
         _ command: FileManagerWindowAction.WindowCommand,
     ) -> Effect<Action> {
@@ -955,7 +559,7 @@ private extension WindowManagerFeature {
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }
 
-    private func sendContentTabCommandToFocusedWindow(
+    func sendContentTabCommandToFocusedWindow(
         _ state: State,
         _ command: FileManagerWindowAction.WindowCommand,
         capability: KeyPath<FileManagerWindowMenuCommandProjection, Bool>,
@@ -1016,7 +620,7 @@ private extension WindowManagerFeature {
                 state.windows.ids.map { id in
                     .send(.windows(.element(
                         id: id,
-                        action: .window(.applyPinnedContentTabs(restoreResult.state)),
+                        action: .window(.applyAuthoritativePinnedContentTabs(restoreResult.state)),
                     )))
                 },
             )
@@ -1025,7 +629,7 @@ private extension WindowManagerFeature {
         }
     }
 
-    private func defaultWindowBootstrapEffectIfNeeded(
+    func defaultWindowBootstrapEffectIfNeeded(
         for windowID: State.WindowID,
         state: inout State,
     ) -> Effect<Action> {
@@ -1062,7 +666,7 @@ private extension WindowManagerFeature {
         }
     }
 
-    private func makeWindowSession(path: String?, selectEntryID: String? = nil) -> WindowSessionState {
+    func makeWindowSession(path: String?, selectEntryID: String? = nil) -> WindowSessionState {
         let id = uuid()
 
         if let path {
@@ -1081,272 +685,6 @@ private extension WindowManagerFeature {
             selectEntryID: selectEntryID,
         )
         return .init(id: id, window: windowState)
-    }
-}
-
-private enum DefaultWindowBootstrap {
-    struct Dependencies {
-        let builtInClient: FileManagerBuiltInCollectionClient
-        let pinnedRecordClient: ContentTabPinnedRecordClient
-        let favoritesClient: FileManagerFavoritesClient
-        let managerClient: FileManagerClient
-        let loadingClient: EntryLoadingClient
-        let defaultsClient: UserDefaultsClient
-        let metricsClient: MetricsClient
-        let now: @Sendable () -> Date
-    }
-
-    struct RestoreResult {
-        let state: ContentTabState
-        let didCompact: Bool
-    }
-
-    static func run(_ dependencies: Dependencies) async -> ContentTabState? {
-        guard !Task.isCancelled else { return nil }
-        let initialStore = (try? dependencies.pinnedRecordClient.loadStore(dependencies.defaultsClient))
-            ?? ContentTabPinnedRecordStore()
-        if !dependencies.defaultsClient.bool(SettingsKeys.defaultPinnedTabsSeedCompleted) {
-            dependencies.defaultsClient.setBool(true, SettingsKeys.defaultPinnedTabsSeedCompleted)
-        }
-        seedFinderFavoritesIfNeeded(initialStore: initialStore, dependencies: dependencies)
-        guard !Task.isCancelled else { return nil }
-        let ensureReport = await dependencies.builtInClient.ensureAll()
-        guard !Task.isCancelled else { return nil }
-        dependencies.metricsClient.logMetric("built_in_pinned_seed_started", 1, nil)
-        seedBuiltInCollectionIfNeeded(
-            identity: .recents,
-            ensureResult: ensureReport.recents,
-            completionKey: SettingsKeys.recentsPinnedSeedCompleted,
-            dependencies: dependencies,
-        )
-        guard !Task.isCancelled else { return nil }
-        seedBuiltInCollectionIfNeeded(
-            identity: .allTags,
-            ensureResult: ensureReport.allTags,
-            completionKey: SettingsKeys.allTagsPinnedSeedCompleted,
-            dependencies: dependencies,
-        )
-        guard !Task.isCancelled else { return nil }
-        let reloadedStore = (try? dependencies.pinnedRecordClient.loadStore(dependencies.defaultsClient))
-            ?? ContentTabPinnedRecordStore()
-        let restoreResult = restorePinnedRecords(from: reloadedStore, dependencies: dependencies)
-        return compactIfNeeded(restoreResult, dependencies: dependencies)
-    }
-
-    private static func seedFinderFavoritesIfNeeded(
-        initialStore: ContentTabPinnedRecordStore,
-        dependencies: Dependencies,
-    ) {
-        guard !dependencies.defaultsClient.bool(SettingsKeys.finderFavoritesPinnedSeedCompleted) else { return }
-        let applicationSupportURL = dependencies.managerClient.urlsForDirectory(
-            .applicationSupportDirectory,
-            .userDomainMask,
-        ).first
-        guard nonBuiltInRecords(
-            in: initialStore,
-            applicationSupportURL: applicationSupportURL,
-        ).isEmpty else {
-            dependencies.defaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
-            return
-        }
-        let favorites = dependencies.favoritesClient.loadFavorites(
-            dependencies.loadingClient,
-            dependencies.defaultsClient,
-        )
-        let mappedRecords = uniqueRecordsByID(FileManagerFavoritesPinnedRecordMapper.pinnedRecords(
-            from: favorites,
-            pinnedAt: dependencies.now(),
-            fileExistsWithIsDirectory: { path, isDirectory in
-                dependencies.managerClient.fileExistsWithIsDirectory(path, isDirectory)
-            },
-        ))
-        do {
-            _ = try dependencies.pinnedRecordClient.updateStoreAndLoad(
-                dependencies.defaultsClient,
-            ) { latestStore in
-                try Task.checkCancellation()
-                guard nonBuiltInRecords(
-                    in: latestStore,
-                    applicationSupportURL: applicationSupportURL,
-                ).isEmpty else {
-                    return latestStore
-                }
-
-                return mergingFinderRecords(
-                    mappedRecords,
-                    into: latestStore,
-                    applicationSupportURL: applicationSupportURL,
-                )
-            }
-            guard !Task.isCancelled else { return }
-            dependencies.defaultsClient.setBool(true, SettingsKeys.finderFavoritesPinnedSeedCompleted)
-        } catch {
-            // Finder 저장 실패 시 완료 플래그를 남기지 않아 다음 부트스트랩에서 재시도한다.
-        }
-    }
-
-    private static func seedBuiltInCollectionIfNeeded(
-        identity: BuiltInCollectionIdentity,
-        ensureResult: BuiltInCollectionEnsureItemResult,
-        completionKey: String,
-        dependencies: Dependencies,
-    ) {
-        guard !Task.isCancelled else { return }
-        if dependencies.defaultsClient.bool(completionKey) {
-            logSeedMetric("built_in_pinned_item_suppressed", identity: identity, dependencies: dependencies)
-            return
-        }
-        let descriptor: BuiltInCollectionDescriptor
-        switch ensureResult {
-        case let .ready(value): descriptor = value
-        case .deferred:
-            logSeedMetric("built_in_pinned_item_deferred", identity: identity, dependencies: dependencies)
-            return
-        case .failed:
-            logSeedMetric("built_in_pinned_item_failed", identity: identity, dependencies: dependencies)
-            return
-        }
-        let policyDescriptor = BuiltInContentTabPinnedRecordSeedPolicy.VerifiedDescriptor(
-            identity: descriptor.identity,
-            canonicalPackageURL: descriptor.packageURL,
-        )
-        do {
-            let finalStore = try dependencies.pinnedRecordClient.updateStoreAndLoad(
-                dependencies.defaultsClient,
-            ) { latestStore in
-                try Task.checkCancellation()
-                let result = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
-                    ensureResult: .ready(policyDescriptor),
-                    completion: false,
-                    store: latestStore,
-                    now: dependencies.now(),
-                )
-                return switch result {
-                case let .seed(store), let .alreadyPresent(store):
-                    store
-                case .suppressed, .deferred, .failed:
-                    latestStore
-                }
-            }
-            guard BuiltInContentTabPinnedRecordSeedPolicy.containsCanonicalRecord(
-                in: finalStore,
-                descriptor: policyDescriptor,
-            ) else {
-                logSeedMetric("built_in_pinned_item_deferred", identity: identity, dependencies: dependencies)
-                return
-            }
-            guard !Task.isCancelled else { return }
-            dependencies.defaultsClient.setBool(true, completionKey)
-            logSeedMetric("built_in_pinned_item_seeded", identity: identity, dependencies: dependencies)
-        } catch {
-            logSeedMetric("built_in_pinned_item_failed", identity: identity, dependencies: dependencies)
-            // 항목별 저장 실패는 완료 플래그를 남기지 않아 독립적으로 재시도한다.
-        }
-    }
-
-    private static func logSeedMetric(
-        _ name: String,
-        identity: BuiltInCollectionIdentity,
-        dependencies: Dependencies,
-    ) {
-        let outcome = name.replacingOccurrences(of: "built_in_pinned_item_", with: "")
-        dependencies.metricsClient.logMetric(
-            name,
-            1,
-            ["identity": identity.rawValue, "outcome": outcome],
-        )
-    }
-
-    private static func compactIfNeeded(
-        _ restoreResult: RestoreResult,
-        dependencies: Dependencies,
-    ) -> ContentTabState {
-        guard restoreResult.didCompact else { return restoreResult.state }
-
-        do {
-            let compactedStore = try dependencies.pinnedRecordClient.updateStoreAndLoad(
-                dependencies.defaultsClient,
-            ) { latestStore in
-                try Task.checkCancellation()
-                let latestRestoreResult = restorePinnedRecords(
-                    from: latestStore,
-                    dependencies: dependencies,
-                )
-                guard latestRestoreResult.didCompact else { return latestStore }
-
-                return ContentTabPinnedRecordStore(
-                    schemaVersion: latestStore.schemaVersion,
-                    records: latestRestoreResult.state.tabs.compactMap { tab in
-                        latestRestoreResult.state.pinnedRecords[tab.id]
-                    },
-                )
-            }
-            return restorePinnedRecords(from: compactedStore, dependencies: dependencies).state
-        } catch {
-            return restoreResult.state
-        }
-    }
-
-    nonisolated private static func mergingFinderRecords(
-        _ records: [ContentTabPinnedRecord],
-        into store: ContentTabPinnedRecordStore,
-        applicationSupportURL: URL?,
-    ) -> ContentTabPinnedRecordStore {
-        let recentsResidue = BuiltInContentTabPinnedRecordSeedPolicy.records(
-            classifiedAs: .recents,
-            in: store,
-            applicationSupportURL: applicationSupportURL,
-        )
-        let allTagsResidue = BuiltInContentTabPinnedRecordSeedPolicy.records(
-            classifiedAs: .allTags,
-            in: store,
-            applicationSupportURL: applicationSupportURL,
-        )
-        return ContentTabPinnedRecordStore(
-            schemaVersion: store.schemaVersion,
-            records: recentsResidue + records + allTagsResidue,
-        )
-    }
-
-    nonisolated private static func nonBuiltInRecords(
-        in store: ContentTabPinnedRecordStore,
-        applicationSupportURL: URL?,
-    ) -> [ContentTabPinnedRecord] {
-        store.records.filter {
-            BuiltInContentTabPinnedRecordSeedPolicy.classify(
-                $0,
-                applicationSupportURL: applicationSupportURL,
-            ) == nil
-        }
-    }
-
-    private static func uniqueRecordsByID(
-        _ records: [ContentTabPinnedRecord],
-    ) -> [ContentTabPinnedRecord] {
-        var seenIDs = Set<String>()
-        return records.filter { seenIDs.insert($0.id).inserted }
-    }
-
-    nonisolated private static func restorePinnedRecords(
-        from store: ContentTabPinnedRecordStore,
-        dependencies: Dependencies,
-    ) -> RestoreResult {
-        let result = ContentTabState.restoringPinnedRecords(
-            from: store,
-            isRestorableAnchor: { anchor in
-                switch anchor {
-                case let .directory(path):
-                    var isDirectory = ObjCBool(false)
-                    return dependencies.managerClient.fileExistsWithIsDirectory(path, &isDirectory)
-                        && isDirectory.boolValue
-                case let .collectionFile(url):
-                    return dependencies.managerClient.fileExistsWithIsDirectory(url.path, nil)
-                case .homeDefault, .virtualCollection, .aiChat:
-                    return true
-                }
-            },
-        )
-        return RestoreResult(state: result.state, didCompact: result.didCompact)
     }
 }
 

@@ -31,23 +31,12 @@ enum AiChatStateSelection {
         _ selectedThinking: AiThinkingSelection?,
         for model: AiProviderModel?,
     ) -> AiThinkingSelection? {
-        guard let selectedThinking, let model else { return nil }
-
-        switch (selectedThinking, model.thinkingCapability) {
-        case (.none, .effort), (.none, .adaptive), (.none, .tokenBudget), (.none, .unknown):
-            return model.supportsThinkingNone ? selectedThinking : nil
-        case let (.effort(value), .effort(values, _)):
-            return values.contains(value) ? selectedThinking : nil
-        case let (.effort(value), .adaptive(values, _)):
-            return values.contains(value) ? selectedThinking : nil
-        case let (.tokenBudget(value), .tokenBudget(min, max, _)):
-            return (min ... max).contains(value) ? selectedThinking : nil
-        case (.effort, .unknown), (.tokenBudget, .unknown):
-            return selectedThinking
-        case (.none, .unsupported), (.effort, .tokenBudget), (.tokenBudget, .effort), (.tokenBudget, .adaptive),
-             (.effort, .unsupported), (.tokenBudget, .unsupported):
-            return nil
-        }
+        guard let model else { return nil }
+        return AiThinkingSelectionPolicy.normalize(
+            selectedThinking,
+            capability: model.thinkingCapability,
+            supportsNone: model.supportsThinkingNone,
+        )
     }
 
     static func modelListState(from catalogRows: [AiModelCatalogRow]) -> AiChatModelListState {
@@ -105,10 +94,10 @@ enum AiChatStateSelection {
     }
 
     static func defaultThinkingLabel(for capability: AiModelThinkingCapability) -> String {
-        CollectionSearchAISelectionPolicy.defaultThinkingLabel(for: capability)
+        AiThinkingSelectionPolicy.defaultLabel(for: capability)
     }
 
     static func thinkingLabel(for selection: AiThinkingSelection) -> String {
-        CollectionSearchAISelectionPolicy.thinkingLabel(for: selection)
+        AiThinkingSelectionPolicy.label(for: selection)
     }
 }

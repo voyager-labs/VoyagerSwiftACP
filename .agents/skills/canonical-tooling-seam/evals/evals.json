@@ -1,0 +1,89 @@
+{
+  "skill_name": "canonical-tooling-seam",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Our macOS app has a mise build task, an Xcode helper, a Sweetpad task, and CI xcodebuild commands. They each set DerivedData, -clonedSourcePackagesDirPath, and -packageCachePath differently, while two worktrees run at once. Design the consolidation so developers can still pass an explicit cache path. Include migration and verification, but don't choose the analysis or verification executor for me.",
+      "expected_output": "A seam design that assigns one owner to cache and lock policy, keeps DerivedData and cloned SourcePackages worktree-local, shares only a safe reusable packageCachePath, preserves explicit cache overrides, uses a validated structured resolver or wrapper contract, and proves every host follows it.",
+      "files": [],
+      "assertions": [
+        "Names one canonical resolver or wrapper as the sole owner of path resolution, cache identity, locks, and run metadata rather than copying xcodebuild flags into each host.",
+        "Keeps DerivedData and -clonedSourcePackagesDirPath writable checkouts worktree-local by default, while sharing only reusable -packageCachePath package-support or download cache when safe.",
+        "Explicitly warns that cloned SourcePackages are not the same thing as -packageCachePath.",
+        "Preserves an explicit cache-path override with documented precedence over derived defaults.",
+        "Requires malformed JSON or NUL-delimited resolver handoff data to fail closed without a direct xcodebuild fallback.",
+        "Separates worktree-local payloads from shared package cache state and includes concurrent-run locking or active-run protection.",
+        "Includes a host verification matrix covering CLI, Xcode or editor adapter, CI, resolver unit cases, and concurrent shared-state behavior.",
+        "States that code-tooling selects tooling and executors, while this design owns the execution-path seam."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Our web app exposes npm and pnpm build commands in package scripts, VS Code tasks, an agent task, and GitHub Actions. The commands drifted on mode, workspace root, cache directory, and cleanup. Propose a canonical integration path that keeps explicit --mode and cache overrides safe and removes direct package-manager bypasses.",
+      "expected_output": "A host-adapter migration plan with one policy owner, safe structured handoff, deterministic cache policy, non-surprising cleanup, and concrete tests across local, IDE, agent, and CI hosts.",
+      "files": [],
+      "assertions": [
+        "Uses thin npm or pnpm, IDE, agent, and CI adapters that call one canonical seam instead of retaining duplicate mode and cache-default logic.",
+        "Defines precedence where explicit --mode and cache overrides survive adapter translation.",
+        "Defines a deterministic cache identity from compatibility inputs such as lockfile, runtime, platform, and build mode, not timestamps or host names.",
+        "Requires path containment and symlink checks plus dry-run or explicit opt-in before cache cleanup or deletion.",
+        "Requires malformed resolver output to stop execution and identifies stale direct package-manager paths through removal, clear failure, or temporary observability.",
+        "Includes focused adapter checks and end-to-end verification for local CLI, IDE task, agent task, and CI."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "A Python backend runs uv and pytest from developer shells, a PyCharm integration, a CI matrix, and an agent command. Each host has a different virtual-environment cache and test selector behavior. Create the architecture and migration checklist for one safe test path while keeping explicit pytest selectors and approved environment overrides.",
+      "expected_output": "A generic backend-oriented seam plan that centralizes resolution and shared-state safety without absorbing IDE presentation or choosing test tools.",
+      "files": [],
+      "assertions": [
+        "Assigns one resolver or wrapper ownership of environment resolution, shared cache identity, locks, and run metadata while adapters retain shell, IDE, CI, and agent presentation details.",
+        "Preserves explicit pytest selectors, markers, and approved environment overrides through a typed request with documented precedence.",
+        "Uses JSON or NUL-delimited argument-safe handoff and fails closed for missing, malformed, or path-escaping resolver output.",
+        "Includes concurrency safety for shared uv or dependency-cache mutation and active-run protection for cleanup.",
+        "Migrates every host away from direct uv or pytest bypasses without surprise environment migration or deletion, using dry-run for destructive maintenance.",
+        "Provides unit, host-adapter, and end-to-end verification evidence and keeps code-tooling's tool-selection role separate."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "I have one developer-only shell command that runs a local formatter. It has no IDE, CI, agent, shared cache, persistent state, or duplicate invocation. Should I add a resolver, wrapper, adapters, and lock metadata anyway?",
+      "expected_output": "A concise decision not to introduce canonical tooling seam architecture for this single-host, no-shared-policy case, while keeping a simple direct command and noting the boundary with code-tooling.",
+      "files": [],
+      "assertions": [
+        "Explicitly recommends keeping a simple direct command rather than adding a resolver, wrapper, adapters, or lock metadata.",
+        "Explains that one host with no shared policy, mutable state, or duplicated execution path does not trigger this skill's architecture.",
+        "Does not invent cache, migration, concurrency, or host-matrix work that the scenario lacks.",
+        "Keeps tool selection separate by identifying code-tooling only as relevant if choosing or looking up the formatter executor is needed."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "We are replacing four legacy build-cache directories with a canonical cache resolver. The old cleanup script immediately deletes paths supplied by users, can race active builds, and follows symlinks. Give the migration and cleanup design for CLI, IDE, CI, and agent hosts without deleting anyone's cache unexpectedly.",
+      "expected_output": "A canonical cleanup migration plan that is dry-run first, requires explicit apply, validates containment after symlink resolution, protects active runs with central locking, observes stale legacy entrypoints, and verifies all hosts without surprise deletion.",
+      "files": [],
+      "assertions": [
+        "Makes destructive cleanup dry-run by default and requires an explicit apply or confirmation action before deletion.",
+        "Requires containment checks after symlink resolution and rejects user-supplied paths that escape allowed roots.",
+        "Centralizes active-run protection and locking at the shared-state owner so cleanup cannot race running builds.",
+        "Migrates CLI, IDE, CI, and agent hosts through one canonical seam and leaves temporary stale-legacy observability before deliberate retirement.",
+        "Promises no surprise migration or deletion and includes recovery or user-visible migration guidance.",
+        "Includes unit tests for destructive guards, host-adapter checks, and end-to-end cleanup verification while keeping code-tooling's executor-selection role separate."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Choose the seam for these two cases, and justify each choice without saying both are interchangeable. Case A: a CLI, IDE task, and CI job need identical workspace, mode, and cache resolution, but each host must keep native process control to stream its own logs, attach a debugger, and decide when to launch. Case B: the same hosts update a shared dependency cache where setup, lock acquisition, mutation, metadata, and cleanup must be one atomic lifecycle. State the owner and verification for each case; do not select build or test tools.",
+      "expected_output": "A decisive design that selects a resolver for Case A because hosts retain process control, selects a wrapper for Case B because one owner must execute an atomic shared-state lifecycle, and separates this seam decision from code-tooling executor selection.",
+      "files": [],
+      "assertions": [
+        "Selects a resolver, not a wrapper, for Case A because the hosts must retain native process, logging, debugger, and launch lifecycle control.",
+        "Selects a wrapper, not a resolver alone, for Case B because setup, locking, shared-cache mutation, metadata, and cleanup require one atomic execution lifecycle owner.",
+        "Assigns one owner for invariant resolution and shared-state policy in each case while keeping host adapters limited to platform-local translation.",
+        "Does not hedge by treating resolver and wrapper as interchangeable for either case.",
+        "Includes resolver contract tests and per-host adapter checks for Case A, plus atomic lifecycle, lock-contention, and cleanup tests for Case B.",
+        "Keeps code-tooling limited to selecting executors or tools rather than deciding resolver-versus-wrapper architecture."
+      ]
+    }
+  ]
+}

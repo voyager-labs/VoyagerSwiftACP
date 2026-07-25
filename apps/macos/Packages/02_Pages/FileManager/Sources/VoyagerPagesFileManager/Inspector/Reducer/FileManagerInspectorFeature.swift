@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import CoreGraphics
+import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesAiChat
 import VoyagerShared
@@ -45,31 +46,33 @@ public struct FileManagerInspectorFeature {
                 return .none
 
             case .sessionHeaderNewChatTapped:
-                return .send(.aiChat(.newChatTapped))
+                return .send(.delegate(.newChatRequested))
 
-            case .sessionHeaderBackTapped:
+            case .newChatRequested:
+                return .send(.delegate(.newChatRequested))
+
+            case .sessionHeaderBackTapped, .showChatHistoryRequested:
+                state.inspectorVisible = true
+                state.activeMode = .chat
                 return .send(.aiChat(.backToSessionsTapped))
 
             case let .openChat(setup, connectionsFile):
-                state.inspectorVisible = true
+                return openChat(setup: setup, connectionsFile: connectionsFile, state: &state)
+
+            case let .openNewChat(setup, connectionsFile):
+                state.inspectorVisible = false
                 state.activeMode = .chat
-
-                if let setupSessionID = setup.sessionID,
-                   state.aiChat.executionPhase.processingSessionID == setupSessionID
-                {
-                    return .send(.aiChat(.providerConnectionsUpdated(connectionsFile)))
-                }
-
-                if let currentSessionID = state.aiChat.sessionID,
-                   let setupSessionID = setup.sessionID,
-                   currentSessionID == setupSessionID
-                {
-                    return .send(.aiChat(.providerConnectionsUpdated(connectionsFile)))
-                }
-
                 return .concatenate(
                     .send(.aiChat(.setup(setup))),
+                    .send(.aiChat(.prepareUnpersistedNewChatWithContext(setup.currentContext))),
                     .send(.aiChat(.providerConnectionsUpdated(connectionsFile))),
+                    .send(.setInspectorVisible(true)),
+                )
+
+            case let .openChatHistory(setup, connectionsFile):
+                return .concatenate(
+                    openChat(setup: setup, connectionsFile: connectionsFile, state: &state),
+                    .send(.aiChat(.backToSessionsTapped)),
                 )
 
             case .aiChat(.delegate(.openAISettings)):
@@ -85,5 +88,35 @@ public struct FileManagerInspectorFeature {
                 return .none
             }
         }
+    }
+}
+
+private extension FileManagerInspectorFeature {
+    func openChat(
+        setup: AiChatSetupState,
+        connectionsFile: AIConnectionsFile,
+        state: inout State,
+        presentInspector: Bool = true,
+    ) -> Effect<Action> {
+        state.inspectorVisible = presentInspector
+        state.activeMode = .chat
+
+        if let setupSessionID = setup.sessionID,
+           state.aiChat.executionPhase.processingSessionID == setupSessionID
+        {
+            return .send(.aiChat(.providerConnectionsUpdated(connectionsFile)))
+        }
+
+        if let currentSessionID = state.aiChat.sessionID,
+           let setupSessionID = setup.sessionID,
+           currentSessionID == setupSessionID
+        {
+            return .send(.aiChat(.providerConnectionsUpdated(connectionsFile)))
+        }
+
+        return .concatenate(
+            .send(.aiChat(.setup(setup))),
+            .send(.aiChat(.providerConnectionsUpdated(connectionsFile))),
+        )
     }
 }

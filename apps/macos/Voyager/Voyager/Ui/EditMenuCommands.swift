@@ -34,10 +34,19 @@ struct EditMenuCommands: Commands {
     }
 
     var body: some Commands {
+        let textResponderIsEditing = isTextEditingResponder()
         let canUndoResponder = canUndoInTextResponder()
         let canRedoResponder = canRedoInTextResponder()
-        let canUndo = canUndoResponder || viewStore.canUndo
-        let canRedo = canRedoResponder || viewStore.canRedo
+        let canUndo = Self.canPerformUndoRedoCommand(
+            textResponderIsEditing: textResponderIsEditing,
+            canHandleByTextResponder: canUndoResponder,
+            canPerformFileOperation: viewStore.canUndo,
+        )
+        let canRedo = Self.canPerformUndoRedoCommand(
+            textResponderIsEditing: textResponderIsEditing,
+            canHandleByTextResponder: canRedoResponder,
+            canPerformFileOperation: viewStore.canRedo,
+        )
 
         let selectedCount = viewStore.selectedItemCount
         let hasSelectedItems = selectedCount > 0
@@ -64,6 +73,7 @@ struct EditMenuCommands: Commands {
         CommandGroup(replacing: .undoRedo) {
             Button("Undo") {
                 sendUndoRedoAction(
+                    textResponderIsEditing: isTextEditingResponder(),
                     canHandleByTextResponder: canUndoInTextResponder(),
                     selector: undoSelector,
                     fallback: .requestUndo,
@@ -74,6 +84,7 @@ struct EditMenuCommands: Commands {
 
             Button("Redo") {
                 sendUndoRedoAction(
+                    textResponderIsEditing: isTextEditingResponder(),
                     canHandleByTextResponder: canRedoInTextResponder(),
                     selector: redoSelector,
                     fallback: .requestRedo,
@@ -98,7 +109,7 @@ struct EditMenuCommands: Commands {
                 ? "Close Contextual AI Chat"
                 : "Open Contextual AI Chat"
             Button(contextualAiChatTitle) {
-                sendEditCommand(.openContextualAiChat)
+                sendEditCommand(.newChat)
             }
             .keyboardShortcut("l", modifiers: .command)
             .disabled(!viewStore.hasFocusedWindow)
@@ -139,7 +150,7 @@ struct EditMenuCommands: Commands {
                 sendEditCommand(.duplicate)
             }
             .keyboardShortcut("d", modifiers: .command)
-            .disabled(!viewStore.canDuplicateEntries)
+            .disabled(!canPerformEntryCommands || !hasSelectedItems)
 
             Button("Make Alias") {
                 sendEditCommand(.makeAlias)
@@ -161,6 +172,30 @@ struct EditMenuCommands: Commands {
         canPerformEntryCommands: Bool,
     ) -> Bool {
         canHandleByTextResponder || canPerformEntryCommands
+    }
+
+    static func canPerformUndoRedoCommand(
+        textResponderIsEditing: Bool,
+        canHandleByTextResponder: Bool,
+        canPerformFileOperation: Bool,
+    ) -> Bool {
+        (textResponderIsEditing && canHandleByTextResponder) || canPerformFileOperation
+    }
+
+    static func performUndoRedoAction(
+        textResponderIsEditing: Bool,
+        canHandleByTextResponder: Bool,
+        isComposerPresented: Bool,
+        sendResponderAction: () -> Bool,
+        sendFallback: () -> Void,
+    ) {
+        let routing = EditMenuUndoRedoRouting.resolve(
+            canHandleByTextResponder: textResponderIsEditing && canHandleByTextResponder,
+            sendNativeAction: sendResponderAction,
+        )
+        guard routing == .window else { return }
+        guard !isComposerPresented else { return }
+        sendFallback()
     }
 
     private func isTextEditingResponder() -> Bool {
@@ -196,15 +231,21 @@ struct EditMenuCommands: Commands {
     }
 
     private func sendUndoRedoAction(
+        textResponderIsEditing: Bool,
         canHandleByTextResponder: Bool,
         selector: Selector,
         fallback command: MenuCommandItem.EditCommand,
     ) {
-        let routing = EditMenuUndoRedoRouting.resolve(
+        Self.performUndoRedoAction(
+            textResponderIsEditing: textResponderIsEditing,
             canHandleByTextResponder: canHandleByTextResponder,
-            sendNativeAction: { NSApp.sendAction(selector, to: nil, from: nil) },
+            isComposerPresented: viewStore.isComposerPresented,
+            sendResponderAction: {
+                NSApp.sendAction(selector, to: nil, from: nil)
+            },
+            sendFallback: {
+                sendEditCommand(command)
+            },
         )
-        guard routing == .window else { return }
-        sendEditCommand(command)
     }
 }

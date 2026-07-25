@@ -230,8 +230,7 @@ enum EntryOpenLive {
     }
 
     nonisolated static var revealInFinder: @Sendable ([URL]) async throws -> Void {
-        let workspaceClient = WorkspaceClient.liveValue
-        return { urls in
+        { urls in
             guard !urls.isEmpty else { return }
             let scoped = urls.map { $0.startAccessingSecurityScopedResource() }
             defer {
@@ -240,7 +239,7 @@ enum EntryOpenLive {
                 }
             }
 
-            workspaceClient.activateFileViewerSelecting(urls)
+            try EntryFinderReveal.reveal(urls)
         }
     }
 

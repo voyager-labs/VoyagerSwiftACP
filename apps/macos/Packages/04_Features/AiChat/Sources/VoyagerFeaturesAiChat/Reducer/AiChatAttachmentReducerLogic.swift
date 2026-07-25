@@ -77,6 +77,9 @@ extension AiChatFeature {
             state.addedAttachments.append(draft)
             didAddAttachments = true
         }
+        if didAddAttachments {
+            state.markPreparedTransientSessionAsTouched()
+        }
         return didAddAttachments
     }
 
@@ -192,7 +195,11 @@ extension AiChatFeature {
     }
 
     func removeAddedAttachment(_ id: AiChatAttachmentID, state: inout State) {
+        let previousCount = state.addedAttachments.count
         state.addedAttachments.removeAll { $0.id == id }
+        if state.addedAttachments.count != previousCount {
+            state.markPreparedTransientSessionAsTouched()
+        }
     }
 
     func makeAttachmentDraft(from url: URL) -> AiChatAttachmentDraft? {

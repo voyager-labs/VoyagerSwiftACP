@@ -14,6 +14,12 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 VALIDATE = "scripts.validate_harness"
 VERIFY = "scripts.verify_plan"
+LOCAL_ARTIFACT_PATHS = (
+    ".omo/session.json",
+    ".omx/session.json",
+    ".sisyphus/evidence/task.json",
+    ".codegraph/index.json",
+)
 RULE = """---
 description: "fixture"
 alwaysApply: true
@@ -376,7 +382,7 @@ class AgentValidationTests(unittest.TestCase):
                 )
                 guide = root / ".agents/skills/fixture/references/guide.md"
                 self.write(root, guide.relative_to(root).as_posix(), "# Guide\n")
-                subprocess.run(["git", "add", "."], cwd=root, check=True)
+                _ = subprocess.run(["git", "add", "."], cwd=root, check=True)
                 subprocess.run(
                     ["git", "commit", "-qm", "fixture"], cwd=root, check=True
                 )
@@ -405,21 +411,25 @@ class AgentValidationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(payload["diagnostics"], [])
 
-    def test_omx_artifacts_are_allowed_locally_and_rejected_when_staged(self) -> None:
-        temp = self.make_repo()
-        self.addCleanup(temp.cleanup)
-        root = Path(temp.name)
-        self.write(root, ".omx/session.json", "{}")
+    def test_local_artifacts_are_allowed_locally_and_rejected_when_staged(self) -> None:
+        for relative in LOCAL_ARTIFACT_PATHS:
+            with self.subTest(relative=relative):
+                temp = self.make_repo()
+                self.addCleanup(temp.cleanup)
+                root = Path(temp.name)
+                self.write(root, relative, "{}")
 
-        working_result, working_payload = self.run_cli(VALIDATE, root, "--working-tree")
-        self.assertEqual(working_result.returncode, 0)
-        self.assertEqual(working_payload["diagnostics"], [])
+                working_result, working_payload = self.run_cli(
+                    VALIDATE, root, "--working-tree"
+                )
+                self.assertEqual(working_result.returncode, 0)
+                self.assertEqual(working_payload["diagnostics"], [])
 
-        subprocess.run(["git", "add", "."], cwd=root, check=True)
-        staged_result, staged_payload = self.run_cli(VALIDATE, root, "--staged")
-        self.assert_exact_diagnostic(
-            staged_result, staged_payload, "HARNESS_STAGED_ARTIFACT"
-        )
+                _ = subprocess.run(["git", "add", "."], cwd=root, check=True)
+                staged_result, staged_payload = self.run_cli(VALIDATE, root, "--staged")
+                self.assert_exact_diagnostic(
+                    staged_result, staged_payload, "HARNESS_STAGED_ARTIFACT"
+                )
 
     def test_scope_modes_select_working_tree_staged_and_base_ref(self) -> None:
         temp = self.make_repo()

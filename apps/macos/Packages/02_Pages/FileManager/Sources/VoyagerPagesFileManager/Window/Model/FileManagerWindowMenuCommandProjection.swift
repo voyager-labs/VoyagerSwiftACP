@@ -31,6 +31,9 @@ public struct FileManagerWindowMenuCommandProjection: Equatable, Sendable {
     public let selectedItemCount: Int
     public let isComposerPresented: Bool
     public let isContextualAiChatPresented: Bool
+    public let isNewChatPresented: Bool
+    public let isChatHistoryPresented: Bool
+    public let canUseAiChatInspector: Bool
 }
 
 public extension FileManagerWindowState {
@@ -47,6 +50,7 @@ public extension FileManagerWindowState {
             && isBatchCloseIdle
             && pendingContentTabClose == nil
             && pendingContentTabTeardown == nil
+        let isComposerPresented = content.composer.isPresented
 
         return FileManagerWindowMenuCommandProjection(
             canPerformEntryCommands: canPerformEntryCommands,
@@ -78,13 +82,23 @@ public extension FileManagerWindowState {
             groupKey: content.entryViewLayout.entryArrangements.groupKey,
             sortKey: content.entryViewLayout.entryArrangements.sortKey,
             sortOrder: content.entryViewLayout.entryArrangements.sortOrder,
-            canUndo: validatedUndoRedoTarget(for: .undo) != nil,
-            canRedo: validatedUndoRedoTarget(for: .redo) != nil,
+            canUndo: !isComposerPresented && validatedUndoRedoTarget(for: .undo) != nil,
+            canRedo: !isComposerPresented && validatedUndoRedoTarget(for: .redo) != nil,
+
             selectedItemCount: selectedIds.count,
-            isComposerPresented: content.composer.isPresented,
+            isComposerPresented: isComposerPresented,
             isContextualAiChatPresented: inspector.inspectorVisible
                 && inspector.inspectorPaneExists
                 && inspector.activeMode == .chat,
+            isNewChatPresented: inspector.inspectorVisible
+                && inspector.inspectorPaneExists
+                && inspector.activeMode == .chat
+                && inspector.aiChat.mode == .chat,
+            isChatHistoryPresented: inspector.inspectorVisible
+                && inspector.inspectorPaneExists
+                && inspector.activeMode == .chat
+                && inspector.aiChat.mode == .sessions,
+            canUseAiChatInspector: contentTabs.activeTabID.map { supportsInspector(tabID: $0) } ?? false,
         )
     }
 }

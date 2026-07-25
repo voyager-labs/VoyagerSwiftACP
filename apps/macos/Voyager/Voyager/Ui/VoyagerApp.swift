@@ -35,7 +35,10 @@ struct VoyagerApp: App {
     @MainActor
     init() {
         let appRootStoreReference = AppRootStoreReference()
-        let fileManagerWindowClient = makeFileManagerWindowClientLive()
+        let fileOperationUndoManagerRegistry = FileOperationUndoManagerRegistry()
+        let fileManagerWindowClient = makeFileManagerWindowClientLive(
+            fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+        )
 
         appRootStore = Store(initialState: AppRootState()) {
             AppRootFeature()
@@ -61,7 +64,7 @@ struct VoyagerApp: App {
                 },
             )
             $0.fileManagerWindowClient = fileManagerWindowClient
-            $0.undoManagerClient = makeFileManagerUndoManagerClientLive()
+            $0.fileOperationUndoManagerClient = .live(registry: fileOperationUndoManagerRegistry)
             $0.metricsClient = Self.makeFileManagerMetricsClient()
         }
         appRootStoreReference.store = appRootStore

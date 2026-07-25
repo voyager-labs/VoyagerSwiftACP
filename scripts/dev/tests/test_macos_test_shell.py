@@ -46,6 +46,7 @@ class MacOSTestShellTests(unittest.TestCase):
             "\n".join(
                 [
                     "#!/usr/bin/env bash",
+                    'if [[ "$1" == "-version" ]]; then printf "Xcode 26.1\\nBuild version 17B55\\n"; exit 0; fi',
                     f'printf "%s\\n" "$@" > "{self.xcodebuild_args}"',
                     f'printf "xcodebuild\\n" >> "{self.xcodebuild_count}"',
                     'printf "xcodebuild output"',
@@ -53,6 +54,10 @@ class MacOSTestShellTests(unittest.TestCase):
                     "",
                 ]
             ),
+        )
+        self._write_executable(
+            "xcrun",
+            "#!/usr/bin/env bash\nprintf 'Swift version 6.2.1\\n'\n",
         )
         self._write_executable(
             "xcbeautify",
@@ -86,6 +91,8 @@ class MacOSTestShellTests(unittest.TestCase):
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["PATH"] = f"{self.bin_dir}{os.pathsep}{environment['PATH']}"
+        environment["XCODEBUILD_REAL"] = str(self.bin_dir / "xcodebuild")
+        environment["VOYAGER_XCODE_CACHE_ROOT"] = str(self.tmpdir / "cache")
         environment.update(env)
         return subprocess.run(
             [str(SCRIPT), *args],
@@ -112,11 +119,10 @@ class MacOSTestShellTests(unittest.TestCase):
             "-scheme",
             "Voyager-Dev",
             "-configuration",
-            "Debug",
+            "Dev-Debug",
             "-derivedDataPath",
-            str(ROOT / "build/dev/DerivedData"),
             "-clonedSourcePackagesDirPath",
-            str(ROOT / "build/dev/SourcePackages"),
+            "-packageCachePath",
             "-skipPackagePluginValidation",
             "-skipMacroValidation",
             "COMPILER_INDEX_STORE_ENABLE=NO",
@@ -164,8 +170,28 @@ class MacOSTestShellTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.xcodebuild_args.exists())
         self.assertIn(selector, result.stdout)
-        self.assertIn("NSUnbufferedIO=YES xcodebuild test", result.stdout)
+        self.assertIn(
+            "NSUnbufferedIO=YES scripts/dev/xcodebuild-branch-product.sh test",
+            result.stdout,
+        )
         self.assertIn("tee build/dev/xcodebuild-test.log", result.stdout)
+        self.assertIn(
+            f"CODE_SIGNING_ALLOWED=NO \\\n  {selector} \\\n  2>&1 | tee",
+            result.stdout,
+        )
+        self.assertNotIn("\\n+", result.stdout)
+        self.assertNotIn("\n+", result.stdout)
+
+    def test_dry_run_continues_from_signing_setting_to_pipeline_without_arguments(
+        self,
+    ) -> None:
+        result = self.run_script("--dry-run")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "CODE_SIGNING_ALLOWED=NO \\\n  2>&1 | tee build/dev/xcodebuild-test.log",
+            result.stdout,
+        )
 
     def test_xcbeautify_receives_piped_xcodebuild_output(self) -> None:
         result = self.run_script()
@@ -185,6 +211,7 @@ class MacOSTestShellTests(unittest.TestCase):
             "\n".join(
                 [
                     "#!/usr/bin/env bash",
+                    'if [[ "$1" == "-version" ]]; then printf "Xcode 26.1\\nBuild version 17B55\\n"; exit 0; fi',
                     f'printf "%s" "$NSUnbufferedIO" > "{self.xcodebuild_args}"',
                     "",
                 ]

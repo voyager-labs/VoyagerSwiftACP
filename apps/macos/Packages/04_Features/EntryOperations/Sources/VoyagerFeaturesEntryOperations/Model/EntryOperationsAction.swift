@@ -71,6 +71,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case appDidBecomeActive
         case syncClipboardState(paths: [String], operation: ClipboardOperation)
         case pathsMutated([String])
+        case restorableTrashPathsLoaded(Set<String>)
     }
 
     @CasePathable
@@ -176,6 +177,16 @@ public struct TagMutationRequest: Equatable, Sendable {
         case toggle
         case add
         case remove
+    }
+}
+
+public struct TagMutationFailure: Equatable, Sendable {
+    public let fileName: String
+    public let reason: String
+
+    public init(fileName: String, reason: String) {
+        self.fileName = fileName
+        self.reason = reason
     }
 }
 

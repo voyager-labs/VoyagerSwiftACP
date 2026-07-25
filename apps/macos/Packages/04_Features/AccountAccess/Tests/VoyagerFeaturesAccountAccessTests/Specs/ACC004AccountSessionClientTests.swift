@@ -19,7 +19,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// - 기대 결과: read()가 nil 반환
     func testReadReturnsNilWhenFileMissing() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
 
         let session = try await client.read(Date())
@@ -34,7 +34,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// - 기대 결과: read()가 nil이 아닌 session 반환, accessToken="valid-token", refreshToken="refresh-token"
     func testReadReturnsSessionWhenValidToken() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
 
         let futureMs = Int64(Date().timeIntervalSince1970 * 1000) + 86_400_000
@@ -62,7 +62,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// - 기대 결과: read()가 nil 반환
     func testReadReturnsNilWhenExpired() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
 
         let pastMs = Int64(Date().timeIntervalSince1970 * 1000) - 86_400_000
@@ -84,7 +84,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// ACC-004-account_session_client: 레거시 credential을 읽으면 binding을 포함한 canonical 파일로 마이그레이션한다.
     func testReadMigratesLegacyCredentialWithSessionBinding() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         let legacy = LegacyTokensFile(
             updatedAtMs: 1,
@@ -117,7 +117,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// ACC-004-account_session_client: access 만료 뒤에도 유효한 refresh credential은 복구 가능한 session으로 반환한다.
     func testReadReturnsExpiredRecoverableSessionUsingInjectedDate() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         let binding = UUID()
         try await store.write(AccountTokensFile(
@@ -139,7 +139,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// ACC-004-account_session_client: refresh credential이 없거나 만료되면 access 만료 session을 복원하지 않는다.
     func testReadReturnsNilForExpiredSessionWithoutRecoverableRefreshCredential() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         try await store.write(AccountTokensFile(
             updatedAtMs: 1,
@@ -157,7 +157,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// ACC-004-account_session_client: read는 wall clock이 아닌 전달된 now로 만료를 분류한다.
     func testReadClassifiesExpiryUsingInjectedDate() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         try await store.write(AccountTokensFile(
             updatedAtMs: 1,
@@ -177,7 +177,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// ACC-004-account_session_client: refresh rotation은 동일한 binding을 보존한다.
     func testRefreshRotationPreservesSessionBinding() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let binding = UUID()
         let source = AccountTokensFile(
             updatedAtMs: 1,
@@ -210,7 +210,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// ACC-004-account_session_client: committed replacement와 동일 token payload를 가진 stale completion은 binding 불일치로 거부된다.
     func testBindingAwareCASRejectsReplacementWithSameCredentials() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let credentials = (access: "same-access", refresh: "same-refresh")
         let stale = AccountTokensFile(
             updatedAtMs: 1,
@@ -250,7 +250,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// ACC-004-account_session_client: 같은 계정의 새 committed session은 이전 binding을 재사용하지 않는다.
     func testCommittedReplacementGeneratesDifferentSessionBinding() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         let initial = AccountSession(
             accessToken: "same-account-access",
@@ -278,7 +278,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// - 기대 결과: store.read()가 nil이 아닌 file 반환, file.accessToken="new-token", file.refreshToken="new-refresh"
     func testPersistWritesSessionToFile() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
 
         let session = AccountSession(
@@ -303,7 +303,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// - 기대 결과: delete 후 read()가 nil 반환
     func testDeleteRemovesTokenFile() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
 
         let session = AccountSession(
@@ -330,7 +330,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// - 기대 결과: delete() 정상 종료
     func testDeleteSucceedsWhenFileMissing() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
 
         try await client.delete(.explicitSignOut)
@@ -339,7 +339,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// ACC-004-account_session_client: CAS는 요청 전 credential snapshot과 일치할 때만 교체한다.
     func testReplaceIfCurrentMatchesRejectsDeletedOrReplacedCredentials() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let expected = AccountTokensFile(
             updatedAtMs: 1,
             accessToken: "expected-access",
@@ -390,7 +390,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// ACC-004-account_session_client: 이전 handoff rollback은 새 세션을 삭제하지 않는다.
     func testDiscardDoesNotDeleteDifferentSession() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         let previousSession = AccountSession(
             accessToken: "previous-token",
@@ -414,7 +414,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// ACC-004-account_session_client: 준비 중인 handoff 취소는 기존 canonical session을 보존한다.
     func testDiscardPreparedHandoffPreservesCanonicalSession() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         let canonicalSession = AccountSession(
             accessToken: "canonical-token",
@@ -441,7 +441,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// ACC-004-account_session_client: marker 없는 stale staging은 기존 canonical session을 변경하지 않는다.
     func testPrepareReplacesStaleStagingWithoutDeletingCanonicalSession() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         let canonicalSession = AccountSession(
             accessToken: "canonical-token",
@@ -465,6 +465,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         _ = try await client.prepareHandoffPersistence(staleSession)
         let markerURL = AccountTokenFSLocation.rollbackMarkerFileURL(
             homeDirectoryURL: fixture.homeURL,
+            appEnv: .dev,
         )
         try FileManager.default.removeItem(at: markerURL)
 
@@ -479,7 +480,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// ACC-004-account_session_client: 변환할 수 없는 prepared credential은 검증 실패로 표면화한다.
     func testPrepareRejectsSessionWithEmptyAccessToken() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         let invalidSession = AccountSession(
             accessToken: "",
@@ -499,7 +500,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// ACC-004-account_session_client: canonical replace 뒤 cancellation은 committed credential을 rollback하지 않는다.
     func testDiscardAfterCanonicalReplacePreservesRecoverableCommittedSession() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         let preparedSession = AccountSession(
             accessToken: "partial-commit-token",
@@ -510,6 +511,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         _ = try await client.prepareHandoffPersistence(preparedSession)
         let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(
             homeDirectoryURL: fixture.homeURL,
+            appEnv: .dev,
         )
         let stagedData = try Data(contentsOf: stagingURL)
         try stagedData.write(to: fixture.accountTokensFileURL, options: .atomic)
@@ -524,7 +526,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// ACC-004-account_session_client: 미완료 rollback marker가 있으면 저장 세션을 복원하지 않는다.
     func testReadRejectsSessionWithPendingRollbackMarker() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         let session = AccountSession(
             accessToken: "cancelled-token",
@@ -534,6 +536,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         try await client.persist(session)
         let markerURL = AccountTokenFSLocation.rollbackMarkerFileURL(
             homeDirectoryURL: fixture.homeURL,
+            appEnv: .dev,
         )
         try Data("rollback-pending".utf8).write(to: markerURL, options: .atomic)
 
@@ -547,7 +550,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// ACC-004-account_session_client: 일반 read는 handoff 준비 저장을 삭제하지 않는다.
     func testReadDoesNotDestroyPreparedHandoffSession() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         let session = AccountSession(
             accessToken: "prepared-token",
@@ -563,6 +566,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.accountTokensFileURL.path))
         let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(
             homeDirectoryURL: fixture.homeURL,
+            appEnv: .dev,
         )
         XCTAssertTrue(FileManager.default.fileExists(atPath: stagingURL.path))
 
@@ -578,7 +582,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// - 기대 결과: read()가 committed session을 반환하고 staging/marker 파일이 제거된다.
     func testColdStartRecoversCommittedHandoffWhenStagingAndMarkerRemain() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         let session = AccountSession(
             accessToken: "committed-with-residue-token",
@@ -588,9 +592,11 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         )
         let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(
             homeDirectoryURL: fixture.homeURL,
+            appEnv: .dev,
         )
         let markerURL = AccountTokenFSLocation.rollbackMarkerFileURL(
             homeDirectoryURL: fixture.homeURL,
+            appEnv: .dev,
         )
 
         _ = try await client.prepareHandoffPersistence(session)
@@ -611,7 +617,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// - 기대 결과: read()가 committed session을 반환하고 marker/staging 파일이 제거된다.
     func testColdStartRecoversCommittedHandoffWithMatchingDigest() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         let session = AccountSession(
             accessToken: "committed-token",
@@ -628,9 +634,11 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         XCTAssertEqual(restoredSession?.refreshToken, session.refreshToken)
         let markerURL = AccountTokenFSLocation.rollbackMarkerFileURL(
             homeDirectoryURL: fixture.homeURL,
+            appEnv: .dev,
         )
         let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(
             homeDirectoryURL: fixture.homeURL,
+            appEnv: .dev,
         )
         XCTAssertFalse(FileManager.default.fileExists(atPath: markerURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: stagingURL.path))
@@ -642,12 +650,12 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// - 기대 결과: nil 반환, canonical과 marker 보존
     func testColdStartFailsClosedWhenMarkerDigestDoesNotMatchCanonical() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         _ = try await client.prepareHandoffPersistence(
             AccountSession(accessToken: "candidate", status: .none, refreshToken: "candidate-refresh"),
         )
-        let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: fixture.homeURL)
+        let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: fixture.homeURL, appEnv: .dev)
         try FileManager.default.removeItem(at: stagingURL)
         let different = AccountTokensFile(
             updatedAtMs: 1,
@@ -665,7 +673,10 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         XCTAssertNil(restoredSession)
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.accountTokensFileURL.path))
         XCTAssertTrue(FileManager.default
-            .fileExists(atPath: AccountTokenFSLocation.rollbackMarkerFileURL(homeDirectoryURL: fixture.homeURL).path))
+            .fileExists(atPath: AccountTokenFSLocation.rollbackMarkerFileURL(
+                homeDirectoryURL: fixture.homeURL,
+                appEnv: .dev,
+            ).path))
     }
 
     /// ACC-004-account_session_client: valid marker에 canonical이 없으면 residue를 정리하고 signed-out으로 복구한다.
@@ -674,13 +685,13 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// - 기대 결과: nil 반환, marker 제거
     func testColdStartClearsValidMarkerWhenCanonicalIsMissing() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         _ = try await client.prepareHandoffPersistence(
             AccountSession(accessToken: "candidate", status: .none, refreshToken: "candidate-refresh"),
         )
-        let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: fixture.homeURL)
-        let markerURL = AccountTokenFSLocation.rollbackMarkerFileURL(homeDirectoryURL: fixture.homeURL)
+        let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: fixture.homeURL, appEnv: .dev)
+        let markerURL = AccountTokenFSLocation.rollbackMarkerFileURL(homeDirectoryURL: fixture.homeURL, appEnv: .dev)
         try FileManager.default.removeItem(at: stagingURL)
 
         let restoredSession = try await client.read(Date())
@@ -694,12 +705,12 @@ final class ACC004AccountSessionClientTests: XCTestCase {
     /// - 기대 결과: nil 반환, canonical 제거, corrupted quarantine 생성
     func testColdStartQuarantinesCorruptCanonicalWithValidMarker() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
         let client = AccountSessionClient.live(store: store)
         _ = try await client.prepareHandoffPersistence(
             AccountSession(accessToken: "candidate", status: .none, refreshToken: "candidate-refresh"),
         )
-        let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: fixture.homeURL)
+        let stagingURL = AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: fixture.homeURL, appEnv: .dev)
         try FileManager.default.removeItem(at: stagingURL)
         try Data("corrupt".utf8).write(to: fixture.accountTokensFileURL, options: .atomic)
 

@@ -53,6 +53,7 @@ struct MenuCommandsFeature {
 
     private func routeAppCommand(_ command: MenuCommandItem.AppCommand) -> Effect<Action> {
         routeFileAppCommand(command)
+            ?? routeFileOperationAppCommand(command)
             ?? routeWindowAppCommand(command)
             ?? routeUpdaterAppCommand(command)
             ?? .none
@@ -76,7 +77,10 @@ struct MenuCommandsFeature {
     }
 
     private func routeEditCommand(_ command: MenuCommandItem.EditCommand) -> Effect<Action> {
-        routePrimaryEditCommand(command) ?? routeClipboardEditCommand(command) ?? .none
+        routePrimaryEditCommand(command)
+            ?? routeAiChatEditCommand(command)
+            ?? routeClipboardEditCommand(command)
+            ?? .none
     }
 
     private func routeFileAppCommand(_ command: MenuCommandItem.AppCommand) -> Effect<Action>? {
@@ -87,6 +91,12 @@ struct MenuCommandsFeature {
         case .togglePinTab: .send(.delegate(.windowManager(.file(.togglePinTab))))
         case .restoreLastClosedTab: .send(.delegate(.windowManager(.file(.restoreLastClosedTab))))
         case .duplicateTab: .send(.delegate(.windowManager(.file(.duplicateTab))))
+        default: nil
+        }
+    }
+
+    private func routeFileOperationAppCommand(_ command: MenuCommandItem.AppCommand) -> Effect<Action>? {
+        switch command {
         case .newFolder: .send(.delegate(.windowManager(.file(.newFolder))))
         case .open: .send(.delegate(.windowManager(.file(.open))))
         case .quickLook: .send(.delegate(.windowManager(.file(.quickLook))))
@@ -120,10 +130,17 @@ struct MenuCommandsFeature {
         case .requestUndo: .send(.delegate(.windowManager(.edit(.requestUndo))))
         case .requestRedo: .send(.delegate(.windowManager(.edit(.requestRedo))))
         case .toggleComposer: .send(.delegate(.windowManager(.edit(.toggleComposer))))
-        case .openContextualAiChat: .send(.delegate(.windowManager(.edit(.openContextualAiChat))))
         case .cut: .send(.delegate(.windowManager(.edit(.cut))))
         case .copy: .send(.delegate(.windowManager(.edit(.copy))))
         case .paste: .send(.delegate(.windowManager(.edit(.paste))))
+        default: nil
+        }
+    }
+
+    private func routeAiChatEditCommand(_ command: MenuCommandItem.EditCommand) -> Effect<Action>? {
+        switch command {
+        case .newChat: .send(.delegate(.windowManager(.edit(.newChat))))
+        case .showChatHistory: .send(.delegate(.windowManager(.edit(.showChatHistory))))
         default: nil
         }
     }

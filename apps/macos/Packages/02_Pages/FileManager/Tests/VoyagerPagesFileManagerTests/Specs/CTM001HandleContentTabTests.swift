@@ -3,8 +3,9 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
-import VoyagerFeaturesAiChat
+@testable import VoyagerFeaturesAiChat
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
@@ -1033,7 +1034,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             return receivedPath == path
         }
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.folder(receivedPath)))) = action
+            guard case let .tabContent(_, .internal(.applyNavigationState(.folder(receivedPath)))) = action
             else { return false }
             return receivedPath == path
         }
@@ -2280,10 +2281,14 @@ final class CTM001HandleContentTabTests: XCTestCase {
         )
         XCTAssertEqual(store.state.tabContentStates[fixture.collectionID], collectionSource)
         XCTAssertFalse(store.state.inspector.inspectorVisible)
-        XCTAssertEqual(
-            store.state.tabInspectorStates[fixture.directoryDuplicateID],
-            FileManagerInspectorFeature.State().tabSnapshot(),
+        let duplicateInspector = try XCTUnwrap(store.state.tabInspectorStates[fixture.directoryDuplicateID])
+        XCTAssertNotEqual(
+            duplicateInspector.aiChat.cancellationOwnerID,
+            fixture.state.inspector.aiChat.cancellationOwnerID,
         )
+        var expectedDuplicateInspector = FileManagerInspectorFeature.State().tabSnapshot()
+        expectedDuplicateInspector.aiChat.cancellationOwnerID = duplicateInspector.aiChat.cancellationOwnerID
+        XCTAssertEqual(duplicateInspector, expectedDuplicateInspector)
         XCTAssertNil(store.state.tabInspectorStates[fixture.collectionDuplicateID])
         XCTAssertEqual(store.state.tabInspectorStates[fixture.directoryID]?.inspectorVisible, true)
         XCTAssertEqual(store.state.tabInspectorStates[fixture.collectionID], collectionInspectorBefore)
@@ -3906,13 +3911,14 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         _ = reducer.reduce(into: &lastTabState, action: .commitClose(lastID))
 
-        // 마지막 tab은 제거되지 않고 Home tab으로 reset됨
+        // two-phase commitClose는 window-close handoff를 위해 마지막 tab identity를 Home으로 재사용함
         XCTAssertEqual(lastTabState.tabs.count, 1)
         XCTAssertEqual(lastTabState.tabs[0].page, .home)
         XCTAssertEqual(lastTabState.tabs[0].anchor, .homeDefault)
         XCTAssertEqual(lastTabState.tabs[0].title, "Home")
         XCTAssertEqual(lastTabState.tabs[0].iconName, "house")
         XCTAssertEqual(lastTabState.activeTabID, lastID)
+        XCTAssertEqual(lastTabState.tabs[0].id, lastID)
         XCTAssertEqual(lastTabState.selectedTabIDs, [lastID])
         XCTAssertEqual(lastTabState.selectionAnchorID, lastID)
         XCTAssertNil(lastTabState.recentlyClosed)
@@ -5279,7 +5285,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let beforeCount = store.state.contentTabs.tabs.count
         let beforeActiveID = store.state.contentTabs.activeTabID
 
-        await store.send(.content(.view(.homeSelectionTapped(.fixedDirectory(.desktop)))))
+        await store.sendTabContent(.view(.homeSelectionTapped(.fixedDirectory(.desktop))))
         await store.receive(\.contentTabs)
         await receiveDirectoryNavigation(store, path: desktopPath)
 
@@ -5310,7 +5316,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // Documents anchor 변환 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.fixedDirectory(.documents)))))
+        await store.sendTabContent(.view(.homeSelectionTapped(.fixedDirectory(.documents))))
         await store.receive(\.contentTabs)
         await receiveDirectoryNavigation(store, path: documentsPath)
 
@@ -5340,7 +5346,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // HomeSelectionReducer의 picker effect 결과를 방출하므로 최종 anchor 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.openDirectory))))
+        await store.sendTabContent(.view(.homeSelectionTapped(.openDirectory)))
         await store.receive(\.contentTabs)
         await receiveDirectoryNavigation(store, path: "/tmp/test")
 
@@ -5367,8 +5373,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // 피커 취소 no-op 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.openDirectory))))
-        await store.receive(\.content.internal.homeDirectoryPickerFinished)
+        await store.sendTabContent(.view(.homeSelectionTapped(.openDirectory)))
+        await store.receiveTabContent(\.internal.homeDirectoryPickerFinished)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .homeDefault)
@@ -5390,8 +5396,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // 피커 실패 no-op 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.openDirectory))))
-        await store.receive(\.content.internal.homeDirectoryPickerFinished)
+        await store.sendTabContent(.view(.homeSelectionTapped(.openDirectory)))
+        await store.receiveTabContent(\.internal.homeDirectoryPickerFinished)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .homeDefault)
@@ -5452,17 +5458,18 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 )
             }
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
             $0.continuousClock = ImmediateClock()
         }
         // 비포괄적: picker/load/open flow가 여러 child action을 방출하므로
         // 최종 anchor 확정 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
-        await store.receive(\.content.internal.homeCollectionPickerFinished)
+        await store.sendTabContent(.view(.homeSelectionTapped(.openCollection)))
+        await store.receiveTabContent(\.internal.homeCollectionPickerFinished)
         await store.receive(\.navigation.view.openCollectionFile)
         await store.receive(\.navigation.internal.collectionFileLoaded)
-        await store.receive(\.content.internal.applyNavigationState)
+        await store.receiveTabContent(\.internal.applyNavigationState)
         await store.receive(\.contentTabs)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
@@ -5485,8 +5492,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // 컬렉션 피커 취소 no-op 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
-        await store.receive(\.content.internal.homeCollectionPickerFinished)
+        await store.sendTabContent(.view(.homeSelectionTapped(.openCollection)))
+        await store.receiveTabContent(\.internal.homeCollectionPickerFinished)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .homeDefault)
@@ -5510,12 +5517,13 @@ final class CTM001HandleContentTabTests: XCTestCase {
             $0.collectionFileClient.load = { _ in throw TestError.loadFailed }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
         }
         // 비포괄적: 실패 경로의 alert/rollback child action보다 tab anchor 보존을 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
-        await store.receive(\.content.internal.homeCollectionPickerFinished)
+        await store.sendTabContent(.view(.homeSelectionTapped(.openCollection)))
+        await store.receiveTabContent(\.internal.homeCollectionPickerFinished)
         await store.receive(\.navigation.view.openCollectionFile)
         await store.receive(\.navigation.internal.collectionFileLoaded)
 
@@ -5563,30 +5571,29 @@ final class CTM001HandleContentTabTests: XCTestCase {
             $0.searchClient.search = { _ in throw TestError.searchFailed }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
             $0.continuousClock = ImmediateClock()
         }
         // 비포괄적: 검색 실패 alert/rollback 세부 action보다 tab anchor 보존을 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
-        await store.receive(\.content.internal.homeCollectionPickerFinished)
+        await store.sendTabContent(.view(.homeSelectionTapped(.openCollection)))
+        await store.receiveTabContent(\.internal.homeCollectionPickerFinished)
         await store.receive(\.navigation.view.openCollectionFile)
         await store.receive(\.navigation.internal.collectionFileLoaded)
-        await store.receive(\.content.delegate.composerCollectionSearchFailed)
+        await store.receiveTabContent(\.delegate.composerCollectionSearchFailed)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .homeDefault)
         XCTAssertEqual(tab.page, .home)
     }
 
-    /// CTM-001-home_selection_page_conversion: AI Chat 세션 생성 성공 시 anchor가 .aiChat으로 변환됨
-    /// VOY-438 AC4a의 startAiChat 성공 → ContentTabPageAnchor.aiChat(sessionID:) 변환을 검증한다.
-    /// - 검증 내용: homeAiChatClient.createSession → .selected("session-123") 반환 후 tab.anchor == .aiChat(sessionID:
-    /// "session-123"),
-    ///   tab.page == .aiChat
+    /// CTM-001-home_selection_page_conversion: 잘못된 AI Chat session 문자열은 Home을 유지함
+    /// Home placeholder는 엄격한 UUID 파싱에 성공한 경우에만 Content AI Chat으로 전달되는지 검증한다.
+    /// - 검증 내용: homeAiChatClient.createSession → invalid UUID 반환 후 anchor/page 불변
     /// - 사전 조건: homeAiChatClient.createSession → .selected("session-123")
-    /// - 기대 결과: active tab의 anchor가 AI Chat 세션 ID로 변경되고 page가 aiChat으로 전환됨
-    func testHomeSelection_startAiChatSuccess_convertsAnchor() async throws {
+    /// - 기대 결과: fallback UUID를 만들지 않고 active tab은 Home 상태를 유지함
+    func testHomeSelection_startAiChatInvalidSessionID_preservesHome() async throws {
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
         } withDependencies: {
@@ -5600,12 +5607,91 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // HomeSelectionReducer의 session 생성 effect 결과를 방출하므로 최종 anchor 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.startAiChat))))
-        await store.receive(\.contentTabs)
+        await store.sendTabContent(.view(.homeSelectionTapped(.startAiChat)))
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
-        XCTAssertEqual(tab.anchor, .aiChat(sessionID: "session-123"))
-        XCTAssertEqual(tab.page, .aiChat)
+        XCTAssertEqual(tab.anchor, .homeDefault)
+        XCTAssertEqual(tab.page, .home)
+    }
+
+    /// CTM-001-home_selection_page_conversion: Home New Chat은 placeholder에 seed를 적용하고 첫 제출까지 저장하지 않음
+    /// VOY-638에서 Home same-tab 전환이 explicit-ID transient seed pipeline을 사용하는지 검증한다.
+    /// - 검증 내용: provider catalog 완료 후에도 save 0회, anchor/session/transient ID 일치, 첫 submit request-start save 1회
+    /// - 사전 조건: Home session placeholder, 유효한 OpenAI 기본 model/thinking, 지연된 deterministic model-list 응답
+    /// - 기대 결과: seed가 placeholder draft에 적용되고 첫 submit이 같은 placeholder ID snapshot을 정확히 한 번 저장함
+    func testHomeSelection_startAiChat_appliesDefaultSeedAndPersistsOnlyFinalSession() async throws {
+        let fixture = CTM001HomeNewChatFixture()
+        let store = fixture.makeStore()
+
+        await store.sendTabContent(.view(.homeSelectionTapped(.startAiChat)))
+        await store.receive(\.contentTabs)
+        await store.receiveTabContent(\.aiChat.providerConnectionsUpdated)
+        await fixture.modelLoadGate.waitUntilLoading()
+        await store.receive(\.internal.homeAiChatNewChatSeedRequested)
+        await store.receive(\.internal.aiChatNewChatDefaultsLoaded)
+
+        XCTAssertTrue(fixture.savedSnapshots.value.isEmpty, "catalog 완료 전에는 placeholder나 최종 세션을 저장하지 않아야 함")
+        XCTAssertTrue(fixture.loadedSessionIDs.value.isEmpty, "fresh placeholder는 restore/load 대상이 아니어야 함")
+
+        await fixture.modelLoadGate.resume(returning: [fixture.defaultModel])
+        await store.receiveTabContent(\.aiChat.modelListLoaded)
+        await store.skipReceivedActions()
+
+        let placeholderID = try XCTUnwrap(UUID(uuidString: fixture.placeholderSessionID))
+        XCTAssertTrue(fixture.savedSnapshots.value.isEmpty, "seed 준비만으로 Home placeholder를 저장하면 안 됨")
+        XCTAssertEqual(store.state.content.aiChat.sessionID?.rawValue, placeholderID)
+        XCTAssertEqual(store.state.content.aiChat.preparedTransientSessionID?.rawValue, placeholderID)
+        XCTAssertNil(store.state.content.aiChat.emptyDraftSessionID)
+        XCTAssertEqual(store.state.content.aiChat.selectedModelHandle, fixture.defaultModel.id)
+        XCTAssertEqual(store.state.content.aiChat.selectedThinking, .effort(.high))
+        XCTAssertTrue(fixture.loadedSessionIDs.value.isEmpty)
+        XCTAssertEqual(
+            store.state.contentTabs.tabs.first?.anchor,
+            .aiChat(sessionID: fixture.placeholderSessionID),
+        )
+
+        await store.sendTabContent(.aiChat(.draftTextChanged("Home question")))
+        await store.sendTabContent(.aiChat(.submitTapped))
+        await store.receiveTabContent(\.aiChat.requestContextResolved)
+        await store.receiveTabContent(\.aiChat.sessionSnapshotUpdated)
+        await store.finish()
+
+        XCTAssertEqual(fixture.savedSnapshots.value.count, 1)
+        let savedSnapshot = try XCTUnwrap(fixture.savedSnapshots.value.first)
+        XCTAssertEqual(savedSnapshot.sessionID.rawValue, placeholderID)
+        XCTAssertEqual(savedSnapshot.model, fixture.defaultModel.id)
+        XCTAssertEqual(savedSnapshot.selectedThinking, .effort(.high))
+    }
+
+    /// CTM-001-home_selection_page_conversion: pending Home seed는 사용자 attachment 변경을 덮어쓰지 않음
+    /// 지연된 catalog completion이 Home placeholder에 추가된 사용자 입력 provenance를 무효화하는지 검증한다.
+    /// - 검증 내용: seed pending 중 attachment 추가 후 late completion 무시, save 0회
+    /// - 사전 조건: valid Home placeholder와 지연된 model catalog가 있다.
+    /// - 기대 결과: attachment와 placeholder identity가 유지되고 seed preparation/persistence는 실행되지 않음
+    func testHomeSelection_pendingSeedIgnoresLateCompletionAfterAttachmentMutation() async throws {
+        let fixture = CTM001HomeNewChatFixture()
+        let store = fixture.makeStore()
+
+        await store.sendTabContent(.view(.homeSelectionTapped(.startAiChat)))
+        await store.receive(\.contentTabs)
+        await store.receiveTabContent(\.aiChat.providerConnectionsUpdated)
+        await fixture.modelLoadGate.waitUntilLoading()
+        await store.receive(\.internal.homeAiChatNewChatSeedRequested)
+        await store.receive(\.internal.aiChatNewChatDefaultsLoaded)
+
+        let attachmentURL = URL(fileURLWithPath: "/tmp/home-pending.txt")
+        await store.sendTabContent(.aiChat(.attachmentPickerSelection([attachmentURL])))
+        XCTAssertEqual(store.state.content.aiChat.addedAttachments.count, 1)
+
+        await fixture.modelLoadGate.resume(returning: [fixture.defaultModel])
+        await store.receiveTabContent(\.aiChat.modelListLoaded)
+
+        let placeholderID = try XCTUnwrap(UUID(uuidString: fixture.placeholderSessionID))
+        XCTAssertEqual(store.state.content.aiChat.sessionID?.rawValue, placeholderID)
+        XCTAssertEqual(store.state.content.aiChat.addedAttachments.count, 1)
+        XCTAssertNil(store.state.content.aiChat.preparedTransientSessionID)
+        XCTAssertNil(store.state.content.aiChat.selectedModelHandle)
+        XCTAssertTrue(fixture.savedSnapshots.value.isEmpty)
     }
 
     /// CTM-001-home_selection_page_conversion: AI Chat 세션 생성 실패 시 Home anchor가 유지됨
@@ -5623,8 +5709,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // 세션 생성 실패 no-op 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.view(.homeSelectionTapped(.startAiChat))))
-        await store.receive(\.content.internal.homeAiChatSessionCreated)
+        await store.sendTabContent(.view(.homeSelectionTapped(.startAiChat)))
+        await store.receiveTabContent(\.internal.homeAiChatSessionCreated)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .homeDefault)
@@ -5654,7 +5740,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let beforeCount = store.state.contentTabs.tabs.count
         let beforeActiveID = store.state.contentTabs.activeTabID
 
-        await store.send(.content(.view(.homeSelectionTapped(.fixedDirectory(.desktop)))))
+        await store.sendTabContent(.view(.homeSelectionTapped(.fixedDirectory(.desktop))))
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, beforeCount)
         XCTAssertEqual(store.state.contentTabs.activeTabID, beforeActiveID)
@@ -5722,7 +5808,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         let initialTabCount = store.state.contentTabs.tabs.count
 
-        await store.send(.content(.view(.homeSelectionTapped(.startAiChat))))
+        await store.sendTabContent(.view(.homeSelectionTapped(.startAiChat)))
         // Home AI Chat 전환은 same-tab handoff에서도 Inspector Chat을 먼저 닫고,
         // active tab anchor와 navigation route를 고정한 뒤 provider load만 tab-scoped async로 처리한다.
         await store.receive { action in
@@ -5748,7 +5834,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             return receivedSessionID == sessionID
         }
         await store.receive { action in
-            guard case .content(.aiChat(.setup)) = action else { return false }
+            guard case .tabContent(_, .aiChat(.setup)) = action else { return false }
             return true
         }
         await store.receive { action in
@@ -5763,12 +5849,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
             return receivedSessionID == sessionID
         }
         await store.receive { action in
-            guard case let .content(.internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action
+            guard case let .tabContent(_, .internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action
             else { return false }
             return receivedSessionID == sessionID
         }
         await store.receive { action in
-            guard case .content(.aiChat(.providerConnectionsUpdated)) = action else { return false }
+            guard case .tabContent(_, .aiChat(.providerConnectionsUpdated)) = action else { return false }
             return true
         }
 
@@ -5970,9 +6056,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // store.exhaustivity = .off: cancellation과 경로별 load 호출 외 navigation child action은 별도 owner가 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+        await store.sendTabContent(.entryViewLayout(.entryOperations(.loading(
             .loadItems(path: "/seed", showHidden: false),
-        )))))
+        ))))
         await fulfillment(of: [oldLoadStarted], timeout: 1)
         await store.send(.reserveExternalContentTabs([
             .init(id: tabID, anchor: .directory(path: "/external")),
@@ -5984,6 +6070,64 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         XCTAssertEqual(cancellationCount.value, 1)
         XCTAssertEqual(loadPaths.value, ["/seed", "/external"])
+    }
+
+    /// CTM-001-external_tab_reservation: 비활성 탭 reload는 활성 탭의 진행 중 load를 취소하지 않는다.
+    /// 탭별 loading cancellation owner가 같은 window 안의 독립 content session을 격리하는지 검증한다.
+    /// - 검증 내용: B load 대기 중 inactive A operation completion이 A reload를 시작해도 B cancellation은 0회다.
+    /// - 사전 조건: 같은 window의 A와 B Directory tab이 있고 B load effect가 continuation gate에서 대기 중이다.
+    /// - 기대 결과: A reload가 시작되며 B load는 독립적으로 계속 실행된다.
+    func testInactiveTabReloadDoesNotCancelActiveTabLoad() async throws {
+        let tabB = ContentTabID(rawValue: "B")
+        let initialState = FileManagerWindowState.makeInitial(path: "/a")
+        let tabA = try XCTUnwrap(initialState.contentTabs.activeTabID)
+
+        let activeLoadStarted = expectation(description: "active B load started")
+        let inactiveReloadStarted = expectation(description: "inactive A reload started")
+        let activeLoadGate = AsyncStream<Void>.makeStream()
+        let activeLoadCancellationCount = LockIsolated(0)
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { url, _ in
+                switch url.path {
+                case "/b":
+                    activeLoadStarted.fulfill()
+                    return await withTaskCancellationHandler {
+                        for await _ in activeLoadGate.stream {}
+                        return []
+                    } onCancel: {
+                        activeLoadCancellationCount.withValue { $0 += 1 }
+                        activeLoadGate.continuation.finish()
+                    }
+                case "/a":
+                    inactiveReloadStarted.fulfill()
+                    return []
+                default:
+                    return []
+                }
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { $0.finish() }
+            }
+        }
+        // store.exhaustivity = .off: navigation 부수 action보다 탭별 loading cancellation 격리를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.reserveExternalContentTabs([
+            .init(id: tabB, anchor: .directory(path: "/b")),
+        ]))
+        await store.receive(\.contentTabs.setCurrent, tabB)
+        await fulfillment(of: [activeLoadStarted], timeout: 1)
+
+        await store.send(ExternalTabReservationTestFixture.inactiveReloadAction(tabID: tabA))
+        await fulfillment(of: [inactiveReloadStarted], timeout: 1)
+
+        XCTAssertEqual(activeLoadCancellationCount.value, 0)
+        activeLoadGate.continuation.finish()
+        await store.skipReceivedActions()
+        await store.finish()
     }
 
     /// CTM-001-external_tab_reservation: Collection reservation은 canonical open 경로를 정확히 한 번 사용한다.
@@ -6008,6 +6152,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 throw TestError.loadFailed
             }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+            $0.uuid = .incrementing
             $0.entryLoadingClient.loadItems = { _, _ in
                 directoryLoads.withValue { $0 += 1 }
                 return []
@@ -6196,6 +6341,17 @@ private enum ExternalTabReservationTestFixture {
         let record: ContentTabPinnedRecord
     }
 
+    static func inactiveReloadAction(tabID: ContentTabID) -> FileManagerWindowAction {
+        .tabContent(
+            tabID: tabID,
+            action: .entryViewLayout(.entryOperations(.lifecycle(.operationFinished(
+                "/a/file.txt",
+                .rename,
+                .success(()),
+            )))),
+        )
+    }
+
     static func makeInvalidSets(existingID: ContentTabID) -> [[ExternalContentTabReservation]] {
         [
             [ExternalContentTabReservation(id: existingID, anchor: .directory(path: "/existing"))],
@@ -6325,5 +6481,95 @@ private enum ExternalTabReservationTestFixture {
             pinnedAt: Date(timeIntervalSince1970: 100),
         )
         return PinnedState(id: id, tab: tab, content: content, record: record)
+    }
+}
+
+private struct CTM001HomeNewChatFixture {
+    let placeholderSessionID = "E621E1F8-C36C-495A-93FC-0C247A3E6E5F"
+    let defaultModel: AiProviderModel
+    let connectionsFile: AIConnectionsFile
+    let defaultSettings: AiChatDefaultSettings
+    let modelLoadGate = CTM001ModelLoadGate()
+    let loadedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+    let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+
+    init() {
+        let model = AiProviderModel(
+            id: AiModelHandle(provider: .openai, rawValue: "gpt-5"),
+            provider: .openai,
+            rawModelID: "gpt-5",
+            displayName: "GPT-5",
+            providerDisplayName: "OpenAI",
+            thinkingCapability: .effort(values: [.minimal, .high], defaultValue: .minimal),
+            supportsThinkingNone: true,
+        )
+        let providerRecord = ProviderRecordFile(
+            providerId: .openai,
+            authMethod: .apiKey,
+            credential: .apiKey(APIKeyCredentialFile(secret: "sk-test-valid")),
+            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+        )
+        defaultModel = model
+        connectionsFile = AIConnectionsFile(
+            updatedAtMs: 1,
+            lastUsedProviderId: .openai,
+            providers: [AiProvider.openai.rawValue: providerRecord],
+        )
+        defaultSettings = AiChatDefaultSettings(
+            provider: PersistedAIProviderSelection(rawValue: AiProvider.openai.rawValue),
+            model: PersistedAIModelSelection(
+                providerRawValue: AiProvider.openai.rawValue,
+                modelRawValue: model.rawModelID,
+            ),
+            thinking: .effort("high"),
+        )
+    }
+
+    @MainActor
+    func makeStore() -> TestStoreOf<FileManagerFeature> {
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.homeAiChatClient.createSession = { .selected(placeholderSessionID) }
+            $0.aiConnectionsFileClient.load = { connectionsFile }
+            $0.aiProviderModelListClient = AiProviderModelListClient(loadModels: { _, _ in
+                await modelLoadGate.load()
+            })
+            $0.aiChatDefaultSettingsClient.load = { defaultSettings }
+            $0.aiChatSessionPersistenceClient.loadSession = { sessionID in
+                loadedSessionIDs.withValue { $0.append(sessionID) }
+                return nil
+            }
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+            $0.uuid = .incrementing
+        }
+        // store.exhaustivity = .off: Home부터 model catalog와 AiChat persistence까지의 통합 action 중 durable 경계만 선별 검증한다.
+        store.exhaustivity = .off
+        return store
+    }
+}
+
+private actor CTM001ModelLoadGate {
+    private var continuation: CheckedContinuation<[AiProviderModel], Never>?
+
+    func load() async -> [AiProviderModel] {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func waitUntilLoading() async {
+        while continuation == nil {
+            await Task.yield()
+        }
+    }
+
+    func resume(returning models: [AiProviderModel]) {
+        continuation?.resume(returning: models)
+        continuation = nil
     }
 }

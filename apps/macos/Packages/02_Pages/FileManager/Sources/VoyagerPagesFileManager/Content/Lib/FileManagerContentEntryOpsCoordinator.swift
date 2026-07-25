@@ -14,16 +14,22 @@ enum FileManagerContentEntryOpsCoordinator {
             handleItemsLoaded(entries: entries, state: &state)
 
         case let .lifecycle(.entryActionCompleted(record)):
-            handleEntryActionCompleted(record, state: state)
+            .merge(
+                handleEntryActionCompleted(record, state: state),
+                record.operationKind == .setTags ? setTagsRefreshEffect(record: record, state: state) : .none,
+            )
 
         case let .undoRedo(.replaySucceeded(direction: direction, sourceRecordID: _, updatedRecord: record)):
-            handleEntryActionApplied(direction: direction, record: record, state: state)
+            .merge(
+                handleEntryActionApplied(direction: direction, record: record, state: state),
+                record.operationKind == .setTags ? setTagsRefreshEffect(record: record, state: state) : .none,
+            )
 
         case let .lifecycle(.pathsMutated(paths)):
             handleMutatedPaths(paths, state: state)
 
-        case .lifecycle(.operationFinished(_, _, .success)):
-            reloadEntryItemsEffect(state: state)
+        case let .lifecycle(.operationFinished(_, kind, .success)):
+            kind == .setTags ? .none : reloadEntryItemsEffect(state: state)
 
         case .lifecycle(.operationFinished(_, _, .failure)):
             .none
@@ -89,6 +95,21 @@ enum FileManagerContentEntryOpsCoordinator {
         state.entryViewLayout.rangeAnchorId = matchedID
         state.entryViewLayout.shouldScrollToSelection = true
         return didChangeSelection
+    }
+
+    private static func setTagsRefreshEffect(
+        record: EntryActionRecord,
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        guard case .collection = state.navigation.navigationState else {
+            return reloadEntryItemsEffect(state: state)
+        }
+        let successfulPaths = record.targets.compactMap(\.afterPath)
+        guard !successfulPaths.isEmpty else { return .none }
+        return .concatenate(
+            .send(.collection(.externalPathsChanged(successfulPaths))),
+            .send(.view(.refreshStaleCollection)),
+        )
     }
 
     private static func handleEntryActionCompleted(

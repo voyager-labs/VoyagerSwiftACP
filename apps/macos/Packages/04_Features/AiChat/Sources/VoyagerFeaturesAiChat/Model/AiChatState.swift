@@ -35,6 +35,14 @@ public enum AiChatMode: Equatable, Sendable {
     case chat
 }
 
+struct AiChatNewChatPreparationMutationTracker: Equatable {
+    var value: UInt64 = 0
+
+    static func == (_: Self, _: Self) -> Bool {
+        true
+    }
+}
+
 public enum AiChatSessionRowMergeResult: Equatable, Sendable {
     case rejected
     case unchanged
@@ -190,12 +198,16 @@ public typealias AiChatCurrentContextFolderStructureModes = [
 
 @ObservableState
 public struct AiChatState: Equatable, Sendable {
+    var cancellationOwnerID = UUID()
+    var newChatPreparationMutationTracker = AiChatNewChatPreparationMutationTracker()
     public var restoreSessionID: AiChatSessionID?
+    public var deferredChatSessionRestoreID: AiChatSessionID?
     public var restoreOutcome: AiChatSessionRestoreResult?
     public var restoreFailure: AiChatSessionRestoreFailure?
     public var mode: AiChatMode
     public var sessionList: AiChatSessionListState
     public var sessionID: AiChatSessionID?
+    public var preparedTransientSessionID: AiChatSessionID?
     public var emptyDraftSessionID: AiChatSessionID?
     public var pendingEmptyDraftDeletionSessionIDs: Set<AiChatSessionID>
     public var currentSessionCustomTitle: String?
@@ -231,13 +243,117 @@ public struct AiChatState: Equatable, Sendable {
     public var availableModelsByProvider: [AiProvider: [AiProviderModel]]
     public var transcriptScrollOffsets: [AiChatSessionID: CGFloat]
 
+    /// 기존 session runtime을 보존한 채 Chat 표시 의미 상태만 준비한다.
+    @discardableResult
+    public mutating func prepareChatPresentation(for sessionID: AiChatSessionID) -> Bool {
+        guard self.sessionID == sessionID else { return false }
+
+        deferredChatSessionRestoreID = nil
+        sessionList.cancelRenaming()
+        sessionList.errorMessage = nil
+        if let restoreSessionID, restoreSessionID != sessionID {
+            self.restoreSessionID = nil
+            if sessionList.selectedSessionID == restoreSessionID {
+                sessionList.selectedSessionID = nil
+            }
+        }
+        restoreOutcome = nil
+        restoreFailure = nil
+        if let promotedExecutionPhase = takePromotedNavigationExecutionPhase(for: sessionID) {
+            executionPhase = promotedExecutionPhase
+        }
+        mode = .chat
+        return true
+    }
+
+    /// inactive cache에서 활성화 시 복원할 persisted Chat session 의도만 준비한다.
+    public mutating func prepareDeferredChatSessionRestore(for sessionID: AiChatSessionID) {
+        sessionList.cancelRenaming()
+        sessionList.errorMessage = nil
+        sessionList.selectedSessionID = sessionID
+        deferredChatSessionRestoreID = sessionID
+        restoreSessionID = nil
+        restoreOutcome = nil
+        restoreFailure = nil
+        mode = .sessions
+    }
+
+    /// 준비된 persisted Chat session 의도를 active restore lifecycle로 승격한다.
+    public mutating func beginDeferredChatSessionRestore(for sessionID: AiChatSessionID) -> Bool {
+        guard self.sessionID != sessionID,
+              restoreSessionID == nil,
+              emptyDraftSessionID != sessionID,
+              deferredChatSessionRestoreID == sessionID
+        else { return false }
+        deferredChatSessionRestoreID = nil
+        restoreSessionID = sessionID
+        sessionList.selectedSessionID = sessionID
+        restoreOutcome = nil
+        restoreFailure = nil
+        mode = .sessions
+        return true
+    }
+
+    mutating func takePromotedNavigationExecutionPhase(
+        for sessionID: AiChatSessionID,
+    ) -> AiChatExecutionPhase? {
+        switch executionPhase {
+        case let .processing(lock) where lock.context.sessionID == sessionID:
+            return .processing(lock)
+        case let .completed(lock) where lock.context.sessionID == sessionID:
+            return .completed(lock)
+        case let .failed(lock, failure) where lock.context.sessionID == sessionID:
+            return .failed(lock, failure)
+        case let .cancelled(lock) where lock.context.sessionID == sessionID:
+            return .cancelled(lock)
+        case let .persistenceRecovery(lock, failure) where lock.context.sessionID == sessionID:
+            return .persistenceRecovery(lock, failure)
+        default:
+            break
+        }
+
+        guard let match = backgroundExecutionPhases
+            .filter({ _, phase in phase.lock?.context.sessionID == sessionID })
+            .max(by: { lhs, rhs in
+                lhs.value.navigationPromotionPriority < rhs.value.navigationPromotionPriority
+            })
+        else { return nil }
+        backgroundExecutionPhases[match.key] = nil
+        return match.value
+    }
+
+    /// inactive cache에서 loaded runtime과 History route intent를 분리한다.
+    public mutating func prepareInactiveSessionsPresentation(for sessionID: AiChatSessionID) {
+        if self.sessionID == sessionID {
+            _ = prepareSessionsPresentation(for: sessionID)
+        } else {
+            prepareDeferredChatSessionRestore(for: sessionID)
+        }
+    }
+
+    public mutating func prepareSessionsPresentation(for sessionID: AiChatSessionID) -> Bool {
+        deferredChatSessionRestoreID = nil
+        sessionList.cancelRenaming()
+        sessionList.errorMessage = nil
+        restoreOutcome = nil
+        restoreFailure = nil
+        mode = .sessions
+        self.sessionID = sessionID
+        sessionList.selectedSessionID = sessionID
+        guard let restoreSessionID, restoreSessionID != sessionID else { return false }
+        self.restoreSessionID = nil
+        return true
+    }
+
     public init(
         restoreSessionID: AiChatSessionID? = nil,
+        deferredChatSessionRestoreID: AiChatSessionID? = nil,
         restoreOutcome: AiChatSessionRestoreResult? = nil,
         restoreFailure: AiChatSessionRestoreFailure? = nil,
         mode: AiChatMode = .sessions,
         sessionList: AiChatSessionListState = .init(),
         sessionID: AiChatSessionID? = nil,
+        preparedTransientSessionID: AiChatSessionID? = nil,
         emptyDraftSessionID: AiChatSessionID? = nil,
         pendingEmptyDraftDeletionSessionIDs: Set<AiChatSessionID> = [],
         currentSessionCustomTitle: String? = nil,
@@ -274,11 +390,13 @@ public struct AiChatState: Equatable, Sendable {
         transcriptScrollOffsets: [AiChatSessionID: CGFloat] = [:],
     ) {
         self.restoreSessionID = restoreSessionID
+        self.deferredChatSessionRestoreID = deferredChatSessionRestoreID
         self.restoreOutcome = restoreOutcome
         self.restoreFailure = restoreFailure
         self.mode = mode
         self.sessionList = sessionList
         self.sessionID = sessionID
+        self.preparedTransientSessionID = preparedTransientSessionID
         self.emptyDraftSessionID = emptyDraftSessionID
         self.pendingEmptyDraftDeletionSessionIDs = pendingEmptyDraftDeletionSessionIDs
         self.currentSessionCustomTitle = currentSessionCustomTitle
@@ -370,6 +488,38 @@ public struct AiChatState: Equatable, Sendable {
 
     public var lockedModelDisplayModel: AiChatLockedModelDisplayModel? {
         displayModelBuilder.lockedModelDisplayModel
+    }
+
+    public var isUntouchedPreparedTransientNewChat: Bool {
+        guard let sessionID,
+              preparedTransientSessionID == sessionID,
+              mode == .chat,
+              sessionStatus == .idle,
+              restoreSessionID == nil,
+              restoreOutcome == nil,
+              restoreFailure == nil,
+              transcriptHistory.isEmpty,
+              draftText.isEmpty,
+              streamingAssistantDraft == nil,
+              addedAttachments.isEmpty,
+              lastRequestContext == nil,
+              executionPhase == .idle,
+              pendingRequestStart?.sessionID != sessionID,
+              !backgroundPendingRequestStarts.values.contains(where: { $0.sessionID == sessionID }),
+              !backgroundExecutionPhases.values.contains(where: { phase in
+                  phase.isProcessing && phase.lock?.context.sessionID == sessionID
+              })
+        else { return false }
+        return true
+    }
+
+    mutating func invalidatePreparedTransientSession(for sessionID: AiChatSessionID? = nil) {
+        guard sessionID == nil || preparedTransientSessionID == sessionID else { return }
+        preparedTransientSessionID = nil
+    }
+
+    mutating func markPreparedTransientSessionAsTouched() {
+        invalidatePreparedTransientSession()
     }
 
     public var hiddenEmptyDraftSessionIDs: Set<AiChatSessionID> {
@@ -509,5 +659,63 @@ public struct AiChatState: Equatable, Sendable {
 
     static func thinkingLabel(for selection: AiThinkingSelection) -> String {
         AiChatStateSelection.thinkingLabel(for: selection)
+    }
+}
+
+public extension AiChatState {
+    var newChatPreparationProvenance: AiChatNewChatPreparationProvenance {
+        AiChatNewChatPreparationProvenance(
+            ownerID: cancellationOwnerID,
+            mutationRevision: newChatPreparationMutationTracker.value,
+            restoreSessionID: restoreSessionID,
+            deferredChatSessionRestoreID: deferredChatSessionRestoreID,
+            restoreOutcome: restoreOutcome,
+            restoreFailure: restoreFailure,
+            mode: mode,
+            selectedHistorySessionID: sessionList.selectedSessionID,
+            sessionID: sessionID,
+            preparedTransientSessionID: preparedTransientSessionID,
+            emptyDraftSessionID: emptyDraftSessionID,
+            currentSessionCustomTitle: currentSessionCustomTitle,
+            sessionStatus: sessionStatus,
+            currentContext: currentContext,
+            currentContextFolderStructureModes: currentContextFolderStructureModes,
+            addedAttachments: addedAttachments,
+            transcriptHistory: transcriptHistory,
+            draftText: draftText,
+            streamingAssistantDraft: streamingAssistantDraft,
+            selectedModelHandle: selectedModelHandle,
+            selectedThinking: selectedThinking,
+            unavailableSelectedModelHandle: unavailableSelectedModelHandle,
+            pendingRequestStart: pendingRequestStart,
+            executionPhase: executionPhase,
+        )
+    }
+
+    func matchesInspectorNewChatPreparationProvenance(
+        _ provenance: AiChatNewChatPreparationProvenance,
+    ) -> Bool {
+        let current = newChatPreparationProvenance
+        return current.ownerID == provenance.ownerID
+            && current.mutationRevision == provenance.mutationRevision
+            && current.restoreSessionID == provenance.restoreSessionID
+            && current.deferredChatSessionRestoreID == provenance.deferredChatSessionRestoreID
+            && current.restoreOutcome == provenance.restoreOutcome
+            && current.restoreFailure == provenance.restoreFailure
+            && current.mode == provenance.mode
+            && current.selectedHistorySessionID == provenance.selectedHistorySessionID
+            && current.sessionID == provenance.sessionID
+            && current.preparedTransientSessionID == provenance.preparedTransientSessionID
+            && current.emptyDraftSessionID == provenance.emptyDraftSessionID
+            && current.currentSessionCustomTitle == provenance.currentSessionCustomTitle
+            && current.sessionStatus == provenance.sessionStatus
+            && current.currentContext == provenance.currentContext
+            && current.currentContextFolderStructureModes == provenance.currentContextFolderStructureModes
+            && current.addedAttachments == provenance.addedAttachments
+            && current.transcriptHistory == provenance.transcriptHistory
+            && current.draftText == provenance.draftText
+            && current.streamingAssistantDraft == provenance.streamingAssistantDraft
+            && current.pendingRequestStart == provenance.pendingRequestStart
+            && current.executionPhase == provenance.executionPhase
     }
 }

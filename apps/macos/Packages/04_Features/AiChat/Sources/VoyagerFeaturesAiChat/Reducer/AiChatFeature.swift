@@ -19,7 +19,7 @@ public struct AiChatFeature {
         case sessionList
         case sessionDelete
         case sessionRename
-        case newChat
+        case newChat(ownerID: UUID)
         case transcriptScrollOffsetPersistence
         case attachmentDrop
     }
@@ -63,6 +63,9 @@ public struct AiChatFeature {
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
+            if action.invalidatesPendingNewChatPreparation {
+                state.newChatPreparationMutationTracker.value &+= 1
+            }
             switch action {
             case .onAppear:
                 normalizeSelectionIfNeeded(&state)
@@ -75,16 +78,54 @@ public struct AiChatFeature {
                 }
 
             case .sessionsAppeared:
-                state.mode = .sessions
+                guard state.mode == .sessions else { return .none }
                 state.sessionList.isLoading = true
                 state.sessionList.errorMessage = nil
                 return loadSessions()
 
             case .newChatTapped:
-                let preservedExecutionPhase = state.executionPhase
-                let snapshot = startNewUnselectedChat(state: &state)
-                preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
-                return saveNewChat(snapshot)
+                return startNewChat(seed: nil, state: &state)
+
+            case let .newChatTappedWithSeed(seed):
+                return startNewChat(seed: seed, state: &state)
+
+            case let .newChatTappedIfCurrent(provenance, seed):
+                return startNewChatIfCurrent(provenance: provenance, seed: seed, state: &state)
+
+            case .prepareUnpersistedNewChat:
+                return prepareUnpersistedNewChat(currentContext: nil, seed: nil, state: &state)
+
+            case let .prepareUnpersistedNewChatWithSeed(seed):
+                return prepareUnpersistedNewChat(currentContext: nil, seed: seed, state: &state)
+
+            case let .prepareTransientNewChat(sessionID, seed):
+                return prepareTransientNewChat(sessionID: sessionID, seed: seed, state: &state)
+
+            case let .prepareTransientNewChatIfCurrent(sessionID, provenance, seed):
+                return prepareTransientNewChatIfCurrent(
+                    sessionID: sessionID,
+                    provenance: provenance,
+                    seed: seed,
+                    state: &state,
+                )
+
+            case let .prepareUnpersistedNewChatWithContext(snapshot):
+                return prepareUnpersistedNewChat(currentContext: snapshot, seed: nil, state: &state)
+
+            case let .prepareTransientNewChatWithContext(snapshot, seed):
+                return prepareUnpersistedNewChat(currentContext: snapshot, seed: seed, state: &state)
+
+            case let .prepareUnpersistedNewChatWithContextIfCurrent(snapshot, provenance, seed):
+                guard state.newChatPreparationProvenance == provenance else { return .none }
+                return prepareUnpersistedNewChat(currentContext: snapshot, seed: seed, state: &state)
+
+            case let .applyNewChatSelectionSeedIfCurrent(provenance, seed):
+                guard state.newChatPreparationProvenance == provenance else { return .none }
+                state.selectedModelHandle = seed?.modelHandle
+                state.selectedThinking = seed?.selectedThinking
+                state.unavailableSelectedModelHandle = nil
+                normalizeSelectionIfNeeded(&state)
+                return .none
 
             case .showSessionsTapped:
                 state.sessionList.cancelRenaming()
@@ -99,18 +140,9 @@ public struct AiChatFeature {
                 return .cancel(id: CancelID.restore)
 
             case let .showSessionsForChat(sessionID):
-                state.sessionList.cancelRenaming()
-                state.sessionList.errorMessage = nil
-                state.restoreOutcome = nil
-                state.restoreFailure = nil
-                state.mode = .sessions
-                state.sessionID = sessionID
-                state.sessionList.selectedSessionID = sessionID
-                guard let restoreSessionID = state.restoreSessionID, restoreSessionID != sessionID else {
-                    return .none
-                }
-                state.restoreSessionID = nil
-                return .cancel(id: CancelID.restore)
+                return state.prepareSessionsPresentation(for: sessionID)
+                    ? .cancel(id: CancelID.restore)
+                    : .none
 
             case .returnToChatTapped:
                 if let restoreSessionID = state.restoreSessionID,
@@ -120,9 +152,9 @@ public struct AiChatFeature {
                 }
                 guard state.sessionID != nil else {
                     let preservedExecutionPhase = state.executionPhase
-                    let snapshot = startNewUnselectedChat(state: &state)
+                    let snapshot = startNewUnselectedChat(seed: nil, state: &state)
                     preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
-                    return saveNewChat(snapshot)
+                    return saveNewChat(snapshot, ownerID: state.cancellationOwnerID)
                 }
                 state.sessionList.cancelRenaming()
                 state.sessionList.errorMessage = nil
@@ -136,9 +168,9 @@ public struct AiChatFeature {
 
             case .startNewChatFromRebindTapped:
                 let preservedExecutionPhase = state.executionPhase
-                let snapshot = startNewUnselectedChat(state: &state)
+                let snapshot = startNewUnselectedChat(seed: nil, state: &state)
                 preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
-                return saveNewChat(snapshot)
+                return saveNewChat(snapshot, ownerID: state.cancellationOwnerID)
 
             case .rebindContextTapped:
                 state.sessionStatus = .active
@@ -256,6 +288,7 @@ public struct AiChatFeature {
                 return .none
 
             case let .newChatCreated(snapshot):
+                guard state.emptyDraftSessionID == snapshot.sessionID else { return .none }
                 applyNewChatCreated(snapshot: snapshot, state: &state)
                 return .none
 
@@ -327,38 +360,25 @@ public struct AiChatFeature {
                 return .none
 
             case let .selectedModelChanged(handle):
-                let resolvedHandle = state.normalizedSelectionHandle(handle)
-                guard state.selectedModelHandle != resolvedHandle else { return .none }
-                state.selectedModelHandle = resolvedHandle
-                state.unavailableSelectedModelHandle = nil
-                normalizeSelectionIfNeeded(&state)
-                clearRetryBlockingFailureIfNeeded(&state)
-                return .none
+                return handleSelectedModelChanged(handle, state: &state)
 
             case let .selectedThinkingChanged(selectedThinking):
-                guard state.selectedThinking != selectedThinking else { return .none }
-                state.selectedThinking = selectedThinking
-                normalizeSelectionIfNeeded(&state)
-                clearRetryBlockingFailureIfNeeded(&state)
-                return .none
+                return handleSelectedThinkingChanged(selectedThinking, state: &state)
 
             case let .currentContextChanged(snapshot):
-                let currentContext = currentContextSnapshot(
-                    snapshot,
-                    excluding: state.addedAttachments,
-                    applyingFolderStructureModes: state.currentContextFolderStructureModes,
-                )
-                ensureCurrentFolderStructureModeDefaults(
-                    for: currentContext,
-                    in: &state.currentContextFolderStructureModes,
-                )
-                state.currentContext = applyFolderStructureModes(
-                    state.currentContextFolderStructureModes,
-                    to: currentContext,
-                )
+                let previousContext = state.currentContext
+                let previousFolderStructureModes = state.currentContextFolderStructureModes
+                applyCurrentContextSnapshot(snapshot, state: &state)
+                if state.currentContext != previousContext
+                    || state.currentContextFolderStructureModes != previousFolderStructureModes
+                {
+                    state.markPreparedTransientSessionAsTouched()
+                }
                 return .none
 
             case let .draftTextChanged(text):
+                guard state.draftText != text else { return .none }
+                state.markPreparedTransientSessionAsTouched()
                 state.draftText = text
                 clearRetryBlockingFailureIfNeeded(&state)
                 return .none
@@ -396,10 +416,13 @@ public struct AiChatFeature {
                         return .none
                     }
                     guard state.addedAttachments[index].source == .folder else { return .none }
-                    state.addedAttachments[index] = updateAttachmentFolderStructureMode(
+                    let updatedAttachment = updateAttachmentFolderStructureMode(
                         mode,
                         for: state.addedAttachments[index],
                     )
+                    guard updatedAttachment != state.addedAttachments[index] else { return .none }
+                    state.markPreparedTransientSessionAsTouched()
+                    state.addedAttachments[index] = updatedAttachment
                 }
                 return .none
 
@@ -477,6 +500,25 @@ public struct AiChatFeature {
             case let .persistenceRecoveryRetryFailed(lock, failure):
                 return handlePersistenceRecoveryRetryFailed(lock: lock, failure: failure, state: &state)
             }
+        }
+    }
+}
+
+private extension AiChatAction {
+    var invalidatesPendingNewChatPreparation: Bool {
+        switch self {
+        case .selectedModelChanged,
+             .selectedThinkingChanged,
+             .currentContextChanged,
+             .draftTextChanged,
+             .attachmentPickerSelection,
+             .attachmentDrop,
+             .attachmentDropSelection,
+             .removeAddedAttachment,
+             .folderStructureModeChanged:
+            true
+        default:
+            false
         }
     }
 }

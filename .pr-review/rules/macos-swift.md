@@ -117,7 +117,7 @@ When a PR touches `APP_ENV`, `PUBLIC_*` values, `.env.prod`, scheme environment,
 mismatch and secret exposure:
 
 - Secrets must not be committed, copied into bundles, logged, or represented as `PUBLIC_*` values.
-- Debug/release environment selection must stay deterministic and match the app/helper/XPC launch path.
+- APP_ENV determines runtime environment, configuration determines compile mode. Dev-Debug/Prod-Release selection must stay deterministic and match the app/helper/XPC launch path.
 - Build scripts must copy only intended secret-free production templates and must not make local `.env.dev` values part of the app bundle.
 - `Info.plist`, entitlements, and scheme changes must not silently weaken sandboxing, helper lookup, network access, or release behavior.
 - Required app/web/checkout/pricing/support URLs must use canonical env keys or explicit error handling; placeholder fallbacks such as `example.invalid`, localhost defaults, empty strings, or made-up base URLs are concrete runtime mismatches.

@@ -42,10 +42,10 @@ public struct ContentTabFeature {
                 return .none
 
             case let .close(id):
-                return commitClose(id: id, state: &state)
+                return commitClose(id: id, preservesLastTabIdentity: false, state: &state)
 
             case let .commitClose(id):
-                return commitClose(id: id, state: &state)
+                return commitClose(id: id, preservesLastTabIdentity: true, state: &state)
 
             case .restore:
                 return restore(state: &state)
@@ -67,6 +67,9 @@ public struct ContentTabFeature {
 
             case let .updateActivePageAnchor(id, newAnchor):
                 return updateActivePageAnchor(id: id, newAnchor: newAnchor, state: &state)
+
+            case let .updateRuntimePageAnchor(id, newAnchor):
+                return updateRuntimePageAnchor(id: id, newAnchor: newAnchor, state: &state)
 
             case let .pinnedRecordSaveSucceeded(tabID, context):
                 guard state.isCurrentPinnedRecordPersistenceIntent(tabID: tabID, intentID: context.intentID) else {
@@ -194,7 +197,11 @@ extension ContentTabFeature {
         return .none
     }
 
-    private func commitClose(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {
+    private func commitClose(
+        id: ContentTabID,
+        preservesLastTabIdentity: Bool,
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
         guard let tab = state.tabs[id: id] else {
             state.previousActiveTabID = nil
             return .none
@@ -218,11 +225,28 @@ extension ContentTabFeature {
             }
 
             state.previousActiveTabID = id
-            state.tabs[id: id]?.page = .home
-            state.tabs[id: id]?.anchor = .homeDefault
-            state.tabs[id: id]?.title = "Home"
-            state.tabs[id: id]?.iconName = "house"
-            state.activeTabID = id
+            if preservesLastTabIdentity {
+                state.tabs[id: id]?.page = .home
+                state.tabs[id: id]?.anchor = .homeDefault
+                state.tabs[id: id]?.title = "Home"
+                state.tabs[id: id]?.iconName = "house"
+                state.activeTabID = id
+                return .none
+            }
+
+            let homeTab = ContentTabItem(
+                id: ContentTabID(),
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )
+            state.tabs.remove(id: id)
+            state.tabs.append(homeTab)
+            state.activeTabID = homeTab.id
+            state.selectedTabIDs = [homeTab.id]
+            state.selectionAnchorID = homeTab.id
             return .none
         }
 
@@ -641,9 +665,25 @@ extension ContentTabFeature {
         )
     }
 
-    private func updateActivePageAnchor(id: ContentTabID, newAnchor: ContentTabPageAnchor,
-                                        state: inout ContentTabState) -> Effect<ContentTabAction>
-    {
+    private func updateRuntimePageAnchor(
+        id: ContentTabID,
+        newAnchor: ContentTabPageAnchor,
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
+        state.previousActiveTabID = nil
+        guard state.tabs[id: id] != nil else { return .none }
+        state.tabs[id: id]?.anchor = newAnchor
+        state.tabs[id: id]?.page = page(for: newAnchor)
+        state.tabs[id: id]?.title = title(for: newAnchor)
+        state.tabs[id: id]?.iconName = iconName(for: newAnchor)
+        return .none
+    }
+
+    private func updateActivePageAnchor(
+        id: ContentTabID,
+        newAnchor: ContentTabPageAnchor,
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
         state.previousActiveTabID = nil
         guard let tab = state.tabs[id: id] else { return .none }
         state.tabs[id: id]?.anchor = newAnchor

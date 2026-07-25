@@ -10,11 +10,11 @@
         "$sweetpad-xcbeautify-errors",
         "$sweetpad-xcbeautify-warnings"
       ],
-      "label": "Voyager Dev: Launch (Debug)",
+      "label": "Voyager Dev: Launch (Dev-Debug)",
       "detail": "Build and Run the Development environment on Debug mode",
       "isBackground": true,
       "scheme": "Voyager-Dev",
-      "configuration": "Debug",
+      "configuration": "Dev-Debug",
       "launchEnv": {
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}",
         "VOYAGER_SCHEME_FORCE_ONBOARDING": "0"
@@ -29,10 +29,10 @@
         "$sweetpad-xcbeautify-errors",
         "$sweetpad-xcbeautify-warnings"
       ],
-      "label": "Voyager Dev: Launch (Release)",
+      "label": "Voyager Dev: Launch (Dev-Release)",
       "detail": "Build and Run the Development environment on Release mode",
       "scheme": "Voyager-Dev",
-      "configuration": "Release",
+      "configuration": "Dev-Release",
       "launchEnv": {
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
       }
@@ -46,10 +46,10 @@
         "$sweetpad-xcbeautify-errors",
         "$sweetpad-xcbeautify-warnings"
       ],
-      "label": "Voyager Prod: Launch (Debug)",
+      "label": "Voyager Prod: Launch (Prod-Debug)",
       "detail": "Build and Run the Production environment on Debug mode",
       "scheme": "Voyager-Prod",
-      "configuration": "Debug",
+      "configuration": "Prod-Debug",
       "launchEnv": {}
     },
     {
@@ -61,10 +61,10 @@
         "$sweetpad-xcbeautify-errors",
         "$sweetpad-xcbeautify-warnings"
       ],
-      "label": "Voyager Prod: Launch (Release)",
+      "label": "Voyager Prod: Launch (Prod-Release)",
       "detail": "Build and Run the Production environment on Release mode",
       "scheme": "Voyager-Prod",
-      "configuration": "Release",
+      "configuration": "Prod-Release",
       "launchEnv": {}
     },
     {
@@ -76,11 +76,11 @@
         "$sweetpad-xcbeautify-errors",
         "$sweetpad-xcbeautify-warnings"
       ],
-      "label": "VoyagerHelper Dev: Launch (Debug)",
+      "label": "VoyagerHelper Dev: Launch (Dev-Debug)",
       "detail": "Build and Run the Development environment on Debug mode",
       "isBackground": true,
       "scheme": "VoyagerHelper-Dev",
-      "configuration": "Debug",
+      "configuration": "Dev-Debug",
       "launchEnv": {
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
       }
@@ -94,10 +94,10 @@
         "$sweetpad-xcbeautify-errors",
         "$sweetpad-xcbeautify-warnings"
       ],
-      "label": "VoyagerHelper Dev: Launch (Release)",
+      "label": "VoyagerHelper Dev: Launch (Dev-Release)",
       "detail": "Build and Run the Development environment on Release mode",
       "scheme": "VoyagerHelper-Dev",
-      "configuration": "Release",
+      "configuration": "Dev-Release",
       "launchEnv": {
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
       }
@@ -111,11 +111,11 @@
         "$sweetpad-xcbeautify-errors",
         "$sweetpad-xcbeautify-warnings"
       ],
-      "label": "OnboardingHost Dev: Launch (Debug)",
+      "label": "OnboardingHost Dev: Launch (Dev-Debug)",
       "detail": "Build and Run OnboardingHost from Voyager.xcworkspace on Debug mode",
       "isBackground": true,
       "scheme": "OnboardingHost-Dev",
-      "configuration": "Debug",
+      "configuration": "Dev-Debug",
       "launchEnv": {
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}",
         "VOYAGER_ONBOARDING_MOCK_BETA": "1"
@@ -130,10 +130,10 @@
         "$sweetpad-xcbeautify-errors",
         "$sweetpad-xcbeautify-warnings"
       ],
-      "label": "OnboardingHost Dev: Launch (Release)",
+      "label": "OnboardingHost Dev: Launch (Dev-Release)",
       "detail": "Build and Run OnboardingHost from Voyager.xcworkspace on Release mode",
       "scheme": "OnboardingHost-Dev",
-      "configuration": "Release",
+      "configuration": "Dev-Release",
       "launchEnv": {
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}",
         "VOYAGER_ONBOARDING_MOCK_BETA": "1"
@@ -148,11 +148,11 @@
         "$sweetpad-xcbeautify-errors",
         "$sweetpad-xcbeautify-warnings"
       ],
-      "label": "SettingsHost Dev: Launch (Debug)",
+      "label": "SettingsHost Dev: Launch (Dev-Debug)",
       "detail": "Build and Run SettingsHost from Voyager.xcworkspace on Debug mode",
       "isBackground": true,
       "scheme": "SettingsHost-Dev",
-      "configuration": "Debug",
+      "configuration": "Dev-Debug",
       "launchEnv": {
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
       }
@@ -166,10 +166,10 @@
         "$sweetpad-xcbeautify-errors",
         "$sweetpad-xcbeautify-warnings"
       ],
-      "label": "SettingsHost Dev: Launch (Release)",
+      "label": "SettingsHost Dev: Launch (Dev-Release)",
       "detail": "Build and Run SettingsHost from Voyager.xcworkspace on Release mode",
       "scheme": "SettingsHost-Dev",
-      "configuration": "Release",
+      "configuration": "Dev-Release",
       "launchEnv": {
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
       }
@@ -184,18 +184,18 @@
         "$sweetpad-xcbeautify-errors",
         "$sweetpad-xcbeautify-warnings"
       ],
-      "label": "FileManagerHost Dev: Launch (Debug)",
+      "label": "FileManagerHost Dev: Launch (Dev-Debug)",
       "detail": "Build and Run FileManagerHost from Voyager.xcworkspace on Debug mode",
       "isBackground": true,
       "scheme": "FileManagerHost-Dev",
-      "configuration": "Debug",
+      "configuration": "Dev-Debug",
       "launchEnv": {
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
       }
     },
     {
       "type": "shell",
-      "label": "FileManagerHost Dev: Launch with Injection (Debug)",
+      "label": "FileManagerHost Dev: Launch with Injection (Dev-Debug)",
       "detail": "Open InjectionNext, build FileManagerHost with interposable symbols, and launch with project watching",
       "command": "mise",
       "args": ["run", "macos-filemanager-injection"],
@@ -213,13 +213,24 @@
         "$sweetpad-xcbeautify-errors",
         "$sweetpad-xcbeautify-warnings"
       ],
-      "label": "FileManagerHost Dev: Launch (Release)",
+      "label": "FileManagerHost Dev: Launch (Dev-Release)",
       "detail": "Build and Run FileManagerHost from Voyager.xcworkspace on Release mode",
       "scheme": "FileManagerHost-Dev",
-      "configuration": "Release",
+      "configuration": "Dev-Release",
       "launchEnv": {
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
       }
+    },
+    {
+      "type": "shell",
+      "label": "Voyager Dev: Test",
+      "detail": "Run the canonical Voyager-Dev macOS test task",
+      "command": "mise",
+      "args": ["run", "macos-test"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
     }
   ]
 }

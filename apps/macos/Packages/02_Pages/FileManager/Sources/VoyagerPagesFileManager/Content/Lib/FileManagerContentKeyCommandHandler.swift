@@ -15,8 +15,9 @@ enum FileManagerContentKeyCommandHandler {
     static func effect(
         for command: KeyCommand,
         state: FileManagerContentState,
-        consumeNativeUndo: () -> Bool = consumeNativeUndo,
-        consumeNativeRedo: () -> Bool = consumeNativeRedo,
+        consumeNativeUndo: (() -> Bool)? = nil,
+        consumeNativeRedo: (() -> Bool)? = nil,
+        textResponderIsEditing: Bool? = nil,
     ) -> Effect<FileManagerContentAction> {
         if let effect = quickLookKeyEffect(for: command, state: state) { return effect }
         if let effect = deleteKeyEffect(for: command, state: state) { return effect }
@@ -27,6 +28,7 @@ enum FileManagerContentKeyCommandHandler {
             state: state,
             consumeNativeUndo: consumeNativeUndo,
             consumeNativeRedo: consumeNativeRedo,
+            textResponderIsEditing: textResponderIsEditing,
         ) { return effect }
         return .none
     }
@@ -94,8 +96,9 @@ enum FileManagerContentKeyCommandHandler {
     private static func commandModifierEffect(
         for command: KeyCommand,
         state: FileManagerContentState,
-        consumeNativeUndo: () -> Bool,
-        consumeNativeRedo: () -> Bool,
+        consumeNativeUndo: (() -> Bool)?,
+        consumeNativeRedo: (() -> Bool)?,
+        textResponderIsEditing: Bool?,
     ) -> Effect<FileManagerContentAction>? {
         guard command.modifiers.contains(.command) else { return nil }
 
@@ -107,6 +110,8 @@ enum FileManagerContentKeyCommandHandler {
                 state: state,
                 consumeNativeUndo: consumeNativeUndo,
                 consumeNativeRedo: consumeNativeRedo,
+                textResponderIsEditing: textResponderIsEditing
+                    ?? ((consumeNativeUndo == nil && consumeNativeRedo == nil) ? isTextEditingResponder() : false),
             )
         }
 
@@ -161,21 +166,30 @@ enum FileManagerContentKeyCommandHandler {
     private static func undoRedoEffect(
         for command: KeyCommand,
         state: FileManagerContentState,
-        consumeNativeUndo: () -> Bool,
-        consumeNativeRedo: () -> Bool,
+        consumeNativeUndo: (() -> Bool)?,
+        consumeNativeRedo: (() -> Bool)?,
+        textResponderIsEditing: Bool,
     ) -> Effect<FileManagerContentAction> {
         if state.composer.isPresented {
             return .none
         }
 
         if command.modifiers.contains(.shift) {
-            if consumeNativeRedo() {
+            if textResponderIsEditing {
+                _ = consumeNativeRedo?() ?? sendNativeAction(redoSelector)
+                return .none
+            }
+            if consumeNativeRedo?() == true {
                 return .none
             }
             return .send(.delegate(.requestUndoRedo(.redo)))
         }
 
-        if consumeNativeUndo() {
+        if textResponderIsEditing {
+            _ = consumeNativeUndo?() ?? sendNativeAction(undoSelector)
+            return .none
+        }
+        if consumeNativeUndo?() == true {
             return .none
         }
         return .send(.delegate(.requestUndoRedo(.undo)))
@@ -227,34 +241,16 @@ enum FileManagerContentKeyCommandHandler {
         ))))
     }
 
-    private static func consumeNativeUndo() -> Bool {
+    private static func sendNativeAction(_ selector: Selector) -> Bool {
         MainActor.assumeIsolated {
-            guard let application = NSApp,
-                  let responder = textEditingResponder(in: application),
-                  responder.undoManager?.canUndo == true
-            else { return false }
-
-            return application.sendAction(undoSelector, to: nil, from: nil)
+            NSApp.sendAction(selector, to: nil, from: nil)
         }
     }
 
-    private static func consumeNativeRedo() -> Bool {
+    private static func isTextEditingResponder() -> Bool {
         MainActor.assumeIsolated {
-            guard let application = NSApp,
-                  let responder = textEditingResponder(in: application),
-                  responder.undoManager?.canRedo == true
-            else { return false }
-
-            return application.sendAction(redoSelector, to: nil, from: nil)
+            guard let responder = NSApp?.keyWindow?.firstResponder else { return false }
+            return responder is NSTextView || responder is NSTextField
         }
-    }
-
-    @MainActor
-    private static func textEditingResponder(in application: NSApplication) -> NSResponder? {
-        guard let responder = application.keyWindow?.firstResponder,
-              responder is NSTextView || responder is NSTextField
-        else { return nil }
-
-        return responder
     }
 }

@@ -20,6 +20,77 @@ extension PasteboardClient {
     )
 }
 
+func makeFailingDeleteClient(error: FileOpError) -> EntryFileOpsClient {
+    let live = EntryFileOpsClient.liveValue
+    return EntryFileOpsClient(
+        createFolder: { parentURL, folderName in try await live.createFolder(parentURL, folderName) },
+        pasteFile: { sourceURL, destinationURL in try await live.pasteFile(sourceURL, destinationURL) },
+        moveFile: { sourceURL, destinationURL in try await live.moveFile(sourceURL, destinationURL) },
+        renameFile: { sourceURL, destinationURL in try await live.renameFile(sourceURL, destinationURL) },
+        createAlias: { sourceURL, aliasURL in try await live.createAlias(sourceURL, aliasURL) },
+        moveToTrashAndReturnURL: { url in try await live.moveToTrashAndReturnURL(url) },
+        deleteImmediately: { _ in throw error },
+        putBackFromTrash: { trashURL, originalPath in try await live.putBackFromTrash(trashURL, originalPath) },
+        compressItems: { urls in try await live.compressItems(urls) },
+        extractCompressedFile: { url in try await live.extractCompressedFile(url) },
+        getTags: { url in try await live.getTags(url) },
+        setTags: { url, tags in try await live.setTags(url, tags) },
+        toggleTag: { url, tag in try await live.toggleTag(url, tag) },
+        fileExists: { path in live.fileExists(path) },
+        saveDragPaths: { _ in },
+        loadDragPaths: { [] },
+        saveDragWithOption: { _ in },
+        loadDragWithOption: { false },
+        clipboardChangeCount: { 0 },
+        loadClipboardCutSessionId: { nil },
+        saveClipboardCutSessionId: { _ in },
+        loadClipboardPaths: { ([], .copy) },
+        postFileSystemChanged: { _ in },
+    )
+}
+
+func makeFailingTrashClient(recorder: FileOpsRecorder) -> EntryFileOpsClient {
+    let live = EntryFileOpsClient.liveValue
+    return EntryFileOpsClient(
+        createFolder: { parentURL, folderName in try await live.createFolder(parentURL, folderName) },
+        pasteFile: { sourceURL, destinationURL in try await live.pasteFile(sourceURL, destinationURL) },
+        moveFile: { sourceURL, destinationURL in try await live.moveFile(sourceURL, destinationURL) },
+        renameFile: { sourceURL, destinationURL in try await live.renameFile(sourceURL, destinationURL) },
+        createAlias: { sourceURL, aliasURL in try await live.createAlias(sourceURL, aliasURL) },
+        moveToTrashAndReturnURL: { _ in throw FileOpError.system(message: "trash unavailable") },
+        deleteImmediately: { url in
+            try await live.deleteImmediately(url)
+            recorder.recordDelete(path: url)
+        },
+        putBackFromTrash: { trashURL, originalPath in try await live.putBackFromTrash(trashURL, originalPath) },
+        compressItems: { urls in try await live.compressItems(urls) },
+        extractCompressedFile: { url in try await live.extractCompressedFile(url) },
+        getTags: { url in try await live.getTags(url) },
+        setTags: { url, tags in try await live.setTags(url, tags) },
+        toggleTag: { url, tag in try await live.toggleTag(url, tag) },
+        fileExists: { path in live.fileExists(path) },
+        saveDragPaths: { _ in },
+        loadDragPaths: { [] },
+        saveDragWithOption: { _ in },
+        loadDragWithOption: { false },
+        clipboardChangeCount: { 0 },
+        loadClipboardCutSessionId: { nil },
+        saveClipboardCutSessionId: { _ in },
+        loadClipboardPaths: { ([], .copy) },
+        postFileSystemChanged: { _ in },
+    )
+}
+
+func prepareTrashRecord(sourceURL: URL, trashRoot: URL) throws -> EntryActionRecord {
+    try FileManager.default.createDirectory(at: trashRoot, withIntermediateDirectories: true)
+    let trashURL = trashRoot.appendingPathComponent(sourceURL.lastPathComponent)
+    try FileManager.default.moveItem(at: sourceURL, to: trashURL)
+    return EntryActionRecord(
+        operationKind: .moveToTrash,
+        targets: [.init(beforePath: sourceURL.path, afterPath: trashURL.path)],
+    )
+}
+
 // MARK: - Test Store Factory
 
 actor EntryOperationsLoadSuspensionGate {
@@ -149,6 +220,7 @@ enum EntryOperationsTestSupport {
             state.isLoading = false
             state.isReloading = false
         }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
         await gate.resume(with: staleCompletion)
         await store.finish()
     }

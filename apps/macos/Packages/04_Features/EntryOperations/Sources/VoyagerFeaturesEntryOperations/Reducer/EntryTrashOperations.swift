@@ -125,6 +125,7 @@ struct EntryTrashOperationsReducer {
                                 URL(fileURLWithPath: path),
                                 originalPath,
                             )
+                            await trashMetadataStoreClient.remove(path)
                             await send(.lifecycle(.pathsMutated([path, originalPath])))
                             await send(.lifecycle(.operationFinished(path, .putBack, .success(()))))
                             targets.append(.init(beforePath: path, afterPath: originalPath))
@@ -150,6 +151,7 @@ struct EntryTrashOperationsReducer {
                                         URL(fileURLWithPath: path),
                                         originalPath,
                                     )
+                                    await trashMetadataStoreClient.remove(path)
                                     await send(.lifecycle(.pathsMutated([path, originalPath])))
                                     await send(.lifecycle(.operationFinished(path, .putBack, .success(()))))
                                     targets.append(.init(beforePath: path, afterPath: originalPath))

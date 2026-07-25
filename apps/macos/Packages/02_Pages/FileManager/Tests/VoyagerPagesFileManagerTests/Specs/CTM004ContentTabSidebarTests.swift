@@ -2795,7 +2795,9 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         let contentWindowID = UUID()
         let firstWindowID = UUID()
         let duplicateWindowID = UUID()
+        let expectedLoadingOwnerID = UUID()
         let expectedUndoOwnerID = UUID()
+        let duplicateOwnerIDs = LockIsolated([expectedLoadingOwnerID, expectedUndoOwnerID])
         let record = EntryActionRecord(
             operationKind: .pasteFileMove,
             targets: [.init(beforePath: "/source/item", afterPath: "/destination/item")],
@@ -2808,7 +2810,9 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
-            $0.uuid = .constant(expectedUndoOwnerID)
+            $0.uuid = UUIDGenerator {
+                duplicateOwnerIDs.withValue { $0.removeFirst() }
+            }
         }
 
         await store.send(.internal(.sidebarEntryDrop(.lifecycle(.windowIDChanged(firstWindowID))))) {
@@ -2817,11 +2821,17 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         await store.send(.internal(.sidebarEntryDrop(.lifecycle(.resetForDuplicate(windowID: duplicateWindowID))))) {
             $0.sidebarEntryDropOperations.resetForDuplicate(
                 windowID: duplicateWindowID,
+                loadingCancellationOwnerID: expectedLoadingOwnerID,
                 undoOwnerID: expectedUndoOwnerID,
             )
         }
 
+        XCTAssertEqual(
+            store.state.sidebarEntryDropOperations.loadingCancellationOwnerID,
+            expectedLoadingOwnerID,
+        )
         XCTAssertEqual(store.state.sidebarEntryDropOperations.undoOwnerID, expectedUndoOwnerID)
+        XCTAssertNotEqual(expectedLoadingOwnerID, expectedUndoOwnerID)
         XCTAssertEqual(store.state.content.entryViewLayout.entryOperations, contentEntryOperations)
         await store.finish()
     }
@@ -3462,7 +3472,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertNil(store.state.contentTabs.tabs[id: activeID])
         XCTAssertNil(store.state.tabContentStates[activeID])
         XCTAssertEqual(store.state.contentTabs.activeTabID, fallbackID)
-        XCTAssertEqual(store.state.tabContentStates[fallbackID], fallbackContent)
+        XCTAssertEqual(store.state.tabContentStates[fallbackID], store.state.content)
         XCTAssertEqual(store.state.content.navigation.navigationState, fallbackContent.navigation.navigationState)
         XCTAssertEqual(
             store.state.content.entryViewLayout.entryOperations.undoOwnerID,
@@ -4186,10 +4196,19 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
         await store.send(.contentTabs(.setCurrent(selectedID)))
         let selectedDirectoryRefresh = AnyCasePath<FileManagerFeature.Action, Void>(
-            embed: { _ in .content(.internal(.applyNavigationState(.folder(selectedPath)))) },
+            embed: { _ in
+                .tabContent(
+                    tabID: selectedID,
+                    action: .internal(.applyNavigationState(.folder(selectedPath))),
+                )
+            },
             extract: { action in
-                guard case let .content(.internal(.applyNavigationState(.folder(path)))) = action,
-                      path == selectedPath
+                guard case let .tabContent(
+                    tabID,
+                    .internal(.applyNavigationState(.folder(path))),
+                ) = action,
+                    tabID == selectedID,
+                    path == selectedPath
                 else { return nil }
                 return ()
             },

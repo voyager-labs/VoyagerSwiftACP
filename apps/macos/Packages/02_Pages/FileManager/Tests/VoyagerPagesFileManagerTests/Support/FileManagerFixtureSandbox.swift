@@ -52,6 +52,23 @@ struct FileManagerFixtureSandbox {
         )
     }
 
+    /// 읽기 전용 reducer 입력에 사용할 실제 fixture 디렉토리를 반환한다.
+    static func readOnlyDirectory(from repoRelativePath: String) throws -> URL {
+        let original = try resolveRepoRoot().appendingPathComponent(repoRelativePath)
+        var isDirectory: ObjCBool = false
+
+        guard FileManager.default.fileExists(atPath: original.path, isDirectory: &isDirectory),
+              isDirectory.boolValue
+        else {
+            throw FileManagerFixtureSandboxError.fixtureNotFound(
+                path: original.path,
+                repoRelative: repoRelativePath,
+            )
+        }
+
+        return original
+    }
+
     /// Removes only the temporary sandbox root. Original fixtures are never touched.
     func cleanup() {
         try? FileManager.default.removeItem(at: root)

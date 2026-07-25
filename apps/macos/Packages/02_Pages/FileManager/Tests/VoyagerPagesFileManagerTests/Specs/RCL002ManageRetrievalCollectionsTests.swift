@@ -7,6 +7,45 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 import XCTest
 
+private actor CollectionFileLoadSuspensionGate {
+    enum Completion {
+        case success(CollectionFileLoadResult)
+        case failure
+    }
+
+    private var continuation: CheckedContinuation<Completion, Never>?
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async throws -> CollectionFileLoadResult {
+        let completion = await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            let waiters = waiters
+            self.waiters.removeAll()
+            waiters.forEach { $0.resume() }
+        }
+        switch completion {
+        case let .success(result):
+            return result
+        case .failure:
+            throw Failure.expected
+        }
+    }
+
+    func waitUntilWaiting() async {
+        guard continuation == nil else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func resume(with completion: Completion) {
+        continuation?.resume(returning: completion)
+        continuation = nil
+    }
+
+    private enum Failure: Error {
+        case expected
+    }
+}
+
 @MainActor
 final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
     // MARK: - RCL-002-save_collection_filter_changes
@@ -520,6 +559,133 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         )
     }
 
+    // MARK: - RCL-002-open_saved_collection
+
+    /// RCL-002-open_saved_collection: 저장 Collection에서 다른 저장 Collection 열기 완료 적용
+    /// 기존 Collection 정리 action이 실행된 뒤에도 동일 요청의 load 완료가 새 Collection으로 전환되는지 검증한다.
+    /// - 검증 내용: dirty Collection A의 load 중 Save 차단과 B route 적용 및 pending/loading 정리
+    /// - 사전 조건: dirty Collection A가 열려 있고 B 파일 load가 snapshot-bearing 결과를 반환함
+    /// - 기대 결과: load 중 A 상태와 Save 차단을 유지한 뒤 Collection B로 전환됨
+    func testOpenSavedCollection_fromSavedCollection_appliesMatchingCompletion() async {
+        let sourceURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/source.voycoll")
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/target.voycoll")
+        let sourceContext = CollectionContext(
+            query: "source",
+            scopes: ["/VoyagerFixtures/Source"],
+            conditions: [],
+        )
+        let dirtySourceContext = makeDirtySourceContext(basedOn: sourceContext)
+        let targetFile = makeSnapshotFile()
+        let targetLoadResult = makeSnapshotLoadResult(file: targetFile)
+        let loadGate = CollectionFileLoadSuspensionGate()
+
+        let initialState = makeDirtyCollectionSwitchState(
+            sourceURL: sourceURL,
+            sourceContext: sourceContext,
+            dirtySourceContext: dirtySourceContext,
+        )
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionFileClient.load = { _ in try await loadGate.wait() }
+            $0.collectionAlertClient = .testValue
+            $0.collectionStalenessClient = .testValue
+            $0.registryClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+            $0.uuid = .constant(UUID(608))
+            $0.continuousClock = ImmediateClock()
+        }
+        // 비포괄적: Collection open은 여러 child reducer action을 방출하므로 최종 lifecycle 상태를 검증한다.
+        store.exhaustivity = .off
+
+        XCTAssertTrue(store.state.content.canSaveCollection)
+
+        await store.send(.navigation(.view(.openCollectionFile(targetURL))))
+        await loadGate.waitUntilWaiting()
+        await store.skipReceivedActions()
+
+        assertCollectionOpenInFlight(
+            store.state,
+            sourceURL: sourceURL,
+            targetURL: targetURL,
+            sourceContext: sourceContext,
+            sourceDraftContext: dirtySourceContext,
+        )
+
+        await loadGate.resume(with: .success(targetLoadResult))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        assertCollectionOpenCompleted(
+            store.state,
+            targetURL: targetURL,
+            targetFile: targetFile,
+        )
+    }
+
+    /// RCL-002-open_saved_collection: 다른 저장 Collection 열기 실패 시 기존 Collection 복원
+    /// Collection B load 실패가 Collection A와 기존 navigation history를 파괴하지 않는지 검증한다.
+    /// - 검증 내용: Collection A document/route/history 복원과 pending/loading 정리
+    /// - 사전 조건: Collection A가 열려 있고 기존 Home history가 있으며 B 파일 load가 실패함
+    /// - 기대 결과: Collection A가 유지되고 기존 history가 보존되며 오류 요청 상태가 남지 않음
+    func testOpenSavedCollection_fromSavedCollectionFailure_restoresSourceWithoutHistoryRollback() async {
+        let sourceURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/source.voycoll")
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/missing.voycoll")
+        let sourceContext = CollectionContext(
+            query: "source",
+            scopes: ["/VoyagerFixtures/Source"],
+            conditions: [],
+        )
+        let dirtySourceContext = makeDirtySourceContext(basedOn: sourceContext)
+        let expectedHistory = [ContentPageNavigationHistorySnapshot(navigationState: .home)]
+        let loadGate = CollectionFileLoadSuspensionGate()
+        var initialState = makeOpenedCollectionState(url: sourceURL, context: sourceContext)
+        initialState.content.collection.collectionContext = dirtySourceContext
+        initialState.content.navigation.backHistory = expectedHistory
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionFileClient.load = { _ in try await loadGate.wait() }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+            $0.collectionStalenessClient = .testValue
+            $0.registryClient = .testValue
+            $0.searchClient = .testValue
+            $0.userDefaultsClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+            $0.uuid = .constant(UUID(610))
+            $0.continuousClock = ImmediateClock()
+        }
+        // 비포괄적: Collection 복원은 child reducer action을 방출하므로 최종 복원 상태를 검증한다.
+        store.exhaustivity = .off
+
+        XCTAssertTrue(store.state.content.canSaveCollection)
+
+        await store.send(.navigation(.view(.openCollectionFile(targetURL))))
+        await loadGate.waitUntilWaiting()
+        await store.skipReceivedActions()
+        assertCollectionOpenInFlight(
+            store.state,
+            sourceURL: sourceURL,
+            targetURL: targetURL,
+            sourceContext: sourceContext,
+            sourceDraftContext: dirtySourceContext,
+        )
+
+        await loadGate.resume(with: .failure)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        assertCollectionOpenFailurePreservedSource(
+            store.state,
+            sourceURL: sourceURL,
+            sourceContext: sourceContext,
+            sourceDraftContext: dirtySourceContext,
+            expectedHistory: expectedHistory,
+        )
+    }
+
     // MARK: - RCL-002-show_restored_collection_snapshot
 
     /// RCL-002-show_restored_collection_snapshot: snapshot-bearing collection open은 저장 snapshot path를 content list에 적용함
@@ -535,8 +701,15 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             compatibility: makeSnapshotAllowedCompatibility(),
         )
         var initialState = FileManagerWindowState()
+        let collectionURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/snapshot.voycoll")
+        let request = ContentPageCollectionOpenRequest(
+            id: UUID(608),
+            url: collectionURL,
+            sourceRoute: initialState.content.navigation.navigationState,
+        )
+        initialState.pendingCollectionOpenRequest = request
         initialState.content.collection.collectionSession.document = .init(
-            url: URL(fileURLWithPath: "/VoyagerFixtures/Collections/snapshot.voycoll"),
+            url: collectionURL,
             name: "snapshot",
             compatibility: makeSnapshotAllowedCompatibility(),
         )
@@ -551,14 +724,37 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         // 이 suite는 window open effect의 라우팅을 검증하므로 composer/content child 내부 state diff는 제외한다.
         store.exhaustivity = .off
 
-        await store.send(.navigation(.internal(.collectionFileLoaded(.success(loadResult)))))
+        await store.send(.navigation(.internal(.collectionFileLoaded(
+            request: request,
+            result: .success(loadResult),
+        ))))
         await store.receive(\.content.composer.view.setPresented)
-        await store.receive(\.content.internal.requestNavigation)
-        await store.receive(\.content.internal.applyNavigationState)
-        await store.receive(\.content.entryViewLayout.internal.setCollectionMode)
-        await store.receive(\.content.composer.internal.syncCollectionState)
-        await store.receive(\.content.entryViewLayout.internal.applyCollectionSearchPaths)
-        await store.receive(\.content.composer.internal.searchListApplied)
+        await store.receive { action in
+            guard case .tabContent(_, .internal(.requestNavigation)) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .tabContent(_, .internal(.applyNavigationState)) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.internal(.setCollectionMode))) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .tabContent(_, .composer(.internal(.syncCollectionState))) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.internal(.applyCollectionSearchPaths))) = action else {
+                return false
+            }
+            return true
+        }
+        await store.receive { action in
+            guard case .tabContent(_, .composer(.internal(.searchListApplied))) = action else { return false }
+            return true
+        }
         await store.finish()
     }
 
@@ -575,6 +771,29 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         } withDependencies: {
             $0.collectionAlertClient = .testValue
         }
+
+        await store.send(.navigation(.view(.goBack)))
+        await store.receive(\.navigation.internal.showUnsavedNavigationAlert)
+        await store.receive(\.navigation.internal.unsavedNavigationAlertResponse)
+        await store.finish()
+    }
+
+    /// RCL-002-alert_unsaved_collection_filter_changes: Collection open loading 중에도 dirty navigation 보호 유지
+    /// Save UI가 비활성화된 loading 상태와 미저장 변경 보호 판정이 분리되는지 검증한다.
+    /// - 검증 내용: loading 중 goBack 요청이 unsaved alert로 라우팅됨
+    /// - 사전 조건: dirty Collection이며 다른 Collection open loading이 진행 중
+    /// - 기대 결과: Save eligibility는 false지만 back navigation은 alert를 거침
+    func testAlertUnsavedCollectionFilterChanges_whileLoading_routesToUnsavedAlert() async {
+        var state = makeDirtyWindowState()
+        state.content.entryViewLayout.isCollectionContentLoading = true
+        let store = TestStore(initialState: state) {
+            FileManagerNavigationActionReducer()
+        } withDependencies: {
+            $0.collectionAlertClient = .testValue
+        }
+
+        XCTAssertFalse(store.state.content.canSaveCollection)
+        XCTAssertTrue(store.state.content.hasUnsavedCollectionChanges)
 
         await store.send(.navigation(.view(.goBack)))
         await store.receive(\.navigation.internal.showUnsavedNavigationAlert)
@@ -621,6 +840,142 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             ),
             appVersion: base.appVersion,
         )
+    }
+
+    private func makeDirtySourceContext(basedOn sourceContext: CollectionContext) -> CollectionContext {
+        CollectionContext(
+            query: "source draft",
+            scopes: sourceContext.scopes,
+            conditions: [],
+        )
+    }
+
+    private func makeSnapshotLoadResult(file: VoyagerCollectionFile) -> CollectionFileLoadResult {
+        CollectionFileLoadResult(
+            file: file,
+            containerFormat: .package,
+            compatibility: makeSnapshotAllowedCompatibility(),
+        )
+    }
+
+    private func makeDirtyCollectionSwitchState(
+        sourceURL: URL,
+        sourceContext: CollectionContext,
+        dirtySourceContext: CollectionContext,
+    ) -> FileManagerWindowState {
+        var state = makeOpenedCollectionState(url: sourceURL, context: sourceContext)
+        state.content.collection.collectionContext = dirtySourceContext
+        state.content.composer.isLoadingFilters = true
+        state.content.composer.isFilteringInFlight = true
+        state.content.composer.activeFiltersRequestID = UUID(609)
+        state.content.composer.pendingSearchQuery = "source"
+        state.content.composer.queryRenderPhase = .searching
+        return state
+    }
+
+    private func assertCollectionOpenInFlight(
+        _ state: FileManagerWindowState,
+        sourceURL: URL,
+        targetURL: URL,
+        sourceContext: CollectionContext,
+        sourceDraftContext: CollectionContext,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertEqual(state.pendingCollectionOpenRequest?.url, targetURL, file: file, line: line)
+        XCTAssertTrue(state.content.entryViewLayout.isCollectionContentLoading, file: file, line: line)
+        XCTAssertEqual(state.content.collection.collectionSession.document?.url, sourceURL, file: file, line: line)
+        XCTAssertEqual(
+            state.content.collection.collectionSession.metadata.baseline?.context,
+            sourceContext,
+            file: file,
+            line: line,
+        )
+        XCTAssertEqual(state.content.collection.collectionContext, sourceDraftContext, file: file, line: line)
+        XCTAssertFalse(state.content.canSaveCollection, file: file, line: line)
+        guard case let .collection(navigation) = state.content.navigation.navigationState else {
+            return XCTFail("Collection B load 중에는 Collection A route가 유지되어야 합니다", file: file, line: line)
+        }
+        XCTAssertEqual(navigation.kind, .file(url: sourceURL, name: "source"), file: file, line: line)
+        XCTAssertEqual(navigation.context, sourceContext, file: file, line: line)
+    }
+
+    private func assertCollectionOpenFailurePreservedSource(
+        _ state: FileManagerWindowState,
+        sourceURL: URL,
+        sourceContext: CollectionContext,
+        sourceDraftContext: CollectionContext,
+        expectedHistory: [ContentPageNavigationHistorySnapshot],
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertNil(state.pendingCollectionOpenRequest, file: file, line: line)
+        XCTAssertFalse(state.content.entryViewLayout.isCollectionContentLoading, file: file, line: line)
+        XCTAssertTrue(state.content.entryViewLayout.isCollectionMode, file: file, line: line)
+        XCTAssertTrue(state.content.canSaveCollection, file: file, line: line)
+        XCTAssertEqual(state.content.collection.collectionSession.document?.url, sourceURL, file: file, line: line)
+        XCTAssertEqual(
+            state.content.collection.collectionSession.metadata.baseline?.context,
+            sourceContext,
+            file: file,
+            line: line,
+        )
+        XCTAssertEqual(state.content.collection.collectionContext, sourceDraftContext, file: file, line: line)
+        XCTAssertEqual(state.content.navigation.backHistory, expectedHistory, file: file, line: line)
+        guard case let .collection(navigation) = state.content.navigation.navigationState else {
+            return XCTFail("Collection A route가 유지되어야 합니다", file: file, line: line)
+        }
+        XCTAssertEqual(navigation.kind, .file(url: sourceURL, name: "source"), file: file, line: line)
+        XCTAssertEqual(navigation.context, sourceContext, file: file, line: line)
+    }
+
+    private func assertCollectionOpenCompleted(
+        _ state: FileManagerWindowState,
+        targetURL: URL,
+        targetFile: VoyagerCollectionFile,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertNil(state.pendingCollectionOpenRequest, file: file, line: line)
+        XCTAssertFalse(state.content.entryViewLayout.isCollectionContentLoading, file: file, line: line)
+        XCTAssertFalse(state.content.composer.isLoadingFilters, file: file, line: line)
+        XCTAssertFalse(state.content.composer.isFilteringInFlight, file: file, line: line)
+        XCTAssertNil(state.content.composer.activeFiltersRequestID, file: file, line: line)
+        XCTAssertNil(state.content.composer.pendingSearchQuery, file: file, line: line)
+        XCTAssertEqual(state.content.composer.queryRenderPhase, .idle, file: file, line: line)
+        XCTAssertEqual(state.content.collection.collectionSession.document?.url, targetURL, file: file, line: line)
+        guard case let .collection(navigation) = state.content.navigation.navigationState else {
+            return XCTFail("Collection B route가 적용되어야 합니다", file: file, line: line)
+        }
+        XCTAssertEqual(navigation.kind, .file(url: targetURL, name: targetFile.name), file: file, line: line)
+        XCTAssertEqual(navigation.context.query, targetFile.query, file: file, line: line)
+        XCTAssertEqual(navigation.context.scopes, targetFile.scopes, file: file, line: line)
+    }
+
+    private func makeOpenedCollectionState(
+        url: URL,
+        context: CollectionContext,
+    ) -> FileManagerWindowState {
+        let navigation = ContentPageCollectionNavigation(
+            kind: .file(url: url, name: url.deletingPathExtension().lastPathComponent),
+            context: context,
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+            compatibility: makeSnapshotAllowedCompatibility(),
+        )
+        var state = FileManagerWindowState()
+        state.content.navigation.navigationState = .collection(navigation)
+        state.content.navigation.titlePath = context.scopes.first ?? "/"
+        state.content.entryViewLayout.isCollectionMode = true
+        state.content.collection.collectionContext = context
+        state.content.collection.collectionSession.document = .init(
+            url: url,
+            name: url.deletingPathExtension().lastPathComponent,
+            compatibility: makeSnapshotAllowedCompatibility(),
+        )
+        state.content.collection.collectionSession.metadata.baseline = .init(context: context)
+        return state
     }
 
     private func makeDirtyWindowState() -> FileManagerWindowState {

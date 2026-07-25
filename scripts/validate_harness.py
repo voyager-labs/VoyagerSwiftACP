@@ -14,6 +14,24 @@ from scripts.agent_validation import (
     validation_root,
 )
 
+from scripts.validate_build_matrix import main as validate_build_matrix_main
+
+
+def _run_build_matrix_validator() -> int:
+    """Run the build matrix validator, sending its output to stderr."""
+    import io
+
+    old_stdout = sys.stdout
+    sys.stdout = io.StringIO()
+    try:
+        exit_code = validate_build_matrix_main()
+    finally:
+        output = sys.stdout.getvalue()
+        sys.stdout = old_stdout
+        if output.strip():
+            print(output.strip(), file=sys.stderr)
+    return exit_code
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -49,7 +67,9 @@ def main() -> int:
         f"validate-harness: {len(diagnostics)} diagnostic(s) in {mode} scope",
         file=sys.stderr,
     )
-    return 1 if diagnostics else 0
+    harness_exit = 1 if diagnostics else 0
+    build_matrix_exit = _run_build_matrix_validator()
+    return 1 if (harness_exit or build_matrix_exit) else 0
 
 
 if __name__ == "__main__":

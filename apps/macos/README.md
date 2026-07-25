@@ -52,37 +52,53 @@ open apps/macos/Voyager/Voyager.xcworkspace
 
 ### 표준 launch 엔트리포인트
 
-Terminal, Zed, VSCode/Sweetpad task는 같은 build flag와 DerivedData 경로를 쓰도록 `scripts/dev/macos-launch.sh`를 표준 진입점으로 사용합니다.
+Terminal, Zed, VSCode/Sweetpad task는 `scripts/dev/xcodebuild-branch-product.sh`를 공유 injection seam으로 사용합니다. launch는 `scripts/dev/macos-launch.sh`를 통해 이 wrapper로 간접 연결됩니다.
 
 ```bash
 # 기본 개발 앱 빌드 후 실행
 mise run macos-launch
 
 # 저장된 진행 상태를 유지한 채 온보딩 강제 표시(Debug 전용, 일회성)
-mise run macos-launch -- --scheme Voyager-Dev --configuration Debug --env VOYAGER_SCHEME_FORCE_ONBOARDING=1
+mise run macos-launch -- --scheme Voyager-Dev --configuration Dev-Debug --env VOYAGER_SCHEME_FORCE_ONBOARDING=1
 
 # 특정 scheme/configuration 빌드 후 실행
-mise run macos-launch -- --scheme SettingsHost-Dev --configuration Debug
+mise run macos-launch -- --scheme SettingsHost-Dev --configuration Dev-Debug
 
 # 빌드만 확인
-mise run macos-launch -- --scheme Voyager-Dev --configuration Debug --no-launch
+mise run macos-launch -- --scheme Voyager-Dev --configuration Dev-Debug --no-launch
 ```
 
 `Voyager-Dev`가 유일한 개발 실행 scheme입니다. Debug 실행의 `VOYAGER_SCHEME_FORCE_ONBOARDING` launch 환경변수가 `0`이거나 없으면 저장된 진행 상태에 따라 동작하고, 정확히 `1`이면 저장된 진행 상태를 지우지 않은 채 온보딩을 강제로 표시합니다. 이 값은 `.env` 설정이 아니며 Release/Prod에서는 지원하지 않습니다.
 
-기본 build flag는 다음 경로로 고정됩니다.
+### Xcode build cache
 
-- `-derivedDataPath build/dev/DerivedData`
-- `-clonedSourcePackagesDirPath build/dev/SourcePackages`
-- `-skipPackagePluginValidation`
-- `-skipMacroValidation`
-- `COMPILER_INDEX_STORE_ENABLE=NO`
+wrapper는 선택한 workspace/project의 `Package.resolved`, 전체 Xcode build version, Swift toolchain version으로 dependency/toolchain key를 계산합니다. 기본 root는 `~/Library/Caches/Voyager/XcodeBuild`이며 테스트나 로컬 환경에서는 `VOYAGER_XCODE_CACHE_ROOT`로 override할 수 있습니다.
+
+- 공유 SwiftPM package support cache: `package-cache/<dependency-toolchain-key>` (`-packageCachePath`)
+- worktree-local DerivedData: `<worktree>/build/dev/DerivedData` (`-derivedDataPath`)
+- worktree-local writable checkouts: `<worktree>/build/dev/SourcePackages` (`-clonedSourcePackagesDirPath`)
+- 공유 registry와 lock: `worktrees/<worktree-key>/metadata.json`, `locks/worktrees/`, `locks/package-cache/`
+
+따라서 같은 dependency/toolchain을 쓰는 worktree는 다운로드 캐시만 공유하고, `SourcePackages/checkouts`와 DerivedData는 공유하지 않습니다. 기본 payload 경로는 절대 경로로 주입됩니다. 호출자가 이 세 flag를 명시하면 wrapper는 해당 값을 중복 없이 보존하며 resolver는 그 외부 경로를 registry에 관리 대상이라고 기록하지 않습니다. build log와 report는 계속 worktree의 `build/dev/`에 남습니다.
+
+```bash
+# 현재 cache 사용량과 worktree/host/entrypoint별 accounting 확인
+mise run macos-cache-report
+
+# 30일 이상 된 orphan entry 후보를 출력만 함 (기본, 안전)
+mise run macos-cache-prune
+
+# 실제 삭제: active Git worktree와 running-build lock은 항상 보호됨
+mise run macos-cache-prune -- --apply --older-than-days 30
+```
+
+report는 active Git worktree의 local payload를 한 번만 계산하고 공유 package cache를 별도로 합산합니다. 예전 중앙 payload가 남아 있으면 `stale_central_entries`로 관찰만 하며 새 중앙 DerivedData는 만들지 않습니다. prune은 cache root 밖을 삭제하지 않으며, metadata가 없거나 stale한 entry, 삭제된 worktree, symlink/containment 검증 실패, 또는 lock을 즉시 얻지 못한 entry도 삭제하지 않습니다. `--apply`도 검증된 `<worktree>/build/dev/{DerivedData,SourcePackages}`만 삭제하며 logs, reports, 다른 build 하위 디렉터리는 보존합니다.
 
 ### IDE별 실행 경로와 온보딩 표시 토글
 
 - Xcode: `apps/macos/Voyager/Voyager.xcworkspace`를 열고 `Voyager-Dev` scheme을 선택합니다. Debug Run 환경변수 `VOYAGER_SCHEME_FORCE_ONBOARDING`을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 설정하면 진행 상태를 유지한 채 온보딩을 강제로 표시합니다.
-- Zed: `.zed/tasks.json`의 `Voyager Dev: Launch (Debug)` task를 실행합니다. task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 바꾸면 온보딩을 강제로 표시합니다.
-- VSCode/Sweetpad: `.vscode/tasks.json`의 `Voyager Dev: Launch (Debug)` task를 실행합니다. task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 Zed와 같이 설정합니다. Sweetpad build는 `.vscode/settings.json`의 shared xcodebuild wrapper를 사용합니다.
+- Zed: `.zed/tasks.json`의 `Voyager Dev: Launch (Dev-Debug)` task를 실행합니다. task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 바꾸면 온보딩을 강제로 표시합니다.
+- VSCode/Sweetpad: `.vscode/tasks.json`의 `Voyager Dev: Launch (Dev-Debug)` task를 실행합니다. task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 Zed와 같이 설정합니다. Sweetpad build는 `.vscode/settings.json`의 shared xcodebuild wrapper를 사용합니다.
 
 이 토글은 launch 환경이며 `.env` 파일에 설정하지 않습니다. Debug 전용 동작이므로 Release/Prod에서는 지원하지 않습니다.
 
@@ -109,17 +125,17 @@ mise run macos-test-flow -- --check
 
 `mise run macos-test`는 광범위한 전체 테스트를 실행하고, `mise run macos-test-flow`는 canonical PRODUCT flow 문서에 매핑된 flow suite만 focused로 실행합니다.
 
-### 테스트 실행 (xcodebuild 직접)
+### selector로 테스트 좁히기
 
 ```bash
-# 모든 테스트 실행(개발)
-xcodebuild test -project Voyager.xcodeproj -scheme Voyager-Dev
+# 모든 개발 테스트 실행
+mise run macos-test
 
 # 단위 테스트 실행
-xcodebuild test -project Voyager.xcodeproj -scheme Voyager-Dev -only-testing:VoyagerTests
+mise run macos-test -- -only-testing:VoyagerTests
 
 # 특정 suite 실행
-xcodebuild test -project Voyager.xcodeproj -scheme Voyager-Dev -only-testing:VoyagerTests/AccessUnlockFlowTests
+mise run macos-test -- -only-testing:VoyagerTests/AccessUnlockFlowTests
 ```
 
 ### 로그 확인
@@ -177,7 +193,7 @@ InjectionNext는 `FileManagerHost` 전용 Debug 개발 도구입니다. `Voyager
 mise run macos-filemanager-injection
 ```
 
-Zed와 VSCode에서는 `FileManagerHost Dev: Launch with Injection (Debug)` task를 선택합니다. 기존 FileManagerHost Debug/Release task는 Injection 없는 일반 실행으로 유지됩니다.
+Zed와 VSCode에서는 `FileManagerHost Dev: Launch with Injection (Dev-Debug)` task를 선택합니다. 기존 FileManagerHost Dev-Debug/Dev-Release task는 Injection 없는 일반 실행으로 유지됩니다.
 
 `INJECTION_PROJECT_ROOT`는 `apps/macos`를 가리키므로 Host와 `Packages` 소스를 함께 감시합니다. Content Tab sidebar row는 HotSwiftUI를 통해 재그리기되며, InjectionNext 전용 Xcode/task 환경에서만 FileManager 패키지가 `-Xlinker -interposable`을 추가합니다.
 

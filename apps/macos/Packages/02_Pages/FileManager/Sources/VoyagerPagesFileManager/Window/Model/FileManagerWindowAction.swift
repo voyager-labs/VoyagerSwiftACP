@@ -18,6 +18,27 @@ public enum SelectedContentTabCloseOutcome: Equatable, Sendable {
     case missing
 }
 
+public enum PinnedContentTabsApplicationMode: Equatable, Sendable {
+    case preservingRuntime
+    case authoritative
+}
+
+public struct FileManagerContentNewChatSeedApplication: Equatable, Sendable {
+    let tabID: ContentTabID
+    let expectedAnchor: ContentTabPageAnchor
+    let sessionID: AiChatSessionID?
+    let provenance: AiChatNewChatPreparationProvenance
+    let seed: AiChatNewChatSelectionSeed?
+}
+
+public struct FileManagerInspectorNewChatSeedApplication: Equatable, Sendable {
+    let tabID: ContentTabID
+    let snapshot: AiChatCurrentContextSnapshot
+    let provenance: AiChatNewChatPreparationProvenance
+    let applicationProvenance: AiChatNewChatPreparationProvenance
+    let seed: AiChatNewChatSelectionSeed?
+}
+
 @CasePathable
 public enum FileManagerWindowAction: CasePathable, Sendable {
     case delegate(Delegate)
@@ -25,6 +46,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case `internal`(Internal)
     case request(WindowCommand)
     case content(FileManagerContentFeature.Action)
+    case tabContent(tabID: ContentTabID, action: FileManagerContentFeature.Action)
     case backgroundAiChat(AiChatAction)
     case backgroundAiChatSnapshotPersisted(AiChatSessionSnapshot)
     case backgroundInspectorAiChat(AiChatAction)
@@ -35,9 +57,15 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case contentTabs(ContentTabAction)
     case applyAppPreferences(AppPreferencesState)
     case applyPinnedContentTabs(ContentTabState)
+    case applyAuthoritativePinnedContentTabs(ContentTabState)
+    case applyPinnedContentTabRuntimeNavigation(
+        tabID: ContentTabID,
+        navigationState: ContentPageNavigationRoute,
+    )
     case applyHiddenFixedLocationIDs(Set<FileManagerFixedLocationItem.ID>)
     case aiConnectionsFileUpdated(AIConnectionsFile)
     case reserveExternalContentTabs([ExternalContentTabReservation])
+    case activateExternalContentTabUndoScopes([ContentTabID])
     case resyncActiveCollectionNavigation
 
     case requestCloseSelectedContentTabs
@@ -79,6 +107,11 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
             requestID: UUID,
             items: [FileManagerFixedLocationItem],
         )
+        case entryActionCompleted(
+            tabID: ContentTabID,
+            record: EntryActionRecord,
+            undoManagerGeneration: UInt64?,
+        )
         case homeFavoritesLoaded([FileManagerHomeFavoriteItem])
         case aiChatTabTitleUpdated(sessionID: AiChatSessionID, title: String?)
         case duplicateContentTabReduced(
@@ -109,6 +142,23 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
             ownerID: UUID,
             result: UndoManagerInvalidationResult,
         )
+        case aiChatNewChatInspectorOpenLoaded(
+            requestID: UUID,
+            setup: AiChatSetupState,
+            connectionsFile: AIConnectionsFile,
+        )
+        case aiChatHistoryInspectorOpenLoaded(
+            requestID: UUID,
+            setup: AiChatSetupState,
+            connectionsFile: AIConnectionsFile,
+        )
+        case aiChatNewChatDefaultsLoaded(
+            requestID: UUID,
+            candidate: AiChatPersistedSelectionCandidate?,
+        )
+        case homeAiChatNewChatSeedRequested(sessionID: AiChatSessionID)
+        case applyContentNewChatSeed(FileManagerContentNewChatSeedApplication)
+        case applyInspectorNewChatSeed(FileManagerInspectorNewChatSeedApplication)
     }
 
     @CasePathable
@@ -130,8 +180,8 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case requestUndo
         case requestRedo
         case toggleComposer
-        case openContextualAiChat
-        case presentContextualAiChat
+        case newChat
+        case showChatHistory
         case cut
         case copy
         case paste
@@ -157,5 +207,9 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case openAISettings
         case requestAttachmentPicker
         case fixedLocationVisibilityChanged(Set<FileManagerFixedLocationItem.ID>)
+        case pinnedContentTabRuntimeNavigationChanged(
+            tabID: ContentTabID,
+            navigationState: ContentPageNavigationRoute,
+        )
     }
 }

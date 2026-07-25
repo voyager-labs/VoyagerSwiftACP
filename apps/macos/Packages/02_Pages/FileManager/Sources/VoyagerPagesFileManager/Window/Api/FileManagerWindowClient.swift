@@ -241,33 +241,25 @@ private func configureFileManagerWindowTabbingPolicyIfNeeded() {
 }
 
 @MainActor
-private func resolveFileManagerEntryOperationsUndoManager(windowID: UUID?) -> UndoManager? {
-    guard let windowID else { return nil }
-    return fileManagerWindowControllersByID[windowID]?.entryOperationsUndoManager
-}
-
-@MainActor
-public func makeFileManagerUndoManagerClientLive() -> UndoManagerClient {
-    .live(resolveUndoManager: { windowID in
-        await MainActor.run {
-            resolveFileManagerEntryOperationsUndoManager(windowID: windowID)
-        }
-    })
-}
-
-@MainActor
-public func makeFileManagerWindowClientLive() -> FileManagerWindowClient {
+public func makeFileManagerWindowClientLive(
+    fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
+) -> FileManagerWindowClient {
     .init(
         open: { id in
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                guard !Task.isCancelled else { return }
-                fileManagerWindowOpen(windowID: id)
+                fileManagerWindowOpen(
+                    windowID: id,
+                    fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+                )
             }
         },
         openTab: { id in
             await MainActor.run {
-                fileManagerWindowOpenTab(windowID: id)
+                fileManagerWindowOpenTab(
+                    windowID: id,
+                    fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+                )
             }
         },
         activate: { id in
@@ -358,8 +350,10 @@ public func requestFileManagerNewTab(path: String?) {
 }
 
 @MainActor
-private func fileManagerWindowOpen(windowID: UUID) {
-    guard !fileManagerWindowClosingIDs.contains(windowID) else { return }
+private func fileManagerWindowOpen(
+    windowID: UUID,
+    fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
+) {
     configureFileManagerWindowTabbingPolicyIfNeeded()
 
     if let existing = fileManagerWindowControllersByID[windowID] {
@@ -372,19 +366,20 @@ private func fileManagerWindowOpen(windowID: UUID) {
         return
     }
 
-    let entryOperationsUndoManager = UndoManager()
     let controller = makeManagedWindowController(
         windowID: windowID,
         fileManagerStore: fileManagerStore,
-        entryOperationsUndoManager: entryOperationsUndoManager,
+        fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
     )
     registerFileManagerWindowController(controller)
     controller.showWindow(nil as Any?)
 }
 
 @MainActor
-private func fileManagerWindowOpenTab(windowID: UUID) {
-    guard !fileManagerWindowClosingIDs.contains(windowID) else { return }
+private func fileManagerWindowOpenTab(
+    windowID: UUID,
+    fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
+) {
     configureFileManagerWindowTabbingPolicyIfNeeded()
 
     if let existing = fileManagerWindowControllersByID[windowID] {
@@ -395,7 +390,10 @@ private func fileManagerWindowOpenTab(windowID: UUID) {
     guard let keyWindow = NSApp.keyWindow,
           fileManagerWindowControllers.contains(where: { $0.window === keyWindow })
     else {
-        fileManagerWindowOpen(windowID: windowID)
+        fileManagerWindowOpen(
+            windowID: windowID,
+            fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+        )
         return
     }
 
@@ -404,11 +402,10 @@ private func fileManagerWindowOpenTab(windowID: UUID) {
         return
     }
 
-    let entryOperationsUndoManager = UndoManager()
     let controller = makeManagedWindowController(
         windowID: windowID,
         fileManagerStore: fileManagerStore,
-        entryOperationsUndoManager: entryOperationsUndoManager,
+        fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
     )
     registerFileManagerWindowController(controller)
 
@@ -501,12 +498,12 @@ private func currentFileManagerWindowSize() -> NSSize? {
 private func makeManagedWindowController(
     windowID: UUID,
     fileManagerStore: StoreOf<FileManagerFeature>,
-    entryOperationsUndoManager: UndoManager,
+    fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
 ) -> FileManagerWindowCoordinator {
     FileManagerWindowCoordinator(
         windowID: windowID,
         store: fileManagerStore,
-        entryOperationsUndoManager: entryOperationsUndoManager,
+        fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
         path: nil,
         sessionLapseGuardStore: fileManagerSessionLapseProvider?.resolveStore(),
         sessionLapseGuardState: fileManagerSessionLapseProvider?.resolveState,

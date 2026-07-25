@@ -81,6 +81,13 @@ struct EntryUndoRedoOperationsReducer {
                     return replayTerminalFailureEffect(direction: .undo, reason: .ownerBusy)
                 }
 
+                if state.redoRecords.isEmpty {
+                    _ = state.undoRecords.popLast()
+                    state.redoRecords.append(latestRecord)
+                    state.pendingReplayRecordID = latestRecord.id
+                } else {
+                    state.pendingReplayRecordID = nil
+                }
                 return .send(.undoRedo(.replayEntryAction(direction: .undo, record: latestRecord)))
 
             case let .undoRedo(.redoEntryAction(record: record)):
@@ -93,6 +100,13 @@ struct EntryUndoRedoOperationsReducer {
                     return replayTerminalFailureEffect(direction: .redo, reason: .ownerBusy)
                 }
 
+                if state.undoRecords.isEmpty {
+                    _ = state.redoRecords.popLast()
+                    state.undoRecords.append(latestRecord)
+                    state.pendingReplayRecordID = latestRecord.id
+                } else {
+                    state.pendingReplayRecordID = nil
+                }
                 return .send(.undoRedo(.replayEntryAction(direction: .redo, record: latestRecord)))
 
             case let .undoRedo(.replayEntryAction(direction: direction, record: record)):
@@ -101,29 +115,49 @@ struct EntryUndoRedoOperationsReducer {
             case let .undoRedo(.replaySucceeded(direction, sourceRecordID, updatedRecord)):
                 switch direction {
                 case .undo:
-                    guard state.latestUndoRecord?.id == sourceRecordID else {
-                        Self.logger.error("Undo unavailable: replay commit record mismatch")
-                        return replayTerminalFailureEffect(direction: direction, reason: .ownerRecordMismatch)
+                    if state.pendingReplayRecordID == sourceRecordID {
+                        guard let recordIndex = state.redoRecords.firstIndex(where: { $0.id == sourceRecordID }) else {
+                            Self.logger.error("Undo unavailable: replay commit record mismatch")
+                            return replayTerminalFailureEffect(direction: direction, reason: .ownerRecordMismatch)
+                        }
+                        state.redoRecords[recordIndex] = updatedRecord
+                    } else {
+                        guard state.latestUndoRecord?.id == sourceRecordID else {
+                            Self.logger.error("Undo unavailable: replay commit record mismatch")
+                            return replayTerminalFailureEffect(direction: direction, reason: .ownerRecordMismatch)
+                        }
+                        _ = state.undoRecords.popLast()
+                        state.redoRecords.append(updatedRecord)
                     }
-                    _ = state.undoRecords.popLast()
-                    state.redoRecords.append(updatedRecord)
 
                 case .redo:
-                    guard state.latestRedoRecord?.id == sourceRecordID else {
-                        Self.logger.error("Redo unavailable: replay commit record mismatch")
-                        return replayTerminalFailureEffect(direction: direction, reason: .ownerRecordMismatch)
+                    if state.pendingReplayRecordID == sourceRecordID {
+                        guard let recordIndex = state.undoRecords.firstIndex(where: { $0.id == sourceRecordID }) else {
+                            Self.logger.error("Redo unavailable: replay commit record mismatch")
+                            return replayTerminalFailureEffect(direction: direction, reason: .ownerRecordMismatch)
+                        }
+                        state.undoRecords[recordIndex] = updatedRecord
+                    } else {
+                        guard state.latestRedoRecord?.id == sourceRecordID else {
+                            Self.logger.error("Redo unavailable: replay commit record mismatch")
+                            return replayTerminalFailureEffect(direction: direction, reason: .ownerRecordMismatch)
+                        }
+                        _ = state.redoRecords.popLast()
+                        state.undoRecords.append(updatedRecord)
                     }
-                    _ = state.redoRecords.popLast()
-                    state.undoRecords.append(updatedRecord)
                 }
+                state.pendingReplayRecordID = nil
                 return .send(.outcome(.entryActionReplayFinished(
                     direction: direction,
                     terminal: .success(updatedRecord),
                 )))
 
             case let .undoRedo(.replayFailed(direction, appliedTargets)):
-                state.undoRecords.removeAll()
-                state.redoRecords.removeAll()
+                if state.pendingReplayRecordID == nil {
+                    state.undoRecords.removeAll()
+                    state.redoRecords.removeAll()
+                }
+                state.pendingReplayRecordID = nil
                 return replayTerminalFailureEffect(
                     direction: direction,
                     reason: .operationFailed,

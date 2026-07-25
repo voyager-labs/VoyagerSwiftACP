@@ -14,21 +14,28 @@ public struct EntryOperationsState: Equatable {
     public var renamingItem: EntryModel?
 
     public var windowID: UUID?
+    public var loadingCancellationOwnerID: UUID
     public var undoOwnerID: UUID
     public var itemStates: [String: ItemOperationState] = [:]
     public var undoRecords: [EntryActionRecord] = []
     public var redoRecords: [EntryActionRecord] = []
+    var pendingReplayRecordID: EntryActionRecord.ID?
     public var selectedEntryIDs: Set<EntryModel.ID> = []
     public var clipboardItems: [String] = []
     public var clipboardOperation: ClipboardOperation = .copy
     public var cutClearSession: EntryOperationsCutClearHeuristic.CutSession?
     public var pendingEmptyTrashItemCount: Int = 0
     public var emptyTrashCompletedCount: Int = 0
+    public var restorableTrashPaths: Set<String> = []
     public var applicationsForItems: [String: [ApplicationInfo]] = [:]
     public var commonApplicationsForSelectedFiles: [ApplicationInfo] = []
     public var dropValidationResult: EntryDropValidationResult = .empty
 
-    public init(undoOwnerID: UUID = UUID()) {
+    public init(
+        loadingCancellationOwnerID: UUID = UUID(),
+        undoOwnerID: UUID = UUID(),
+    ) {
+        self.loadingCancellationOwnerID = loadingCancellationOwnerID
         self.undoOwnerID = undoOwnerID
     }
 
@@ -36,9 +43,14 @@ public struct EntryOperationsState: Equatable {
         self.undoOwnerID = undoOwnerID
         undoRecords = []
         redoRecords = []
+        pendingReplayRecordID = nil
     }
 
-    public mutating func resetForDuplicate(windowID: UUID, undoOwnerID: UUID) {
+    public mutating func resetForDuplicate(
+        windowID: UUID,
+        loadingCancellationOwnerID: UUID,
+        undoOwnerID: UUID,
+    ) {
         loadingContext = .init()
         isLoading = false
         isReloading = false
@@ -46,16 +58,19 @@ public struct EntryOperationsState: Equatable {
         renamingText = ""
         renamingItem = nil
         self.windowID = windowID
+        self.loadingCancellationOwnerID = loadingCancellationOwnerID
         self.undoOwnerID = undoOwnerID
         itemStates = [:]
         undoRecords = []
         redoRecords = []
+        pendingReplayRecordID = nil
         selectedEntryIDs = []
         clipboardItems = []
         clipboardOperation = .copy
         cutClearSession = nil
         pendingEmptyTrashItemCount = 0
         emptyTrashCompletedCount = 0
+        restorableTrashPaths = []
         applicationsForItems = [:]
         commonApplicationsForSelectedFiles = []
         dropValidationResult = .empty
@@ -87,6 +102,7 @@ public struct EntryOperationsState: Equatable {
     public mutating func appendUndoRecord(_ record: EntryActionRecord) {
         undoRecords.append(record)
         redoRecords.removeAll()
+        pendingReplayRecordID = nil
     }
 
     public func isEntryActionBusy(_ record: EntryActionRecord) -> Bool {

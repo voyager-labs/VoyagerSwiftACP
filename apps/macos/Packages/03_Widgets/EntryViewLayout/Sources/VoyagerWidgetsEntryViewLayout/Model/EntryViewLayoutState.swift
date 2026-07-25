@@ -67,4 +67,28 @@ public struct EntryViewLayoutState: Equatable {
     public var entries: [EntryModel] = []
 
     public init() {}
+
+    public mutating func clearCollectionPresentation() {
+        isCollectionMode = false
+        collectionItems = []
+        isCollectionContentLoading = false
+        entries = displayOrderItems
+
+        let remainingIDs = Set(entries.map(\.id))
+        selectedIds = selectedIds.intersection(remainingIDs)
+        guard !selectedIds.isEmpty else {
+            lastSelectedId = nil
+            rangeAnchorId = nil
+            shouldScrollToSelection = false
+            return
+        }
+
+        if lastSelectedId.map(selectedIds.contains) != true {
+            lastSelectedId = entries.first { selectedIds.contains($0.id) }?.id
+        }
+        if rangeAnchorId.map(selectedIds.contains) != true {
+            rangeAnchorId = lastSelectedId
+        }
+        shouldScrollToSelection = false
+    }
 }

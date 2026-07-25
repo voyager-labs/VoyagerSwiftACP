@@ -549,8 +549,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 return true
             }
             $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
             $0.fileManagerWindowClient.registeredWindowIDs = { [newID] }
+            $0.fileManagerWindowClient.open = { _ in }
         }
         store.exhaustivity = .off
 
@@ -634,7 +634,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
     /// pinned 저장 성공 이벤트는 external marker 여부와 무관하게 열린 모든 window로 fan-out한다.
     /// pinned sidebar가 window마다 어긋나지 않고 external unpinned tab이 보존되는지 검증한다.
-    /// - 검증 내용: child pinnedRecordSaveSucceeded → pinnedContentTabsStoreChanged → 모든 window applyPinnedContentTabs
+    /// - 검증 내용: child pinnedRecordSaveSucceeded → pinnedContentTabsStoreChanged → 모든 window authoritative pinned sync
     /// - 사전 조건: 일반 window와 active external marker window, global pinned store 1개
     /// - 기대 결과: 두 window 모두 동일한 pinned tab을 받고 external window의 unpinned tab은 유지
     func testPinnedRecordSaveSucceededSyncsPinnedTabsAcrossOpenWindows() async throws {
@@ -690,7 +690,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )))
         await store.receive(\.pinnedContentTabsStoreChanged)
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs(contentTabs)))) = action
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.applyAuthoritativePinnedContentTabs(contentTabs)),
+            )) = action
             else {
                 return false
             }
@@ -699,7 +702,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 && contentTabs.tabs[id: contentTabs.activeTabID ?? ContentTabID(rawValue: "")]?.page == .home
         }
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs(contentTabs)))) = action
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.applyAuthoritativePinnedContentTabs(contentTabs)),
+            )) = action
             else {
                 return false
             }
@@ -804,13 +810,19 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.send(.pinnedContentTabsStoreChanged)
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs(contentTabs)))) = action
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.applyAuthoritativePinnedContentTabs(contentTabs)),
+            )) = action
             else { return false }
             return id == sourceWindowID
                 && contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue) == ["global-batch-pin"]
         }
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs(contentTabs)))) = action
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.applyAuthoritativePinnedContentTabs(contentTabs)),
+            )) = action
             else { return false }
             return id == otherWindowID
                 && contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue) == ["global-batch-pin"]
@@ -836,7 +848,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             return id == sourceWindowID && receivedID == operationID
         }
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs(contentTabs)))) = action
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.applyAuthoritativePinnedContentTabs(contentTabs)),
+            )) = action
             else { return false }
             return id == sourceWindowID
                 && contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue) == ["global-batch-pin"]
@@ -956,15 +971,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             CombineReducers {
                 WindowManagerFeature()
                 Reduce { _, action in
-                    if case .pinnedContentTabsStoreChanged = action {
-                        syncCount.withValue { $0 += 1 }
-                    }
-                    if case let .windows(.element(
-                        id: windowID,
-                        action: .window(.applyPinnedContentTabs),
-                    )) = action {
-                        applyCounts.withValue { $0[windowID, default: 0] += 1 }
-                    }
+                    Self.recordPinnedStoreTracking(
+                        action,
+                        syncCount: syncCount,
+                        applyCounts: applyCounts,
+                    )
                     return .none
                 }
             }
@@ -1086,6 +1097,22 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
     }
 
+    private static func recordPinnedStoreTracking(
+        _ action: WindowManagerFeature.Action,
+        syncCount: LockIsolated<Int>,
+        applyCounts: LockIsolated<[UUID: Int]>,
+    ) {
+        if case .pinnedContentTabsStoreChanged = action {
+            syncCount.withValue { $0 += 1 }
+        }
+        if case let .windows(.element(
+            id: windowID,
+            action: .window(.applyAuthoritativePinnedContentTabs),
+        )) = action {
+            applyCounts.withValue { $0[windowID, default: 0] += 1 }
+        }
+    }
+
     /// live sync는 bootstrap cleanup과 달리 파일 존재 검증으로 열린 pinned tab을 갑자기 제거하지 않는다.
     /// - 검증 내용: deleted directory record가 store에 있어도 sync fan-out state에는 유지되고 saveStore compaction이 호출되지 않음
     /// - 사전 조건: 열린 window 1개, global pinned store에 현재 존재하지 않는 directory record 1개
@@ -1139,7 +1166,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )))
         await store.receive(\.pinnedContentTabsStoreChanged)
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs(contentTabs)))) = action
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.applyAuthoritativePinnedContentTabs(contentTabs)),
+            )) = action
             else {
                 return false
             }
@@ -1227,7 +1257,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             contentTabs: restoredState,
         ))
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs(contentTabs)))) = action
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.applyAuthoritativePinnedContentTabs(contentTabs)),
+            )) = action
             else {
                 return false
             }
@@ -1290,7 +1323,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.defaultWindowBootstrapWindowIDs = []
         }
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs(contentTabs)))) = action
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.applyAuthoritativePinnedContentTabs(contentTabs)),
+            )) = action
             else { return false }
             return id == windowID
                 && contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue) == ["latest-pin"]
@@ -1423,181 +1459,6 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(window?.contentTabs.tabs.last?.anchor, directoryAnchor, "복원된 tab의 anchor가 일치해야 함")
     }
 
-    /// CTM-001-duplicate_selected_content_tabs: FileCommand는 focused window selection을 bulk request로 전달한다.
-    /// reconciled selected tab이 있으면 기존 duplicateTab case가 semantic bulk request를 선택한다.
-    /// - 검증 내용: focused window bulk forwarding과 다른 window isolation
-    /// - 사전 조건: 두 window 중 focused window에만 selected content tab이 존재함
-    /// - 기대 결과: focused window만 duplicateSelectedContentTabs request를 수신함
-    func testFileDuplicateTabCommand_routesSelectedTabsToFocusedWindowBulkRequest() async {
-        let focusedWindowID = UUID()
-        let otherWindowID = UUID()
-        var focusedWindow = FileManagerWindowFeature.State.makeInitial(path: "/focused")
-        guard let selectedTabID = focusedWindow.contentTabs.activeTabID else {
-            XCTFail("Expected active content tab")
-            return
-        }
-        let secondSelectedTabID = ContentTabID(rawValue: "focused-second-selected")
-        focusedWindow.contentTabs.tabs.append(ContentTabItem(
-            id: secondSelectedTabID,
-            page: .home,
-            anchor: .homeDefault,
-            isPinned: false,
-            title: "Second",
-            iconName: "house",
-        ))
-        focusedWindow.contentTabs.selectedTabIDs = [selectedTabID, secondSelectedTabID]
-        let otherWindow = FileManagerWindowFeature.State.makeInitial(path: "/other")
-
-        var initialState = WindowManagerFeature.State()
-        initialState.windows = [
-            WindowSessionState(id: focusedWindowID, window: focusedWindow),
-            WindowSessionState(id: otherWindowID, window: otherWindow),
-        ]
-        initialState.focusedWindowID = focusedWindowID
-
-        let store = TestStore(initialState: initialState) {
-            WindowManagerFeature()
-        } withDependencies: {
-            $0.uuid = .incrementing
-            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
-            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
-            $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
-            $0.fileManagerClient.fileExistsWithIsDirectory = { _, isDirectory in
-                isDirectory?.pointee = ObjCBool(true)
-                return true
-            }
-        }
-        store.exhaustivity = .off
-        let otherWindowBeforeCommand = store.state.windows[id: otherWindowID]?.window
-
-        await store.send(.file(.duplicateTab))
-        await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.request(command)))) = action else {
-                return false
-            }
-            guard id == focusedWindowID, case .duplicateSelectedContentTabs = command else { return false }
-            return true
-        }
-        XCTAssertEqual(store.state.windows[id: otherWindowID]?.window, otherWindowBeforeCommand)
-    }
-
-    /// FileCommand .duplicateTab이 selection 없는 focused window로
-    /// .request(.duplicateActiveContentTab) 명령을 전송하는지 검증한다.
-    func testFileDuplicateTabCommand_routesToFocusedWindowDuplicateRequest() async {
-        let windowID = UUID()
-
-        var initialState = WindowManagerFeature.State()
-        initialState.windows = [
-            WindowSessionState(id: windowID, window: .makeInitial(path: nil)),
-        ]
-        initialState.focusedWindowID = windowID
-
-        let store = TestStore(initialState: initialState) {
-            WindowManagerFeature()
-        } withDependencies: {
-            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
-            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
-            $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
-        }
-        store.exhaustivity = .off
-
-        await store.send(.file(.duplicateTab))
-        await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.request(command)))) = action else {
-                return false
-            }
-            guard id == windowID, case .duplicateActiveContentTab = command else { return false }
-            return true
-        }
-
-        let window = store.state.windows[id: windowID]?.window
-        XCTAssertNotNil(window, "window가 존재해야 함")
-        await store.skipReceivedActions()
-    }
-
-    /// CTM-001-duplicate_selected_content_tabs: unavailable focused contexts는 duplicate command를 전달하지 않는다.
-    /// no focus, pending close/teardown, zero capacity는 direct FileCommand에도 방어적으로 no-op이다.
-    /// - 검증 내용: command forwarding action과 state mutation 부재
-    /// - 사전 조건: 각 unavailable 상태에서 duplicateTab FileCommand를 직접 전송함
-    /// - 기대 결과: child request가 생성되지 않고 각 store state가 유지됨
-    func testFileDuplicateTabCommand_unavailableContextsAreNoOp() async {
-        let noFocusWindowID = UUID()
-        var noFocusState = WindowManagerFeature.State()
-        noFocusState.windows = [
-            WindowSessionState(id: noFocusWindowID, window: .makeInitial(path: "/no-focus")),
-        ]
-        let noFocusStore = TestStore(initialState: noFocusState) { WindowManagerFeature() }
-        await noFocusStore.send(.file(.duplicateTab))
-        await noFocusStore.finish()
-
-        let pendingCloseWindowID = UUID()
-        var pendingCloseWindow = FileManagerWindowFeature.State.makeInitial(path: "/pending-close")
-        guard let activeTabID = pendingCloseWindow.contentTabs.activeTabID else {
-            XCTFail("Expected active content tab")
-            return
-        }
-        pendingCloseWindow.contentTabs.selectedTabIDs = [activeTabID]
-        pendingCloseWindow.pendingContentTabClose = PendingContentTabClose(tabID: activeTabID)
-        await assertDuplicateTabCommandIsNoOp(windowID: pendingCloseWindowID, window: pendingCloseWindow)
-
-        let pendingTeardownWindowID = UUID()
-        var pendingTeardownWindow = FileManagerWindowFeature.State.makeInitial(path: "/pending-teardown")
-        guard let teardownTabID = pendingTeardownWindow.contentTabs.activeTabID else {
-            XCTFail("Expected active content tab")
-            return
-        }
-        pendingTeardownWindow.contentTabs.selectedTabIDs = [teardownTabID]
-        pendingTeardownWindow.pendingContentTabTeardown = PendingContentTabTeardown(
-            requestID: UUID(),
-            tabID: teardownTabID,
-            ownerID: UUID(),
-        )
-        await assertDuplicateTabCommandIsNoOp(windowID: pendingTeardownWindowID, window: pendingTeardownWindow)
-
-        let fullWindowID = UUID()
-        var fullWindow = FileManagerWindowFeature.State.makeInitial(path: "/full")
-        guard let fullSelectedTabID = fullWindow.contentTabs.activeTabID else {
-            XCTFail("Expected active content tab")
-            return
-        }
-        fullWindow.contentTabs.selectedTabIDs = [fullSelectedTabID]
-        while fullWindow.contentTabs.tabs.count < ContentTabConstants.maxTabs {
-            guard let tab = ContentTabState.withHomeTab().tabs.first else { continue }
-            fullWindow.contentTabs.tabs.append(tab)
-        }
-        await assertDuplicateTabCommandIsNoOp(windowID: fullWindowID, window: fullWindow)
-    }
-
-    /// EditCommand .duplicate(⌘D)가 Entry duplicate 경로(.edit(.duplicate))로
-    /// 라우팅되는 기존 동작이 변경되지 않았음을 검증한다.
-    func testEntryDuplicate_unchanged() async {
-        let windowID = UUID()
-
-        var initialState = WindowManagerFeature.State()
-        initialState.windows = [
-            WindowSessionState(id: windowID, window: .makeInitial(path: nil)),
-        ]
-        initialState.focusedWindowID = windowID
-
-        let store = TestStore(initialState: initialState) {
-            WindowManagerFeature()
-        } withDependencies: {
-            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
-            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
-            $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
-        }
-        store.exhaustivity = .off
-
-        await store.send(.edit(.duplicate))
-        await store.receive(\.windows)
-    }
-
     // MARK: - Default Pinned Favorites Seed
 
     /// 최초 실행(finder flag=false, pinnedStore empty)에서 Finder Favorites를 compatible pinned tab으로 변환하고
@@ -1667,7 +1528,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.file(.newWindow(path: nil)))
         await store.receive(\.defaultWindowBootstrapCompleted)
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs))) = action
+            guard case let .windows(.element(id: id, action: .window(.applyAuthoritativePinnedContentTabs))) = action
             else {
                 return false
             }
@@ -1747,7 +1608,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.file(.newWindow(path: nil)))
         await store.receive(\.defaultWindowBootstrapCompleted)
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs))) = action
+            guard case let .windows(.element(id: id, action: .window(.applyAuthoritativePinnedContentTabs))) = action
             else {
                 return false
             }
@@ -1832,7 +1693,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.file(.newWindow(path: nil)))
         await store.receive(\.defaultWindowBootstrapCompleted)
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs))) = action
+            guard case let .windows(.element(id: id, action: .window(.applyAuthoritativePinnedContentTabs))) = action
             else {
                 return false
             }
@@ -1906,7 +1767,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.file(.newWindow(path: nil)))
         await store.receive(\.defaultWindowBootstrapCompleted)
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs))) = action
+            guard case let .windows(.element(id: id, action: .window(.applyAuthoritativePinnedContentTabs))) = action
             else {
                 return false
             }
@@ -1971,7 +1832,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.file(.newWindow(path: nil)))
         await store.receive(\.defaultWindowBootstrapCompleted)
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.applyPinnedContentTabs))) = action
+            guard case let .windows(.element(id: id, action: .window(.applyAuthoritativePinnedContentTabs))) = action
             else {
                 return false
             }
@@ -2079,8 +1940,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             }
             $0.metricsClient = Self.metricsClient(recording: metrics)
             $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
             $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
+            $0.fileManagerWindowClient.open = { _ in }
         }
         // store.exhaustivity = .off: window child handoff보다 bootstrap의 durable 호출 순서와 최종 상태를 검증한다.
         store.exhaustivity = .off
@@ -2189,8 +2050,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.userDefaultsClient.bool = { flags.value[$0] ?? false }
             $0.userDefaultsClient.setBool = { value, key in flags.withValue { $0[key] = value } }
             $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
             $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
+            $0.fileManagerWindowClient.open = { _ in }
         }
         // store.exhaustivity = .off: 연속 두 bootstrap의 persistence 결과와 retry 계약만 추적한다.
         store.exhaustivity = .off
@@ -2269,8 +2130,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.userDefaultsClient.setBool = { value, key in flags.withValue { $0[key] = value } }
             $0.metricsClient = Self.metricsClient(recording: metrics)
             $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
             $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
+            $0.fileManagerWindowClient.open = { _ in }
         }
         // store.exhaustivity = .off: 항목별 persistence 결과와 downstream window 적용만 검증한다.
         store.exhaustivity = .off
@@ -2336,8 +2197,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.userDefaultsClient.setBool = { value, key in flags.withValue { $0[key] = value } }
             $0.metricsClient = Self.metricsClient(recording: metrics)
             $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
             $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
+            $0.fileManagerWindowClient.open = { _ in }
         }
         // store.exhaustivity = .off: package ensure 수행과 seed suppression의 경계만 검증한다.
         store.exhaustivity = .off
@@ -2411,8 +2272,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.userDefaultsClient.setBool = { value, key in flags.withValue { $0[key] = value } }
             $0.metricsClient = Self.metricsClient(recording: metrics)
             $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
             $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
+            $0.fileManagerWindowClient.open = { _ in }
         }
         // store.exhaustivity = .off: 두 bootstrap의 durable store와 downstream 복원 결과를 검증한다.
         store.exhaustivity = .off
@@ -2515,8 +2376,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 flags.withValue { $0[key] = value }
             }
             $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
             $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
+            $0.fileManagerWindowClient.open = { _ in }
         }
         // store.exhaustivity = .off: 두 bootstrap 사이 durable interruption과 최종 복원 상태만 검증한다.
         store.exhaustivity = .off
@@ -2581,8 +2442,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 logDAUEntryAction: { _, _ in },
             )
             $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
             $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
+            $0.fileManagerWindowClient.open = { _ in }
         }
         // store.exhaustivity = .off: real file/persistence integration의 최종 pinned state만 검증한다.
         store.exhaustivity = .off
@@ -2639,8 +2500,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.userDefaultsClient.bool = { _ in false }
             $0.userDefaultsClient.setBool = { _, _ in }
             $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
             $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
+            $0.fileManagerWindowClient.open = { _ in }
         }
         // store.exhaustivity = .off: 모든 dependency 실패 뒤 completion downstream state만 검증한다.
         store.exhaustivity = .off
@@ -3249,32 +3110,28 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
     }
 
-    /// 기존 mounted window의 external reservation은 state commit 후 canonical tab handoff로 활성화된다.
+    /// 기존 mounted window의 external reservations은 state commit 후 모든 Undo scope와 canonical tab handoff가 활성화된다.
     /// Directory load가 장기 실행 중이어도 apply terminal은 load 완료를 기다리지 않는 경계를 검증한다.
-    /// - 검증 내용: ordered append, old→new active 전환, suspended load 전 terminal 1회다.
-    /// - 사전 조건: seed tab이 active인 기존 window와 Directory reservation 하나다.
-    /// - 기대 결과: 마지막 preallocated tab이 active가 되고 apply completion은 load gate가 닫힌 동안 도착한다.
+    /// - 검증 내용: ordered append, 전체 reservation scope 활성화, old→new active 전환, suspended load 전 terminal 1회다.
+    /// - 사전 조건: seed tab이 active인 기존 window와 Directory reservation 두 개다.
+    /// - 기대 결과: 각 preallocated tab에 독립 manager가 생기고 마지막 tab이 active인 채 terminal이 load 전에 도착한다.
     func testPlacementApplicationActivatesExistingWindowWithoutAwaitingDirectoryLoad() async throws {
         let batchID = UUID()
         let windowID = UUID()
-        let itemID = UUID()
-        let tabID = ContentTabID(rawValue: "existing-window-external")
+        let firstItemID = UUID()
+        let secondItemID = UUID()
+        let firstTabID = ContentTabID(rawValue: "existing-window-external-first")
+        let secondTabID = ContentTabID(rawValue: "existing-window-external-second")
         var existingWindow = FileManagerWindowFeature.State.makeInitial(path: "/seed")
         existingWindow.content.entryViewLayout.entryOperations.windowID = windowID
         existingWindow.content.composer.cancellationOwnerID = windowID
         existingWindow.syncActiveTabContentState()
         let previousActiveID = try XCTUnwrap(existingWindow.contentTabs.activeTabID)
-        let selectedSiblingID = ContentTabID(rawValue: "existing-window-selected-sibling")
-        existingWindow.contentTabs.tabs.append(ContentTabItem(
-            id: selectedSiblingID,
-            page: .home,
-            anchor: .homeDefault,
-            isPinned: false,
-            title: "Selected Sibling",
-            iconName: "house",
-        ))
-        existingWindow.contentTabs.selectedTabIDs = [previousActiveID, selectedSiblingID]
-        existingWindow.contentTabs.selectionAnchorID = selectedSiblingID
+        let registry = FileOperationUndoManagerRegistry()
+        let client = FileOperationUndoManagerClient.live(registry: registry)
+        let seedScope = UndoManagerScope(windowID: windowID, contentTabID: previousActiveID.rawValue)
+        let seedManager = client.activate(seedScope)
+        let seedGeneration = try XCTUnwrap(client.generation(seedScope))
         var initialState = WindowManagerFeature.State()
         initialState.windows = [.init(id: windowID, window: existingWindow)]
         initialState.authorizedExternalOpenBatchID = batchID
@@ -3284,7 +3141,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 .init(
                     windowID: windowID,
                     isNewWindow: false,
-                    items: [.init(itemID: itemID, tabID: tabID)],
+                    items: [
+                        .init(itemID: firstItemID, tabID: firstTabID),
+                        .init(itemID: secondItemID, tabID: secondTabID),
+                    ],
                 ),
             ],
         )
@@ -3308,8 +3168,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             }
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileOperationUndoManagerClient = client
             $0.entryLoadingClient.loadItems = { url, _ in
-                XCTAssertEqual(url.path, "/external")
+                XCTAssertEqual(url.path, "/external-second")
                 loadStarted.fulfill()
                 await loadGate.wait()
                 return []
@@ -3324,21 +3185,39 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.placement(.apply(
             plan: plan,
             reservationsByItemID: [
-                itemID: .init(id: tabID, anchor: .directory(path: "/external")),
+                firstItemID: .init(id: firstTabID, anchor: .directory(path: "/external-first")),
+                secondItemID: .init(id: secondTabID, anchor: .directory(path: "/external-second")),
             ],
         )))
         await fulfillment(of: [loadStarted, terminalReceived], timeout: 1)
         await store.skipReceivedActions()
 
         let committedWindow = try XCTUnwrap(store.state.windows[id: windowID]?.window)
-        XCTAssertEqual(committedWindow.contentTabs.tabs.map(\.id), [previousActiveID, selectedSiblingID, tabID])
-        XCTAssertEqual(committedWindow.contentTabs.activeTabID, tabID)
+        XCTAssertEqual(
+            committedWindow.contentTabs.tabs.map(\.id),
+            [previousActiveID, firstTabID, secondTabID],
+        )
+        XCTAssertEqual(committedWindow.contentTabs.activeTabID, secondTabID)
         XCTAssertEqual(committedWindow.contentTabs.previousActiveTabID, previousActiveID)
-        XCTAssertEqual(committedWindow.contentTabs.selectedTabIDs, [previousActiveID, selectedSiblingID])
-        XCTAssertEqual(committedWindow.contentTabs.selectionAnchorID, selectedSiblingID)
-        XCTAssertEqual(committedWindow.menuCommandProjection.selectedContentTabCount, 2)
-        XCTAssertTrue(committedWindow.menuCommandProjection.canDuplicateSelectedContentTabs)
+        XCTAssertEqual(committedWindow.contentTabs.selectedTabIDs, [secondTabID])
+        XCTAssertEqual(committedWindow.contentTabs.selectionAnchorID, secondTabID)
+        XCTAssertEqual(committedWindow.menuCommandProjection.selectedContentTabCount, 1)
+        XCTAssertFalse(committedWindow.menuCommandProjection.canDuplicateSelectedContentTabs)
         XCTAssertEqual(terminalCount.value, 1)
+
+        let firstScope = UndoManagerScope(windowID: windowID, contentTabID: firstTabID.rawValue)
+        let secondScope = UndoManagerScope(windowID: windowID, contentTabID: secondTabID.rawValue)
+        let firstGeneration = try XCTUnwrap(client.generation(firstScope))
+        let secondGeneration = try XCTUnwrap(client.generation(secondScope))
+        let firstManagerValue = await client.undoManager(firstScope)
+        let secondManagerValue = await client.undoManager(secondScope)
+        let firstManager = try XCTUnwrap(firstManagerValue)
+        let secondManager = try XCTUnwrap(secondManagerValue)
+        XCTAssertNotEqual(firstGeneration, secondGeneration)
+        XCTAssertNotIdentical(firstManager, secondManager)
+        let currentSeedManager = await client.undoManager(seedScope)
+        XCTAssertIdentical(currentSeedManager, seedManager)
+        XCTAssertEqual(client.generation(seedScope), seedGeneration)
 
         await loadGate.open()
         await store.skipReceivedActions()
@@ -4363,20 +4242,6 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
 
         XCTAssertEqual(terminalCount.value, 1)
-    }
-
-    private func assertDuplicateTabCommandIsNoOp(
-        windowID: UUID,
-        window: FileManagerWindowFeature.State,
-    ) async {
-        var initialState = WindowManagerFeature.State()
-        initialState.windows = [WindowSessionState(id: windowID, window: window)]
-        initialState.focusedWindowID = windowID
-        let store = TestStore(initialState: initialState) { WindowManagerFeature() }
-
-        await store.send(.file(.duplicateTab))
-        await store.finish()
-        XCTAssertEqual(store.state, initialState)
     }
 
     private struct PlacementBoundaryScenario {
