@@ -92,8 +92,8 @@ struct EditMenuCommands: Commands {
             .keyboardShortcut("f", modifiers: .command)
             .disabled(!viewStore.hasFocusedWindow)
 
-            Button(viewStore.newChatTitle) {
-                sendEditCommand(.newChat)
+            Button(viewStore.openChatTitle) {
+                sendEditCommand(.openChat)
             }
             .keyboardShortcut("l", modifiers: .command)
             .disabled(!viewStore.canUseAiChatInspector)

@@ -415,7 +415,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
             FileManagerAiChatSelection(modelHandle: anthropicModel.id, thinking: AiThinkingSelection.none),
         )
 
-        await store.send(.edit(.newChat))
+        await store.send(.edit(.openChat))
         await store.receive { action in
             guard case let .windows(.element(
                 id: id,
@@ -441,7 +441,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         )
 
         await store.send(.event(.windowBecameKey(secondID)))
-        await store.send(.edit(.newChat))
+        await store.send(.edit(.openChat))
         await store.receive { action in
             guard case let .windows(.element(
                 id: id,
@@ -514,7 +514,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
 
         XCTAssertNil(store.state.windows[id: recreatedID]?.window.lastExplicitAiChatSelection)
 
-        await store.send(.edit(.newChat))
+        await store.send(.edit(.openChat))
         await store.receive { action in
             guard case let .windows(.element(
                 id: id,
