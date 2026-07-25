@@ -12,6 +12,7 @@ from scripts.validate_build_matrix import (
     DEV_RELEASE,
     PROD_DEBUG,
     PROD_RELEASE,
+    PROD_RELEASE_SIZE_SETTINGS,
     check_ci_references,
     check_host_project,
     check_scheme_files,
@@ -23,7 +24,10 @@ from scripts.validate_build_matrix import (
 _cfg_counter = 0
 
 
-def _make_cfg(name: str, build_settings: dict | None = None) -> mock.MagicMock:
+def _make_cfg(
+    name: str,
+    build_settings: dict[str, str] | None = None,
+) -> mock.MagicMock:
     """Create a mock XCBuildConfiguration with unique ID."""
     global _cfg_counter
     _cfg_counter += 1
@@ -184,6 +188,7 @@ class ValidateVoyagerPbxprojTests(unittest.TestCase):
             _make_cfg(
                 PROD_RELEASE,
                 {
+                    **PROD_RELEASE_SIZE_SETTINGS,
                     "APP_ENV": "prod",
                     "PRODUCT_BUNDLE_IDENTIFIER": "fm.voyager.Voyager",
                     "CODE_SIGN_IDENTITY": "Developer ID Application",
@@ -231,6 +236,7 @@ class ValidateVoyagerPbxprojTests(unittest.TestCase):
             _make_cfg(
                 PROD_RELEASE,
                 {
+                    **PROD_RELEASE_SIZE_SETTINGS,
                     "APP_ENV": "prod",
                     "PRODUCT_BUNDLE_IDENTIFIER": "fm.voyager.VoyagerHelper",
                     "CODE_SIGN_IDENTITY": "Developer ID Application",
@@ -288,6 +294,7 @@ class ValidateVoyagerPbxprojTests(unittest.TestCase):
             _make_cfg(
                 PROD_RELEASE,
                 {
+                    **PROD_RELEASE_SIZE_SETTINGS,
                     "APP_ENV": "prod",
                     "PRODUCT_BUNDLE_IDENTIFIER": "fm.voyager.Voyager.FilterSearchXPC",
                     "XPC_MACH_SERVICE_NAME": "fm.voyager.Voyager.FilterSearchXPC",
