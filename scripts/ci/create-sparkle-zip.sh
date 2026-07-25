@@ -17,4 +17,4 @@ fi
 ZIP_PATH="${BUILD_DIR}/Voyager-${VERSION}.zip"
 
 mkdir -p "$(dirname "${ZIP_PATH}")"
-ditto -c -k --sequesterRsrc --keepParent "${APP_PATH}" "${ZIP_PATH}"
+ditto -c -k --zlibCompressionLevel 9 --sequesterRsrc --keepParent "${APP_PATH}" "${ZIP_PATH}"
