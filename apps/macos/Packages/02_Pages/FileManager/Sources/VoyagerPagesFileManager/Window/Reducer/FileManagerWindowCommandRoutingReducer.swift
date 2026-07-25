@@ -171,7 +171,7 @@ struct FileManagerWindowCommandRoutingReducer {
 
             case let .tabContent(tabID, .delegate(.newChatRequested)):
                 guard tabID == state.contentTabs.activeTabID else { return .none }
-                return .send(.request(.reopenChat))
+                return .send(.request(.newChat))
 
             case let .tabContent(tabID, .delegate(.durableNewChatRequested)):
                 guard tabID == state.contentTabs.activeTabID else { return .none }

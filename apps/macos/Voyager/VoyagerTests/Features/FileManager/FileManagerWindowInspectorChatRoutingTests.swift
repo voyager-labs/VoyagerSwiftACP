@@ -259,11 +259,11 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertEqual(savedSnapshots.value.count, 1)
     }
 
-    /// 실제 toolbar action으로 만든 대화는 저장·완료·닫기 후 같은 session으로 재진입한다.
-    /// - 검증 내용: `.content` wrapper, submit/final 저장, close, semantic reopen의 exact identity와 transcript
+    /// 실제 toolbar New Chat은 저장된 대화가 있어도 새 transient session을 연다.
+    /// - 검증 내용: `.content` wrapper, submit/final 저장, close 이후 새 session identity와 빈 transcript
     /// - 사전 조건: Directory Content Tab에서 연결된 model로 Inspector 대화를 완료한다.
-    /// - 기대 결과: 일반 Chat 버튼 재진입은 New Chat을 만들지 않고 저장된 session을 복원한다.
-    func testActualToolbarFlowReopensCompletedPersistedInspectorSession() async throws {
+    /// - 기대 결과: 명시적 New Chat 버튼은 저장된 session을 복원하지 않는다.
+    func testActualToolbarFlowStartsNewChatAfterCompletedPersistedInspectorSession() async throws {
         let model = makeAiModel(
             provider: .openai,
             rawValue: "gpt-5",
@@ -274,6 +274,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
             providers: [.testFixture(provider: .openai, authMethod: .apiKey)],
         )
         let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let loadedSessionIDs = LockIsolated<[AiChatSessionID]>([])
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         initialState.lastExplicitAiChatSelection = FileManagerAiChatSelection(
             modelHandle: model.id,
@@ -301,7 +302,8 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
             }
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { sessionID in
-                    savedSnapshots.value.last(where: { $0.sessionID == sessionID })
+                    loadedSessionIDs.withValue { $0.append(sessionID) }
+                    return savedSnapshots.value.last(where: { $0.sessionID == sessionID })
                 },
                 saveSession: { snapshot in
                     savedSnapshots.withValue { $0.append(snapshot) }
@@ -338,14 +340,16 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertFalse(store.state.inspector.inspectorVisible)
 
         await store.send(.content(.view(.newChatTapped)))
-        await store.receive(\.request.reopenChat)
-        await store.receive(\.internal.aiChatReopenInspectorOpenLoaded)
-        await store.skipReceivedActions()
+        await store.receive(\.request.newChat)
+        await store.receive(\.internal.applyInspectorNewChatSeed)
         await store.finish()
 
+        let newSessionID = try XCTUnwrap(store.state.inspector.aiChat.sessionID)
         XCTAssertTrue(store.state.inspector.inspectorVisible)
-        XCTAssertEqual(store.state.inspector.aiChat.sessionID, sessionID)
-        XCTAssertEqual(store.state.inspector.aiChat.transcriptHistory, completedTranscript)
+        XCTAssertNotEqual(newSessionID, sessionID)
+        XCTAssertTrue(store.state.inspector.aiChat.transcriptHistory.isEmpty)
+        XCTAssertTrue(store.state.inspector.aiChat.isUntouchedPreparedTransientNewChat)
+        XCTAssertTrue(loadedSessionIDs.value.isEmpty)
     }
 
     func testVisibleInspectorNewChatUsesWindowLastBeforePersistedDefaultWithoutSaving() async {
@@ -1568,7 +1572,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
             guard case let .tabContent(tabID, .delegate(.newChatRequested)) = action else { return false }
             return tabID == activeTabID
         }
-        await store.receive(\.request.reopenChat)
+        await store.receive(\.request.newChat)
         await assertOpenNewChat(on: store, expectedSetup: expectedSetup, expectedConnectionsFile: .empty())
         await assertAiChatSetup(on: store, expectedSetup: expectedSetup)
         await assertProviderConnectionsUpdated(on: store, expectedFile: .empty())
@@ -1860,7 +1864,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
             guard case let .tabContent(tabID, .delegate(.newChatRequested)) = action else { return false }
             return tabID == activeTabID
         }
-        await store.receive(\.request.reopenChat)
+        await store.receive(\.request.newChat)
         await assertOpenNewChat(on: store, expectedSetup: expectedSetup, expectedConnectionsFile: connectionsFile)
         await assertAiChatSetup(on: store, expectedSetup: expectedSetup)
         await assertProviderConnectionsUpdated(on: store, expectedFile: connectionsFile)
@@ -1888,7 +1892,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
             guard case let .tabContent(tabID, .delegate(.newChatRequested)) = action else { return false }
             return tabID == activeTabID
         }
-        await store.receive(\.request.reopenChat)
+        await store.receive(\.request.newChat)
         await store.receive(\.inspector.closeChat) {
             $0.inspector.inspectorVisible = false
         }
