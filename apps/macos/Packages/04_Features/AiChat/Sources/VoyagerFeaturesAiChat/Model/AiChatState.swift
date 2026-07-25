@@ -692,6 +692,22 @@ public extension AiChatState {
         )
     }
 
+    func matchesInspectorLiveRuntimeReopenProvenance(
+        _ provenance: AiChatNewChatPreparationProvenance,
+    ) -> Bool {
+        let current = newChatPreparationProvenance
+        return current.ownerID == provenance.ownerID
+            && current.mutationRevision == provenance.mutationRevision
+            && current.restoreSessionID == provenance.restoreSessionID
+            && current.deferredChatSessionRestoreID == provenance.deferredChatSessionRestoreID
+            && current.mode == provenance.mode
+            && current.selectedHistorySessionID == provenance.selectedHistorySessionID
+            && current.sessionID == provenance.sessionID
+            && current.preparedTransientSessionID == provenance.preparedTransientSessionID
+            && current.emptyDraftSessionID == provenance.emptyDraftSessionID
+            && current.sessionStatus == provenance.sessionStatus
+    }
+
     func matchesInspectorNewChatPreparationProvenance(
         _ provenance: AiChatNewChatPreparationProvenance,
     ) -> Bool {

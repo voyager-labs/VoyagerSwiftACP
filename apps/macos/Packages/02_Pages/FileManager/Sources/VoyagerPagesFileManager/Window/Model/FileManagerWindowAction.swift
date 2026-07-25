@@ -84,6 +84,11 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
             setup: AiChatSetupState,
             connectionsFile: AIConnectionsFile,
         )
+        case aiChatReopenInspectorOpenLoaded(
+            requestID: UUID,
+            setup: AiChatSetupState,
+            connectionsFile: AIConnectionsFile,
+        )
         case aiChatNewChatDefaultsLoaded(
             requestID: UUID,
             candidate: AiChatPersistedSelectionCandidate?,
@@ -112,6 +117,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case requestUndo
         case requestRedo
         case toggleComposer
+        case reopenChat
         case newChat
         case showChatHistory
         case cut

@@ -111,6 +111,9 @@ struct FileManagerWindowCommandRoutingReducer {
                 )
                 return .none
 
+            case .request(.reopenChat):
+                return handleAiChatReopenRequest(state: &state)
+
             case let .request(command):
                 return handleRequestedCommand(command, state: &state)
 
@@ -168,7 +171,7 @@ struct FileManagerWindowCommandRoutingReducer {
 
             case let .tabContent(tabID, .delegate(.newChatRequested)):
                 guard tabID == state.contentTabs.activeTabID else { return .none }
-                return .send(.request(.newChat))
+                return .send(.request(.reopenChat))
 
             case let .tabContent(tabID, .delegate(.durableNewChatRequested)):
                 guard tabID == state.contentTabs.activeTabID else { return .none }
@@ -233,6 +236,15 @@ struct FileManagerWindowCommandRoutingReducer {
                 return handleAiChatInspectorOpenCompletion(
                     requestID: requestID,
                     destination: .chatHistory,
+                    setup: setup,
+                    connectionsFile: connectionsFile,
+                    state: &state,
+                )
+
+            case let .internal(.aiChatReopenInspectorOpenLoaded(requestID, setup, connectionsFile)):
+                return handleAiChatInspectorOpenCompletion(
+                    requestID: requestID,
+                    destination: .reopenChat,
                     setup: setup,
                     connectionsFile: connectionsFile,
                     state: &state,
@@ -434,19 +446,11 @@ struct FileManagerWindowCommandRoutingReducer {
 
     private func handleRequestedCommand(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
         switch command {
-        case .openNewContentTab:
-            .send(.contentTabs(.open(.homeDefault)))
-
-        case .closeActiveContentTab:
-            state.contentTabs.activeTabID
-                .map { .send(.closeContentTabRequested($0)) }
-                ?? .none
-
-        case .toggleActiveContentTabPin:
-            toggleActiveContentTabPin(state: state)
-
-        case .restoreLastClosedContentTab:
-            handleRestoreLastClosedContentTab(state: &state)
+        case .openNewContentTab,
+             .closeActiveContentTab,
+             .toggleActiveContentTabPin,
+             .restoreLastClosedContentTab:
+            handleContentTabRequest(command, state: &state)
 
         case .newFolder,
              .openSelectedItem,
@@ -490,6 +494,29 @@ struct FileManagerWindowCommandRoutingReducer {
         case .requestUndo,
              .requestRedo:
             handleUndoRedoRequest(command, state: state)
+
+        case .reopenChat:
+            .none
+        }
+    }
+
+    private func handleContentTabRequest(
+        _ command: Action.WindowCommand,
+        state: inout State,
+    ) -> Effect<Action> {
+        switch command {
+        case .openNewContentTab:
+            .send(.contentTabs(.open(.homeDefault)))
+        case .closeActiveContentTab:
+            state.contentTabs.activeTabID
+                .map { .send(.closeContentTabRequested($0)) }
+                ?? .none
+        case .toggleActiveContentTabPin:
+            toggleActiveContentTabPin(state: state)
+        case .restoreLastClosedContentTab:
+            handleRestoreLastClosedContentTab(state: &state)
+        default:
+            .none
         }
     }
 
