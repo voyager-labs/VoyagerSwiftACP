@@ -64,8 +64,7 @@ struct ConditionChipPropertyOperatorView: View {
                         },
                         searchPlaceholder: "Search attributes",
                     )
-                    .frame(minHeight: 22)
-                    .fixedSize(horizontal: true, vertical: false)
+                    .fixedSize(horizontal: true, vertical: true)
                 }
             },
         )
@@ -100,8 +99,7 @@ struct ConditionChipPropertyOperatorView: View {
                     },
                     showsBorder: false,
                 )
-                .frame(minHeight: 22)
-                .fixedSize(horizontal: true, vertical: false)
+                .fixedSize(horizontal: true, vertical: true)
             }
         }
     }

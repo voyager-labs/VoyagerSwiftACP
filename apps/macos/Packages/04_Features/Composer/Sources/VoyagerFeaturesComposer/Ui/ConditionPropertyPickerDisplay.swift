@@ -80,18 +80,11 @@ enum ConditionPropertyPickerDisplay {
                 onSelect: onSelect,
             )
         }
-        let categoryItems = grouped.keys.sorted().map { categoryKey in
-            ComposerNativeMenuItem.submenu(
-                title: categoryTitle(for: categoryKey),
-                items: (grouped[categoryKey] ?? []).map {
-                    propertyMenuItem(
-                        key: $0,
-                        configuration: configuration,
-                        onSelect: onSelect,
-                    )
-                },
-            ).withImage(ConditionPropertyIcon.iconName(forCategory: categoryKey))
-        }
+        let categoryItems = categoryMenuItems(
+            grouped: grouped,
+            configuration: configuration,
+            onSelect: onSelect,
+        )
 
         if filtered.isEmpty {
             return [
@@ -104,10 +97,49 @@ enum ConditionPropertyPickerDisplay {
             ]
         }
 
-        let separator: [ComposerNativeMenuItem] =
-            (recommendedItems.isEmpty || categoryItems.isEmpty) ? [] : [.separator()]
+        return sectionedMenuItems(
+            recommendedItems: recommendedItems,
+            categoryItems: categoryItems,
+        )
+    }
 
-        return recommendedItems + separator + categoryItems
+    private static func categoryMenuItems(
+        grouped: [String: [String]],
+        configuration: NativeMenuConfiguration,
+        onSelect: @escaping (String) -> Void,
+    ) -> [ComposerNativeMenuItem] {
+        grouped.keys.sorted().map { categoryKey in
+            let submenu = ComposerNativeMenuItem.submenu(
+                title: categoryTitle(for: categoryKey),
+                items: (grouped[categoryKey] ?? []).map {
+                    propertyMenuItem(
+                        key: $0,
+                        configuration: configuration,
+                        onSelect: onSelect,
+                    )
+                },
+            )
+            return submenu.withImage(ConditionPropertyIcon.iconName(forCategory: categoryKey))
+        }
+    }
+
+    private static func sectionedMenuItems(
+        recommendedItems: [ComposerNativeMenuItem],
+        categoryItems: [ComposerNativeMenuItem],
+    ) -> [ComposerNativeMenuItem] {
+        var items: [ComposerNativeMenuItem] = []
+        if !recommendedItems.isEmpty {
+            items.append(.caption("Recommended"))
+            items.append(contentsOf: recommendedItems)
+        }
+
+        if !categoryItems.isEmpty {
+            if !items.isEmpty { items.append(.separator()) }
+            items.append(.caption("Categories"))
+            items.append(contentsOf: categoryItems)
+        }
+
+        return items
     }
 
     private static func propertyMenuItem(
