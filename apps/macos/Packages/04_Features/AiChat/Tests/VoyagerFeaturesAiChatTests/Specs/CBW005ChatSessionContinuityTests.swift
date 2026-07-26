@@ -2330,6 +2330,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         )) {
             AiChatFeature()
         } withDependencies: {
+            $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: TimeInterval(fixedMs) / 1000))
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
@@ -2369,6 +2370,209 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(persistence.snapshots, [expectedSnapshot])
         XCTAssertNil(store.state.executionPhase.lock?.finalSnapshot)
         await store.finish()
+    }
+
+    /// CBW-005: final snapshot 저장 중 변경한 모델과 Thinking을 저장 완료 후에도 유지한다.
+    /// - 검증 내용: 저장 시작 snapshot보다 최신인 runtime selection 보존
+    /// - 사전 조건: final snapshot 저장이 완료되기 전에 모델과 Thinking을 변경한다.
+    /// - 기대 결과: 저장 완료는 transcript를 반영하되 최신 모델과 Thinking을 덮어쓰지 않는다.
+    func testFinalSnapshotSaveCompletionPreservesNewerRuntimeSelection() async {
+        let catalogRows = makeCatalogRows()
+        let persistedHandle = catalogRows[0].handle
+        let newerHandle = catalogRows[1].handle
+        let sessionID = makeCBW005SessionID("13131313-1313-1313-1313-131313131323")
+        let fixedMs: Int64 = 1_700_000_001_323
+        let userMessage = AiChatMessage(role: .user, content: "Question before delayed save")
+        let assistantMessage = AiChatMessage(role: .assistant, content: "Delayed final answer")
+        let request = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: sessionID,
+                requestID: AiChatRequestID(rawValue: makeUUID("13131313-1313-1313-1313-131313131324")),
+                runID: AiChatRunID(rawValue: makeUUID("13131313-1313-1313-1313-131313131325")),
+                model: persistedHandle,
+                selectedRow: catalogRows[0],
+                selectedModel: makeProviderModels()[0],
+            ),
+            messages: [userMessage],
+        )
+        let processingLock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: persistedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        let finalizedLock = processingLock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
+        let expectedSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: nil,
+            provider: persistedHandle.provider,
+            model: persistedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [userMessage, assistantMessage],
+            lastRequestID: finalizedLock.requestID,
+            lastRunID: finalizedLock.runID,
+            lastRequestContext: finalizedLock.context.requestContext,
+            updatedAtMs: fixedMs,
+        )
+        let finalizedLockWithSnapshot = finalizedLock.recordingFinalSnapshot(expectedSnapshot)
+        let saveStarted = AsyncStream<Void>.makeStream()
+        let resumeSave = AsyncStream<Void>.makeStream()
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            sessionStatus: .active,
+            transcriptHistory: [userMessage],
+            catalogRows: catalogRows,
+            selectedModelHandle: persistedHandle,
+            lockedModelHandle: persistedHandle,
+            executionPhase: .processing(processingLock),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: TimeInterval(fixedMs) / 1000))
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                saveStarted.continuation.yield()
+                var iterator = resumeSave.stream.makeAsyncIterator()
+                _ = await iterator.next()
+                return snapshot
+            }
+        }
+        // 저장 gate 전후의 selection과 completion projection만 선별 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.executionEvent(.final(response: AiChatResponse(
+            context: processingLock.context,
+            assistantMessage: assistantMessage,
+            completedAtMs: fixedMs,
+        ))))
+        var saveStartedIterator = saveStarted.stream.makeAsyncIterator()
+        _ = await saveStartedIterator.next()
+
+        await store.send(.selectedModelChanged(newerHandle))
+        await store.send(.selectedThinkingChanged(.effort(.low)))
+        resumeSave.continuation.yield()
+        await store.receive(.sessionSnapshotSaved(
+            AiChatSessionSummary(snapshot: expectedSnapshot),
+            snapshot: expectedSnapshot,
+            requestID: finalizedLockWithSnapshot.requestID,
+            runID: finalizedLockWithSnapshot.runID,
+        )) { state in
+            state.executionPhase = .completed(finalizedLockWithSnapshot.clearingFinalSnapshot())
+            state.sessionList.replaceRow(AiChatSessionSummary(snapshot: expectedSnapshot))
+            state.sessionList.selectedSessionID = sessionID
+            state.sessionList.errorMessage = nil
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.selectedModelHandle, newerHandle)
+        XCTAssertEqual(store.state.selectedThinking, .effort(.low))
+        XCTAssertEqual(store.state.transcriptHistory, [userMessage, assistantMessage])
+    }
+
+    /// CBW-005: background final 저장 중 원래 session으로 돌아와 변경한 selection을 유지한다.
+    /// - 검증 내용: offscreen save baseline과 promoted final owner의 최신 runtime selection 보존
+    /// - 사전 조건: session A 저장이 지연된 동안 session B에서 A로 복귀해 모델과 Thinking을 변경한다.
+    /// - 기대 결과: A의 저장 완료는 최신 selection을 덮어쓰지 않고 final transcript만 반영한다.
+    func testBackgroundFinalSaveCompletionPreservesSelectionChangedAfterReturningToSession() async {
+        let catalogRows = makeCatalogRows()
+        let persistedHandle = catalogRows[0].handle
+        let newerHandle = catalogRows[1].handle
+        let sessionID = makeCBW005SessionID("13131313-1313-1313-1313-131313131333")
+        let otherSessionID = makeCBW005SessionID("13131313-1313-1313-1313-131313131334")
+        let fixedMs: Int64 = 1_700_000_001_333
+        let userMessage = AiChatMessage(role: .user, content: "Background question")
+        let assistantMessage = AiChatMessage(role: .assistant, content: "Background final answer")
+        let request = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: sessionID,
+                requestID: AiChatRequestID(rawValue: makeUUID("13131313-1313-1313-1313-131313131335")),
+                runID: AiChatRunID(rawValue: makeUUID("13131313-1313-1313-1313-131313131336")),
+                model: persistedHandle,
+                selectedRow: catalogRows[0],
+                selectedModel: makeProviderModels()[0],
+            ),
+            messages: [userMessage],
+        )
+        let processingLock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: persistedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        let staleSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: nil,
+            provider: persistedHandle.provider,
+            model: persistedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [userMessage],
+            lastRequestID: nil,
+            lastRunID: nil,
+            lastRequestContext: nil,
+            updatedAtMs: fixedMs - 1,
+        )
+        let saveStarted = AsyncStream<Void>.makeStream()
+        let resumeSave = AsyncStream<Void>.makeStream()
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionList: .init(
+                allRows: [AiChatSessionSummary(snapshot: staleSnapshot)],
+                rows: [AiChatSessionSummary(snapshot: staleSnapshot)],
+            ),
+            sessionID: otherSessionID,
+            sessionStatus: .active,
+            transcriptHistory: [AiChatMessage(role: .user, content: "Other session")],
+            catalogRows: catalogRows,
+            modelListState: .loaded(makeThinkingCapableProviderModels()),
+            selectedModelHandle: persistedHandle,
+            backgroundExecutionPhases: [processingLock.requestID: .processing(processingLock)],
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: TimeInterval(fixedMs) / 1000))
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { requestedSessionID in
+                    requestedSessionID == sessionID ? staleSnapshot : nil
+                },
+                saveSession: { snapshot in
+                    saveStarted.continuation.yield()
+                    var iterator = resumeSave.stream.makeAsyncIterator()
+                    _ = await iterator.next()
+                    return snapshot
+                },
+                deleteSession: { _ in },
+            )
+        }
+        // background final, restore promotion, selection mutation, save completion 순서만 선별 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.executionEvent(.final(response: AiChatResponse(
+            context: processingLock.context,
+            assistantMessage: assistantMessage,
+            completedAtMs: fixedMs,
+        ))))
+        var saveStartedIterator = saveStarted.stream.makeAsyncIterator()
+        _ = await saveStartedIterator.next()
+
+        await store.send(.routeToChatSession(sessionID))
+        await store.skipReceivedActions()
+        XCTAssertEqual(store.state.sessionID, sessionID)
+        XCTAssertEqual(store.state.transcriptHistory, [userMessage, assistantMessage])
+
+        await store.send(.selectedModelChanged(newerHandle))
+        await store.send(.selectedThinkingChanged(.effort(.low)))
+        resumeSave.continuation.yield()
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(store.state.selectedModelHandle, newerHandle)
+        XCTAssertEqual(store.state.selectedThinking, .effort(.low))
+        XCTAssertEqual(store.state.transcriptHistory, [userMessage, assistantMessage])
     }
 
     func testRequestStartPreservesPreviousCompletedOwnerForCancellation() async {

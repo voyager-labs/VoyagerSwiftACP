@@ -63,6 +63,7 @@ extension AiChatFeature {
     }
 
     func handlePersistenceRecoverySucceeded(lock: AiChatRequestLock, state: inout State) -> Effect<Action> {
+        _ = state.completeInspectorReopenPersistenceBaseline(requestID: lock.requestID)
         if case let .persistenceRecovery(currentLock, _) = state.executionPhase,
            currentLock.requestID == lock.requestID,
            currentLock.runID == lock.runID

@@ -125,6 +125,9 @@ extension AiChatFeature {
             targetSessionID: targetSessionID,
         )
         applySetupSession(setup, to: &state)
+        if let sessionID = setup.sessionID {
+            state.resetInspectorReopenMutationBaseline(for: sessionID)
+        }
         applySetupModelState(setup, to: &state)
         clearSetupRuntimeState(&state)
     }
@@ -229,6 +232,7 @@ extension AiChatFeature {
         state.executionPhase = preservedExecutionPhase ?? .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
+        state.resetInspectorReopenMutationBaseline(for: snapshot.sessionID)
     }
 
     func promotedNavigationExecutionPhase(
@@ -256,6 +260,7 @@ extension AiChatFeature {
         state.executionPhase = preservedExecutionPhase ?? .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
+        state.resetInspectorReopenMutationBaseline(for: snapshot.sessionID)
     }
 
     func applyPromotedExecutionTranscript(_ phase: AiChatExecutionPhase?, state: inout State) {
