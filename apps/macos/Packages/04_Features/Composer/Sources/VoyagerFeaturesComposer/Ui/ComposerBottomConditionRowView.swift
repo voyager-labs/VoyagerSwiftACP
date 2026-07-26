@@ -83,7 +83,7 @@ struct ComposerBottomConditionRowView: View {
                     ComposerNativeMenuButton(
                         title: "",
                         accessibilityIdentifier: "composer.condition.add",
-                        minimumWidth: chipHeight,
+                        minimumWidth: ComposerUIMetrics.compactControlHeight,
                         isPlaceholder: false,
                         onOpen: {
                             pickerStore.send(.onAppear)
@@ -96,6 +96,10 @@ struct ComposerBottomConditionRowView: View {
                         imageName: "plus",
                         accessibilityLabel: "Add condition",
                         showsBorder: false,
+                        size: CGSize(
+                            width: ComposerUIMetrics.compactControlHeight,
+                            height: ComposerUIMetrics.compactControlHeight,
+                        ),
                         searchableItems: { searchText in
                             ConditionPropertyPickerDisplay.nativeMenuItems(
                                 configuration: .init(
@@ -114,8 +118,10 @@ struct ComposerBottomConditionRowView: View {
                         },
                         searchPlaceholder: "Search attributes",
                     )
-                    .frame(minWidth: chipHeight, minHeight: chipHeight)
-                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(
+                        width: ComposerUIMetrics.compactControlHeight,
+                        height: ComposerUIMetrics.compactControlHeight,
+                    )
                 }
             },
         )
