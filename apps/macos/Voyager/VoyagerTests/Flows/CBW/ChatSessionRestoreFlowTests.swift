@@ -117,6 +117,53 @@ final class ChatSessionRestoreFlowTests: XCTestCase {
         XCTAssertTrue(store.state.inspector.aiChat.transcriptHistory.isEmpty)
     }
 
+    // FLOW-PATH: corrupted_session_fallback
+
+    /// CBW chat_session_restore: corrupted_session_falls_back_to_new_chat
+    /// durable candidate의 저장 데이터가 손상됐을 때 안전한 새 세션 fallback을 검증한다.
+    /// - 검증 내용: corruptedRecord failure, 새 session ID, 열린 Inspector Chat
+    /// - 사전 조건: active candidate의 persisted snapshot load가 오류를 반환한다.
+    /// - 기대 결과: 손상된 session 대신 빈 New Chat이 표시된다.
+    func testCorruptedPersistedSessionFallsBackToNewChat() async throws {
+        let sessionID = try AiChatSessionID(rawValue: XCTUnwrap(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000674"),
+        ))
+        let fallbackID = try XCTUnwrap(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000675"),
+        )
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.inspector.aiChat = AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            sessionStatus: .active,
+        )
+        initialState.syncActiveTabInspectorState()
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+            $0.uuid = .constant(fallbackID)
+            $0.aiConnectionsFileClient.load = { .empty() }
+            $0.aiChatDefaultSettingsClient.load = { .default }
+            $0.aiChatSessionPersistenceClient.saveSession = { $0 }
+            $0.aiProviderModelListClient = AiProviderModelListClient(loadModels: { _, _ in [] })
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in
+                throw NSError(domain: "ChatSessionRestoreFlowTests", code: 1)
+            }
+        }
+        // corrupted restore와 fallback 최종 상태만 검증하며 provider 후속 action은 이 흐름의 소유 범위가 아니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.request(.reopenChat))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertTrue(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID?.rawValue, fallbackID)
+        XCTAssertEqual(store.state.inspector.aiChat.restoreFailure, .corruptedRecord)
+        XCTAssertTrue(store.state.inspector.aiChat.transcriptHistory.isEmpty)
+    }
+
     // FLOW-PATH: untouched_transient_fallback
 
     /// CBW chat_session_restore: untouched_transient_uses_new_chat_path
