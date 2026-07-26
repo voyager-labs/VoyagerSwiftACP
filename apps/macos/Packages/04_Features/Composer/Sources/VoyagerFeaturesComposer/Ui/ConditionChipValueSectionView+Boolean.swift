@@ -39,7 +39,7 @@ extension ConditionChipValueSectionView {
                     },
                     onDismiss: {},
                 )
-                .frame(maxWidth: 70)
+                .fixedSize(horizontal: true, vertical: true)
             }
         }
     }
