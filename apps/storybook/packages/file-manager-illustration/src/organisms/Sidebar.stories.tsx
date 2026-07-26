@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import type { SidebarTabItem } from "../types"
+import type { SidebarTabItem } from "../model/types"
 import { Sidebar } from "./Sidebar"
 
 const locationShortcuts = [

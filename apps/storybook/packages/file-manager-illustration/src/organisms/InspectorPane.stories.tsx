@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { files } from "../mock-data"
+import { files } from "../data/mock-data"
 import { InspectorPane } from "./InspectorPane"
 
 const primaryEntry = files[0]

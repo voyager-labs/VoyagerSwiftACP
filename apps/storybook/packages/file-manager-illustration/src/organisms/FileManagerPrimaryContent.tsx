@@ -1,11 +1,11 @@
 import type { FC } from "react"
-import type { ContentRoute } from "../content-route"
+import type { ContentRoute } from "../model/content-route"
+import type { HomeFavorite, HomeLocation, HomeRecentChat } from "../model/home"
+import type { Entry } from "../model/types"
 import type { EntryViewMode } from "../molecules/FileToolbar"
-import type { Entry } from "../types"
 import { AIChatWindow } from "../workflows/ai-chat/AIChatWindow"
 import type { AiChatState } from "../workflows/ai-chat/types"
 import { FileBrowser } from "./FileBrowser"
-import type { HomeFavorite, HomeLocation, HomeRecentChat } from "./Home"
 import { Home } from "./Home"
 
 export interface FileManagerPrimaryContentProps {

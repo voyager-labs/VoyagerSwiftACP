@@ -1,5 +1,5 @@
 import type { FC } from "react"
-import type { SelectedEntriesCardProps } from "./types"
+import type { SelectedEntriesCardProps } from "../model/types"
 
 export const SelectedEntriesCard: FC<SelectedEntriesCardProps> = ({ count, primaryName }) => {
   return (

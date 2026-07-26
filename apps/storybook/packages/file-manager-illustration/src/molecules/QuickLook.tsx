@@ -1,8 +1,8 @@
 import type { FC } from "react"
-import { Button } from "../Button"
+import { Button } from "../atoms/Button"
 import { EntryThumbnail } from "../atoms/EntryThumbnail"
 import type { EntryThumbnailEntry } from "../atoms/EntryThumbnail"
-import type { EntryKind } from "../types"
+import type { EntryKind } from "../model/types"
 
 export interface QuickLookEntry extends EntryThumbnailEntry {
   readonly name: string

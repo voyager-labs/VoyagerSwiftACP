@@ -1,5 +1,5 @@
 import type { FC } from "react"
-import type { SearchFieldProps } from "./types"
+import type { SearchFieldProps } from "../model/types"
 
 export const SearchField: FC<SearchFieldProps> = ({
   value = "",

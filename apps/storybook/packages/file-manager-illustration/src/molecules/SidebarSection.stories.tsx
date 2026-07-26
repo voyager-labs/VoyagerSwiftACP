@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { expect, within } from "storybook/test"
-import type { SidebarTabItem } from "../types"
+import type { SidebarTabItem } from "../model/types"
 import { SidebarSection } from "./SidebarSection"
 
 const pinnedTabs: readonly SidebarTabItem[] = [

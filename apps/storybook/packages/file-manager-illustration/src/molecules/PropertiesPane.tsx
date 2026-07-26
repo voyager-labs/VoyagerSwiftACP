@@ -1,5 +1,5 @@
 import type { FC } from "react"
-import type { Entry } from "./types"
+import type { Entry } from "../model/types"
 
 export interface PropertiesPaneProps {
   readonly selectedEntries: readonly Entry[]

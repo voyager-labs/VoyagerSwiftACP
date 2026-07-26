@@ -5,21 +5,26 @@ import {
   deriveBreadcrumb,
   deriveSelectionLabel,
   propsToInitialParams,
-} from "./file-manager-adapter"
+} from "./lib/file-manager-adapter"
+import { locationShortcuts } from "./lib/navigation-data"
+import type { HomeFavorite, HomeLocation, HomeRecentChat } from "./model/home"
+import { createInitialState, getContentRoute, reducer } from "./model/reducer"
+import type { Entry, FileManagerIllustrationProps, SidebarTabItem } from "./model/types"
 import type { FileToolbarContent } from "./molecules/FileToolbar"
 import { FileToolbar } from "./molecules/FileToolbar"
 import { StatusBar } from "./molecules/StatusBar"
-import { locationShortcuts } from "./navigation-data"
 import { FileBrowser } from "./organisms/FileBrowser"
 import { FileManagerPrimaryContent } from "./organisms/FileManagerPrimaryContent"
 import { FileManagerWindowLayout } from "./organisms/FileManagerWindowLayout"
-import type { HomeFavorite, HomeLocation, HomeRecentChat } from "./organisms/Home"
 import { InspectorPane } from "./organisms/InspectorPane"
 import { Sidebar } from "./organisms/Sidebar"
-import { createInitialState, getContentRoute, reducer } from "./reducer"
-import type { Entry, FileManagerIllustrationProps, SidebarTabItem } from "./types"
-import "./file-manager.css"
-import "./styles.css"
+import "./styles/macos-tokens.css"
+import "./styles/file-manager.css"
+import "./styles/atoms.css"
+import "./styles/inspector.css"
+import "./styles/sidebar.css"
+import "./styles/window-shell.css"
+import "./styles/workflows.css"
 
 export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props) => {
   const { files, chatMessages, contentContext } = props

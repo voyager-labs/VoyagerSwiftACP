@@ -1,6 +1,6 @@
 import type { ChangeEvent, FC } from "react"
-import { IconButton } from "./IconButton"
-import type { InspectorChatInputProps } from "./types"
+import { IconButton } from "../atoms/IconButton"
+import type { InspectorChatInputProps } from "../model/types"
 
 export const InspectorChatInput: FC<InspectorChatInputProps> = ({
   requestText,

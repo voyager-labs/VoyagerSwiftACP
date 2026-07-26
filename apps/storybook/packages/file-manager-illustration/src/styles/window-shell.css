@@ -1,0 +1,168 @@
+[data-file-manager-illustration] {
+  margin: 0;
+  min-width: 0;
+  min-height: 100vh;
+  background: var(--fm-canvas);
+  color: var(--fm-text-primary);
+  font-family: var(--fm-font-ui);
+  -webkit-font-smoothing: antialiased;
+  font-synthesis-weight: none;
+}
+
+[data-file-manager-illustration] button,
+[data-file-manager-illustration] textarea {
+  font: inherit;
+}
+
+[data-file-manager-illustration] button {
+  cursor: default;
+}
+
+[data-file-manager-illustration] .stage {
+  display: grid;
+  width: 100%;
+  min-height: 100dvh;
+  overflow: auto;
+  place-items: center;
+  padding: var(--fm-stage-padding);
+  box-sizing: border-box;
+  background: radial-gradient(circle at 50% 24%, var(--fm-canvas-glow), transparent 36rem),
+    linear-gradient(
+      145deg,
+      var(--fm-canvas-top) 0%,
+      var(--fm-canvas) 42%,
+      var(--fm-canvas-bottom) 100%
+    );
+}
+
+[data-file-manager-illustration] .mac-window {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  width: min(var(--fm-native-window-width), 100%);
+  min-width: var(--fm-native-window-min-width);
+  height: min(var(--fm-native-window-height), calc(100dvh - var(--fm-window-height-inset)));
+  min-height: var(--fm-native-window-min-height);
+  overflow: hidden;
+  border: 1px solid var(--fm-window-border);
+  border-radius: var(--fm-radius-window);
+  background: var(--fm-window);
+  box-shadow: var(--fm-shadow-window);
+}
+
+[data-file-manager-illustration] .mac-window:not(.sidebar-closed) {
+  min-width: calc(var(--fm-native-window-min-width) + var(--fm-native-sidebar-min-width));
+}
+
+[data-file-manager-illustration] .mac-window:not(.inspector-closed).sidebar-closed {
+  min-width: calc(var(--fm-native-content-min-width) + var(--fm-native-inspector-min-width) + 5px);
+}
+
+[data-file-manager-illustration] .mac-window:not(.inspector-closed):not(.sidebar-closed) {
+  min-width: calc(
+    var(--fm-native-sidebar-min-width) +
+    var(--fm-native-content-min-width) +
+    var(--fm-native-inspector-min-width) +
+    10px
+  );
+}
+
+[data-file-manager-illustration] .fm-window-layout {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+[data-file-manager-illustration] .fm-layout-sidebar {
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+[data-file-manager-illustration] .fm-layout-split-handle {
+  width: 5px;
+  cursor: col-resize;
+  flex-shrink: 0;
+  margin-left: -2px;
+  margin-right: -2px;
+  z-index: 10;
+  position: relative;
+}
+
+[data-file-manager-illustration] .fm-layout-split-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  right: 2px;
+  border-radius: 2px;
+  transition: background var(--fm-motion-fast) ease;
+}
+
+[data-file-manager-illustration] .fm-layout-split-handle:hover::after {
+  background: var(--fm-selection-label);
+  opacity: 0.3;
+}
+
+[data-file-manager-illustration] .fm-layout-split-handle:active::after {
+  background: var(--fm-selection-label);
+  opacity: 0.5;
+}
+
+[data-file-manager-illustration] .fm-layout-split-handle:focus-visible {
+  outline: none;
+}
+
+[data-file-manager-illustration] .fm-layout-split-handle:focus-visible::after {
+  background: var(--fm-focus-ring);
+  opacity: 0.65;
+}
+
+[data-file-manager-illustration] .fm-layout-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  border-radius: var(--fm-radius-md);
+  background: var(--fm-content);
+  box-shadow: inset 0 0 0 0.5px var(--fm-separator);
+}
+
+[data-file-manager-illustration] .fm-layout-main-inner {
+  flex: 1;
+  min-width: var(--fm-native-content-min-width);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+[data-file-manager-illustration] .fm-layout-toolbar-area {
+  flex-shrink: 0;
+}
+
+[data-file-manager-illustration] .fm-layout-content-area {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+[data-file-manager-illustration] .fm-layout-breadcrumb-area {
+  flex-shrink: 0;
+}
+
+[data-file-manager-illustration] .fm-layout-inspector {
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--fm-separator);
+}

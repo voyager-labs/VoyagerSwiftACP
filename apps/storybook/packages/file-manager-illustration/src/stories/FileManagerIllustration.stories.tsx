@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { expect, userEvent, within } from "storybook/test"
-import { FileManagerIllustration } from "./FileManagerIllustration"
-import { publicFiles } from "./mock-data"
+import { FileManagerIllustration } from "../FileManagerIllustration"
+import { publicFiles } from "../data/mock-data"
 
 const defaultTabs = [
   { id: "recents", label: "Recents" },

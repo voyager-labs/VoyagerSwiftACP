@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { contextMenuActions } from "../mock-data"
+import { contextMenuActions } from "../data/mock-data"
 import { ContextMenu } from "./ContextMenu"
 
 const meta = {

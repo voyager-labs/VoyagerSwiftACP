@@ -6,5 +6,5 @@ export type {
   ChatMessage,
   ContentTab,
   ContentContext,
-} from "./types"
+} from "./model/types"
 export { FileManagerIllustration } from "./FileManagerIllustration"

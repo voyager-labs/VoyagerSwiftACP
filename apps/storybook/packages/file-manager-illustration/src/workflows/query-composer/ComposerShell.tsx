@@ -1,5 +1,5 @@
 import type { FC } from "react"
-import { Button } from "../../Button"
+import { Button } from "../../atoms/Button"
 import type { ComposerDraft } from "./types"
 
 export interface ComposerShellProps {

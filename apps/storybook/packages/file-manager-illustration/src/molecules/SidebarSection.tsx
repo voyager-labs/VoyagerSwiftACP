@@ -1,7 +1,7 @@
 import type { FC } from "react"
-import { DisclosureControl } from "../DisclosureControl"
-import { SidebarNavItem } from "../SidebarNavItem"
-import type { SidebarSectionProps } from "../types"
+import { DisclosureControl } from "../atoms/DisclosureControl"
+import { SidebarNavItem } from "../atoms/SidebarNavItem"
+import type { SidebarSectionProps } from "../model/types"
 
 export const SidebarSection: FC<SidebarSectionProps> = ({ items, title, compact = false }) => {
   const sectionClass = ["sidebar-section", compact ? "compact" : ""].filter(Boolean).join(" ")

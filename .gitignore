@@ -13,6 +13,9 @@ eggs/
 .eggs/
 lib/
 lib64/
+# File Manager illustration source modules
+!apps/storybook/packages/file-manager-illustration/src/lib/
+!apps/storybook/packages/file-manager-illustration/src/lib/**
 parts/
 sdist/
 var/

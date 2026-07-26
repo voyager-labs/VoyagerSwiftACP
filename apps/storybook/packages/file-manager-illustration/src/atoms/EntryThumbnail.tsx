@@ -1,5 +1,5 @@
 import type { FC } from "react"
-import type { EntryKind } from "../types"
+import type { EntryKind } from "../model/types"
 import { ArchiveIcon } from "./entry-icons/ArchiveIcon"
 import { FileIcon } from "./entry-icons/FileIcon"
 import { FolderIcon } from "./entry-icons/FolderIcon"

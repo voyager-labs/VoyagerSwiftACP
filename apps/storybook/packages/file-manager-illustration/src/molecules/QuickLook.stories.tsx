@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { entryKindEntries } from "../mock-data"
+import { entryKindEntries } from "../data/mock-data"
 import { QuickLook } from "./QuickLook"
 
 const meta = {

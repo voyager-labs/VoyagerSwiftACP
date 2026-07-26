@@ -1,4 +1,4 @@
-import type { HomeFavorite, HomeLocation, HomeRecentChat } from "./Home"
+import type { HomeFavorite, HomeLocation, HomeRecentChat } from "../model/home"
 
 export const homeFavorites: readonly HomeFavorite[] = [
   {

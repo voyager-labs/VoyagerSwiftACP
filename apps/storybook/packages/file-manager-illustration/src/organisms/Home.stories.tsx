@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import { homeFavorites, homeLocations, homeRecentChats } from "../data/home-data"
 import { Home } from "./Home"
-import { homeFavorites, homeLocations, homeRecentChats } from "./home-data"
 
 const meta = {
   component: Home,

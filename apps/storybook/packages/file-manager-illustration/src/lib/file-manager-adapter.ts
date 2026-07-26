@@ -1,13 +1,13 @@
-import type { ContentRoute } from "./content-route"
+import type { ContentRoute } from "../model/content-route"
 import type {
   ContentTab,
   Entry,
   FileEntry,
   FileManagerIllustrationProps,
   SidebarTabItem,
-} from "./types"
-import type { ChatMessage } from "./types"
-import type { AiChatState } from "./workflows/ai-chat/types"
+} from "../model/types"
+import type { ChatMessage } from "../model/types"
+import type { AiChatState } from "../workflows/ai-chat/types"
 
 /** Convert public FileEntry to internal Entry. */
 export function toEntry(f: FileEntry): Entry {

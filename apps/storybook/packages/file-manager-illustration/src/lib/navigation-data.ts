@@ -1,4 +1,4 @@
-import type { LocationShortcut, SidebarTabItem } from "./types"
+import type { LocationShortcut, SidebarTabItem } from "../model/types"
 
 export const locationShortcuts: readonly LocationShortcut[] = [
   { id: "local-entries", label: "Local Entries", glyph: "▣" },

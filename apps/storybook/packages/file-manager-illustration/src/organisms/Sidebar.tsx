@@ -1,9 +1,9 @@
 import type { FC } from "react"
-import { FileManagerIcon } from "../FileManagerIcon"
-import { SidebarNavItem } from "../SidebarNavItem"
-import { TrafficLights } from "../TrafficLights"
+import { FileManagerIcon } from "../atoms/FileManagerIcon"
+import { SidebarNavItem } from "../atoms/SidebarNavItem"
+import { TrafficLights } from "../atoms/TrafficLights"
+import type { LocationShortcut, SidebarTabAction, SidebarTabItem } from "../model/types"
 import { LocationShortcuts } from "../molecules/LocationShortcuts"
-import type { LocationShortcut, SidebarTabAction, SidebarTabItem } from "../types"
 
 export interface SidebarProps {
   readonly locationShortcuts: readonly LocationShortcut[]

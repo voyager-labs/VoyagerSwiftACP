@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { entryKindEntries, files, selectedInitial } from "../mock-data"
+import { entryKindEntries, files, selectedInitial } from "../data/mock-data"
 import { EntryList } from "./EntryList"
 
 const meta = {

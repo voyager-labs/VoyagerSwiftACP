@@ -1,4 +1,4 @@
-import type { ContextMenuAction, Entry, FileEntry } from "./types"
+import type { ContextMenuAction, Entry, FileEntry } from "../model/types"
 
 export const files: readonly Entry[] = [
   { id: "e01", name: "IDC20on20The20Hig...tion.pdf", kind: "pdf" },

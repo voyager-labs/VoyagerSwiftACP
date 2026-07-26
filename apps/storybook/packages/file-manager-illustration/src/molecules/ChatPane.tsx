@@ -1,5 +1,5 @@
 import type { FC, FormEvent } from "react"
-import type { Entry } from "./types"
+import type { Entry } from "../model/types"
 
 export interface ChatPaneProps {
   readonly requestText: string

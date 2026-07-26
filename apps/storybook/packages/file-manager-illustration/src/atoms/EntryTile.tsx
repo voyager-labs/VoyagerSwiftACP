@@ -1,5 +1,5 @@
 import type { FC, MouseEvent } from "react"
-import type { EntryKind } from "../types"
+import type { EntryKind } from "../model/types"
 import { EntryThumbnail } from "./EntryThumbnail"
 import type { EntryThumbnailEntry } from "./EntryThumbnail"
 

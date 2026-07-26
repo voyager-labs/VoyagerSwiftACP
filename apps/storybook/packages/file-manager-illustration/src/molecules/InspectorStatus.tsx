@@ -1,5 +1,5 @@
 import type { FC } from "react"
-import { IconButton } from "../IconButton"
+import { IconButton } from "../atoms/IconButton"
 
 export const InspectorStatus: FC<Record<string, never>> = () => {
   return (

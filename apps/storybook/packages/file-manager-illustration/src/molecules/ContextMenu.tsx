@@ -1,5 +1,5 @@
 import type { FC } from "react"
-import type { ContextMenuAction } from "../types"
+import type { ContextMenuAction } from "../model/types"
 
 export interface ContextMenuProps {
   readonly actions: readonly ContextMenuAction[]

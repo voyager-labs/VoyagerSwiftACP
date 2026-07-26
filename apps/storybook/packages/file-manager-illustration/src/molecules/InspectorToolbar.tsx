@@ -1,6 +1,6 @@
 import type { FC } from "react"
-import { IconButton } from "../IconButton"
-import { SegmentedControl } from "../SegmentedControl"
+import { IconButton } from "../atoms/IconButton"
+import { SegmentedControl } from "../atoms/SegmentedControl"
 
 export type InspectorMode = "chat" | "properties" | "preview"
 

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import type { Entry } from "../types"
+import type { Entry } from "../model/types"
 import { FileBrowser } from "./FileBrowser"
 
 const entries: readonly Entry[] = [

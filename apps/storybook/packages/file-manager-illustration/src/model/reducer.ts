@@ -1,6 +1,6 @@
+import { contentTabs } from "../lib/navigation-data"
 import type { ContentRoute } from "./content-route"
 import { deriveContentRoute } from "./content-route"
-import { contentTabs } from "./navigation-data"
 import type { ChatMessage, Entry, SidebarTabItem } from "./types"
 
 export interface State {

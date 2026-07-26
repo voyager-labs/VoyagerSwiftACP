@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import type { LocationShortcut } from "../types"
+import type { LocationShortcut } from "../model/types"
 import { LocationShortcuts } from "./LocationShortcuts"
 
 const locationShortcuts: readonly LocationShortcut[] = [

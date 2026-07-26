@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import type { SidebarTabItem } from "../model/types"
 import { SidebarNavItem } from "./SidebarNavItem"
-import type { SidebarTabItem } from "./types"
 
 const contentTabs: readonly SidebarTabItem[] = [
   { id: "home", label: "Home Page", icon: "home" },
