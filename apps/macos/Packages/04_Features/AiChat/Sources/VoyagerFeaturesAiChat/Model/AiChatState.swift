@@ -43,6 +43,21 @@ struct AiChatNewChatPreparationMutationTracker: Equatable {
     }
 }
 
+struct AiChatInspectorReopenMutationBaseline: Equatable {
+    struct PendingPersistence: Equatable {
+        let sessionID: AiChatSessionID
+        let revision: UInt64
+    }
+
+    var sessionID: AiChatSessionID?
+    var revision: UInt64 = 0
+    var pendingPersistence: [AiChatRequestID: PendingPersistence] = [:]
+
+    static func == (_: Self, _: Self) -> Bool {
+        true
+    }
+}
+
 public enum AiChatSessionRowMergeResult: Equatable, Sendable {
     case rejected
     case unchanged
@@ -200,6 +215,7 @@ public typealias AiChatCurrentContextFolderStructureModes = [
 public struct AiChatState: Equatable, Sendable {
     var cancellationOwnerID = UUID()
     var newChatPreparationMutationTracker = AiChatNewChatPreparationMutationTracker()
+    var inspectorReopenMutationBaseline = AiChatInspectorReopenMutationBaseline()
     public var restoreSessionID: AiChatSessionID?
     public var deferredChatSessionRestoreID: AiChatSessionID?
     public var restoreOutcome: AiChatSessionRestoreResult?
@@ -432,6 +448,7 @@ public struct AiChatState: Equatable, Sendable {
         self.providerConnectionSnapshot = providerConnectionSnapshot
         self.availableModelsByProvider = availableModelsByProvider
         self.transcriptScrollOffsets = transcriptScrollOffsets
+        inspectorReopenMutationBaseline = .init(sessionID: sessionID)
     }
 
     public var availableModels: [AiProviderModel] {
@@ -663,6 +680,13 @@ public struct AiChatState: Equatable, Sendable {
 }
 
 public extension AiChatState {
+    /// 동일 session에서 마지막 persisted 기준 이후 사용자 또는 navigation 변경이 발생했는지 반환한다.
+    func hasInspectorReopenUserMutation(for sessionID: AiChatSessionID) -> Bool {
+        self.sessionID == sessionID
+            && inspectorReopenMutationBaseline.sessionID == sessionID
+            && newChatPreparationMutationTracker.value != inspectorReopenMutationBaseline.revision
+    }
+
     var newChatPreparationProvenance: AiChatNewChatPreparationProvenance {
         AiChatNewChatPreparationProvenance(
             ownerID: cancellationOwnerID,
@@ -733,5 +757,32 @@ public extension AiChatState {
             && current.streamingAssistantDraft == provenance.streamingAssistantDraft
             && current.pendingRequestStart == provenance.pendingRequestStart
             && current.executionPhase == provenance.executionPhase
+    }
+}
+
+extension AiChatState {
+    mutating func resetInspectorReopenMutationBaseline(for sessionID: AiChatSessionID) {
+        inspectorReopenMutationBaseline.sessionID = sessionID
+        inspectorReopenMutationBaseline.revision = newChatPreparationMutationTracker.value
+    }
+
+    mutating func prepareInspectorReopenPersistenceBaseline(
+        requestID: AiChatRequestID,
+        sessionID: AiChatSessionID,
+    ) {
+        inspectorReopenMutationBaseline.pendingPersistence[requestID] = .init(
+            sessionID: sessionID,
+            revision: newChatPreparationMutationTracker.value,
+        )
+    }
+
+    mutating func completeInspectorReopenPersistenceBaseline(requestID: AiChatRequestID) -> Bool {
+        guard let pending = inspectorReopenMutationBaseline.pendingPersistence.removeValue(forKey: requestID),
+              sessionID == pending.sessionID
+        else { return false }
+        let hasNewerMutation = newChatPreparationMutationTracker.value != pending.revision
+        inspectorReopenMutationBaseline.sessionID = pending.sessionID
+        inspectorReopenMutationBaseline.revision = pending.revision
+        return hasNewerMutation
     }
 }
