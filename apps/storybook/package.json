@@ -15,23 +15,24 @@
     "preview": "vite preview",
     "storybook": "storybook dev -p 6006",
     "typecheck": "tsc -b",
-    "build-storybook": "storybook build",
-    "check": "biome check . && tsc -b"
+    "build-storybook": "pnpm --filter @voyager-labs/file-manager-illustration build && storybook build",
+    "check": "biome check . && tsc -b && pnpm --filter @voyager-labs/file-manager-illustration typecheck"
   },
   "dependencies": {
+    "@voyager-labs/file-manager-illustration": "workspace:*",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@storybook/addon-docs": "^10.5.3",
+    "@storybook/react-vite": "^10.5.3",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
-    "typescript": "~6.0.2",
-    "vite": "^8.1.1",
     "storybook": "^10.5.3",
-    "@storybook/react-vite": "^10.5.3",
-    "@storybook/addon-docs": "^10.5.3"
+    "typescript": "~6.0.2",
+    "vite": "^8.1.1"
   }
 }
