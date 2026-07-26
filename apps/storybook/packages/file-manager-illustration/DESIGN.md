@@ -6,7 +6,7 @@ The illustration mirrors Voyager's current macOS File Manager: a quiet native ut
 
 ## 2. Color
 
-All colors come from the `--macos-*` and `--fm-*` custom properties in `src/file-manager.css`. Sidebar, toolbar, content, inspector, selection, text, separator, focus, and status roles must use those tokens. No component-level raw colors are allowed.
+All macOS semantic colors come from `--macos-*` custom properties in `src/styles/macos-tokens.css`. File Manager aliases and shared/content styles remain in `src/styles/file-manager.css`. Atom styles are owned by `src/styles/atoms.css`. Window shell, Sidebar, Inspector, and workflow styles are owned by `src/styles/window-shell.css`, `src/styles/sidebar.css`, `src/styles/inspector.css`, and `src/styles/workflows.css`. Sidebar, toolbar, content, inspector, selection, text, separator, focus, and status roles must use those tokens. No component-level raw colors are allowed.
 
 ## 3. Typography
 

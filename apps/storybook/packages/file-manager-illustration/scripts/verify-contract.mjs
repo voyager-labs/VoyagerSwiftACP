@@ -8,7 +8,20 @@ import * as runtime from "../dist/index.js"
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const storybookRoot = resolve(packageRoot, "../..")
-const css = readFileSync(resolve(packageRoot, "src/file-manager.css"), "utf8")
+const macosTokens = readFileSync(resolve(packageRoot, "src/styles/macos-tokens.css"), "utf8")
+const styleSheets = [
+  "src/styles/file-manager.css",
+  "src/styles/atoms.css",
+  "src/styles/window-shell.css",
+  "src/styles/sidebar.css",
+  "src/styles/inspector.css",
+  "src/styles/workflows.css",
+]
+const fileManagerCss = readFileSync(resolve(packageRoot, styleSheets[0]), "utf8")
+const css = [
+  macosTokens,
+  ...styleSheets.map((path) => readFileSync(resolve(packageRoot, path), "utf8")),
+].join("\n")
 const sourceBarrel = readFileSync(resolve(packageRoot, "src/index.ts"), "utf8")
 const packageJson = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"))
 const index = JSON.parse(
@@ -77,6 +90,8 @@ const publicTypes = typeExportBlock[1]
   .map((typeName) => typeName.trim())
   .filter(Boolean)
 assert.deepEqual(publicTypes.sort(), expectedPublicTypes.sort())
+assert.match(macosTokens, /--macos-label-color\s*:/)
+assert.doesNotMatch(fileManagerCss, /--macos-[a-z0-9-]+\s*:/)
 
 for (const contract of [
   "--fm-native-window-width: 960px",
