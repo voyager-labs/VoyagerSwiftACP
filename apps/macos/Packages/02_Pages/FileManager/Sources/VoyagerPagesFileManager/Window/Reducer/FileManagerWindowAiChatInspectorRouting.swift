@@ -514,10 +514,7 @@ extension FileManagerWindowCommandRoutingReducer {
         let preservesLiveRuntime = resumeSessionID.map { sessionID in
             let aiChat = state.inspector.aiChat
             return aiChat.lifecycleSessionIDsToPreserve.contains(sessionID)
-                || (
-                    aiChat.sessionID == sessionID
-                        && (!aiChat.draftText.isEmpty || !aiChat.addedAttachments.isEmpty)
-                )
+                || aiChat.hasInspectorReopenUserMutation(for: sessionID)
         } ?? false
         state.pendingAiChatInspectorOpen = FileManagerPendingAiChatInspectorOpen(
             requestID: requestID,

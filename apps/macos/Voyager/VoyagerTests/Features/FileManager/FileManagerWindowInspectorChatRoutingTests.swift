@@ -1359,9 +1359,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
     /// - 기대 결과: 동일 session을 다시 표시하며 draft를 초기화하지 않는다.
     func testReopenPreservesIdleDraftWithoutPersistedRestore() async {
         let sessionID = makeSessionID("00000000-0000-0000-0000-000000000671")
-        var initialState = makeClosedDurableInspectorState(sessionID: sessionID)
-        initialState.inspector.aiChat.draftText = "Unsent draft"
-        initialState.syncActiveTabInspectorState()
+        let initialState = makeClosedDurableInspectorState(sessionID: sessionID)
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
         } withDependencies: {
@@ -1375,6 +1373,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         // 동일 session의 미전송 draft 보존 결과만 선별 검증한다.
         store.exhaustivity = .off(showSkippedAssertions: false)
 
+        await store.send(.inspector(.aiChat(.draftTextChanged("Unsent draft"))))
         await store.send(.request(.reopenChat))
         await store.skipReceivedActions()
         await store.finish()
@@ -1417,18 +1416,149 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertEqual(store.state.inspector.aiChat.addedAttachments.count, 1)
     }
 
+    /// 유휴 durable session의 모델·Thinking·컨텍스트 변경은 Open Chat 재진입 뒤에도 유지된다.
+    /// - 검증 내용: AiChat 사용자 mutation 기반 same-session fast path와 persistence load 미호출
+    /// - 사전 조건: active session의 입력은 비어 있고 모델·Thinking·컨텍스트·폴더 모드를 변경했다.
+    /// - 기대 결과: 동일 session을 다시 표시하며 변경된 composer 설정을 persisted snapshot으로 덮지 않는다.
+    func testReopenPreservesIdleComposerSettingsWithoutPersistedRestore() async throws {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000674")
+        let originalModel = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            thinkingCapability: .effort(values: [.low, .high], defaultValue: nil),
+        )
+        let changedModel = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5-mini",
+            thinkingCapability: .effort(values: [.low, .high], defaultValue: nil),
+        )
+        let originalContext = AiChatCurrentContextSnapshot(
+            summary: "Original context",
+            references: [
+                AiChatContextReference(
+                    kind: .folder,
+                    identifier: "/tmp/projects",
+                    title: "Projects",
+                    subtitle: "/tmp/projects",
+                    metadata: ["path": "/tmp/projects"],
+                ),
+            ],
+        )
+        let changedContext = AiChatCurrentContextSnapshot(
+            summary: "Changed context",
+            references: originalContext.references,
+        )
+        var initialState = makeClosedDurableInspectorState(sessionID: sessionID)
+        initialState.inspector.aiChat = AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: originalContext,
+            modelListState: .loaded([originalModel, changedModel]),
+            selectedModelHandle: originalModel.id,
+            selectedThinking: .effort(.high),
+        )
+        initialState.syncActiveTabInspectorState()
+        let loadedSessionCount = LockIsolated(0)
+        let gate = AIConnectionsLoadGate()
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiConnectionsFileClient.load = { await gate.load() }
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in
+                loadedSessionCount.withValue { $0 += 1 }
+                return nil
+            }
+        }
+        // 동일 session의 사용자 변경 보존 결과만 선별 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.inspector(.aiChat(.selectedModelChanged(changedModel.id))))
+        await store.send(.inspector(.aiChat(.selectedThinkingChanged(.effort(.low)))))
+        await store.send(.inspector(.aiChat(.currentContextChanged(changedContext))))
+        await store.send(.inspector(.aiChat(.folderStructureModeChanged(
+            .currentContext,
+            .includeSubfolders,
+        ))))
+        XCTAssertTrue(store.state.inspector.aiChat.draftText.isEmpty)
+        XCTAssertTrue(store.state.inspector.aiChat.addedAttachments.isEmpty)
+
+        await store.send(.request(.reopenChat))
+        await gate.waitForPendingLoadCount(1)
+        let pending = try XCTUnwrap(store.state.pendingAiChatInspectorOpen)
+
+        XCTAssertTrue(pending.preservesLiveRuntime)
+        XCTAssertEqual(pending.resumeSessionID, sessionID)
+        XCTAssertEqual(loadedSessionCount.value, 0)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, sessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.selectedModelHandle, changedModel.id)
+        XCTAssertEqual(store.state.inspector.aiChat.selectedThinking, .effort(.low))
+        XCTAssertEqual(store.state.inspector.aiChat.currentContext.summary, "Changed context")
+        XCTAssertTrue(store.state.inspector.aiChat.currentContextFolderStructureModes.values.allSatisfy {
+            $0 == .includeSubfolders
+        })
+
+        await store.send(.request(.reopenChat))
+        XCTAssertNil(store.state.pendingAiChatInspectorOpen)
+        await gate.resumeNext(with: .empty())
+        await store.finish()
+        XCTAssertEqual(loadedSessionCount.value, 0)
+    }
+
+    /// authoritative setup은 과거 mutation revision을 persisted 기준으로 재설정한다.
+    /// - 검증 내용: nonzero historical revision 이후 persistence restore와 missing fallback 실행
+    /// - 사전 조건: 사용자 변경 뒤 동일 session의 authoritative setup을 적용했다.
+    /// - 기대 결과: Open Chat은 live runtime을 보존하지 않고 persisted session을 조회한다.
+    func testReopenLoadsPersistenceAfterAuthoritativeSetupRebasesHistoricalMutation() async throws {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000675")
+        let gate = AIConnectionsLoadGate()
+        let loadedSessionCount = LockIsolated(0)
+        let store = TestStore(initialState: makeClosedDurableInspectorState(sessionID: sessionID)) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiConnectionsFileClient.load = { await gate.load() }
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in
+                loadedSessionCount.withValue { $0 += 1 }
+                return nil
+            }
+        }
+        // persisted 기준 재설정 뒤 restore/fallback 결과만 선별 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.inspector(.aiChat(.draftTextChanged("Historical mutation"))))
+        await store.send(.inspector(.aiChat(.setup(.init(
+            sessionID: sessionID,
+            mode: .chat,
+            sessionStatus: .active,
+        )))))
+        await store.send(.request(.reopenChat))
+        await gate.waitForPendingLoadCount(1)
+        let pending = try XCTUnwrap(store.state.pendingAiChatInspectorOpen)
+        XCTAssertFalse(pending.preservesLiveRuntime)
+        XCTAssertEqual(pending.resumeSessionID, sessionID)
+
+        await gate.resumeNext(with: .empty())
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(loadedSessionCount.value, 1)
+        XCTAssertNotEqual(store.state.inspector.aiChat.sessionID, sessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.restoreFailure, .missingRecord)
+    }
+
     /// 유휴 composer session 재진입 중 draft mutation은 stale completion을 무효화한다.
     /// - 검증 내용: live provenance mutation guard, 최신 draft 보존, Inspector 미표시
     /// - 사전 조건: 미전송 draft를 가진 active session의 connections load가 pending이다.
     /// - 기대 결과: 늦은 completion은 무시되고 변경된 draft가 유지된다.
     func testIdleComposerReopenIgnoresCompletionAfterDraftMutation() async throws {
         let sessionID = makeSessionID("00000000-0000-0000-0000-000000000673")
-        var initialState = makeClosedDurableInspectorState(sessionID: sessionID)
-        initialState.inspector.aiChat.draftText = "Original draft"
-        initialState.syncActiveTabInspectorState()
+        let initialState = makeClosedDurableInspectorState(sessionID: sessionID)
         let gate = AIConnectionsLoadGate()
         let store = makeDelayedConnectionsStore(initialState: initialState, gate: gate)
 
+        await store.send(.inspector(.aiChat(.draftTextChanged("Original draft"))))
         await store.send(.request(.reopenChat))
         let pending = try XCTUnwrap(store.state.pendingAiChatInspectorOpen)
         XCTAssertTrue(pending.preservesLiveRuntime)
