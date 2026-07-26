@@ -1,0 +1,116 @@
+import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
+import { createElement } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
+import * as runtime from "../dist/index.js"
+
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+const storybookRoot = resolve(packageRoot, "../..")
+const css = readFileSync(resolve(packageRoot, "src/file-manager.css"), "utf8")
+const sourceBarrel = readFileSync(resolve(packageRoot, "src/index.ts"), "utf8")
+const packageJson = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"))
+const index = JSON.parse(
+  readFileSync(resolve(storybookRoot, "storybook-static/index.json"), "utf8"),
+)
+
+const tabs = [
+  { id: "home", label: "Home" },
+  { id: "directory", label: "Directory" },
+  { id: "ai-chat", label: "AI Chat" },
+]
+
+const files = [
+  {
+    id: "entry-1",
+    displayName: "Report.pdf",
+    kind: "pdf",
+    extension: "pdf",
+    secondaryLabel: null,
+  },
+]
+
+function render(activeTabId) {
+  return renderToStaticMarkup(
+    createElement(runtime.FileManagerIllustration, {
+      files,
+      chatMessages: [{ role: "user", paragraph: "Summarize this file" }],
+      contentContext: { tabs, activeTabId },
+    }),
+  )
+}
+
+const directoryMarkup = render("directory")
+const homeMarkup = render("home")
+const aiChatMarkup = render("ai-chat")
+
+assert.match(directoryMarkup, /aria-label="Sidebar"/)
+assert.match(directoryMarkup, /aria-label="Entries"/)
+assert.match(directoryMarkup, /aria-label="Breadcrumb"/)
+assert.match(directoryMarkup, /role="separator"/)
+assert.doesNotMatch(directoryMarkup, /window-chrome|window-title/)
+assert.ok(
+  directoryMarkup.indexOf("traffic-lights") > directoryMarkup.indexOf('aria-label="Sidebar"'),
+)
+assert.match(homeMarkup, /aria-label="Home"/)
+assert.doesNotMatch(homeMarkup, /aria-label="Entries"/)
+assert.match(aiChatMarkup, /aria-label="AI Chat"/)
+assert.doesNotMatch(aiChatMarkup, /aria-label="Entries"|aria-label="Context Pane"/)
+
+assert.deepEqual(Object.keys(runtime).sort(), ["FileManagerIllustration"])
+assert.deepEqual(Object.keys(packageJson.exports).sort(), [".", "./styles.css"])
+
+const expectedPublicTypes = [
+  "FileManagerIllustrationProps",
+  "FileEntry",
+  "EntryKind",
+  "ChatRole",
+  "ChatMessage",
+  "ContentTab",
+  "ContentContext",
+]
+const typeExportBlock = sourceBarrel.match(/export type\s*\{([\s\S]*?)\}\s*from/)
+assert.ok(typeExportBlock, "Missing public type export block")
+const publicTypes = typeExportBlock[1]
+  .split(",")
+  .map((typeName) => typeName.trim())
+  .filter(Boolean)
+assert.deepEqual(publicTypes.sort(), expectedPublicTypes.sort())
+
+for (const contract of [
+  "--fm-native-window-width: 960px",
+  "--fm-native-window-height: 510px",
+  "--fm-native-window-min-width: 600px",
+  "--fm-native-window-min-height: 350px",
+  "--fm-native-sidebar-min-width: 150px",
+  "--fm-native-inspector-min-width: 230px",
+  "--fm-native-content-min-width: 400px",
+  ".sidebar-titlebar",
+  "height: 50px",
+  ".toolbar",
+  "height: 40px",
+  ".statusbar",
+  "height: 24px",
+]) {
+  assert.ok(css.includes(contract), `Missing CSS contract: ${contract}`)
+}
+
+assert.doesNotMatch(css, /\.window-chrome\s*\{|\.window-title\s*\{|\.view-icons\s*\{/)
+
+const entries = Object.values(index.entries ?? {})
+const fileManagerStories = entries.filter(
+  (entry) => entry.type === "story" && entry.title?.startsWith("File Manager/"),
+)
+const fileManagerPaths = new Set(fileManagerStories.map((entry) => entry.importPath))
+const nonFileManagerStories = entries.filter(
+  (entry) => entry.type === "story" && !entry.title?.startsWith("File Manager/"),
+)
+
+assert.equal(fileManagerStories.length, 98)
+assert.equal(fileManagerPaths.size, 28)
+assert.equal(nonFileManagerStories.length, 0)
+
+console.log("native layout contract: pass")
+console.log(`catalog: ${fileManagerStories.length} stories / ${fileManagerPaths.size} paths`)
+console.log(`runtime exports: ${JSON.stringify(Object.keys(runtime).sort())}`)
