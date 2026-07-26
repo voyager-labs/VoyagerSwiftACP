@@ -511,8 +511,13 @@ extension FileManagerWindowCommandRoutingReducer {
 
         let requestID = uuid()
         let resumeProvenance = resumeSessionID.map { _ in state.inspector.aiChat.newChatPreparationProvenance }
-        let preservesLiveRuntime = resumeSessionID.map {
-            state.inspector.aiChat.lifecycleSessionIDsToPreserve.contains($0)
+        let preservesLiveRuntime = resumeSessionID.map { sessionID in
+            let aiChat = state.inspector.aiChat
+            return aiChat.lifecycleSessionIDsToPreserve.contains(sessionID)
+                || (
+                    aiChat.sessionID == sessionID
+                        && (!aiChat.draftText.isEmpty || !aiChat.addedAttachments.isEmpty)
+                )
         } ?? false
         state.pendingAiChatInspectorOpen = FileManagerPendingAiChatInspectorOpen(
             requestID: requestID,

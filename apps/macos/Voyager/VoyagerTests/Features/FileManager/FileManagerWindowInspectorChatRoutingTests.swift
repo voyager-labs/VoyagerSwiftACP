@@ -1353,6 +1353,100 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await store.finish()
     }
 
+    /// 유휴 durable session의 미전송 draft는 Open Chat 재진입 뒤에도 유지된다.
+    /// - 검증 내용: same-session fast path, persistence load 미호출, draft 보존
+    /// - 사전 조건: lifecycle은 idle이고 active session에 미전송 draft가 남아 있다.
+    /// - 기대 결과: 동일 session을 다시 표시하며 draft를 초기화하지 않는다.
+    func testReopenPreservesIdleDraftWithoutPersistedRestore() async {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000671")
+        var initialState = makeClosedDurableInspectorState(sessionID: sessionID)
+        initialState.inspector.aiChat.draftText = "Unsent draft"
+        initialState.syncActiveTabInspectorState()
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiConnectionsFileClient.load = { .empty() }
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in
+                XCTFail("Idle draft reopen must not load persisted state")
+                return nil
+            }
+        }
+        // 동일 session의 미전송 draft 보존 결과만 선별 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.request(.reopenChat))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertTrue(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, sessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.draftText, "Unsent draft")
+    }
+
+    /// 유휴 durable session의 미전송 attachment는 Open Chat 재진입 뒤에도 유지된다.
+    /// - 검증 내용: same-session fast path, persistence load 미호출, attachment 보존
+    /// - 사전 조건: lifecycle은 idle이고 active session에 미전송 attachment가 남아 있다.
+    /// - 기대 결과: 동일 session을 다시 표시하며 attachment를 제거하지 않는다.
+    func testReopenPreservesIdleAttachmentsWithoutPersistedRestore() async {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000672")
+        let initialState = makeClosedDurableInspectorState(sessionID: sessionID)
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiConnectionsFileClient.load = { .empty() }
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in
+                XCTFail("Idle attachment reopen must not load persisted state")
+                return nil
+            }
+        }
+        // 동일 session의 미전송 attachment 보존 결과만 선별 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.inspector(.aiChat(.attachmentPickerSelection([
+            URL(fileURLWithPath: "/tmp/idle-reopen.txt"),
+        ]))))
+        XCTAssertEqual(store.state.inspector.aiChat.addedAttachments.count, 1)
+        await store.send(.request(.reopenChat))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertTrue(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, sessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.addedAttachments.count, 1)
+    }
+
+    /// 유휴 composer session 재진입 중 draft mutation은 stale completion을 무효화한다.
+    /// - 검증 내용: live provenance mutation guard, 최신 draft 보존, Inspector 미표시
+    /// - 사전 조건: 미전송 draft를 가진 active session의 connections load가 pending이다.
+    /// - 기대 결과: 늦은 completion은 무시되고 변경된 draft가 유지된다.
+    func testIdleComposerReopenIgnoresCompletionAfterDraftMutation() async throws {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000673")
+        var initialState = makeClosedDurableInspectorState(sessionID: sessionID)
+        initialState.inspector.aiChat.draftText = "Original draft"
+        initialState.syncActiveTabInspectorState()
+        let gate = AIConnectionsLoadGate()
+        let store = makeDelayedConnectionsStore(initialState: initialState, gate: gate)
+
+        await store.send(.request(.reopenChat))
+        let pending = try XCTUnwrap(store.state.pendingAiChatInspectorOpen)
+        XCTAssertTrue(pending.preservesLiveRuntime)
+        await gate.waitForPendingLoadCount(1)
+        await store.send(.inspector(.aiChat(.draftTextChanged("Changed while reopening"))))
+        await store.send(.internal(.aiChatReopenInspectorOpenLoaded(
+            requestID: pending.requestID,
+            setup: .init(sessionID: sessionID, mode: .chat),
+            connectionsFile: .empty(),
+        )))
+
+        XCTAssertNil(store.state.pendingAiChatInspectorOpen)
+        XCTAssertFalse(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.aiChat.draftText, "Changed while reopening")
+        await gate.resumeNext(with: .empty())
+        await store.finish()
+    }
+
     func testReopenPreservesLivePendingRequestWithoutPersistedRestore() async {
         let sessionID = makeSessionID("00000000-0000-0000-0000-000000000656")
         let model = makeAiModel(
