@@ -10,6 +10,7 @@ struct ComposerNativeMenuItem {
     let action: (() -> Void)?
     let submenuItems: [ComposerNativeMenuItem]?
     let isSeparator: Bool
+    let isCaption: Bool
 
     init(
         title: String,
@@ -24,6 +25,7 @@ struct ComposerNativeMenuItem {
         self.action = action
         submenuItems = nil
         isSeparator = false
+        isCaption = false
     }
 
     static func separator() -> Self {
@@ -35,6 +37,20 @@ struct ComposerNativeMenuItem {
             action: nil,
             submenuItems: nil,
             isSeparator: true,
+            isCaption: false,
+        )
+    }
+
+    static func caption(_ title: String) -> Self {
+        .init(
+            title: title,
+            imageName: nil,
+            isSelected: false,
+            isEnabled: false,
+            action: nil,
+            submenuItems: nil,
+            isSeparator: false,
+            isCaption: true,
         )
     }
 
@@ -51,6 +67,7 @@ struct ComposerNativeMenuItem {
             action: nil,
             submenuItems: items,
             isSeparator: false,
+            isCaption: false,
         )
     }
 
@@ -62,6 +79,7 @@ struct ComposerNativeMenuItem {
         action: (() -> Void)?,
         submenuItems: [ComposerNativeMenuItem]?,
         isSeparator: Bool,
+        isCaption: Bool,
     ) {
         self.title = title
         self.imageName = imageName
@@ -70,6 +88,7 @@ struct ComposerNativeMenuItem {
         self.action = action
         self.submenuItems = submenuItems
         self.isSeparator = isSeparator
+        self.isCaption = isCaption
     }
 
     /// 기존 init을 유지하면서 imageName만 추가로 받는 헬퍼.
@@ -82,6 +101,7 @@ struct ComposerNativeMenuItem {
             action: action,
             submenuItems: submenuItems,
             isSeparator: isSeparator,
+            isCaption: isCaption,
         )
     }
 }
@@ -92,6 +112,7 @@ struct ComposerNativeMenuButton: NSViewRepresentable {
     let accessibilityLabel: String?
     let accessibilityIdentifier: String
     let minimumWidth: CGFloat
+    let size: CGSize?
     let isPlaceholder: Bool
     let showsBorder: Bool
     let onOpen: () -> Void
@@ -113,6 +134,7 @@ struct ComposerNativeMenuButton: NSViewRepresentable {
         imageName: String? = nil,
         accessibilityLabel: String? = nil,
         showsBorder: Bool = true,
+        size: CGSize? = nil,
         searchableItems: ((String) -> [ComposerNativeMenuItem])? = nil,
         searchPlaceholder: String = "Search",
     ) {
@@ -121,6 +143,7 @@ struct ComposerNativeMenuButton: NSViewRepresentable {
         self.accessibilityLabel = accessibilityLabel
         self.accessibilityIdentifier = accessibilityIdentifier
         self.minimumWidth = minimumWidth
+        self.size = size
         self.isPlaceholder = isPlaceholder
         self.showsBorder = showsBorder
         self.onOpen = onOpen
@@ -165,12 +188,13 @@ struct ComposerNativeMenuButton: NSViewRepresentable {
         button.setAccessibilityIdentifier(accessibilityIdentifier)
         button.setAccessibilityLabel(accessibilityLabel ?? (title.isEmpty ? nil : title))
         button.minimumWidth = minimumWidth
+        button.fixedSize = size
         button.showsBorder = showsBorder
         button.contentTintColor = isPlaceholder ? .secondaryLabelColor : .labelColor
     }
 
     @MainActor
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, NSMenuDelegate {
         var onOpen: () -> Void
         var menuItems: () -> [ComposerNativeMenuItem]
         var onDismiss: () -> Void
@@ -179,6 +203,8 @@ struct ComposerNativeMenuButton: NSViewRepresentable {
         private var itemActions: [() -> Void] = []
         private var currentMenu: NSMenu?
         private var currentSearchText: String = ""
+        private var currentSearchRow: ComposerNativeMenuSearchRow?
+        private let searchableMenuWidth: CGFloat = 320
 
         init(
             onOpen: @escaping () -> Void,
@@ -209,14 +235,24 @@ struct ComposerNativeMenuButton: NSViewRepresentable {
             itemActions = []
             currentSearchText = ""
 
-            let menu = NSMenu()
+            let menu = ComposerNativeMenu()
             menu.autoenablesItems = false
+            menu.delegate = self
             currentMenu = menu
 
             if searchableItems != nil {
                 menu.addItem(makeSearchMenuItem())
+                menu.searchField = currentSearchRow?.searchField
                 menu.addItem(.separator())
                 appendItems(searchableItems?("") ?? [], to: menu)
+
+                menu.update()
+                menu.minimumWidth = searchableMenuWidth
+                if let searchView = menu.item(at: 0)?.view {
+                    var frame = searchView.frame
+                    frame.size.width = searchableMenuWidth
+                    searchView.frame = frame
+                }
             } else {
                 appendItems(menuItems(), to: menu)
             }
@@ -226,28 +262,29 @@ struct ComposerNativeMenuButton: NSViewRepresentable {
 
         private func makeSearchMenuItem() -> NSMenuItem {
             let searchItem = NSMenuItem()
-            let container = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
-            let searchField = ComposerNativeMenuSearchField()
-            searchField.placeholderString = searchPlaceholder
-            searchField.target = self
-            searchField.action = #selector(searchChanged(_:))
-            searchField.font = NSFont.systemFont(ofSize: 12)
-            searchField.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(searchField)
-            NSLayoutConstraint.activate([
-                searchField.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
-                searchField.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
-                searchField.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            ])
-            searchItem.view = container
-            DispatchQueue.main.async {
-                searchField.becomeFirstResponder()
-            }
+            let searchRow = ComposerNativeMenuSearchRow(
+                placeholder: searchPlaceholder,
+                target: self,
+                action: #selector(searchChanged(_:)),
+            )
+            currentSearchRow = searchRow
+            searchItem.view = searchRow
             return searchItem
         }
 
+        func menuWillOpen(_: NSMenu) {
+            guard let searchRow = currentSearchRow else { return }
+            searchRow.focusSearchField(in: searchRow.window)
+        }
+
+        func menuDidClose(_ menu: NSMenu) {
+            guard menu === currentMenu else { return }
+            currentSearchRow = nil
+            currentMenu = nil
+        }
+
         @objc
-        func searchChanged(_ sender: NSSearchField) {
+        func searchChanged(_ sender: NSTextField) {
             currentSearchText = sender.stringValue
             rebuildFilteredItems()
         }
@@ -266,6 +303,20 @@ struct ComposerNativeMenuButton: NSViewRepresentable {
             for item in items {
                 if item.isSeparator {
                     menu.addItem(.separator())
+                    continue
+                }
+
+                if item.isCaption {
+                    let menuItem = NSMenuItem(title: item.title, action: nil, keyEquivalent: "")
+                    menuItem.isEnabled = false
+                    menuItem.attributedTitle = NSAttributedString(
+                        string: item.title,
+                        attributes: [
+                            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+                            .foregroundColor: NSColor.secondaryLabelColor,
+                        ],
+                    )
+                    menu.addItem(menuItem)
                     continue
                 }
 
@@ -315,14 +366,20 @@ struct ComposerNativeMenuButton: NSViewRepresentable {
     }
 }
 
-private final class ComposerNativeMenuSearchField: NSSearchField {
-    override var acceptsFirstResponder: Bool {
-        true
-    }
-}
-
 final class ComposerNativeMenuNSButton: NSButton {
+    private let hoverLayer = CALayer()
+    private var hoverTrackingArea: NSTrackingArea?
+    private var isHovering = false {
+        didSet { updateHoverAppearance() }
+    }
+
     var minimumWidth: CGFloat = 0 {
+        didSet {
+            invalidateIntrinsicContentSize()
+        }
+    }
+
+    var fixedSize: CGSize? {
         didSet {
             invalidateIntrinsicContentSize()
         }
@@ -335,26 +392,172 @@ final class ComposerNativeMenuNSButton: NSButton {
     }
 
     override var intrinsicContentSize: NSSize {
-        let size = super.intrinsicContentSize
-        return NSSize(width: max(size.width + 12, minimumWidth), height: size.height + 8)
+        if let fixedSize {
+            return fixedSize
+        }
+        let titleWidth = title.isEmpty
+            ? 0
+            : (title as NSString).size(withAttributes: [.font: font ?? NSFont.systemFont(ofSize: 11)]).width
+        let imageWidth = image?.size.width ?? 0
+        let imageTitleSpacing: CGFloat = imageWidth > 0 && titleWidth > 0 ? 4 : 0
+        let contentWidth = imageWidth + imageTitleSpacing + titleWidth
+        return NSSize(
+            width: max(
+                contentWidth + ComposerUIMetrics.compactControlHorizontalPadding * 2,
+                minimumWidth,
+            ),
+            height: ComposerUIMetrics.compactControlHeight,
+        )
+    }
+
+    override func layout() {
+        super.layout()
+        hoverLayer.frame = bounds
+    }
+
+    override var isEnabled: Bool {
+        didSet { updateHoverAppearance() }
     }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         bezelStyle = .inline
         isBordered = false
+        (cell as? NSButtonCell)?.highlightsBy = []
         focusRingType = .default
         font = NSFont.systemFont(ofSize: 11, weight: .medium)
         contentTintColor = .labelColor
         wantsLayer = true
+        hoverLayer.cornerRadius = VoyagerDS.Radius.chipItem
+        layer?.insertSublayer(hoverLayer, at: 0)
         layer?.cornerRadius = VoyagerDS.Radius.chipItem
         layer?.borderWidth = 1
         layer?.borderColor = NSColor.secondaryLabelColor.withAlphaComponent(0.25).cgColor
         setButtonType(.momentaryPushIn)
     }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil,
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        isHovering = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        isHovering = false
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateHoverAppearance()
+    }
+
+    private func updateHoverAppearance() {
+        let colorScheme: ColorScheme = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? .dark
+            : .light
+        hoverLayer.backgroundColor = isEnabled && isHovering
+            ? NSColor(VoyagerDS.Interaction.controlHoverFill(for: colorScheme)).cgColor
+            : NSColor.clear.cgColor
+    }
+
     @available(*, unavailable)
     required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+}
+
+@MainActor
+final class ComposerNativeMenu: NSMenu {
+    private let searchFieldBox = WeakSearchFieldBox()
+
+    var searchField: NSTextField? {
+        get { searchFieldBox.value }
+        set { searchFieldBox.value = newValue }
+    }
+
+    override nonisolated func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard Self.shouldForwardToSearchField(event) else {
+            return super.performKeyEquivalent(with: event)
+        }
+
+        let keyEvent = KeyEventData(event)
+        let searchFieldBox = searchFieldBox
+        return MainActor.assumeIsolated {
+            guard let searchField = searchFieldBox.value,
+                  let window = searchField.window,
+                  let forwardedEvent = keyEvent.makeEvent()
+            else {
+                return false
+            }
+            window.makeFirstResponder(searchField)
+            searchField.currentEditor()?.keyDown(with: forwardedEvent)
+            return true
+        }
+    }
+
+    nonisolated private static func shouldForwardToSearchField(_ event: NSEvent) -> Bool {
+        let deleteKeyCodes: Set<UInt16> = [51, 117]
+        if deleteKeyCodes.contains(event.keyCode) { return true }
+
+        let menuNavigationKeyCodes: Set<UInt16> = [48, 49, 53, 123, 124, 125, 126]
+        if menuNavigationKeyCodes.contains(event.keyCode) { return false }
+        if event.modifierFlags.contains(.command) { return false }
+
+        return !(event.characters?.isEmpty ?? true)
+    }
+}
+
+private final class WeakSearchFieldBox: @unchecked Sendable {
+    @MainActor weak var value: NSTextField?
+}
+
+private struct KeyEventData {
+    let modifierFlags: UInt
+    let timestamp: TimeInterval
+    let windowNumber: Int
+    let characters: String
+    let charactersIgnoringModifiers: String
+    let isARepeat: Bool
+    let keyCode: UInt16
+
+    init(_ event: NSEvent) {
+        modifierFlags = event.modifierFlags.rawValue
+        timestamp = event.timestamp
+        windowNumber = event.windowNumber
+        characters = event.characters ?? ""
+        charactersIgnoringModifiers = event.charactersIgnoringModifiers ?? ""
+        isARepeat = event.isARepeat
+        keyCode = event.keyCode
+    }
+
+    @MainActor
+    func makeEvent() -> NSEvent? {
+        NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: NSEvent.ModifierFlags(rawValue: modifierFlags),
+            timestamp: timestamp,
+            windowNumber: windowNumber,
+            context: nil,
+            characters: characters,
+            charactersIgnoringModifiers: charactersIgnoringModifiers,
+            isARepeat: isARepeat,
+            keyCode: keyCode,
+        )
     }
 }
