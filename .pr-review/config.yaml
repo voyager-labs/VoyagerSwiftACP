@@ -47,27 +47,6 @@ path_instructions:
   - path: "apps/macos/**/*.swift"
     instructions_file: "rules/macos-swift.md"
 
-  # Backend Python — shorter inline rules
-  - path: "apps/backend/**/*.py"
-    instructions: |
-      # Backend — FastAPI + Pydantic
-
-      When a PR touches backend routes, request/response schemas, search conversion,
-      or API clients, verify the observable contract:
-
-      - Response envelopes, status codes, and error shapes remain compatible with
-        existing clients.
-      - Internal exceptions, tracebacks, filesystem paths, and provider details are
-        not exposed as raw API responses.
-      - Search conversion endpoints preserve the documented convert-only contract;
-        do not introduce implicit indexing, filesystem mutation, or app-runtime
-        coupling through backend APIs.
-      - Schema/model changes include matching route behavior and tests for success,
-        validation failure, and provider/backend failure paths.
-
-      Tools: ruff (lint), pyright (types).
-      Flag API contract drift as P1 correctness or compatibility risk.
-
   # Global rules — apply to all files
   - path: "**"
     instructions: |
@@ -144,10 +123,6 @@ tools:
   swiftlint:
     enabled: true
     config_file: "apps/macos/.swiftlint.yml"
-  ruff:
-    enabled: true
-  pyright:
-    enabled: true
 
 # ── Phase 5: Output ──
 output:
