@@ -267,6 +267,60 @@ final class SET009CollectionSearchAiSettingsTests: XCTestCase {
         XCTAssertEqual(client.load(), .default)
     }
 
+    /// SET-009-show_collection_search_ai_settings_section: summary는 Auto의 runtime 선택 의미를 정확히 설명한다.
+    /// explicit/unavailable 선택과 Auto provider/model을 품질 scoring 표현 없이 구분하는지 검증한다.
+    /// - 검증 내용: Collection Search summary formatter, disclosure accessibility label, footer and Auto copy
+    /// - 사전 조건: default Auto 설정과 explicit/unavailable provider/model 설정을 각각 제공한다.
+    /// - 기대 결과: Auto는 last-used available provider와 first compatible model 의미를 전달한다.
+    func testCollectionSearchSummaryExplainsAutoRuntimeSelection() {
+        let autoSummary = AiSettingsView.collectionSearchSummary(settings: .default)
+
+        XCTAssertEqual(
+            autoSummary,
+            "Automatic · Last-used provider first · First compatible model",
+        )
+        XCTAssertFalse(autoSummary.lowercased().contains("recommended"))
+        XCTAssertFalse(autoSummary.lowercased().contains("best"))
+
+        let explicitSettings = CollectionSearchAISettings(
+            provider: .specific(AiProvider.openai.rawValue),
+            model: .specific(provider: AiProvider.openai.rawValue, model: "gpt-4o-mini"),
+            thinking: .effort("low"),
+        )
+        XCTAssertEqual(
+            AiSettingsView.collectionSearchSummary(
+                settings: explicitSettings,
+                providerDisplayName: "OpenAI",
+                modelDisplayName: "GPT-4o mini",
+            ),
+            "OpenAI · GPT-4o mini · low",
+        )
+
+        let unavailableSettings = CollectionSearchAISettings(
+            provider: .specific("future-provider"),
+            model: .specific(provider: "future-provider", model: "future-model"),
+            thinking: .providerDefault,
+        )
+        XCTAssertEqual(
+            AiSettingsView.collectionSearchSummary(
+                settings: unavailableSettings,
+                providerUnavailable: true,
+                modelUnavailable: true,
+            ),
+            "future-provider (Unavailable) · future-model (Unavailable) · Provider default",
+        )
+        XCTAssertEqual(AiSettingsView.aiModelSettingsSectionTitle, "AI Model Settings")
+        XCTAssertEqual(AiSettingsView.collectionSummaryAccessibilityLabel, "Collection Search Settings")
+        XCTAssertEqual(
+            AiSettingsView.collectionSearchFooterText,
+            "These preferences are stored locally and used by collection search only.",
+        )
+        XCTAssertEqual(
+            AiSettingsView.collectionSearchAutoExplanationText,
+            "Auto uses the last-used available provider first and the first compatible model at runtime.",
+        )
+    }
+
     /// SET-009-show_collection_search_ai_settings_section: 손상된 collection search AI 설정은 기본값으로 복구된다.
     /// 설정 화면이 decode할 수 없는 저장값 때문에 중단되지 않고 안전한 기본 선택을 표시하는지 검증한다.
     /// - 검증 내용: live collectionSearchAISettingsClient corrupt payload fallback, default selection

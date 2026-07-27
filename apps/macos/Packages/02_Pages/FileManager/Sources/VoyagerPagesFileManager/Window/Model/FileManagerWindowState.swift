@@ -17,12 +17,33 @@ enum FileManagerFixedLocationsLoadPhase: Equatable {
 enum FileManagerAiChatInspectorDestination: Equatable {
     case newChat
     case chatHistory
+    case reopenChat
 }
 
 struct FileManagerPendingAiChatInspectorOpen: Equatable {
     var requestID: UUID
     var tabID: ContentTabID
     var destination: FileManagerAiChatInspectorDestination
+    var resumeSessionID: AiChatSessionID?
+    var resumeProvenance: AiChatNewChatPreparationProvenance?
+    var preservesLiveRuntime: Bool
+}
+
+struct FileManagerPendingAiChatNewChat: Equatable {
+    var requestID: UUID
+    var tabID: ContentTabID
+    var target: FileManagerAiChatNewChatTarget
+    var windowLast: AiChatNewChatSelectionCandidate?
+    var persistedDefault: AiChatPersistedSelectionCandidate?
+    var didLoadPersistedDefault: Bool
+    var requiresCatalogRefresh: Bool
+    var didObserveCatalogRefresh: Bool
+    var expectedModelListRequestID: UUID?
+}
+
+struct FileManagerAiChatSelection: Equatable {
+    var modelHandle: AiModelHandle
+    var thinking: AiThinkingSelection?
 }
 
 @ObservableState
@@ -38,7 +59,9 @@ public struct FileManagerWindowState: Equatable {
     public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
     public var pendingContentTabClose: PendingContentTabClose?
     public var pendingCollectionOpenRequest: ContentPageCollectionOpenRequest?
+    var lastExplicitAiChatSelection: FileManagerAiChatSelection?
     var pendingAiChatInspectorOpen: FileManagerPendingAiChatInspectorOpen?
+    var pendingAiChatNewChat: FileManagerPendingAiChatNewChat?
     var fixedLocationsLoadPhase: FileManagerFixedLocationsLoadPhase = .idle
     var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
 
@@ -54,7 +77,9 @@ public struct FileManagerWindowState: Equatable {
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
         pendingCollectionOpenRequest = nil
+        lastExplicitAiChatSelection = nil
         pendingAiChatInspectorOpen = nil
+        pendingAiChatNewChat = nil
         if let activeTabID = contentTabs.activeTabID {
             tabContentStates[activeTabID] = content
         }
@@ -178,6 +203,9 @@ public struct FileManagerWindowState: Equatable {
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
         pendingCollectionOpenRequest = nil
+        lastExplicitAiChatSelection = nil
+        pendingAiChatInspectorOpen = nil
+        pendingAiChatNewChat = nil
         fixedLocationsLoadPhase = .idle
         homeFavoriteItems = []
     }
@@ -660,7 +688,7 @@ private extension AiChatExecutionPhase {
     }
 }
 
-private extension AiChatFeature.State {
+extension AiChatFeature.State {
     var lifecycleSessionIDsToPreserve: [AiChatSessionID] {
         var sessionIDs: [AiChatSessionID] = []
         let shouldPreserveOwner = switch executionPhase {

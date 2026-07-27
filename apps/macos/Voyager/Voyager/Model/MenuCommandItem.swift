@@ -45,7 +45,7 @@ struct MenuCommandItem: Identifiable, Equatable {
         case requestUndo
         case requestRedo
         case toggleComposer
-        case newChat
+        case openChat
         case showChatHistory
 
         case cut

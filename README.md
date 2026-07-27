@@ -105,9 +105,7 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
 Swift 기대 버전은 루트 `.swift-toolchain-version`에 별도로 명시합니다.
 모든 로컬 개발 환경과 CI는 이 버전에 맞추는 것을 원칙으로 합니다.
 
-`swiftly`를 사용하는 환경을 위해 루트 `.swift-version`은 `xcode`로 고정합니다.
-`.swift-version`은 swiftly가 읽는 toolchain 선택 파일이고, `.swift-toolchain-version`은 이 레포가 기대하는 Swift 버전을 검증하기 위한 파일입니다.
-따라서 `swiftly`가 PATH에서 먼저 잡히더라도 레포 안에서는 현재 선택된 Xcode toolchain을 사용하고, 그 결과가 Swift 6.2.1인지 `mise run swift-version`으로 확인합니다.
+Swift toolchain 선택은 현재 활성 Xcode를 따릅니다. `.swift-toolchain-version`은 설치 도구를 선택하지 않고, 활성 Xcode가 제공하는 Swift 버전을 `mise run swift-version`으로 검증하는 기준입니다.
 
 #### 사전 준비
 
@@ -119,8 +117,7 @@ Swift 기대 버전은 루트 `.swift-toolchain-version`에 별도로 명시합�
 처음 클론했거나, Xcode 버전을 다시 맞추고 싶을 때 **레포 루트에서** 다음을 실행합니다.
 
 ```bash
-chmod +x scripts/xcodes.sh   # 최초 1회만 필요 (이미 실행 권한이 있으면 생략 가능)
-./scripts/xcodes.sh
+mise run xcode
 ```
 
 이 스크립트는 다음 작업을 수행합니다.
@@ -130,14 +127,7 @@ chmod +x scripts/xcodes.sh   # 최초 1회만 필요 (이미 실행 권한이 �
 3. `xcodes install <버전>`으로 해당 Xcode 버전을 설치합니다. (이미 설치되어 있다면 건너뜁니다)
 4. `xcodes select <버전>`으로 해당 버전을 현재 macOS의 활성 Xcode로 설정합니다.
 
-`swiftly`를 별도로 쓰는 경우에는 아래 명령으로 레포 기준 Swift toolchain도 확인할 수 있습니다.
-
-```bash
-swiftly use
-mise run swift-version
-```
-
-정상이라면 `swiftly use`는 `xcode`, `mise run swift-version`은 `.swift-toolchain-version`과 일치하는 Swift 6.2.1을 출력합니다.
+`mise run swift-version`은 활성 Xcode toolchain이 `.swift-toolchain-version`과 일치하는지 확인합니다.
 
 설정이 제대로 되었는지 확인하려면:
 
@@ -149,11 +139,12 @@ xcodebuild -version
 
 #### 스크립트를 실행해야 하는 시점
 
-- 이 레포를 **처음 클론한 직후**
+- 이 레포를 처음 clone하고 `mise run setup`을 실행할 때 자동으로 수행됩니다.
+- `.xcode-version` 버전이 설치되어 있지 않거나 시스템 기본 Xcode를 해당 버전으로 명시적으로 바꿀 때
 
 ## Development Bootstrap (Git hooks)
 
-커밋 시점에 Swift/Python 포맷/린트를 자동으로 실행해서 실패하면 커밋을 막습니다.
+커밋 시점에 Swift 포맷·린트와 프로젝트 검증을 변경 없이 실행하고, 문제가 있으면 커밋을 막습니다.
 
 처음 클론한 후(그리고 새로운 머신에서) **레포 루트에서 한 번만** 실행하세요:
 
@@ -161,24 +152,28 @@ xcodebuild -version
 bash scripts/setup.sh
 ```
 
-이 설정은 repo-local git config(`core.hooksPath`)에 저장되며, 동일 레포에서 생성한 worktree에도 그대로 적용되는 것을 목표로 합니다.
+이 명령은 pinned tool, `.xcode-version`의 Xcode 설치·선택, Git hook, submodule, `docs/canonical` npm 의존성을 모두 설정합니다. 문서 lock이 변경된 경우에만 `mise run docs-setup`이 `npm ci`를 다시 실행합니다.
+
+Lefthook은 저장소의 Git hooks 디렉터리에 hook을 설치합니다. hook이 사라졌다면 `mise run hooks`로 복구할 수 있습니다.
+새 worktree의 최초 checkout에서는 `post-checkout` hook이 `scripts/setup.sh`를 실행해 같은 개발 환경을 자동으로 준비합니다. 일반 branch checkout과 merge에서는 현재 `mise.toml` 신뢰, submodule 동기화, 문서 lock 기반 npm 의존성 동기화를 수행합니다.
 
 - 다른 프로젝트 때문에 Xcode 버전을 변경했다가, **다시 Voyager 앱을 개발하려고 할 때**
 - `.xcode-version`이 변경된 PR이 머지되어, **새로운 공식 Xcode 버전에 맞추어야 할 때**
 
 > 이 레포에서 작업할 때는 항상 `.xcode-version`에 적힌 Xcode 버전으로 빌드하는 것을 원칙으로 합니다.
-> 다른 프로젝트와 혼용해서 Xcode 버전을 바꾼 경우, Voyager 작업 전에 `./scripts/xcodes.sh`를 한 번 실행해 Xcode 버전을 다시 맞춰 주세요.
+> 다른 프로젝트와 혼용해서 Xcode 버전을 바꾼 경우, Voyager 작업 전에 `mise run xcode`를 한 번 실행해 Xcode 버전을 다시 맞춰 주세요.
 
 ## Cupertino Apple Docs MCP
 
-이 레포의 `opencode.json`에는 Apple 플랫폼 문서 검색용 `cupertino` MCP가 함께 선언되어 있습니다.
-`mise`로 버전 고정 관리되며, `mise install cupertino`로 설치할 수 있습니다.
+이 레포는 Apple 플랫폼 문서 검색용 Cupertino를 `mise`로 버전 고정 관리합니다. `mise run setup`에 포함된 `mise install`이 Cupertino를 설치하므로 도구별 설치 명령은 필요하지 않습니다.
+
+`opencode.json`의 Cupertino MCP 항목은 기본적으로 `enabled: false`입니다. 따라서 실행 파일 설치와 OpenCode MCP 서버 활성화는 별도 상태이며, 설치만으로 서버가 시작되지는 않습니다.
 
 - 지원 플랫폼: macOS 15+
 - 설치:
 
 ```bash
-mise install cupertino
+mise install
 ```
 
 ## Conventions

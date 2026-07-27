@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
@@ -1634,14 +1635,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(tab.page, .home)
     }
 
-    /// CTM-001-home_selection_page_conversion: AI Chat 세션 생성 성공 시 anchor가 .aiChat으로 변환됨
-    /// VOY-438 AC4a의 startAiChat 성공 → ContentTabPageAnchor.aiChat(sessionID:) 변환을 검증한다.
-    /// - 검증 내용: homeAiChatClient.createSession → .selected("session-123") 반환 후 tab.anchor == .aiChat(sessionID:
-    /// "session-123"),
-    ///   tab.page == .aiChat
+    /// CTM-001-home_selection_page_conversion: 잘못된 AI Chat session 문자열은 Home을 유지함
+    /// Home placeholder는 엄격한 UUID 파싱에 성공한 경우에만 Content AI Chat으로 전달되는지 검증한다.
+    /// - 검증 내용: homeAiChatClient.createSession → invalid UUID 반환 후 anchor/page 불변
     /// - 사전 조건: homeAiChatClient.createSession → .selected("session-123")
-    /// - 기대 결과: active tab의 anchor가 AI Chat 세션 ID로 변경되고 page가 aiChat으로 전환됨
-    func testHomeSelection_startAiChatSuccess_convertsAnchor() async throws {
+    /// - 기대 결과: fallback UUID를 만들지 않고 active tab은 Home 상태를 유지함
+    func testHomeSelection_startAiChatInvalidSessionID_preservesHome() async throws {
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
         } withDependencies: {
@@ -1656,11 +1655,90 @@ final class CTM001HandleContentTabTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.sendTabContent(.view(.homeSelectionTapped(.startAiChat)))
-        await store.receive(\.contentTabs)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
-        XCTAssertEqual(tab.anchor, .aiChat(sessionID: "session-123"))
-        XCTAssertEqual(tab.page, .aiChat)
+        XCTAssertEqual(tab.anchor, .homeDefault)
+        XCTAssertEqual(tab.page, .home)
+    }
+
+    /// CTM-001-home_selection_page_conversion: Home New Chat은 placeholder에 seed를 적용하고 첫 제출까지 저장하지 않음
+    /// VOY-638에서 Home same-tab 전환이 explicit-ID transient seed pipeline을 사용하는지 검증한다.
+    /// - 검증 내용: provider catalog 완료 후에도 save 0회, anchor/session/transient ID 일치, 첫 submit request-start save 1회
+    /// - 사전 조건: Home session placeholder, 유효한 OpenAI 기본 model/thinking, 지연된 deterministic model-list 응답
+    /// - 기대 결과: seed가 placeholder draft에 적용되고 첫 submit이 같은 placeholder ID snapshot을 정확히 한 번 저장함
+    func testHomeSelection_startAiChat_appliesDefaultSeedAndPersistsOnlyFinalSession() async throws {
+        let fixture = CTM001HomeNewChatFixture()
+        let store = fixture.makeStore()
+
+        await store.sendTabContent(.view(.homeSelectionTapped(.startAiChat)))
+        await store.receive(\.contentTabs)
+        await store.receiveTabContent(\.aiChat.providerConnectionsUpdated)
+        await fixture.modelLoadGate.waitUntilLoading()
+        await store.receive(\.internal.homeAiChatNewChatSeedRequested)
+        await store.receive(\.internal.aiChatNewChatDefaultsLoaded)
+
+        XCTAssertTrue(fixture.savedSnapshots.value.isEmpty, "catalog 완료 전에는 placeholder나 최종 세션을 저장하지 않아야 함")
+        XCTAssertTrue(fixture.loadedSessionIDs.value.isEmpty, "fresh placeholder는 restore/load 대상이 아니어야 함")
+
+        await fixture.modelLoadGate.resume(returning: [fixture.defaultModel])
+        await store.receiveTabContent(\.aiChat.modelListLoaded)
+        await store.skipReceivedActions()
+
+        let placeholderID = try XCTUnwrap(UUID(uuidString: fixture.placeholderSessionID))
+        XCTAssertTrue(fixture.savedSnapshots.value.isEmpty, "seed 준비만으로 Home placeholder를 저장하면 안 됨")
+        XCTAssertEqual(store.state.content.aiChat.sessionID?.rawValue, placeholderID)
+        XCTAssertEqual(store.state.content.aiChat.preparedTransientSessionID?.rawValue, placeholderID)
+        XCTAssertNil(store.state.content.aiChat.emptyDraftSessionID)
+        XCTAssertEqual(store.state.content.aiChat.selectedModelHandle, fixture.defaultModel.id)
+        XCTAssertEqual(store.state.content.aiChat.selectedThinking, .effort(.high))
+        XCTAssertTrue(fixture.loadedSessionIDs.value.isEmpty)
+        XCTAssertEqual(
+            store.state.contentTabs.tabs.first?.anchor,
+            .aiChat(sessionID: fixture.placeholderSessionID),
+        )
+
+        await store.sendTabContent(.aiChat(.draftTextChanged("Home question")))
+        await store.sendTabContent(.aiChat(.submitTapped))
+        await store.receiveTabContent(\.aiChat.requestContextResolved)
+        await store.receiveTabContent(\.aiChat.sessionSnapshotUpdated)
+        await store.finish()
+
+        XCTAssertEqual(fixture.savedSnapshots.value.count, 1)
+        let savedSnapshot = try XCTUnwrap(fixture.savedSnapshots.value.first)
+        XCTAssertEqual(savedSnapshot.sessionID.rawValue, placeholderID)
+        XCTAssertEqual(savedSnapshot.model, fixture.defaultModel.id)
+        XCTAssertEqual(savedSnapshot.selectedThinking, .effort(.high))
+    }
+
+    /// CTM-001-home_selection_page_conversion: pending Home seed는 사용자 attachment 변경을 덮어쓰지 않음
+    /// 지연된 catalog completion이 Home placeholder에 추가된 사용자 입력 provenance를 무효화하는지 검증한다.
+    /// - 검증 내용: seed pending 중 attachment 추가 후 late completion 무시, save 0회
+    /// - 사전 조건: valid Home placeholder와 지연된 model catalog가 있다.
+    /// - 기대 결과: attachment와 placeholder identity가 유지되고 seed preparation/persistence는 실행되지 않음
+    func testHomeSelection_pendingSeedIgnoresLateCompletionAfterAttachmentMutation() async throws {
+        let fixture = CTM001HomeNewChatFixture()
+        let store = fixture.makeStore()
+
+        await store.sendTabContent(.view(.homeSelectionTapped(.startAiChat)))
+        await store.receive(\.contentTabs)
+        await store.receiveTabContent(\.aiChat.providerConnectionsUpdated)
+        await fixture.modelLoadGate.waitUntilLoading()
+        await store.receive(\.internal.homeAiChatNewChatSeedRequested)
+        await store.receive(\.internal.aiChatNewChatDefaultsLoaded)
+
+        let attachmentURL = URL(fileURLWithPath: "/tmp/home-pending.txt")
+        await store.sendTabContent(.aiChat(.attachmentPickerSelection([attachmentURL])))
+        XCTAssertEqual(store.state.content.aiChat.addedAttachments.count, 1)
+
+        await fixture.modelLoadGate.resume(returning: [fixture.defaultModel])
+        await store.receiveTabContent(\.aiChat.modelListLoaded)
+
+        let placeholderID = try XCTUnwrap(UUID(uuidString: fixture.placeholderSessionID))
+        XCTAssertEqual(store.state.content.aiChat.sessionID?.rawValue, placeholderID)
+        XCTAssertEqual(store.state.content.aiChat.addedAttachments.count, 1)
+        XCTAssertNil(store.state.content.aiChat.preparedTransientSessionID)
+        XCTAssertNil(store.state.content.aiChat.selectedModelHandle)
+        XCTAssertTrue(fixture.savedSnapshots.value.isEmpty)
     }
 
     /// CTM-001-home_selection_page_conversion: AI Chat 세션 생성 실패 시 Home anchor가 유지됨
@@ -2397,5 +2475,95 @@ private enum ExternalTabReservationTestFixture {
             pinnedAt: Date(timeIntervalSince1970: 100),
         )
         return PinnedState(id: id, tab: tab, content: content, record: record)
+    }
+}
+
+private struct CTM001HomeNewChatFixture {
+    let placeholderSessionID = "E621E1F8-C36C-495A-93FC-0C247A3E6E5F"
+    let defaultModel: AiProviderModel
+    let connectionsFile: AIConnectionsFile
+    let defaultSettings: AiChatDefaultSettings
+    let modelLoadGate = CTM001ModelLoadGate()
+    let loadedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+    let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+
+    init() {
+        let model = AiProviderModel(
+            id: AiModelHandle(provider: .openai, rawValue: "gpt-5"),
+            provider: .openai,
+            rawModelID: "gpt-5",
+            displayName: "GPT-5",
+            providerDisplayName: "OpenAI",
+            thinkingCapability: .effort(values: [.minimal, .high], defaultValue: .minimal),
+            supportsThinkingNone: true,
+        )
+        let providerRecord = ProviderRecordFile(
+            providerId: .openai,
+            authMethod: .apiKey,
+            credential: .apiKey(APIKeyCredentialFile(secret: "sk-test-valid")),
+            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+        )
+        defaultModel = model
+        connectionsFile = AIConnectionsFile(
+            updatedAtMs: 1,
+            lastUsedProviderId: .openai,
+            providers: [AiProvider.openai.rawValue: providerRecord],
+        )
+        defaultSettings = AiChatDefaultSettings(
+            provider: PersistedAIProviderSelection(rawValue: AiProvider.openai.rawValue),
+            model: PersistedAIModelSelection(
+                providerRawValue: AiProvider.openai.rawValue,
+                modelRawValue: model.rawModelID,
+            ),
+            thinking: .effort("high"),
+        )
+    }
+
+    @MainActor
+    func makeStore() -> TestStoreOf<FileManagerFeature> {
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.homeAiChatClient.createSession = { .selected(placeholderSessionID) }
+            $0.aiConnectionsFileClient.load = { connectionsFile }
+            $0.aiProviderModelListClient = AiProviderModelListClient(loadModels: { _, _ in
+                await modelLoadGate.load()
+            })
+            $0.aiChatDefaultSettingsClient.load = { defaultSettings }
+            $0.aiChatSessionPersistenceClient.loadSession = { sessionID in
+                loadedSessionIDs.withValue { $0.append(sessionID) }
+                return nil
+            }
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+            $0.uuid = .incrementing
+        }
+        // store.exhaustivity = .off: Home부터 model catalog와 AiChat persistence까지의 통합 action 중 durable 경계만 선별 검증한다.
+        store.exhaustivity = .off
+        return store
+    }
+}
+
+private actor CTM001ModelLoadGate {
+    private var continuation: CheckedContinuation<[AiProviderModel], Never>?
+
+    func load() async -> [AiProviderModel] {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func waitUntilLoading() async {
+        while continuation == nil {
+            await Task.yield()
+        }
+    }
+
+    func resume(returning models: [AiProviderModel]) {
+        continuation?.resume(returning: models)
+        continuation = nil
     }
 }

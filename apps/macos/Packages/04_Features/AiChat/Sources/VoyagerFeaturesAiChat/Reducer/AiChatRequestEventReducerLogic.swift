@@ -75,6 +75,10 @@ extension AiChatFeature {
             )
             state.executionPhase = .completed(finalizedLock.recordingFinalSnapshot(snapshot))
         }
+        state.prepareInspectorReopenPersistenceBaseline(
+            requestID: finalizedLock.requestID,
+            sessionID: snapshot.sessionID,
+        )
         return saveFinalSnapshot(snapshot, finalizedLock: finalizedLock.recordingFinalSnapshot(snapshot))
     }
 

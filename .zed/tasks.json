@@ -30,13 +30,23 @@
 	{
 		"label": "Voyager Prod: Launch (Prod-Debug)",
 		"command": "./scripts/dev/macos-launch.sh",
-		"args": ["--scheme", "Voyager-Prod", "--configuration", "Prod-Debug"],
+		"args": [
+			"--scheme",
+			"Voyager-Prod",
+			"--configuration",
+			"Prod-Debug"
+		],
 		"cwd": "$ZED_WORKTREE_ROOT"
 	},
 	{
 		"label": "Voyager Prod: Launch (Prod-Release)",
 		"command": "./scripts/dev/macos-launch.sh",
-		"args": ["--scheme", "Voyager-Prod", "--configuration", "Prod-Release"],
+		"args": [
+			"--scheme",
+			"Voyager-Prod",
+			"--configuration",
+			"Prod-Release"
+		],
 		"cwd": "$ZED_WORKTREE_ROOT"
 	},
 	{
@@ -137,7 +147,10 @@
 	{
 		"label": "FileManagerHost Dev: Launch with Injection (Dev-Debug)",
 		"command": "mise",
-		"args": ["run", "macos-filemanager-injection"],
+		"args": [
+			"run",
+			"macos-filemanager-injection"
+		],
 		"cwd": "$ZED_WORKTREE_ROOT"
 	},
 	{
@@ -156,7 +169,19 @@
 	{
 		"label": "Storybook: Dev Server",
 		"command": "mise",
-		"args": ["run", "storybook"],
+		"args": [
+			"run",
+			"storybook"
+		],
+		"cwd": "$ZED_WORKTREE_ROOT"
+	},
+	{
+		"label": "Voyager Dev: Test",
+		"command": "mise",
+		"args": [
+			"run",
+			"macos-test"
+		],
 		"cwd": "$ZED_WORKTREE_ROOT"
 	}
 ]

@@ -174,7 +174,6 @@
 				"VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
 			}
 		},
-
 		{
 			"type": "sweetpad",
 			"action": "debugging-launch",
@@ -198,7 +197,10 @@
 			"label": "FileManagerHost Dev: Launch with Injection (Dev-Debug)",
 			"detail": "Open InjectionNext, build FileManagerHost with interposable symbols, and launch with project watching",
 			"command": "mise",
-			"args": ["run", "macos-filemanager-injection"],
+			"args": [
+				"run",
+				"macos-filemanager-injection"
+			],
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},
@@ -226,7 +228,24 @@
 			"label": "Storybook: Dev Server",
 			"detail": "Launch Storybook development server on port 6006",
 			"command": "mise",
-			"args": ["run", "storybook"],
+			"args": [
+				"run",
+				"storybook"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": []
+		},
+		{
+			"type": "shell",
+			"label": "Voyager Dev: Test",
+			"detail": "Run the canonical Voyager-Dev macOS test task",
+			"command": "mise",
+			"args": [
+				"run",
+				"macos-test"
+			],
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},

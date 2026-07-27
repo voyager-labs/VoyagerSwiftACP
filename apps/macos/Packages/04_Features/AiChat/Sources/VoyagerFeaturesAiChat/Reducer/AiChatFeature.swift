@@ -63,6 +63,9 @@ public struct AiChatFeature {
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
+            if action.invalidatesPendingNewChatPreparation {
+                state.newChatPreparationMutationTracker.value &+= 1
+            }
             switch action {
             case .onAppear:
                 normalizeSelectionIfNeeded(&state)
@@ -81,16 +84,48 @@ public struct AiChatFeature {
                 return loadSessions()
 
             case .newChatTapped:
-                let preservedExecutionPhase = state.executionPhase
-                let snapshot = startNewUnselectedChat(state: &state)
-                preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
-                return saveNewChat(snapshot, ownerID: state.cancellationOwnerID)
+                return startNewChat(seed: nil, state: &state)
+
+            case let .newChatTappedWithSeed(seed):
+                return startNewChat(seed: seed, state: &state)
+
+            case let .newChatTappedIfCurrent(provenance, seed):
+                return startNewChatIfCurrent(provenance: provenance, seed: seed, state: &state)
 
             case .prepareUnpersistedNewChat:
-                return prepareUnpersistedNewChat(currentContext: nil, state: &state)
+                return prepareUnpersistedNewChat(currentContext: nil, seed: nil, state: &state)
+
+            case let .prepareUnpersistedNewChatWithSeed(seed):
+                return prepareUnpersistedNewChat(currentContext: nil, seed: seed, state: &state)
+
+            case let .prepareTransientNewChat(sessionID, seed):
+                return prepareTransientNewChat(sessionID: sessionID, seed: seed, state: &state)
+
+            case let .prepareTransientNewChatIfCurrent(sessionID, provenance, seed):
+                return prepareTransientNewChatIfCurrent(
+                    sessionID: sessionID,
+                    provenance: provenance,
+                    seed: seed,
+                    state: &state,
+                )
 
             case let .prepareUnpersistedNewChatWithContext(snapshot):
-                return prepareUnpersistedNewChat(currentContext: snapshot, state: &state)
+                return prepareUnpersistedNewChat(currentContext: snapshot, seed: nil, state: &state)
+
+            case let .prepareTransientNewChatWithContext(snapshot, seed):
+                return prepareUnpersistedNewChat(currentContext: snapshot, seed: seed, state: &state)
+
+            case let .prepareUnpersistedNewChatWithContextIfCurrent(snapshot, provenance, seed):
+                guard state.newChatPreparationProvenance == provenance else { return .none }
+                return prepareUnpersistedNewChat(currentContext: snapshot, seed: seed, state: &state)
+
+            case let .applyNewChatSelectionSeedIfCurrent(provenance, seed):
+                guard state.newChatPreparationProvenance == provenance else { return .none }
+                state.selectedModelHandle = seed?.modelHandle
+                state.selectedThinking = seed?.selectedThinking
+                state.unavailableSelectedModelHandle = nil
+                normalizeSelectionIfNeeded(&state)
+                return .none
 
             case .showSessionsTapped:
                 state.sessionList.cancelRenaming()
@@ -117,7 +152,7 @@ public struct AiChatFeature {
                 }
                 guard state.sessionID != nil else {
                     let preservedExecutionPhase = state.executionPhase
-                    let snapshot = startNewUnselectedChat(state: &state)
+                    let snapshot = startNewUnselectedChat(seed: nil, state: &state)
                     preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
                     return saveNewChat(snapshot, ownerID: state.cancellationOwnerID)
                 }
@@ -133,7 +168,7 @@ public struct AiChatFeature {
 
             case .startNewChatFromRebindTapped:
                 let preservedExecutionPhase = state.executionPhase
-                let snapshot = startNewUnselectedChat(state: &state)
+                let snapshot = startNewUnselectedChat(seed: nil, state: &state)
                 preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
                 return saveNewChat(snapshot, ownerID: state.cancellationOwnerID)
 
@@ -331,7 +366,14 @@ public struct AiChatFeature {
                 return handleSelectedThinkingChanged(selectedThinking, state: &state)
 
             case let .currentContextChanged(snapshot):
+                let previousContext = state.currentContext
+                let previousFolderStructureModes = state.currentContextFolderStructureModes
                 applyCurrentContextSnapshot(snapshot, state: &state)
+                if state.currentContext != previousContext
+                    || state.currentContextFolderStructureModes != previousFolderStructureModes
+                {
+                    state.markPreparedTransientSessionAsTouched()
+                }
                 return .none
 
             case let .draftTextChanged(text):
@@ -458,6 +500,25 @@ public struct AiChatFeature {
             case let .persistenceRecoveryRetryFailed(lock, failure):
                 return handlePersistenceRecoveryRetryFailed(lock: lock, failure: failure, state: &state)
             }
+        }
+    }
+}
+
+private extension AiChatAction {
+    var invalidatesPendingNewChatPreparation: Bool {
+        switch self {
+        case .selectedModelChanged,
+             .selectedThinkingChanged,
+             .currentContextChanged,
+             .draftTextChanged,
+             .attachmentPickerSelection,
+             .attachmentDrop,
+             .attachmentDropSelection,
+             .removeAddedAttachment,
+             .folderStructureModeChanged:
+            true
+        default:
+            false
         }
     }
 }
