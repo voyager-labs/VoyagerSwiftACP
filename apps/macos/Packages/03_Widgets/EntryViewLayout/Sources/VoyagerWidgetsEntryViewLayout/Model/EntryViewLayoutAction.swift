@@ -35,15 +35,44 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
 
     @CasePathable
     public enum View: @unchecked Sendable {
+        case updateSelection(
+            ids: Set<EntryModel.ID>,
+            lastSelectedId: EntryModel.ID?,
+            rangeAnchorId: EntryModel.ID?,
+            shouldScrollToSelection: Bool,
+        )
+        case selectAll(orderedItemIds: [EntryModel.ID])
         case selectNextItem(isShiftPressed: Bool)
         case selectPreviousItem(isShiftPressed: Bool)
         case selectByOffset(offset: Int, isShiftPressed: Bool)
+        case updateGridColumnCount(Int)
+        case updateListVisibleColumns([EntryListColumn])
+        case updateListColumnVisibility(column: EntryListColumn, isVisible: Bool)
+        case moveListColumn(from: Int, to: Int)
+        case resetListVisibleColumns
+        case resetScrollFlag
         case setDropTargeted(Bool)
         case startDrag(paths: [String])
         case handleDrop(providers: [NSItemProvider], destinationPath: String)
         case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
         case openSelectedItem
+        case executeCommand(String)
+        case openPathInNewWindow(String)
+        case startRename(item: EntryModel, text: String)
+        case commitRename(itemID: EntryModel.ID, newName: String)
+        case openEntry(EntryModel)
+        case saveScrollOffset(CGPoint, forPath: String)
+        case changeSort(EntryViewLayoutSortKey, VoyagerShared.SortOrder)
+        case toggleGroup(String)
+        case preloadOpenWithApplications([EntryModel])
+        case openWithApp(bundleID: String?)
+        case toggleTag(String)
+        case mutateTag(name: String, mode: TagMutationMode)
+        case expandFolder(EntryModel.ID)
+        case collapseFolder(EntryModel.ID)
+        case retryFolder(EntryModel.ID)
         case toggleShowHiddenFiles
+        case applyContentProjection(ContentProjection)
     }
 
     @CasePathable
@@ -61,6 +90,12 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case renameCommitted(itemID: EntryModel.ID, newName: String)
         case sortChanged(EntryViewLayoutSortKey, VoyagerShared.SortOrder)
         case groupChanged(EntryViewLayoutGroupKey)
+        case toggleGroup(String)
+        case preloadOpenWithApplications([EntryModel])
+        case tagMutation(tagName: String, mode: TagMutationMode)
+        case toggleTag(tagName: String)
+        case openWithApp(bundleID: String?)
+        case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
     }
 
     @CasePathable

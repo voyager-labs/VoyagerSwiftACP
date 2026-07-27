@@ -29,7 +29,13 @@ public struct EntryViewLayoutState: Equatable {
     public var sortOrder: VoyagerShared.SortOrder = .ascending
     public var groupKey: EntryViewLayoutGroupKey = .none
     public var collapsedGroups: Set<String> = []
+    public var presentationSections: [EntryViewLayoutSection] = []
+    public var openWithApplications: [ApplicationInfo] = []
     public var clipboardCutPaths: Set<String> = []
+    /// FileManagerContentState.entryOperations에서 동기화되는 투영값
+    public var restorableTrashPaths: Set<String> = []
+    public var trashDirectoryPath: String?
+    public var busyEntryPaths: Set<String> = []
     public var hierarchy: EntryListHierarchyState = .init()
     public var outlineProjectionRevision: Int = 0
 
@@ -86,6 +92,16 @@ public struct EntryViewLayoutState: Equatable {
         Array(displayItems)
     }
 
+    public var presentation: EntryViewLayoutPresentation {
+        EntryViewLayoutPresentation(
+            sections: presentationSections.isEmpty
+                ? [.ungrouped(items: entries)]
+                : presentationSections,
+            selectedIds: selectedIds,
+            openWithApplications: openWithApplications,
+        )
+    }
+
     public var entries: [EntryModel] = []
 
     public func visibleSelectableEntryIDs(isNormalDirectoryPage: Bool) -> [EntryModel.ID] {
@@ -94,6 +110,23 @@ public struct EntryViewLayoutState: Equatable {
 
     public func visibleSelectableEntries(isNormalDirectoryPage: Bool) -> [EntryModel] {
         outlineProjection(isNormalDirectoryPage: isNormalDirectoryPage).visibleSelectableEntries
+    }
+
+    mutating func synchronizeEntries(_ entries: [EntryModel]) {
+        self.entries = entries
+        presentationSections = [.ungrouped(items: entries)]
+        reconcileSelectionWithVisibleEntries()
+    }
+
+    mutating func synchronizePresentation(
+        entries: [EntryModel],
+        sections: [EntryViewLayoutSection],
+        openWithApplications: [ApplicationInfo],
+    ) {
+        self.entries = entries
+        presentationSections = sections.isEmpty ? [.ungrouped(items: entries)] : sections
+        self.openWithApplications = openWithApplications
+        reconcileSelectionWithVisibleEntries()
     }
 
     public var hierarchyProjectionIsActive: Bool {
@@ -136,13 +169,55 @@ public struct EntryViewLayoutState: Equatable {
         outlineProjectionRevision &+= 1
     }
 
+    mutating func reconcileSelectionWithVisibleEntries() {
+        let previousSelectedIds = selectedIds
+        let remainingIds = Set(visibleSelectableEntryIDs(
+            isNormalDirectoryPage: selectionProjectionIsHierarchyEnabled,
+        ))
+        selectedIds = selectedIds.intersection(remainingIds)
+
+        if remainingIds != lastVisibleSelectableEntryIDs {
+            advanceOutlineProjectionRevision()
+            lastVisibleSelectableEntryIDs = remainingIds
+        }
+
+        guard !selectedIds.isEmpty else {
+            lastSelectedId = nil
+            rangeAnchorId = nil
+            shouldScrollToSelection = false
+            return
+        }
+
+        if lastSelectedId.map(selectedIds.contains) != true {
+            let visibleIDs = visibleSelectableEntryIDs(
+                isNormalDirectoryPage: selectionProjectionIsHierarchyEnabled,
+            )
+            lastSelectedId = visibleIDs.first { selectedIds.contains($0) }
+        }
+        if rangeAnchorId.map(selectedIds.contains) != true {
+            rangeAnchorId = lastSelectedId
+        }
+        if selectedIds != previousSelectedIds {
+            shouldScrollToSelection = false
+        }
+    }
+
     public init() {}
+
     public mutating func clearCollectionPresentation() {
+        collectionReplaceEpoch &+= 1
         isCollectionMode = false
         collectionItems = []
         isCollectionContentLoading = false
         activeCollectionReplacePaths = []
+        expectedCollectionReplaceBatchIndex = 0
+        activeCollectionAppendExpectedBatchIndices = [:]
         activeCollectionAppendPaths = [:]
+        finishedCollectionAppendTokens = []
+        collectionCoreFinished = false
+        collectionStreamCompleted = false
+        collectionIncompleteFailure = nil
+        removedCollectionPaths = []
         entries = displayOrderItems
 
         let remainingIDs = Set(entries.map(\.id))

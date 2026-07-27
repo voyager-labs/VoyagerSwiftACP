@@ -84,7 +84,7 @@ public struct EntryViewLayoutFeature {
                 return .send(.delegate(.selectionChanged))
 
             case .internal(.reconcileHierarchySelection):
-                Self.reconcileSelectionWithVisibleEntries(&state)
+                state.reconcileSelectionWithVisibleEntries()
                 return .none
 
             case let .internal(.applySelectionOffset(offset, isShiftPressed, orderedItemIds)):
@@ -148,7 +148,7 @@ public struct EntryViewLayoutFeature {
 
             case let .internal(.setMode(mode)):
                 state.mode = mode
-                Self.reconcileSelectionWithVisibleEntries(&state)
+                state.reconcileSelectionWithVisibleEntries()
                 return .none
 
             case let .internal(.setListVisibleColumns(columns)):
@@ -200,13 +200,95 @@ public struct EntryViewLayoutFeature {
                 state.isDropTargeted = isTargeted
                 return .none
 
+            case let .view(.updateSelection(ids, lastSelectedId, rangeAnchorId, shouldScrollToSelection)):
+                return .send(.internal(.setSelectionState(
+                    ids: ids,
+                    lastSelectedId: lastSelectedId,
+                    rangeAnchorId: rangeAnchorId,
+                    shouldScrollToSelection: shouldScrollToSelection,
+                )))
+
+            case let .view(.selectAll(orderedItemIds)):
+                return .send(.internal(.applySelectAll(orderedItemIds: orderedItemIds)))
+
+            case let .view(.updateGridColumnCount(count)):
+                return .send(.internal(.updateGridColumnCount(count)))
+
+            case let .view(.updateListVisibleColumns(columns)):
+                return .send(.internal(.setListVisibleColumns(columns)))
+
+            case let .view(.updateListColumnVisibility(column, isVisible)):
+                return .send(.internal(.setListColumnVisibility(column: column, isVisible: isVisible)))
+
+            case let .view(.moveListColumn(from, to)):
+                return .send(.internal(.moveListColumn(from: from, to: to)))
+
+            case .view(.resetListVisibleColumns):
+                return .send(.internal(.resetListVisibleColumns))
+
+            case .view(.resetScrollFlag):
+                return .send(.internal(.resetScrollFlag))
+
+            case let .view(.dropItems(sourcePaths, destinationPath, isOptionDrag)):
+                return .send(.delegate(.dropItems(
+                    sourcePaths: sourcePaths,
+                    destinationPath: destinationPath,
+                    isOptionDrag: isOptionDrag,
+                )))
+
+            case let .view(.executeCommand(command)):
+                return .send(.delegate(.executeCommand(command)))
+
+            case let .view(.openPathInNewWindow(path)):
+                return .send(.delegate(.openPathInNewWindow(path)))
+
+            case let .view(.startRename(item, text)):
+                return .send(.delegate(.startRename(item: item, text: text)))
+
+            case let .view(.commitRename(itemID, newName)):
+                return .send(.delegate(.renameCommitted(itemID: itemID, newName: newName)))
+
+            case let .view(.openEntry(entry)):
+                return .send(.delegate(.openEntry(entry)))
+
+            case let .view(.saveScrollOffset(offset, path)):
+                return .send(.delegate(.saveScrollOffset(offset, forPath: path)))
+
+            case let .view(.changeSort(sortKey, sortOrder)):
+                return .send(.delegate(.sortChanged(sortKey, sortOrder)))
+
+            case let .view(.toggleGroup(groupName)):
+                return .send(.delegate(.toggleGroup(groupName)))
+
+            case let .view(.preloadOpenWithApplications(entries)):
+                return .send(.delegate(.preloadOpenWithApplications(entries)))
+
+            case let .view(.openWithApp(bundleID)):
+                return .send(.delegate(.openWithApp(bundleID: bundleID)))
+
+            case let .view(.toggleTag(tagName)):
+                return .send(.delegate(.toggleTag(tagName: tagName)))
+
+            case let .view(.mutateTag(name, mode)):
+                return .send(.delegate(.tagMutation(tagName: name, mode: mode)))
+
+            case let .view(.expandFolder(id)):
+                return .send(.hierarchy(.folderExpansionRequested(id: id)))
+
+            case let .view(.collapseFolder(id)):
+                return .send(.hierarchy(.folderCollapseRequested(id: id)))
+
+            case let .view(.retryFolder(id)):
+                return .send(.hierarchy(.folderRetryRequested(id: id)))
+
+            case .view(.openSelectedItem):
+                return .send(.delegate(.executeCommand("navigation.openSelectedItem")))
+
             case .view(.selectNextItem),
                  .view(.selectPreviousItem),
                  .view(.selectByOffset),
                  .view(.startDrag),
-                 .view(.handleDrop),
-                 .view(.dropItems),
-                 .view(.openSelectedItem):
+                 .view(.handleDrop):
                 return .none
 
             case let .internal(.setShowHiddenFiles(show)):
@@ -214,6 +296,25 @@ public struct EntryViewLayoutFeature {
 
             case .view(.toggleShowHiddenFiles):
                 return Self.setShowHiddenFiles(!state.showHiddenFiles, state: &state)
+
+            case let .view(.applyContentProjection(projection)):
+                state.entries = projection.entries
+                state.isLoading = projection.isLoading
+                state.sortKey = projection.sortKey
+                state.sortOrder = projection.sortOrder
+                state.groupKey = projection.groupKey
+                state.collapsedGroups = projection.collapsedGroups
+                state.presentationSections = projection.sections.isEmpty
+                    ? [.ungrouped(items: projection.entries)]
+                    : projection.sections
+                state.openWithApplications = projection.openWithApplications
+                state.renamingItemId = projection.renamingItemId
+                state.clipboardCutPaths = projection.clipboardCutPaths
+                state.busyEntryPaths = projection.busyEntryPaths
+                state.restorableTrashPaths = projection.restorableTrashPaths
+                state.trashDirectoryPath = projection.trashDirectoryPath
+                state.reconcileSelectionWithVisibleEntries()
+                return .none
 
             case let .internal(.setCollectionMode(isCollectionMode)):
                 state.isCollectionMode = isCollectionMode
@@ -459,8 +560,7 @@ public struct EntryViewLayoutFeature {
     // MARK: - Helpers
 
     static func updateEntriesAndReapply(_ state: inout State) -> Effect<Action> {
-        state.entries = state.displayOrderItems
-        reconcileSelectionWithVisibleEntries(&state)
+        state.synchronizeEntries(state.displayOrderItems)
         return .none
     }
 
@@ -474,9 +574,10 @@ public struct EntryViewLayoutFeature {
     static func updateEntriesPreservingOrder(_ state: inout State) {
         let currentItems = Dictionary(uniqueKeysWithValues: state.displayOrderItems.map { ($0.id, $0) })
         let existingIDs = Set(state.entries.map(\.id))
-        state.entries = state.entries.compactMap { currentItems[$0.id] }
-            + state.displayOrderItems.filter { !existingIDs.contains($0.id) }
-        reconcileSelectionWithVisibleEntries(&state)
+        state.synchronizeEntries(
+            state.entries.compactMap { currentItems[$0.id] }
+                + state.displayOrderItems.filter { !existingIDs.contains($0.id) },
+        )
     }
 
     static func metadataPatchesAffectActiveArrangement(
@@ -635,39 +736,6 @@ public struct EntryViewLayoutFeature {
             probes.append(.tags)
         }
         return probes.isEmpty ? .none : .active(probes)
-    }
-
-    static func reconcileSelectionWithVisibleEntries(_ state: inout State) {
-        let remainingIds = Set(state.visibleSelectableEntryIDs(
-            isNormalDirectoryPage: state.selectionProjectionIsHierarchyEnabled,
-        ))
-        state.selectedIds = state.selectedIds.intersection(remainingIds)
-
-        // Only advance revision when the visible entries structure actually changed.
-        // Selection-only changes (e.g., user clicking different items) do not affect
-        // the outline projection and must not trigger NSOutlineView reloadData.
-        if remainingIds != state.lastVisibleSelectableEntryIDs {
-            state.advanceOutlineProjectionRevision()
-            state.lastVisibleSelectableEntryIDs = remainingIds
-        }
-
-        guard !state.selectedIds.isEmpty else {
-            state.lastSelectedId = nil
-            state.rangeAnchorId = nil
-            state.shouldScrollToSelection = false
-            return
-        }
-
-        if state.lastSelectedId.map(state.selectedIds.contains) != true {
-            let visibleIDs = state.visibleSelectableEntryIDs(
-                isNormalDirectoryPage: state.selectionProjectionIsHierarchyEnabled,
-            )
-            state.lastSelectedId = visibleIDs.first { state.selectedIds.contains($0) }
-        }
-        if state.rangeAnchorId.map(state.selectedIds.contains) != true {
-            state.rangeAnchorId = state.lastSelectedId
-        }
-        state.shouldScrollToSelection = false
     }
 
     static func normalizedPath(_ path: String) -> String {
