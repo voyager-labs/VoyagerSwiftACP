@@ -4,6 +4,8 @@
 # ── Tools (pinned versions) ───────────────────────────────────
 
 [tools]
+node = "24"
+pnpm = "11.16.0"
 lefthook = "2.1.9"
 swiftlint = "0.63.3"
 xcodes = "1.6.2"

@@ -13,7 +13,7 @@
     "build": "tsc -b && vite build",
     "lint": "biome check .",
     "preview": "vite preview",
-    "storybook": "storybook dev -p 6006",
+    "storybook": "pnpm --filter @voyager-labs/file-manager-illustration build && storybook dev -p 6006",
     "typecheck": "tsc -b",
     "build-storybook": "pnpm --filter @voyager-labs/file-manager-illustration build && storybook build",
     "check": "biome check . && tsc -b && pnpm --filter @voyager-labs/file-manager-illustration typecheck"
