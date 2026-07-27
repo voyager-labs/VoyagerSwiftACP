@@ -63,7 +63,6 @@ private extension ScopePickerView {
     ) -> some View {
         ScopeEditorSummaryRow(
             summary: viewStore.scopeEditor.summary,
-            ruleDescription: viewStore.scopeEditor.scopeRuleDescription,
             includeSubfolders: viewStore.scopeEditor.selection.isRootOnly ? nil : viewStore.scopeEditor
                 .includeSubfolders,
             onToggleIncludeSubfolders: { store.send(.scopeEditorSetIncludeSubfolders(!$0)) },
