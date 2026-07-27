@@ -49,8 +49,15 @@ extension ConditionChipValueSectionView {
         }
     }
 
+    private static func buttonText(values: [String]) -> String {
+        let committed = ConditionValueNormalizer.deduplicatedTokenValues(values)
+        guard !committed.isEmpty else { return "Value" }
+        if committed.count <= 2 { return committed.joined(separator: ", ") }
+        return "\(committed[0]), \(committed[1]) +\(committed.count - 2)"
+    }
+
     private func tokenButtonLabel() -> some View {
-        Text(ConditionTokenPresentation.buttonText(values: condition.values ?? []))
+        Text(Self.buttonText(values: condition.values ?? []))
             .font(VoyagerDS.Typography.chip)
             .foregroundColor((condition.values?.isEmpty ?? true) ? .secondary.opacity(0.7) : .primary)
             .padding(.horizontal, 4)
