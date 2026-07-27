@@ -159,25 +159,5 @@ xcrun swift run \
   "$@"
 """
 
-# ── CodeGraph ─────────────────────────────────────────────────
 
-[tasks.codegraph-init]
-description = "CodeGraph 인덱스 초기화 (최초 1회)"
-run = "mise exec -- codegraph init -i"
-
-[tasks.codegraph-serve]
-description = "CodeGraph MCP 서버 실행"
-run = "mise exec -- codegraph serve --mcp"
-
-[tasks.codegraph-reindex]
-description = "CodeGraph 인덱스 재구축"
-run = "mise exec -- codegraph index"
-
-[tasks.codegraph-clean]
-description = "CodeGraph 인덱스/캐시 삭제"
-run = "rm -rf .codegraph"
-
-[tasks.codegraph-status]
-description = "CodeGraph 인덱스 상태 확인"
-run = "mise exec -- codegraph status"
 
