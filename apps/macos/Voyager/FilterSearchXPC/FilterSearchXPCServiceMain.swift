@@ -8,6 +8,7 @@ struct FilterSearchXPCServiceMain {
         bootstrapLogging()
         let logger = Logger(label: "Voyager.FilterSearchXPC")
         loadEnvironment(logger: logger)
+        EnvironmentLoader.requireAppEnv()
 
         let service = initializeService(logger: logger)
         let modelCatalogCache = AIProviderModelCatalogCache(logger: logger)
@@ -26,7 +27,6 @@ struct FilterSearchXPCServiceMain {
     private static func loadEnvironment(logger: Logger) {
         do {
             try EnvironmentLoader.loadEnvFilesWithProjectRootInference(
-                environment: ProcessInfo.processInfo.environment,
                 bundle: .main,
             )
         } catch {
