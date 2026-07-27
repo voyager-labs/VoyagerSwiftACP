@@ -24,7 +24,8 @@ final class TemporaryHomeFixture {
             )
         }
 
-        // TODO(VOY-432): ProcessInfo 대신 Dotenv 사용 검토 — https://linear.app/voyager-fm/issue/VOY-432
+        // HOME/project-root는 test-harness 격리 후 restore할 원본값으로, ProcessInfo 스냅샷이 올바르다.
+        // Dotenv는 runtime config를 위한 계층이며 test fixture 복원용이 아니다.
         originalHome = ProcessInfo.processInfo.environment["HOME"]
         originalProjectRoot = ProcessInfo.processInfo.environment["VOYAGER_PROJECT_ROOT"]
         setenv("HOME", tmp.path, 1)
