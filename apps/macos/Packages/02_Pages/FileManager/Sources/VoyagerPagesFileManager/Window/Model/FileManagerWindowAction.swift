@@ -191,6 +191,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case copyAbsolutePaths
         case copyURLs
         case openNewContentTab
+        case selectContentTab(position: Int)
         case closeActiveContentTab
         case closeSelectedContentTabs
         case toggleActiveContentTabPin

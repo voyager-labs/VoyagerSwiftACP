@@ -542,9 +542,9 @@ struct FileManagerWindowCommandRoutingReducer {
         }
 
         switch command {
-        case .openNewContentTab:
-            guard state.contentTabs.tabs.count < ContentTabConstants.maxTabs else { return .none }
-            return .send(.contentTabs(.open(.homeDefault)))
+        case .openNewContentTab,
+             .selectContentTab:
+            return handleContentTabCommand(command, state: state)
 
         case .closeActiveContentTab:
             return state.contentTabs.activeTabID
@@ -612,6 +612,30 @@ struct FileManagerWindowCommandRoutingReducer {
         case .requestUndo,
              .requestRedo:
             return handleUndoRedoRequest(command, state: &state)
+        }
+    }
+
+    private func handleContentTabCommand(
+        _ command: Action.WindowCommand,
+        state: State,
+    ) -> Effect<Action> {
+        switch command {
+        case .openNewContentTab:
+            guard state.contentTabs.tabs.count < ContentTabConstants.maxTabs else { return .none }
+            return .send(.contentTabs(.open(.homeDefault)))
+
+        case let .selectContentTab(position):
+            guard state.pendingSelectedContentTabClose == nil,
+                  let targetID = ContentTabProjection.tabID(
+                      atDisplayPosition: position,
+                      in: state.contentTabs,
+                  ),
+                  targetID != state.contentTabs.activeTabID
+            else { return .none }
+            return .send(.contentTabs(.setCurrent(targetID)))
+
+        default:
+            return .none
         }
     }
 

@@ -9,10 +9,10 @@ final class CTM002SetCurrentContentTabTests: XCTestCase {
 
     /// CTM-002-set_current_content_tab_by_index: 현재 Content Tab 전환과 selection 독립성 검증
     /// Sidebar primary click이나 index 기반 선택이 공유할 reducer contract를 검증한다.
-    /// - 검증 내용: setCurrent가 activeTabID만 변경하고 기존 selection과 anchor를 보존함
-    /// - 사전 조건: Home, Directory, Collection 세 탭과 Home active 상태
-    /// - 기대 결과: 지정한 tab id가 순서대로 active가 되며 selection과 anchor는 변경되지 않음
-    func testSetCurrentContentTabByIndex_activatesTargetWithoutChangingSelection() async {
+    /// - 검증 내용: setCurrent가 previous/active identity만 갱신하고 tab rows, selection, anchor를 보존함
+    /// - 사전 조건: Home, Directory, Collection 세 탭과 Home active, 기존 previous/selection/anchor 상태
+    /// - 기대 결과: 지정한 tab id가 active가 되고 직전 active가 previous가 되며 나머지 상태는 변경되지 않음
+    func testSetCurrentContentTabByIndex_activatesTargetPreservingSelectionAndAnchor() async {
         let homeID = ContentTabID()
         let directoryID = ContentTabID()
         let collectionID = ContentTabID()
@@ -35,9 +35,17 @@ final class CTM002SetCurrentContentTabTests: XCTestCase {
                 iconName: nil,
             ),
         ]
-        var state = ContentTabState(tabs: tabs, activeTabID: homeID, recentlyClosed: nil)
+        var state = ContentTabState(
+            tabs: tabs,
+            activeTabID: homeID,
+            previousActiveTabID: directoryID,
+            recentlyClosed: nil,
+        )
         state.selectedTabIDs = [homeID, collectionID]
         state.selectionAnchorID = directoryID
+        let expectedTabs = state.tabs
+        let expectedSelectedTabIDs = state.selectedTabIDs
+        let expectedSelectionAnchorID = state.selectionAnchorID
         let store = TestStore(initialState: state) {
             ContentTabFeature()
         }
@@ -46,13 +54,436 @@ final class CTM002SetCurrentContentTabTests: XCTestCase {
             $0.previousActiveTabID = homeID
             $0.activeTabID = collectionID
         }
+        XCTAssertEqual(store.state.tabs, expectedTabs)
+        XCTAssertEqual(store.state.selectedTabIDs, expectedSelectedTabIDs)
+        XCTAssertEqual(store.state.selectionAnchorID, expectedSelectionAnchorID)
+
         await store.send(.setCurrent(directoryID)) {
             $0.previousActiveTabID = collectionID
             $0.activeTabID = directoryID
         }
+        XCTAssertEqual(store.state.tabs, expectedTabs)
+        XCTAssertEqual(store.state.selectedTabIDs, expectedSelectedTabIDs)
+        XCTAssertEqual(store.state.selectionAnchorID, expectedSelectionAnchorID)
+    }
 
-        XCTAssertEqual(store.state.selectedTabIDs, [homeID, collectionID])
-        XCTAssertEqual(store.state.selectionAnchorID, directoryID)
+    /// CTM-002-set_current_content_tab_by_index: 존재하지 않는 Content Tab 선택은 전체 상태 no-op
+    /// 사용자가 stale index에 해당하는 target을 선택해도 현재 tab 문맥이 손상되지 않는지 검증한다.
+    /// - 검증 내용: setCurrent가 missing ID에서 ContentTabState의 어떤 필드도 변경하지 않음
+    /// - 사전 조건: non-nil previousActiveTabID와 selection, anchor를 가진 Directory active 상태
+    /// - 기대 결과: action 전후의 전체 ContentTabState가 동일함
+    func testSetCurrentContentTabByIndex_missingTargetIsWholeStateNoOp() async {
+        let homeID = ContentTabID()
+        let directoryID = ContentTabID()
+        let missingID = ContentTabID()
+        let tabs: IdentifiedArrayOf<ContentTabItem> = [
+            ContentTabItem(
+                id: homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: true,
+                title: "Pinned Home",
+                iconName: "house",
+            ),
+            ContentTabItem(
+                id: directoryID,
+                page: .directory,
+                anchor: .directory(path: "/missing-target"),
+                isPinned: false,
+                title: "Current Directory",
+                iconName: "folder",
+            ),
+        ]
+        var state = ContentTabState(
+            tabs: tabs,
+            activeTabID: directoryID,
+            previousActiveTabID: homeID,
+            recentlyClosed: nil,
+        )
+        state.selectedTabIDs = [homeID, directoryID]
+        state.selectionAnchorID = homeID
+        let expectedState = state
+        let store = TestStore(initialState: state) {
+            ContentTabFeature()
+        }
+
+        await store.send(.setCurrent(missingID))
+
+        XCTAssertEqual(store.state, expectedState)
+    }
+
+    /// CTM-002-set_current_content_tab_by_index: parent가 존재하지 않는 stale Content Tab 전환을 전체 window no-op으로 유지함
+    /// child setCurrent가 거부한 target으로 parent runtime handoff가 진행되지 않는지 full FileManager reducer에서 검증한다.
+    /// - 검증 내용: current/cache content, inspector, active/previous, selection, anchor, Sidebar projection 전체 불변
+    /// - 사전 조건: active A, previous B, missing C와 서로 다른 live/cache content 및 inspector snapshot
+    /// - 기대 결과: C를 setCurrent해도 전체 FileManagerFeature.State가 동일하고 후속 action/effect가 없음
+    func testSetCurrentContentTabByIndex_missingStaleTargetIsWholeWindowStateNoOpAtParent() async {
+        let activeID = ContentTabID(rawValue: "stale-active-A")
+        let previousID = ContentTabID(rawValue: "stale-previous-B")
+        let missingID = ContentTabID(rawValue: "stale-missing-C")
+        let state = makeStaleTargetWindowState(
+            activeID: activeID,
+            previousID: previousID,
+        )
+
+        let expectedState = state
+        let expectedSidebarProjection = state.sidebar.contentTabSidebarItems
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+
+        await store.send(.contentTabs(.setCurrent(missingID)))
+
+        XCTAssertEqual(store.state, expectedState)
+        XCTAssertEqual(store.state.sidebar.contentTabSidebarItems, expectedSidebarProjection)
+    }
+
+    // MARK: - CTM-002-set_current_content_tab_by_number
+
+    /// CTM-002-set_current_content_tab_by_number: 이미 active인 표시 위치 선택은 전체 window state no-op
+    /// 사용자가 현재 Content Tab의 숫자 shortcut을 다시 입력해도 runtime snapshot과 history가 유지되는지 검증한다.
+    /// - 검증 내용: command admission이 setCurrent child action과 parent handoff를 방출하지 않고 전체 state를 보존함
+    /// - 사전 조건: non-nil previousActiveTabID와 서로 다른 runtime snapshot을 가진 첫 번째 tab active 상태
+    /// - 기대 결과: 숫자 command 전후 FileManagerFeature.State가 동일하고 수신 action이 없음
+    func testSelectContentTabByNumber_sameActivePositionIsWholeWindowStateNoOp() async {
+        let activeID = ContentTabID(rawValue: "same-active")
+        let previousID = ContentTabID(rawValue: "same-previous")
+        var state = makePositionWindowState(
+            tabs: [makePositionTab(id: activeID), makePositionTab(id: previousID)],
+            activeTabID: activeID,
+        )
+        state.contentTabs.previousActiveTabID = previousID
+        state.contentTabs.selectedTabIDs = [activeID, previousID]
+        state.contentTabs.selectionAnchorID = previousID
+        let expectedState = state
+        let store = makePositionStore(initialState: state)
+
+        await store.send(.request(.selectContentTab(position: 1)))
+
+        XCTAssertEqual(store.state, expectedState)
+    }
+
+    /// CTM-002-set_current_content_tab_by_number: position 1...9가 현재 표시 ID와 정확히 대응함
+    /// 사용자가 숫자 shortcut을 누를 때 현재 Content Tab 표시 위치의 tab으로 전환되는지 검증한다.
+    /// - 검증 내용: projection의 1-based mapping과 command가 방출하는 setCurrent 및 runtime handoff identity
+    /// - 사전 조건: 서로 다른 Directory runtime snapshot을 가진 unpinned tab 9개와 아홉 번째 active 상태
+    /// - 기대 결과: position 1...9 각각이 같은 위치의 ID를 활성화하고 selection과 anchor를 보존함
+    func testSelectContentTabByNumber_positionsOneThroughNineMapExactVisibleIDs() async {
+        let ids = (1 ... 9).map { ContentTabID(rawValue: "position-\($0)") }
+        var state = makePositionWindowState(
+            tabs: IdentifiedArray(uniqueElements: ids.map { makePositionTab(id: $0) }),
+            activeTabID: ids[8],
+        )
+        state.contentTabs.selectedTabIDs = [ids[1], ids[7]]
+        state.contentTabs.selectionAnchorID = ids[7]
+        let store = makePositionStore(initialState: state)
+        // store.exhaustivity = .off: 기존 setCurrent runtime handoff의 광범위한 child action보다 position identity와 최종 snapshot을
+        // 검증한다.
+        store.exhaustivity = .off
+
+        for (position, expectedID) in zip(1 ... 9, ids) {
+            await assertPositionCommand(position, selects: expectedID, store: store)
+        }
+
         await store.finish()
+    }
+
+    /// CTM-002-set_current_content_tab_by_number: mixed raw tabs는 pinned-first 표시 순서를 사용함
+    /// raw storage가 pinned와 unpinned를 교차해도 숫자 shortcut은 Sidebar와 같은 표시 순서를 따라야 한다.
+    /// - 검증 내용: raw tabs index가 아니라 selectionOrderedTabIDs를 매 command 시점에 position mapping으로 사용함
+    /// - 사전 조건: raw U1/P1/U2/P2/U3/P3/U4/P4/U5와 U5 active, non-empty selection/anchor
+    /// - 기대 결과: position 1...9가 P1/P2/P3/P4/U1/U2/U3/U4/U5 순서로 전환됨
+    func testSelectContentTabByNumber_mixedRawTabsUsePinnedFirstVisibleOrder() async {
+        let unpinned = (1 ... 5).map { ContentTabID(rawValue: "U\($0)") }
+        let pinned = (1 ... 4).map { ContentTabID(rawValue: "P\($0)") }
+        let rawTabs: IdentifiedArrayOf<ContentTabItem> = [
+            makePositionTab(id: unpinned[0]),
+            makePositionTab(id: pinned[0], isPinned: true),
+            makePositionTab(id: unpinned[1]),
+            makePositionTab(id: pinned[1], isPinned: true),
+            makePositionTab(id: unpinned[2]),
+            makePositionTab(id: pinned[2], isPinned: true),
+            makePositionTab(id: unpinned[3]),
+            makePositionTab(id: pinned[3], isPinned: true),
+            makePositionTab(id: unpinned[4]),
+        ]
+        let expectedVisibleIDs = pinned + unpinned
+        var state = makePositionWindowState(tabs: rawTabs, activeTabID: unpinned[4])
+        state.contentTabs.selectedTabIDs = [pinned[1], unpinned[2]]
+        state.contentTabs.selectionAnchorID = unpinned[2]
+        let store = makePositionStore(initialState: state)
+        // store.exhaustivity = .off: 기존 setCurrent runtime handoff의 광범위한 child action보다 pinned-first mapping과 최종
+        // snapshot을 검증한다.
+        store.exhaustivity = .off
+
+        XCTAssertEqual(store.state.contentTabs.tabs.ids, rawTabs.ids)
+        XCTAssertEqual(store.state.contentTabs.selectionOrderedTabIDs, expectedVisibleIDs)
+        for (position, expectedID) in zip(1 ... 9, expectedVisibleIDs) {
+            await assertPositionCommand(position, selects: expectedID, store: store)
+        }
+
+        await store.finish()
+    }
+
+    /// CTM-002-set_current_content_tab_by_number: 부족한 tab과 범위 밖 position은 전체 상태 no-op
+    /// 표시 가능한 tab이 없는 position이나 내부 방어 범위를 벗어난 값은 어떤 command도 실행하지 않아야 한다.
+    /// - 검증 내용: position 4...9 및 내부 방어 position 0/10에서 state/effect 완전 불변
+    /// - 사전 조건: non-nil previous/selection/anchor와 서로 다른 runtime snapshot을 가진 tab 3개
+    /// - 기대 결과: 모든 no-op position 전후 FileManagerWindowState와 runtime snapshot이 동일하고 수신 action이 없음
+    func testSelectContentTabByNumber_insufficientAndOutOfRangePositionsAreWholeStateNoOps() async {
+        let ids = (1 ... 3).map { ContentTabID(rawValue: "short-\($0)") }
+        var state = makePositionWindowState(
+            tabs: IdentifiedArray(uniqueElements: ids.map { makePositionTab(id: $0) }),
+            activeTabID: ids[0],
+        )
+        state.contentTabs.previousActiveTabID = ids[2]
+        state.contentTabs.selectedTabIDs = [ids[0], ids[2]]
+        state.contentTabs.selectionAnchorID = ids[2]
+        let expectedState = state
+        let store = makePositionStore(initialState: state)
+
+        for position in [0] + Array(4 ... 9) + [10] {
+            XCTAssertNil(ContentTabProjection.tabID(atDisplayPosition: position, in: store.state.contentTabs))
+            let command = FileManagerWindowAction.WindowCommand.selectContentTab(position: position)
+            await store.send(.request(command))
+            XCTAssertEqual(store.state, expectedState)
+        }
+    }
+
+    /// CTM-002-set_current_content_tab_by_number: reorder와 close 직후 최신 표시 순서를 다시 계산함
+    /// tab topology가 바뀐 뒤 숫자 shortcut이 이전 순서를 cache하지 않고 현재 state를 읽는지 검증한다.
+    /// - 검증 내용: reorder 후 position 2, inactive close 후 position 3의 projection/command/runtime handoff
+    /// - 사전 조건: A/B/C/D unpinned tabs, A active, A/C selection과 C anchor
+    /// - 기대 결과: A/D/B/C에서 position 2는 D, B close 후 A/D/C에서 position 3은 C를 활성화함
+    func testSelectContentTabByNumber_recomputesAfterReorderAndCloseUpdates() async {
+        let ids = ["A", "B", "C", "D"].map(ContentTabID.init(rawValue:))
+        var state = makePositionWindowState(
+            tabs: IdentifiedArray(uniqueElements: ids.map { makePositionTab(id: $0) }),
+            activeTabID: ids[0],
+        )
+        state.contentTabs.selectedTabIDs = [ids[0], ids[2]]
+        state.contentTabs.selectionAnchorID = ids[2]
+        let store = makePositionStore(initialState: state)
+        // store.exhaustivity = .off: 기존 reorder/close와 setCurrent handoff의 child action보다 매 command 시점의 재계산 결과를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.reorder(sourceID: ids[3], targetID: ids[1], placement: .before)))
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.contentTabs.selectionOrderedTabIDs, [ids[0], ids[3], ids[1], ids[2]])
+        await assertPositionCommand(2, selects: ids[3], store: store)
+
+        await store.send(.contentTabs(.close(ids[1])))
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.contentTabs.selectionOrderedTabIDs, [ids[0], ids[3], ids[2]])
+        await assertPositionCommand(3, selects: ids[2], store: store)
+
+        await store.finish()
+    }
+
+    /// CTM-002-set_current_content_tab_by_number: duplicate와 restore 직후 최신 표시 순서를 다시 계산함
+    /// 새 identity가 추가된 뒤 숫자 shortcut이 별도 mapping cache 없이 현재 tabs를 사용하는지 검증한다.
+    /// - 검증 내용: duplicate row와 restore row가 추가된 직후 projection/command가 새 position을 선택함
+    /// - 사전 조건: A/B tabs, A active, B duplicate ID와 Directory recentlyClosed snapshot
+    /// - 기대 결과: duplicate 후 position 3은 D, restore 후 position 4는 새 restored ID를 활성화함
+    func testSelectContentTabByNumber_recomputesAfterDuplicateAndRestoreUpdates() async throws {
+        let tabA = ContentTabID(rawValue: "duplicate-A")
+        let tabB = ContentTabID(rawValue: "duplicate-B")
+        let duplicateID = ContentTabID(rawValue: "duplicate-D")
+        var state = makePositionWindowState(
+            tabs: [makePositionTab(id: tabA), makePositionTab(id: tabB)],
+            activeTabID: tabA,
+        )
+        state.contentTabs.selectedTabIDs = [tabA, tabB]
+        state.contentTabs.selectionAnchorID = tabB
+        state.contentTabs.recentlyClosed = ClosedContentTabSnapshot(
+            page: .directory,
+            anchor: .directory(path: "/position/restored"),
+            wasPinned: false,
+            closedAt: Date(timeIntervalSince1970: 1_234_567_890),
+            title: "Restored",
+            iconName: "folder",
+        )
+        let store = makePositionStore(initialState: state)
+        // store.exhaustivity = .off: duplicate/restore가 생성하는 handoff child action보다 새 identity를 포함한 live mapping을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.duplicate(sourceID: tabB, duplicateID: duplicateID)))
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.contentTabs.selectionOrderedTabIDs, [tabA, tabB, duplicateID])
+        await assertPositionCommand(2, selects: tabB, store: store)
+        await assertPositionCommand(3, selects: duplicateID, store: store)
+
+        await store.send(.contentTabs(.restore))
+        await store.skipReceivedActions(strict: false)
+        let restoredID = try XCTUnwrap(store.state.contentTabs.tabs.last?.id)
+        XCTAssertEqual(store.state.contentTabs.selectionOrderedTabIDs, [tabA, tabB, duplicateID, restoredID])
+        await assertPositionCommand(1, selects: tabA, store: store)
+        await assertPositionCommand(4, selects: restoredID, store: store)
+
+        await store.finish()
+    }
+
+    /// CTM-002-set_current_content_tab_by_number: selected-tab close pending 중 command는 전체 상태 no-op
+    /// batch close transaction 중 숫자 shortcut이 현재 close target과 runtime handoff를 우회하지 않는지 검증한다.
+    /// - 검증 내용: 유효한 position mapping이 있어도 request admission에서 state/effect를 완전히 차단함
+    /// - 사전 조건: A/B tabs, A active, A/B selected, A current인 PendingSelectedContentTabClose
+    /// - 기대 결과: position 2 command 전후 FileManagerWindowState가 동일하고 수신 action이 없음
+    func testSelectContentTabByNumber_pendingSelectedCloseIsWholeStateNoOp() async throws {
+        let tabA = ContentTabID(rawValue: "pending-A")
+        let tabB = ContentTabID(rawValue: "pending-B")
+        var state = makePositionWindowState(
+            tabs: [makePositionTab(id: tabA), makePositionTab(id: tabB)],
+            activeTabID: tabA,
+        )
+        state.contentTabs.previousActiveTabID = tabB
+        state.contentTabs.selectedTabIDs = [tabA, tabB]
+        state.contentTabs.selectionAnchorID = tabB
+        state.pendingSelectedContentTabClose = try PendingSelectedContentTabClose(
+            operationID: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000634")),
+            orderedTargetIDs: [tabA, tabB],
+            currentTabID: tabA,
+            originalActiveTabID: tabA,
+            preferredFallbackIDs: [tabB],
+        )
+        let expectedState = state
+        let store = makePositionStore(initialState: state)
+
+        XCTAssertEqual(ContentTabProjection.tabID(atDisplayPosition: 2, in: state.contentTabs), tabB)
+        let command = FileManagerWindowAction.WindowCommand.selectContentTab(position: 2)
+        await store.send(.request(command))
+        XCTAssertEqual(store.state, expectedState)
+    }
+}
+
+private func makeStaleTargetWindowState(
+    activeID: ContentTabID,
+    previousID: ContentTabID,
+) -> FileManagerFeature.State {
+    var state = FileManagerFeature.State()
+    state.contentTabs = ContentTabState(
+        tabs: [makePositionTab(id: activeID), makePositionTab(id: previousID)],
+        activeTabID: activeID,
+        previousActiveTabID: previousID,
+    )
+    state.contentTabs.selectedTabIDs = [activeID, previousID]
+    state.contentTabs.selectionAnchorID = previousID
+    state.content = makeStaleContent(path: "/live/A", pendingEntryID: "live-A")
+    state.tabContentStates = [
+        activeID: makeStaleContent(path: "/cached/A", pendingEntryID: "cached-A"),
+        previousID: makeStaleContent(path: "/cached/B", pendingEntryID: "cached-B"),
+    ]
+    state.inspector = makeStaleInspector(isVisible: true, paneExists: true, width: 321)
+    state.tabInspectorStates = [
+        activeID: makeStaleInspector(isVisible: false, paneExists: false, width: 432).tabSnapshot(),
+        previousID: makeStaleInspector(isVisible: true, paneExists: false, width: 543).tabSnapshot(),
+    ]
+    state.syncContentTabSidebarItems()
+    return state
+}
+
+private func makeStaleContent(
+    path: String,
+    pendingEntryID: String,
+) -> FileManagerContentFeature.State {
+    var content = FileManagerContentFeature.State()
+    content.navigation.seedInitialFolderPath(path)
+    content.pendingSelectEntryID = pendingEntryID
+    return content
+}
+
+private func makeStaleInspector(
+    isVisible: Bool,
+    paneExists: Bool,
+    width: CGFloat,
+) -> FileManagerInspectorFeature.State {
+    var inspector = FileManagerInspectorFeature.State()
+    inspector.inspectorVisible = isVisible
+    inspector.inspectorPaneExists = paneExists
+    inspector.inspectorWidth = width
+    return inspector
+}
+
+private func makePositionTab(id: ContentTabID, isPinned: Bool = false) -> ContentTabItem {
+    ContentTabItem(
+        id: id,
+        page: .directory,
+        anchor: .directory(path: "/position/\(id.rawValue)"),
+        isPinned: isPinned,
+        title: id.rawValue,
+        iconName: "folder",
+    )
+}
+
+private func makePositionWindowState(
+    tabs: IdentifiedArrayOf<ContentTabItem>,
+    activeTabID: ContentTabID,
+) -> FileManagerFeature.State {
+    var state = FileManagerFeature.State()
+    state.contentTabs = ContentTabState(tabs: tabs, activeTabID: activeTabID)
+    state.tabContentStates = Dictionary(uniqueKeysWithValues: tabs.map { tab in
+        var content = FileManagerContentFeature.State()
+        if case let .directory(path) = tab.anchor {
+            content.navigation.seedInitialFolderPath(path)
+        }
+        return (tab.id, content)
+    })
+    if let activeContent = state.tabContentStates[activeTabID] {
+        state.content = activeContent
+    }
+    state.syncContentTabSidebarItems()
+    return state
+}
+
+@MainActor
+private func makePositionStore(
+    initialState: FileManagerFeature.State,
+) -> TestStoreOf<FileManagerFeature> {
+    TestStore(initialState: initialState) {
+        FileManagerFeature()
+    } withDependencies: {
+        $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        $0.entryLoadingClient.loadItems = { _, _ in [] }
+        $0.fileChangeGatewayClient.observeEvents = {
+            AsyncStream { continuation in continuation.finish() }
+        }
+    }
+}
+
+@MainActor
+private func assertPositionCommand(
+    _ position: Int,
+    selects expectedID: ContentTabID,
+    store: TestStoreOf<FileManagerFeature>,
+    file: StaticString = #filePath,
+    line: UInt = #line,
+) async {
+    let previousActiveID = store.state.contentTabs.activeTabID
+    let selectedTabIDs = store.state.contentTabs.selectedTabIDs
+    let selectionAnchorID = store.state.contentTabs.selectionAnchorID
+    XCTAssertEqual(
+        ContentTabProjection.tabID(atDisplayPosition: position, in: store.state.contentTabs),
+        expectedID,
+        file: file,
+        line: line,
+    )
+
+    let command = FileManagerWindowAction.WindowCommand.selectContentTab(position: position)
+    await store.send(.request(command))
+    await store.receive(\.contentTabs.setCurrent, expectedID)
+    await store.skipReceivedActions(strict: false)
+
+    XCTAssertEqual(store.state.contentTabs.previousActiveTabID, previousActiveID, file: file, line: line)
+    XCTAssertEqual(store.state.contentTabs.selectedTabIDs, selectedTabIDs, file: file, line: line)
+    XCTAssertEqual(store.state.contentTabs.selectionAnchorID, selectionAnchorID, file: file, line: line)
+    XCTAssertEqual(
+        store.state.sidebar.contentTabSidebarItems.first(where: { $0.isActive })?.id,
+        expectedID,
+        file: file,
+        line: line,
+    )
+    if case let .directory(path) = store.state.contentTabs.tabs[id: expectedID]?.anchor {
+        XCTAssertEqual(store.state.content.navigation.currentPath, path, file: file, line: line)
+    } else {
+        XCTFail("expected a directory position fixture", file: file, line: line)
     }
 }

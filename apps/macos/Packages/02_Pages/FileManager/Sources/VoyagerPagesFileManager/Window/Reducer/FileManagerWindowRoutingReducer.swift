@@ -380,7 +380,8 @@ struct FileManagerWindowRoutingReducer {
             case .content(.delegate(.closeWindow)):
                 return .send(.delegate(.closeWindow))
 
-            case .contentTabs(.setCurrent):
+            case let .contentTabs(.setCurrent(targetID)):
+                guard state.contentTabs.activeTabID == targetID else { return .none }
                 if keepPendingContentTabCloseFocused(state: &state) {
                     return .none
                 }
