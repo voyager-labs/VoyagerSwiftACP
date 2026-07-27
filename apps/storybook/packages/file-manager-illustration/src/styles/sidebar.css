@@ -4,7 +4,6 @@
   flex: 1;
   flex-direction: column;
   overflow: hidden;
-  border-right: 1px solid var(--fm-separator);
   background: var(--fm-sidebar);
   padding: 0;
   backdrop-filter: var(--fm-backdrop-blur);
@@ -18,12 +17,6 @@
   flex-shrink: 0;
   padding: 0 var(--fm-space-5);
   gap: var(--fm-space-4);
-}
-
-[data-file-manager-illustration] .sidebar-titlebar .traffic-lights {
-  display: flex;
-  gap: var(--fm-space-4);
-  padding: 0;
 }
 
 [data-file-manager-illustration] .sidebar-hide-button {
@@ -58,13 +51,6 @@
   width: var(--fm-window-sidebar-width);
   min-height: 100vh;
   box-sizing: border-box;
-}
-
-[data-file-manager-illustration] .traffic-lights span {
-  width: 12px;
-  height: 12px;
-  border-radius: var(--fm-radius-round);
-  box-shadow: inset 0 0 0 0.5px var(--fm-control-outline);
 }
 
 [data-file-manager-illustration] .red {

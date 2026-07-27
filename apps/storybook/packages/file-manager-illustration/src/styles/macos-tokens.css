@@ -1,5 +1,5 @@
-/* macOS/AppKit semantic color mirror.
- * Values are web approximations of dynamic NSColor roles.
+/* macOS semantic token mirror.
+ * SwiftUI Color values are generated below; AppKit-only roles remain web approximations.
  * Use #RRGGBBAA for alpha so Swift can mirror values as Color(hex: 0xRRGGBB, alpha: A).
  */
 
@@ -307,7 +307,8 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root[data-voyager-visual-baseline="sequoia"] [data-file-manager-illustration] {
+  :root[data-voyager-visual-baseline="sequoia"]:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration] {
     --macos-unemphasized-selected-text-background-color: #ebebf52e;
     --macos-separator-color: #54545899;
     --macos-separator-strong-color: #545458b3;
@@ -392,3 +393,157 @@
   --macos-entry-accent-video-color: #7e99af;
   --macos-entry-accent-archive-color: #bd925f;
 }
+
+/* SWIFTUI-SYSTEM-COLORS:sequoia:BEGIN */
+/* SwiftUI runtime: macOS 15.6.1, Color.resolve(in:), sRGB */
+:root[data-voyager-visual-baseline="sequoia"] [data-file-manager-illustration] {
+  --swiftui-primary: #000000d8;
+  --swiftui-secondary: #0000007f;
+  --swiftui-accent-color: #007affff;
+  --swiftui-blue: #007affff;
+  --swiftui-brown: #a2845eff;
+  --swiftui-cyan: #55bef0ff;
+  --swiftui-gray: #8e8e93ff;
+  --swiftui-green: #28cd41ff;
+  --swiftui-indigo: #5856d6ff;
+  --swiftui-mint: #00c7beff;
+  --swiftui-orange: #ff9500ff;
+  --swiftui-pink: #ff2d55ff;
+  --swiftui-purple: #af52deff;
+  --swiftui-red: #ff3b30ff;
+  --swiftui-teal: #59adc4ff;
+  --swiftui-yellow: #ffcc00ff;
+  --macos-label-color: var(--swiftui-primary);
+  --macos-secondary-label-color: var(--swiftui-secondary);
+  --macos-control-accent-color: var(--swiftui-accent-color);
+  --macos-selected-content-background-color: var(--swiftui-accent-color);
+  --macos-system-blue: var(--swiftui-blue);
+  --macos-system-brown: var(--swiftui-brown);
+  --macos-system-cyan: var(--swiftui-cyan);
+  --macos-system-gray: var(--swiftui-gray);
+  --macos-system-green: var(--swiftui-green);
+  --macos-system-indigo: var(--swiftui-indigo);
+  --macos-system-mint: var(--swiftui-mint);
+  --macos-system-orange: var(--swiftui-orange);
+  --macos-system-pink: var(--swiftui-pink);
+  --macos-system-purple: var(--swiftui-purple);
+  --macos-system-red: var(--swiftui-red);
+  --macos-system-teal: var(--swiftui-teal);
+  --macos-system-yellow: var(--swiftui-yellow);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-voyager-visual-baseline="sequoia"]:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration] {
+    --swiftui-primary: #ffffffd8;
+    --swiftui-secondary: #ffffff8c;
+    --swiftui-accent-color: #007affff;
+    --swiftui-blue: #0a84ffff;
+    --swiftui-brown: #ac8e68ff;
+    --swiftui-cyan: #5ac8f5ff;
+    --swiftui-gray: #98989dff;
+    --swiftui-green: #32d74bff;
+    --swiftui-indigo: #5e5ce6ff;
+    --swiftui-mint: #63e6e2ff;
+    --swiftui-orange: #ff9f0aff;
+    --swiftui-pink: #ff375fff;
+    --swiftui-purple: #bf5af2ff;
+    --swiftui-red: #ff453aff;
+    --swiftui-teal: #6ac4dcff;
+    --swiftui-yellow: #ffd60aff;
+  }
+}
+
+:root[data-voyager-visual-baseline="sequoia"][data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration] {
+  --swiftui-primary: #ffffffd8;
+  --swiftui-secondary: #ffffff8c;
+  --swiftui-accent-color: #007affff;
+  --swiftui-blue: #0a84ffff;
+  --swiftui-brown: #ac8e68ff;
+  --swiftui-cyan: #5ac8f5ff;
+  --swiftui-gray: #98989dff;
+  --swiftui-green: #32d74bff;
+  --swiftui-indigo: #5e5ce6ff;
+  --swiftui-mint: #63e6e2ff;
+  --swiftui-orange: #ff9f0aff;
+  --swiftui-pink: #ff375fff;
+  --swiftui-purple: #bf5af2ff;
+  --swiftui-red: #ff453aff;
+  --swiftui-teal: #6ac4dcff;
+  --swiftui-yellow: #ffd60aff;
+}
+
+:root[data-voyager-visual-baseline="sequoia"][data-voyager-color-scheme-contrast="increased"]
+  [data-file-manager-illustration] {
+  --swiftui-primary: #000000ff;
+  --swiftui-secondary: #000000c1;
+  --swiftui-accent-color: #0040ddff;
+  --swiftui-blue: #0040ddff;
+  --swiftui-brown: #7f6545ff;
+  --swiftui-cyan: #0071a4ff;
+  --swiftui-gray: #69696eff;
+  --swiftui-green: #007d1bff;
+  --swiftui-indigo: #3634a3ff;
+  --swiftui-mint: #0c817bff;
+  --swiftui-orange: #c93400ff;
+  --swiftui-pink: #d30f45ff;
+  --swiftui-purple: #ad44abff;
+  --swiftui-red: #d70015ff;
+  --swiftui-teal: #008299ff;
+  --swiftui-yellow: #a05a00ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-voyager-visual-baseline="sequoia"][data-voyager-color-scheme-contrast="increased"]:not(
+      [data-voyager-color-scheme="light"]
+    )
+    [data-file-manager-illustration] {
+    --swiftui-primary: #ffffffff;
+    --swiftui-secondary: #ffffffb2;
+    --swiftui-accent-color: #1774daff;
+    --swiftui-blue: #409cffff;
+    --swiftui-brown: #b59469ff;
+    --swiftui-cyan: #70d7ff00;
+    --swiftui-gray: #98989dff;
+    --swiftui-green: #31de4bff;
+    --swiftui-indigo: #7d7affff;
+    --swiftui-mint: #63e6e2ff;
+    --swiftui-orange: #ffb340ff;
+    --swiftui-pink: #ff6482ff;
+    --swiftui-purple: #da8fffff;
+    --swiftui-red: #ff6961ff;
+    --swiftui-teal: #5de6ffff;
+    --swiftui-yellow: #ffd426ff;
+  }
+}
+
+:root[data-voyager-visual-baseline="sequoia"][data-voyager-color-scheme="dark"][data-voyager-color-scheme-contrast="increased"]
+  [data-file-manager-illustration] {
+  --swiftui-primary: #ffffffff;
+  --swiftui-secondary: #ffffffb2;
+  --swiftui-accent-color: #1774daff;
+  --swiftui-blue: #409cffff;
+  --swiftui-brown: #b59469ff;
+  --swiftui-cyan: #70d7ff00;
+  --swiftui-gray: #98989dff;
+  --swiftui-green: #31de4bff;
+  --swiftui-indigo: #7d7affff;
+  --swiftui-mint: #63e6e2ff;
+  --swiftui-orange: #ffb340ff;
+  --swiftui-pink: #ff6482ff;
+  --swiftui-purple: #da8fffff;
+  --swiftui-red: #ff6961ff;
+  --swiftui-teal: #5de6ffff;
+  --swiftui-yellow: #ffd426ff;
+}
+/* SWIFTUI-SYSTEM-COLORS:sequoia:END */
+
+/* SWIFTUI-FIXED-COLORS:BEGIN */
+/* SwiftUI fixed colors: baseline-independent constants */
+:root [data-file-manager-illustration] {
+  --swiftui-black: #000000ff;
+  --swiftui-white: #ffffffff;
+  --swiftui-clear: #00000000;
+}
+/* SWIFTUI-FIXED-COLORS:END */

@@ -26,13 +26,8 @@
   place-items: center;
   padding: var(--fm-stage-padding);
   box-sizing: border-box;
-  background: radial-gradient(circle at 50% 24%, var(--fm-canvas-glow), transparent 36rem),
-    linear-gradient(
-      145deg,
-      var(--fm-canvas-top) 0%,
-      var(--fm-canvas) 42%,
-      var(--fm-canvas-bottom) 100%
-    );
+  background: radial-gradient(circle at 50% 18%, var(--fm-canvas-glow), transparent 34rem),
+    var(--fm-canvas);
 }
 
 [data-file-manager-illustration] .mac-window {
@@ -43,11 +38,38 @@
   min-width: var(--fm-native-window-min-width);
   height: min(var(--fm-native-window-height), calc(100dvh - var(--fm-window-height-inset)));
   min-height: var(--fm-native-window-min-height);
+  position: relative;
   overflow: hidden;
   border: 1px solid var(--fm-window-border);
   border-radius: var(--fm-radius-window);
   background: var(--fm-window);
   box-shadow: var(--fm-shadow-window);
+}
+
+[data-file-manager-illustration] .mac-titlebar-controls {
+  display: flex;
+  position: absolute;
+  z-index: 20;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: var(--fm-window-chrome-height);
+  align-items: center;
+  pointer-events: none;
+  -webkit-app-region: drag;
+}
+
+[data-file-manager-illustration] .mac-titlebar-controls .traffic-lights {
+  display: flex;
+  gap: var(--fm-space-4);
+  padding-left: 14px;
+}
+
+[data-file-manager-illustration] .window-chrome .traffic-lights span {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--fm-radius-round);
+  box-shadow: inset 0 0 0 0.5px var(--fm-control-outline);
 }
 
 [data-file-manager-illustration] .mac-window:not(.sidebar-closed) {
