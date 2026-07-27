@@ -3,6 +3,7 @@ import { TrafficLights } from "./TrafficLights"
 
 const meta = {
   component: TrafficLights,
+  id: "file-manager-trafficlights",
   tags: ["autodocs"],
 } satisfies Meta<typeof TrafficLights>
 

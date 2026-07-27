@@ -25,14 +25,15 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
-    "@storybook/addon-docs": "^10.5.3",
-    "@storybook/react-vite": "^10.5.3",
+    "@storybook/addon-docs": "^10.5.4",
+    "@storybook/react-vite": "^10.5.4",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
-    "storybook": "^10.5.3",
+    "storybook": "^10.5.4",
     "typescript": "~6.0.2",
-    "vite": "^8.1.1"
+    "vite": "^8.1.1",
+    "@storybook/addon-mcp": "^0.7.0"
   }
 }

@@ -10,7 +10,7 @@ const config: StorybookConfig = {
       files: "**/*.stories.tsx",
     },
   ],
-  addons: ["@storybook/addon-docs"],
+  addons: ["@storybook/addon-docs", "@storybook/addon-mcp"],
   framework: "@storybook/react-vite",
 }
 export default config

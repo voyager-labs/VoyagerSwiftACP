@@ -9,6 +9,10 @@ import * as runtime from "../dist/index.js"
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const storybookRoot = resolve(packageRoot, "../..")
 const macosTokens = readFileSync(resolve(packageRoot, "src/styles/macos-tokens.css"), "utf8")
+const generatedMaterialMetadata = readFileSync(
+  resolve(packageRoot, "src/foundations/swiftui-material-metadata.generated.ts"),
+  "utf8",
+)
 const styleSheets = [
   "src/styles/file-manager.css",
   "src/styles/atoms.css",
@@ -23,6 +27,10 @@ const css = [
   ...styleSheets.map((path) => readFileSync(resolve(packageRoot, path), "utf8")),
 ].join("\n")
 const sourceBarrel = readFileSync(resolve(packageRoot, "src/index.ts"), "utf8")
+const designTokensStorySource = readFileSync(
+  resolve(packageRoot, "src/foundations/DesignTokens.stories.tsx"),
+  "utf8",
+)
 const packageJson = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"))
 const index = JSON.parse(
   readFileSync(resolve(storybookRoot, "storybook-static/index.json"), "utf8"),
@@ -91,6 +99,38 @@ const publicTypes = typeExportBlock[1]
   .filter(Boolean)
 assert.deepEqual(publicTypes.sort(), expectedPublicTypes.sort())
 assert.match(macosTokens, /--macos-label-color\s*:/)
+const fixedColorBlock = macosTokens.match(
+  /SWIFTUI-FIXED-COLORS:BEGIN([\s\S]*?)SWIFTUI-FIXED-COLORS:END/,
+)
+const sequoiaColorBlock = macosTokens.match(
+  /SWIFTUI-SYSTEM-COLORS:sequoia:BEGIN([\s\S]*?)SWIFTUI-SYSTEM-COLORS:sequoia:END/,
+)
+assert.ok(fixedColorBlock, "Missing baseline-independent SwiftUI fixed colors")
+assert.ok(sequoiaColorBlock, "Missing Sequoia SwiftUI dynamic colors")
+assert.match(fixedColorBlock[1], /:root \[data-file-manager-illustration\]/)
+assert.match(fixedColorBlock[1], /--swiftui-black:\s*#000000ff/)
+assert.match(fixedColorBlock[1], /--swiftui-white:\s*#ffffffff/)
+assert.match(fixedColorBlock[1], /--swiftui-clear:\s*#00000000/)
+assert.doesNotMatch(sequoiaColorBlock[1], /--swiftui-(?:black|white|clear):/)
+assert.match(macosTokens, /SWIFTUI-SYSTEM-COLORS:sequoia:BEGIN/)
+assert.match(macosTokens, /--swiftui-primary:\s*#000000d8/)
+assert.match(macosTokens, /data-voyager-color-scheme-contrast="increased"/)
+const sequoiaDarkMediaSelector =
+  /:root\[data-voyager-visual-baseline="sequoia"\]:not\(\[data-voyager-color-scheme="light"\]\)/
+assert.match(macosTokens, sequoiaDarkMediaSelector)
+assert.match(fileManagerCss, sequoiaDarkMediaSelector)
+assert.match(generatedMaterialMetadata, /Material\.ultraThinMaterial/)
+assert.match(generatedMaterialMetadata, /Glass\.regular/)
+assert.match(generatedMaterialMetadata, /tahoeRuntimeMeasured:\s*false/)
+assert.match(
+  generatedMaterialMetadata,
+  /rgbaPolicy:\s*"materials-and-glass-are-contextual-shape-styles"/,
+)
+assert.doesNotMatch(
+  designTokensStorySource,
+  /globals:\s*\{\s*visualBaseline:\s*swiftUIMaterialMetadata\.sourceBaseline\s*\}/,
+)
+assert.doesNotMatch(designTokensStorySource, /swiftUIMaterialMetadata\.sourceBaseline/)
 assert.doesNotMatch(fileManagerCss, /--macos-[a-z0-9-]+\s*:/)
 
 for (const contract of [
@@ -121,9 +161,17 @@ const fileManagerPaths = new Set(fileManagerStories.map((entry) => entry.importP
 const nonFileManagerStories = entries.filter(
   (entry) => entry.type === "story" && !entry.title?.startsWith("File Manager/"),
 )
+const designTokensStory = fileManagerStories.find(
+  (entry) => entry.id === "file-manager-design-tokens--overview",
+)
 
-assert.equal(fileManagerStories.length, 98)
-assert.equal(fileManagerPaths.size, 28)
+assert.ok(designTokensStory, "Missing File Manager design tokens overview story")
+assert.equal(
+  designTokensStory.importPath,
+  "./packages/file-manager-illustration/src/foundations/DesignTokens.stories.tsx",
+)
+assert.equal(fileManagerStories.length, 99)
+assert.equal(fileManagerPaths.size, 29)
 assert.equal(nonFileManagerStories.length, 0)
 
 console.log("native layout contract: pass")

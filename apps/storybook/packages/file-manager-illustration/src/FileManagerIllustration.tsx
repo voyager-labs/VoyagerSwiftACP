@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react"
 import type { FC } from "react"
+import { TrafficLights } from "./atoms/TrafficLights"
 import {
   buildAiChatState,
   deriveBreadcrumb,
@@ -224,6 +225,9 @@ export const FileManagerIllustration: FC<FileManagerIllustrationProps> = (props)
               />
             }
           />
+          <div className="mac-titlebar-controls" aria-hidden="true">
+            <TrafficLights />
+          </div>
         </section>
       </main>
     </div>

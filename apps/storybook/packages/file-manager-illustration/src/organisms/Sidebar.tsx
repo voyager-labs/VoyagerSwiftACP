@@ -1,7 +1,6 @@
 import type { FC } from "react"
 import { FileManagerIcon } from "../atoms/FileManagerIcon"
 import { SidebarNavItem } from "../atoms/SidebarNavItem"
-import { TrafficLights } from "../atoms/TrafficLights"
 import type { LocationShortcut, SidebarTabAction, SidebarTabItem } from "../model/types"
 import { LocationShortcuts } from "../molecules/LocationShortcuts"
 
@@ -36,9 +35,7 @@ export const Sidebar: FC<SidebarProps> = ({
 
   return (
     <aside className={classes} aria-label="Sidebar">
-      {/* Fixed 50px titlebar: traffic lights + hide-sidebar control */}
       <div className="sidebar-titlebar">
-        <TrafficLights />
         <button
           className="sidebar-hide-button"
           type="button"
