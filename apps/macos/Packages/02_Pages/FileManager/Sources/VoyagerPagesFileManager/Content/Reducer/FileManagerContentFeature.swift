@@ -20,6 +20,8 @@ public struct FileManagerContentFeature {
 
     @Dependency(\.fileManagerClient)
     private var fileManagerClient
+    @Dependency(\.entryOpenClient)
+    private var entryOpenClient
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -103,17 +105,30 @@ public struct FileManagerContentFeature {
 
         FileManagerHomeSelectionReducer()
 
-        // Feature → Widget view state 동기화
-        Reduce { state, _ in
-            state.entryViewLayout.entries = Array(state.entryOperations.items)
-            state.entryViewLayout.isLoading = state.entryOperations.isLoading
-            state.entryViewLayout.renamingItemId = state.entryOperations.renamingItemId
-            state.entryViewLayout.sortKey = .fromShared(state.entryArrangements.sortKey)
-            state.entryViewLayout.sortOrder = state.entryArrangements.sortOrder
-            state.entryViewLayout.groupKey = .fromShared(state.entryArrangements.groupKey.rawValue)
-            state.entryViewLayout.collapsedGroups = state.entryArrangements.collapsedGroups
-            state.entryViewLayout.clipboardCutPaths = Set(state.entryOperations.clipboardItems)
-            return .none
+        // Feature → Widget projection (replaces catch-all sync)
+        Reduce { state, action in
+            let shouldProject = FileManagerContentFeature.shouldProjectContent(action)
+            guard shouldProject else { return .none }
+
+            let projection = ContentProjection(
+                entries: Array(state.entryOperations.items),
+                isLoading: state.entryOperations.isLoading,
+                sortKey: .fromShared(state.entryArrangements.sortKey),
+                sortOrder: state.entryArrangements.sortOrder,
+                groupKey: .fromShared(state.entryArrangements.groupKey.rawValue),
+                collapsedGroups: state.entryArrangements.collapsedGroups,
+                sections: FileManagerContentFeature.makeSections(
+                    groupedItems: state.entryArrangements.groupedItems,
+                    collapsedGroups: state.entryArrangements.collapsedGroups,
+                ),
+                renamingItemId: state.entryOperations.renamingItemId,
+                clipboardCutPaths: Set(state.entryOperations.clipboardItems),
+                busyEntryPaths: Set(state.entryOperations.itemStates.filter(\.value.isBusy).map(\.key)),
+                openWithApplications: state.entryOperations.commonApplicationsForSelectedFiles,
+                restorableTrashPaths: state.entryOperations.restorableTrashPaths,
+                trashDirectoryPath: entryOpenClient.trashDirectoryPath(),
+            )
+            return .send(.entryViewLayout(.view(.applyContentProjection(projection))))
         }
 
         Reduce { state, action in
@@ -140,8 +155,11 @@ public struct FileManagerContentFeature {
             case .aiChat(.cancelInFlightWork):
                 return .none
 
-            case .view(.openContextualAiChatTapped):
-                return .send(.delegate(.openContextualAiChat))
+            case .view(.newChatTapped):
+                return .send(.delegate(.newChatRequested))
+
+            case .view(.showChatHistoryTapped):
+                return .send(.delegate(.showChatHistoryRequested))
 
             case .aiChat(.delegate(.openAISettings)):
                 return .send(.delegate(.openAISettings))
@@ -182,6 +200,11 @@ public struct FileManagerContentFeature {
                     state: &state,
                     computerName: fileManagerClient.displayName("/"),
                 )
+
+            case .entryArrangements(.delegate(.requestApply)):
+                let items = Array(state.entryOperations.items)
+                let isCollectionMode = state.entryViewLayout.isCollectionMode
+                return .send(.entryArrangements(.apply(items: items, isCollectionMode: isCollectionMode)))
 
             default:
                 return .none
@@ -262,6 +285,46 @@ public struct FileManagerContentFeature {
             return .none
         }
         return .send(.entryViewLayout(.delegate(.selectionChanged)))
+    }
+
+    // MARK: - Projection Bridge
+
+    static func shouldProjectContent(_ action: Action) -> Bool {
+        switch action {
+        case .entryOperations(.loading(.itemsLoaded)),
+             .entryOperations(.loading(.streamEvent)),
+             .entryOperations(.loading(.streamFinished)),
+             .entryOperations(.lifecycle(.operationFinished)),
+             .entryOperations(.lifecycle(.entryActionCompleted)),
+             .entryOperations(.lifecycle(.emptyTrashCompleted)),
+             .entryOperations(.edit(.commitRename)),
+             .entryOperations(.openWith(.commonApplicationsLoaded)),
+             .entryOperations(.lifecycle(.syncClipboardState)),
+             .entryOperations(.lifecycle(.restorableTrashPathsLoaded)),
+             .entryOperations(.lifecycle(.pathsMutated)),
+             .entryArrangements(.delegate(.applied)),
+             .externalFileSystemChanged,
+             .internal(.clearCollectionMode),
+             .internal(.exitCollectionMode):
+            true
+        default:
+            false
+        }
+    }
+
+    static func makeSections(
+        groupedItems: [GroupedItems],
+        collapsedGroups: Set<String>,
+    ) -> [EntryViewLayoutSection] {
+        groupedItems.map { group in
+            EntryViewLayoutSection(
+                id: group.groupName,
+                title: group.groupName.isEmpty ? nil : group.groupName,
+                colorCode: group.colorCode,
+                items: group.items,
+                isCollapsed: collapsedGroups.contains(group.groupName),
+            )
+        }
     }
 }
 

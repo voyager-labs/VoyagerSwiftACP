@@ -673,6 +673,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
         await store.receive(\.entryViewLayout.internal.applyClearSelection)
         await store.receive(\.entryOperations.loading.itemsLoaded)
+        // Projection bridge가 itemsLoaded를 감지하고 ContentProjection을 전송
+        await store.receive { action in
+            guard case .entryViewLayout(.view(.applyContentProjection)) = action else { return false }
+            return true
+        }
         await store.finish()
 
         await store.send(.entryOperations(.loading(.streamEvent(.init(
@@ -729,6 +734,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
         await store.receive(\.entryViewLayout.internal.applyClearSelection)
         await store.receive(\.entryOperations.loading.itemsLoaded)
+        // Projection bridge가 itemsLoaded를 감지하고 ContentProjection을 전송
+        await store.receive { action in
+            guard case .entryViewLayout(.view(.applyContentProjection)) = action else { return false }
+            return true
+        }
         await store.finish()
 
         XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
