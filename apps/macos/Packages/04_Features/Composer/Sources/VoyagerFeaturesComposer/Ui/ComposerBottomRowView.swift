@@ -391,3 +391,34 @@ private extension ComposerBottomRowView {
         calculatedHeight = min(contentHeight + paddingHeight, maxChipAreaHeight)
     }
 }
+
+enum ChipItemType: Identifiable, Hashable {
+    case scopeRoot
+    case scopeBase(path: String)
+    case condition(id: UUID)
+    case conditionAdd
+
+    var id: String {
+        switch self {
+        case .scopeRoot:
+            "scope-root"
+        case let .scopeBase(path):
+            "scope-base-\(path)"
+        case let .condition(id):
+            "condition-\(id.uuidString)"
+        case .conditionAdd:
+            "condition-add"
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func `if`(_ condition: Bool, transform: (Self) -> some View) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
+    }
+}
