@@ -25,7 +25,7 @@ struct ConditionPropertyPickerView: View {
             .frame(width: 200, height: 320)
             .background(VoyagerDS.Surface.popoverBackground(for: colorScheme))
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.control)
                     .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
             )
             .shadow(
@@ -43,7 +43,7 @@ struct ConditionPropertyPickerView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12))
+                    .font(VoyagerDS.Typography.caption)
                     .foregroundColor(.secondary)
                     .accessibilityHidden(true)
 
@@ -51,7 +51,7 @@ struct ConditionPropertyPickerView: View {
                     if viewStore.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text("Search attributes")
                             .foregroundColor(.secondary)
-                            .font(.system(size: 13))
+                            .font(VoyagerDS.Typography.body)
                             .padding(.leading, 2)
                     }
 
@@ -65,7 +65,7 @@ struct ConditionPropertyPickerView: View {
                             set: { isSearchFocused = $0 },
                         ),
                     )
-                    .font(.system(size: 13))
+                    .font(VoyagerDS.Typography.body)
                     .accessibilityIdentifier("composer.property.search")
                 }
 
@@ -74,7 +74,7 @@ struct ConditionPropertyPickerView: View {
                         viewStore.send(.searchTextChanged(""))
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12))
+                            .font(VoyagerDS.Typography.caption)
                             .foregroundColor(.secondary)
                             .accessibilityLabel("Clear search")
                     }
@@ -174,7 +174,7 @@ struct ConditionPropertyPickerView: View {
                         }
                     } else if !viewStore.searchText.isEmpty {
                         Text("No properties found")
-                            .font(.system(size: 12))
+                            .font(VoyagerDS.Typography.caption)
                             .foregroundColor(.secondary)
                             .padding(.vertical, 16)
                     }
@@ -221,7 +221,7 @@ struct ConditionPropertyPickerView: View {
     private func emptyStateIfNeeded(filtered: [String], query: String) -> some View {
         if filtered.isEmpty, !query.isEmpty {
             Text("No properties found")
-                .font(.system(size: 12))
+                .font(VoyagerDS.Typography.caption)
                 .foregroundColor(.secondary)
                 .padding(.vertical, 16)
         }
@@ -238,23 +238,23 @@ struct ConditionPropertyPickerView: View {
             let isHovering = hoveredCategoryKey == categoryKey
             HStack(spacing: 8) {
                 Image(systemName: ConditionPropertyIcon.iconName(forCategory: categoryKey))
-                    .font(.system(size: 12))
+                    .font(VoyagerDS.Typography.caption)
                     .foregroundColor(.secondary)
                     .frame(width: 16)
                     .accessibilityHidden(true)
                 Text(ConditionPropertyPickerDisplay.categoryTitle(for: categoryKey))
-                    .font(.system(size: 13))
+                    .font(VoyagerDS.Typography.body)
                     .foregroundColor(.primary)
                 Spacer()
                 Text("\(items.count)")
-                    .font(.system(size: 12))
+                    .font(VoyagerDS.Typography.caption)
                     .foregroundColor(.secondary)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
                     .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
             )
         }
@@ -285,14 +285,14 @@ struct ConditionPropertyPickerView: View {
                             type: type,
                         ),
                     )
-                    .font(.system(size: 12))
+                    .font(VoyagerDS.Typography.caption)
                     .foregroundColor(.secondary)
                     .frame(width: 16)
                     .accessibilityHidden(true)
                 }
 
                 Text(label)
-                    .font(.system(size: 13))
+                    .font(VoyagerDS.Typography.body)
                     .foregroundColor(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -303,7 +303,7 @@ struct ConditionPropertyPickerView: View {
             .padding(.vertical, 8)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
                     .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
             )
         }
@@ -318,18 +318,18 @@ private extension ConditionPropertyPickerView {
     func duplicateWarning(_ message: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 12))
+                .font(VoyagerDS.Typography.caption)
                 .foregroundColor(.yellow)
                 .accessibilityLabel("Warning")
             Text(message)
-                .font(.system(size: 12))
+                .font(VoyagerDS.Typography.caption)
                 .foregroundColor(.primary)
             Spacer()
             Button {
                 store.send(.clearDuplicateMessage)
             } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 12))
+                    .font(VoyagerDS.Typography.caption)
                     .foregroundColor(.secondary)
                     .accessibilityLabel("Dismiss warning")
             }

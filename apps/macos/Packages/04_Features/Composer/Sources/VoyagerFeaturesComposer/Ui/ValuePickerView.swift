@@ -19,7 +19,7 @@ struct ValuePickerView: View {
             VStack(alignment: .leading, spacing: 8) {
                 if valueInputCount == 0 {
                     Text("No value needed for this operator.")
-                        .font(.system(size: 12))
+                        .font(VoyagerDS.Typography.caption)
                         .foregroundColor(.secondary)
                 } else if valueInputCount == 1 {
                     valueField(
@@ -73,7 +73,7 @@ struct ValuePickerView: View {
             .padding(12)
             .frame(width: 240)
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.control)
                     .fill(VoyagerDS.Surface.popoverBackground(for: colorScheme)),
             )
         })
@@ -82,12 +82,12 @@ struct ValuePickerView: View {
     private func valueField(title: String, placeholder: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 11, weight: .medium))
+                .font(VoyagerDS.Typography.chip)
                 .foregroundColor(.secondary)
 
             TextField(placeholder, text: text)
                 .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12))
+                .font(VoyagerDS.Typography.caption)
         }
     }
 

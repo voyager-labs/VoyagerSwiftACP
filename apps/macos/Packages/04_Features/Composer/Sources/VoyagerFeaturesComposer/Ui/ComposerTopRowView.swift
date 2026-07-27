@@ -41,19 +41,21 @@ private extension ComposerTopRowView {
                 isEnabled: viewStore.canUndo && !isLocked,
                 colorScheme: colorScheme,
                 action: { store.send(.undo) },
-            ) {
-                Image(systemName: "arrow.uturn.backward")
-                    .font(.system(size: 13))
-            }
+                label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(VoyagerDS.Typography.body)
+                },
+            )
 
             ComposerChromeButton(
                 isEnabled: viewStore.canRedo && !isLocked,
                 colorScheme: colorScheme,
                 action: { store.send(.redo) },
-            ) {
-                Image(systemName: "arrow.uturn.forward")
-                    .font(.system(size: 13))
-            }
+                label: {
+                    Image(systemName: "arrow.uturn.forward")
+                        .font(VoyagerDS.Typography.body)
+                },
+            )
 
             textField(viewStore: viewStore, isLocked: isLocked)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -62,10 +64,11 @@ private extension ComposerTopRowView {
                 isEnabled: canSaveCollection && !isLocked,
                 colorScheme: colorScheme,
                 action: { viewStore.send(.saveCollection) },
-            ) {
-                Image(systemName: "tray.and.arrow.down")
-                    .font(.system(size: 13))
-            }
+                label: {
+                    Image(systemName: "tray.and.arrow.down")
+                        .font(VoyagerDS.Typography.body)
+                },
+            )
 
             overflowMenu(viewStore: viewStore, isLocked: isLocked)
         }
@@ -127,7 +130,7 @@ private extension ComposerTopRowView {
             if viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(placeholderText)
                     .foregroundColor(.secondary)
-                    .font(.system(size: 13))
+                    .font(VoyagerDS.Typography.body)
                     .padding(.leading, 12)
             }
 
@@ -142,7 +145,7 @@ private extension ComposerTopRowView {
                     if !trimmed.isEmpty { viewStore.send(.submit) }
                 },
             )
-            .font(.system(size: 13))
+            .font(VoyagerDS.Typography.body)
             .accessibilityIdentifier("composer.query.input")
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
@@ -195,7 +198,7 @@ private extension ComposerTopRowView {
             .disabled(!isSaveAsEnabled)
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 13))
+                .font(VoyagerDS.Typography.body)
                 .foregroundColor(.primary)
         }
         .menuStyle(.borderlessButton)
