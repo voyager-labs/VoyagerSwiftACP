@@ -143,6 +143,17 @@ run = "python3 -m scripts.verify_plan"
 description = "Storybook 개발 서버 실행 (기본 포트: 6006)"
 run = "cd apps/storybook && pnpm storybook \"$@\""
 
+[tasks.swiftui-tokens]
+description = "SwiftUI system color와 material metadata를 Storybook에 동기화"
+run = """
+xcrun swift run \
+  --package-path apps/macos/Packages/06_Shared/VoyagerShared \
+  VoyagerDesignTokenExporter \
+  --css-output apps/storybook/packages/file-manager-illustration/src/styles/macos-tokens.css \
+  --metadata-output apps/storybook/packages/file-manager-illustration/src/foundations/swiftui-material-metadata.generated.ts \
+  "$@"
+"""
+
 # ── CodeGraph ─────────────────────────────────────────────────
 
 [tasks.codegraph-init]
