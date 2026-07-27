@@ -22,7 +22,7 @@ struct ScopeChipView: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(summary.primaryText)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(VoyagerDS.Typography.chip)
                     .foregroundColor(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -55,7 +55,7 @@ struct ScopeChipView: View {
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
                 .fill(VoyagerDS.Surface.chipContainerBackground(for: colorScheme)),
         )
         .accessibilityElement(children: .ignore)
@@ -74,7 +74,7 @@ struct ScopeChipView: View {
                 .padding(.vertical, 2)
                 .frame(height: 19)
                 .background(
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipItem)
                         .fill(dropdownHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
                 )
                 .accessibilityLabel(summary.accessibilityText)
@@ -94,12 +94,12 @@ struct ScopeTokenChipView: View {
     var body: some View {
         HStack(spacing: 6) {
             Text("\u{10088A}")
-                .font(.system(size: 10, weight: .medium))
+                .font(VoyagerDS.Typography.smallButton)
                 .foregroundColor(.secondary)
                 .frame(width: 12, height: 12)
 
             Text(title)
-                .font(.system(size: 11, weight: .medium))
+                .font(VoyagerDS.Typography.chip)
                 .foregroundColor(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -116,10 +116,10 @@ struct ScopeTokenChipView: View {
         }
         .padding(.leading, 4)
         .padding(.trailing, onRemove == nil ? 8 : 5)
-        .frame(height: 22)
+        .frame(height: ComposerUIMetrics.compactControlHeight)
         .fixedSize(horizontal: false, vertical: true)
         .background(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipItem, style: .continuous)
                 .fill(VoyagerDS.SystemColor.separator.opacity(0.9)),
         )
         .accessibilityElement(children: .contain)

@@ -106,11 +106,11 @@ struct CurrentScopeRow: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
                 .fill(VoyagerDS.Surface.chipItemBackground(for: colorScheme)),
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
                 .stroke(VoyagerDS.Surface.chipItemBorder(for: colorScheme), lineWidth: 0.5),
         )
     }
@@ -171,7 +171,7 @@ struct ExceptionRow: View {
                         .foregroundColor(.secondary)
                         .accessibilityLabel("Excluded")
                     Text(text)
-                        .font(.system(size: 12))
+                        .font(VoyagerDS.Typography.caption)
                         .foregroundColor(.primary)
                     Text("Excluded")
                         .font(.system(size: 9, weight: .medium))
@@ -190,7 +190,7 @@ struct ExceptionRow: View {
         .padding(.trailing, 10)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
                 .fill(VoyagerDS.Surface.chipItemBackground(for: colorScheme).opacity(0.5)),
         )
     }
@@ -202,7 +202,7 @@ struct ExceptionRow: View {
                 Image(systemName: "arrow.uturn.backward")
                     .font(.system(size: 9, weight: .medium))
                 Text("Restore")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(VoyagerDS.Typography.chip)
             }
         }
         .buttonStyle(.borderless)
@@ -235,14 +235,14 @@ struct AddableCandidateRow: View {
                     .frame(width: 16, height: 16)
             } else {
                 Image(systemName: candidate.iconName)
-                    .font(.system(size: 12))
+                    .font(VoyagerDS.Typography.caption)
                     .foregroundColor(.secondary)
                     .frame(width: 16)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(candidate.name)
-                    .font(.system(size: 13))
+                    .font(VoyagerDS.Typography.body)
                     .foregroundColor(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -263,7 +263,7 @@ struct AddableCandidateRow: View {
         .padding(.vertical, 8)
         .contentShape(Rectangle())
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
                 .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
         )
         .accessibilityElement(children: .combine)
@@ -276,7 +276,10 @@ struct AddableCandidateRow: View {
         Image(systemName: actionKind.symbolName)
             .font(.system(size: 10, weight: .semibold))
             .foregroundColor(actionKind.usesDestructiveStyling ? .secondary : .accentColor)
-            .frame(width: 22, height: 22)
+            .frame(
+                width: ComposerUIMetrics.compactControlHeight,
+                height: ComposerUIMetrics.compactControlHeight,
+            )
             .background(
                 Circle()
                     .fill(actionKind.usesDestructiveStyling ? Color.secondary.opacity(0.12) : Color.accentColor
@@ -352,7 +355,7 @@ struct ScopeEditorSummaryRow: View {
         } label: {
             HStack(spacing: 4) {
                 Text(isOn ? "Subfolders On" : "Subfolders Off")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(VoyagerDS.Typography.smallButton)
                 Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 11, weight: .semibold))
             }
@@ -374,7 +377,7 @@ struct ScopeEditorParentContextRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
             Image(systemName: "folder")
-                .font(.system(size: 11, weight: .medium))
+                .font(VoyagerDS.Typography.chip)
                 .foregroundColor(.secondary)
                 .frame(width: 16)
 
@@ -396,7 +399,7 @@ struct ScopeEditorParentContextRow: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
                 .fill(Color.secondary.opacity(0.08)),
         )
         .accessibilityElement(children: .combine)

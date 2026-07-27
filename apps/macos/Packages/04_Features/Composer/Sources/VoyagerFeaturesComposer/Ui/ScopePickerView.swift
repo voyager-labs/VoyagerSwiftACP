@@ -40,12 +40,12 @@ struct ScopePickerView: View {
                 .frame(width: ScopePickerPresentationMetrics.width)
                 .frame(maxHeight: ScopePickerPresentationMetrics.maxHeight)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous)
                         .fill(VoyagerDS.Surface.popoverBackground(for: colorScheme)),
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.control, style: .continuous)
                         .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
                 )
                 .accessibilityIdentifier(ScopePickerAccessibilityID.surface)
@@ -75,12 +75,12 @@ private extension ScopePickerView {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12))
+                    .font(VoyagerDS.Typography.caption)
                     .foregroundColor(.secondary)
 
                 TextField("Search directories...", text: queryText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(VoyagerDS.Typography.body)
                     .focused($isSearchFocused)
                     .accessibilityIdentifier(ScopePickerAccessibilityID.searchField)
 
@@ -89,7 +89,7 @@ private extension ScopePickerView {
                         queryText.wrappedValue = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12))
+                            .font(VoyagerDS.Typography.caption)
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.borderless)
@@ -384,7 +384,7 @@ private extension ScopePickerView {
 
     private func scopeSectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 10, weight: .medium))
+            .font(VoyagerDS.Typography.smallButton)
             .foregroundColor(.secondary.opacity(0.85))
             .padding(.horizontal, 2)
     }
@@ -398,7 +398,7 @@ private extension ScopePickerView {
                     .foregroundColor(.secondary)
 
                 Text(message)
-                    .font(.system(size: 12))
+                    .font(VoyagerDS.Typography.caption)
                     .foregroundColor(.secondary)
 
                 if let recoveryMessage = listState.emptyStateRecoveryMessage {

@@ -59,11 +59,11 @@ struct ScopeTreeRowView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
                 .fill(backgroundFill),
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
                 .stroke(borderColor, lineWidth: 0.5),
         )
         .onHover { hovering in
@@ -101,7 +101,7 @@ struct ScopeTreeRowView: View {
                         .accessibilityHidden(true)
                     if isHovering {
                         Text(actionLabel(for: action))
-                            .font(.system(size: 10, weight: .medium))
+                            .font(VoyagerDS.Typography.smallButton)
                     }
                 }
                 .foregroundColor(actionForegroundColor(for: action))
