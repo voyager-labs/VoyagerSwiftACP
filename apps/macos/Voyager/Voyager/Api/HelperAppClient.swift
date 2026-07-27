@@ -282,15 +282,6 @@ private func terminateHelperGracefully(_ info: HelperLifecycleInfo) async {
 }
 
 private let kHelperEnvironmentKeys: [String] = [
-    "APP_ENV",
-    "PATH",
-    "PUBLIC_APP_NAME",
-    "PUBLIC_GATEWAY_URL",
-    "PUBLIC_HELPER_NAME",
-    "PUBLIC_LOG_LEVEL",
-    "PUBLIC_SENTRY_DSN",
-    "PUBLIC_SENTRY_TRACES_SAMPLE_RATE",
-    "PUBLIC_WEB_BASE_URL",
     "VOYAGER_PROJECT_ROOT",
 ]
 

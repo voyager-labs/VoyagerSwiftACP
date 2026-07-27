@@ -15,6 +15,7 @@ class VoyagerHelperApp {
         bootstrapLogging()
         let logger = Logger(label: "VoyagerHelper")
         try? EnvironmentLoader.loadEnvFiles()
+        EnvironmentLoader.requireAppEnv()
         SentryBootstrap.startIfNeeded(
             appVersion: helperAppVersion(),
             userId: nil,

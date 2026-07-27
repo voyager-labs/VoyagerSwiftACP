@@ -117,8 +117,7 @@
       "scheme": "OnboardingHost-Dev",
       "configuration": "Dev-Debug",
       "launchEnv": {
-        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}",
-        "VOYAGER_ONBOARDING_MOCK_BETA": "1"
+        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
       }
     },
     {
@@ -135,8 +134,7 @@
       "scheme": "OnboardingHost-Dev",
       "configuration": "Dev-Release",
       "launchEnv": {
-        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}",
-        "VOYAGER_ONBOARDING_MOCK_BETA": "1"
+        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
       }
     },
     {
