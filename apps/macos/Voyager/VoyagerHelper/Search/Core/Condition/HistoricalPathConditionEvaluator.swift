@@ -127,7 +127,25 @@ private extension HistoricalPathConditionEvaluator {
         _ candidate: Double?,
         condition: SearchConditionPayload,
     ) -> Bool {
+        if let result = matchesNumberPresence(candidate, operatorCode: condition.operator) {
+            return result
+        }
         guard let candidate else { return false }
+        return matchesNumberComparison(candidate, condition: condition)
+    }
+
+    static func matchesNumberPresence(_ candidate: Double?, operatorCode: String) -> Bool? {
+        switch operatorCode {
+        case "exists": candidate != nil
+        case "empty": candidate == nil
+        default: nil
+        }
+    }
+
+    static func matchesNumberComparison(
+        _ candidate: Double,
+        condition: SearchConditionPayload,
+    ) -> Bool {
         let values = numberValues(condition.value)
         switch (condition.operator, values.count) {
         case ("eq", 1): return candidate == values[0]

@@ -208,6 +208,27 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
             homeURL: homeURL,
         ))
     }
+
+    /// RCL-003-apply_deterministic_filters: path-derived 숫자 조건의 존재 여부를 평가함
+    /// 값이 없는 depth_from_home exists/empty 조건을 숫자 비교 전에 처리하는지 검증한다.
+    /// - 검증 내용: numeric path candidate의 exists/empty no-value operator
+    /// - 사전 조건: 홈 하위 파일에 depth_from_home path condition이 적용됨
+    /// - 기대 결과: exists는 true이고 empty는 false임
+    func testHistoricalPathConditionEvaluatorHandlesNumericExistsAndEmpty() {
+        let homeURL = URL(fileURLWithPath: "/Users/test", isDirectory: true)
+        let path = "/Users/test/Documents/report.pdf"
+
+        XCTAssertTrue(HistoricalPathConditionEvaluator.matches(
+            path,
+            conditions: [.init(propertyKey: "depth_from_home", operator: "exists", value: nil)],
+            homeURL: homeURL,
+        ))
+        XCTAssertFalse(HistoricalPathConditionEvaluator.matches(
+            path,
+            conditions: [.init(propertyKey: "depth_from_home", operator: "empty", value: nil)],
+            homeURL: homeURL,
+        ))
+    }
 }
 
 private extension FilterSearchQueryBuilderTests {
