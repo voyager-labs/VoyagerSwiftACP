@@ -66,6 +66,7 @@
 }
 
 [data-file-manager-illustration] .traffic-lights span {
+  display: block;
   width: 12px;
   height: 12px;
   border-radius: var(--fm-radius-round);
