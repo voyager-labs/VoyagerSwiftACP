@@ -53,18 +53,6 @@
   box-sizing: border-box;
 }
 
-[data-file-manager-illustration] .red {
-  background: var(--fm-red);
-}
-
-[data-file-manager-illustration] .yellow {
-  background: var(--fm-yellow);
-}
-
-[data-file-manager-illustration] .green {
-  background: var(--fm-green);
-}
-
 [data-file-manager-illustration] .location-shortcuts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(var(--fm-sidebar-location-cell-size), 1fr));
