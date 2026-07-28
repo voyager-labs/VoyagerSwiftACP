@@ -19,7 +19,6 @@ const styleSheets = [
   "src/styles/window-shell.css",
   "src/styles/sidebar.css",
   "src/styles/inspector.css",
-  "src/styles/workflows.css",
 ]
 const fileManagerCss = readFileSync(resolve(packageRoot, styleSheets[0]), "utf8")
 const css = [
@@ -39,7 +38,6 @@ const index = JSON.parse(
 const tabs = [
   { id: "home", label: "Home" },
   { id: "directory", label: "Directory" },
-  { id: "ai-chat", label: "AI Chat" },
 ]
 
 const files = [
@@ -56,7 +54,6 @@ function render(activeTabId) {
   return renderToStaticMarkup(
     createElement(runtime.FileManagerIllustration, {
       files,
-      chatMessages: [{ role: "user", paragraph: "Summarize this file" }],
       contentContext: { tabs, activeTabId },
     }),
   )
@@ -64,7 +61,6 @@ function render(activeTabId) {
 
 const directoryMarkup = render("directory")
 const homeMarkup = render("home")
-const aiChatMarkup = render("ai-chat")
 
 assert.match(directoryMarkup, /aria-label="Sidebar"/)
 assert.match(directoryMarkup, /aria-label="Entries"/)
@@ -76,8 +72,6 @@ assert.ok(
 )
 assert.match(homeMarkup, /aria-label="Home"/)
 assert.doesNotMatch(homeMarkup, /aria-label="Entries"/)
-assert.match(aiChatMarkup, /aria-label="AI Chat"/)
-assert.doesNotMatch(aiChatMarkup, /aria-label="Entries"|aria-label="Context Pane"/)
 
 assert.deepEqual(Object.keys(runtime).sort(), ["FileManagerIllustration"])
 assert.deepEqual(Object.keys(packageJson.exports).sort(), [".", "./styles.css"])
@@ -86,8 +80,6 @@ const expectedPublicTypes = [
   "FileManagerIllustrationProps",
   "FileEntry",
   "EntryKind",
-  "ChatRole",
-  "ChatMessage",
   "ContentTab",
   "ContentContext",
 ]
@@ -175,8 +167,8 @@ assert.equal(
   designTokensStory.importPath,
   "./packages/file-manager-illustration/src/foundations/DesignTokens.stories.tsx",
 )
-assert.equal(fileManagerStories.length, 99)
-assert.equal(fileManagerPaths.size, 29)
+assert.equal(fileManagerStories.length, 92)
+assert.equal(fileManagerPaths.size, 28)
 assert.equal(nonFileManagerStories.length, 0)
 
 console.log("native layout contract: pass")

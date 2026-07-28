@@ -263,7 +263,8 @@
   background: inherit;
 }
 
-[data-file-manager-illustration] .nav-icon svg {
+[data-file-manager-illustration] .nav-icon svg,
+[data-file-manager-illustration] .nav-icon .sf-symbol {
   display: block;
   width: 18px;
   height: 18px;
