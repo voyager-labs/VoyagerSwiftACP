@@ -8,11 +8,28 @@ public enum EntryModelConverterLive {
         entryLoadingClient: EntryLoadingClient,
         workspaceClient: WorkspaceClient,
     ) -> EntryModel? {
-        var isDirectory: ObjCBool = false
-        guard entryLoadingClient.fileExistsAtPath(itemURL.path, &isDirectory) else {
+        guard var entry = convertURLToCoreEntry(itemURL, entryLoadingClient: entryLoadingClient) else {
             return nil
         }
+        for probe in EntryMetadataProbe.allCases {
+            if let patch = metadataPatch(
+                for: entry,
+                probe: probe,
+                entryLoadingClient: entryLoadingClient,
+                workspaceClient: workspaceClient,
+            ) {
+                entry = entry.applying(patch)
+            }
+        }
+        return entry
+    }
 
+    nonisolated public static func convertURLToCoreEntry(
+        _ itemURL: URL,
+        entryLoadingClient: EntryLoadingClient,
+    ) -> EntryModel? {
+        var isDirectory: ObjCBool = false
+        guard entryLoadingClient.fileExistsAtPath(itemURL.path, &isDirectory) else { return nil }
         let resourceValues = try? itemURL.resourceValues(forKeys: [
             .nameKey,
             .fileSizeKey,
@@ -30,16 +47,7 @@ public enum EntryModelConverterLive {
         let addedDate = resourceValues?.addedToDirectoryDate ?? Date()
 
         let isHidden = resourceValues?.isHidden ?? false || name.hasPrefix(".")
-
-        let metadata = entryLoadingClient.getItemMetadata(itemURL, isDirectory.boolValue, workspaceClient)
-        let lastOpenedDate = metadata.lastUsedDate
-        let tags = entryTags(from: itemURL)
-
-        let supplementaryMetadata = entrySupplementaryMetadata(
-            url: itemURL,
-            isDirectory: isDirectory.boolValue,
-            entryLoadingClient: entryLoadingClient,
-        )
+        let isPackage = isDirectory.boolValue && entryLoadingClient.isPackageDirectory(itemURL)
 
         return EntryModel(
             name: name,
@@ -52,13 +60,51 @@ public enum EntryModelConverterLive {
             facets: EntryFacets(
                 createdDate: createdDate,
                 addedDate: addedDate,
-                lastOpenedDate: lastOpenedDate,
+                lastOpenedDate: nil,
+                kind: isDirectory.boolValue ? "Folder" : itemURL.pathExtension.isEmpty ? "File" : itemURL.pathExtension
+                    .uppercased() + " File",
+                creatorApplication: nil,
+                tags: nil,
+                supplementaryMetadata: nil,
+            ),
+            isPackage: isPackage,
+        )
+    }
+
+    nonisolated public static func metadataPatch(
+        for entry: EntryModel,
+        probe: EntryMetadataProbe,
+        entryLoadingClient: EntryLoadingClient,
+        workspaceClient: WorkspaceClient,
+        favoriteTags: [Tag] = [],
+    ) -> EntryMetadataPatch? {
+        let url = URL(fileURLWithPath: entry.fullPath)
+        switch probe {
+        case .spotlight:
+            let metadata = entryLoadingClient.getItemMetadata(url, entry.isFolder, workspaceClient)
+            return .spotlight(
+                id: entry.id,
                 kind: metadata.kind,
                 creatorApplication: metadata.creatorApplication,
-                tags: tags,
-                supplementaryMetadata: supplementaryMetadata,
-            ),
-        )
+                lastOpenedDate: metadata.lastUsedDate,
+            )
+        case .tags:
+            let patch = EntryMetadataPatch.tags(id: entry.id, tags: entryTags(from: url))
+            let normalizedEntry = EntryModelTagColorNormalizer.normalize(
+                entry.applying(patch),
+                favoriteTags: favoriteTags,
+            )
+            return .tags(id: entry.id, tags: normalizedEntry.facets.tags)
+        case .supplementaryMetadata:
+            return .supplementaryMetadata(
+                id: entry.id,
+                metadata: entrySupplementaryMetadata(
+                    url: url,
+                    isDirectory: entry.isFolder,
+                    entryLoadingClient: entryLoadingClient,
+                ),
+            )
+        }
     }
 
     nonisolated private static func entryTags(from itemURL: URL) -> [Tag]? {
