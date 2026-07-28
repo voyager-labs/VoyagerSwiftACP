@@ -29,7 +29,7 @@ trap 'rm -f "${P8_PATH}"' EXIT
 printf "%s" "${ASC_PRIVATE_KEY_P8}" >"${P8_PATH}"
 
 echo "Signing DMG..."
-codesign --force --timestamp --sign "Developer ID Application" "${DMG_PATH}"
+codesign --force --timestamp --sign "Developer ID Application: Voyager for Momentum Inc. (UNR9C79D99)" "${DMG_PATH}"
 codesign --verify --verbose=2 "${DMG_PATH}"
 
 echo "Submitting for notarization..."
