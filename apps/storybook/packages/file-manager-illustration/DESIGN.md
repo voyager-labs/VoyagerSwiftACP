@@ -6,7 +6,7 @@ The illustration mirrors Voyager's current macOS File Manager: a quiet native ut
 
 ## 2. Color
 
-All macOS semantic colors come from `--macos-*` custom properties in `src/styles/macos-tokens.css`. File Manager aliases and shared/content styles remain in `src/styles/file-manager.css`. Atom styles are owned by `src/styles/atoms.css`. Window shell, Sidebar, Inspector, and workflow styles are owned by `src/styles/window-shell.css`, `src/styles/sidebar.css`, `src/styles/inspector.css`, and `src/styles/workflows.css`. Sidebar, toolbar, content, inspector, selection, text, separator, focus, and status roles must use those tokens. No component-level raw colors are allowed.
+All macOS semantic colors come from `--macos-*` custom properties in `src/styles/macos-tokens.css`. File Manager aliases and shared/content styles remain in `src/styles/file-manager.css`. Atom styles are owned by `src/styles/atoms.css`. Window shell, Sidebar, and Inspector styles are owned by `src/styles/window-shell.css`, `src/styles/sidebar.css`, and `src/styles/inspector.css`. Sidebar, toolbar, content, inspector, selection, text, separator, focus, and status roles must use those tokens. No component-level raw colors are allowed.
 
 ## 3. Typography
 
@@ -28,7 +28,7 @@ All macOS semantic colors come from `--macos-*` custom properties in `src/styles
 - Breadcrumb/status bar: 24px.
 - Location grid: 42px cells, 12px horizontal padding, 8px gap.
 
-Scroll ownership is explicit: sidebar tabs, entry content, AI messages, and inspector chat own their independent vertical scrolling. Window chrome, location shortcuts, toolbar, and breadcrumb/status remain fixed.
+Scroll ownership is explicit: sidebar tabs, entry content, and inspector chat own their independent vertical scrolling. Window chrome, location shortcuts, toolbar, and breadcrumb/status remain fixed.
 
 ## 5. Components
 
@@ -45,8 +45,8 @@ Scroll ownership is explicit: sidebar tabs, entry content, AI messages, and insp
 
 ### Content Chrome
 
-- **Structure:** navigation controls, active title/composer area, hover/focus view and sort controls, New Chat, optional Show Sidebar, scroll body, breadcrumb/status.
-- **States:** Home, browser, primary AI Chat, grid/list, sidebar closed.
+- **Structure:** navigation controls, active title area, hover/focus view and sort controls, New Chat, optional Show Sidebar, scroll body, breadcrumb/status.
+- **States:** Home, browser, grid/list, sidebar closed.
 
 ### Contextual Inspector
 

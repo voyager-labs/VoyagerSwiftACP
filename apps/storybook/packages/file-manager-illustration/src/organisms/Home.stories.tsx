@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { homeFavorites, homeLocations, homeRecentChats } from "../data/home-data"
+import { homeFavorites, homeLocations } from "../data/home-data"
 import { Home } from "./Home"
 
 const meta = {
@@ -8,12 +8,9 @@ const meta = {
   args: {
     favorites: homeFavorites,
     locations: homeLocations,
-    recentChats: homeRecentChats,
     standalone: true,
     onFavoriteSelect: () => {},
     onLocationSelect: () => {},
-    onRecentChatSelect: () => {},
-    onNewChat: () => {},
   },
 } satisfies Meta<typeof Home>
 
@@ -26,7 +23,6 @@ export const Empty: Story = {
   args: {
     favorites: [],
     locations: [],
-    recentChats: [],
   },
 }
 

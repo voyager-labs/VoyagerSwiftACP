@@ -20,7 +20,6 @@ const contentTabs: readonly SidebarTabItem[] = [
   { id: "home", label: "Home Page", icon: "home" },
   { id: "directory", label: "Directory", icon: "folder-blue", active: true },
   { id: "collection", label: "Research Collection", icon: "collection" },
-  { id: "ai-chat", label: "AI Chat", icon: "chat" },
 ] as const
 
 const longLabelTabs: readonly SidebarTabItem[] = [

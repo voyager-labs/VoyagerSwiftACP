@@ -9,13 +9,6 @@ export type FileEntry = {
   readonly secondaryLabel: string | null
 }
 
-export type ChatRole = "user" | "assistant"
-
-export type ChatMessage = {
-  readonly role: ChatRole
-  readonly paragraph: string
-}
-
 export type SidebarIconKind = "home" | "folder" | "folder-blue" | "collection" | "chat"
 
 export type SidebarTabItem = {
@@ -26,7 +19,6 @@ export type SidebarTabItem = {
   readonly isPinned?: boolean
   readonly secondary?: string
   readonly pageAnchor?: string
-  readonly chatSessionId?: string
 }
 
 export type SidebarTabAction = (item: SidebarTabItem) => void
@@ -106,6 +98,5 @@ export type Entry = {
 
 export type FileManagerIllustrationProps = {
   readonly files: readonly FileEntry[]
-  readonly chatMessages: readonly ChatMessage[]
   readonly contentContext: ContentContext
 }

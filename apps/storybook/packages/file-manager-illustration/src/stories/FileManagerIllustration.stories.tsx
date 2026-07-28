@@ -12,7 +12,6 @@ const defaultTabs = [
   { id: "home", label: "Home Page" },
   { id: "directory", label: "Directory" },
   { id: "collection", label: "Research Collection" },
-  { id: "ai-chat", label: "AI Chat" },
 ] as const
 
 const meta = {
@@ -27,10 +26,6 @@ type Story = StoryObj<typeof meta>
 export const Default: Story = {
   args: {
     files: publicFiles,
-    chatMessages: [
-      { role: "user", paragraph: "Show me the budget files" },
-      { role: "assistant", paragraph: "Here are the spreadsheet files I found." },
-    ],
     contentContext: { tabs: defaultTabs, activeTabId: "directory" },
   },
   play: async ({ canvasElement }) => {
@@ -44,7 +39,6 @@ export const Default: Story = {
 export const ListView: Story = {
   args: {
     files: publicFiles,
-    chatMessages: [],
     contentContext: { tabs: defaultTabs, activeTabId: "directory" },
   },
   play: async ({ canvasElement }) => {
@@ -57,7 +51,6 @@ export const ListView: Story = {
 export const FocusMode: Story = {
   args: {
     files: publicFiles,
-    chatMessages: [],
     contentContext: { tabs: defaultTabs, activeTabId: "directory" },
   },
   play: async ({ canvasElement }) => {
@@ -69,29 +62,9 @@ export const FocusMode: Story = {
   },
 }
 
-/** Replaces obsolete PropertiesMode — AI Chat as primary content. */
-export const AIChatPrimary: Story = {
-  args: {
-    files: publicFiles,
-    chatMessages: [],
-    contentContext: { tabs: defaultTabs, activeTabId: "ai-chat" },
-  },
-  play: async ({ canvasElement }) => {
-    const chatArea = canvasElement.querySelector(
-      '[data-file-manager-illustration-workflow="ai-chat-content"]',
-    )
-    expect(chatArea).toBeInTheDocument()
-    expect(within(canvasElement).queryByRole("region", { name: "Entries" })).not.toBeInTheDocument()
-    expect(
-      within(canvasElement).queryByRole("complementary", { name: "Context Pane" }),
-    ).not.toBeInTheDocument()
-  },
-}
-
 export const Home: Story = {
   args: {
     files: [],
-    chatMessages: [],
     contentContext: { tabs: defaultTabs, activeTabId: "home" },
   },
   play: async ({ canvasElement }) => {

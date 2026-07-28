@@ -4,7 +4,7 @@ import { IconButton } from "../atoms/IconButton"
 
 export type EntryViewMode = "grid" | "list"
 
-export type FileToolbarContent = "directory" | "home" | "ai-chat"
+export type FileToolbarContent = "directory" | "home"
 
 export interface FileToolbarProps {
   /** Active tab title (e.g. "Directory", "Home", "Ask Voyager"). */
@@ -76,7 +76,7 @@ export const FileToolbar: FC<FileToolbarProps> = ({
       </div>
 
       <div className="toolbar-right">
-        {content !== "ai-chat" && onNewChat && (
+        {onNewChat && (
           <IconButton aria-label="New Chat" onClick={onNewChat}>
             <FileManagerIcon name="chat" />
           </IconButton>
