@@ -45,6 +45,7 @@ mise run xcode
 mise run hooks
 mise run submodules
 mise run docs-setup
+mise run storybook-setup
 """
 
 # .xcode-version 기준 Xcode 설치 및 선택
@@ -148,6 +149,10 @@ run = "python3 -m scripts.verify_plan"
 description = "Storybook 개발 서버 실행 (기본 포트: 6006)"
 run = "cd apps/storybook && pnpm storybook \"$@\""
 
+[tasks.storybook-setup]
+description = "Storybook pnpm 의존성 동기화"
+run = "pnpm --dir apps/storybook install --frozen-lockfile"
+
 [tasks.swiftui-tokens]
 description = "SwiftUI system color와 material metadata를 Storybook에 동기화"
 run = """
@@ -158,6 +163,5 @@ xcrun swift run \
   --metadata-output apps/storybook/packages/file-manager-illustration/src/foundations/swiftui-material-metadata.generated.ts \
   "$@"
 """
-
 
 
