@@ -159,6 +159,7 @@ private actor URLMaterializationSequence {
     private var didFinishCore = false
     private var didCloseFirstCoreBatch = false
     private var didCloseCoreComplete = false
+    private var didCloseRequest = false
     private var didBeginMetadata = false
     private var didFinish = false
 
@@ -243,6 +244,15 @@ private actor URLMaterializationSequence {
             return await nextCoreEvent()
         }
 
+        return nextMetadataEvent()
+    }
+
+    private func nextMetadataEvent() -> EntryLoadEvent? {
+        guard probeIndex < priority.probes.count else {
+            finishIfNeeded()
+            return nil
+        }
+        beginMetadataIfNeeded()
         while probeIndex < priority.probes.count {
             guard !Task.isCancelled else {
                 finishIfNeeded()
@@ -323,7 +333,7 @@ private actor URLMaterializationSequence {
                 didFinishCore = true
                 closeFirstCoreBatchIfNeeded()
                 closeCoreCompleteIfNeeded()
-                beginMetadataIfNeeded()
+                closeRequestIfNeeded()
                 return .coreFinished(batchCount: batchIndex)
             }
 
@@ -349,13 +359,20 @@ private actor URLMaterializationSequence {
         instrumentation.begin(.metadataComplete, context: context)
     }
 
+    private func closeRequestIfNeeded() {
+        guard !didCloseRequest else { return }
+        didCloseRequest = true
+        instrumentation.end(.request, context: context, workCounts: workCounts)
+    }
+
     private func finishIfNeeded() {
         guard !didFinish else { return }
         didFinish = true
         closeFirstCoreBatchIfNeeded()
         closeCoreCompleteIfNeeded()
-        beginMetadataIfNeeded()
-        instrumentation.end(.metadataComplete, context: context, workCounts: workCounts)
-        instrumentation.end(.request, context: context, workCounts: workCounts)
+        closeRequestIfNeeded()
+        if didBeginMetadata {
+            instrumentation.end(.metadataComplete, context: context, workCounts: workCounts)
+        }
     }
 }

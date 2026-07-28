@@ -280,8 +280,8 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         XCTAssertEqual(instrumentationRecorder.intervalNames, [
             "entry_loading_first_core_batch",
             "entry_loading_core_complete",
-            "entry_loading_metadata_complete",
             "entry_loading_request",
+            "entry_loading_metadata_complete",
         ])
     }
 
@@ -646,11 +646,48 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
 
     // MARK: - EVM-001-entry_loading_performance
 
+    /// EVM-001-entry_loading_performance: Core-only consumption closes its active instrumentation intervals.
+    /// core 완료 직후 소비를 중단해도 metadata 계측을 열지 않고 request 계측을 닫는지 검증한다.
+    /// - 검증 내용: core 완료 시 request 종료, metadata probe 미실행, metadata interval 미시작
+    /// - 사전 조건: Spotlight metadata가 활성화된 단일 URL stream을 coreFinished까지만 소비한다.
+    /// - 기대 결과: first/core/request interval만 종료되고 metadata closure는 호출되지 않는다.
+    func testBreakingAfterCoreFinishedClosesRequestWithoutStartingMetadata() async throws {
+        let recorder = EntryLoadingInstrumentationRecorder()
+        let metadataCalls = LockedCounter()
+        var client = visibleEntryClient()
+        client.getItemMetadata = { _, _, _ in
+            metadataCalls.increment()
+            return .init(kind: "File", creatorApplication: nil, lastUsedDate: nil)
+        }
+
+        for try await event in EntryStagedMaterializerLive.materializeURLs(
+            [URL(fileURLWithPath: "/fixture/File-0")],
+            showHidden: false,
+            configuration: .init(
+                priority: .active([.spotlight]),
+                entryLoadingClient: client,
+                workspaceClient: .testValue,
+                sourceKind: .direct,
+                instrumentation: recorder.instrumentation,
+                favoriteTags: [],
+            ),
+        ) where event.isCoreFinished {
+            break
+        }
+
+        XCTAssertEqual(metadataCalls.value, 0)
+        XCTAssertEqual(recorder.intervalNames, [
+            "entry_loading_first_core_batch",
+            "entry_loading_core_complete",
+            "entry_loading_request",
+        ])
+    }
+
     /// EVM-001-entry_loading_performance: Staged URL loading closes each interval once in stream order.
     /// 빈 입력과 deferred probe 실패가 있어도 계측 interval과 work count가 결정론적으로 닫히는지 검증한다.
     /// - 검증 내용: request/first/core/metadata interval 순서, empty 완료, probe 실패 후 종료, folder-count work 수
     /// - 사전 조건: 빈 URL 입력과 supplementary probe가 nil을 반환하는 폴더 URL을 각각 사용한다.
-    /// - 기대 결과: 각 request의 네 interval은 정확히 한 번씩 닫히고, metadata interval은 core 완료 뒤에만 시작한다.
+    /// - 기대 결과: request는 core 완료와 함께 닫히고 metadata interval은 실제 probe가 있을 때만 뒤이어 닫힌다.
     func testStagedLoadingInstrumentationClosesIntervalsForEmptyAndProbeFailure() async throws {
         let emptyRecorder = EntryLoadingInstrumentationRecorder()
         _ = try await collect(EntryStagedMaterializerLive.materializeURLs(
@@ -669,7 +706,6 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         XCTAssertEqual(emptyRecorder.intervalNames, [
             "entry_loading_first_core_batch",
             "entry_loading_core_complete",
-            "entry_loading_metadata_complete",
             "entry_loading_request",
         ])
         XCTAssertEqual(emptyRecorder.workCounts.folderCountProbes, 0)
@@ -697,8 +733,8 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         XCTAssertEqual(probeRecorder.intervalNames, [
             "entry_loading_first_core_batch",
             "entry_loading_core_complete",
-            "entry_loading_metadata_complete",
             "entry_loading_request",
+            "entry_loading_metadata_complete",
         ])
         XCTAssertEqual(calls.value, 1)
         XCTAssertEqual(probeRecorder.workCounts.folderCountProbes, 1)
