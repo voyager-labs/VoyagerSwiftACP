@@ -1727,7 +1727,7 @@
 					"$(inherited)",
 				);
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = FilterSearchXPC/Info.plist;
+				INFOPLIST_FILE = FilterSearchXPC/Info-Dev-Debug.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -1763,7 +1763,7 @@
 				ENABLE_PREVIEWS = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = FilterSearchXPC/Info.plist;
+				INFOPLIST_FILE = FilterSearchXPC/Info-Prod-Release.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -1797,7 +1797,7 @@
 				DEVELOPMENT_TEAM = UNR9C79D99;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = FilterSearchXPC/Info.plist;
+				INFOPLIST_FILE = FilterSearchXPC/Info-Dev-Release.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -1833,7 +1833,7 @@
 					"$(inherited)",
 				);
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = FilterSearchXPC/Info.plist;
+				INFOPLIST_FILE = FilterSearchXPC/Info-Prod-Debug.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
