@@ -66,12 +66,13 @@ struct SpotlightSearchService: SearchExecutionServicing {
             scopeURLs: scopeURLs,
             normalizedFilterScopes: normalizedFilterScopes,
         )
-        let filteredPaths = filterPaths(
+        let scopeFilteredPaths = filterPaths(
             paths,
             scopes: prepared.scopes,
             includeSubfolders: filters.includeSubfolders,
             excludedScopes: filters.excludedScopes,
         )
+        let filteredPaths = applyPathConditions(compiledPlan, to: scopeFilteredPaths)
 
         if paths.count == maxCandidates {
             logger.warning("MDQuery result truncated at maxCandidates=\(maxCandidates): id=\(requestId)")
@@ -121,6 +122,24 @@ struct SpotlightSearchService: SearchExecutionServicing {
                 pathMatchesExactFolderScope(path, normalizedScopes: normalizedFilterScopes)
             },
         )
+    }
+
+    private func applyPathConditions(
+        _ compiledPlan: SpotlightQueryCompiler.CompilePlan,
+        to paths: [String],
+    ) -> [String] {
+        guard !compiledPlan.pathConditions.isEmpty else {
+            return paths
+        }
+
+        let homeURL = defaultScopeURL()
+        return paths.filter { path in
+            HistoricalPathConditionEvaluator.matches(
+                path,
+                conditions: compiledPlan.pathConditions,
+                homeURL: homeURL,
+            )
+        }
     }
 
     private func logApplyFiltersCompleted(

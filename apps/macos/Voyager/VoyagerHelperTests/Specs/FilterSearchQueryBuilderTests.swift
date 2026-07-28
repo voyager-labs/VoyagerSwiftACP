@@ -86,6 +86,94 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         XCTAssertTrue(plan.predicate.contains("kMDItemFSName == \"pdf\""))
         XCTAssertEqual(plan.pushdownConditions, [condition])
     }
+
+    func testConditionCompilerRestoresHistoricalOperatorProfiles() throws {
+        let compiler = try makeCompiler()
+        let cases: [(SearchConditionPayload, [String])] = [
+            (
+                .init(
+                    propertyKey: "file_kind",
+                    operator: "all",
+                    value: .array([.string("PDF"), .string("Document")]),
+                ),
+                ["kMDItemKind == \"PDF\"", "kMDItemKind == \"Document\"", " && "],
+            ),
+            (
+                .init(propertyKey: "tag_names", operator: "cn", value: .string("work")),
+                ["kMDItemUserTags == \"*work*\""],
+            ),
+            (
+                .init(propertyKey: "is_invisible", operator: "neq", value: .bool(true)),
+                ["kMDItemFSInvisible != TRUE"],
+            ),
+            (
+                .init(
+                    propertyKey: "audio_channel_count",
+                    operator: "in",
+                    value: .array([.number(1), .number(2)]),
+                ),
+                ["kMDItemAudioChannelCount == 1", "kMDItemAudioChannelCount == 2", " || "],
+            ),
+            (
+                .init(
+                    propertyKey: "extension",
+                    operator: "in",
+                    value: .array([.string("pdf"), .string("md")]),
+                ),
+                ["kMDItemFSName == \"*.pdf\"", "kMDItemFSName == \"*.md\"", " || "],
+            ),
+            (
+                .init(
+                    propertyKey: "uniform_type_identifier",
+                    operator: "in",
+                    value: .array([.string("public.pdf")]),
+                ),
+                ["kMDItemContentType == \"public.pdf\""],
+            ),
+        ]
+
+        for (condition, fragments) in cases {
+            let plan = try compiler.compilePlan(conditions: [condition])
+            for fragment in fragments {
+                XCTAssertTrue(plan.predicate.contains(fragment), plan.predicate)
+            }
+        }
+    }
+
+    func testConditionCompilerSeparatesRetiredPathConditionsFromSpotlightPushdown() throws {
+        let compiler = try makeCompiler()
+        let condition = SearchConditionPayload(
+            propertyKey: "relative_path_from_home",
+            operator: "starts_with",
+            value: .string("~/Documents"),
+        )
+
+        let plan = try compiler.compilePlan(conditions: [condition])
+
+        XCTAssertEqual(plan.predicate, SpotlightQueryCompiler.basePredicate)
+        XCTAssertEqual(plan.pushdownConditions, [])
+        XCTAssertEqual(plan.pathConditions, [
+            .init(propertyKey: "relative_path_from_home", operator: "sw", value: .string("~/Documents")),
+        ])
+    }
+
+    func testHistoricalPathConditionEvaluatorMatchesIndexedPathFields() {
+        let homeURL = URL(fileURLWithPath: "/Users/test", isDirectory: true)
+        let path = "/Users/test/Documents/report.pdf"
+        let conditions: [SearchConditionPayload] = [
+            .init(propertyKey: "dir_path", operator: "eq", value: .string("/Users/test/Documents")),
+            .init(propertyKey: "parent_dir_name", operator: "eq", value: .string("Documents")),
+            .init(propertyKey: "depth_from_home", operator: "eq", value: .number(1)),
+            .init(propertyKey: "relative_path_from_home", operator: "sw", value: .string("~/Documents")),
+        ]
+
+        XCTAssertTrue(HistoricalPathConditionEvaluator.matches(path, conditions: conditions, homeURL: homeURL))
+        XCTAssertFalse(HistoricalPathConditionEvaluator.matches(
+            "/Users/test/Downloads/report.pdf",
+            conditions: conditions,
+            homeURL: homeURL,
+        ))
+    }
 }
 
 private extension FilterSearchQueryBuilderTests {
@@ -99,6 +187,7 @@ private extension FilterSearchQueryBuilderTests {
 
     func loadRegistry<T: Decodable>(fileName: String) throws -> T {
         let rootURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
