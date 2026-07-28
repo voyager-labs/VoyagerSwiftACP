@@ -185,10 +185,14 @@ struct ComposerConditionEditingReducer {
             sourcePayload: nil,
         ) else { return .none }
         state.pushHistory()
-        let displayState = payload.selectedUnitCode.flatMap { _ in
-            editor.displayState.map { ConditionDisplayState(
+        let displayState = payload.selectedUnitCode.flatMap { selectedUnitCode in
+            let unitValueState = editor.displayState?.unitValueState
+                ?? replacement.property.unitContract.map {
+                    UnitValueState(contract: $0, preferredUnitCode: selectedUnitCode)
+                }
+            return unitValueState.map { ConditionDisplayState(
                 values: payload.displayValues,
-                unitValueState: $0.unitValueState,
+                unitValueState: $0,
             )
             }
         }
