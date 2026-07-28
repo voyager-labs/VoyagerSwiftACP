@@ -25,10 +25,10 @@ final class ComposerHostPresetTests: XCTestCase {
     func testPresetsSelectExpectedConditionContracts() throws {
         let expected: [ComposerHostPreset: (String, String)] = [
             .textValue: ("name_stem", "eq"),
-            .numberRange: ("file_size", "btw"),
-            .boolean: ("is_hidden", "eq"),
+            .numberRange: ("size", "btw"),
+            .boolean: ("is_invisible", "eq"),
             .tokenList: ("tag_names", "any"),
-            .dateRange: ("modified_date", "btw"),
+            .dateRange: ("modification_date", "btw"),
         ]
 
         for (preset, condition) in expected {

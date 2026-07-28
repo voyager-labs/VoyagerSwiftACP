@@ -8,11 +8,11 @@ final class ComposerHostSandboxTests: XCTestCase {
         let registry = ComposerHostSandbox.makeRegistryClient()
 
         XCTAssertTrue(ComposerHostSandbox.registryCoverageIsComplete())
-        XCTAssertEqual(registry.propertyTypeString(for: "kind"), "categorical")
-        XCTAssertNotNil(registry.unitSpec(for: "file_size"))
+        XCTAssertEqual(registry.propertyTypeString(for: "file_kind"), "categorical")
+        XCTAssertNotNil(registry.unitSpec(for: "size"))
 
         let dateRange = try registry.resolveCondition(
-            propertyKey: "modified_date",
+            propertyKey: "modification_date",
             operatorCode: "btw",
             values: ["2025-01-01", "2025-01-31"],
             sourcePayload: nil,
@@ -83,7 +83,8 @@ final class ComposerHostSandboxTests: XCTestCase {
                 URL(fileURLWithPath: ComposerHostSandbox.projectsPath),
                 [],
                 [],
-            ).map(\.path),
+            )
+            .map(\.path),
             ["/Fixture/Projects/Composer"],
         )
         XCTAssertEqual(tags.map(\.name), ["Work", "Pinned", "Archive"])

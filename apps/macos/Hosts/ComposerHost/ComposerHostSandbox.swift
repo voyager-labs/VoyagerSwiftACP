@@ -85,10 +85,10 @@ public enum ComposerHostSandbox {
     public static func registryCoverageIsComplete() -> Bool {
         let registry = makeRegistryClient()
         let keys = Set(registry.allProperties().map(\.key))
-        return keys.isSuperset(of: ["kind", "modified_date", "file_size", "tag_names"])
-            && Set(registry.operatorCodes(for: "kind")).isSuperset(of: ["eq", "exists"])
-            && Set(registry.operatorCodes(for: "modified_date")).isSuperset(of: ["eq", "btw", "exists"])
-            && Set(registry.operatorCodes(for: "file_size")).isSuperset(of: ["eq", "btw"])
+        return keys.isSuperset(of: ["file_kind", "modification_date", "size", "tag_names"])
+            && Set(registry.operatorCodes(for: "file_kind")).isSuperset(of: ["any", "exists"])
+            && Set(registry.operatorCodes(for: "modification_date")).isSuperset(of: ["eq", "btw"])
+            && Set(registry.operatorCodes(for: "size")).isSuperset(of: ["eq", "btw"])
             && Set(registry.operatorCodes(for: "tag_names")).contains("any")
     }
 
@@ -126,13 +126,13 @@ extension ComposerHostSandbox {
             id: "00000000-0000-0000-0000-000000000101",
         ),
         .numberRange: .init(
-            propertyKey: "file_size",
+            propertyKey: "size",
             operatorCode: "btw",
             values: ["1048576", "5242880"],
             id: "00000000-0000-0000-0000-000000000102",
         ),
         .boolean: .init(
-            propertyKey: "is_hidden",
+            propertyKey: "is_invisible",
             operatorCode: "eq",
             values: ["false"],
             id: "00000000-0000-0000-0000-000000000103",
@@ -144,7 +144,7 @@ extension ComposerHostSandbox {
             id: "00000000-0000-0000-0000-000000000104",
         ),
         .dateRange: .init(
-            propertyKey: "modified_date",
+            propertyKey: "modification_date",
             operatorCode: "btw",
             values: ["2025-01-01", "2025-01-31"],
             id: "00000000-0000-0000-0000-000000000105",
