@@ -45,11 +45,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.servicesProvider = self
         withAppRootStore {
             $0.send(.lifecycle(.launch(.didFinishLaunching)))
-            keyboardShortcutMonitor.start { [weak self] position in
-                self?.withAppRootStore {
-                    $0.send(.menuCommands(.view(.app(.selectContentTab(position: position)))))
-                }
-            }
+            keyboardShortcutMonitor.start(
+                context: { [weak self] in
+                    self?.contentTabShortcutContext() ?? .unavailable
+                },
+                onSelectContentTab: { [weak self] position in
+                    self?.withAppRootStore {
+                        $0.send(.menuCommands(.view(.app(.selectContentTab(position: position)))))
+                    }
+                },
+            )
         }
     }
 
@@ -178,6 +183,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } onMissing: {
             .terminateNow
         }
+    }
+
+    private func contentTabShortcutContext() -> AppKeyboardShortcutMonitor.ContentTabShortcutContext {
+        withAppRootStore({ store in
+            store.withState { state in
+                let menuCommands = MenuCommandsState(state: state)
+                return .init(
+                    hasFocusedWindow: menuCommands.hasFocusedWindow,
+                    isComposerPresented: menuCommands.isComposerPresented,
+                )
+            }
+        }, onMissing: {
+            .unavailable
+        })
     }
 
     @discardableResult

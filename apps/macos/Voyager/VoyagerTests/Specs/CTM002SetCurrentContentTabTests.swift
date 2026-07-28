@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import ComposableArchitecture
 @testable import Voyager
 import VoyagerPagesFileManager
@@ -8,24 +9,36 @@ import XCTest
 final class CTM002SetCurrentContentTabTests: XCTestCase {
     // MARK: - CTM-002-set_current_content_tab_by_number
 
-    /// CTM-002-set_current_content_tab_by_number: Command와 허용 가능한 보조 flag가 숫자 위치를 분류한다.
-    /// 사용자가 Command+1...9를 입력할 때 Caps Lock과 숫자 키패드 상태가 있어도 같은 위치로 해석되는지 검증한다.
-    /// - 검증 내용: key 문자와 modifier flag를 순수 분류기가 1-based position으로 변환함
-    /// - 사전 조건: 각 숫자에 Command를 포함하고 Caps Lock 또는 numericPad flag를 선택적으로 조합함
-    /// - 기대 결과: 모든 1...9 입력이 정확히 대응하는 position을 반환함
-    func testShortcutClassifierAcceptsCommandDigitsWithHarmlessFlags() {
-        let harmlessModifiers: [NSEvent.ModifierFlags] = [
+    /// CTM-002-set_current_content_tab_by_number: 물리 숫자열과 키패드는 키보드 레이아웃과 무관하게 위치를 분류한다.
+    /// 사용자가 Command+1...9를 입력할 때 번역된 문자가 달라도 동일한 물리 키 위치로 해석되는지 검증한다.
+    /// - 검증 내용: 숫자열·키패드 keyCode와 Shift·Caps Lock·numericPad flag를 1-based position으로 변환함
+    /// - 사전 조건: 각 위치의 Carbon virtual key code에 Command와 허용 가능한 보조 flag를 조합함
+    /// - 기대 결과: 숫자열과 키패드의 모든 1...9 입력이 정확한 position을 반환함
+    func testShortcutClassifierUsesPhysicalDigitKeyCodesAcrossLayouts() {
+        let keyCodes: [(UInt16, Int)] = [
+            (UInt16(kVK_ANSI_1), 1), (UInt16(kVK_ANSI_Keypad1), 1),
+            (UInt16(kVK_ANSI_2), 2), (UInt16(kVK_ANSI_Keypad2), 2),
+            (UInt16(kVK_ANSI_3), 3), (UInt16(kVK_ANSI_Keypad3), 3),
+            (UInt16(kVK_ANSI_4), 4), (UInt16(kVK_ANSI_Keypad4), 4),
+            (UInt16(kVK_ANSI_5), 5), (UInt16(kVK_ANSI_Keypad5), 5),
+            (UInt16(kVK_ANSI_6), 6), (UInt16(kVK_ANSI_Keypad6), 6),
+            (UInt16(kVK_ANSI_7), 7), (UInt16(kVK_ANSI_Keypad7), 7),
+            (UInt16(kVK_ANSI_8), 8), (UInt16(kVK_ANSI_Keypad8), 8),
+            (UInt16(kVK_ANSI_9), 9), (UInt16(kVK_ANSI_Keypad9), 9),
+        ]
+        let allowedModifiers: [NSEvent.ModifierFlags] = [
             [.command],
+            [.command, .shift],
             [.command, .capsLock],
             [.command, .numericPad],
-            [.command, .capsLock, .numericPad],
+            [.command, .shift, .capsLock, .numericPad],
         ]
 
-        for position in 1 ... 9 {
-            for modifiers in harmlessModifiers {
+        for (keyCode, position) in keyCodes {
+            for modifiers in allowedModifiers {
                 XCTAssertEqual(
                     AppKeyboardShortcutMonitor.contentTabPosition(
-                        charactersIgnoringModifiers: String(position),
+                        keyCode: keyCode,
                         modifierFlags: modifiers,
                     ),
                     position,
@@ -34,36 +47,147 @@ final class CTM002SetCurrentContentTabTests: XCTestCase {
         }
     }
 
-    /// CTM-002-set_current_content_tab_by_number: 범위 밖 문자와 금지 modifier 조합은 shortcut으로 소비하지 않는다.
-    /// 숫자 입력이 정확한 Command+1...9 chord가 아닐 때 기존 responder 경로로 통과할 수 있도록 분류 결과를 검증한다.
-    /// - 검증 내용: nil·다문자·비숫자·0·plain digit와 Shift/Option/Control/Function 조합을 거부함
-    /// - 사전 조건: Command가 없거나 금지 modifier가 섞인 대표 key 입력 matrix를 사용함
+    /// CTM-002-set_current_content_tab_by_number: 범위 밖 물리 키와 금지 modifier 조합은 shortcut으로 소비하지 않는다.
+    /// 입력이 정확한 Command+1...9 물리 키 조합이 아닐 때 기존 responder 경로로 통과할 수 있도록 검증한다.
+    /// - 검증 내용: 0·문자 keyCode와 Command 없는 입력 및 Option·Control·Function 조합을 거부함
+    /// - 사전 조건: 지원하지 않는 대표 keyCode와 modifier matrix를 사용함
     /// - 기대 결과: 모든 입력이 nil을 반환해 event 처리 대상에서 제외됨
-    func testShortcutClassifierRejectsUnhandledKeysAndModifiers() {
-        let rejectedInputs: [(String?, NSEvent.ModifierFlags)] = [
-            (nil, [.command]),
-            ("", [.command]),
-            ("0", [.command]),
-            ("10", [.command]),
-            ("a", [.command]),
-            ("1", []),
-            ("1", [.capsLock]),
-            ("1", [.command, .shift]),
-            ("1", [.command, .option]),
-            ("1", [.command, .control]),
-            ("1", [.command, .function]),
-            ("1", [.command, .capsLock, .shift]),
-            ("1", [.command, .numericPad, .option]),
+    func testShortcutClassifierRejectsUnhandledKeyCodesAndModifiers() {
+        let rejectedInputs: [(UInt16, NSEvent.ModifierFlags)] = [
+            (UInt16(kVK_ANSI_0), [.command]),
+            (UInt16(kVK_ANSI_Keypad0), [.command, .numericPad]),
+            (UInt16(kVK_ANSI_A), [.command]),
+            (UInt16(kVK_ANSI_1), []),
+            (UInt16(kVK_ANSI_1), [.capsLock]),
+            (UInt16(kVK_ANSI_1), [.command, .option]),
+            (UInt16(kVK_ANSI_1), [.command, .control]),
+            (UInt16(kVK_ANSI_1), [.command, .function]),
+            (UInt16(kVK_ANSI_1), [.command, .shift, .option]),
+            (UInt16(kVK_ANSI_Keypad1), [.command, .numericPad, .control]),
         ]
 
-        for (characters, modifiers) in rejectedInputs {
+        for (keyCode, modifiers) in rejectedInputs {
             XCTAssertNil(
                 AppKeyboardShortcutMonitor.contentTabPosition(
-                    charactersIgnoringModifiers: characters,
+                    keyCode: keyCode,
                     modifierFlags: modifiers,
                 ),
             )
         }
+    }
+
+    /// CTM-002-set_current_content_tab_by_number: 텍스트 편집 responder는 숫자 shortcut event를 그대로 받는다.
+    /// Search·NSTextField field editor·AI Composer 입력 중 탭 전환 callback이 실행되지 않는지 검증한다.
+    /// - 검증 내용: NSTextField와 NSTextView에서 event identity와 callback count를 보존함
+    /// - 사전 조건: focused live window가 있고 유효한 Command+1 event가 text responder에 전달됨
+    /// - 기대 결과: 원본 event가 반환되고 Content Tab 선택 callback은 호출되지 않음
+    func testShortcutMonitorPassesThroughTextEditingResponders() {
+        let responders: [NSResponder] = [NSTextField(), NSTextView()]
+
+        for responder in responders {
+            var selectedPositions: [Int] = []
+            let handled = AppKeyboardShortcutMonitor.handleKeyDown(
+                keyCode: UInt16(kVK_ANSI_1),
+                modifierFlags: [.command],
+                context: .init(hasFocusedWindow: true, isComposerPresented: false),
+                firstResponder: responder,
+                onSelectContentTab: { selectedPositions.append($0) },
+            )
+
+            XCTAssertFalse(handled)
+            XCTAssertTrue(selectedPositions.isEmpty)
+        }
+    }
+
+    /// CTM-002-set_current_content_tab_by_number: focused Composer 또는 focused window 부재 시 event를 소비하지 않는다.
+    /// 앱 입력 문맥이 Content Tab 전환을 허용하지 않을 때 local monitor의 pass-through 결정을 검증한다.
+    /// - 검증 내용: Composer 표시와 no-focus context에서 event identity와 callback count를 보존함
+    /// - 사전 조건: 유효한 Command+1 event와 각각의 비허용 runtime context를 사용함
+    /// - 기대 결과: 원본 event가 반환되고 Content Tab 선택 callback은 호출되지 않음
+    func testShortcutMonitorPassesThroughUnavailableRuntimeContexts() {
+        let contexts: [AppKeyboardShortcutMonitor.ContentTabShortcutContext] = [
+            .init(hasFocusedWindow: true, isComposerPresented: true),
+            .unavailable,
+        ]
+
+        for context in contexts {
+            var selectedPositions: [Int] = []
+            let handled = AppKeyboardShortcutMonitor.handleKeyDown(
+                keyCode: UInt16(kVK_ANSI_1),
+                modifierFlags: [.command],
+                context: context,
+                firstResponder: nil,
+                onSelectContentTab: { selectedPositions.append($0) },
+            )
+
+            XCTAssertFalse(handled)
+            XCTAssertTrue(selectedPositions.isEmpty)
+        }
+    }
+
+    /// CTM-002-set_current_content_tab_by_number: 허용된 Shift 필요 레이아웃 입력은 한 번 처리하고 event를 소비한다.
+    /// AZERTY처럼 번역 문자가 숫자가 아니어도 물리 keyCode와 runtime context로 탭 위치를 선택하는지 검증한다.
+    /// - 검증 내용: Command+Shift 물리 1 key가 position 1 callback을 한 번 호출하고 nil을 반환함
+    /// - 사전 조건: focused live window, 닫힌 Composer, 비텍스트 responder와 번역 문자 `&`를 사용함
+    /// - 기대 결과: position 1만 전달되고 event는 이후 responder로 전파되지 않음
+    func testShortcutMonitorHandlesAllowedPhysicalKeyExactlyOnce() {
+        var selectedPositions: [Int] = []
+
+        let handled = AppKeyboardShortcutMonitor.handleKeyDown(
+            keyCode: UInt16(kVK_ANSI_1),
+            modifierFlags: [.command, .shift],
+            context: .init(hasFocusedWindow: true, isComposerPresented: false),
+            firstResponder: nil,
+            onSelectContentTab: { selectedPositions.append($0) },
+        )
+
+        XCTAssertTrue(handled)
+        XCTAssertEqual(selectedPositions, [1])
+    }
+
+    /// CTM-002-set_current_content_tab_by_number: monitor adapter는 미처리 event를 보존하고 처리 event만 소비한다.
+    /// 실제 local monitor closure의 반환 계약과 callback 단일 실행을 함께 검증한다.
+    /// - 검증 내용: text responder에서는 동일 NSEvent identity를 반환하고 허용 context에서는 nil과 position 1을 반환함
+    /// - 사전 조건: 물리 Command+1 NSEvent, focused live window, text/non-text responder를 사용함
+    /// - 기대 결과: pass-through event는 그대로 전달되고 처리 event만 한 번 소비됨
+    func testShortcutMonitorAdapterPreservesOrConsumesEvent() throws {
+        let event = try XCTUnwrap(
+            NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: [.command],
+                timestamp: 0,
+                windowNumber: 0,
+                context: nil,
+                characters: "1",
+                charactersIgnoringModifiers: "1",
+                isARepeat: false,
+                keyCode: UInt16(kVK_ANSI_1),
+            ),
+        )
+        let context = AppKeyboardShortcutMonitor.ContentTabShortcutContext(
+            hasFocusedWindow: true,
+            isComposerPresented: false,
+        )
+        var selectedPositions: [Int] = []
+
+        let passedThrough = AppKeyboardShortcutMonitor.processKeyDownEvent(
+            event,
+            context: context,
+            firstResponder: NSTextField(),
+            onSelectContentTab: { selectedPositions.append($0) },
+        )
+        XCTAssertIdentical(passedThrough, event)
+        XCTAssertTrue(selectedPositions.isEmpty)
+
+        let consumed = AppKeyboardShortcutMonitor.processKeyDownEvent(
+            event,
+            context: context,
+            firstResponder: nil,
+            onSelectContentTab: { selectedPositions.append($0) },
+        )
+        XCTAssertNil(consumed)
+        XCTAssertEqual(selectedPositions, [1])
     }
 
     /// CTM-002-set_current_content_tab_by_number: 첫 번째 위치 명령은 semantic position 1을 AppRoot까지 전달한다.
