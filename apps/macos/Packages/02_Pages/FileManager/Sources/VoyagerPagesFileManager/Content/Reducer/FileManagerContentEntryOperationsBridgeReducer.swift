@@ -112,7 +112,9 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         case .mutation(.emptyTrash):
             state.entryViewLayout.entries
         default:
-            state.entryViewLayout.entries
+            state.entryViewLayout.hierarchyProjectionIsActive
+                ? state.entryViewLayout.visibleSelectableEntries(isNormalDirectoryPage: true)
+                : state.entryViewLayout.entries
         }
 
         return EntryOperationsCommandContext(
