@@ -301,7 +301,7 @@ enum EntryLoadingLive {
                     showHidden: showHidden,
                     configuration: .init(
                         priority: priority,
-                        entryLoadingClient: .liveValue,
+                        entryLoadingClient: entryLoadingClient,
                         workspaceClient: workspaceClient,
                         sourceKind: .directory,
                         instrumentation: .live(),

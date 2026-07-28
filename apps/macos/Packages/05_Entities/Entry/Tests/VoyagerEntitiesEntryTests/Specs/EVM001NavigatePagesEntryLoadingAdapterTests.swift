@@ -585,6 +585,65 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         XCTAssertTrue(normalized.isPackage)
     }
 
+    /// EVM-001-progressive_entry_materialization: Directory staged loading forwards the injected client through
+    /// materialization.
+    /// 디렉터리 열거와 core/metadata 구체화가 동일한 dependency override를 사용하는 경계를 검증한다.
+    /// - 검증 내용: injected file existence, package classification, Spotlight metadata closure 호출
+    /// - 사전 조건: 실제 파일시스템에는 없는 package URL을 반환하는 EntryLoadingClient override를 사용한다.
+    /// - 기대 결과: 주입된 client로 core entry와 metadata patch가 생성되고 package 분류가 유지된다.
+    func testDirectoryStagedLoaderForwardsInjectedClientToMaterializer() async throws {
+        let directoryURL = URL(fileURLWithPath: "/fixture")
+        let packageURL = directoryURL.appendingPathComponent("Injected.app", isDirectory: true)
+        let fileExistenceCalls = LockedCounter()
+        let packageClassifierCalls = LockedCounter()
+        let metadataCalls = LockedCounter()
+        var client = EntryLoadingClient.testValue
+        client.contentsOfDirectory = { requestedURL, _, _ in
+            XCTAssertEqual(requestedURL, directoryURL)
+            return [packageURL]
+        }
+        client.fileExistsAtPath = { path, isDirectory in
+            XCTAssertEqual(path, packageURL.path)
+            fileExistenceCalls.increment()
+            isDirectory?.pointee = true
+            return true
+        }
+        client.isPackageDirectory = { url in
+            XCTAssertEqual(url.path, packageURL.path)
+            packageClassifierCalls.increment()
+            return true
+        }
+        client.getItemMetadata = { url, isDirectory, _ in
+            XCTAssertEqual(url.path, packageURL.path)
+            XCTAssertTrue(isDirectory)
+            metadataCalls.increment()
+            return .init(kind: "Injected Package", creatorApplication: "Injected App", lastUsedDate: nil)
+        }
+
+        let events = try await withDependencies {
+            $0.entryLoadingClient = client
+            $0.workspaceClient = .testValue
+        } operation: {
+            try await collect(EntryLoadingClient.liveValue.loadItems(
+                directoryURL,
+                false,
+                .active([.spotlight]),
+            ))
+        }
+
+        XCTAssertEqual(events.coreBatches.flatMap(\.items).map(\.id), [packageURL.path])
+        XCTAssertTrue(events.coreBatches.flatMap(\.items).allSatisfy(\.isPackage))
+        XCTAssertTrue(events.metadataPatches.contains(.spotlight(
+            id: packageURL.path,
+            kind: "Injected Package",
+            creatorApplication: "Injected App",
+            lastOpenedDate: nil,
+        )))
+        XCTAssertEqual(fileExistenceCalls.value, 1)
+        XCTAssertGreaterThanOrEqual(packageClassifierCalls.value, 1)
+        XCTAssertEqual(metadataCalls.value, 1)
+    }
+
     // MARK: - EVM-001-entry_loading_performance
 
     /// EVM-001-entry_loading_performance: Staged URL loading closes each interval once in stream order.
