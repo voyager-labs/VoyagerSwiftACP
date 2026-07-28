@@ -28,7 +28,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         let store = makeStore(initialState: state)
 
         await store.send(.externalFileSystemChanged(["\(folderPath)/11.txt"]))
-        await store.receive(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
+            return true
+        }
     }
 
     /// EVM-001-reload_directory_page_on_external_change: 관련 없는 folder 외부 변경 시 reload 안 함
@@ -59,7 +62,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         let store = makeStore(initialState: state)
 
         await store.send(.externalFileSystemChanged([changedPath]))
-        await store.receive(\.entryViewLayout.entryOperations.loading.loadRecentItems, true)
+        await store.receive { action in
+            guard case .entryViewLayout(.entryOperations(.loading(.loadRecentItems))) = action else { return false }
+            return true
+        }
     }
 
     /// EVM-001-reload_directory_page_on_external_change: Tags route에서 route loader refresh
@@ -74,7 +80,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         let store = makeStore(initialState: state)
 
         await store.send(.externalFileSystemChanged([changedPath]))
-        await store.receive(\.entryViewLayout.entryOperations.loading.loadTagItems)
+        await store.receive { action in
+            guard case .entryViewLayout(.entryOperations(.loading(.loadTagItems))) = action else { return false }
+            return true
+        }
     }
 
     /// EVM-001-reload_directory_page_on_external_change: Collection route에서 directory reload로 contents 대체하지 않음
@@ -135,7 +144,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         await store.send(.internal(.applyNavigationState(.folder(currentPath))))
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
+            return true
+        }
         await store.receive(\.externalFileSystemChanged, [changedPath])
     }
 
@@ -538,7 +550,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         ))))
 
         await store.receive { action in
-            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(path, showHidden))))) =
+            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(
+                path,
+                showHidden,
+                priority: _,
+            ))))) =
                 action else { return false }
             return path == folderPath && showHidden == false
         }
@@ -566,7 +582,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         ))))
 
         await store.receive { action in
-            guard case .forwarded(.entryViewLayout(.entryOperations(.loading(.loadRecentItems(showHidden: false))))) =
+            guard case .forwarded(.entryViewLayout(.entryOperations(.loading(.loadRecentItems(
+                showHidden: false,
+                priority: _,
+            ))))) =
                 action else { return false }
             return true
         }
@@ -606,7 +625,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
         await store.receive { action in
-            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(path, showHidden))))) =
+            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(
+                path,
+                showHidden,
+                priority: _,
+            ))))) =
                 action else { return false }
             return path == folderPath && !showHidden
         }

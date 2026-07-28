@@ -137,7 +137,10 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
             $0.entryViewLayout.showHiddenFiles = true
         }
 
-        _ = await store.receive(\.entryViewLayout.entryOperations.loading.loadItems)
+        _ = await store.receive { action in
+            guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
+            return true
+        }
 
         // 네비게이션 라우트와 히스토리가 변경되지 않았는지 확인
         XCTAssertEqual(store.state.navigation.navigationState, preNavigation)

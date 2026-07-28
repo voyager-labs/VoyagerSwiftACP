@@ -433,7 +433,11 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.contentTabs(.setCurrent(directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(directoryPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
 
         XCTAssertEqual(loadPaths.value, [directoryPath])
@@ -470,7 +474,11 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.contentTabs(.setCurrent(directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(directoryPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
 
         XCTAssertEqual(loadPaths.value, [directoryPath])
@@ -538,7 +546,11 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.navigation(.view(.navigateToPath(secondPath))))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(secondPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await gate.waitUntilWaiting()
         XCTAssertEqual(store.state.contentTabs.tabs[id: directoryID]?.anchor, .directory(path: secondPath))
         XCTAssertEqual(store.state.content.entryViewLayout.entries.map(\.fullPath), [firstEntry.fullPath])
@@ -557,7 +569,11 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.contentTabs(.setCurrent(directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(secondPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
         XCTAssertEqual(loadPaths.value, [secondPath, secondPath])
         XCTAssertTrue(store.state.content.entryViewLayout.entries.isEmpty)
@@ -567,7 +583,11 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.contentTabs(.setCurrent(directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(secondPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
         XCTAssertEqual(loadPaths.value, [secondPath, secondPath, secondPath])
         XCTAssertTrue(store.state.content.entryViewLayout.entries.isEmpty)
@@ -610,7 +630,11 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.contentTabs(.setCurrent(directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(directoryPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await gate.waitUntilWaiting()
         XCTAssertEqual(store.state.content.entryViewLayout.entries, [staleEntry])
 
@@ -655,13 +679,21 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.contentTabs(.setCurrent(firstID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(firstPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
 
         await store.send(.contentTabs(.setCurrent(secondID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(secondPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
 
         XCTAssertEqual(loadPaths.value, [firstPath, secondPath])
@@ -1279,7 +1311,11 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.contentTabs(.close(activeID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(fallbackPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await gate.waitUntilWaiting()
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, fallbackID)
@@ -10633,7 +10669,11 @@ private extension CTM005IndependentContentTabSessionTests {
         await store.receive { action in
             guard case let .tabContent(
                 receivedTabID,
-                .entryViewLayout(.entryOperations(.loading(.loadItems(path: receivedPath, showHidden: false)))),
+                .entryViewLayout(.entryOperations(.loading(.loadItems(
+                    path: receivedPath,
+                    showHidden: false,
+                    priority: _,
+                )))),
             ) = action else { return false }
             return receivedTabID == tabID && receivedPath == path
         }
@@ -10712,7 +10752,11 @@ private extension CTM005IndependentContentTabSessionTests {
         await store.send(.contentTabs(.setCurrent(fixture.directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(fixture.directoryPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await fixture.gate.waitUntilWaiting()
         XCTAssertEqual(store.state.content.entryViewLayout.entries, [fixture.staleEntry])
 
@@ -10725,7 +10769,11 @@ private extension CTM005IndependentContentTabSessionTests {
         await store.send(.contentTabs(.setCurrent(fixture.directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(fixture.directoryPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await fixture.gate.waitUntilWaiting()
         await fixture.gate.resume(with: .entries([]))
         await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
@@ -10737,7 +10785,11 @@ private extension CTM005IndependentContentTabSessionTests {
         await store.send(.contentTabs(.setCurrent(fixture.directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(fixture.directoryPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await fixture.gate.waitUntilWaiting()
         await fixture.gate.resume(with: .entries([]))
         await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
