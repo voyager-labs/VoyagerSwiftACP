@@ -79,6 +79,9 @@ DerivedData/
 htmlcov/
 .tox/
 
+# Removed backend local test corpus (prevent accidental restaging)
+apps/backend/notebooks/test-files/
+
 # Code coverage and profiling
 *.profraw
 default.profraw
