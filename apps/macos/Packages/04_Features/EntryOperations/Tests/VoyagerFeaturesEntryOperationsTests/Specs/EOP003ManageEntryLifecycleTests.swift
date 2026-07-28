@@ -76,6 +76,26 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertNotNil(store.state.itemStates[sourcePath]?.lastError)
     }
 
+    /// EOP-003-move_entries_to_trash: 선택된 부모와 하위 항목은 부모만 Trash 이동으로 계획한다.
+    /// 사용자가 하위 항목, 같은 raw-prefix peer, 부모를 표시 순서대로 함께 선택할 때 lifecycle planner가 부모와 peer만 유지하는지 확인한다.
+    /// - 검증 내용: `.routing(.executeCommand)` planner가 선택된 조상 관계를 pathComponents로 판별하고 원본 fullPath 및 남은 표시 순서를 보존한다.
+    /// - 사전 조건: 선택 목록에 descendant-first 부모-하위 항목 쌍과 조상이 아닌 raw-prefix peer를 구성한다.
+    /// - 기대 결과: `.trash(.moveToTrash)`는 하위 항목을 제외한 peer와 부모 경로만 방출한다.
+    func testMoveEntriesToTrash_plansTopmostSelectedPaths() throws {
+        let scenario = makeTopmostLifecycleSelectionScenario()
+
+        let outputs = EntryOperationsCommandPlanner.plan(
+            command: .mutation(.moveSelectedItemsToTrash),
+            context: scenario.context,
+        )
+
+        XCTAssertEqual(outputs.count, 1)
+        guard case let .entryOperations(.trash(.moveToTrash(paths))) = try XCTUnwrap(outputs.first) else {
+            return XCTFail("Trash 이동 명령은 moveToTrash payload를 계획해야 합니다.")
+        }
+        XCTAssertEqual(paths, scenario.expectedPaths)
+    }
+
     // MARK: - EOP-003-delete_entries_immediately
 
     /// EOP-003-delete_entries_immediately: 선택한 Entry가 즉시 삭제되는지 검증한다.
@@ -135,6 +155,48 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sourcePath))
         XCTAssertEqual(store.state.itemStates[sourcePath]?.lastError, error)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-003-delete_entries_immediately: 선택된 부모와 하위 항목은 부모만 즉시 삭제로 계획한다.
+    /// 사용자가 하위 항목, 같은 raw-prefix peer, 부모를 표시 순서대로 함께 선택할 때 lifecycle planner가 부모와 peer만 유지하는지 확인한다.
+    /// - 검증 내용: `.routing(.executeCommand)` planner가 선택된 조상 관계를 pathComponents로 판별하고 원본 fullPath 및 남은 표시 순서를 보존한다.
+    /// - 사전 조건: 선택 목록에 descendant-first 부모-하위 항목 쌍과 조상이 아닌 raw-prefix peer를 구성한다.
+    /// - 기대 결과: `.trash(.deleteImmediately)`는 하위 항목을 제외한 peer와 부모 경로만 방출한다.
+    func testDeleteEntriesImmediately_plansTopmostSelectedPaths() throws {
+        let scenario = makeTopmostLifecycleSelectionScenario()
+
+        let outputs = EntryOperationsCommandPlanner.plan(
+            command: .mutation(.deleteSelectedItemsImmediately),
+            context: scenario.context,
+        )
+
+        XCTAssertEqual(outputs.count, 1)
+        guard case let .entryOperations(.trash(.deleteImmediately(paths))) = try XCTUnwrap(outputs.first) else {
+            return XCTFail("즉시 삭제 명령은 deleteImmediately payload를 계획해야 합니다.")
+        }
+        XCTAssertEqual(paths, scenario.expectedPaths)
+    }
+
+    // MARK: - EOP-003-put_deleted_entries_back
+
+    /// EOP-003-put_deleted_entries_back: 선택된 부모와 하위 항목은 부모만 원래 위치 복귀로 계획한다.
+    /// 사용자가 하위 항목, 같은 raw-prefix peer, 부모를 표시 순서대로 함께 선택할 때 lifecycle planner가 부모와 peer만 유지하는지 확인한다.
+    /// - 검증 내용: `.routing(.executeCommand)` planner가 선택된 조상 관계를 pathComponents로 판별하고 원본 fullPath 및 남은 표시 순서를 보존한다.
+    /// - 사전 조건: 선택 목록에 descendant-first 부모-하위 항목 쌍과 조상이 아닌 raw-prefix peer를 구성한다.
+    /// - 기대 결과: `.trash(.putBackFromTrash)`는 하위 항목을 제외한 peer와 부모 경로만 방출한다.
+    func testPutBackSelectedItems_plansTopmostSelectedPaths() throws {
+        let scenario = makeTopmostLifecycleSelectionScenario()
+
+        let outputs = EntryOperationsCommandPlanner.plan(
+            command: .mutation(.putBackSelectedItems),
+            context: scenario.context,
+        )
+
+        XCTAssertEqual(outputs.count, 1)
+        guard case let .entryOperations(.trash(.putBackFromTrash(paths))) = try XCTUnwrap(outputs.first) else {
+            return XCTFail("되돌리기 명령은 putBackFromTrash payload를 계획해야 합니다.")
+        }
+        XCTAssertEqual(paths, scenario.expectedPaths)
     }
 
     // MARK: - EOP-003-empty_trash
@@ -982,6 +1044,26 @@ extension EOP003ManageEntryLifecycleTests {
 }
 
 private extension EOP003ManageEntryLifecycleTests {
+    struct TopmostLifecycleSelectionScenario {
+        let context: EntryOperationsCommandContext
+        let expectedPaths: [String]
+    }
+
+    func makeTopmostLifecycleSelectionScenario() -> TopmostLifecycleSelectionScenario {
+        let parent = EntryModelFixtures.makeEntry(path: "/tmp/Selected Folder", isFolder: true)
+        let descendant = EntryModelFixtures.makeEntry(path: "/tmp/Selected Folder/nested/file.txt")
+        let rawPrefixPeer = EntryModelFixtures.makeEntry(path: "/tmp/Selected Folder Copy.txt")
+        let displayItems = [descendant, rawPrefixPeer, parent]
+        return TopmostLifecycleSelectionScenario(
+            context: EntryOperationsCommandContext(
+                selectedIds: Set(displayItems.map(\.id)),
+                displayItems: displayItems,
+                currentPath: "/tmp",
+            ),
+            expectedPaths: [rawPrefixPeer.fullPath, parent.fullPath],
+        )
+    }
+
     func verifyLoadFailureRetry() async {
         let staleEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/stale.txt", name: "stale.txt")
         let gate = EntryLoadSuspensionGate()

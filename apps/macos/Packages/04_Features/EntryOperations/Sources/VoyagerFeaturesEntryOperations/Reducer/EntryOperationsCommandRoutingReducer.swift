@@ -37,7 +37,7 @@ struct EntryOperationsCommandRoutingReducer {
                 let operation: ClipboardOperation = entryFileOpsClient.loadDragWithOption() ? .copy : .cut
                 let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
                 return .send(.clipboard(.pasteItems(
-                    sourcePaths: internalPaths,
+                    sourcePaths: topmostPaths(internalPaths),
                     destinationPath: destinationPath,
                     operation: operation,
                     operationKind: operationKind,
@@ -47,7 +47,7 @@ struct EntryOperationsCommandRoutingReducer {
                 let operation: ClipboardOperation = isOptionDrag ? .copy : .cut
                 let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
                 return .send(.clipboard(.pasteItems(
-                    sourcePaths: sourcePaths,
+                    sourcePaths: topmostPaths(sourcePaths),
                     destinationPath: destinationPath,
                     operation: operation,
                     operationKind: operationKind,
@@ -84,33 +84,20 @@ struct EntryOperationsCommandRoutingReducer {
         let sourcePaths = context.sourcePaths
         let isInternalDrag = !sourcePaths.isEmpty
 
-        if isInternalDrag, !context.prefersCopy {
-            guard let sourcePath = sourcePaths.first else {
-                return .init(
-                    destinationPath: destinationPath,
-                    resolvedOperation: .none,
-                    isOptionDrag: false,
-                )
-            }
+        if isInternalDrag, !context.prefersCopy,
+           let rejection = moveRejection(destinationPath: destinationPath, sourcePaths: sourcePaths)
+        {
+            return rejection
+        }
 
-            let sourceParent = URL(fileURLWithPath: sourcePath).deletingLastPathComponent().path
-            if sourceParent == destinationPath {
-                return .init(
-                    destinationPath: destinationPath,
-                    resolvedOperation: .none,
-                    isOptionDrag: false,
-                )
-            }
-
-            for sourcePath in sourcePaths {
-                if destinationPath == sourcePath || isDescendantPath(destinationPath, of: sourcePath) {
-                    return .init(
-                        destinationPath: destinationPath,
-                        resolvedOperation: .none,
-                        isOptionDrag: false,
-                    )
-                }
-            }
+        if isInternalDrag, context.prefersCopy,
+           rejectsCopyDescendantSelf(destinationPath: destinationPath, sourcePaths: sourcePaths)
+        {
+            return .init(
+                destinationPath: destinationPath,
+                resolvedOperation: .none,
+                isOptionDrag: true,
+            )
         }
 
         let allowedOperations = NSDragOperation(rawValue: context.allowedOperationsRawValue)
@@ -138,6 +125,25 @@ struct EntryOperationsCommandRoutingReducer {
         )
     }
 
+    private func moveRejection(
+        destinationPath: String,
+        sourcePaths: [String],
+    ) -> EntryDropValidationResult? {
+        guard let sourcePath = sourcePaths.first else {
+            return .init(destinationPath: destinationPath, resolvedOperation: .none, isOptionDrag: false)
+        }
+        let sourceParent = URL(fileURLWithPath: sourcePath).deletingLastPathComponent().path
+        if sourceParent == destinationPath {
+            return .init(destinationPath: destinationPath, resolvedOperation: .none, isOptionDrag: false)
+        }
+        for sourcePath in sourcePaths {
+            if destinationPath == sourcePath || isDescendantPath(destinationPath, of: sourcePath) {
+                return .init(destinationPath: destinationPath, resolvedOperation: .none, isOptionDrag: false)
+            }
+        }
+        return nil
+    }
+
     private func contains(_ allowed: NSDragOperation, _ operation: EntryDropResolvedOperation) -> Bool {
         switch operation {
         case .none:
@@ -146,6 +152,12 @@ struct EntryOperationsCommandRoutingReducer {
             allowed.contains(.copy)
         case .move:
             allowed.contains(.move)
+        }
+    }
+
+    private func rejectsCopyDescendantSelf(destinationPath: String, sourcePaths: [String]) -> Bool {
+        sourcePaths.contains { sourcePath in
+            destinationPath == sourcePath || isDescendantPath(destinationPath, of: sourcePath)
         }
     }
 
@@ -160,6 +172,14 @@ struct EntryOperationsCommandRoutingReducer {
         }
 
         return Array(destinationComponents.prefix(sourceComponents.count)) == sourceComponents
+    }
+
+    private func topmostPaths(_ paths: [String]) -> [String] {
+        paths.filter { path in
+            !paths.contains { otherPath in
+                otherPath != path && isDescendantPath(path, of: otherPath)
+            }
+        }
     }
 }
 
