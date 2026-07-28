@@ -329,18 +329,48 @@ private func applyResolvedConditions(
 }
 
 func defaultDisplayState(
-    for _: Condition,
+    for condition: Condition,
     registryClient _: RegistryClient,
 ) -> ConditionDisplayState? {
-    nil
+    guard let unitContract = condition.property.unitContract else { return nil }
+    let unitValueState = UnitValueState(contract: unitContract)
+    let canonicalValues = condition.values ?? []
+    let displayValues = canonicalValues.compactMap {
+        ConditionUnitConverter.fromCanonical(
+            canonicalText: $0,
+            to: unitValueState.selectedUnitCode,
+            contract: unitContract,
+        )
+    }
+    guard displayValues.count == canonicalValues.count else { return nil }
+    return ConditionDisplayState(values: displayValues, unitValueState: unitValueState)
 }
 
 private func reconcileDisplayState(
     for condition: Condition,
     previous: ConditionDisplayState,
-    registryClient _: RegistryClient,
+    registryClient: RegistryClient,
 ) -> ConditionDisplayState? {
-    ConditionDisplayState(values: condition.values ?? [], unitValueState: previous.unitValueState)
+    guard let unitContract = condition.property.unitContract else {
+        return ConditionDisplayState(values: condition.values ?? [], unitValueState: previous.unitValueState)
+    }
+    guard let unitValueState = previous.unitValueState,
+          ConditionUnitConverter.unitCodes(contract: unitContract).contains(unitValueState.selectedUnitCode)
+    else {
+        return defaultDisplayState(for: condition, registryClient: registryClient)
+    }
+    let canonicalValues = condition.values ?? []
+    let displayValues = canonicalValues.compactMap {
+        ConditionUnitConverter.fromCanonical(
+            canonicalText: $0,
+            to: unitValueState.selectedUnitCode,
+            contract: unitContract,
+        )
+    }
+    guard displayValues.count == canonicalValues.count else {
+        return defaultDisplayState(for: condition, registryClient: registryClient)
+    }
+    return ConditionDisplayState(values: displayValues, unitValueState: unitValueState)
 }
 
 func resetValuePicker(state: inout ComposerFeature.State) {

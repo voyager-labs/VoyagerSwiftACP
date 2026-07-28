@@ -88,6 +88,7 @@ final class RCL005ComposeCollectionConditionsTestsUnitDisplay: XCTestCase {
             store.state.conditionEditors[id: fixture.firstID]?.displayState?.unitValueState?.selectedUnitCode,
             "kilobyte",
         )
+        XCTAssertEqual(store.state.conditionEditors[id: fixture.firstID]?.displayState?.values, ["1"])
         XCTAssertEqual(
             store.state.conditionEditors[id: fixture.secondID]?.displayState?.unitValueState?.selectedUnitCode,
             "byte",
@@ -98,6 +99,31 @@ final class RCL005ComposeCollectionConditionsTestsUnitDisplay: XCTestCase {
             store.state.history.last?.conditionEditors[id: fixture.firstID]?.displayState?.unitValueState?
                 .selectedUnitCode,
             "byte",
+        )
+    }
+
+    /// RCL-005-change_collection_condition_value: filter response는 선택한 단위의 표시값을 복원한다.
+    /// backend canonical condition을 editor에 재조립해도 사용자가 선택한 단위와 숫자가 유지되는지 검증한다.
+    /// - 검증 내용: applied filter reconciliation 후 canonical condition과 display values·selected unit 상태
+    /// - 사전 조건: 1000 bytes condition을 1 kilobyte로 표시한 editor가 있음
+    /// - 기대 결과: response 재조립 뒤 canonical 값 1000과 display 값 1, kilobyte 선택이 유지됨
+    func testChangeConditionValue_filterResponseReconcilesCanonicalValueToSelectedUnit() throws {
+        let fixture = try makeFixture()
+        var state = fixture.state
+        state.conditionEditors.remove(id: fixture.secondID)
+        let unitContract = try XCTUnwrap(state.conditionEditors[id: fixture.firstID]?.condition.property.unitContract)
+        state.conditionEditors[id: fixture.firstID]?.displayState = .init(
+            values: ["1"],
+            unitValueState: .init(contract: unitContract, preferredUnitCode: "kilobyte"),
+        )
+
+        applyAppliedFilters(nil, state: &state, registryClient: .testValue)
+
+        XCTAssertEqual(state.conditionEditors[id: fixture.firstID]?.condition.values, ["1000"])
+        XCTAssertEqual(state.conditionEditors[id: fixture.firstID]?.displayState?.values, ["1"])
+        XCTAssertEqual(
+            state.conditionEditors[id: fixture.firstID]?.displayState?.unitValueState?.selectedUnitCode,
+            "kilobyte",
         )
     }
 

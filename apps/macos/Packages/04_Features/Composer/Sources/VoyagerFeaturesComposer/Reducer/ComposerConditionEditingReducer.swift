@@ -116,6 +116,15 @@ struct ComposerConditionEditingReducer {
             else {
                 return .none
             }
+            let canonicalValues = editor.condition.values ?? []
+            let displayValues = canonicalValues.compactMap {
+                ConditionUnitConverter.fromCanonical(
+                    canonicalText: $0,
+                    to: unitCode,
+                    contract: unitContract,
+                )
+            }
+            guard displayValues.count == canonicalValues.count else { return .none }
             state.pushHistory()
             var unitValueState = editor.displayState?.unitValueState
                 ?? .init(contract: unitContract, preferredUnitCode: unitCode)
@@ -124,7 +133,7 @@ struct ComposerConditionEditingReducer {
                 id: editor.id,
                 condition: editor.condition,
                 displayState: .init(
-                    values: editor.displayState?.values ?? editor.condition.values ?? [],
+                    values: displayValues,
                     unitValueState: unitValueState,
                 ),
             )
