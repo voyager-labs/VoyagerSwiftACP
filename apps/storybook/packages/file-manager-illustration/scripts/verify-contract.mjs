@@ -105,13 +105,18 @@ const fixedColorBlock = macosTokens.match(
 const sequoiaColorBlock = macosTokens.match(
   /SWIFTUI-SYSTEM-COLORS:sequoia:BEGIN([\s\S]*?)SWIFTUI-SYSTEM-COLORS:sequoia:END/,
 )
+const tahoeColorBlock = macosTokens.match(
+  /SWIFTUI-SYSTEM-COLORS:tahoe:BEGIN([\s\S]*?)SWIFTUI-SYSTEM-COLORS:tahoe:END/,
+)
 assert.ok(fixedColorBlock, "Missing baseline-independent SwiftUI fixed colors")
 assert.ok(sequoiaColorBlock, "Missing Sequoia SwiftUI dynamic colors")
+assert.ok(tahoeColorBlock, "Missing Tahoe SwiftUI dynamic colors")
 assert.match(fixedColorBlock[1], /:root \[data-file-manager-illustration\]/)
 assert.match(fixedColorBlock[1], /--swiftui-black:\s*#000000ff/)
 assert.match(fixedColorBlock[1], /--swiftui-white:\s*#ffffffff/)
 assert.match(fixedColorBlock[1], /--swiftui-clear:\s*#00000000/)
 assert.doesNotMatch(sequoiaColorBlock[1], /--swiftui-(?:black|white|clear):/)
+assert.doesNotMatch(tahoeColorBlock[1], /--swiftui-(?:black|white|clear):/)
 assert.match(macosTokens, /SWIFTUI-SYSTEM-COLORS:sequoia:BEGIN/)
 assert.match(macosTokens, /--swiftui-primary:\s*#000000d8/)
 assert.match(macosTokens, /data-voyager-color-scheme-contrast="increased"/)
@@ -121,7 +126,7 @@ assert.match(macosTokens, sequoiaDarkMediaSelector)
 assert.match(fileManagerCss, sequoiaDarkMediaSelector)
 assert.match(generatedMaterialMetadata, /Material\.ultraThinMaterial/)
 assert.match(generatedMaterialMetadata, /Glass\.regular/)
-assert.match(generatedMaterialMetadata, /tahoeRuntimeMeasured:\s*false/)
+assert.match(generatedMaterialMetadata, /tahoeRuntimeMeasured:\s*true/)
 assert.match(
   generatedMaterialMetadata,
   /rgbaPolicy:\s*"materials-and-glass-are-contextual-shape-styles"/,
