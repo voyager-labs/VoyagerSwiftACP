@@ -2,7 +2,9 @@
   "name": "@voyager-labs/file-manager-illustration",
   "version": "0.0.1",
   "type": "module",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -28,5 +30,8 @@
     "build": "vite build && rm -f tsconfig.tsbuildinfo && tsc -b",
     "typecheck": "tsc -b",
     "verify:contract": "node scripts/verify-contract.mjs"
+  },
+  "dependencies": {
+    "symbolist": "^5.1.0"
   }
 }
