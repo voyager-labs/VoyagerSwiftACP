@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import Foundation
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 @testable import VoyagerWidgetsEntryViewLayout
@@ -1169,6 +1170,245 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         // EntryArrangements 내부 grouping 파생 상태는 해당 패키지 owner suite에서 별도로 검증한다.
         store.exhaustivity = .off
         return store
+    }
+
+    // MARK: - EVM-002-toggle_directory_expansion_in_list
+
+    /// EVM-002-toggle_directory_expansion_in_list: expanded folder는 immediate child를 parent 바로 아래에 projection한다.
+    /// 사용자가 list directory에서 folder disclosure를 열었을 때 child entry가 same page outline에 나타나는지 검증한다.
+    /// - 검증 내용: root와 expanded folder의 child state가 preorder visible rows로 변환된다.
+    /// - 사전 조건: /root/a folder가 expanded이고 /root/a/file child가 loaded 상태다.
+    /// - 기대 결과: visible entry IDs는 /root/a, /root/a/file, /root/b 순서다.
+    func testDirectoryExpansionProjectsImmediateChildren() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let file = makeHierarchyEntry(id: "/root/a/file", name: "file")
+        let sibling = EntryModel.temporaryFolder(id: "/root/b", name: "b")
+        let projection = makeHierarchyProjection(
+            roots: [folder, sibling],
+            expandedFolderIDs: [folder.id],
+            childrenByFolderID: [folder.id: [file]],
+        )
+
+        XCTAssertEqual(projection.visibleSelectableEntryIDs, [folder.id, file.id, sibling.id])
+        XCTAssertEqual(projection.visibleRows, [.entry(folder.id), .entry(file.id), .entry(sibling.id)])
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: expanded child folder는 repeated immediate projection으로 arbitrary
+    /// depth를 만든다.
+    /// 사용자가 root folder와 그 child folder를 차례로 열었을 때 eager subtree load 없이 preorder가 구성되는지 검증한다.
+    /// - 검증 내용: expanded ancestor chain만 visible rows에 포함하고 collapsed ancestor 아래 descendant는 제외한다.
+    /// - 사전 조건: /root/a와 /root/a/b가 expanded이고 각각 immediate children이 loaded 상태다.
+    /// - 기대 결과: visible entry IDs는 /root/a, /root/a/file, /root/a/b, /root/a/b/deep 순서다.
+    func testNestedExpansionProjectsArbitraryDepthOneLevelAtATime() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let file = makeHierarchyEntry(id: "/root/a/file", name: "file")
+        let nestedFolder = EntryModel.temporaryFolder(id: "/root/a/b", name: "z")
+        let deepFile = makeHierarchyEntry(id: "/root/a/b/deep", name: "deep")
+        let projection = makeHierarchyProjection(
+            roots: [folder],
+            expandedFolderIDs: [folder.id, nestedFolder.id],
+            childrenByFolderID: [folder.id: [file, nestedFolder], nestedFolder.id: [deepFile]],
+        )
+
+        XCTAssertEqual(projection.visibleSelectableEntryIDs, [folder.id, file.id, nestedFolder.id, deepFile.id])
+        XCTAssertEqual(
+            projection.visibleRows,
+            [.entry(folder.id), .entry(file.id), .entry(nestedFolder.id), .entry(deepFile.id)],
+        )
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: expanded loaded-empty folder는 nonselectable empty feedback row를
+    /// projection한다.
+    /// 사용자가 child가 없는 folder를 열어도 synthetic feedback이 selection 대상이 되지 않는지 검증한다.
+    /// - 검증 내용: loaded empty folder는 stable empty synthetic ID를 child row로 가진다.
+    /// - 사전 조건: /root/empty folder가 expanded이고 loaded children가 빈 배열이다.
+    /// - 기대 결과: empty row는 visibleRows에 있으나 visibleSelectableEntryIDs에는 없다.
+    func testExpandedEmptyFolderProjectsNonselectableEmptyRow() {
+        let folder = EntryModel.temporaryFolder(id: "/root/empty", name: "empty")
+        let projection = makeHierarchyProjection(
+            roots: [folder],
+            expandedFolderIDs: [folder.id],
+            childrenByFolderID: [folder.id: []],
+        )
+
+        XCTAssertEqual(projection.visibleRows, [.entry(folder.id), .empty(parent: folder.id)])
+        XCTAssertEqual(projection.visibleSelectableEntryIDs, [folder.id])
+        XCTAssertFalse(projection.itemPayloads[.empty(parent: folder.id)]?.isSelectable ?? true)
+        XCTAssertFalse(projection.itemPayloads[.empty(parent: folder.id)]?.isRetryable ?? true)
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: root와 every expanded parent는 독립 sibling set으로 arrangement된다.
+    /// 서로 다른 folder의 children가 하나의 global sorted list로 섞이지 않고 각 parent 아래에 남는지 검증한다.
+    /// - 검증 내용: projection은 root와 parent-local child arrays에 같은 sorter를 적용한 뒤 preorder로 flatten한다.
+    /// - 사전 조건: root와 /root/a의 child input order가 name sort와 반대이고 /root/b는 collapsed다.
+    /// - 기대 결과: /root/a children은 /root/a 아래에서만 정렬되고 /root/b와 섞이지 않는다.
+    func testEachParentReceivesIndependentSiblingArrangement() {
+        let folderA = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let folderB = EntryModel.temporaryFolder(id: "/root/b", name: "b")
+        let childZ = makeHierarchyEntry(id: "/root/a/z", name: "z")
+        let childY = makeHierarchyEntry(id: "/root/a/y", name: "y")
+        let projection = makeHierarchyProjection(
+            roots: [folderB, folderA],
+            expandedFolderIDs: [folderA.id],
+            childrenByFolderID: [folderA.id: [childZ, childY]],
+        )
+
+        XCTAssertEqual(projection.visibleSelectableEntryIDs, [folderA.id, childY.id, childZ.id, folderB.id])
+    }
+
+    private func makeHierarchyProjection(
+        roots: [EntryModel],
+        expandedFolderIDs: Set<EntryModel.ID>,
+        childrenByFolderID: [EntryModel.ID: [EntryModel]],
+    ) -> EntryListOutlineProjection {
+        let folderStates = childrenByFolderID.mapValues { EntryListHierarchyState.FolderChildrenState(
+            children: $0,
+            phase: .loaded,
+            generation: 0,
+        )
+        }
+        let hierarchyState = EntryListHierarchyState(
+            rootPath: "/root",
+            expandedFolderIDs: expandedFolderIDs,
+            foldersByID: folderStates,
+        )
+        return EntryListOutlineProjection(
+            revision: 1,
+            rootEntries: roots,
+            hierarchyState: hierarchyState,
+            context: .init(mode: .list, isNormalDirectoryPage: true, hasActiveGrouping: false),
+            sortKey: .name,
+            sortOrder: .ascending,
+        )
+    }
+
+    private func makeHierarchyEntry(id: String, name: String) -> EntryModel {
+        EntryModel(
+            name: name,
+            fullPath: id,
+            isFolder: false,
+            isHidden: false,
+            size: 0,
+            modifiedDate: Date(timeIntervalSince1970: 1_700_000_000),
+            fileExtension: "txt",
+            facets: EntryFacets(
+                createdDate: Date(timeIntervalSince1970: 1_700_000_000),
+                addedDate: Date(timeIntervalSince1970: 1_700_000_000),
+                lastOpenedDate: nil,
+                kind: "Text",
+                creatorApplication: nil,
+                tags: nil,
+                supplementaryMetadata: nil,
+            ),
+        )
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: 동일 folder의 loading expansion은 중복 요청을 만들지 않는다.
+    /// - 검증 내용: loading phase에서 다시 expand해도 generation이 유지된다.
+    /// - 사전 조건: /root/a가 root entry이고 첫 expansion이 loading 상태다.
+    /// - 기대 결과: 두 번째 expansion 뒤에도 generation은 1이다.
+    func testFirstExpandLoadsOnlyImmediateChildrenOnce() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        var state = hierarchyLoadingState(roots: [folder])
+        let reducer = EntryListHierarchyReducer()
+        _ = reducer.reduce(into: &state, action: .hierarchy(.folderExpansionRequested(id: folder.id)))
+        _ = reducer.reduce(into: &state, action: .hierarchy(.folderExpansionRequested(id: folder.id)))
+        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.generation, 1)
+        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.phase, .loading)
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: sibling folder loads는 서로 독립이다.
+    /// - 검증 내용: 각 folder가 자체 generation/loading phase를 가진다.
+    /// - 사전 조건: /root/a와 /root/b가 root folders다.
+    /// - 기대 결과: 두 folder 모두 loading이며 generation 1이다.
+    func testConcurrentFolderLoadsRemainIndependent() {
+        let a = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let b = EntryModel.temporaryFolder(id: "/root/b", name: "b")
+        var state = hierarchyLoadingState(roots: [a, b])
+        let reducer = EntryListHierarchyReducer()
+        _ = reducer.reduce(into: &state, action: .hierarchy(.folderExpansionRequested(id: a.id)))
+        _ = reducer.reduce(into: &state, action: .hierarchy(.folderExpansionRequested(id: b.id)))
+        XCTAssertEqual(state.hierarchy.foldersByID[a.id]?.phase, .loading)
+        XCTAssertEqual(state.hierarchy.foldersByID[b.id]?.phase, .loading)
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: loaded folder 재확장은 session cache를 재사용한다.
+    /// - 검증 내용: collapse 뒤 expand가 loaded children/generation을 유지한다.
+    /// - 사전 조건: /root/a의 immediate child가 loaded다.
+    /// - 기대 결과: 재확장 후 child cache와 generation이 변하지 않는다.
+    func testReexpandUsesSessionCache() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let child = makeHierarchyEntry(id: "/root/a/file", name: "file")
+        var state = hierarchyLoadingState(roots: [folder])
+        state.hierarchy.foldersByID[folder.id] = .init(children: [child], phase: .loaded, generation: 4)
+        let reducer = EntryListHierarchyReducer()
+        _ = reducer.reduce(into: &state, action: .hierarchy(.folderCollapseRequested(id: folder.id)))
+        _ = reducer.reduce(into: &state, action: .hierarchy(.folderExpansionRequested(id: folder.id)))
+        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.children, [child])
+        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.generation, 4)
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: retry는 failed folder만 새 generation으로 교체한다.
+    /// - 검증 내용: sibling loaded state가 retry에 의해 변경되지 않는다.
+    /// - 사전 조건: a는 failed, b는 loaded다.
+    /// - 기대 결과: a만 loading generation 2가 되고 b cache는 유지된다.
+    func testFolderRetryPreservesSiblingState() {
+        let a = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let b = EntryModel.temporaryFolder(id: "/root/b", name: "b")
+        let child = makeHierarchyEntry(id: "/root/b/file", name: "file")
+        var state = hierarchyLoadingState(roots: [a, b])
+        state.hierarchy.foldersByID[a.id] = .init(phase: .failed(.permissionDenied), generation: 1)
+        state.hierarchy.foldersByID[b.id] = .init(children: [child], phase: .loaded, generation: 3)
+        let reducer = EntryListHierarchyReducer()
+        _ = reducer.reduce(into: &state, action: .hierarchy(.folderRetryRequested(id: a.id)))
+        XCTAssertEqual(state.hierarchy.foldersByID[a.id]?.phase, .loading)
+        XCTAssertEqual(state.hierarchy.foldersByID[a.id]?.generation, 2)
+        XCTAssertEqual(state.hierarchy.foldersByID[b.id]?.children, [child])
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: 이전 generation response는 현재 request를 바꾸지 않는다.
+    /// - 검증 내용: generation guard가 stale success를 무시한다.
+    /// - 사전 조건: /root/a generation 2가 loading 중이다.
+    /// - 기대 결과: generation 1 success 뒤에도 phase는 loading이며 cache는 비어 있다.
+    func testOlderFolderGenerationResponseIsIgnored() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let staleChild = makeHierarchyEntry(id: "/root/a/stale", name: "stale")
+        var state = hierarchyLoadingState(roots: [folder])
+        state.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 2)
+        let reducer = EntryListHierarchyReducer()
+        _ = reducer.reduce(into: &state, action: .hierarchy(.folderChildrenResponse(
+            rootContextGeneration: 0,
+            folderID: folder.id,
+            folderGeneration: 1,
+            .event(.coreBatch(items: [staleChild], batchIndex: 0)),
+        )))
+        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.phase, .loading)
+        XCTAssertEqual(state.hierarchy.foldersByID[folder.id]?.children, [])
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: collapse는 해당 folder request만 무효화한다.
+    /// - 검증 내용: collapse가 folder generation을 올리고 sibling loading을 보존한다.
+    /// - 사전 조건: a와 b가 loading/expanded 상태다.
+    /// - 기대 결과: a만 collapsed generation 2가 되고 b는 loading generation 1이다.
+    func testCollapseCancelsOnlyCollapsedFolderLoad() {
+        let a = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let b = EntryModel.temporaryFolder(id: "/root/b", name: "b")
+        var state = hierarchyLoadingState(roots: [a, b])
+        state.hierarchy.expandedFolderIDs = [a.id, b.id]
+        state.hierarchy.foldersByID[a.id] = .init(phase: .loading, generation: 1)
+        state.hierarchy.foldersByID[b.id] = .init(phase: .loading, generation: 1)
+        _ = EntryListHierarchyReducer().reduce(into: &state, action: .hierarchy(.folderCollapseRequested(id: a.id)))
+        XCTAssertFalse(state.hierarchy.expandedFolderIDs.contains(a.id))
+        XCTAssertTrue(state.hierarchy.expandedFolderIDs.contains(b.id))
+        XCTAssertEqual(state.hierarchy.foldersByID[a.id]?.generation, 2)
+        XCTAssertEqual(state.hierarchy.foldersByID[b.id]?.generation, 1)
+    }
+
+    private func hierarchyLoadingState(roots: [EntryModel]) -> EntryViewLayoutState {
+        var state = EntryViewLayoutState()
+        state.entries = roots
+        state.hierarchy = .init(rootPath: "/root")
+        return state
     }
 
     private func receiveCollectionPresentationReapplySequence(

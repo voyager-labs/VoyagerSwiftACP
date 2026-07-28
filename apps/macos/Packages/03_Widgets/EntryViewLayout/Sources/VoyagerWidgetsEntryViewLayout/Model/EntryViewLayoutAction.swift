@@ -11,6 +11,7 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
     case view(View)
     case delegate(Delegate)
     case `internal`(Internal)
+    case hierarchy(EntryListHierarchyAction)
 
     case entryOperations(EntryOperationsFeature.Action)
     case entryThumbnail(EntryThumbnailFeature.Action)
@@ -72,6 +73,7 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case applyClearSelection
         case applySelectionOffset(offset: Int, isShiftPressed: Bool, orderedItemIds: [EntryModel.ID])
         case updateGridColumnCount(Int)
+        case setMode(EntryViewLayoutState.Mode)
         case setListVisibleColumns([EntryListColumn])
         case setListColumnVisibility(column: EntryListColumn, isVisible: Bool)
         case moveListColumn(from: Int, to: Int)
@@ -84,7 +86,14 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case setCollectionItems([EntryModel])
         case applyCollectionSearchPaths(paths: [String], showHidden: Bool)
         case addCollectionPaths([String])
+        case collectionReplaceEvent(epoch: Int, event: EntryLoadEvent)
+        case collectionReplaceStreamCompleted(epoch: Int)
+        case collectionReplaceFailed(epoch: Int, message: String)
+        case collectionAppendEvent(epoch: Int, token: Int, event: EntryLoadEvent)
+        case collectionAppendStreamCompleted(epoch: Int, token: Int)
+        case collectionAppendFailed(epoch: Int, token: Int, message: String)
         case removeCollectionPaths([String])
         case clearCollectionPresentation
+        case reconcileHierarchySelection
     }
 }
