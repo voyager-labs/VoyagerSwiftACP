@@ -1,6 +1,6 @@
 import Foundation
 
-enum ConditionPropertyIconUtils {
+enum ConditionPropertyIcon {
     private static let keyIconMap: [String: String] = [
         "name": "doc.text",
         "size": "arrow.up.left.and.arrow.down.right",

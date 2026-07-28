@@ -1,6 +1,7 @@
 @_spi(Internals)
 import ComposableArchitecture
 import Foundation
+@_spi(Testing)
 import VoyagerEntitiesCollection
 import VoyagerEntitiesTag
 @testable import VoyagerPagesFileManager
@@ -27,7 +28,7 @@ final class RCL002EnsureBuiltInCollectionsTests: XCTestCase {
 
         XCTAssertEqual(report, .init(recents: .failed, allTags: .failed))
         let contexts = try XCTUnwrap(captured.value)
-        XCTAssertEqual(contexts.0.conditions.map(\.propertyKey), ["last_used_date", "content_type_tree"])
+        XCTAssertEqual(contexts.0.conditions.map(\.property.key), ["last_used_date", "content_type_tree"])
         XCTAssertFalse(contexts.0.includeDirectories)
         XCTAssertEqual(contexts.1?.conditions.first?.values, ["Personal", "Work"])
         XCTAssertEqual(contexts.1?.includeDirectories, true)
@@ -71,13 +72,29 @@ private enum BuiltInCollectionAdapterTestRegistry {
         operatorDefinition: { code in
             OperatorDefinition(uiLabel: code, uiValueKind: nil)
         },
-        operatorValueUIKind: { code, typeKey in
-            switch (code, typeKey) {
-            case ("any", "categorical"): "listText"
-            case ("gt", "date"): "singleDate"
-            default: "singleText"
-            }
-        },
         resolvePropertyKey: { .canonical($0) },
+        resolveCondition: { propertyKey, operatorCode, values, sourcePayload in
+            let input: Condition.ValueInputKind = propertyKey == "tag_names" ? .listText :
+                (propertyKey == "last_used_date" ? .singleDate : .singleText)
+            let contract = Condition.ValueContract(
+                shape: input == .listText ? .list : .single,
+                count: input == .listText ? .multiple : .fixed(1),
+                input: input,
+            )
+            return Condition(
+                property: .init(
+                    key: propertyKey,
+                    label: propertyKey,
+                    type: .init(rawType: propertyKey == "tag_names" ? "categorical" :
+                        (propertyKey == "last_used_date" ? "date" : "string")),
+                    unitContract: nil,
+                    operatorOptions: operatorCode.map { [.init(code: $0, label: $0)] } ?? [],
+                ),
+                operation: operatorCode.map { .init(code: $0, label: $0, valueContract: contract) },
+                values: values,
+                availability: .available,
+                opaqueSource: sourcePayload,
+            )
+        },
     )
 }

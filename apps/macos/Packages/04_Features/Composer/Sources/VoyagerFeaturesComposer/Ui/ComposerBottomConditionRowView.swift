@@ -14,8 +14,6 @@ struct ComposerBottomConditionRowView: View {
     let store: StoreOf<ComposerFeature>
     let pickerStore: StoreOf<ConditionPropertyPickerFeature>
     let rows: [[ChipItemType]]
-    let conditionDisplayByKey: [String: ConditionDisplayState]
-    let operatorOptionsByKey: [String: [String]]
     let colorScheme: ColorScheme
     let chipSpacing: CGFloat
     let rowHeight: CGFloat
@@ -60,28 +58,19 @@ struct ComposerBottomConditionRowView: View {
         case .conditionAdd:
             conditionAddButton
 
-        case let .condition(condition):
-            let displayState = conditionDisplayByKey[condition.propertyKey]
-            ConditionChipView(
-                propertyPickerStore: store.scope(state: \.propertyPicker, action: \.propertyPicker),
-                condition: condition,
-                isDark: isDark,
-                hoverFillOpacity: hoverFillOpacity,
-                operatorPickerStore: store.scope(state: \.operatorPicker, action: \.operatorPicker),
-                valuePickerStore: store.scope(state: \.valuePicker, action: \.valuePicker),
-                operatorOptions: operatorOptionsByKey[condition.propertyKey] ?? [],
-                displayState: displayState,
-                defaultChipHeight: chipHeight,
-                onPropertyTap: {
-                    store.send(.propertyPicker(.startEditing(condition.propertyKey)))
-                },
-                onRemove: {
-                    store.send(.removeCondition(propertyKey: condition.propertyKey))
-                },
-                onDisplayUnitChange: { propertyKey, unitCode in
-                    store.send(.setDisplayUnit(propertyKey: propertyKey, unitCode: unitCode))
-                },
-            )
+        case let .condition(id):
+            if let editorStore = store.scope(
+                state: \.conditionEditors[id: id],
+                action: \.conditionEditor[id: id],
+            ) {
+                ConditionChipView(
+                    store: editorStore,
+                    isDark: isDark,
+                    hoverFillOpacity: hoverFillOpacity,
+                    defaultChipHeight: chipHeight,
+                    onRemove: { store.send(.removeCondition(id: id)) },
+                )
+            }
         }
     }
 
@@ -90,32 +79,37 @@ struct ComposerBottomConditionRowView: View {
             pickerStore,
             observe: { $0 },
             content: { viewStore in
-                Button {
-                    viewStore.send(.setPresented(true))
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .frame(width: chipHeight, height: chipHeight)
-                        .background(
-                            RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
-                                .fill(isAddButtonHovering ? VoyagerDS.Interaction
-                                    .controlHoverFill(for: colorScheme) : .clear),
-                        )
-                        .accessibilityLabel("Add condition")
-                }
-                .buttonStyle(.borderless)
-                .onHover { hovering in
-                    isAddButtonHovering = hovering
-                }
-                .popover(
-                    isPresented: viewStore.binding(
-                        get: { $0.isPresented && $0.editingConditionKey == nil },
-                        send: ConditionPropertyPickerFeature.Action.setPresented,
-                    ),
-                    arrowEdge: .bottom,
-                ) {
-                    ConditionPropertyPickerView(store: pickerStore)
+                if ComposerPickerHostPolicy.host(for: .property) == .nativeMenu {
+                    ComposerNativeMenuButton(
+                        title: "",
+                        accessibilityIdentifier: "composer.condition.add",
+                        minimumWidth: chipHeight,
+                        isPlaceholder: false,
+                        onOpen: {
+                            pickerStore.send(.onAppear)
+                            pickerStore.send(.setPresented(true))
+                        },
+                        menuItems: {
+                            ConditionPropertyPickerDisplay.nativeMenuItems(
+                                configuration: .init(
+                                    properties: viewStore.properties,
+                                    existingKeys: viewStore.existingKeys,
+                                    editingKey: viewStore.editingConditionKey,
+                                    defaults: viewStore.propertyDefaults,
+                                    categories: viewStore.propertyCategories,
+                                    labels: viewStore.propertyLabels,
+                                    selectedKey: nil,
+                                ),
+                                onSelect: { pickerStore.send(.propertyTapped($0)) },
+                            )
+                        },
+                        onDismiss: {
+                            pickerStore.send(.setPresented(false))
+                        },
+                        imageName: "plus",
+                        accessibilityLabel: "Add condition",
+                    )
+                    .frame(minWidth: chipHeight, minHeight: chipHeight)
                 }
             },
         )

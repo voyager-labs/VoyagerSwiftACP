@@ -3,17 +3,7 @@ import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 
-enum ValuePickerTokenUtils {
-    static let finderTagPropertyKey = "tag_names"
-
-    static func isTokenMode(isCategoricalProperty: Bool, valueUIKind: String) -> Bool {
-        isCategoricalProperty && valueUIKind == "listText"
-    }
-
-    static func isTokenPopoverProperty(propertyType: String, valueUIKind: String) -> Bool {
-        propertyType == "categorical" && valueUIKind == "listText"
-    }
-
+enum ConditionTagSuggestions {
     static func normalizedTokenKey(_ raw: String) -> String {
         raw
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -48,14 +38,5 @@ enum ValuePickerTokenUtils {
             let displayName = tag.name.trimmingCharacters(in: .whitespacesAndNewlines)
             return displayName.localizedCaseInsensitiveContains(trimmedQuery)
         }
-    }
-
-    static func tokenButtonText(values: [String]) -> String {
-        let committed = ValueNormalizerUtils.deduplicatedTokenValues(values)
-        guard !committed.isEmpty else { return "Value" }
-        if committed.count <= 2 {
-            return committed.joined(separator: ", ")
-        }
-        return "\(committed[0]), \(committed[1]) +\(committed.count - 2)"
     }
 }

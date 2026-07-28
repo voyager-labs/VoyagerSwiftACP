@@ -59,11 +59,9 @@ func syncRelativeSelectedDate(_ dateValueState: inout DateValueState) {
 
 func prepareDateValueState(
     values: [String],
-    valueType: String,
-    valueArity: Int,
+    contract: Condition.ValueContract?,
 ) -> DateValueState? {
-    guard valueArity == 1,
-          valueType == "date" || valueType == "datetime"
+    guard contract?.input == .singleDate
     else {
         return nil
     }
@@ -81,7 +79,7 @@ func prepareDateValueState(
         )
     }
 
-    if let parsed = ValueNormalizerUtils.parseDate(rawValue) {
+    if let parsed = ConditionValueNormalizer.parseDate(rawValue) {
         return DateValueState(
             mode: isToday(parsed) ? .today : .absolute,
             selectedDate: parsed,
@@ -102,7 +100,6 @@ func prepareDateValueState(
 
 func commitSemanticDateIfNeeded(
     state: inout ValuePickerFeature.State,
-    propertyKey: String,
 ) -> Effect<ValuePickerFeature.Action>? {
     guard isSingleDateEditing(state),
           let dateValueState = state.dateValueState
@@ -140,7 +137,6 @@ func commitSemanticDateIfNeeded(
     state.errorMessage = nil
     return .send(
         .commitResult(
-            propertyKey: propertyKey,
             values: [rawValue],
             displayValues: [displayValue],
             selectedUnitCode: nil,
@@ -149,7 +145,11 @@ func commitSemanticDateIfNeeded(
 }
 
 func isSingleDateEditing(_ state: ValuePickerFeature.State) -> Bool {
-    state.valueArity == 1 && (state.valueType == "date" || state.valueType == "datetime")
+    if case .singleDate? = state.valueContract?.input {
+        true
+    } else {
+        false
+    }
 }
 
 func isToday(_ date: Date) -> Bool {

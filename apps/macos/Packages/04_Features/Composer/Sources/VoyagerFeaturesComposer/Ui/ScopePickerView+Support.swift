@@ -9,8 +9,8 @@ enum ScopePickerPresentationMetrics {
 }
 
 enum ScopePickerAccessibilityID {
-    static let surface = "scopeEditor.surface"
-    static let searchField = "scopeEditor.searchField"
+    static let surface = "composer.scope.dropdown"
+    static let searchField = "composer.scope.search"
     static let currentSummary = "scopeEditor.currentSummary"
     static let treeSection = "scopeEditor.treeSection"
     static let noResults = "scopeEditor.noResults"

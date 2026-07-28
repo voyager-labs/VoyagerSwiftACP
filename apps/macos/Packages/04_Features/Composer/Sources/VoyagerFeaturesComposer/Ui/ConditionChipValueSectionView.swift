@@ -3,67 +3,56 @@ import SwiftUI
 import VoyagerEntitiesCollection
 
 struct ConditionChipValueSectionView: View {
+    let store: StoreOf<ConditionEditorFeature>
     let condition: Condition
     let displayState: ConditionDisplayState?
     let isDark: Bool
     let hoverFillOpacity: Double
-    let valuePickerStore: StoreOf<ValuePickerFeature>
-    let onDisplayUnitChange: (_ propertyKey: String, _ unitCode: String) -> Void
 
     @State var isValueHovering = false
     @State var datePopoverIndex: Int?
     @State var tempDate: Date = .init()
     @State var dateHoverIndex: Int?
-    @State var boolPopoverIndex: Int?
-    @State var boolHoverIndex: Int?
-    @State var boolOptionHoverValue: String?
     @FocusState var focusedValueIndex: Int?
-
-    var displayUnitValueState: UnitValueState? {
-        displayState?.unitValueState
-    }
 
     let rangeSep = "-"
 
+    var valuePickerStore: StoreOf<ValuePickerFeature> {
+        store.scope(state: \.valuePicker, action: \.valuePicker)
+    }
+
     var body: some View {
-        WithViewStore(valuePickerStore, observe: { $0 }, content: { valueStore in
-            valueSection(valueStore: valueStore)
-        })
+        WithViewStore(
+            valuePickerStore,
+            observe: { $0 },
+            content: { valueStore in valueSection(valueStore: valueStore) },
+        )
     }
 
     @ViewBuilder
-    func valueSection(
+    private func valueSection(
         valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
-        let valueUIKind = condition.operatorValueUIKind ?? "singleText"
-        let valueArity = condition.operatorValueArity ?? ValueNormalizerUtils.expectedArity(for: valueUIKind)
-        let isDateType = condition.valueType == "date" || condition.valueType == "datetime"
-        let isEditingValue = !isDateType && condition.valueType != "boolean" && valueStore.isPresented &&
-            valueStore.propertyKey == condition.propertyKey
-
-        if let operatorCode = condition.operatorCode, valueArity != 0 {
-            if valueUIKind == "rangeNumber" {
-                rangeNumberSection(
-                    operatorCode: operatorCode,
-                    valueUIKind: valueUIKind,
-                    valueArity: valueArity,
-                    valueStore: valueStore,
-                )
-            } else if isDateType {
-                dateValueSection(
-                    operatorCode: operatorCode,
-                    valueUIKind: valueUIKind,
-                    valueArity: valueArity,
+        if let contract = condition.operation?.valueContract {
+            switch contract.input {
+            case .none:
+                EmptyView()
+            case .singleDate, .rangeDate:
+                dateValueSection(contract: contract, valueViewStore: valueStore)
+            case .rangeNumber:
+                rangeNumberSection(contract: contract, valueStore: valueStore)
+            case .toggle:
+                booleanValueButton(
+                    placeholderText: "",
+                    currentText: condition.values?.first ?? "",
+                    index: 0,
                     valueViewStore: valueStore,
+                    contract: contract,
                 )
-            } else {
-                nonDateValueSection(
-                    operatorCode: operatorCode,
-                    valueUIKind: valueUIKind,
-                    valueArity: valueArity,
-                    isEditingValue: isEditingValue,
-                    valueStore: valueStore,
-                )
+            case .listText where condition.property.type.rawValue == "categorical":
+                tokenValueButton(contract: contract, valueViewStore: valueStore)
+            case .singleText, .listText, .singleNumber, .listNumber:
+                ordinaryValueSection(contract: contract, valueStore: valueStore)
             }
         }
     }
@@ -71,71 +60,28 @@ struct ConditionChipValueSectionView: View {
     func currentUnitValueState(
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>? = nil,
     ) -> UnitValueState? {
-        if let valueViewStore,
-           valueViewStore.propertyKey == condition.propertyKey,
-           let unitValueState = valueViewStore.unitValueState
-        {
-            return unitValueState
-        }
-        return displayUnitValueState
+        valueViewStore?.unitValueState ?? displayState?.unitValueState
     }
 
     func currentDisplayValues(
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>? = nil,
     ) -> [String]? {
-        if let valueViewStore, valueViewStore.propertyKey == condition.propertyKey {
-            return valueViewStore.values
-        }
-        return displayState?.values ?? condition.values
+        valueViewStore?.isPresented == true ? valueViewStore?.values : displayState?.values ?? condition.values
     }
 
-    func makePreparePayload(
-        operatorCode: String,
-        valueUIKind: String,
-        valueArity: Int,
+    func prepare(
         editingIndex: Int?,
         valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>? = nil,
         existingValues: [String]? = nil,
         includeDisplayState: Bool = true,
-        valueType: String? = nil,
-    ) -> PreparePayload {
-        PreparePayload(
-            propertyKey: condition.propertyKey,
-            operatorCode: operatorCode,
-            valueType: valueType ?? condition.valueType,
-            valueUIKind: valueUIKind,
-            valueArity: valueArity,
-            existingValues: existingValues ?? condition.values,
-            existingDisplayValues: includeDisplayState ? currentDisplayValues(valueViewStore: valueStore) : nil,
+    ) {
+        valuePickerStore.send(.prepare(.init(
+            condition: condition,
+            existingDisplayValues: includeDisplayState ? currentDisplayValues(valueViewStore: valueStore) :
+                existingValues,
             preferredUnitCode: includeDisplayState ? currentUnitValueState(valueViewStore: valueStore)?
                 .selectedUnitCode : nil,
             editingIndex: editingIndex,
-        )
-    }
-
-    func sendPrepare(
-        operatorCode: String,
-        valueUIKind: String,
-        valueArity: Int,
-        editingIndex: Int?,
-        valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>? = nil,
-        existingValues: [String]? = nil,
-        includeDisplayState: Bool = true,
-        valueType: String? = nil,
-    ) {
-        valuePickerStore.send(
-            .prepare(
-                makePreparePayload(
-                    operatorCode: operatorCode,
-                    valueUIKind: valueUIKind,
-                    valueArity: valueArity,
-                    editingIndex: editingIndex,
-                    valueStore: valueStore,
-                    existingValues: existingValues,
-                    includeDisplayState: includeDisplayState,
-                    valueType: valueType,
-                ),
-            ),
-        )
+        )))
     }
 }

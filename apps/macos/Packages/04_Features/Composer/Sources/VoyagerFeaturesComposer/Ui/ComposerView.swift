@@ -134,12 +134,15 @@ public struct ComposerView: View {
                     store.send(.scopeEditorSetPresented(false))
                     return true
                 }
-                if store.propertyPicker.isPresented {
-                    store.send(.propertyPicker(.setPresented(false)))
+                if let editor = store.conditionEditors.first(where: {
+                    $0.propertyPicker.isPresented || $0.isOperatorMenuPresented || $0.valuePicker.isPresented || $0
+                        .isValuePickerPresented
+                }) {
+                    store.send(.conditionEditor(.element(id: editor.id, action: .view(.dismiss))))
                     return true
                 }
-                if store.operatorPicker.isPresented {
-                    store.send(.operatorPicker(.setPresented(false)))
+                if store.propertyPicker.isPresented {
+                    store.send(.propertyPicker(.setPresented(false)))
                     return true
                 }
                 if store.valuePicker.isPresented {

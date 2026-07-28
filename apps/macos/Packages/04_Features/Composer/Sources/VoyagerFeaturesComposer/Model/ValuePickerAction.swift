@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
 import VoyagerShared
 
 @CasePathable
@@ -20,7 +21,6 @@ public enum ValuePickerAction: CasePathable, Sendable, Equatable {
     case removeToken(String)
     case commit
     case commitResult(
-        propertyKey: String,
         values: [String],
         displayValues: [String],
         selectedUnitCode: String?,
@@ -28,33 +28,20 @@ public enum ValuePickerAction: CasePathable, Sendable, Equatable {
 }
 
 public struct PreparePayload: Sendable, Equatable {
-    public let propertyKey: String
-    public let operatorCode: String
-    public let valueType: String
-    public let valueUIKind: String
-    public let valueArity: Int
+    public let condition: Condition
     public let existingValues: [String]?
     public let existingDisplayValues: [String]?
     public let preferredUnitCode: String?
     public let editingIndex: Int?
 
     public init(
-        propertyKey: String,
-        operatorCode: String,
-        valueType: String,
-        valueUIKind: String,
-        valueArity: Int,
-        existingValues: [String]?,
+        condition: Condition,
         existingDisplayValues: [String]?,
         preferredUnitCode: String?,
         editingIndex: Int?,
     ) {
-        self.propertyKey = propertyKey
-        self.operatorCode = operatorCode
-        self.valueType = valueType
-        self.valueUIKind = valueUIKind
-        self.valueArity = valueArity
-        self.existingValues = existingValues
+        self.condition = condition
+        existingValues = condition.values
         self.existingDisplayValues = existingDisplayValues
         self.preferredUnitCode = preferredUnitCode
         self.editingIndex = editingIndex

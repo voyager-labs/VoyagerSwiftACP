@@ -66,6 +66,7 @@ struct ConditionPropertyPickerView: View {
                         ),
                     )
                     .font(.system(size: 13))
+                    .accessibilityIdentifier("composer.property.search")
                 }
 
                 if !viewStore.searchText.isEmpty {
@@ -104,18 +105,18 @@ struct ConditionPropertyPickerView: View {
     }
 
     private func rootContent(_ viewStore: ViewStoreOf<ConditionPropertyPickerFeature>) -> some View {
-        let filtered = ConditionPropertyPickerDisplayUtils.filteredProperties(
+        let filtered = ConditionPropertyPickerDisplay.filteredProperties(
             properties: viewStore.properties,
             existingKeys: viewStore.existingKeys,
             editingKey: viewStore.editingConditionKey,
             searchText: viewStore.searchText,
             labels: viewStore.propertyLabels,
         )
-        let recommended = ConditionPropertyPickerDisplayUtils.recommendedProperties(
+        let recommended = ConditionPropertyPickerDisplay.recommendedProperties(
             from: filtered,
             defaults: viewStore.propertyDefaults,
         )
-        let grouped = ConditionPropertyPickerDisplayUtils.groupedByCategory(
+        let grouped = ConditionPropertyPickerDisplay.groupedByCategory(
             filtered,
             categories: viewStore.propertyCategories,
         )
@@ -134,7 +135,7 @@ struct ConditionPropertyPickerView: View {
         _ viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
         categoryKey: String,
     ) -> some View {
-        let filtered = ConditionPropertyPickerDisplayUtils.filteredProperties(
+        let filtered = ConditionPropertyPickerDisplay.filteredProperties(
             properties: viewStore.properties,
             existingKeys: viewStore.existingKeys,
             editingKey: viewStore.editingConditionKey,
@@ -152,7 +153,7 @@ struct ConditionPropertyPickerView: View {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 11, weight: .semibold))
                             .accessibilityHidden(true)
-                        Text(ConditionPropertyPickerDisplayUtils.categoryTitle(for: categoryKey))
+                        Text(ConditionPropertyPickerDisplay.categoryTitle(for: categoryKey))
                             .font(.system(size: 12, weight: .semibold))
                     }
                 }
@@ -236,12 +237,12 @@ struct ConditionPropertyPickerView: View {
         } label: {
             let isHovering = hoveredCategoryKey == categoryKey
             HStack(spacing: 8) {
-                Image(systemName: ConditionPropertyIconUtils.iconName(forCategory: categoryKey))
+                Image(systemName: ConditionPropertyIcon.iconName(forCategory: categoryKey))
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .frame(width: 16)
                     .accessibilityHidden(true)
-                Text(ConditionPropertyPickerDisplayUtils.categoryTitle(for: categoryKey))
+                Text(ConditionPropertyPickerDisplay.categoryTitle(for: categoryKey))
                     .font(.system(size: 13))
                     .foregroundColor(.primary)
                 Spacer()
@@ -278,7 +279,7 @@ struct ConditionPropertyPickerView: View {
             HStack(spacing: 8) {
                 if showIcon {
                     Image(
-                        systemName: ConditionPropertyIconUtils.iconName(
+                        systemName: ConditionPropertyIcon.iconName(
                             forKey: propertyKey,
                             category: category,
                             type: type,

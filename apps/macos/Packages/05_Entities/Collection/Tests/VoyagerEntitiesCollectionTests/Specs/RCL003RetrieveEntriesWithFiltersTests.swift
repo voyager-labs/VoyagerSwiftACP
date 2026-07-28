@@ -1,5 +1,6 @@
 @_spi(Internals) import ComposableArchitecture
 import Foundation
+@_spi(Testing)
 @testable import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
@@ -113,9 +114,47 @@ final class RCL003RetrieveEntriesWithFiltersTests: XCTestCase {
 
         XCTAssertEqual(resolved.scopes, ["/VoyagerFixtures/Documents"])
         XCTAssertEqual(resolved.excludedScopes, ["/VoyagerFixtures/Documents/Archive"])
-        XCTAssertEqual(resolved.conditions.map(\.propertyKey), ["kind", "size"])
-        XCTAssertEqual(resolved.conditions.map(\.operatorCode), ["eq", "gt"])
+        XCTAssertEqual(resolved.conditions.map(\.property.key), ["file_kind", "file_size"])
+        XCTAssertEqual(resolved.conditions.compactMap(\.operation?.code), ["eq", "gt"])
         XCTAssertEqual(resolved.unknownKeys, [])
+    }
+
+    /// RCL-003-apply_deterministic_filters: unsupported applied filter는 응답 순서와 raw payload를 보존하지만 실행에서 제외한다.
+    /// 검색 응답에 미래 registry가 만든 filter가 섞여도 지원되는 filter만 실행 가능한 aggregate로 남는지 검증한다.
+    /// - 검증 내용: resolver response order, opaque raw JSON preservation, execution readiness separation
+    /// - 사전 조건: known `kind eq` payload 뒤에 array/number 값을 가진 unknown property payload가 있음
+    /// - 기대 결과: 두 condition은 순서대로 hydrate되고 unknown row는 opaque이면서 execution-ready가 아님
+    func testApplyDeterministicFilters_preservesOpaquePayloadAndExcludesItFromExecution() {
+        let opaquePayload = SearchConditionPayload(
+            propertyKey: "future_property",
+            operator: "future_operator",
+            value: .array([.number(7), .string("raw")]),
+        )
+        let resolved = AppliedFilterResolver.resolveDetailed(
+            AppliedFiltersPayload(
+                scopes: ["/VoyagerFixtures/Documents"],
+                excludedScopes: [],
+                includeSubfolders: true,
+                conditions: [
+                    .init(propertyKey: "kind", operator: "eq", value: .string("pdf")),
+                    opaquePayload,
+                ],
+            ),
+            fallbackScopes: [],
+            fallbackConditions: [],
+            registryClient: makeDeterministicRegistryClient(),
+        )
+
+        XCTAssertEqual(resolved.conditions.count, 2)
+        XCTAssertEqual(resolved.conditions[0].property.key, "file_kind")
+        XCTAssertTrue(resolved.conditions[0].isExecutionReady)
+        let opaqueSource = CollectionCondition(
+            propertyKey: opaquePayload.propertyKey,
+            operatorCode: opaquePayload.operator,
+            value: opaquePayload.value,
+        )
+        XCTAssertEqual(resolved.conditions[1].opaqueSource, opaqueSource)
+        XCTAssertFalse(resolved.conditions[1].isExecutionReady)
     }
 
     // MARK: - RCL-003-request_collection_results_refresh
@@ -292,14 +331,63 @@ final class RCL003RetrieveEntriesWithFiltersTests: XCTestCase {
                 default: OperatorDefinition(uiLabel: code, uiValueKind: ["string": "singleText"])
                 }
             },
-            operatorValueUIKind: { code, typeKey in
-                switch (code, typeKey) {
-                case ("eq", "string"): "singleText"
-                case ("gt", "number"): "singleNumber"
-                default: "singleText"
-                }
-            },
             resolvePropertyKey: { .canonical($0) },
+            resolveCondition: { propertyKey, operatorCode, values, sourcePayload in
+                let source = sourcePayload ?? CollectionCondition(
+                    propertyKey: propertyKey,
+                    operatorCode: operatorCode ?? "",
+                )
+                let contract: Condition.ValueContract
+                let type: SystemPropertyTypeKey
+                let label: String
+                let canonicalKey: String
+                switch propertyKey {
+                case "kind":
+                    contract = .init(shape: .single, count: .fixed(1), input: .singleText)
+                    type = .string
+                    label = "Kind"
+                    canonicalKey = "file_kind"
+                case "size":
+                    contract = .init(shape: .single, count: .fixed(1), input: .singleNumber)
+                    type = .number
+                    label = "Size"
+                    canonicalKey = "file_size"
+                default:
+                    return RegistryClient.opaqueCondition(
+                        key: propertyKey,
+                        source: source,
+                        availability: .unsupportedProperty,
+                    )
+                }
+                guard let operatorCode else {
+                    return Condition(
+                        property: .init(
+                            key: canonicalKey,
+                            label: label,
+                            type: type,
+                            unitContract: nil,
+                            operatorOptions: [],
+                        ),
+                        operation: nil,
+                        values: nil,
+                        availability: .available,
+                        opaqueSource: nil,
+                    )
+                }
+                return Condition(
+                    property: .init(
+                        key: canonicalKey,
+                        label: label,
+                        type: type,
+                        unitContract: nil,
+                        operatorOptions: [.init(code: operatorCode, label: operatorCode)],
+                    ),
+                    operation: .init(code: operatorCode, label: operatorCode, valueContract: contract),
+                    values: values,
+                    availability: .available,
+                    opaqueSource: nil,
+                )
+            },
         )
     }
 

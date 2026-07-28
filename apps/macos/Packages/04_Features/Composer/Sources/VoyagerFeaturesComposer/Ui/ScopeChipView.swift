@@ -142,7 +142,7 @@ extension View {
 enum ChipItemType: Identifiable, Hashable {
     case scopeRoot
     case scopeBase(path: String)
-    case condition(Condition)
+    case condition(id: UUID)
     case conditionAdd
 
     var id: String {
@@ -151,8 +151,8 @@ enum ChipItemType: Identifiable, Hashable {
             "scope-root"
         case let .scopeBase(path):
             "scope-base-\(path)"
-        case let .condition(condition):
-            "condition-\(condition.propertyKey)"
+        case let .condition(id):
+            "condition-\(id.uuidString)"
         case .conditionAdd:
             "condition-add"
         }

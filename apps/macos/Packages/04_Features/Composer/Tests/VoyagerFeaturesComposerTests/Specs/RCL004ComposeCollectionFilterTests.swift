@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesCollection
+@_spi(Testing)
+@testable import VoyagerEntitiesCollection
 @testable import VoyagerFeaturesComposer
 import VoyagerShared
 import XCTest
@@ -72,6 +73,7 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
 
         withDependencies {
             $0.registryClient = makeRegistryClient()
+            $0.uuid = .constant(UUID())
         } operation: {
             _ = ComposerFeature().reduce(into: &state, action: .searchResponse(requestID, .success(response)))
         }
@@ -245,8 +247,33 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
                     uiValueKind: ["string": "singleText"],
                 )
             },
-            operatorValueUIKind: { _, _ in "singleText" },
             resolvePropertyKey: { .canonical($0) },
+            resolveCondition: { propertyKey, operatorCode, values, sourcePayload in
+                let property = Condition.Property(
+                    key: propertyKey,
+                    label: "Kind",
+                    type: .string,
+                    unitContract: nil,
+                    operatorOptions: [
+                        .init(code: "eq", label: "Equals"),
+                        .init(code: "contains", label: "Contains"),
+                    ],
+                )
+                let operation = operatorCode.map { code in
+                    Condition.Operation(
+                        code: code,
+                        label: code == "eq" ? "Equals" : "Contains",
+                        valueContract: .init(shape: .single, count: .fixed(1), input: .singleText),
+                    )
+                }
+                return Condition(
+                    property: property,
+                    operation: operation,
+                    values: values,
+                    availability: .available,
+                    opaqueSource: sourcePayload,
+                )
+            },
         )
     }
 }
