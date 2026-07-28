@@ -108,7 +108,7 @@ public struct FileManagerFeature {
                 }
                 let effect = FileManagerContentFeature().reduce(
                     into: &contentState,
-                    action: .entryOperations(.lifecycle(.entryActionCompleted(record))),
+                    action: .entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(record)))),
                 )
                 if isActiveTab {
                     state.content = contentState
@@ -150,8 +150,8 @@ public struct FileManagerFeature {
     private func clearLogicalUndoHistory(tabID: ContentTabID, state: inout State) {
         let isActiveTab = state.contentTabs.activeTabID == tabID
         guard var contentState = isActiveTab ? state.content : state.tabContentStates[tabID] else { return }
-        contentState.entryOperations.undoRecords.removeAll()
-        contentState.entryOperations.redoRecords.removeAll()
+        contentState.entryViewLayout.entryOperations.undoRecords.removeAll()
+        contentState.entryViewLayout.entryOperations.redoRecords.removeAll()
         if isActiveTab {
             state.content = contentState
         }
@@ -172,7 +172,9 @@ public struct FileManagerFeature {
     private static func completedEntryActionRecord(
         from action: FileManagerContentAction,
     ) -> EntryActionRecord? {
-        guard case let .entryOperations(.lifecycle(.entryActionCompleted(record))) = action else { return nil }
+        guard case let .entryViewLayout(
+            .entryOperations(.lifecycle(.entryActionCompleted(record))),
+        ) = action else { return nil }
         return record
     }
 
