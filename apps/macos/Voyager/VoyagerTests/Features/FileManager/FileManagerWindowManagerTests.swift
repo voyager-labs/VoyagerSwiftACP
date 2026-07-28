@@ -129,6 +129,8 @@ final class FileManagerWindowManagerTests: XCTestCase {
         }
     }
 
+    // MARK: - CTM-001-open_new_content_tab
+
     /// CTM-001-open_new_content_tab: focused FileManager window로 새 Content Tab command 라우팅.
     /// File menu의 New Content Tab 입력은 native NSWindow tab이 아니라 focused FMW의 openNewContentTab request로 전달되어야 한다.
     func test_newTabCommand_routesToFocusedFileManagerWindow() async {
