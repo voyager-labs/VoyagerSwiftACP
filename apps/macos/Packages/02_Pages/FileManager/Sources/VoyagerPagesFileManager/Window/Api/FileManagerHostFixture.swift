@@ -81,17 +81,17 @@ public enum FileManagerHostFixture {
         materialConfiguration: MaterialConfiguration? = nil,
     ) -> FileManagerWindowCoordinator {
         let windowID = UUID()
-        let state = FileManagerHostFixtureStateFactory.makeState(preset: preset)
         let fileOperationUndoManagerRegistry = FileOperationUndoManagerRegistry()
+        let state = FileManagerHostFixtureStateFactory.makeState(preset: preset, windowID: windowID)
         let workspaceClient = WorkspaceClient.fileManagerHostFixture(oneDriveIcon: oneDriveIcon)
         let store = Store(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
             FileManagerHostFixtureDependencies.apply(
                 to: &$0,
-                undoManager: UndoManager(),
                 progressiveEntryLoading: preset.scenario.progressiveEntryLoading,
                 windowID: windowID,
+                fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
                 workspaceClient: workspaceClient,
             )
         }
@@ -140,18 +140,25 @@ public enum FileManagerHostFixture {
         FileManagerHostFixtureStateFactory.makeState(preset: preset)
     }
 
+    static func makeState(
+        preset: FileManagerHostPreset,
+        windowID: UUID,
+    ) -> FileManagerFeature.State {
+        FileManagerHostFixtureStateFactory.makeState(preset: preset, windowID: windowID)
+    }
+
     static func applyDependencies(
         to dependencies: inout DependencyValues,
-        undoManager: UndoManager,
+        undoManager _: UndoManager,
         progressiveEntryLoading: FileManagerHostProgressiveEntryLoadingScenario,
         windowID: UUID,
         workspaceClient: WorkspaceClient,
     ) {
         FileManagerHostFixtureDependencies.apply(
             to: &dependencies,
-            undoManager: undoManager,
             progressiveEntryLoading: progressiveEntryLoading,
             windowID: windowID,
+            fileOperationUndoManagerRegistry: .init(),
             workspaceClient: workspaceClient,
         )
     }
@@ -178,7 +185,10 @@ public enum FileManagerHostFixture {
 
 @MainActor
 private enum FileManagerHostFixtureStateFactory {
-    static func makeState(preset _: FileManagerHostPreset) -> FileManagerFeature.State {
+    static func makeState(
+        preset _: FileManagerHostPreset,
+        windowID: UUID? = nil,
+    ) -> FileManagerFeature.State {
         var state = FileManagerFeature.State.makeInitial(path: nil)
         state.sidebar.sidebarVisible = true
         state.sidebar.sidebarWidth = 220
@@ -189,6 +199,9 @@ private enum FileManagerHostFixtureStateFactory {
             uniqueElements: FileManagerHostFixtureSampleData.entries,
         )
         state.content.entryViewLayout.entries = FileManagerHostFixtureSampleData.entries
+        if let windowID {
+            state.content.applyWindowContext(windowID: windowID)
+        }
         return state
     }
 }
@@ -197,9 +210,9 @@ private enum FileManagerHostFixtureStateFactory {
 enum FileManagerHostFixtureDependencies {
     static func apply(
         to dependencies: inout DependencyValues,
-        undoManager _: UndoManager,
         progressiveEntryLoading: FileManagerHostProgressiveEntryLoadingScenario,
         windowID _: UUID,
+        fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
         workspaceClient: WorkspaceClient,
     ) {
         dependencies.userDefaultsClient = .previewValue
@@ -217,7 +230,7 @@ enum FileManagerHostFixtureDependencies {
         dependencies.entryQuickLookClient = .previewValue
         dependencies.entryFileOpsClient = .previewValue
         dependencies.entryOperationsAlertClient = .previewValue
-        dependencies.fileOperationUndoManagerClient = .live(registry: FileOperationUndoManagerRegistry())
+        dependencies.fileOperationUndoManagerClient = .live(registry: fileOperationUndoManagerRegistry)
         dependencies.registryClient = .testValue
         dependencies.collectionFileClient = .testValue
         dependencies.collectionAlertClient = .previewValue

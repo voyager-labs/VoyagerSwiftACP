@@ -6,6 +6,17 @@ import XCTest
 
 @MainActor
 final class FileManagerHostFixturePhaseNotificationTests: XCTestCase {
+    func test_fixtureStateSeedsWindowContextIntoReducerState() {
+        let windowID = UUID()
+        let state = FileManagerHostFixture.makeState(preset: .default, windowID: windowID)
+
+        XCTAssertEqual(
+            state.content.entryViewLayout.entryOperations.windowID,
+            windowID,
+        )
+        XCTAssertEqual(state.content.composer.cancellationOwnerID, windowID)
+    }
+
     func test_progressiveFixtureSeedsNavigationAndHierarchyBeforeExpansionStreamStarts() async {
         let state = FileManagerHostFixture.makeState(preset: .progressiveEntryLoading)
         let projectsID = "/Fixture/FileManager/Projects"
