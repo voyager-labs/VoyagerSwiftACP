@@ -32,12 +32,12 @@ public extension EntryListCoordinator {
     }
 }
 
-extension EntryListCoordinator.OutlineItem {
-    func flattenEntries() -> [(EntryModel.ID, EntryListCoordinator.OutlineItem)] {
+extension EntryListOutlineItem {
+    func flattenEntries() -> [(EntryModel.ID, EntryListOutlineItem)] {
         switch kind {
         case let .entry(entry):
-            [(entry.id, self)]
-        case .group:
+            [(entry.id, self)] + children.flatMap { $0.flattenEntries() }
+        case .group, .empty, .error:
             children.flatMap { $0.flattenEntries() }
         }
     }
@@ -131,10 +131,12 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
 
     public func outlineView(_: NSOutlineView, shouldSelectItem item: Any) -> Bool {
         guard let outlineItem = item as? OutlineItem else { return false }
-        if case .group = outlineItem.kind {
+        switch outlineItem.kind {
+        case .entry:
+            return true
+        case .group, .empty, .error:
             return false
         }
-        return true
     }
 
     public func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
@@ -144,6 +146,8 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             return 32
         case .entry:
             return max(24, state.listIconSize + 4)
+        case .empty, .error:
+            return 24
         }
     }
 
@@ -162,6 +166,20 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             let resolvedTableColumn = tableColumn ?? outlineView.outlineTableColumn
             let columnId = resolvedTableColumn?.identifier.rawValue ?? EntryListColumn.name.rawValue
             return makeEntryCell(outlineView: outlineView, columnId: columnId, entry: entry)
+        case .empty:
+            return makeStatusCell(
+                outlineView: outlineView,
+                tableColumn: tableColumn,
+                title: "Empty folder",
+                retryFolderID: nil,
+            )
+        case let .error(parent, failure):
+            return makeStatusCell(
+                outlineView: outlineView,
+                tableColumn: tableColumn,
+                title: statusTitle(for: failure),
+                retryFolderID: parent,
+            )
         }
     }
 
@@ -190,7 +208,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
     }
 
     public func outlineViewSelectionDidChange(_: Notification) {
-        guard !isUpdatingSelectionFromStore else { return }
+        guard !isUpdatingSelectionFromStore, !projectionSession.isApplyingStoreProjection else { return }
 
         let selectedIndexes = tableView.selectedRowIndexes
         let selectedEntries: [EntryModel] = selectedIndexes.compactMap { index in
@@ -225,20 +243,46 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
     }
 
     public func outlineViewItemDidExpand(_ notification: Notification) {
-        guard !isUpdatingGroupExpansion else { return }
+        guard !isUpdatingGroupExpansion, !isApplyingHierarchyExpansion else { return }
         guard let item = notification.userInfo?["NSObject"] as? OutlineItem else { return }
-        guard case let .group(name, _, _) = item.kind else { return }
-        if state.entryArrangements.collapsedGroups.contains(name) {
-            sendEntryArrangements(.toggleCollapsedGroup(name))
+        switch item.kind {
+        case let .group(name, _, _):
+            if state.entryArrangements.collapsedGroups.contains(name) {
+                sendEntryArrangements(.toggleCollapsedGroup(name))
+            }
+        case let .entry(entry):
+            sendProjectionIntent(.disclosureExpand(entry.id, revision: state.outlineProjectionRevision))
+        case .empty, .error:
+            break
         }
     }
 
     public func outlineViewItemDidCollapse(_ notification: Notification) {
-        guard !isUpdatingGroupExpansion else { return }
+        guard !isUpdatingGroupExpansion, !isApplyingHierarchyExpansion else { return }
         guard let item = notification.userInfo?["NSObject"] as? OutlineItem else { return }
-        guard case let .group(name, _, _) = item.kind else { return }
-        if !state.entryArrangements.collapsedGroups.contains(name) {
-            sendEntryArrangements(.toggleCollapsedGroup(name))
+        switch item.kind {
+        case let .group(name, _, _):
+            if !state.entryArrangements.collapsedGroups.contains(name) {
+                sendEntryArrangements(.toggleCollapsedGroup(name))
+            }
+        case let .entry(entry):
+            sendProjectionIntent(.disclosureCollapse(entry.id, revision: state.outlineProjectionRevision))
+        case .empty, .error:
+            break
+        }
+    }
+
+    func sendProjectionIntent(_ intent: EntryListCoordinatorProjectionIntent) {
+        guard let acceptedIntent = projectionSession.accept(intent) else { return }
+        switch acceptedIntent {
+        case let .folderExpansionRequested(id):
+            store.send(.hierarchy(.folderExpansionRequested(id: id)))
+        case let .folderCollapseRequested(id):
+            store.send(.hierarchy(.folderCollapseRequested(id: id)))
+        case let .folderRetryRequested(id):
+            store.send(.hierarchy(.folderRetryRequested(id: id)))
+        case .selection, .navigate:
+            break
         }
     }
 }
@@ -294,6 +338,18 @@ extension EntryListCoordinator {
     }
 
     func rebuildRowsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        guard previous.isHierarchyOutlineEnabled == snapshot.isHierarchyOutlineEnabled else {
+            rebuildRowsAndReload()
+            return
+        }
+
+        if snapshot.isHierarchyOutlineEnabled {
+            if previous.outlineProjection != snapshot.outlineProjection {
+                rebuildRowsAndReload()
+            }
+            return
+        }
+
         if previous.entries != snapshot.entries
             || previous.groupKey != snapshot.groupKey
             || previous.groupedItems != snapshot.groupedItems
