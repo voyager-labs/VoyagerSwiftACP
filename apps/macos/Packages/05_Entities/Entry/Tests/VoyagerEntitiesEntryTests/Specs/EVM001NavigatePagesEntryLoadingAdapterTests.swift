@@ -706,6 +706,48 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         XCTAssertEqual(enumerationCalls.value, 1)
     }
 
+    /// EVM-001-progressive_entry_materialization: First core demand consumes only one directory URL batch.
+    /// 대용량 directory source의 첫 core batch가 전체 열거 완료를 기다리지 않는 경계를 검증한다.
+    /// - 검증 내용: 첫 stream event까지 요청된 URL source batch 수와 core item 수
+    /// - 사전 조건: 32개와 1개 URL을 순서대로 반환하는 lazy directory batch override를 사용한다.
+    /// - 기대 결과: 첫 event는 32개 core item이며 두 번째 source batch는 아직 요청되지 않는다.
+    func testDirectoryStagedLoaderConsumesOneSourceBatchPerCoreDemand() async throws {
+        let batchRequests = LockedCounter()
+        let firstBatch = (0 ..< 32).map { URL(fileURLWithPath: "/fixture/File-\($0)") }
+        let secondBatch = [URL(fileURLWithPath: "/fixture/File-32")]
+        let batches = [firstBatch, secondBatch]
+        var client = visibleEntryClient()
+        client.contentsOfDirectory = { _, _, _ in
+            XCTFail("Expected lazy directory batches")
+            return []
+        }
+        client.directoryURLBatches = { _, _, requestedBatchSize in
+            XCTAssertEqual(requestedBatchSize, 32)
+            return AsyncThrowingStream(unfolding: {
+                let index = batchRequests.value
+                guard index < batches.count else { return nil }
+                batchRequests.increment()
+                return batches[index]
+            })
+        }
+
+        let stream = withDependencies {
+            $0.entryLoadingClient = client
+            $0.workspaceClient = .testValue
+        } operation: {
+            EntryLoadingClient.liveValue.loadItems(URL(fileURLWithPath: "/fixture"), false, .none)
+        }
+        var iterator = stream.makeAsyncIterator()
+        let firstEvent = try await iterator.next()
+
+        guard case let .coreBatch(items, batchIndex) = firstEvent else {
+            return XCTFail("Expected first core batch")
+        }
+        XCTAssertEqual(items.count, 32)
+        XCTAssertEqual(batchIndex, 0)
+        XCTAssertEqual(batchRequests.value, 1)
+    }
+
     // MARK: - EVM-001-entry_loading_performance
 
     /// EVM-001-entry_loading_performance: Core-only consumption closes its active instrumentation intervals.

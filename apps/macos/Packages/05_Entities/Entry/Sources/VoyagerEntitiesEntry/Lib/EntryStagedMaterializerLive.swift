@@ -108,6 +108,29 @@ public enum EntryStagedMaterializerLive {
         return stream(for: sequence)
     }
 
+    static func materializeURLBatches(
+        _ urlBatches: AsyncThrowingStream<[URL], Error>,
+        showHidden: Bool,
+        configuration: URLMaterializationConfiguration,
+    ) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+        let sequence = URLMaterializationSequence(
+            urlBatches: urlBatches,
+            showHidden: showHidden,
+            priority: configuration.priority,
+            entryLoadingClient: configuration.entryLoadingClient,
+            workspaceClient: configuration.workspaceClient,
+            favoriteTags: configuration.favoriteTags,
+            context: .init(
+                sourceKind: configuration.sourceKind,
+                correlationID: UUID(),
+                inputCount: 0,
+                priority: configuration.priority.instrumentationValue,
+            ),
+            instrumentation: configuration.instrumentation,
+        )
+        return stream(for: sequence)
+    }
+
     static func materializePayloadEntries(
         _ entries: [EntryModel],
         showHidden: Bool,
@@ -139,7 +162,7 @@ public enum EntryStagedMaterializerLive {
         }
         return AsyncThrowingStream(unfolding: {
             _ = lifetime
-            return await sequence.next()
+            return try await sequence.next()
         })
     }
 
@@ -164,8 +187,15 @@ private final class EntryLoadStreamLifetime: @unchecked Sendable {
     }
 }
 
+private enum CoreSourceBatch {
+    case urls([URL])
+    case entries([EntryModel])
+    case finished
+}
+
 private actor URLMaterializationSequence {
     private let urls: [URL]?
+    private let nextURLBatch: (@Sendable () async throws -> [URL]?)?
     private let sourceEntries: [EntryModel]
     private let showHidden: Bool
     private let priority: EntryMetadataPriority
@@ -189,6 +219,7 @@ private actor URLMaterializationSequence {
 
     init(
         urls: [URL]?,
+        nextURLBatch: (@Sendable () async throws -> [URL]?)?,
         sourceEntries: [EntryModel],
         showHidden: Bool,
         priority: EntryMetadataPriority,
@@ -199,6 +230,7 @@ private actor URLMaterializationSequence {
         instrumentation: EntryLoadingInstrumentation,
     ) {
         self.urls = urls
+        self.nextURLBatch = nextURLBatch
         self.sourceEntries = sourceEntries
         self.showHidden = showHidden
         self.priority = priority
@@ -224,6 +256,7 @@ private actor URLMaterializationSequence {
     ) {
         self.init(
             urls: nil,
+            nextURLBatch: nil,
             sourceEntries: entries,
             showHidden: true,
             priority: priority,
@@ -247,6 +280,7 @@ private actor URLMaterializationSequence {
     ) {
         self.init(
             urls: urls,
+            nextURLBatch: nil,
             sourceEntries: [],
             showHidden: showHidden,
             priority: priority,
@@ -258,17 +292,46 @@ private actor URLMaterializationSequence {
         )
     }
 
-    func next() async -> EntryLoadEvent? {
+    init(
+        urlBatches: AsyncThrowingStream<[URL], Error>,
+        showHidden: Bool,
+        priority: EntryMetadataPriority,
+        entryLoadingClient: EntryLoadingClient,
+        workspaceClient: WorkspaceClient,
+        favoriteTags: [Tag],
+        context: EntryLoadingInstrumentation.Context,
+        instrumentation: EntryLoadingInstrumentation,
+    ) {
+        let iterator = URLBatchIteratorBox(urlBatches.makeAsyncIterator())
+        self.init(
+            urls: nil,
+            nextURLBatch: { try await iterator.next() },
+            sourceEntries: [],
+            showHidden: showHidden,
+            priority: priority,
+            entryLoadingClient: entryLoadingClient,
+            workspaceClient: workspaceClient,
+            favoriteTags: favoriteTags,
+            context: context,
+            instrumentation: instrumentation,
+        )
+    }
+
+    func next() async throws -> EntryLoadEvent? {
         guard !Task.isCancelled else {
             finishIfNeeded()
             return nil
         }
 
-        if !didFinishCore {
-            return await nextCoreEvent()
+        do {
+            if !didFinishCore {
+                return try await nextCoreEvent()
+            }
+            return nextMetadataEvent()
+        } catch {
+            finishIfNeeded()
+            throw error
         }
-
-        return nextMetadataEvent()
     }
 
     func finish() {
@@ -322,30 +385,21 @@ private actor URLMaterializationSequence {
         return nil
     }
 
-    private func nextCoreEvent() async -> EntryLoadEvent? {
+    private func nextCoreEvent() async throws -> EntryLoadEvent? {
         while true {
             guard !Task.isCancelled else {
                 finishIfNeeded()
                 return nil
             }
 
-            var batch: [EntryModel] = []
-            if let urls {
-                let chunkEndIndex = min(sourceIndex + EntryStagedMaterializerLive.batchSize, urls.count)
-                while sourceIndex < chunkEndIndex {
-                    let url = urls[sourceIndex]
-                    sourceIndex += 1
-                    guard let entry = EntryModelConverterLive.convertURLToCoreEntry(
-                        url,
-                        entryLoadingClient: entryLoadingClient,
-                    ) else { continue }
-                    guard showHidden || !entry.isHidden, seenIDs.insert(entry.id).inserted else { continue }
-                    batch.append(entry)
-                }
-            } else if sourceIndex < sourceEntries.count {
-                let endIndex = min(sourceIndex + EntryStagedMaterializerLive.batchSize, sourceEntries.count)
-                batch = Array(sourceEntries[sourceIndex ..< endIndex])
-                sourceIndex = endIndex
+            let batch: [EntryModel]
+            switch try await nextCoreSourceBatch() {
+            case let .urls(urls):
+                batch = coreEntries(for: urls)
+            case let .entries(sourceEntries):
+                batch = sourceEntries
+            case .finished:
+                return finishCoreEvent()
             }
 
             if !batch.isEmpty {
@@ -357,16 +411,44 @@ private actor URLMaterializationSequence {
                 return .coreBatch(items: batch, batchIndex: batchIndex)
             }
 
-            if sourceIndex >= (urls?.count ?? sourceEntries.count) {
-                didFinishCore = true
-                closeFirstCoreBatchIfNeeded()
-                closeCoreCompleteIfNeeded()
-                closeRequestIfNeeded()
-                return .coreFinished(batchCount: batchIndex)
-            }
-
             await Task.yield()
         }
+    }
+
+    private func nextCoreSourceBatch() async throws -> CoreSourceBatch {
+        if let nextURLBatch {
+            guard let urls = try await nextURLBatch() else { return .finished }
+            return .urls(urls)
+        }
+        if let urls {
+            guard sourceIndex < urls.count else { return .finished }
+            let endIndex = min(sourceIndex + EntryStagedMaterializerLive.batchSize, urls.count)
+            defer { sourceIndex = endIndex }
+            return .urls(Array(urls[sourceIndex ..< endIndex]))
+        }
+        guard sourceIndex < sourceEntries.count else { return .finished }
+        let endIndex = min(sourceIndex + EntryStagedMaterializerLive.batchSize, sourceEntries.count)
+        defer { sourceIndex = endIndex }
+        return .entries(Array(sourceEntries[sourceIndex ..< endIndex]))
+    }
+
+    private func coreEntries(for urls: [URL]) -> [EntryModel] {
+        urls.compactMap { url in
+            guard let entry = EntryModelConverterLive.convertURLToCoreEntry(
+                url,
+                entryLoadingClient: entryLoadingClient,
+            ) else { return nil }
+            guard showHidden || !entry.isHidden, seenIDs.insert(entry.id).inserted else { return nil }
+            return entry
+        }
+    }
+
+    private func finishCoreEvent() -> EntryLoadEvent {
+        didFinishCore = true
+        closeFirstCoreBatchIfNeeded()
+        closeCoreCompleteIfNeeded()
+        closeRequestIfNeeded()
+        return .coreFinished(batchCount: batchIndex)
     }
 
     private func closeFirstCoreBatchIfNeeded() {
@@ -402,5 +484,17 @@ private actor URLMaterializationSequence {
         if didBeginMetadata {
             instrumentation.end(.metadataComplete, context: context, workCounts: workCounts)
         }
+    }
+}
+
+private final class URLBatchIteratorBox: @unchecked Sendable {
+    private var iterator: AsyncThrowingStream<[URL], Error>.Iterator
+
+    init(_ iterator: AsyncThrowingStream<[URL], Error>.Iterator) {
+        self.iterator = iterator
+    }
+
+    func next() async throws -> [URL]? {
+        try await iterator.next()
     }
 }
