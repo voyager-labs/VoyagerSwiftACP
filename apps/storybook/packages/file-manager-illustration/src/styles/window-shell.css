@@ -65,7 +65,7 @@
   padding-left: 14px;
 }
 
-[data-file-manager-illustration] .window-chrome .traffic-lights span {
+[data-file-manager-illustration] .mac-titlebar-controls .traffic-lights span {
   width: 12px;
   height: 12px;
   border-radius: var(--fm-radius-round);
