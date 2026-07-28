@@ -33,6 +33,10 @@ struct FileManagerContentNavigationBridgeReducer {
                 let scrollPositionKey = scrollPositionKey(for: navigationState)
                 state.entryViewLayout.currentPath = scrollPositionKey
                 state.entryViewLayout.savedScrollOffset = state.navigation.scrollPositions[scrollPositionKey]
+                if case .folder = navigationState {
+                    state.entryViewLayout.entryOperations.isReloading = !state.entryViewLayout.entryOperations.items
+                        .isEmpty
+                }
                 return applyNavigationStateEffect(navigationState, state: state)
 
             case .view(.selectAllEntries):

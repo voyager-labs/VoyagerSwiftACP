@@ -10761,8 +10761,7 @@ private extension CTM005IndependentContentTabSessionTests {
         XCTAssertEqual(store.state.content.entryViewLayout.entries, [fixture.staleEntry])
 
         await fixture.gate.resume(with: .failure)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoadFailed)
-        await store.skipReceivedActions()
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.streamFailed, 1)
 
         await store.send(.contentTabs(.setCurrent(fixture.homeID)))
         await store.skipReceivedActions()
