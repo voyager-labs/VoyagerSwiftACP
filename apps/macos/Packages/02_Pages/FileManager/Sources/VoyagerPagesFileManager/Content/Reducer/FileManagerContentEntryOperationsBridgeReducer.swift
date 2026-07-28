@@ -80,6 +80,9 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             case let .openCollectionFile(url):
                 let navigationAction: ContentPageNavigationAction = .view(.openCollectionFile(url))
                 return .send(.internal(.requestNavigation(navigationAction)))
+
+            case .folderLoadEvent, .folderLoadFinished, .folderLoadFailed:
+                return .none
             }
         }
 

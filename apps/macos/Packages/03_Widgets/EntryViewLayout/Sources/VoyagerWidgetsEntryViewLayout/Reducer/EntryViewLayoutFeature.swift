@@ -398,6 +398,30 @@ public struct EntryViewLayoutFeature {
 
             case let .entryOperations(entryOperationsAction):
                 switch entryOperationsAction {
+                case let .delegate(.folderLoadEvent(request, event)):
+                    return .send(.hierarchy(.folderChildrenResponse(
+                        rootContextGeneration: request.id.rootContextGeneration,
+                        folderID: request.id.folderID,
+                        folderGeneration: request.folderGeneration,
+                        .event(event),
+                    )))
+
+                case let .delegate(.folderLoadFinished(request)):
+                    return .send(.hierarchy(.folderChildrenResponse(
+                        rootContextGeneration: request.id.rootContextGeneration,
+                        folderID: request.id.folderID,
+                        folderGeneration: request.folderGeneration,
+                        .streamCompleted,
+                    )))
+
+                case let .delegate(.folderLoadFailed(request, failure)):
+                    return .send(.hierarchy(.folderChildrenResponse(
+                        rootContextGeneration: request.id.rootContextGeneration,
+                        folderID: request.id.folderID,
+                        folderGeneration: request.folderGeneration,
+                        .failed(Self.hierarchyFailure(from: failure)),
+                    )))
+
                 case .loading(.itemsLoaded),
                      .loading(.itemsLoadFailed):
                     return Self.updateEntriesAndReapply(&state)
@@ -431,6 +455,15 @@ public struct EntryViewLayoutFeature {
     }
 
     // MARK: - Helpers
+
+    static func hierarchyFailure(from failure: EntryFolderLoadFailure) -> EntryLoadFailure {
+        switch failure {
+        case .permissionDenied:
+            .permissionDenied
+        case let .unavailable(description):
+            .unavailable(description: description)
+        }
+    }
 
     static func updateEntriesAndReapply(_ state: inout State) -> Effect<Action> {
         state.entries = state.displayOrderItems

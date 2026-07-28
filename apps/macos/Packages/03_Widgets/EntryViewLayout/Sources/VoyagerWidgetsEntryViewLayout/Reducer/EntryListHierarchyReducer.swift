@@ -1,19 +1,13 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesEntryOperations
 
 @Reducer
 struct EntryListHierarchyReducer {
     typealias State = EntryViewLayoutState
     typealias Action = EntryViewLayoutAction
-
-    struct CancellationID: Hashable {
-        let rootContextGeneration: Int
-        let folderID: EntryModel.ID
-    }
-
-    @Dependency(\.entryLoadingClient)
-    private var entryLoadingClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -21,15 +15,15 @@ struct EntryListHierarchyReducer {
 
             switch hierarchyAction {
             case let .rootContextChanged(path):
-                let cancellationIDs = state.hierarchy.foldersByID.keys.map {
-                    CancellationID(
+                let cancellationRequests = state.hierarchy.foldersByID.keys.map {
+                    EntryFolderLoadRequest.RequestID(
                         rootContextGeneration: state.hierarchy.rootContextGeneration,
                         folderID: $0,
                     )
                 }
                 state.hierarchy.replaceRoot(path: path)
                 return .merge(
-                    cancellationIDs.map { .cancel(id: $0) }
+                    cancellationRequests.map { .send(.entryOperations(.loading(.cancelFolderItems($0)))) }
                         + [.send(.internal(.applyClearSelection)), .send(.internal(.reconcileHierarchySelection))],
                 )
 
@@ -67,7 +61,8 @@ struct EntryListHierarchyReducer {
             case let .folderCollapseRequested(id):
                 state.hierarchy.expandedFolderIDs.remove(id)
                 var folderState = state.hierarchy.foldersByID[id] ?? .init()
-                if folderState.phase != .loaded {
+                let shouldCancelLoad = folderState.phase != .loaded
+                if shouldCancelLoad {
                     folderState.generation &+= 1
                     folderState.children = []
                     folderState.phase = .idle
@@ -75,12 +70,12 @@ struct EntryListHierarchyReducer {
                     folderState.coreFinished = false
                 }
                 state.hierarchy.foldersByID[id] = folderState
-                let cancellationID = CancellationID(
+                let requestID = EntryFolderLoadRequest.RequestID(
                     rootContextGeneration: state.hierarchy.rootContextGeneration,
                     folderID: id,
                 )
                 return .merge(
-                    .cancel(id: cancellationID),
+                    shouldCancelLoad ? .send(.entryOperations(.loading(.cancelFolderItems(requestID)))) : .none,
                     .send(.internal(.reconcileHierarchySelection)),
                 )
 
@@ -113,41 +108,14 @@ struct EntryListHierarchyReducer {
         state.hierarchy.foldersByID[id] = folderState
         EntryViewLayoutFeature.reconcileSelectionWithVisibleEntries(&state)
 
-        let rootContextGeneration = state.hierarchy.rootContextGeneration
-        let folderGeneration = folderState.generation
-        let showHidden = state.showHiddenFiles
-        let cancellationID = CancellationID(rootContextGeneration: rootContextGeneration, folderID: id)
-        let url = URL(fileURLWithPath: folder.fullPath)
-
-        return .run { send in
-            do {
-                for try await event in entryLoadingClient.loadItems(url, showHidden, .none) {
-                    await send(.hierarchy(.folderChildrenResponse(
-                        rootContextGeneration: rootContextGeneration,
-                        folderID: id,
-                        folderGeneration: folderGeneration,
-                        .event(event),
-                    )))
-                }
-                try Task.checkCancellation()
-                await send(.hierarchy(.folderChildrenResponse(
-                    rootContextGeneration: rootContextGeneration,
-                    folderID: id,
-                    folderGeneration: folderGeneration,
-                    .streamCompleted,
-                )))
-            } catch is CancellationError {
-                return
-            } catch {
-                await send(.hierarchy(.folderChildrenResponse(
-                    rootContextGeneration: rootContextGeneration,
-                    folderID: id,
-                    folderGeneration: folderGeneration,
-                    .failed(Self.failure(from: error)),
-                )))
-            }
-        }
-        .cancellable(id: cancellationID, cancelInFlight: true)
+        return .send(.entryOperations(.loading(.loadFolderItems(.init(
+            rootContextGeneration: state.hierarchy.rootContextGeneration,
+            folderID: id,
+            folderGeneration: folderState.generation,
+            path: folder.fullPath,
+            showHidden: state.showHiddenFiles,
+            priority: Self.metadataPriority(for: state.entryArrangements),
+        )))))
     }
 
     private func invalidateHierarchy(
@@ -160,7 +128,10 @@ struct EntryListHierarchyReducer {
         })
         let oldRootGeneration = state.hierarchy.rootContextGeneration
         var effects: [Effect<Action>] = removedIDs.map {
-            .cancel(id: CancellationID(rootContextGeneration: oldRootGeneration, folderID: $0))
+            .send(.entryOperations(.loading(.cancelFolderItems(.init(
+                rootContextGeneration: oldRootGeneration,
+                folderID: $0,
+            )))))
         }
 
         for id in removedIDs {
@@ -192,10 +163,10 @@ struct EntryListHierarchyReducer {
                 folderState.expectedBatchIndex = 0
                 folderState.coreFinished = false
                 state.hierarchy.foldersByID[id] = folderState
-                effects.append(.cancel(id: CancellationID(
+                effects.append(.send(.entryOperations(.loading(.cancelFolderItems(.init(
                     rootContextGeneration: oldRootGeneration,
                     folderID: id,
-                )))
+                ))))))
             }
         }
 
@@ -221,12 +192,13 @@ struct EntryListHierarchyReducer {
         isSameOrDescendant(path: id, of: state.hierarchy.rootPath)
     }
 
-    private static func failure(from error: Error) -> EntryLoadFailure {
-        let nsError = error as NSError
-        if nsError.code == NSFileReadNoPermissionError {
-            return .permissionDenied
-        }
-        return .unavailable(description: nsError.localizedDescription)
+    private static func metadataPriority(
+        for arrangements: EntryArrangementsFeature.State,
+    ) -> EntryMetadataPriority {
+        .active([
+            EntryViewLayoutFeature.metadataProbe(for: arrangements.sortKey),
+            EntryViewLayoutFeature.metadataProbe(for: arrangements.groupKey),
+        ].compactMap(\.self))
     }
 
     private func apply(

@@ -186,13 +186,36 @@ enum EntryOperationsTestSupport {
         staleCompletion: EntryOperationsLoadSuspensionGate.Completion,
     ) async {
         await gate.waitUntilWaiting()
-        await store.send(.loading(.loadItems(path: "/tmp", showHidden: false)))
-        await store.receive(\.loading.itemsLoaded, [latestEntry]) { state in
+        let generation = store.state.loadingContext.generation + 1
+        await store.send(.loading(.loadItems(path: "/tmp", showHidden: false))) { state in
+            state.isLoading = true
+            state.loadingContext.generation = generation
+            state.loadingContext.expectedCoreBatchIndex = 0
+            state.loadingContext.coreFinished = false
+            state.loadingContext.streamTerminal = false
+            state.loadingContext.isIncomplete = false
+            state.loadingContext.sourceKind = .directory
+        }
+        await store.receive(\.loading.streamEvent, .init(
+            generation: generation,
+            event: .coreBatch(items: [latestEntry], batchIndex: 0),
+        )) { state in
             state.items = [latestEntry]
             state.isLoading = false
             state.isReloading = false
+            state.loadingContext.generation = generation
+            state.loadingContext.expectedCoreBatchIndex = 1
+            state.loadingContext.sourceKind = .directory
         }
-        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
+        await store.receive(\.loading.streamEvent, .init(
+            generation: generation,
+            event: .coreFinished(batchCount: 1),
+        )) { state in
+            state.loadingContext.coreFinished = true
+        }
+        await store.receive(\.loading.streamFinished, generation) { state in
+            state.loadingContext.streamTerminal = true
+        }
         await gate.resume(with: staleCompletion)
         await store.finish()
     }
@@ -206,9 +229,25 @@ enum EntryOperationsTestSupport {
         let gate = EntryOperationsLoadSuspensionGate()
         let store = makeStore { dependencies in
             configure(&dependencies, gate)
-            dependencies.entryLoadingClient.loadItems = { _, _ in [latestEntry] }
+            dependencies.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                immediateStagedStream(entries: [latestEntry])
+            }
         }
-        await store.send(action) { state in state.isLoading = true }
+        await store.send(action) { state in
+            state.isLoading = true
+            switch action {
+            case .loading(.loadRecentItems):
+                state.loadingContext.generation = 1
+                state.loadingContext.sourceKind = .recents
+            case .loading(.loadTagItems):
+                state.loadingContext.generation = 1
+                state.loadingContext.sourceKind = .tags
+            case .loading(.loadComputerItems):
+                state.loadingContext.generation = 1
+            default:
+                break
+            }
+        }
         await completeReplacementAfterCancellation(
             store: store,
             gate: gate,
@@ -227,7 +266,9 @@ enum EntryOperationsTestSupport {
                 latestEntry: latestEntry,
                 staleCompletion: .entries([makeStaleEntry("recent")]),
             ) { dependencies, gate in
-                dependencies.entryLoadingClient.loadRecentItems = { _, _ in await gate.waitForValue() }
+                dependencies.entryLoadingClient.stagedLoadRecentItems = { _, _ in
+                    delayedStagedStream(gate: gate)
+                }
             }
         case .tag:
             await cancelledLoadResult(
@@ -235,7 +276,9 @@ enum EntryOperationsTestSupport {
                 latestEntry: latestEntry,
                 staleCompletion: .entries([makeStaleEntry("tag")]),
             ) { dependencies, gate in
-                dependencies.entryLoadingClient.loadFilesWithTag = { _, _, _ in await gate.waitForValue() }
+                dependencies.entryLoadingClient.stagedLoadFilesWithTag = { _, _, _ in
+                    delayedStagedStream(gate: gate)
+                }
             }
         case .computerSuccess:
             await cancelledLoadResult(
@@ -262,5 +305,30 @@ enum EntryOperationsTestSupport {
             id: "/tmp/stale-\(suffix).txt",
             name: "stale-\(suffix).txt",
         )
+    }
+}
+
+private func immediateStagedStream(entries: [EntryModel]) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+    AsyncThrowingStream { continuation in
+        if !entries.isEmpty {
+            continuation.yield(.coreBatch(items: entries, batchIndex: 0))
+        }
+        continuation.yield(.coreFinished(batchCount: entries.isEmpty ? 0 : 1))
+        continuation.finish()
+    }
+}
+
+private func delayedStagedStream(
+    gate: EntryOperationsLoadSuspensionGate,
+) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+    AsyncThrowingStream { continuation in
+        Task {
+            let entries = await gate.waitForValue()
+            if !entries.isEmpty {
+                continuation.yield(.coreBatch(items: entries, batchIndex: 0))
+            }
+            continuation.yield(.coreFinished(batchCount: entries.isEmpty ? 0 : 1))
+            continuation.finish()
+        }
     }
 }
