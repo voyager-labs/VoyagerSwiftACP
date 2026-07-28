@@ -105,7 +105,7 @@ public enum EntryStagedMaterializerLive {
             ),
             instrumentation: configuration.instrumentation,
         )
-        return AsyncThrowingStream(unfolding: { await sequence.next() })
+        return stream(for: sequence)
     }
 
     static func materializePayloadEntries(
@@ -128,7 +128,19 @@ public enum EntryStagedMaterializerLive {
             ),
             instrumentation: instrumentation,
         )
-        return AsyncThrowingStream(unfolding: { await sequence.next() })
+        return stream(for: sequence)
+    }
+
+    private static func stream(
+        for sequence: URLMaterializationSequence,
+    ) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+        let lifetime = EntryLoadStreamLifetime {
+            Task { await sequence.finish() }
+        }
+        return AsyncThrowingStream(unfolding: {
+            _ = lifetime
+            return await sequence.next()
+        })
     }
 
     private static func filtered(_ entries: [EntryModel], showHidden: Bool) -> [EntryModel] {
@@ -137,6 +149,18 @@ public enum EntryStagedMaterializerLive {
             guard showHidden || !entry.isHidden, seen.insert(entry.id).inserted else { return false }
             return true
         }
+    }
+}
+
+private final class EntryLoadStreamLifetime: @unchecked Sendable {
+    private let cleanup: @Sendable () -> Void
+
+    init(cleanup: @escaping @Sendable () -> Void) {
+        self.cleanup = cleanup
+    }
+
+    deinit {
+        cleanup()
     }
 }
 
@@ -245,6 +269,10 @@ private actor URLMaterializationSequence {
         }
 
         return nextMetadataEvent()
+    }
+
+    func finish() {
+        finishIfNeeded()
     }
 
     private func nextMetadataEvent() -> EntryLoadEvent? {

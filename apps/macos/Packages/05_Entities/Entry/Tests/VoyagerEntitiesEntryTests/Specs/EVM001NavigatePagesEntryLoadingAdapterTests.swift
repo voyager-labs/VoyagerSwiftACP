@@ -233,6 +233,42 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         XCTAssertEqual(calls.value, 0)
     }
 
+    /// EVM-001-progressive_entry_materialization: Releasing a partially consumed stream closes instrumentation.
+    /// 첫 core batch 뒤 stream 수명이 끝나면 추가 demand 없이 열린 request/core 계측을 닫는지 검증한다.
+    /// - 검증 내용: coreFinished 전 stream 해제와 request interval 종료
+    /// - 사전 조건: 두 batch가 필요한 33개 URL 중 첫 batch만 소비한다.
+    /// - 기대 결과: stream 해제 후 request interval 종료 callback이 호출된다.
+    func testReleasingStreamAfterFirstCoreBatchClosesInstrumentation() async throws {
+        let requestClosed = expectation(description: "Request instrumentation closed")
+        let instrumentation = EntryLoadingInstrumentation(
+            onBegin: { _, _ in },
+            onEnd: { interval, _, _ in
+                if interval == .request {
+                    requestClosed.fulfill()
+                }
+            },
+        )
+
+        for try await event in EntryStagedMaterializerLive.materializeURLs(
+            (0 ..< 33).map { URL(fileURLWithPath: "/fixture/File-\($0)") },
+            showHidden: false,
+            configuration: .init(
+                priority: .none,
+                entryLoadingClient: visibleEntryClient(),
+                workspaceClient: .testValue,
+                sourceKind: .direct,
+                instrumentation: instrumentation,
+                favoriteTags: [],
+            ),
+        ) {
+            if case .coreBatch = event {
+                break
+            }
+        }
+
+        await fulfillment(of: [requestClosed], timeout: 0.1)
+    }
+
     /// EVM-001-progressive_entry_materialization: Cancelling while metadata probing is in progress stops remaining
     /// probes.
     /// 첫 deferred probe가 시작된 뒤 취소하면 후속 항목을 탐침하거나 부분 patch를 전달하지 않는지 검증한다.
