@@ -23,6 +23,8 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     func testExternalFolderChildChangeReloadsCurrentFolder() async {
         let folderPath = Self.fixtureDir("texts/plain")
         let changedPath = "\(folderPath)/11.txt"
+        let canonicalFolderPath = URL(fileURLWithPath: folderPath).standardizedFileURL.resolvingSymlinksInPath().path
+        let canonicalChangedPath = URL(fileURLWithPath: changedPath).standardizedFileURL.resolvingSymlinksInPath().path
         var state = FileManagerContentState()
         state.navigation.navigationState = .folder(folderPath)
         state.entryViewLayout.showHiddenFiles = true
@@ -32,7 +34,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.receive { action in
             guard case let .entryViewLayout(.hierarchy(.hierarchyInvalidated(affectedPaths, removedPrefixes))) = action
             else { return false }
-            return affectedPaths == [folderPath] && removedPrefixes == [changedPath]
+            return affectedPaths == [canonicalFolderPath] && removedPrefixes == [canonicalChangedPath]
         }
         await store.receive { action in
             guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }

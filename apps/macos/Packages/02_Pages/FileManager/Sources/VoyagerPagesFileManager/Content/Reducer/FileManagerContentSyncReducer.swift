@@ -25,27 +25,28 @@ struct FileManagerContentSyncReducer {
                     guard pathsAffectCurrentFolder(paths, currentPath: path) else {
                         return .none
                     }
-                    let normalizedCurrentPath = URL(fileURLWithPath: path).standardizedFileURL.path
+                    let normalizedPaths = paths.map(normalizedPath(for:))
+                    let normalizedCurrentPath = normalizedPath(for: path)
                     let expandedHasFolder = !state.entryViewLayout.hierarchy.expandedFolderIDs.isEmpty
-                    let coarseRefreshNeeded = paths.count == 1
+                    let coarseRefreshNeeded = normalizedPaths.count == 1
                         && expandedHasFolder
                         && isProperAncestor(
-                            URL(fileURLWithPath: paths[0]).standardizedFileURL.path,
+                            normalizedPaths[0],
                             of: normalizedCurrentPath,
                         )
                     if coarseRefreshNeeded {
                         return .concatenate(
                             .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
-                                affectedPaths: paths.map(parentPath(for:)),
-                                removedPrefixes: paths,
+                                affectedPaths: normalizedPaths.map(parentPath(for:)),
+                                removedPrefixes: normalizedPaths,
                             )))),
                             FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
                         )
                     }
                     return .concatenate(
                         .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
-                            affectedPaths: paths.map(parentPath(for:)),
-                            removedPrefixes: paths,
+                            affectedPaths: normalizedPaths.map(parentPath(for:)),
+                            removedPrefixes: normalizedPaths,
                         )))),
                         FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
                     )
@@ -64,15 +65,15 @@ struct FileManagerContentSyncReducer {
     }
 
     private func pathsAffectCurrentFolder(_ paths: [String], currentPath: String) -> Bool {
-        let normalizedCurrentPath = URL(fileURLWithPath: currentPath).standardizedFileURL.path
+        let normalizedCurrentPath = normalizedPath(for: currentPath)
 
         return paths.contains { path in
-            let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
-            if normalizedPath == normalizedCurrentPath {
+            let candidatePath = normalizedPath(for: path)
+            if candidatePath == normalizedCurrentPath {
                 return true
             }
 
-            return isSameOrDescendant(path: normalizedPath, of: normalizedCurrentPath)
+            return isSameOrDescendant(path: candidatePath, of: normalizedCurrentPath)
         }
     }
 
@@ -90,12 +91,16 @@ struct FileManagerContentSyncReducer {
     }
 
     private func parentPath(for path: String) -> String {
-        URL(fileURLWithPath: path).standardizedFileURL.deletingLastPathComponent().path
+        URL(fileURLWithPath: normalizedPath(for: path)).deletingLastPathComponent().path
+    }
+
+    private func normalizedPath(for path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     private func collectionPathsAffectCurrentContext(_ paths: [String], state: State) -> Bool {
         let relevantPaths = paths.filter {
-            !isOpenedCollectionDocumentPath($0, openedURL: state.collection.collectionSession.document?.url)
+            !isOpenedCollectionDocumentPath($0, openedURL: state.openedCollectionURL)
         }
         guard !relevantPaths.isEmpty else {
             return false
@@ -116,13 +121,20 @@ struct FileManagerContentSyncReducer {
             return false
         }
 
-        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
-        let normalizedOpenedPath = openedURL.standardizedFileURL.path
-        if normalizedPath == normalizedOpenedPath {
+        let lexicalPath = URL(fileURLWithPath: path).path
+        let lexicalOpenedPath = openedURL.path
+        let lexicalPackagePrefix = lexicalOpenedPath == "/" ? "/" : lexicalOpenedPath + "/"
+        if lexicalPath == lexicalOpenedPath || lexicalPath.hasPrefix(lexicalPackagePrefix) {
+            return true
+        }
+
+        let candidatePath = normalizedPath(for: path)
+        let normalizedOpenedPath = normalizedPath(for: openedURL.path)
+        if candidatePath == normalizedOpenedPath {
             return true
         }
 
         let packagePrefix = normalizedOpenedPath == "/" ? "/" : normalizedOpenedPath + "/"
-        return normalizedPath.hasPrefix(packagePrefix)
+        return candidatePath.hasPrefix(packagePrefix)
     }
 }
