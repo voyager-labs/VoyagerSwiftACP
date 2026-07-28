@@ -440,7 +440,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
     /// - 기대 결과: read()=nil, accountAccessAuthAxis=.signedOut, hasAccountSession=false
     func testCorruptedSessionTreatedAsLoggedOut() async throws {
         let fixture = try TemporaryHomeFixture()
-        let fileStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let fileStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
 
         let corruptedData = Data("{ invalid json }".utf8)
         try corruptedData.write(to: fixture.accountTokensFileURL)
@@ -666,7 +666,7 @@ extension ACC001RestoreAccountSessionTests {
     /// - 기대 결과: read()=nil, accountAccessAuthAxis=.signedOut, hasAccountSession=false
     func testFirstRunNoSessionShowsLoggedOut() async throws {
         let fixture = try TemporaryHomeFixture(createVoyagerDirectory: false)
-        let fileStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let fileStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
 
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: fixture.accountTokensFileURL.path),
@@ -688,7 +688,7 @@ extension ACC001RestoreAccountSessionTests {
     /// - 기대 결과: read()가 nil 반환, 원본 파일 삭제, quarantine 파일 생성됨
     func testEmptyFileIsQuarantinedAndReturnsNil() async throws {
         let fixture = try TemporaryHomeFixture()
-        let fileStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let fileStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
 
         try Data().write(to: fixture.accountTokensFileURL)
 
@@ -713,7 +713,7 @@ extension ACC001RestoreAccountSessionTests {
     /// - 기대 결과: 파일 권한 == 0o600
     func testTokenFilePermissionsAre0o600AfterWrite() async throws {
         let fixture = try TemporaryHomeFixture()
-        let fileStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let fileStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
 
         let tokens = AccountTokensFile(
             updatedAtMs: 1000,
@@ -737,7 +737,7 @@ extension ACC001RestoreAccountSessionTests {
     /// - 기대 결과: 디렉토리 권한 == 0o700
     func testTokenDirectoryPermissionsAre0o700AfterWrite() async throws {
         let fixture = try TemporaryHomeFixture()
-        let fileStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let fileStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
 
         let tokens = AccountTokensFile(
             updatedAtMs: 1000,

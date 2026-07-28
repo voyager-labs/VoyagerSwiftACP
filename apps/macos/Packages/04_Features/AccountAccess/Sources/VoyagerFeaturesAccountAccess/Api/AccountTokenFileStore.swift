@@ -1,12 +1,13 @@
 import CryptoKit
 @preconcurrency import Darwin
 @preconcurrency import Foundation
+import VoyagerShared
 
 /// ADR 001: 계정 토큰은 ~/.voyager/account_tokens.json에 저장 (home 고정).
 /// AI connection 저장소(VoyagerEntitiesAi.AiConnectionRootResolver)와 root를 분리한다.
 actor AccountTokenFileStore {
     private let fileManager = FileManager.default
-    private let payloadURL: URL
+    nonisolated let payloadURL: URL
     private let handoffStagingURL: URL
     private let lockURL: URL
     private let rollbackMarkerURL: URL
@@ -23,21 +24,28 @@ actor AccountTokenFileStore {
 
     static func withDefaultHome(
         homeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser,
+        appEnv: EnvironmentLoader.AppEnv,
     ) -> AccountTokenFileStore {
         AccountTokenFileStore(
-            payloadURL: AccountTokenFSLocation.accountTokensFileURL(homeDirectoryURL: homeDirectoryURL),
-            handoffStagingURL: AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: homeDirectoryURL),
-            lockURL: AccountTokenFSLocation.lockFileURL(homeDirectoryURL: homeDirectoryURL),
-            rollbackMarkerURL: AccountTokenFSLocation.rollbackMarkerFileURL(homeDirectoryURL: homeDirectoryURL),
+            payloadURL: AccountTokenFSLocation.accountTokensFileURL(homeDirectoryURL: homeDirectoryURL, appEnv: appEnv),
+            handoffStagingURL: AccountTokenFSLocation.handoffStagingFileURL(
+                homeDirectoryURL: homeDirectoryURL,
+                appEnv: appEnv,
+            ),
+            lockURL: AccountTokenFSLocation.lockFileURL(homeDirectoryURL: homeDirectoryURL, appEnv: appEnv),
+            rollbackMarkerURL: AccountTokenFSLocation.rollbackMarkerFileURL(
+                homeDirectoryURL: homeDirectoryURL,
+                appEnv: appEnv,
+            ),
         )
     }
 
-    static func withCustomHome(homeURL: URL) -> AccountTokenFileStore {
+    static func withCustomHome(homeURL: URL, appEnv: EnvironmentLoader.AppEnv) -> AccountTokenFileStore {
         AccountTokenFileStore(
-            payloadURL: AccountTokenFSLocation.accountTokensFileURL(homeDirectoryURL: homeURL),
-            handoffStagingURL: AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: homeURL),
-            lockURL: AccountTokenFSLocation.lockFileURL(homeDirectoryURL: homeURL),
-            rollbackMarkerURL: AccountTokenFSLocation.rollbackMarkerFileURL(homeDirectoryURL: homeURL),
+            payloadURL: AccountTokenFSLocation.accountTokensFileURL(homeDirectoryURL: homeURL, appEnv: appEnv),
+            handoffStagingURL: AccountTokenFSLocation.handoffStagingFileURL(homeDirectoryURL: homeURL, appEnv: appEnv),
+            lockURL: AccountTokenFSLocation.lockFileURL(homeDirectoryURL: homeURL, appEnv: appEnv),
+            rollbackMarkerURL: AccountTokenFSLocation.rollbackMarkerFileURL(homeDirectoryURL: homeURL, appEnv: appEnv),
         )
     }
 

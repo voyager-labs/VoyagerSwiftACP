@@ -15,12 +15,17 @@ enum FileManagerContentKeyCommandHandler {
     static func effect(
         for command: KeyCommand,
         state: FileManagerContentState,
+        textResponderIsEditing: Bool? = nil,
     ) -> Effect<FileManagerContentAction> {
         if let effect = quickLookKeyEffect(for: command, state: state) { return effect }
         if let effect = deleteKeyEffect(for: command, state: state) { return effect }
         if let effect = renameKeyEffect(for: command, state: state) { return effect }
         if let movementEffect = selectionMovementEffect(for: command, state: state) { return movementEffect }
-        if let effect = commandModifierEffect(for: command, state: state) { return effect }
+        if let effect = commandModifierEffect(
+            for: command,
+            state: state,
+            textResponderIsEditing: textResponderIsEditing,
+        ) { return effect }
         return .none
     }
 
@@ -87,13 +92,18 @@ enum FileManagerContentKeyCommandHandler {
     private static func commandModifierEffect(
         for command: KeyCommand,
         state: FileManagerContentState,
+        textResponderIsEditing: Bool?,
     ) -> Effect<FileManagerContentAction>? {
         guard command.modifiers.contains(.command) else { return nil }
 
         if command.modifiers.isDisjoint(with: [.option, .control]),
            command.charactersIgnoringModifiers == "z"
         {
-            return undoRedoEffect(for: command, state: state)
+            return undoRedoEffect(
+                for: command,
+                state: state,
+                textResponderIsEditing: textResponderIsEditing ?? isTextEditingResponder(),
+            )
         }
 
         if command.characters == ".", command.modifiers.contains(.shift) {
@@ -147,13 +157,15 @@ enum FileManagerContentKeyCommandHandler {
     private static func undoRedoEffect(
         for command: KeyCommand,
         state: FileManagerContentState,
+        textResponderIsEditing: Bool,
     ) -> Effect<FileManagerContentAction> {
         if state.composer.isPresented {
             return .none
         }
 
         if command.modifiers.contains(.shift) {
-            if canRedoInTextResponder(), NSApp.sendAction(redoSelector, to: nil, from: nil) {
+            if textResponderIsEditing {
+                _ = NSApp.sendAction(redoSelector, to: nil, from: nil)
                 return .none
             }
             return .send(.entryViewLayout(.entryOperations(.undoRedo(
@@ -161,7 +173,8 @@ enum FileManagerContentKeyCommandHandler {
             ))))
         }
 
-        if canUndoInTextResponder(), NSApp.sendAction(undoSelector, to: nil, from: nil) {
+        if textResponderIsEditing {
+            _ = NSApp.sendAction(undoSelector, to: nil, from: nil)
             return .none
         }
         return .send(.entryViewLayout(.entryOperations(.undoRedo(
@@ -218,15 +231,5 @@ enum FileManagerContentKeyCommandHandler {
     private static func isTextEditingResponder() -> Bool {
         guard let responder = NSApp.keyWindow?.firstResponder else { return false }
         return responder is NSTextView || responder is NSTextField
-    }
-
-    private static func canUndoInTextResponder() -> Bool {
-        guard isTextEditingResponder() else { return false }
-        return (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager?.canUndo == true
-    }
-
-    private static func canRedoInTextResponder() -> Bool {
-        guard isTextEditingResponder() else { return false }
-        return (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager?.canRedo == true
     }
 }

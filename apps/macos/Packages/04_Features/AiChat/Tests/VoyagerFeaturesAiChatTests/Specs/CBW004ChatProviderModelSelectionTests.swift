@@ -1847,6 +1847,111 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
             XCTFail("Expected processing surface state after clearing invalid selection")
         }
     }
+
+    /// CBW-004-select_chat_model_thinking: capability별 Thinking 선택을 중립 정책으로 정규화한다.
+    /// Chat과 Collection Search가 provider와 무관하게 같은 호환성 규칙을 사용하는지 검증합니다.
+    /// - 검증 내용: provider default, none, effort, token budget, unknown capability 정규화
+    /// - 사전 조건: 각 capability와 supportsNone 값을 독립 입력으로 제공한다.
+    /// - 기대 결과: 호환 값은 유지되고 비호환 값만 provider default인 nil로 정리된다.
+    func testThinkingSelectionPolicyNormalizesCapabilityMatrix() {
+        let effort = AiModelThinkingCapability.effort(values: [.low, .high], defaultValue: .low)
+        let tokenBudget = AiModelThinkingCapability.tokenBudget(min: 128, max: 1024, defaultValue: 512)
+        let unknown = AiModelThinkingCapability.unknown(reason: .init(message: "Metadata pending"))
+        let unsupported = AiModelThinkingCapability.unsupported(reason: .init(message: "Unavailable"))
+
+        XCTAssertNil(AiThinkingSelectionPolicy.normalize(nil, capability: effort, supportsNone: true))
+        XCTAssertEqual(
+            AiThinkingSelectionPolicy.normalize(AiThinkingSelection.none, capability: effort, supportsNone: true),
+            AiThinkingSelection.none,
+        )
+        XCTAssertNil(AiThinkingSelectionPolicy.normalize(
+            AiThinkingSelection.none,
+            capability: effort,
+            supportsNone: false,
+        ))
+        XCTAssertEqual(
+            AiThinkingSelectionPolicy.normalize(.effort(.high), capability: effort, supportsNone: false),
+            .effort(.high),
+        )
+        XCTAssertNil(AiThinkingSelectionPolicy.normalize(.effort(.medium), capability: effort, supportsNone: false))
+        XCTAssertEqual(
+            AiThinkingSelectionPolicy.normalize(.tokenBudget(512), capability: tokenBudget, supportsNone: false),
+            .tokenBudget(512),
+        )
+        XCTAssertNil(
+            AiThinkingSelectionPolicy.normalize(.tokenBudget(64), capability: tokenBudget, supportsNone: false),
+        )
+        XCTAssertEqual(
+            AiThinkingSelectionPolicy.normalize(.effort(.xhigh), capability: unknown, supportsNone: false),
+            .effort(.xhigh),
+        )
+        XCTAssertEqual(
+            AiThinkingSelectionPolicy.normalize(.tokenBudget(777), capability: unknown, supportsNone: false),
+            .tokenBudget(777),
+        )
+        XCTAssertEqual(
+            AiThinkingSelectionPolicy.normalize(AiThinkingSelection.none, capability: unknown, supportsNone: true),
+            AiThinkingSelection.none,
+        )
+        XCTAssertNil(AiThinkingSelectionPolicy.normalize(
+            AiThinkingSelection.none,
+            capability: unsupported,
+            supportsNone: true,
+        ))
+    }
+
+    /// CBW-004-select_chat_model_thinking: effort와 adaptive 옵션의 catalog 순서와 라벨을 보존한다.
+    /// selector가 중립 옵션 표현을 사용해 기존 사용자 노출 순서를 그대로 만드는지 검증합니다.
+    /// - 검증 내용: provider default, none, effort/adaptive ordering, exact visible labels
+    /// - 사전 조건: supportsNone과 순서가 지정된 effort/adaptive capability
+    /// - 기대 결과: 기본 옵션 뒤에 capability catalog 순서대로 정확한 라벨이 이어진다.
+    func testThinkingSelectionPolicyPreservesEffortAndAdaptiveOptionOrderingAndLabels() {
+        let effortOptions = AiThinkingSelectionPolicy.options(
+            capability: .effort(values: [.low, .xhigh], defaultValue: .low),
+            supportsNone: true,
+        )
+        XCTAssertEqual(effortOptions.map(\.selection), [nil, AiThinkingSelection.none, .effort(.low), .effort(.xhigh)])
+        XCTAssertEqual(effortOptions.map(\.title), ["Provider default", "none", "low", "x-high"])
+
+        let adaptiveOptions = AiThinkingSelectionPolicy.options(
+            capability: .adaptive(effortValues: [.high, .minimal, .medium], defaultValue: .medium),
+            supportsNone: false,
+        )
+        XCTAssertEqual(
+            adaptiveOptions.map(\.selection),
+            [nil, .effort(.high), .effort(.minimal), .effort(.medium)],
+        )
+        XCTAssertEqual(adaptiveOptions.map(\.title), ["Provider default", "high", "minimal", "medium"])
+    }
+
+    /// CBW-004-select_chat_model_thinking: token budget 옵션과 unknown capability 출력을 정규화한다.
+    /// token selector의 대표 경계값과 metadata 미확정 상태의 빈 옵션 계약을 검증합니다.
+    /// - 검증 내용: min/distinct default/max ordering, token labels, duplicate 제거, unknown options
+    /// - 사전 조건: token budget 범위와 distinct 또는 min과 같은 default 값
+    /// - 기대 결과: 중복 없는 경계 옵션이 순서대로 생성되고 unknown capability는 옵션을 만들지 않는다.
+    func testThinkingSelectionPolicyBuildsTokenBudgetOptionsAndNoUnknownOptions() {
+        let options = AiThinkingSelectionPolicy.options(
+            capability: .tokenBudget(min: 128, max: 1024, defaultValue: 512),
+            supportsNone: false,
+        )
+        XCTAssertEqual(options.map(\.selection), [nil, .tokenBudget(128), .tokenBudget(512), .tokenBudget(1024)])
+        XCTAssertEqual(options.map(\.title), ["Provider default", "128 tokens", "512 tokens", "1024 tokens"])
+
+        let duplicateDefaultOptions = AiThinkingSelectionPolicy.options(
+            capability: .tokenBudget(min: 128, max: 1024, defaultValue: 128),
+            supportsNone: false,
+        )
+        XCTAssertEqual(duplicateDefaultOptions.map(\.selection), [nil, .tokenBudget(128), .tokenBudget(1024)])
+        XCTAssertTrue(AiThinkingSelectionPolicy.options(
+            capability: .unknown(reason: .init(message: "Metadata pending")),
+            supportsNone: true,
+        ).isEmpty)
+        XCTAssertEqual(AiThinkingSelectionPolicy.defaultLabel(for: .effort(values: [], defaultValue: nil)), "default")
+        XCTAssertEqual(
+            AiThinkingSelectionPolicy.defaultLabel(for: .unknown(reason: .init(message: "Metadata pending"))),
+            "Thinking unavailable",
+        )
+    }
 }
 
 @MainActor

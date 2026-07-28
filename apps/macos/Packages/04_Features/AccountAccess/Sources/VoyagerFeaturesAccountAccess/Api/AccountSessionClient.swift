@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 // MARK: - Client Struct
 
@@ -142,7 +143,8 @@ extension AccountSessionClient {
 
 extension AccountSessionClient: DependencyKey {
     nonisolated public static var liveValue: AccountSessionClient {
-        .live(store: AccountTokenFileStore.withDefaultHome())
+        let appEnv = EnvironmentLoader.detectAppEnv()
+        return .live(store: AccountTokenFileStore.withDefaultHome(appEnv: appEnv))
     }
 
     nonisolated public static var testValue: AccountSessionClient {

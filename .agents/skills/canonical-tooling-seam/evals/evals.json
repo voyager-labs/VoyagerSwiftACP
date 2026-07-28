@@ -3,7 +3,7 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Our macOS app has a mise build task, an Xcode helper, a Sweetpad task, and CI xcodebuild commands. They each set DerivedData, -clonedSourcePackagesDirPath, and -packageCachePath differently, while two worktrees run at once. Design the consolidation so developers can still pass an explicit cache path. Include migration and verification, but don't choose CodeGraph or XcodeBuildMCP for me.",
+      "prompt": "Our macOS app has a mise build task, an Xcode helper, a Sweetpad task, and CI xcodebuild commands. They each set DerivedData, -clonedSourcePackagesDirPath, and -packageCachePath differently, while two worktrees run at once. Design the consolidation so developers can still pass an explicit cache path. Include migration and verification, but don't choose the analysis or verification executor for me.",
       "expected_output": "A seam design that assigns one owner to cache and lock policy, keeps DerivedData and cloned SourcePackages worktree-local, shares only a safe reusable packageCachePath, preserves explicit cache overrides, uses a validated structured resolver or wrapper contract, and proves every host follows it.",
       "files": [],
       "assertions": [

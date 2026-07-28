@@ -6,6 +6,7 @@ import Foundation
 public enum AppHandoffTarget: Sendable, Equatable, DependencyKey {
     case voyager
     case voyagerDev
+    case voyagerProdDebug
     case onboardingHost
 
     nonisolated public static var liveValue: AppHandoffTarget {
@@ -26,6 +27,7 @@ public enum AppHandoffTarget: Sendable, Equatable, DependencyKey {
         switch self {
         case .voyager: "voyager"
         case .voyagerDev: "voyager_dev"
+        case .voyagerProdDebug: "voyager_prod_debug"
         case .onboardingHost: "onboarding_host"
         }
     }
@@ -35,6 +37,7 @@ public enum AppHandoffTarget: Sendable, Equatable, DependencyKey {
         switch self {
         case .voyager: "voyager"
         case .voyagerDev: "voyager-dev"
+        case .voyagerProdDebug: "voyager-proddebug"
         case .onboardingHost: "voyager-onboarding-host"
         }
     }
@@ -42,11 +45,13 @@ public enum AppHandoffTarget: Sendable, Equatable, DependencyKey {
     /// 정확한 bundle identifier로 AppHandoffTarget을 결정한다.
     /// - fm.voyager.Voyager.dev → .voyagerDev
     /// - fm.voyager.Voyager → .voyager
+    /// - fm.voyager.Voyager-proddebug → .voyagerProdDebug
     /// - fm.voyager.OnboardingHost → .onboardingHost
     /// - 그 외 → .voyager (fallback)
     public static func resolve(bundleId: String) -> AppHandoffTarget {
         switch bundleId {
         case "fm.voyager.Voyager.dev": .voyagerDev
+        case "fm.voyager.Voyager-proddebug": .voyagerProdDebug
         case "fm.voyager.Voyager": .voyager
         case "fm.voyager.OnboardingHost": .onboardingHost
         default: .voyager

@@ -27,7 +27,7 @@ for arg in "$@"; do
   if [[ "$prev" == "-scheme" ]]; then
     SCHEME="$arg"
   fi
-  if [[ "$prev" == "-configuration" && "$arg" == "Debug" ]]; then
+  if [[ "$prev" == "-configuration" && "$arg" == "Dev-Debug" ]]; then
     HAS_CONFIG_DEBUG=1
   fi
   if [[ "$arg" == VOYAGER_APP_SUFFIX=* ]]; then

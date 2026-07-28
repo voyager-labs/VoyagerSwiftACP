@@ -11,6 +11,7 @@
 		B20000000000000000000021 /* system_property_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000023 /* system_property_registry.json */; };
 		B20000000000000000000022 /* property_condition_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000024 /* property_condition_registry.json */; };
 		B20000000000000000000025 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000027 /* InjectionNext */; };
+		B20000000000000000000030 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000029 /* VoyagerShared */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -19,9 +20,22 @@
 		B20000000000000000000024 /* property_condition_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = property_condition_registry.json; path = ../../../../shared/property_condition_registry.json; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		B20000000000000000000031 /* Exceptions for "FileManagerHost" folder in "FileManagerHost" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = B20000000000000000000006 /* FileManagerHost */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		B20000000000000000000005 /* FileManagerHost */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				B20000000000000000000031 /* Exceptions for "FileManagerHost" folder in "FileManagerHost" target */,
+			);
 			path = .;
 			sourceTree = "<group>";
 		};
@@ -34,6 +48,7 @@
 			files = (
 				B20000000000000000000016 /* VoyagerPagesFileManager in Frameworks */,
 				B20000000000000000000025 /* InjectionNext in Frameworks */,
+				B20000000000000000000030 /* VoyagerShared in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -80,6 +95,7 @@
 			packageProductDependencies = (
 				B20000000000000000000018 /* VoyagerPagesFileManager */,
 				B20000000000000000000027 /* InjectionNext */,
+				B20000000000000000000029 /* VoyagerShared */,
 			);
 			productName = FileManagerHost;
 			productReference = B20000000000000000000004 /* FileManagerHost.app */;
@@ -112,6 +128,7 @@
 			packageReferences = (
 				B20000000000000000000020 /* XCLocalSwiftPackageReference "VoyagerPagesFileManager" */,
 				B20000000000000000000026 /* XCRemoteSwiftPackageReference "InjectionNext" */,
+				B20000000000000000000028 /* XCLocalSwiftPackageReference "VoyagerShared" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B20000000000000000000003 /* Products */;
@@ -146,7 +163,7 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		B20000000000000000000011 /* Debug */ = {
+		B20000000000000000000011 /* Dev-Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -211,9 +228,9 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
 			};
-			name = Debug;
+			name = Dev-Debug;
 		};
-		B20000000000000000000012 /* Release */ = {
+		B20000000000000000000012 /* Dev-Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -270,21 +287,23 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_VERSION = 6.0;
 			};
-			name = Release;
+			name = Dev-Release;
 		};
-		B20000000000000000000014 /* Debug */ = {
+		B20000000000000000000014 /* Dev-Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = dev;
 				AUTOMATION_APPLE_EVENTS = YES;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "FileManager Host (Debug)";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -302,27 +321,30 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUFeedURL = "";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 			};
-			name = Debug;
+			name = Dev-Debug;
 		};
-		B20000000000000000000015 /* Release */ = {
+		B20000000000000000000015 /* Dev-Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				APP_ENV = prod;
+				APP_ENV = dev;
 				AUTOMATION_APPLE_EVENTS = YES;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "FileManager Host";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -336,13 +358,14 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUFeedURL = "";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 			};
-			name = Release;
+			name = Dev-Release;
 		};
 /* End XCBuildConfiguration section */
 
@@ -350,20 +373,20 @@
 		B20000000000000000000010 /* Build configuration list for PBXProject "FileManagerHost" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B20000000000000000000011 /* Debug */,
-				B20000000000000000000012 /* Release */,
+				B20000000000000000000011 /* Dev-Debug */,
+				B20000000000000000000012 /* Dev-Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Dev-Release;
 		};
 		B20000000000000000000013 /* Build configuration list for PBXNativeTarget "FileManagerHost" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B20000000000000000000014 /* Debug */,
-				B20000000000000000000015 /* Release */,
+				B20000000000000000000014 /* Dev-Debug */,
+				B20000000000000000000015 /* Dev-Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Dev-Release;
 		};
 /* End XCConfigurationList section */
 
@@ -371,6 +394,10 @@
 		B20000000000000000000020 /* XCLocalSwiftPackageReference "VoyagerPagesFileManager" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../../Packages/02_Pages/FileManager;
+		};
+		B20000000000000000000028 /* XCLocalSwiftPackageReference "VoyagerShared" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../Packages/06_Shared/VoyagerShared;
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -395,6 +422,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = B20000000000000000000020 /* XCLocalSwiftPackageReference "VoyagerPagesFileManager" */;
 			productName = VoyagerPagesFileManager;
+		};
+		B20000000000000000000029 /* VoyagerShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B20000000000000000000028 /* XCLocalSwiftPackageReference "VoyagerShared" */;
+			productName = VoyagerShared;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

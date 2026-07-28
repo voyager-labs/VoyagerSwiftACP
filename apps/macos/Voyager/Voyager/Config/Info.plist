@@ -108,7 +108,9 @@
 	<key>SUScheduledCheckInterval</key>
 	<integer>21600</integer>
 	<key>SUFeedURL</key>
-    <string>https://downloads.voyager.fm/releases/appcast.xml</string>
+    <string>$(SUFeedURL)</string>
+	<key>XPC_MACH_SERVICE_NAME</key>
+	<string>$(XPC_MACH_SERVICE_NAME)</string>
 	<key>SUPublicEDKey</key>
     <string>NomZB47jirICFt7N3J9K+ONptIwZig9UdpEnAiC1JJI=</string>
 </dict>

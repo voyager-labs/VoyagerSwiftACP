@@ -1,0 +1,209 @@
+[data-file-manager-illustration] .ai-chat-window {
+  display: grid;
+  grid-template-columns: var(--fm-prototype-chat-sidebar-width) minmax(0, 1fr);
+  width: min(var(--fm-prototype-chat-width), 100%);
+  height: 720px;
+}
+
+[data-file-manager-illustration] .ai-chat-sidebar {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: var(--fm-space-5);
+  border-right: 1px solid var(--fm-separator);
+  background: var(--fm-sidebar);
+  padding: var(--fm-space-6);
+}
+
+[data-file-manager-illustration] .ai-chat-sidebar h2,
+[data-file-manager-illustration] .ai-chat-main h1 {
+  margin: 0;
+  letter-spacing: -0.03em;
+}
+
+[data-file-manager-illustration] .ai-session-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--fm-space-4);
+  font-size: var(--fm-font-size-body);
+}
+
+[data-file-manager-illustration] .ai-session-row small,
+[data-file-manager-illustration] .ai-chat-message small,
+[data-file-manager-illustration] .ai-context-card small {
+  color: var(--fm-text-tertiary);
+}
+
+[data-file-manager-illustration] .ai-chat-main {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  min-width: 0;
+  gap: var(--fm-space-5);
+  padding: var(--fm-space-7);
+}
+
+[data-file-manager-illustration] .ai-chat-topbar,
+[data-file-manager-illustration] .ai-context-card,
+[data-file-manager-illustration] .ai-chat-input {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fm-space-5);
+}
+
+[data-file-manager-illustration] .ai-model-stack {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-3);
+  flex-wrap: wrap;
+}
+
+[data-file-manager-illustration] .ai-context-card {
+  padding: var(--fm-space-5) var(--fm-space-6);
+}
+
+[data-file-manager-illustration] .ai-message-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fm-space-4);
+  padding-right: var(--fm-space-2);
+}
+
+[data-file-manager-illustration] .ai-chat-message {
+  max-width: 72%;
+  border: 1px solid var(--fm-separator);
+  border-radius: var(--fm-radius-xl);
+  background: var(--fm-control);
+  padding: var(--fm-space-5) var(--fm-space-6);
+  box-shadow: inset 0 1px 0 var(--fm-control-inner-highlight);
+}
+
+[data-file-manager-illustration] .ai-chat-message.user {
+  align-self: flex-end;
+  border-color: var(--fm-selection-label);
+  background: var(--fm-selection);
+}
+
+[data-file-manager-illustration] .ai-chat-message p {
+  margin: var(--fm-space-2) 0 0;
+  line-height: var(--fm-line-body);
+}
+
+[data-file-manager-illustration] .ai-chat-input .vc-form-field {
+  flex: 1;
+}
+
+[data-file-manager-illustration] .composer-shell {
+  position: relative;
+  display: grid;
+  width: min(var(--fm-prototype-composer-width), 100%);
+  gap: var(--fm-space-7);
+  padding: var(--fm-space-8);
+}
+
+[data-file-manager-illustration] .composer-header,
+[data-file-manager-illustration] .composer-footer,
+[data-file-manager-illustration] .composer-scope,
+[data-file-manager-illustration] .composer-input-row,
+[data-file-manager-illustration] .composer-header-actions,
+[data-file-manager-illustration] .composer-toggles,
+[data-file-manager-illustration] .composer-history,
+[data-file-manager-illustration] .composer-chip-row {
+  display: flex;
+  align-items: center;
+}
+
+[data-file-manager-illustration] .composer-header,
+[data-file-manager-illustration] .composer-footer,
+[data-file-manager-illustration] .composer-scope {
+  justify-content: space-between;
+  gap: var(--fm-space-6);
+}
+
+[data-file-manager-illustration] .composer-header h1 {
+  margin: var(--fm-space-2) 0 0;
+  font-size: 26px;
+  letter-spacing: -0.03em;
+}
+
+[data-file-manager-illustration] .composer-header-actions,
+[data-file-manager-illustration] .composer-toggles,
+[data-file-manager-illustration] .composer-history,
+[data-file-manager-illustration] .composer-chip-row {
+  gap: var(--fm-space-3);
+  flex-wrap: wrap;
+}
+
+[data-file-manager-illustration] .composer-input-row {
+  gap: var(--fm-space-4);
+}
+
+[data-file-manager-illustration] .composer-input {
+  flex: 1;
+  font-size: var(--fm-font-size-title);
+}
+
+[data-file-manager-illustration] .composer-scope {
+  padding: var(--fm-space-6);
+}
+
+[data-file-manager-illustration] .composer-scope strong {
+  display: block;
+  margin-top: var(--fm-space-2);
+}
+
+[data-file-manager-illustration] .composer-scope p {
+  margin: var(--fm-space-1) 0 0;
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-caption);
+}
+
+[data-file-manager-illustration] .composer-feedback {
+  position: absolute;
+  right: var(--fm-space-8);
+  bottom: var(--fm-space-8);
+  max-width: var(--fm-feedback-max-width);
+  border: 1px solid var(--fm-separator);
+  border-radius: var(--fm-radius-lg);
+  background: var(--fm-control);
+  padding: var(--fm-space-5) var(--fm-space-6);
+  box-shadow: var(--fm-shadow-card);
+  font-size: var(--fm-font-size-caption);
+}
+
+[data-file-manager-illustration] .composer-feedback.error {
+  border-color: var(--fm-danger-outline);
+  color: var(--fm-red);
+}
+
+[data-file-manager-illustration] .composer-feedback.delayed {
+  border-color: var(--fm-warning-outline);
+  color: var(--fm-amber);
+}
+
+[data-file-manager-illustration] .ai-chat-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: var(--fm-space-5);
+  padding: var(--fm-space-7);
+}
+
+[data-file-manager-illustration] .ai-chat-content .ai-message-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fm-space-4);
+}
+
+[data-file-manager-illustration] .ai-chat-content .ai-chat-input {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-4);
+  flex-shrink: 0;
+}
+
+[data-file-manager-illustration] .ai-chat-content .ai-chat-input .vc-form-field {
+  flex: 1;
+}

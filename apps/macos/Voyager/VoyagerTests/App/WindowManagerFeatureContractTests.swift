@@ -3478,21 +3478,28 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(store.state, initialState)
     }
 
-    /// 기존 mounted window의 external reservation은 state commit 후 canonical tab handoff로 활성화된다.
+    /// 기존 mounted window의 external reservations은 state commit 후 모든 Undo scope와 canonical tab handoff가 활성화된다.
     /// Directory load가 장기 실행 중이어도 apply terminal은 load 완료를 기다리지 않는 경계를 검증한다.
-    /// - 검증 내용: ordered append, old→new active 전환, suspended load 전 terminal 1회다.
-    /// - 사전 조건: seed tab이 active인 기존 window와 Directory reservation 하나다.
-    /// - 기대 결과: 마지막 preallocated tab이 active가 되고 apply completion은 load gate가 닫힌 동안 도착한다.
+    /// - 검증 내용: ordered append, 전체 reservation scope 활성화, old→new active 전환, suspended load 전 terminal 1회다.
+    /// - 사전 조건: seed tab이 active인 기존 window와 Directory reservation 두 개다.
+    /// - 기대 결과: 각 preallocated tab에 독립 manager가 생기고 마지막 tab이 active인 채 terminal이 load 전에 도착한다.
     func testPlacementApplicationActivatesExistingWindowWithoutAwaitingDirectoryLoad() async throws {
         let batchID = UUID()
         let windowID = UUID()
-        let itemID = UUID()
-        let tabID = ContentTabID(rawValue: "existing-window-external")
+        let firstItemID = UUID()
+        let secondItemID = UUID()
+        let firstTabID = ContentTabID(rawValue: "existing-window-external-first")
+        let secondTabID = ContentTabID(rawValue: "existing-window-external-second")
         var existingWindow = FileManagerWindowFeature.State.makeInitial(path: "/seed")
         existingWindow.content.entryViewLayout.entryOperations.windowID = windowID
         existingWindow.content.composer.cancellationOwnerID = windowID
         existingWindow.syncActiveTabContentState()
         let previousActiveID = try XCTUnwrap(existingWindow.contentTabs.activeTabID)
+        let registry = FileOperationUndoManagerRegistry()
+        let client = FileOperationUndoManagerClient.live(registry: registry)
+        let seedScope = UndoManagerScope(windowID: windowID, contentTabID: previousActiveID.rawValue)
+        let seedManager = client.activate(seedScope)
+        let seedGeneration = try XCTUnwrap(client.generation(seedScope))
         var initialState = WindowManagerFeature.State()
         initialState.windows = [.init(id: windowID, window: existingWindow)]
         initialState.authorizedExternalOpenBatchID = batchID
@@ -3502,7 +3509,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 .init(
                     windowID: windowID,
                     isNewWindow: false,
-                    items: [.init(itemID: itemID, tabID: tabID)],
+                    items: [
+                        .init(itemID: firstItemID, tabID: firstTabID),
+                        .init(itemID: secondItemID, tabID: secondTabID),
+                    ],
                 ),
             ],
         )
@@ -3526,8 +3536,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             }
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileOperationUndoManagerClient = client
             $0.entryLoadingClient.loadItems = { url, _ in
-                XCTAssertEqual(url.path, "/external")
+                XCTAssertEqual(url.path, "/external-second")
                 loadStarted.fulfill()
                 await loadGate.wait()
                 return []
@@ -3542,17 +3553,35 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.placement(.apply(
             plan: plan,
             reservationsByItemID: [
-                itemID: .init(id: tabID, anchor: .directory(path: "/external")),
+                firstItemID: .init(id: firstTabID, anchor: .directory(path: "/external-first")),
+                secondItemID: .init(id: secondTabID, anchor: .directory(path: "/external-second")),
             ],
         )))
         await fulfillment(of: [loadStarted, terminalReceived], timeout: 1)
         await store.skipReceivedActions()
 
         let committedWindow = try XCTUnwrap(store.state.windows[id: windowID]?.window)
-        XCTAssertEqual(committedWindow.contentTabs.tabs.map(\.id), [previousActiveID, tabID])
-        XCTAssertEqual(committedWindow.contentTabs.activeTabID, tabID)
+        XCTAssertEqual(
+            committedWindow.contentTabs.tabs.map(\.id),
+            [previousActiveID, firstTabID, secondTabID],
+        )
+        XCTAssertEqual(committedWindow.contentTabs.activeTabID, secondTabID)
         XCTAssertEqual(committedWindow.contentTabs.previousActiveTabID, previousActiveID)
         XCTAssertEqual(terminalCount.value, 1)
+
+        let firstScope = UndoManagerScope(windowID: windowID, contentTabID: firstTabID.rawValue)
+        let secondScope = UndoManagerScope(windowID: windowID, contentTabID: secondTabID.rawValue)
+        let firstGeneration = try XCTUnwrap(client.generation(firstScope))
+        let secondGeneration = try XCTUnwrap(client.generation(secondScope))
+        let firstManagerValue = await client.undoManager(firstScope)
+        let secondManagerValue = await client.undoManager(secondScope)
+        let firstManager = try XCTUnwrap(firstManagerValue)
+        let secondManager = try XCTUnwrap(secondManagerValue)
+        XCTAssertNotEqual(firstGeneration, secondGeneration)
+        XCTAssertNotIdentical(firstManager, secondManager)
+        let currentSeedManager = await client.undoManager(seedScope)
+        XCTAssertIdentical(currentSeedManager, seedManager)
+        XCTAssertEqual(client.generation(seedScope), seedGeneration)
 
         await loadGate.open()
         await store.skipReceivedActions()

@@ -175,7 +175,10 @@ private final class UpdaterCoordinator: NSObject, @preconcurrency SPUUpdaterDele
 
     func checkForUpdates() {
         configureIfNeeded()
-        guard EnvironmentLoader.detectAppEnv() != .dev else {
+        guard EnvironmentLoader.detectAppEnv() != .dev,
+              let feedURL = Bundle.main.infoDictionary?["SUFeedURL"] as? String,
+              !feedURL.isEmpty
+        else {
             logger.info("sparkle_skip_check_dev")
             return
         }
@@ -189,7 +192,10 @@ private final class UpdaterCoordinator: NSObject, @preconcurrency SPUUpdaterDele
 
     func startAtLaunch() async {
         configureIfNeeded()
-        guard EnvironmentLoader.detectAppEnv() != .dev else {
+        guard EnvironmentLoader.detectAppEnv() != .dev,
+              let feedURL = Bundle.main.infoDictionary?["SUFeedURL"] as? String,
+              !feedURL.isEmpty
+        else {
             logger.info("sparkle_skip_start_dev")
             return
         }

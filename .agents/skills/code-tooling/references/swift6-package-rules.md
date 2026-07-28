@@ -170,7 +170,7 @@ After creating, editing, or adding files to a package:
 4. Test consumer with the matrix-selected route  → consumer tests pass
 ```
 
-Use `mise run macos-build` and `mise run macos-test` for a macOS consumer, or the supported XcodeBuildMCP route for a simulator consumer. Each step must pass before moving to the next. For detailed integration-layer verification (consumer build/test, stale import detection, public surface checks), see `package-integration.md`.
+Use `mise run macos-build` and `mise run macos-test` for a macOS consumer. If a consumer needs a platform route not owned by the repository, stop and report the missing executor instead of inventing one. Each step must pass before moving to the next. For detailed integration-layer verification (consumer build/test, stale import detection, public surface checks), see `package-integration.md`.
 
 ## Decision flowchart
 

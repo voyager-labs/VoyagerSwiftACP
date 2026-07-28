@@ -23,7 +23,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
     /// - 기대 결과: token 파일이 삭제되고 accountAccessAuthAxis==.signedOut, hasAccountSession==false
     func testSignOutDeletesTokenAndTransitionsToLoggedOut() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
 
         let tokens = AccountTokensFile(
             updatedAtMs: 1_718_000_000_000,
@@ -72,7 +72,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
     /// - 기대 결과: token 파일이 삭제되고 read()=nil 반환
     func testServerFailureStillDeletesLocalToken() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
 
         let tokens = AccountTokensFile(
             updatedAtMs: 1000,
@@ -98,7 +98,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
     /// - 기대 결과: delete() 후에도 파일 없음 상태 유지, 에러 발생하지 않음
     func testSignOutWhenAlreadyLoggedOutIsNoOp() async throws {
         let fixture = try TemporaryHomeFixture(createVoyagerDirectory: false)
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.accountTokensFileURL.path))
 
@@ -567,7 +567,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
     /// - 기대 결과: notification의 userInfo에 explicitSignOut reason이 포함됨
     func testDeleteEmitsSessionEndReasonInUserInfo() async throws {
         let fixture = try TemporaryHomeFixture()
-        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL, appEnv: .dev)
 
         let futureMs = Int64(Date().timeIntervalSince1970 * 1000) + 86_400_000
         let tokens = AccountTokensFile(

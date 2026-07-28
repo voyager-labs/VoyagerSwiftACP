@@ -7,9 +7,10 @@ import VoyagerShared
 
 public struct EntryOperationsLoadingCancelID: Hashable, Sendable {
     public let windowID: UUID?
+    public let ownerID: UUID
 
-    public static func loadItems(windowID: UUID?) -> Self {
-        Self(windowID: windowID)
+    public static func loadItems(windowID: UUID?, ownerID: UUID) -> Self {
+        Self(windowID: windowID, ownerID: ownerID)
     }
 }
 
@@ -44,7 +45,10 @@ public struct EntryOperationsLoadingReducer {
                     }
                 }
                 .cancellable(
-                    id: EntryOperationsLoadingCancelID.loadItems(windowID: state.windowID),
+                    id: EntryOperationsLoadingCancelID.loadItems(
+                        windowID: state.windowID,
+                        ownerID: state.loadingCancellationOwnerID,
+                    ),
                     cancelInFlight: true,
                 )
 
@@ -56,7 +60,10 @@ public struct EntryOperationsLoadingReducer {
                     await send(.loading(.itemsLoaded(recentItems)))
                 }
                 .cancellable(
-                    id: EntryOperationsLoadingCancelID.loadItems(windowID: state.windowID),
+                    id: EntryOperationsLoadingCancelID.loadItems(
+                        windowID: state.windowID,
+                        ownerID: state.loadingCancellationOwnerID,
+                    ),
                     cancelInFlight: true,
                 )
 
@@ -68,7 +75,10 @@ public struct EntryOperationsLoadingReducer {
                     await send(.loading(.itemsLoaded(taggedItems)))
                 }
                 .cancellable(
-                    id: EntryOperationsLoadingCancelID.loadItems(windowID: state.windowID),
+                    id: EntryOperationsLoadingCancelID.loadItems(
+                        windowID: state.windowID,
+                        ownerID: state.loadingCancellationOwnerID,
+                    ),
                     cancelInFlight: true,
                 )
 
@@ -87,7 +97,10 @@ public struct EntryOperationsLoadingReducer {
                     }
                 }
                 .cancellable(
-                    id: EntryOperationsLoadingCancelID.loadItems(windowID: state.windowID),
+                    id: EntryOperationsLoadingCancelID.loadItems(
+                        windowID: state.windowID,
+                        ownerID: state.loadingCancellationOwnerID,
+                    ),
                     cancelInFlight: true,
                 )
 

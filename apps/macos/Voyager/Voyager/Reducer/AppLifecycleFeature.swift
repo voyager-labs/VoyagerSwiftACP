@@ -59,6 +59,7 @@ struct AppLifecycleFeature {
                 }
 
                 try? EnvironmentLoader.loadEnvFiles()
+                EnvironmentLoader.requireAppEnv()
                 let userId = DeviceIdentifierProvider.current()
                 let appVersion = AppVersionInfo.shortVersion
                 SentryBootstrap.startIfNeeded(
