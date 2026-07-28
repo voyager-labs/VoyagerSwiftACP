@@ -188,7 +188,8 @@ extension ContentTabFeature {
     }
 
     private func setCurrent(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {
-        guard state.tabs[id: id] != nil, state.activeTabID != id else {
+        guard state.tabs[id: id] != nil else { return .none }
+        guard state.activeTabID != id else {
             state.previousActiveTabID = nil
             return .none
         }

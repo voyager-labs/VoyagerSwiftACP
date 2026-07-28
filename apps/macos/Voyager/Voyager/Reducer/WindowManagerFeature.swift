@@ -142,6 +142,9 @@ struct WindowManagerFeature {
             case .file(.duplicateTab):
                 return sendDuplicateTabCommandToFocusedWindow(state)
 
+            case let .file(.selectContentTab(position: position)):
+                return sendCommandToFocusedWindow(state, .selectContentTab(position: position))
+
             case .file(.newFolder):
                 return sendCommandToFocusedWindow(state, .newFolder)
 
@@ -224,7 +227,9 @@ struct WindowManagerFeature {
                 return sendCommandToFocusedWindow(state, .copyURLs)
 
             case let .event(.windowBecameKey(id)):
-                guard state.windows[id: id] != nil else { return .none }
+                guard state.windows[id: id] != nil,
+                      !state.closingWindowIDs.contains(id)
+                else { return .none }
                 state.focusedWindowID = id
                 state.moveWindowToMRUFront(id)
                 return .none
@@ -554,7 +559,8 @@ extension WindowManagerFeature {
         _ command: FileManagerWindowAction.WindowCommand,
     ) -> Effect<Action> {
         guard let id = state.focusedWindowID,
-              !state.closingWindowIDs.contains(id)
+              !state.closingWindowIDs.contains(id),
+              state.windows[id: id] != nil
         else { return .none }
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }

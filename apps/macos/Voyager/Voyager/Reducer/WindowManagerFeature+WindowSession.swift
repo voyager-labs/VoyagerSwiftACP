@@ -183,11 +183,7 @@ extension WindowManagerFeature {
         guard state.windows[id: id] != nil, !state.closingWindowIDs.contains(id) else { return .none }
         state.closingWindowIDs.insert(id)
         if state.focusedWindowID == id {
-            state.focusedWindowID = state.lastUsedWindowIDs.first(where: {
-                $0 != id && isWindowReady($0, state: state)
-            }) ?? state.windows.ids.first(where: {
-                $0 != id && isWindowReady($0, state: state)
-            })
+            state.focusedWindowID = nil
         }
         guard state.pendingWindowOpenIDs.contains(id) else {
             return .run { [fileManagerWindowClient] _ in await fileManagerWindowClient.close(id) }
