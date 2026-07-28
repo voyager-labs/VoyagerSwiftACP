@@ -41,7 +41,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         case let .executeCommand(command):
             let entryOperationsAction = EntryOperationsAction.routing(.executeCommand(
                 command: command,
-                context: makeEntryOperationsCommandContext(state: state),
+                context: makeEntryOperationsCommandContext(command: command, state: state),
             ))
             return sendEntryOperations(entryOperationsAction)
 
@@ -104,10 +104,20 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         .send(.entryViewLayout(.entryOperations(action)))
     }
 
-    private func makeEntryOperationsCommandContext(state: State) -> EntryOperationsCommandContext {
-        EntryOperationsCommandContext(
+    private func makeEntryOperationsCommandContext(
+        command: EntryOperationsCommand,
+        state: State,
+    ) -> EntryOperationsCommandContext {
+        let displayItems = switch command {
+        case .mutation(.emptyTrash):
+            state.entryViewLayout.entries
+        default:
+            state.entryViewLayout.entries
+        }
+
+        return EntryOperationsCommandContext(
             selectedIds: state.entryViewLayout.selectedIds,
-            displayItems: state.entryViewLayout.entries,
+            displayItems: displayItems,
             currentPath: state.navigation.currentPath,
         )
     }

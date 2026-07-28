@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 
 @Reducer
 struct FileManagerContentSyncReducer {
@@ -24,7 +25,30 @@ struct FileManagerContentSyncReducer {
                     guard pathsAffectCurrentFolder(paths, currentPath: path) else {
                         return .none
                     }
-                    return FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state)
+                    let normalizedCurrentPath = URL(fileURLWithPath: path).standardizedFileURL.path
+                    let expandedHasFolder = !state.entryViewLayout.hierarchy.expandedFolderIDs.isEmpty
+                    let coarseRefreshNeeded = paths.count == 1
+                        && expandedHasFolder
+                        && isProperAncestor(
+                            URL(fileURLWithPath: paths[0]).standardizedFileURL.path,
+                            of: normalizedCurrentPath,
+                        )
+                    if coarseRefreshNeeded {
+                        return .concatenate(
+                            .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                                affectedPaths: paths.map(parentPath(for:)),
+                                removedPrefixes: paths,
+                            )))),
+                            FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
+                        )
+                    }
+                    return .concatenate(
+                        .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                            affectedPaths: paths.map(parentPath(for:)),
+                            removedPrefixes: paths,
+                        )))),
+                        FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
+                    )
 
                 case .recents, .tags, .computer:
                     return FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state)
@@ -48,9 +72,25 @@ struct FileManagerContentSyncReducer {
                 return true
             }
 
-            let folderPrefix = normalizedCurrentPath == "/" ? "/" : normalizedCurrentPath + "/"
-            return normalizedPath.hasPrefix(folderPrefix)
+            return isSameOrDescendant(path: normalizedPath, of: normalizedCurrentPath)
         }
+    }
+
+    private func isSameOrDescendant(path: String, of ancestor: String) -> Bool {
+        let pathComponents = URL(fileURLWithPath: path).pathComponents
+        let ancestorComponents = URL(fileURLWithPath: ancestor).pathComponents
+        return pathComponents.starts(with: ancestorComponents)
+    }
+
+    private func isProperAncestor(_ candidate: String, of path: String) -> Bool {
+        let candidateComponents = URL(fileURLWithPath: candidate).pathComponents
+        let pathComponents = URL(fileURLWithPath: path).pathComponents
+        return candidateComponents.count < pathComponents.count
+            && pathComponents.starts(with: candidateComponents)
+    }
+
+    private func parentPath(for path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.deletingLastPathComponent().path
     }
 
     private func collectionPathsAffectCurrentContext(_ paths: [String], state: State) -> Bool {

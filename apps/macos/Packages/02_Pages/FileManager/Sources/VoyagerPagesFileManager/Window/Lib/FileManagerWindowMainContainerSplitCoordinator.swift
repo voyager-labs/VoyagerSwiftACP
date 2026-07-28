@@ -7,6 +7,7 @@ import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 @MainActor
 final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate {
@@ -95,10 +96,12 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
     override func viewDidLoad() {
         super.viewDidLoad()
         startIfNeeded()
+        scheduleEntryListAccessibilityExposure()
     }
 
     override func viewDidLayout() {
         super.viewDidLayout()
+        exposeEntryListAccessibilityChildren()
         retryPendingInspectorMountIfNeeded()
     }
 
@@ -188,6 +191,37 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
             overlayProps: overlayProps,
             activePageAnchor: chromeProps.activePageAnchor,
         )
+        scheduleEntryListAccessibilityExposure()
+    }
+
+    private func scheduleEntryListAccessibilityExposure() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
+            self?.exposeEntryListAccessibilityChildren()
+        }
+    }
+
+    private func exposeEntryListAccessibilityChildren() {
+        guard let hostingView = contentHosting?.view else { return }
+
+        let entryListViews = descendantViews(of: hostingView).compactMap { $0 as? EntryListView }
+        guard !entryListViews.isEmpty else { return }
+
+        let existingChildren = hostingView.accessibilityChildren() ?? []
+        let unrepresentedEntryLists = entryListViews.filter { entryListView in
+            !existingChildren.contains { child in
+                (child as? NSView) === entryListView
+            }
+        }
+        guard !unrepresentedEntryLists.isEmpty else { return }
+
+        hostingView.setAccessibilityChildren(existingChildren + unrepresentedEntryLists)
+        NSAccessibility.post(element: hostingView, notification: .layoutChanged)
+    }
+
+    private func descendantViews(of view: NSView) -> [NSView] {
+        view.subviews.flatMap { subview in
+            [subview] + descendantViews(of: subview)
+        }
     }
 
     private func makeContentRootView(

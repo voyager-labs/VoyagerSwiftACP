@@ -19,13 +19,14 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         var state = FileManagerContentState()
         state.entryViewLayout.mode = .grid
 
-        let store = makeFileManagerContentStore(initialState: state)
+        let store = makeFileManagerContentFeatureStore(initialState: state)
 
-        await store.send(.view(.changeLayout(.list))) {
+        await store.send(.view(.changeLayout(.list)))
+        await store.receive(\.entryViewLayout.internal.setMode) {
             $0.entryViewLayout.mode = .list
+            $0.entryViewLayout.outlineProjectionRevision += 1
         }
 
-        // composer 동기화 수신 — 하위 composer 액션
         await store.receive(\.composer.internal.syncCollectionState)
     }
 
@@ -37,10 +38,12 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
     /// - 사전 조건: 기본 FileManagerContentState (mode 기본값)
     /// - 기대 결과: state.entryViewLayout.mode == .grid, composer.syncCollectionState 수신
     func testChangeLayoutToGridUpdatesMode() async {
-        let store = makeFileManagerContentStore()
+        let store = makeFileManagerContentFeatureStore()
 
-        await store.send(.view(.changeLayout(.grid))) {
+        await store.send(.view(.changeLayout(.grid)))
+        await store.receive(\.entryViewLayout.internal.setMode) {
             $0.entryViewLayout.mode = .grid
+            $0.entryViewLayout.outlineProjectionRevision += 1
         }
 
         await store.receive(\.composer.internal.syncCollectionState)
@@ -53,10 +56,12 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
     /// - 기대 결과: recorder에 SettingsKeys.viewLayout == EntryViewLayoutState.Mode.grid.rawValue 기록
     func testChangeLayoutPersistsToSettings() async {
         let recorder = UserDefaultsStringRecorder()
-        let store = makeFileManagerContentStore(setString: recorder.record)
+        let store = makeFileManagerContentFeatureStore(setString: recorder.record)
 
-        await store.send(.view(.changeLayout(.grid))) {
+        await store.send(.view(.changeLayout(.grid)))
+        await store.receive(\.entryViewLayout.internal.setMode) {
             $0.entryViewLayout.mode = .grid
+            $0.entryViewLayout.outlineProjectionRevision += 1
         }
 
         await store.receive(\.composer.internal.syncCollectionState)
@@ -77,8 +82,10 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
 
         let store = makeFileManagerContentFeatureStore(initialState: state)
 
-        await store.send(.view(.changeLayout(.grid))) {
+        await store.send(.view(.changeLayout(.grid)))
+        await store.receive(\.entryViewLayout.internal.setMode) {
             $0.entryViewLayout.mode = .grid
+            $0.entryViewLayout.outlineProjectionRevision += 1
         }
 
         await store.receive(\.composer.internal.syncCollectionState)
@@ -98,12 +105,17 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         state.entryViewLayout.mode = .list
         state.entryViewLayout.entryOperations.renamingItemId = renamingId
 
-        let store = makeFileManagerContentStore(initialState: state)
+        let store = makeFileManagerContentFeatureStore(initialState: state)
 
         // 같은 모드로 변경 → isModeChanging == false → 취소 없음
         await store.send(.view(.changeLayout(.list)))
+        await store.receive(\.entryViewLayout.internal.setMode) {
+            $0.entryViewLayout.outlineProjectionRevision += 1
+        }
 
         await store.receive(\.composer.internal.syncCollectionState)
+        XCTAssertEqual(store.state.entryViewLayout.mode, .list)
+        XCTAssertEqual(store.state.entryViewLayout.entryOperations.renamingItemId, renamingId)
     }
 
     // MARK: - EVM-002-show_hide_hidden_entry
@@ -163,19 +175,18 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         var state = FileManagerContentState()
         state.entryViewLayout.mode = .grid
 
-        // store.exhaustivity = .off: FileManagerContentFeature 전체 리듀서 사용 시
-        // changeLayout이 ComposerReducer 외에도 Scope/composer 자체 처리를 트리거할 수 있음
         let store = makeFileManagerContentFeatureStore(
             initialState: state,
             setString: recorder.record,
         )
-        store.exhaustivity = .off
 
-        await store.send(.view(.changeLayout(.list))) {
+        await store.send(.view(.changeLayout(.list)))
+        await store.receive(\.entryViewLayout.internal.setMode) {
             $0.entryViewLayout.mode = .list
+            $0.entryViewLayout.outlineProjectionRevision += 1
         }
 
-        _ = await store.receive(\.composer.internal.syncCollectionState)
+        await store.receive(\.composer.internal.syncCollectionState)
 
         XCTAssertEqual(recorder.value(forKey: SettingsKeys.viewLayout), EntryViewLayoutState.Mode.list.rawValue)
         XCTAssertEqual(store.state.entryViewLayout.mode, .list)

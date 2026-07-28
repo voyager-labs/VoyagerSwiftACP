@@ -22,12 +22,18 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     /// - 기대 결과: externalFileSystemChanged 전송 시 entryOperations.loading.loadItems 수신
     func testExternalFolderChildChangeReloadsCurrentFolder() async {
         let folderPath = Self.fixtureDir("texts/plain")
+        let changedPath = "\(folderPath)/11.txt"
         var state = FileManagerContentState()
         state.navigation.navigationState = .folder(folderPath)
         state.entryViewLayout.showHiddenFiles = true
         let store = makeStore(initialState: state)
 
-        await store.send(.externalFileSystemChanged(["\(folderPath)/11.txt"]))
+        await store.send(.externalFileSystemChanged([changedPath]))
+        await store.receive { action in
+            guard case let .entryViewLayout(.hierarchy(.hierarchyInvalidated(affectedPaths, removedPrefixes))) = action
+            else { return false }
+            return affectedPaths == [folderPath] && removedPrefixes == [changedPath]
+        }
         await store.receive { action in
             guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
             return true
