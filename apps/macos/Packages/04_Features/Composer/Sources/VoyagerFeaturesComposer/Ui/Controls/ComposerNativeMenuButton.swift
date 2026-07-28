@@ -194,7 +194,7 @@ struct ComposerNativeMenuButton: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, NSMenuDelegate {
+    final class Coordinator: NSObject, NSMenuDelegate, NSTextFieldDelegate {
         var onOpen: () -> Void
         var menuItems: () -> [ComposerNativeMenuItem]
         var onDismiss: () -> Void
@@ -264,8 +264,7 @@ struct ComposerNativeMenuButton: NSViewRepresentable {
             let searchItem = NSMenuItem()
             let searchRow = ComposerNativeMenuSearchRow(
                 placeholder: searchPlaceholder,
-                target: self,
-                action: #selector(searchChanged(_:)),
+                delegate: self,
             )
             currentSearchRow = searchRow
             searchItem.view = searchRow
@@ -289,6 +288,13 @@ struct ComposerNativeMenuButton: NSViewRepresentable {
             rebuildFilteredItems()
         }
 
+        // MARK: - NSTextFieldDelegate
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            searchChanged(field)
+        }
+
         private func rebuildFilteredItems() {
             guard let menu = currentMenu, searchableItems != nil else { return }
             itemActions = []
@@ -297,6 +303,7 @@ struct ComposerNativeMenuButton: NSViewRepresentable {
             }
             let items = searchableItems?(currentSearchText) ?? []
             appendItems(items, to: menu)
+            menu.update()
         }
 
         private func appendItems(_ items: [ComposerNativeMenuItem], to menu: NSMenu) {

@@ -7,7 +7,7 @@ final class ComposerNativeMenuSearchRow: NSView {
         inputField
     }
 
-    init(placeholder: String, target: AnyObject, action: Selector) {
+    init(placeholder: String, delegate: NSTextFieldDelegate) {
         inputField = ComposerNativeMenuSearchField()
         super.init(frame: NSRect(x: 0, y: 0, width: 1, height: 24))
 
@@ -22,12 +22,10 @@ final class ComposerNativeMenuSearchRow: NSView {
 
         inputField.placeholderString = placeholder
         inputField.cell = searchCell
-        inputField.target = target
-        inputField.action = action
+        inputField.delegate = delegate
         inputField.isEditable = true
         inputField.isSelectable = true
         inputField.isEnabled = true
-        inputField.isContinuous = true
         inputField.usesSingleLineMode = true
         inputField.isBordered = false
         inputField.isBezeled = false
