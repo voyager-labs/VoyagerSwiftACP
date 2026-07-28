@@ -3491,7 +3491,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let firstTabID = ContentTabID(rawValue: "existing-window-external-first")
         let secondTabID = ContentTabID(rawValue: "existing-window-external-second")
         var existingWindow = FileManagerWindowFeature.State.makeInitial(path: "/seed")
-        existingWindow.content.entryViewLayout.entryOperations.windowID = windowID
+        existingWindow.content.entryOperations.windowID = windowID
         existingWindow.content.composer.cancellationOwnerID = windowID
         existingWindow.syncActiveTabContentState()
         let previousActiveID = try XCTUnwrap(existingWindow.contentTabs.activeTabID)
@@ -3669,7 +3669,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(committedWindow.contentTabs.activeTabID, collectionTabID)
         XCTAssertEqual(committedWindow.contentTabs.previousActiveTabID, directoryTabID)
         XCTAssertTrue(committedWindow.tabContentStates.values.allSatisfy { content in
-            content.entryViewLayout.entryOperations.windowID == windowID
+            content.entryOperations.windowID == windowID
                 && content.composer.cancellationOwnerID == windowID
         })
         XCTAssertEqual(openedURLs.value, [collectionURL])
@@ -3737,10 +3737,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(store.state.windows.map(\.id), [firstWindowID, secondWindowID])
         XCTAssertEqual(store.state.windows.map(\.window.contentTabs.tabs.count), [20, 1])
         XCTAssertTrue(store.state.windows.allSatisfy { window in
-            window.window.content.entryViewLayout.entryOperations.windowID == window.id
+            window.window.content.entryOperations.windowID == window.id
                 && window.window.content.composer.cancellationOwnerID == window.id
                 && window.window.tabContentStates.values.allSatisfy { content in
-                    content.entryViewLayout.entryOperations.windowID == window.id
+                    content.entryOperations.windowID == window.id
                         && content.composer.cancellationOwnerID == window.id
                 }
         })

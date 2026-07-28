@@ -223,7 +223,7 @@ extension WindowManagerFeature {
     private func windowIDChangedEffect(for id: UUID) -> Effect<Action> {
         .send(.windows(.element(
             id: id,
-            action: .window(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(id)))))),
+            action: .window(.content(.entryOperations(.lifecycle(.windowIDChanged(id))))),
         )))
     }
 }
