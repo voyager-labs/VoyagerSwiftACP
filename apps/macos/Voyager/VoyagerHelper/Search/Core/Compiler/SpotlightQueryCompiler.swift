@@ -385,7 +385,7 @@ extension SpotlightQueryCompiler {
             "\(attribute) != nil"
         case (_, "empty"):
             "(\(attribute) == nil || \(attribute) == \"\")"
-        case ("string", "any"), ("string", "all"):
+        case ("string", "any"), ("string", "all"), ("string", "none"), ("string", "miss"):
             try buildHistoricalStringListClause(attribute: attribute, condition: condition)
         case ("number", "in"):
             try buildHistoricalNumberListClause(attribute: attribute, condition: condition)
@@ -454,7 +454,21 @@ extension SpotlightQueryCompiler {
         let comparisons = values.map { value in
             "\(attribute) == \"*\(escapeLiteral(value))*\""
         }
-        return "(" + comparisons.joined(separator: condition.operator == "all" ? " && " : " || ") + ")"
+        switch condition.operator {
+        case "any":
+            return "(" + comparisons.joined(separator: " || ") + ")"
+        case "all":
+            return "(" + comparisons.joined(separator: " && ") + ")"
+        case "none":
+            return "(" + comparisons.map { "!(\($0))" }.joined(separator: " && ") + ")"
+        case "miss":
+            return "(" + comparisons.map { "!(\($0))" }.joined(separator: " || ") + ")"
+        default:
+            throw CompileError.unsupportedOperator(
+                propertyKey: condition.propertyKey,
+                operatorCode: condition.operator,
+            )
+        }
     }
 
     private func buildCategoricalClause(

@@ -140,6 +140,40 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         }
     }
 
+    /// RCL-003-apply_deterministic_filters: historical string none/miss 조건을 컴파일함
+    /// 과거 alpha-list 부정 연산자가 단일 문자열 decoder로 빠지지 않고 list clause를 생성하는지 검증한다.
+    /// - 검증 내용: not_contains_any/not_contains_all의 none/miss 정규화와 부정 predicate
+    /// - 사전 조건: file_kind와 extension에 배열 값이 저장된 historical payload
+    /// - 기대 결과: 모든 값을 부정하는 none/miss predicate가 오류 없이 생성됨
+    func testConditionCompilerRestoresHistoricalNegativeStringListOperators() throws {
+        let compiler = try makeCompiler()
+        let cases: [(SearchConditionPayload, [String])] = [
+            (
+                .init(
+                    propertyKey: "file_kind",
+                    operator: "not_contains_any",
+                    value: .array([.string("PDF"), .string("Document")]),
+                ),
+                ["!(kMDItemKind == \"*PDF*\")", "!(kMDItemKind == \"*Document*\")", " && "],
+            ),
+            (
+                .init(
+                    propertyKey: "extension",
+                    operator: "not_contains_all",
+                    value: .array([.string("pdf"), .string("md")]),
+                ),
+                ["!(kMDItemFSName == \"*pdf*\")", "!(kMDItemFSName == \"*md*\")", " || "],
+            ),
+        ]
+
+        for (condition, fragments) in cases {
+            let plan = try compiler.compilePlan(conditions: [condition])
+            for fragment in fragments {
+                XCTAssertTrue(plan.predicate.contains(fragment), plan.predicate)
+            }
+        }
+    }
+
     func testConditionCompilerSeparatesRetiredPathConditionsFromSpotlightPushdown() throws {
         let compiler = try makeCompiler()
         let condition = SearchConditionPayload(
