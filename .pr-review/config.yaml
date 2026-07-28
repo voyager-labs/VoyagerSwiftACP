@@ -43,6 +43,9 @@ path_filters:
 
 # ── Phase 4: Path Instructions ──
 path_instructions:
+  - path: "apps/storybook/**"
+    instructions_file: "rules/storybook.md"
+
   # macOS Swift — extensive architecture rules in external file
   - path: "apps/macos/**/*.swift"
     instructions_file: "rules/macos-swift.md"
@@ -73,9 +76,12 @@ path_instructions:
     instructions: |
       ## Severity and noise policy
 
-      Only leave comments for P0/P1-level issues:
+      Only leave comments for P0/P1-level issues by default:
       - P0: blocker, data loss, security issue, crash, or severe architectural breakage.
       - P1: high-confidence correctness, lifecycle, ownership, boundary, or maintainability risk.
+
+      `apps/storybook/**` is the only exception. Its routed instructions may add
+      non-blocking P2 design-polish notes. Do not use P2 for any other path.
 
       Do not comment on:
       - Formatting, import ordering, naming nits, minor style preferences
@@ -151,6 +157,6 @@ tools:
 
 # ── Phase 5: Output ──
 output:
-  severity_levels: [P0, P1]
+  severity_levels: [P0, P1, P2]
   evidence_required: true
   review_footer: true
