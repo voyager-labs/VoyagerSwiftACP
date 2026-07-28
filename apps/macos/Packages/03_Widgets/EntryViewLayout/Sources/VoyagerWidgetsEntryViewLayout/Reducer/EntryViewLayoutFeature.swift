@@ -423,7 +423,8 @@ public struct EntryViewLayoutFeature {
                     )))
 
                 case .loading(.itemsLoaded),
-                     .loading(.itemsLoadFailed):
+                     .loading(.itemsLoadFailed),
+                     .loading(.streamEvent):
                     return Self.updateEntriesAndReapply(&state)
 
                 default:

@@ -80,6 +80,21 @@ public struct EntryViewLayoutState: Equatable {
     public var entries: [EntryModel] = []
 
     public func visibleSelectableEntryIDs(isNormalDirectoryPage: Bool) -> [EntryModel.ID] {
+        outlineProjection(isNormalDirectoryPage: isNormalDirectoryPage).visibleSelectableEntryIDs
+    }
+
+    public func visibleSelectableEntries(isNormalDirectoryPage: Bool) -> [EntryModel] {
+        outlineProjection(isNormalDirectoryPage: isNormalDirectoryPage).visibleSelectableEntries
+    }
+
+    public var hierarchyProjectionIsActive: Bool {
+        mode == .list
+            && !isCollectionMode
+            && !hierarchy.rootPath.isEmpty
+            && entryArrangements.groupKey == .none
+    }
+
+    private func outlineProjection(isNormalDirectoryPage: Bool) -> EntryListOutlineProjection {
         EntryListOutlineProjection(
             revision: outlineProjectionRevision,
             rootEntries: entries,
@@ -91,7 +106,7 @@ public struct EntryViewLayoutState: Equatable {
             ),
             sortKey: entryArrangements.sortKey,
             sortOrder: entryArrangements.sortOrder,
-        ).visibleSelectableEntryIDs
+        )
     }
 
     var selectionProjectionIsHierarchyEnabled: Bool {

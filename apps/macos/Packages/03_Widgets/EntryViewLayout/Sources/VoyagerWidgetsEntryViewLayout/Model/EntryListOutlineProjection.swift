@@ -64,6 +64,13 @@ public struct EntryListOutlineProjection: Equatable, Sendable {
     public let visibleRows: [ItemID]
     public let visibleSelectableEntryIDs: [EntryModel.ID]
 
+    public var visibleSelectableEntries: [EntryModel] {
+        visibleRows.compactMap { itemID in
+            guard case let .entry(entry, _) = itemPayloads[itemID] else { return nil }
+            return entry
+        }
+    }
+
     public init(
         revision: Int,
         rootEntries: [EntryModel],
