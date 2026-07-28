@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesEntry
 @testable import VoyagerPagesFileManager
 
 @MainActor
@@ -27,6 +28,7 @@ func makeFileManagerContentFeatureStore(
     } withDependencies: {
         $0.userDefaultsClient.setString = setString
         $0.date = .constant(date)
+        $0.entryQuickLookClient = .previewValue
     }
 }
 

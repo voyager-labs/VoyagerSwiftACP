@@ -1,5 +1,4 @@
 @preconcurrency import AppKit
-import Combine
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
@@ -152,7 +151,22 @@ public final class EntryListCoordinator: NSObject {
 
     var outlineItems: [OutlineItem] = []
     var entryItemById: [EntryModel.ID: OutlineItem] = [:]
+    var outlineItemByID: [String: OutlineItem] = [:]
     var groupItemByName: [String: OutlineItem] = [:]
+    let projectionSession = EntryListCoordinatorProjectionSession()
+    var lastAppliedVisibleRows: [EntryListOutlineProjection.ItemID] = []
+    var renderedProjectionRevision: Int? {
+        projectionSession.renderedProjectionRevision
+    }
+
+    var isApplyingStoreProjection: Bool {
+        projectionSession.isApplyingStoreProjection
+    }
+
+    var pendingProjection: EntryListOutlineProjection? {
+        projectionSession.pendingProjection
+    }
+
     var sortSyncGate = EntryListCoordinatorSortSyncGate()
     var isApplyingColumnsFromStore = false
     var isUpdatingSelectionFromStore = false
@@ -165,13 +179,11 @@ public final class EntryListCoordinator: NSObject {
     var contextMenuCoordinator: EntryContextMenuCoordinator?
     var boundsDidChangeObserver: NSObjectProtocol?
     var lastRenderSnapshot: RenderSnapshot?
-    var renderObservationCancellable: AnyCancellable?
+    var isRenderObservationEnabled = true
     let renderThrottler = MainThreadThrottler(intervalMs: 16, latest: true)
     let visibleRowsPrefetchThrottler = MainThreadThrottler(intervalMs: 150, latest: true)
     let dateModifiedResizeDebouncer = MainThreadDebouncer(intervalMs: 150)
     var thumbnailImagesByPath: [String: NSImage] = [:]
-    @Dependency(\.entryOpenClient)
-    var entryOpenClient
     @Dependency(\.workspaceClient)
     var workspaceClient
     @Dependency(\.entryThumbnailCacheClient)
@@ -200,6 +212,7 @@ public final class EntryListCoordinator: NSObject {
             return
         }
         didBind = true
+        lastRenderSnapshot = RenderSnapshot(state: state)
         observeListStore()
         observeTableView()
         rebuildRowsAndReload()
@@ -261,19 +274,17 @@ public final class EntryListCoordinator: NSObject {
 
         projectionSession.reset()
         outlineItems = makeOutlineItems(state: state)
-        entryItemById = Dictionary(uniqueKeysWithValues: outlineItems.flatMap { $0.flattenEntries() })
-        groupItemByName = Dictionary(uniqueKeysWithValues: outlineItems.compactMap { item in
-            if case let .group(name, _, _) = item.kind {
-                return (name, item)
-            }
-            return nil
-        })
+        rebuildItemIndexes()
+        lastAppliedVisibleRows = []
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0)
         tableView.reloadData()
         syncListSelectionFromStore()
         applyGroupExpansionState()
         scrollToSelectionIfNeeded()
         restoreScrollPositionIfNeeded()
         syncListRenamingFromStore()
+        CATransaction.commit()
         requestThumbnailsForVisibleRows()
     }
 
@@ -370,7 +381,7 @@ public final class EntryListCoordinator: NSObject {
 
     func saveScrollPosition() {
         let offset = scrollView.contentView.bounds.origin
-        store.send(.delegate(.saveScrollOffset(offset, forPath: state.currentPath)))
+        store.send(.view(.saveScrollOffset(offset, forPath: state.currentPath)))
     }
 
     func scrollToSelectionIfNeeded() {
@@ -378,16 +389,16 @@ public final class EntryListCoordinator: NSObject {
         let targetId = state.lastSelectedId
             ?? state.selectedIds.first
         guard let targetId, let item = entryItemById[targetId] else {
-            store.send(.internal(.resetScrollFlag))
+            store.send(.view(.resetScrollFlag))
             return
         }
         let row = tableView.row(forItem: item)
         guard row >= 0 else {
-            store.send(.internal(.resetScrollFlag))
+            store.send(.view(.resetScrollFlag))
             return
         }
         tableView.scrollRowToVisible(row)
-        store.send(.internal(.resetScrollFlag))
+        store.send(.view(.resetScrollFlag))
     }
 
     func updateDropTargetBorder(isTargeted: Bool) {
@@ -396,11 +407,169 @@ public final class EntryListCoordinator: NSObject {
     }
 
     func makeOutlineItems(state: EntryViewLayoutState) -> [OutlineItem] {
-        if state.groupKey == .none {
-            return state.entries.map { OutlineItem(kind: .entry($0)) }
+        state.presentation.sections.flatMap { section -> [OutlineItem] in
+            let entries = section.items.map { OutlineItem(kind: .entry($0)) }
+            guard let title = section.title else { return entries }
+            return [
+                OutlineItem(
+                    kind: .group(
+                        name: title,
+                        colorCode: section.colorCode,
+                        isCollapsed: section.isCollapsed,
+                    ),
+                    children: entries,
+                ),
+            ]
         }
-        // Grouping will be restored in Wave 2 (Page bridge provides grouped items)
-        return state.entries.map { OutlineItem(kind: .entry($0)) }
+    }
+
+    func applyStoreProjection(_ projection: EntryListOutlineProjection) {
+        let oldVisibleRows = lastAppliedVisibleRows
+
+        projectionSession.apply(projection) { [weak self] projection, items in
+            guard let self else { return }
+
+            let newVisibleRows = projection.visibleRows
+
+            if tryIncrementalRowUpdate(old: oldVisibleRows, new: newVisibleRows, items: items) {
+                lastAppliedVisibleRows = newVisibleRows
+                return
+            }
+
+            outlineItems = items
+            rebuildItemIndexes()
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(0)
+            tableView.reloadData()
+            applyFolderExpansionState(for: projection)
+            syncListSelectionFromStore()
+            scrollToSelectionIfNeeded()
+            restoreScrollPositionIfNeeded()
+            syncListRenamingFromStore()
+            CATransaction.commit()
+            requestThumbnailsForVisibleRows()
+            lastAppliedVisibleRows = newVisibleRows
+        }
+    }
+
+    private func tryIncrementalRowUpdate(
+        old: [EntryListOutlineProjection.ItemID],
+        new: [EntryListOutlineProjection.ItemID],
+        items: [OutlineItem],
+    ) -> Bool {
+        guard !old.isEmpty, !new.isEmpty else { return false }
+
+        let oldSet = Set(old)
+        let newSet = Set(new)
+        let removed = oldSet.subtracting(newSet)
+        let added = newSet.subtracting(oldSet)
+
+        guard added.isEmpty, !removed.isEmpty, removed.count <= 20 else { return false }
+
+        var oldIdx = 0
+        for newItem in new {
+            while oldIdx < old.count, removed.contains(old[oldIdx]) {
+                oldIdx += 1
+            }
+            guard oldIdx < old.count, old[oldIdx] == newItem else { return false }
+            oldIdx += 1
+        }
+
+        guard let removedRootChildIndices = rootRemovalIndexes(for: removed) else { return false }
+
+        let incomingItemsByID = Dictionary(uniqueKeysWithValues: items.flatMap { $0.flattenItems() })
+        for item in outlineItems.flatMap({ $0.flattenItems().map(\.1) }) {
+            guard let incoming = incomingItemsByID[item.id] else { continue }
+            item.kind = incoming.kind
+            item.isLoadingChildren = incoming.isLoadingChildren
+        }
+        for index in removedRootChildIndices.reversed() {
+            outlineItems.remove(at: index)
+        }
+        rebuildItemIndexes()
+
+        tableView.beginUpdates()
+        tableView.removeItems(at: removedRootChildIndices, inParent: nil, withAnimation: .slideLeft)
+        tableView.endUpdates()
+
+        syncListSelectionFromStore()
+        requestThumbnailsForVisibleRows()
+
+        return true
+    }
+
+    private func rootRemovalIndexes(
+        for removed: Set<EntryListOutlineProjection.ItemID>,
+    ) -> IndexSet? {
+        var indexes = IndexSet()
+        for (index, item) in outlineItems.enumerated() {
+            guard case let .entry(entry) = item.kind else { return nil }
+            if removed.contains(.entry(entry.id)) {
+                indexes.insert(index)
+            }
+        }
+        return indexes.count == removed.count ? indexes : nil
+    }
+
+    func rebuildItemIndexes() {
+        entryItemById = Dictionary(uniqueKeysWithValues: outlineItems.flatMap { $0.flattenEntries() })
+        outlineItemByID = Dictionary(uniqueKeysWithValues: outlineItems.flatMap { $0.flattenItems() })
+        groupItemByName = Dictionary(uniqueKeysWithValues: outlineItems.compactMap { item in
+            if case let .group(name, _, _) = item.kind {
+                return (name, item)
+            }
+            return nil
+        })
+    }
+
+    func applyFolderExpansionState(for projection: EntryListOutlineProjection) {
+        for itemID in projection.rootItemIDs {
+            applyFolderExpansionState(itemID: itemID, projection: projection)
+        }
+    }
+
+    func applyFolderExpansionState(itemID: EntryListOutlineProjection.ItemID, projection: EntryListOutlineProjection) {
+        guard case let .entry(entryID) = itemID,
+              let item = outlineItemByID["entry:\(entryID)"]
+        else {
+            return
+        }
+        if projection.childrenByParent[itemID] != nil {
+            tableView.expandItem(item)
+        } else {
+            tableView.collapseItem(item)
+        }
+        for childID in projection.childrenByParent[itemID, default: []] {
+            applyFolderExpansionState(itemID: childID, projection: projection)
+        }
+    }
+
+    var isHierarchyOutlineEnabled: Bool {
+        RenderSnapshot(state: state).isHierarchyOutlineEnabled
+    }
+
+    func isCurrentOutlineItem(_ item: OutlineItem) -> Bool {
+        outlineItemByID[item.id] === item
+    }
+
+    func sendProjectionIntent(_ intent: EntryListCoordinatorProjectionIntent) {
+        guard !projectionSession.isApplyingStoreProjection else { return }
+        let revision: Int = switch intent {
+        case let .disclosureExpand(_, revision), let .disclosureCollapse(_, revision),
+             let .retry(_, revision), let .selection(_, revision), let .activate(_, revision):
+            revision
+        }
+        guard revision == state.outlineProjectionRevision else { return }
+        switch intent {
+        case let .disclosureExpand(id, _):
+            store.send(.view(.expandFolder(id)))
+        case let .disclosureCollapse(id, _):
+            store.send(.view(.collapseFolder(id)))
+        case let .retry(id, _):
+            store.send(.view(.retryFolder(id)))
+        case .selection, .activate:
+            return
+        }
     }
 
     func applyGroupExpansionState() {

@@ -40,8 +40,8 @@ struct EntryContextMenuTarget {
         return selectedIds.isSubset(of: visibleIDs)
     }
 
-    func containsBusyEntry(itemStates: [String: ItemOperationState]) -> Bool {
-        entries.contains { itemStates[$0.fullPath]?.isBusy == true }
+    func containsBusyEntry(busyEntryPaths: Set<String>) -> Bool {
+        entries.contains { busyEntryPaths.contains($0.fullPath) }
     }
 }
 
@@ -49,6 +49,11 @@ enum EntryContextMenuTagSelection {
     case on
     case off
     case mixed
+}
+
+public enum TagMutationMode: String, Sendable, Equatable {
+    case add
+    case remove
 }
 
 struct EntryContextMenuSpec {

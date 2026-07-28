@@ -1,7 +1,7 @@
 @preconcurrency import AppKit
-import Combine
 import ComposableArchitecture
 import Foundation
+import SwiftNavigation
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerShared
@@ -13,27 +13,26 @@ extension EntryGridCoordinator {
     }
 
     public func observeRenderLoop() {
-        renderObservationCancellable?.cancel()
-        renderObservationCancellable = store.publisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self else { return }
-                let snapshot = RenderSnapshot(state: state)
+        observe { [weak self] in
+            guard let self else { return }
+            let snapshot = RenderSnapshot(state: state)
+            guard isRenderObservationEnabled else { return }
 
-                guard let previous = lastRenderSnapshot else {
-                    lastRenderSnapshot = snapshot
-                    return
-                }
-
-                handleSnapshotChanges(previous: previous, snapshot: snapshot)
-
+            guard let previous = lastRenderSnapshot else {
                 lastRenderSnapshot = snapshot
+                return
             }
+
+            handleSnapshotChanges(previous: previous, snapshot: snapshot)
+            lastRenderSnapshot = snapshot
+        }
     }
 
     func handleSnapshotChanges(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if shouldRebuildSections(previous: previous, snapshot: snapshot) {
             rebuildSectionsAndReload()
+        } else if !applyIncrementalEntryRemoval(previous: previous, snapshot: snapshot) {
+            reloadVisibleItemsForEntryContentChange(previous: previous, snapshot: snapshot)
         }
         syncSelectionIfNeeded(previous: previous, snapshot: snapshot)
         reloadVisibleItemsIfNeeded(previous: previous, snapshot: snapshot)
@@ -48,8 +47,63 @@ extension EntryGridCoordinator {
     }
 
     func shouldRebuildSections(previous: RenderSnapshot, snapshot: RenderSnapshot) -> Bool {
-        previous.entries != snapshot.entries || previous.groupKey != snapshot.groupKey
-            || previous.collapsedGroups != snapshot.collapsedGroups
+        let changes = snapshot.presentation.changes(from: previous.presentation)
+        guard changes.sectionStructureChanged || changes.groupExpansionChanged else { return false }
+        guard !changes.groupExpansionChanged else { return true }
+
+        let previousSections = previous.presentation.sections
+        let nextSections = snapshot.presentation.sections
+        let isSingleUngroupedSection = previousSections.count == 1
+            && nextSections.count == 1
+            && previousSections[0].title == nil
+            && nextSections[0].title == nil
+        guard isSingleUngroupedSection else { return true }
+
+        let previousIDs = previous.entries.map(\.id)
+        let nextIDs = snapshot.entries.map(\.id)
+        return !canApplyIncrementalEntryRemoval(previousIDs: previousIDs, nextIDs: nextIDs)
+    }
+
+    func reloadVisibleItemsForEntryContentChange(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        let changedIDs = snapshot.presentation.changes(from: previous.presentation).updatedEntryIDs
+        guard !changedIDs.isEmpty else { return }
+        updateSectionsFromState()
+        let visibleIndexPaths: Set<IndexPath> = MainActor.assumeIsolated {
+            collectionView.indexPathsForVisibleItems()
+        }
+        let changedIndexPaths = Set(changedIDs.compactMap { indexPathByEntryId[$0] })
+            .intersection(visibleIndexPaths)
+        guard !changedIndexPaths.isEmpty else { return }
+        MainActor.assumeIsolated {
+            collectionView.reloadItems(at: changedIndexPaths)
+        }
+    }
+
+    func applyIncrementalEntryRemoval(previous: RenderSnapshot, snapshot: RenderSnapshot) -> Bool {
+        let previousIDs = previous.entries.map(\.id)
+        let nextIDs = snapshot.entries.map(\.id)
+        guard canApplyIncrementalEntryRemoval(previousIDs: previousIDs, nextIDs: nextIDs) else { return false }
+
+        let nextIDSet = Set(nextIDs)
+        let removedIndexPaths = Set(previousIDs.enumerated().compactMap { index, id in
+            nextIDSet.contains(id) ? nil : IndexPath(item: index, section: 0)
+        })
+        updateSectionsFromState()
+        MainActor.assumeIsolated {
+            collectionView.performBatchUpdates {
+                collectionView.deleteItems(at: removedIndexPaths)
+            }
+        }
+        return true
+    }
+
+    func canApplyIncrementalEntryRemoval(
+        previousIDs: [EntryModel.ID],
+        nextIDs: [EntryModel.ID],
+    ) -> Bool {
+        let nextIDSet = Set(nextIDs)
+        return previousIDs.count > nextIDs.count
+            && previousIDs.filter(nextIDSet.contains) == nextIDs
     }
 
     func syncSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -247,15 +301,15 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             workspaceClient: workspaceClient,
             onRenameUpdate: { [weak self] text in
                 guard let self else { return }
-                store.send(.delegate(.startRename(item: entry, text: text)))
+                store.send(.view(.startRename(item: entry, text: text)))
             },
             onRenameCommit: { [weak self] in
                 guard let self else { return }
-                store.send(.delegate(.renameCommitted(itemID: entry.id, newName: entry.name)))
+                store.send(.view(.commitRename(itemID: entry.id, newName: entry.name)))
             },
             onRenameCancel: { [weak self] in
                 guard let self else { return }
-                store.send(.internal(.setSelectionState(
+                store.send(.view(.updateSelection(
                     ids: state.selectedIds,
                     lastSelectedId: state.lastSelectedId,
                     rangeAnchorId: state.rangeAnchorId,
@@ -304,7 +358,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             onToggle: { [weak self] in
                 guard let self else { return }
                 if let title = section.title {
-                    store.send(.delegate(.groupChanged(state.groupKey)))
+                    store.send(.view(.toggleGroup(title)))
                 }
             },
         )
@@ -390,7 +444,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         var targetEntryId: EntryModel.ID?
         if let entry = entry(at: indexPath),
            entry.isFolder,
-           !entryLoadingClient.isPackageDirectory(URL(fileURLWithPath: entry.fullPath))
+           !entry.isPackage
         {
             destinationPath = entry.fullPath
             targetEntryId = entry.id
@@ -407,7 +461,6 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         return operation
     }
 
-    // swiftlint:disable:next function_body_length
     public func collectionView(
         _: NSCollectionView,
         acceptDrop draggingInfo: NSDraggingInfo,
@@ -442,7 +495,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         let lastSelectedId = selectedIndexPaths.max().flatMap { entry(at: $0)?.id }
         let selectedEntries = selectedIndexPaths.compactMap { entry(at: $0) }
         preloadOpenWithApplications(selectedEntries: selectedEntries)
-        store.send(.internal(.setSelectionState(
+        store.send(.view(.updateSelection(
             ids: selectedIds,
             lastSelectedId: lastSelectedId,
             rangeAnchorId: lastSelectedId,

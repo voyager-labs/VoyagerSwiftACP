@@ -1,6 +1,6 @@
 @preconcurrency import AppKit
-import Combine
 import ComposableArchitecture
+import SwiftNavigation
 import VoyagerEntitiesEntry
 import VoyagerShared
 
@@ -98,10 +98,10 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         )
         if let sortKey = needed.sortKey {
             let widgetSortKey = EntryViewLayoutSortKey.fromShared(sortKey)
-            store.send(.delegate(.sortChanged(widgetSortKey, needed.sortOrder ?? state.sortOrder)))
+            store.send(.view(.changeSort(widgetSortKey, needed.sortOrder ?? state.sortOrder)))
         }
         if let sortOrder = needed.sortOrder {
-            store.send(.delegate(.sortChanged(state.sortKey, sortOrder)))
+            store.send(.view(.changeSort(state.sortKey, sortOrder)))
         }
     }
 
@@ -113,7 +113,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         let newIndex = userInfo["NSNewColumn"] as? Int
 
         if let oldIndex, let newIndex {
-            store.send(.internal(.moveListColumn(from: oldIndex, to: newIndex)))
+            store.send(.view(.moveListColumn(from: oldIndex, to: newIndex)))
             return
         }
 
@@ -230,8 +230,6 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             guard case let .entry(entry) = outlineItem.kind else { return nil }
             return entry
         }
-        let selectedIds: Set<EntryModel.ID> = Set(selectedEntries.map(\.id))
-
         let clickedRow = tableView.clickedRow
         let lastSelectedId: EntryModel.ID? = if selectedIndexes.contains(clickedRow),
                                                 let item = tableView.item(atRow: clickedRow) as? OutlineItem,
@@ -249,7 +247,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
 
         let acceptedIDs = Set(selectedEntries.map(\.id))
         preloadOpenWithApplications(selectedEntries: selectedEntries)
-        store.send(.internal(.setSelectionState(
+        store.send(.view(.updateSelection(
             ids: acceptedIDs,
             lastSelectedId: lastSelectedId,
             rangeAnchorId: lastSelectedId,
@@ -264,7 +262,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         switch item.kind {
         case let .group(name, _, _):
             if state.collapsedGroups.contains(name) {
-                store.send(.delegate(.groupChanged(state.groupKey)))
+                store.send(.view(.toggleGroup(name)))
             }
         case let .entry(entry) where isHierarchyOutlineEnabled:
             sendProjectionIntent(.disclosureExpand(entry.id, revision: state.outlineProjectionRevision))
@@ -280,7 +278,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         switch item.kind {
         case let .group(name, _, _):
             if !state.collapsedGroups.contains(name) {
-                store.send(.delegate(.groupChanged(state.groupKey)))
+                store.send(.view(.toggleGroup(name)))
             }
         case let .entry(entry) where isHierarchyOutlineEnabled:
             sendProjectionIntent(.disclosureCollapse(entry.id, revision: state.outlineProjectionRevision))
@@ -310,20 +308,17 @@ extension EntryListCoordinator {
     }
 
     public func observeRenderLoop() {
-        renderObservationCancellable?.cancel()
-        renderObservationCancellable = store.publisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self else { return }
-                renderThrottler.schedule { [weak self] in
-                    self?.processRender()
-                }
+        observe { [weak self] in
+            guard let self else { return }
+            let snapshot = RenderSnapshot(state: state)
+            guard isRenderObservationEnabled else { return }
+            renderThrottler.schedule { [weak self] in
+                self?.processRender(snapshot)
             }
+        }
     }
 
-    private func processRender() {
-        let snapshot = RenderSnapshot(state: state)
-
+    private func processRender(_ snapshot: RenderSnapshot) {
         guard let previous = lastRenderSnapshot else {
             lastRenderSnapshot = snapshot
             return
@@ -367,18 +362,74 @@ extension EntryListCoordinator {
         }
 
         if snapshot.isHierarchyOutlineEnabled {
-            if previous.outlineProjection != snapshot.outlineProjection {
+            if !previous.outlineProjection.hasSameOutlineShape(as: snapshot.outlineProjection) {
                 rebuildRowsAndReload()
+            } else if !previous.outlineProjection.hasSameStructure(as: snapshot.outlineProjection) {
+                reloadVisibleRowsForContentChange(
+                    previous: previous.outlineProjection,
+                    snapshot: snapshot.outlineProjection,
+                )
             }
             return
         }
 
-        if previous.entries != snapshot.entries
-            || previous.groupKey != snapshot.groupKey
-            || !previous.outlineProjection.hasSameStructure(as: snapshot.outlineProjection)
-            || previous.isHierarchyOutlineEnabled != snapshot.isHierarchyOutlineEnabled
-        {
+        let changes = snapshot.presentation.changes(from: previous.presentation)
+        if changes.sectionStructureChanged || changes.groupExpansionChanged {
             rebuildRowsAndReload()
+        } else if !changes.updatedEntryIDs.isEmpty {
+            reloadVisibleRowsForPresentationChange(
+                changedEntryIDs: changes.updatedEntryIDs,
+                presentation: snapshot.presentation,
+            )
+        }
+    }
+
+    func reloadVisibleRowsForPresentationChange(
+        changedEntryIDs: Set<EntryModel.ID>,
+        presentation: EntryViewLayoutPresentation,
+    ) {
+        let entriesByID = presentation.entries.reduce(into: [EntryModel.ID: EntryModel]()) { result, entry in
+            result[entry.id] = entry
+        }
+        let rowIndexes = IndexSet(changedEntryIDs.compactMap { entryID in
+            guard let item = entryItemById[entryID], let entry = entriesByID[entryID] else { return nil }
+            item.kind = .entry(entry)
+            let row = tableView.row(forItem: item)
+            return row >= 0 ? row : nil
+        })
+        guard !rowIndexes.isEmpty else { return }
+        let columnIndexes = IndexSet(integersIn: 0 ..< tableView.numberOfColumns)
+        tableView.reloadData(forRowIndexes: rowIndexes, columnIndexes: columnIndexes)
+        requestThumbnailsForVisibleRows()
+    }
+
+    func reloadVisibleRowsForContentChange(
+        previous: EntryListOutlineProjection,
+        snapshot: EntryListOutlineProjection,
+    ) {
+        let changedItemIDs = snapshot.itemPayloads.compactMap { itemID, payload in
+            previous.itemPayloads[itemID] == payload ? nil : itemID
+        }
+        let rowIndexes = IndexSet(changedItemIDs.compactMap { itemID in
+            guard let item = outlineItem(for: itemID), let payload = snapshot.itemPayloads[itemID] else { return nil }
+            item.apply(payload)
+            let row = tableView.row(forItem: item)
+            return row >= 0 ? row : nil
+        })
+        guard !rowIndexes.isEmpty else { return }
+        let columnIndexes = IndexSet(integersIn: 0 ..< tableView.numberOfColumns)
+        tableView.reloadData(forRowIndexes: rowIndexes, columnIndexes: columnIndexes)
+        requestThumbnailsForVisibleRows()
+    }
+
+    func outlineItem(for itemID: EntryListOutlineProjection.ItemID) -> OutlineItem? {
+        switch itemID {
+        case let .entry(entryID):
+            entryItemById[entryID]
+        case let .empty(parent):
+            outlineItemByID["empty:\(parent)"]
+        case let .error(parent):
+            outlineItemByID["error:\(parent)"]
         }
     }
 
@@ -389,7 +440,9 @@ extension EntryListCoordinator {
     }
 
     func syncSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if previous.selectedIds != snapshot.selectedIds { syncListSelectionFromStore() }
+        if snapshot.presentation.changes(from: previous.presentation).selectionChanged {
+            syncListSelectionFromStore()
+        }
     }
 
     func reloadVisibleRowsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {

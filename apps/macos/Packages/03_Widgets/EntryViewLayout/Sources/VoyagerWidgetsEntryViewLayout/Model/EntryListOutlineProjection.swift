@@ -81,6 +81,15 @@ public struct EntryListOutlineProjection: Equatable, Sendable {
             && visibleSelectableEntryIDs == other.visibleSelectableEntryIDs
     }
 
+    /// Compares outline topology only (rows, hierarchy, expand/collapse shape).
+    /// Excludes `itemPayloads` so spinner/metadata changes don't trigger full reload.
+    func hasSameOutlineShape(as other: EntryListOutlineProjection) -> Bool {
+        rootItemIDs == other.rootItemIDs
+            && childrenByParent == other.childrenByParent
+            && visibleRows == other.visibleRows
+            && visibleSelectableEntryIDs == other.visibleSelectableEntryIDs
+    }
+
     public init(
         revision: Int,
         rootEntries: [EntryModel],

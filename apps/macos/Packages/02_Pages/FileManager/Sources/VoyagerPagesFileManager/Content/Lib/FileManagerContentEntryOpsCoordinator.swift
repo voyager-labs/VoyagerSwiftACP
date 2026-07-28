@@ -119,7 +119,7 @@ enum FileManagerContentEntryOpsCoordinator {
             metadataProbe(for: sortKey),
             metadataProbe(for: groupKey),
         ].compactMap(\.self)
-        return probes.isEmpty ? .none : .active(probes)
+        return .active(probes)
     }
 
     private static func setTagsRefreshEffect(

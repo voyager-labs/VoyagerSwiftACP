@@ -15,13 +15,13 @@ struct FileManagerWindowUndoRoutingReducer {
             switch action {
             case let .tabContent(
                 tabID,
-                .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))),
+                .entryOperations(.undoRedo(.requestUndo)),
             ):
                 performUndoRedo(tabID: tabID, direction: .undo, state: &state)
 
             case let .tabContent(
                 tabID,
-                .entryViewLayout(.entryOperations(.undoRedo(.requestRedo))),
+                .entryOperations(.undoRedo(.requestRedo)),
             ):
                 performUndoRedo(tabID: tabID, direction: .redo, state: &state)
 
@@ -50,7 +50,7 @@ struct FileManagerWindowUndoRoutingReducer {
         guard var contentState = isActiveTab ? state.content : state.tabContentStates[tabID] else {
             return .none
         }
-        let operations = contentState.entryViewLayout.entryOperations
+        let operations = contentState.entryOperations
         let record: EntryActionRecord? = switch direction {
         case .undo:
             operations.canUndoEntryAction ? operations.latestUndoRecord : nil
@@ -75,14 +75,14 @@ struct FileManagerWindowUndoRoutingReducer {
             }
             let effect = FileManagerContentFeature().reduce(
                 into: &contentState,
-                action: .entryViewLayout(.entryOperations(.undoRedo(undoRedoAction))),
+                action: .entryOperations(.undoRedo(undoRedoAction)),
             )
             updateContentState(contentState, tabID: tabID, isActiveTab: isActiveTab, state: &state)
             return effect.map { .tabContent(tabID: tabID, action: $0) }
 
         case .invalidated:
-            contentState.entryViewLayout.entryOperations.undoRecords.removeAll()
-            contentState.entryViewLayout.entryOperations.redoRecords.removeAll()
+            contentState.entryOperations.undoRecords.removeAll()
+            contentState.entryOperations.redoRecords.removeAll()
             updateContentState(contentState, tabID: tabID, isActiveTab: isActiveTab, state: &state)
             return .none
 

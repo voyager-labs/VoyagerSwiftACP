@@ -511,19 +511,7 @@ public struct EntryViewLayoutFeature {
                     Effect<Action>.cancel(id: Self.collectionCancelID(for: .append($0), state: state))
                 }
                 let replaceCancelID = Self.collectionCancelID(for: .replace, state: state)
-                state.collectionReplaceEpoch &+= 1
-                state.isCollectionMode = false
-                state.collectionItems = []
-                state.activeCollectionReplacePaths = []
-                state.activeCollectionAppendPaths = [:]
-                state.isCollectionContentLoading = false
-                state.expectedCollectionReplaceBatchIndex = 0
-                state.activeCollectionAppendExpectedBatchIndices = [:]
-                state.finishedCollectionAppendTokens = []
-                state.collectionCoreFinished = false
-                state.collectionStreamCompleted = false
-                state.collectionIncompleteFailure = nil
-                state.removedCollectionPaths = []
+                state.clearCollectionPresentation()
                 return .merge(cancellationEffects + [
                     .cancel(id: replaceCancelID),
                     Self.updateEntriesAndReapply(&state),

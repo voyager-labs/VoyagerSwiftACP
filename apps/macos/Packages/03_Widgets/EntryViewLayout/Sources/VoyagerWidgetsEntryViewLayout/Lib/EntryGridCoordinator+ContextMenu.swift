@@ -2,12 +2,12 @@
 import VoyagerEntitiesEntry
 
 extension EntryGridCoordinator {
-    func preloadOpenWithApplications(selectedEntries _: [EntryModel]) {
-        // Open-with applications are now loaded by the Page bridge (Wave 2)
+    func preloadOpenWithApplications(selectedEntries: [EntryModel]) {
+        store.send(.view(.preloadOpenWithApplications(selectedEntries)))
     }
 
     func openWithApplications(selectedEntries _: [EntryModel]) -> [ApplicationInfo] {
-        []
+        state.presentation.openWithApplications
     }
 
     func updateContextMenuAnchor(_ event: NSEvent) {

@@ -10,6 +10,7 @@ struct EntryGridSection {
 }
 
 struct EntryGridRenderSnapshot: Equatable {
+    let presentation: EntryViewLayoutPresentation
     let entries: [EntryModel]
     let entriesCount: Int
     let groupKey: EntryViewLayoutGroupKey
@@ -26,6 +27,7 @@ struct EntryGridRenderSnapshot: Equatable {
     let outlineProjectionRevision: Int
 
     init(state: EntryViewLayoutState) {
+        presentation = state.presentation
         entries = state.entries
         entriesCount = state.entries.count
         groupKey = state.groupKey

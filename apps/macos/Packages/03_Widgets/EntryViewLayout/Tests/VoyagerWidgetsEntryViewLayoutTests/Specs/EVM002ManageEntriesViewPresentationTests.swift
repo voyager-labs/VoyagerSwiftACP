@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 @testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
@@ -196,6 +197,25 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     }
 
     // MARK: - EVM-002-update_entry_selection
+
+    /// EVM-002-update_entry_selection: 컨텍스트 메뉴 대상이 표시 중인 유효 selection만 보존한다.
+    /// stale selection이 남아 있어도 선택된 row를 우클릭하면 현재 화면의 유효한 다중 선택만 메뉴와 실행 대상으로 사용해야 한다.
+    /// - 검증 내용: context menu target이 display entries와 selected IDs의 교집합을 selection 및 entries로 반환한다.
+    /// - 사전 조건: 두 display entry와 하나의 stale ID가 선택되어 있고 두 번째 entry를 우클릭한다.
+    /// - 기대 결과: target은 두 유효 entry와 두 유효 ID만 포함하며 stale ID는 제거된다.
+    func testContextMenuTargetPrunesStaleSelectionForSelectedRow() {
+        let first = EntryModel.temporaryFolder(id: "/tmp/first", name: "first")
+        let second = EntryModel.temporaryFolder(id: "/tmp/second", name: "second")
+
+        let target = EntryContextMenuTarget.resolve(
+            displayEntries: [first, second],
+            selectedIds: [first.id, second.id, "/stale"],
+            rowEntry: second,
+        )
+
+        XCTAssertEqual(target.selectedIds, [first.id, second.id])
+        XCTAssertEqual(target.entries.map(\.id), [first.id, second.id])
+    }
 
     /// EVM-002-update_entry_selection: 전체 선택 액션이 모든 ID를 selectedIds에 설정하는지 검증
     ///
@@ -464,11 +484,11 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     ///
     /// - 검증 내용: 비표시 kind 컬럼 메뉴 클릭 시 `setListColumnVisibility` 액션이 발행
     /// - 사전 조건: name 컬럼만 표시되는 헤더 메뉴와 action recorder
-    /// - 기대 결과: kind 컬럼을 표시하는 내부 액션이 1회 전달됨
+    /// - 기대 결과: kind 컬럼을 표시하는 view intent가 1회 전달됨
     func testHeaderMenuToggleClickSendsSetListColumnVisibility() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.name])
         let headerView = EntryListHeaderView()
-        var sentActions: [EntryViewLayoutAction] = []
+        var sentActions: [EntryViewLayoutAction.View] = []
         headerView.send = { sentActions.append($0) }
 
         let menu = headerView.makeMenu(model: model)
@@ -491,8 +511,8 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
 
         XCTAssertEqual(sentActions.count, 1)
         guard let first = sentActions.first else { return }
-        guard case let .internal(.setListColumnVisibility(column, isVisible)) = first else {
-            XCTFail("Expected setListColumnVisibility")
+        guard case let .updateListColumnVisibility(column, isVisible) = first else {
+            XCTFail("Expected updateListColumnVisibility")
             return
         }
         XCTAssertEqual(column, .kind)
@@ -507,7 +527,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     func testRequiredNameColumnCannotBeHiddenEvenIfHandlerIsInvoked() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.dateModified])
         let headerView = EntryListHeaderView()
-        var sentActions: [EntryViewLayoutAction] = []
+        var sentActions: [EntryViewLayoutAction.View] = []
         headerView.send = { sentActions.append($0) }
 
         let menu = headerView.makeMenu(model: model)
@@ -535,11 +555,11 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     ///
     /// - 검증 내용: 헤더 메뉴 reset item 실행 시 `resetListVisibleColumns` 액션 발행
     /// - 사전 조건: name 컬럼만 표시되는 헤더 메뉴와 action recorder
-    /// - 기대 결과: 컬럼 초기화 내부 액션이 1회 전달됨
+    /// - 기대 결과: 컬럼 초기화 view intent가 1회 전달됨
     func testHeaderMenuResetClickSendsResetListVisibleColumns() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.name])
         let headerView = EntryListHeaderView()
-        var sentActions: [EntryViewLayoutAction] = []
+        var sentActions: [EntryViewLayoutAction.View] = []
         headerView.send = { sentActions.append($0) }
 
         let menu = headerView.makeMenu(model: model)
@@ -562,7 +582,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
 
         XCTAssertEqual(sentActions.count, 1)
         guard let first = sentActions.first else { return }
-        guard case .internal(.resetListVisibleColumns) = first else {
+        guard case .resetListVisibleColumns = first else {
             XCTFail("Expected resetListVisibleColumns")
             return
         }

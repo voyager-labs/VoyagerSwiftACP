@@ -214,6 +214,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             selectedEntries: selectedEntries,
             rowEntry: child,
             isTrashFolder: false,
+            restorableTrashPaths: [],
             canPaste: false,
             favoriteTags: [Tag(name: "Work", colorCode: 4)],
             openWithApplications: [],
@@ -223,7 +224,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertTrue(spec.showOpenWith)
         XCTAssertFalse(spec.showCompress)
         XCTAssertTrue(spec.showExtract)
-        guard let workTag = spec.tags.first else {
+        guard let workTag = spec.paletteTags.first else {
             return XCTFail("Expected Work tag spec")
         }
         guard case .on = workTag.selection else {

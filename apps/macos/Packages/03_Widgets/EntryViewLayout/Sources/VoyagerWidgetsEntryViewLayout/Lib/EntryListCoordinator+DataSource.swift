@@ -15,7 +15,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         case .group:
             return !outlineItem.children.isEmpty
         case let .entry(entry):
-            return state.hierarchyProjectionIsActive && entry.supportsListHierarchyExpansion
+            return isHierarchyOutlineEnabled && entry.supportsListHierarchyExpansion
         case .empty, .error:
             return false
         }
@@ -97,7 +97,7 @@ extension EntryListCoordinator: NSTextFieldDelegate {
         guard let textField = notification.object as? NSTextField else { return }
         guard (textField.delegate as AnyObject?) === self else { return }
         guard let renamingItem = state.entries.first(where: { $0.id == renamingItemId }) else { return }
-        store.send(.delegate(.startRename(item: renamingItem, text: textField.stringValue)))
+        store.send(.view(.startRename(item: renamingItem, text: textField.stringValue)))
     }
 
     public func control(_ control: NSControl, textView _: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -106,11 +106,11 @@ extension EntryListCoordinator: NSTextFieldDelegate {
         guard (textField.delegate as AnyObject?) === self else { return false }
 
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-            store.send(.delegate(.renameCommitted(itemID: state.renamingItemId ?? "", newName: textField.stringValue)))
+            store.send(.view(.commitRename(itemID: state.renamingItemId ?? "", newName: textField.stringValue)))
             return true
         }
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            store.send(.internal(.setSelectionState(
+            store.send(.view(.updateSelection(
                 ids: state.selectedIds,
                 lastSelectedId: state.lastSelectedId,
                 rangeAnchorId: state.rangeAnchorId,
@@ -119,7 +119,7 @@ extension EntryListCoordinator: NSTextFieldDelegate {
             return true
         }
         if commandSelector == #selector(NSResponder.insertTab(_:)) {
-            store.send(.delegate(.renameCommitted(itemID: state.renamingItemId ?? "", newName: textField.stringValue)))
+            store.send(.view(.commitRename(itemID: state.renamingItemId ?? "", newName: textField.stringValue)))
             return true
         }
 
@@ -130,6 +130,6 @@ extension EntryListCoordinator: NSTextFieldDelegate {
         guard state.renamingItemId != nil else { return }
         guard let textField = notification.object as? NSTextField else { return }
         guard (textField.delegate as AnyObject?) === self else { return }
-        store.send(.delegate(.renameCommitted(itemID: state.renamingItemId ?? "", newName: textField.stringValue)))
+        store.send(.view(.commitRename(itemID: state.renamingItemId ?? "", newName: textField.stringValue)))
     }
 }

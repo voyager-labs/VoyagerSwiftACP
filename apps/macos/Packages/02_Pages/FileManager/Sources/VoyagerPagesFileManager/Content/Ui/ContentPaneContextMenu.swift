@@ -24,11 +24,11 @@ struct ContentPaneContextMenu: View {
     }
 
     private var canPerformEntryCommands: Bool {
-        !store.entryViewLayout.entryOperations.isLoading || store.entryViewLayout.isCollectionMode
+        !store.entryOperations.isLoading || store.entryViewLayout.isCollectionMode
     }
 
     private var canPaste: Bool {
-        canPerformEntryCommands && !store.entryViewLayout.entryOperations.clipboardItems.isEmpty
+        canPerformEntryCommands && !store.entryOperations.clipboardItems.isEmpty
     }
 
     private var canSelectAll: Bool {
@@ -57,9 +57,7 @@ struct ContentPaneContextMenu: View {
         Divider()
 
         Button("Paste") {
-            store.send(.entryViewLayout(.delegate(.executeCommand(.clipboard(
-                .pasteItems(destinationPath: store.navigation.currentPath),
-            )))))
+            store.send(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems"))))
         }
         .keyboardShortcut("v", modifiers: .command)
         .disabled(!canPaste)
@@ -87,7 +85,7 @@ struct ContentPaneContextMenu: View {
             sortOrderToggle("Ascending", order: .ascending)
             sortOrderToggle("Descending", order: .descending)
         }
-        .disabled(store.entryViewLayout.entryArrangements.groupKey != .none || !canPerformEntryCommands)
+        .disabled(store.entryArrangements.groupKey != .none || !canPerformEntryCommands)
 
         Menu("Group By") {
             groupKeyToggle("None", key: .none)

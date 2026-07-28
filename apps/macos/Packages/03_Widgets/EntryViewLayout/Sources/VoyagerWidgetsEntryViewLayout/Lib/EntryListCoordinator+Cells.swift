@@ -67,17 +67,17 @@ extension EntryListCoordinator {
                 onRenameUpdate: { [weak self] text in
                     guard let self else { return }
                     guard state.renamingItemId != nil else { return }
-                    store.send(.delegate(.startRename(item: entry, text: text)))
+                    store.send(.view(.startRename(item: entry, text: text)))
                 },
                 onRenameCommit: { [weak self] in
                     guard let self else { return }
                     guard state.renamingItemId != nil else { return }
-                    store.send(.delegate(.renameCommitted(itemID: entry.id, newName: entry.name)))
+                    store.send(.view(.commitRename(itemID: entry.id, newName: entry.name)))
                 },
                 onRenameCancel: { [weak self] in
                     guard let self else { return }
                     guard state.renamingItemId != nil else { return }
-                    store.send(.internal(.setSelectionState(
+                    store.send(.view(.updateSelection(
                         ids: state.selectedIds,
                         lastSelectedId: state.lastSelectedId,
                         rangeAnchorId: state.rangeAnchorId,

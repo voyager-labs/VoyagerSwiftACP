@@ -1,4 +1,4 @@
-import CasePaths
+import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
 
@@ -14,6 +14,9 @@ public enum EntryListHierarchyAction: CasePathable, Sendable {
     case arrangementMetadataPriorityChanged
     case hierarchyInvalidated(affectedPaths: [String], removedPrefixes: [String])
     case coarseHierarchyInvalidated(removedPrefixes: [String])
+    case coarseHierarchyRefreshRequested
+    case rootSnapshotCompleted(rootFolderIDs: Set<EntryModel.ID>)
+    case showHiddenFilesRefreshRequested
     case folderExpansionRequested(id: EntryModel.ID)
     case folderCollapseRequested(id: EntryModel.ID)
     case folderRetryRequested(id: EntryModel.ID)

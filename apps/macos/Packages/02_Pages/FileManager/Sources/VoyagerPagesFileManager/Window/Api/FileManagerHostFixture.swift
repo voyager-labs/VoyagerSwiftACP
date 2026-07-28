@@ -11,49 +11,57 @@ import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
+public struct FileManagerHostMaterialSurfaceConfiguration {
+    public var material: NSVisualEffectView.Material
+    public var blendingMode: NSVisualEffectView.BlendingMode
+    public var alphaValue: CGFloat
+
+    public init(
+        material: NSVisualEffectView.Material,
+        blendingMode: NSVisualEffectView.BlendingMode,
+        alphaValue: CGFloat,
+    ) {
+        self.material = material
+        self.blendingMode = blendingMode
+        self.alphaValue = alphaValue
+    }
+
+    var materialOverride: FileManagerWindowMaterialOverride.Surface {
+        FileManagerWindowMaterialOverride.Surface(
+            material: material,
+            blendingMode: blendingMode,
+            alphaValue: alphaValue,
+        )
+    }
+}
+
 @MainActor
 public enum FileManagerHostFixture {
+    public struct PhaseNotification: Equatable, Sendable {
+        public let phase: String
+        public let windowID: UUID
+    }
+
     public struct MaterialConfiguration {
-        public struct Surface {
-            public var material: NSVisualEffectView.Material
-            public var blendingMode: NSVisualEffectView.BlendingMode
-            public var alphaValue: CGFloat
+        public var windowShell: FileManagerHostMaterialSurfaceConfiguration
+        public var contentBackground: FileManagerHostMaterialSurfaceConfiguration
 
-            public init(
-                material: NSVisualEffectView.Material,
-                blendingMode: NSVisualEffectView.BlendingMode,
-                alphaValue: CGFloat,
-            ) {
-                self.material = material
-                self.blendingMode = blendingMode
-                self.alphaValue = alphaValue
-            }
-
-            var materialOverride: FileManagerWindowMaterialOverride.Surface {
-                FileManagerWindowMaterialOverride.Surface(
-                    material: material,
-                    blendingMode: blendingMode,
-                    alphaValue: alphaValue,
-                )
-            }
-        }
-
-        public var windowShell: Surface
-        public var contentBackground: Surface
-
-        public init(windowShell: Surface, contentBackground: Surface) {
+        public init(
+            windowShell: FileManagerHostMaterialSurfaceConfiguration,
+            contentBackground: FileManagerHostMaterialSurfaceConfiguration,
+        ) {
             self.windowShell = windowShell
             self.contentBackground = contentBackground
         }
 
         public static var hostDefault: Self {
             Self(
-                windowShell: Surface(
+                windowShell: FileManagerHostMaterialSurfaceConfiguration(
                     material: VoyagerDS.SurfaceMaterialRole.windowShell.material,
                     blendingMode: VoyagerDS.SurfaceMaterialRole.windowShell.blendingMode,
                     alphaValue: VoyagerDS.SurfaceMaterialRole.windowShell.alphaValue,
                 ),
-                contentBackground: Surface(
+                contentBackground: FileManagerHostMaterialSurfaceConfiguration(
                     material: VoyagerDS.SurfaceMaterialRole.mainContentBackground.material,
                     blendingMode: VoyagerDS.SurfaceMaterialRole.mainContentBackground.blendingMode,
                     alphaValue: VoyagerDS.SurfaceMaterialRole.mainContentBackground.alphaValue,
@@ -72,6 +80,22 @@ public enum FileManagerHostFixture {
     nonisolated public static let phaseDidChange = Notification.Name("FileManagerHostFixture.phaseDidChange")
     nonisolated public static let phaseUserInfoKey = "phase"
     nonisolated public static let phaseWindowIDUserInfoKey = "windowID"
+
+    nonisolated public static func snapshotCaptureDirectory(
+        in outputDirectory: URL,
+        windowID: UUID,
+    ) -> URL {
+        outputDirectory.appending(path: windowID.uuidString, directoryHint: .isDirectory)
+    }
+
+    nonisolated public static func phaseNotification(from notification: Notification) -> PhaseNotification? {
+        guard notification.name == phaseDidChange,
+              let phase = notification.userInfo?[phaseUserInfoKey] as? String,
+              let windowID = notification.userInfo?[phaseWindowIDUserInfoKey] as? UUID
+        else { return nil }
+
+        return PhaseNotification(phase: phase, windowID: windowID)
+    }
 
     public static func makeWindowController(
         preset: FileManagerHostPreset = .default,
@@ -110,13 +134,6 @@ public enum FileManagerHostFixture {
         )
     }
 
-    public static func updateMaterialConfiguration(
-        _ materialConfiguration: MaterialConfiguration?,
-        in coordinator: FileManagerWindowCoordinator,
-    ) {
-        coordinator.updateMaterialOverride(materialConfiguration?.materialOverride)
-    }
-
     /// Host window가 mount된 뒤 fixture Projects folder의 deterministic stream을 시작한다.
     public static func startScenarioIfNeeded(
         for preset: FileManagerHostPreset,
@@ -136,20 +153,26 @@ public enum FileManagerHostFixture {
         }
     }
 
-    static func makeState(preset: FileManagerHostPreset) -> FileManagerFeature.State {
-        FileManagerHostFixtureStateFactory.makeState(preset: preset)
+    public static func updateMaterialConfiguration(
+        _ materialConfiguration: MaterialConfiguration?,
+        in coordinator: FileManagerWindowCoordinator,
+    ) {
+        coordinator.updateMaterialOverride(materialConfiguration?.materialOverride)
     }
 
     static func makeState(
         preset: FileManagerHostPreset,
         windowID: UUID,
     ) -> FileManagerFeature.State {
-        FileManagerHostFixtureStateFactory.makeState(preset: preset, windowID: windowID)
+        FileManagerHostFixtureStateFactory.makeState(
+            preset: preset,
+            windowID: windowID,
+        )
     }
 
     static func applyDependencies(
         to dependencies: inout DependencyValues,
-        undoManager _: UndoManager,
+        fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
         progressiveEntryLoading: FileManagerHostProgressiveEntryLoadingScenario,
         windowID: UUID,
         workspaceClient: WorkspaceClient,
@@ -158,7 +181,7 @@ public enum FileManagerHostFixture {
             to: &dependencies,
             progressiveEntryLoading: progressiveEntryLoading,
             windowID: windowID,
-            fileOperationUndoManagerRegistry: .init(),
+            fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
             workspaceClient: workspaceClient,
         )
     }
@@ -185,24 +208,121 @@ public enum FileManagerHostFixture {
 
 @MainActor
 private enum FileManagerHostFixtureStateFactory {
+    private static let aiChatSessionID = "00000000-0000-0000-0000-000000000001"
+    private static let homeTabID = ContentTabID(rawValue: "file-manager-host-home")
+    private static let recentsTabID = ContentTabID(rawValue: "file-manager-host-recents")
+    private static let computerTabID = ContentTabID(rawValue: "file-manager-host-computer")
+    private static let collectionTabID = ContentTabID(rawValue: "file-manager-host-collection")
+    private static let aiChatTabID = ContentTabID(rawValue: "file-manager-host-ai-chat")
+
     static func makeState(
-        preset _: FileManagerHostPreset,
-        windowID: UUID? = nil,
+        preset: FileManagerHostPreset,
+        windowID: UUID,
     ) -> FileManagerFeature.State {
         var state = FileManagerFeature.State.makeInitial(path: nil)
         state.sidebar.sidebarVisible = true
         state.sidebar.sidebarWidth = 220
         state.content.navigation.seedInitialFolderPath(FileManagerHostFixtureSampleData.path)
+        state.content.applyWindowContext(windowID: windowID)
         state.content.entryViewLayout.mode = .list
         state.content.entryViewLayout.hierarchy.replaceRoot(path: FileManagerHostFixtureSampleData.path)
         state.content.entryOperations.items = IdentifiedArrayOf(
             uniqueElements: FileManagerHostFixtureSampleData.entries,
         )
         state.content.entryViewLayout.entries = FileManagerHostFixtureSampleData.entries
-        if let windowID {
-            state.content.applyWindowContext(windowID: windowID)
+        if preset == .default {
+            seedSpecialContentTabs(in: &state)
+        } else {
+            state.syncActiveTabContentState()
+        }
+        for tabID in state.contentTabs.tabs.ids {
+            state.tabContentStates[tabID]?.applyWindowContext(windowID: windowID)
+        }
+        if let activeTabID = state.contentTabs.activeTabID,
+           let activeContent = state.tabContentStates[activeTabID]
+        {
+            state.content = activeContent
         }
         return state
+    }
+
+    private static func seedSpecialContentTabs(in state: inout FileManagerFeature.State) {
+        state.contentTabs = makeSpecialContentTabs()
+        state.tabContentStates = makeSpecialContentStates(source: state.content)
+        state.syncContentTabSidebarItems()
+    }
+
+    private static func makeSpecialContentTabs() -> ContentTabState {
+        ContentTabState(
+            tabs: [
+                makeTab(homeTabID, .home, .homeDefault, "Home", "house"),
+                makeTab(recentsTabID, .collection, .virtualCollection(id: "Recents"), "Recents", "clock"),
+                makeTab(
+                    computerTabID,
+                    .collection,
+                    .virtualCollection(id: "Computer"),
+                    "Computer",
+                    "desktopcomputer",
+                ),
+                makeTab(
+                    collectionTabID,
+                    .collection,
+                    .virtualCollection(id: "Design Assets"),
+                    "Collection",
+                    "list.bullet",
+                ),
+                makeTab(aiChatTabID, .aiChat, .aiChat(sessionID: aiChatSessionID), "AI Chat", "message"),
+            ],
+            activeTabID: homeTabID,
+        )
+    }
+
+    private static func makeTab(
+        _ id: ContentTabID,
+        _ page: ContentTabPage,
+        _ anchor: ContentTabPageAnchor,
+        _ title: String,
+        _ iconName: String,
+    ) -> ContentTabItem {
+        ContentTabItem(
+            id: id,
+            page: page,
+            anchor: anchor,
+            isPinned: false,
+            title: title,
+            iconName: iconName,
+        )
+    }
+
+    private static func makeSpecialContentStates(
+        source: FileManagerContentFeature.State,
+    ) -> [ContentTabID: FileManagerContentFeature.State] {
+        var recentsContent = FileManagerContentFeature.State.initialContent(
+            for: .virtualCollection(id: "Recents"),
+            inheritingWindowContextFrom: source,
+        )
+        recentsContent.navigation.navigationState = .recents
+        var computerContent = FileManagerContentFeature.State.initialContent(
+            for: .virtualCollection(id: "Computer"),
+            inheritingWindowContextFrom: source,
+        )
+        computerContent.navigation.navigationState = .computer
+        let collectionContent = FileManagerContentFeature.State.initialContent(
+            for: .virtualCollection(id: "Design Assets"),
+            inheritingWindowContextFrom: source,
+        )
+        let aiChatContent = FileManagerContentFeature.State.initialContent(
+            for: .aiChat(sessionID: aiChatSessionID),
+            inheritingWindowContextFrom: source,
+        )
+
+        return [
+            homeTabID: source,
+            recentsTabID: recentsContent,
+            computerTabID: computerContent,
+            collectionTabID: collectionContent,
+            aiChatTabID: aiChatContent,
+        ]
     }
 }
 
@@ -211,7 +331,7 @@ enum FileManagerHostFixtureDependencies {
     static func apply(
         to dependencies: inout DependencyValues,
         progressiveEntryLoading: FileManagerHostProgressiveEntryLoadingScenario,
-        windowID _: UUID,
+        windowID: UUID,
         fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
         workspaceClient: WorkspaceClient,
     ) {
@@ -221,6 +341,7 @@ enum FileManagerHostFixtureDependencies {
         dependencies.fileManagerIconClient = .previewValue
         dependencies.entryLoadingClient = .fileManagerHostFixture(
             progressiveEntryLoading: progressiveEntryLoading,
+            windowID: windowID,
         )
         dependencies.fileManagerClient = .previewValue
         dependencies.fileManagerLocationsClient = .fileManagerHostFixture
@@ -285,7 +406,8 @@ private extension WorkspaceClient {
         let previewIconForFile = client.iconForFile
         let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
         let homeDirectoryPath = homeDirectory.path
-        let iCloudIconPath = "/System/Library/PrivateFrameworks/iCloudDriveCore.framework/Versions/A/Resources/iCloudDrive.icns"
+        let iCloudIconPath = "/System/Library/PrivateFrameworks/iCloudDriveCore.framework/Versions/A/Resources/"
+            + "iCloudDrive.icns"
         nonisolated(unsafe) let workspace = NSWorkspace.shared
         let cachedIcons = FileManagerHostFixtureIconCache([
             "/Fixture/Library/Mobile Documents/com~apple~CloudDocs":
@@ -327,28 +449,32 @@ private struct FileManagerHostFixtureIconCache: @unchecked Sendable {
     }
 }
 
+private typealias FileManagerHostStagedEntryLoader = @Sendable (
+    URL,
+    Bool,
+    EntryMetadataPriority,
+) -> AsyncThrowingStream<EntryLoadEvent, Error>
+
 private extension EntryLoadingClient {
     static func fileManagerHostFixture(
         progressiveEntryLoading: FileManagerHostProgressiveEntryLoadingScenario,
+        windowID: UUID,
     ) -> EntryLoadingClient {
         let progressiveLoadingCoordinator = FileManagerHostFixtureProgressiveLoadingCoordinator()
-        let stagedLoadItems: (@Sendable (URL, Bool, EntryMetadataPriority) -> AsyncThrowingStream<
-            EntryLoadEvent,
-            Error,
-        >)? = if progressiveEntryLoading == .none {
-            nil
-        } else {
-            { _, _, _ in
-                let request = progressiveLoadingCoordinator.beginRequest()
-                return FileManagerHostFixtureProgressiveLoading.stream(
-                    for: progressiveEntryLoading,
-                    isCurrent: { progressiveLoadingCoordinator.isCurrent(request) },
-                )
-            }
-        }
+        let stagedLoadItems = stagedEntryLoader(
+            progressiveEntryLoading: progressiveEntryLoading,
+            windowID: windowID,
+            coordinator: progressiveLoadingCoordinator,
+        )
 
         return EntryLoadingClient(
-            loadItems: { _, _ in FileManagerHostFixtureSampleData.entries },
+            loadItems: { directoryURL, _ in
+                if directoryURL.path == FileManagerHostFixtureSampleData.projects.fullPath {
+                    FileManagerHostFixtureSampleData.progressiveChildren
+                } else {
+                    FileManagerHostFixtureSampleData.entries
+                }
+            },
             loadComputerItems: { FileManagerHostFixtureSampleData.entries },
             loadRecentItems: { _, _ in FileManagerHostFixtureSampleData.entries },
             loadFilesWithTag: { _, _, _ in FileManagerHostFixtureSampleData.entries },
@@ -356,22 +482,7 @@ private extension EntryLoadingClient {
             fileExistsAtPath: { _, _ in false },
             contentsOfDirectory: { _, _, _ in [] },
             mountedVolumeURLs: { _, _ in nil },
-            urlsForDirectory: { directory, _ in
-                switch directory {
-                case .desktopDirectory:
-                    [URL(fileURLWithPath: "/Fixture/Desktop")]
-                case .documentDirectory:
-                    [URL(fileURLWithPath: "/Fixture/Documents")]
-                case .downloadsDirectory:
-                    [URL(fileURLWithPath: "/Fixture/Downloads")]
-                case .applicationDirectory:
-                    [URL(fileURLWithPath: "/Fixture/Applications")]
-                case .trashDirectory:
-                    [URL(fileURLWithPath: "/Fixture/.Trash")]
-                default:
-                    []
-                }
-            },
+            urlsForDirectory: { directory, _ in fixtureURLs(for: directory) },
             homeDirectory: { "/Fixture" },
             getItemMetadata: { _, _, _ in
                 EntryItemMetadata(kind: "Fixture", creatorApplication: nil, lastUsedDate: nil)
@@ -386,6 +497,33 @@ private extension EntryLoadingClient {
             },
             stagedLoadItems: stagedLoadItems,
         )
+    }
+
+    static func stagedEntryLoader(
+        progressiveEntryLoading: FileManagerHostProgressiveEntryLoadingScenario,
+        windowID: UUID,
+        coordinator: FileManagerHostFixtureProgressiveLoadingCoordinator,
+    ) -> FileManagerHostStagedEntryLoader? {
+        guard progressiveEntryLoading != .none else { return nil }
+        return { _, _, _ in
+            let request = coordinator.beginRequest()
+            return FileManagerHostFixtureProgressiveLoading.stream(
+                for: progressiveEntryLoading,
+                windowID: windowID,
+                isCurrent: { coordinator.isCurrent(request) },
+            )
+        }
+    }
+
+    static func fixtureURLs(for directory: FileManager.SearchPathDirectory) -> [URL] {
+        switch directory {
+        case .desktopDirectory: [URL(fileURLWithPath: "/Fixture/Desktop")]
+        case .documentDirectory: [URL(fileURLWithPath: "/Fixture/Documents")]
+        case .downloadsDirectory: [URL(fileURLWithPath: "/Fixture/Downloads")]
+        case .applicationDirectory: [URL(fileURLWithPath: "/Fixture/Applications")]
+        case .trashDirectory: [URL(fileURLWithPath: "/Fixture/.Trash")]
+        default: []
+        }
     }
 }
 
@@ -454,19 +592,22 @@ private enum FileManagerHostFixtureSampleData {
     }
 }
 
-private enum FileManagerHostFixturePhase: String {
+enum FileManagerHostFixturePhase: String {
     case waiting
     case firstBatch
     case coreFinished
     case streamFinished
     case partialFailure
 
-    func log(count: Int) {
+    func log(count: Int, windowID: UUID) {
         print("[FileManagerHostFixture] \(rawValue):\(count)")
         NotificationCenter.default.post(
             name: FileManagerHostFixture.phaseDidChange,
             object: nil,
-            userInfo: [FileManagerHostFixture.phaseUserInfoKey: rawValue],
+            userInfo: [
+                FileManagerHostFixture.phaseUserInfoKey: rawValue,
+                FileManagerHostFixture.phaseWindowIDUserInfoKey: windowID,
+            ],
         )
     }
 }
@@ -496,68 +637,80 @@ private final class FileManagerHostFixtureProgressiveLoadingCoordinator: @unchec
 private enum FileManagerHostFixtureProgressiveLoading {
     static func stream(
         for scenario: FileManagerHostProgressiveEntryLoadingScenario,
+        windowID: UUID,
         isCurrent: @escaping @Sendable () -> Bool,
     ) -> AsyncThrowingStream<EntryLoadEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
-                do {
-                    try await Task.sleep(for: .milliseconds(100))
-                    guard isCurrent() else {
-                        continuation.finish()
-                        return
-                    }
-                    FileManagerHostFixturePhase.waiting.log(count: 0)
-                    try await Task.sleep(for: .milliseconds(300))
-
-                    guard isCurrent() else {
-                        continuation.finish()
-                        return
-                    }
-                    let children = FileManagerHostFixtureSampleData.progressiveChildren
-                    continuation.yield(.coreBatch(items: Array(children.prefix(32)), batchIndex: 0))
-                    FileManagerHostFixturePhase.firstBatch.log(count: 32)
-
-                    try await Task.sleep(for: .milliseconds(300))
-                    guard isCurrent() else {
-                        continuation.finish()
-                        return
-                    }
-                    guard scenario == .success else {
-                        FileManagerHostFixturePhase.partialFailure.log(count: 32)
-                        continuation.finish(throwing: FileManagerHostFixtureProgressiveLoadingError.partialFailure)
-                        return
-                    }
-
-                    continuation.yield(.coreBatch(items: Array(children.dropFirst(32)), batchIndex: 1))
-                    continuation.yield(.coreFinished(batchCount: 2))
-                    FileManagerHostFixturePhase.coreFinished.log(count: children.count)
-
-                    try await Task.sleep(for: .milliseconds(300))
-                    guard isCurrent() else {
-                        continuation.finish()
-                        return
-                    }
-                    continuation.yield(
-                        .metadataPatches(
-                            children.map {
-                                .spotlight(
-                                    id: $0.id,
-                                    kind: "Fixture Text Document",
-                                    creatorApplication: nil,
-                                    lastOpenedDate: nil,
-                                )
-                            },
-                        ),
-                    )
-                    continuation.finish()
-                    FileManagerHostFixturePhase.streamFinished.log(count: children.count)
-                } catch is CancellationError {
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
+                await runStream(
+                    scenario: scenario,
+                    windowID: windowID,
+                    isCurrent: isCurrent,
+                    continuation: continuation,
+                )
             }
             continuation.onTermination = { @Sendable _ in task.cancel() }
         }
+    }
+
+    private static func runStream(
+        scenario: FileManagerHostProgressiveEntryLoadingScenario,
+        windowID: UUID,
+        isCurrent: @escaping @Sendable () -> Bool,
+        continuation: AsyncThrowingStream<EntryLoadEvent, Error>.Continuation,
+    ) async {
+        do {
+            try await produceStream(
+                scenario: scenario,
+                windowID: windowID,
+                isCurrent: isCurrent,
+                continuation: continuation,
+            )
+        } catch is CancellationError {
+            continuation.finish()
+        } catch {
+            continuation.finish(throwing: error)
+        }
+    }
+
+    private static func produceStream(
+        scenario: FileManagerHostProgressiveEntryLoadingScenario,
+        windowID: UUID,
+        isCurrent: @escaping @Sendable () -> Bool,
+        continuation: AsyncThrowingStream<EntryLoadEvent, Error>.Continuation,
+    ) async throws {
+        try await Task.sleep(for: .milliseconds(100))
+        guard isCurrent() else { return continuation.finish() }
+        FileManagerHostFixturePhase.waiting.log(count: 0, windowID: windowID)
+        try await Task.sleep(for: .milliseconds(300))
+        guard isCurrent() else { return continuation.finish() }
+
+        let children = FileManagerHostFixtureSampleData.progressiveChildren
+        continuation.yield(.coreBatch(items: Array(children.prefix(32)), batchIndex: 0))
+        FileManagerHostFixturePhase.firstBatch.log(count: 32, windowID: windowID)
+
+        try await Task.sleep(for: .milliseconds(300))
+        guard isCurrent() else { return continuation.finish() }
+        guard scenario == .success else {
+            FileManagerHostFixturePhase.partialFailure.log(count: 32, windowID: windowID)
+            throw FileManagerHostFixtureProgressiveLoadingError.partialFailure
+        }
+
+        continuation.yield(.coreBatch(items: Array(children.dropFirst(32)), batchIndex: 1))
+        continuation.yield(.coreFinished(batchCount: 2))
+        FileManagerHostFixturePhase.coreFinished.log(count: children.count, windowID: windowID)
+
+        try await Task.sleep(for: .milliseconds(300))
+        guard isCurrent() else { return continuation.finish() }
+        continuation.yield(.metadataPatches(children.map {
+            .spotlight(
+                id: $0.id,
+                kind: "Fixture Text Document",
+                creatorApplication: nil,
+                lastOpenedDate: nil,
+            )
+        }))
+        continuation.finish()
+        FileManagerHostFixturePhase.streamFinished.log(count: children.count, windowID: windowID)
     }
 }

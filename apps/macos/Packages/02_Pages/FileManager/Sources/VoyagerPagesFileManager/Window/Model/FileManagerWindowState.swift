@@ -253,7 +253,7 @@ public extension FileManagerWindowState {
 
 extension FileManagerWindowState {
     var windowID: UUID? {
-        content.entryViewLayout.entryOperations.windowID
+        content.entryOperations.windowID
     }
 
     var activeTabInspectorStateMissing: Bool {
@@ -675,7 +675,7 @@ private extension AiChatFeature.State {
     }
 }
 
-private extension AiChatExecutionPhase {
+extension AiChatExecutionPhase {
     var shouldPreserveLifecycleOwner: Bool {
         switch self {
         case let .completed(lock):

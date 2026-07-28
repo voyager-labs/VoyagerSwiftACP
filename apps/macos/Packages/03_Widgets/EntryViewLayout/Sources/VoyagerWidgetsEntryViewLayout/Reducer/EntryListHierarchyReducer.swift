@@ -69,7 +69,7 @@ struct EntryListHierarchyReducer {
                 let folderState = state.hierarchy.foldersByID[id] ?? .init()
                 switch folderState.phase {
                 case .loaded, .loading:
-                    EntryViewLayoutFeature.reconcileSelectionWithVisibleEntries(&state)
+                    state.reconcileSelectionWithVisibleEntries()
                     return .none
                 case .idle, .failed:
                     return startLoad(folder: folder, id: id, state: &state)
@@ -128,7 +128,7 @@ struct EntryListHierarchyReducer {
                     }
                 }
 
-                EntryViewLayoutFeature.reconcileSelectionWithVisibleEntries(&state)
+                state.reconcileSelectionWithVisibleEntries()
                 return .none
             }
         }
@@ -146,7 +146,7 @@ struct EntryListHierarchyReducer {
         folderState.expectedBatchIndex = 0
         folderState.coreFinished = false
         state.hierarchy.foldersByID[id] = folderState
-        EntryViewLayoutFeature.reconcileSelectionWithVisibleEntries(&state)
+        state.reconcileSelectionWithVisibleEntries()
 
         return .send(.delegate(.expandRequested(id)))
     }
@@ -200,7 +200,7 @@ struct EntryListHierarchyReducer {
             }
         }
 
-        EntryViewLayoutFeature.reconcileSelectionWithVisibleEntries(&state)
+        state.reconcileSelectionWithVisibleEntries()
         return .merge(effects)
     }
 

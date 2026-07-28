@@ -184,6 +184,10 @@ enum FileManagerContentKeyCommandHandler {
         let isShiftPressed = command.modifiers.contains(.shift)
 
         switch command.keyCode {
+        case 123 where state.entryViewLayout.mode == .list:
+            return listHierarchyCollapseEffect(state: state)
+        case 124 where state.entryViewLayout.mode == .list:
+            return listHierarchyExpansionEffect(state: state)
         case 123 where state.entryViewLayout.mode == .grid:
             return selectionOffsetEffect(offset: -1, isShiftPressed: isShiftPressed, state: state)
         case 124 where state.entryViewLayout.mode == .grid:
@@ -207,6 +211,34 @@ enum FileManagerContentKeyCommandHandler {
         default:
             return nil
         }
+    }
+
+    private static func listHierarchyExpansionEffect(
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        guard let entry = focusedVisibleEntry(state: state),
+              entry.supportsListHierarchyExpansion,
+              !state.entryViewLayout.hierarchy.expandedFolderIDs.contains(entry.id)
+        else { return .none }
+        return .send(.entryViewLayout(.hierarchy(.folderExpansionRequested(id: entry.id))))
+    }
+
+    private static func listHierarchyCollapseEffect(
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        guard let entry = focusedVisibleEntry(state: state),
+              state.entryViewLayout.hierarchy.expandedFolderIDs.contains(entry.id)
+        else { return .none }
+        return .send(.entryViewLayout(.hierarchy(.folderCollapseRequested(id: entry.id))))
+    }
+
+    private static func focusedVisibleEntry(state: FileManagerContentState) -> EntryModel? {
+        guard state.entryViewLayout.hierarchyProjectionIsActive,
+              let focusedID = state.entryViewLayout.lastSelectedId ?? state.entryViewLayout.selectedIds.first
+        else { return nil }
+        return state.entryViewLayout
+            .visibleSelectableEntries(isNormalDirectoryPage: isNormalDirectoryPage(state))
+            .first { $0.id == focusedID }
     }
 
     private static func selectionOffsetEffect(

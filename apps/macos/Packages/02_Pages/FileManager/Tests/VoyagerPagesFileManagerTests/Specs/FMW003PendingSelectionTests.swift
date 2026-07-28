@@ -339,11 +339,10 @@ final class FMW003PendingSelectionTests: XCTestCase {
         ]))
         XCTAssertEqual(store.state.tabContentStates[tabID]?.pendingSelectEntryID, filePath)
         await store.receive(\.contentTabs.setCurrent, tabID)
-        await store.receive(\.content.internal.applyNavigationState, .folder(directoryPath))
-        await store.receive(\.content.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive(\.content.entryOperations.loading.loadItems)
-        // bridge sync 및 handoff 부수 action을 소비한 후 최종 상태 검증
-        await store.skipReceivedActions()
+        await store.receiveTabContent(\.internal.applyNavigationState, .folder(directoryPath))
+        await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receiveTabContent(\.entryOperations.loading.loadItems)
+        await store.receiveTabContent(\.entryOperations.loading.itemsLoaded)
         await store.finish()
 
         XCTAssertEqual(loadPaths.value, [directoryPath])

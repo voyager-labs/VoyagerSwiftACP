@@ -156,10 +156,6 @@ struct ContentPageView: View {
                 guard policy.requiresKeyCommandFocus else { return }
                 restoreKeyCommandFocus()
             }
-            .onChange(of: store.entryViewLayout.selectedIds) { _ in
-                guard store.entryOperations.renamingItemId == nil else { return }
-                restoreKeyCommandFocus()
-            }
             .onAppear {
                 store.send(.internal(.startObservingSystemNotifications))
                 guard store.entryOperations.renamingItemId == nil else { return }

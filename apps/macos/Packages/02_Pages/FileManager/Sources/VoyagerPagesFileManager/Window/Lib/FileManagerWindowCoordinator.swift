@@ -23,9 +23,15 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         }
     }
 
+    private struct WindowConstructionContext {
+        let workspaceClient: WorkspaceClient
+        let sessionLapseGuard: SessionLapseGuardContext?
+        let materialOverride: FileManagerWindowMaterialOverride?
+    }
+
     public let windowID: UUID
-    public let windowUndoManager: UndoManager
     public let store: StoreOf<FileManagerFeature>
+    private let fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry
     private let onBecameKey: (@MainActor (UUID) -> Void)?
     private let onResignedKey: (@MainActor (UUID) -> Void)?
     private let onWillClose: (@MainActor (UUID) -> Void)?
@@ -36,7 +42,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
     public init(
         windowID: UUID,
         store: StoreOf<FileManagerFeature>,
-        windowUndoManager: UndoManager,
+        fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
         path: String? = nil,
         workspaceClient: WorkspaceClient = .liveValue,
         sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>? = nil,
@@ -49,7 +55,12 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
     ) {
         self.windowID = windowID
         self.store = store
-        self.windowUndoManager = windowUndoManager
+        self.fileOperationUndoManagerRegistry = fileOperationUndoManagerRegistry
+        Self.activateInitialScopes(
+            windowID: windowID,
+            store: store,
+            registry: fileOperationUndoManagerRegistry,
+        )
         self.onBecameKey = onBecameKey
         self.onResignedKey = onResignedKey
         self.onWillClose = onWillClose
@@ -58,13 +69,15 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         let window = Self.makeWindow(
             store: store,
             path: path,
-            workspaceClient: workspaceClient,
-            sessionLapseGuard: sessionLapseGuardStore.map {
-                SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
-            },
+            context: WindowConstructionContext(
+                workspaceClient: workspaceClient,
+                sessionLapseGuard: sessionLapseGuardStore.map {
+                    SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
+                },
+                materialOverride: nil,
+            ),
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
-            materialOverride: nil,
         )
 
         super.init(window: window)
@@ -76,7 +89,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
     init(
         windowID: UUID,
         store: StoreOf<FileManagerFeature>,
-        windowUndoManager: UndoManager,
+        fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
         path: String? = nil,
         workspaceClient: WorkspaceClient = .liveValue,
         sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>? = nil,
@@ -85,12 +98,17 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         onResignedKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
         initialWindowSizeProvider: (() -> NSSize?)? = nil,
-        materialOverride: FileManagerWindowMaterialOverride?,
+        materialOverride: FileManagerWindowMaterialOverride? = nil,
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)? = nil,
     ) {
         self.windowID = windowID
         self.store = store
-        self.windowUndoManager = windowUndoManager
+        self.fileOperationUndoManagerRegistry = fileOperationUndoManagerRegistry
+        Self.activateInitialScopes(
+            windowID: windowID,
+            store: store,
+            registry: fileOperationUndoManagerRegistry,
+        )
         self.onBecameKey = onBecameKey
         self.onResignedKey = onResignedKey
         self.onWillClose = onWillClose
@@ -99,13 +117,15 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         let window = Self.makeWindow(
             store: store,
             path: path,
-            workspaceClient: workspaceClient,
-            sessionLapseGuard: sessionLapseGuardStore.map {
-                SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
-            },
+            context: WindowConstructionContext(
+                workspaceClient: workspaceClient,
+                sessionLapseGuard: sessionLapseGuardStore.map {
+                    SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
+                },
+                materialOverride: materialOverride,
+            ),
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
-            materialOverride: materialOverride,
         )
 
         super.init(window: window)
@@ -116,6 +136,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
 
     init(
         registryClient: RegistryClient,
+        fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
         path: String? = nil,
         workspaceClient: WorkspaceClient = .liveValue,
         duplicateState: FileManagerFeature.State? = nil,
@@ -128,23 +149,29 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)? = nil,
     ) {
         let windowID = UUID()
-        let state = Self.createInitialState(path: path, duplicateState: duplicateState)
-        let undoManager = UndoManager()
+        let state = Self.createInitialState(
+            windowID: windowID,
+            path: path,
+            duplicateState: duplicateState,
+        )
         let store = Self.createStore(
             state: state,
-            undoManager: undoManager,
+            fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
             registryClient: registryClient,
         )
 
-        if duplicateState != nil {
-            store.send(.content(.entryOperations(.lifecycle(.resetForDuplicate(windowID: windowID)))))
-        } else {
+        if duplicateState == nil {
             store.send(.content(.entryOperations(.lifecycle(.windowIDChanged(windowID)))))
         }
 
         self.windowID = windowID
         self.store = store
-        windowUndoManager = undoManager
+        self.fileOperationUndoManagerRegistry = fileOperationUndoManagerRegistry
+        Self.activateInitialScopes(
+            windowID: windowID,
+            store: store,
+            registry: fileOperationUndoManagerRegistry,
+        )
         self.onBecameKey = onBecameKey
         self.onResignedKey = onResignedKey
         self.onWillClose = onWillClose
@@ -153,13 +180,15 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         let window = Self.makeWindow(
             store: store,
             path: path,
-            workspaceClient: workspaceClient,
-            sessionLapseGuard: sessionLapseGuardStore.map {
-                SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
-            },
+            context: WindowConstructionContext(
+                workspaceClient: workspaceClient,
+                sessionLapseGuard: sessionLapseGuardStore.map {
+                    SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
+                },
+                materialOverride: nil,
+            ),
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
-            materialOverride: nil,
         )
 
         super.init(window: window)
@@ -174,6 +203,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
     }
 
     static func createInitialState(
+        windowID: UUID,
         path: String?,
         duplicateState: FileManagerFeature.State?,
     ) -> FileManagerFeature.State {
@@ -183,8 +213,29 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
             FileManagerFeature.State()
         }
 
+        if duplicateState != nil {
+            for tabID in state.contentTabs.tabs.ids {
+                guard var tabContent = state.tabContentStates[tabID]
+                    ?? (tabID == state.contentTabs.activeTabID ? state.content : nil)
+                else { continue }
+                tabContent.entryOperations.resetForDuplicate(windowID: windowID)
+                tabContent.applyWindowContext(windowID: windowID)
+                tabContent.entryViewLayout.selectedIds = []
+                tabContent.entryViewLayout.lastSelectedId = nil
+                tabContent.entryViewLayout.rangeAnchorId = nil
+                tabContent.entryViewLayout.shouldScrollToSelection = false
+                state.tabContentStates[tabID] = tabContent
+            }
+            if let activeTabID = state.contentTabs.activeTabID,
+               let activeContent = state.tabContentStates[activeTabID]
+            {
+                state.content = activeContent
+            }
+        }
+
         if let path {
             state.content.navigation.seedInitialFolderPath(path)
+            state.syncActiveTabContentState()
         }
 
         return state
@@ -192,25 +243,34 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
 
     private static func createStore(
         state: FileManagerFeature.State,
-        undoManager: UndoManager,
+        fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
         registryClient: RegistryClient,
     ) -> StoreOf<FileManagerFeature> {
         Store(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
-            $0.undoManagerClient = .live(undoManager: undoManager)
+            $0.fileOperationUndoManagerClient = .live(registry: fileOperationUndoManagerRegistry)
             $0.registryClient = registryClient
+        }
+    }
+
+    private static func activateInitialScopes(
+        windowID: UUID,
+        store: StoreOf<FileManagerFeature>,
+        registry: FileOperationUndoManagerRegistry,
+    ) {
+        let tabIDs = store.withState { $0.contentTabs.tabs.ids }
+        for tabID in tabIDs {
+            registry.activate(UndoManagerScope(windowID: windowID, contentTabID: tabID.rawValue))
         }
     }
 
     private static func makeWindow(
         store: StoreOf<FileManagerFeature>,
         path: String?,
-        workspaceClient: WorkspaceClient,
-        sessionLapseGuard: SessionLapseGuardContext?,
+        context: WindowConstructionContext,
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)?,
         initialWindowSizeProvider: (() -> NSSize?)?,
-        materialOverride: FileManagerWindowMaterialOverride?,
     ) -> NSWindow {
         let contentViewController: NSViewController = if let makeContentViewController {
             makeContentViewController(store, path)
@@ -218,10 +278,10 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
             FileManagerWindowSplitCoordinator(
                 store: store,
                 isDark: FileManagerWindowChrome.currentIsDark,
-                workspaceClient: workspaceClient,
-                sessionLapseGuardStore: sessionLapseGuard?.store,
-                sessionLapseGuardState: sessionLapseGuard?.resolveState,
-                materialOverride: materialOverride,
+                workspaceClient: context.workspaceClient,
+                sessionLapseGuardStore: context.sessionLapseGuard?.store,
+                sessionLapseGuardState: context.sessionLapseGuard?.resolveState,
+                materialOverride: context.materialOverride,
             )
         }
 
@@ -287,6 +347,7 @@ public extension FileManagerWindowCoordinator {
         if let window = notification.object as? NSWindow {
             FileManagerWindowChrome.saveFrame(window)
         }
+        fileOperationUndoManagerRegistry.deactivateAll(windowID: windowID)
         tearDownBindings()
         if let onWillClose {
             onWillClose(windowID)
@@ -298,6 +359,12 @@ public extension FileManagerWindowCoordinator {
     }
 
     func windowWillReturnUndoManager(_: NSWindow) -> UndoManager? {
-        windowUndoManager
+        guard let activeTabID = store.withState(\.contentTabs.activeTabID) else {
+            return nil
+        }
+        return fileOperationUndoManagerRegistry.undoManager(for: UndoManagerScope(
+            windowID: windowID,
+            contentTabID: activeTabID.rawValue,
+        ))
     }
 }

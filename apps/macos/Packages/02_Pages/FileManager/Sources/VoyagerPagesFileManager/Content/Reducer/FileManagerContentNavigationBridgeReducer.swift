@@ -145,7 +145,10 @@ struct FileManagerContentNavigationBridgeReducer {
         ))))
         let cancelRootLoad: Effect<Action> = .cancel(
             id: EntryOperationsLoadingCancelID
-                .loadItems(windowID: state.entryOperations.windowID ?? UUID()),
+                .loadItems(
+                    windowID: state.entryOperations.windowID,
+                    ownerID: state.entryOperations.loadingCancellationOwnerID,
+                ),
         )
         return switch navigationState {
         case .home: homeRouteEffect(rootContextChange: rootContextChange)

@@ -3,6 +3,7 @@ import VoyagerEntitiesEntry
 import VoyagerShared
 
 struct EntryListCoordinatorRenderSnapshot: Equatable {
+    let presentation: EntryViewLayoutPresentation
     let listVisibleColumns: [EntryListColumn]
     let listIconSize: CGFloat
     let listTextSize: CGFloat
@@ -22,6 +23,7 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
     let isHierarchyOutlineEnabled: Bool
 
     init(state: EntryViewLayoutState) {
+        presentation = state.presentation
         listVisibleColumns = state.listVisibleColumns
         listIconSize = state.listIconSize
         listTextSize = state.listTextSize
@@ -64,10 +66,10 @@ enum EntryListOutlineItemKind {
 }
 
 final class EntryListOutlineItem: Hashable {
-    let kind: EntryListOutlineItemKind
+    var kind: EntryListOutlineItemKind
     let children: [EntryListOutlineItem]
     let id: String
-    let isLoadingChildren: Bool
+    var isLoadingChildren: Bool
 
     init(
         kind: EntryListOutlineItemKind,
@@ -95,6 +97,20 @@ final class EntryListOutlineItem: Hashable {
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(ObjectIdentifier(self))
+    }
+
+    func apply(_ payload: EntryListOutlineProjection.ItemPayload) {
+        switch payload {
+        case let .entry(entry, isLoadingChildren):
+            kind = .entry(entry)
+            self.isLoadingChildren = isLoadingChildren
+        case let .empty(parent):
+            kind = .empty(parent: parent)
+            isLoadingChildren = false
+        case let .error(parent, failure):
+            kind = .error(parent: parent, failure: failure)
+            isLoadingChildren = false
+        }
     }
 }
 

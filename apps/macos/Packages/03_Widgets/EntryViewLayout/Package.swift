@@ -19,6 +19,7 @@ let kPackage = Package(
         .package(url: "https://github.com/pointfreeco/swift-composable-architecture", exact: "1.22.3"),
         .package(url: "https://github.com/pointfreeco/swift-dependencies", exact: "1.10.0"),
         .package(url: "https://github.com/pointfreeco/swift-identified-collections", exact: "1.1.1"),
+        .package(url: "https://github.com/pointfreeco/swift-navigation", exact: "2.8.0"),
         .package(url: "https://github.com/pointfreeco/swift-perception", exact: "2.0.8"),
     ],
     targets: [
@@ -33,6 +34,7 @@ let kPackage = Package(
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
+                .product(name: "SwiftNavigation", package: "swift-navigation"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
             ],
             linkerSettings: ProcessInfo.processInfo.environment["RUNNING_VIA_INJECTION_NEXT"] == nil
