@@ -221,6 +221,10 @@ private extension ComposerBottomRowView {
                 }
             },
         )
+        .contentShape(RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer))
+        .onTapGesture {
+            store.send(.scopeEditorOpen(editingPath: nil, favorites: favorites, backHistory: historyPaths))
+        }
         .accessibilityIdentifier("composer.scopeRow")
     }
 

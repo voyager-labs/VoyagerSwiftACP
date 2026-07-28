@@ -16,6 +16,7 @@ struct ComposerTopRowView: View {
 
     @State var isComposeFieldFirstResponder: Bool = true
     @State var isStopHovering: Bool = false
+    @State var isOverflowHovering: Bool = false
 
     var isDark: Bool {
         colorScheme == .dark
@@ -92,7 +93,7 @@ private extension ComposerTopRowView {
                 colorScheme: colorScheme,
                 action: { viewStore.send(.saveCollection) },
                 label: {
-                    Image(systemName: "tray.and.arrow.down")
+                    Image(systemName: "square.and.arrow.down")
                         .font(VoyagerDS.Typography.body)
                 },
             )
@@ -227,9 +228,21 @@ private extension ComposerTopRowView {
             Image(systemName: "ellipsis")
                 .font(VoyagerDS.Typography.body)
                 .foregroundColor(.primary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipItem)
+                        .fill(isOverflowHovering
+                            ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme)
+                            : .clear),
+                )
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
+        .onHover { hovering in
+            isOverflowHovering = hovering
+        }
         .accessibilityLabel("More actions")
         .accessibilityIdentifier("composer.overflow.menu")
     }
