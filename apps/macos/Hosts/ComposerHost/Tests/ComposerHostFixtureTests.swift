@@ -287,6 +287,27 @@ extension ComposerHostFixtureTests {
         XCTAssertTrue(legacyDraft.diagnostics.isEmpty)
     }
 
+    func testCollectionCatalogRestoresLegacyConditionFixtureWithoutDiagnostics() async throws {
+        let root = try ComposerHostFixtureTestResources.root()
+        let conditionCollection = try definition(
+            named: "condition_collection",
+            from: ComposerHostFixtureTestResources.collections(),
+        )
+
+        let draft = try await ComposerHostCollectionCatalog.load(
+            definition: conditionCollection,
+            fixtureRoot: root,
+            registryClient: ComposerHostSandbox.makeRegistryClient(),
+        )
+
+        XCTAssertTrue(draft.diagnostics.isEmpty, draft.diagnostics.joined(separator: "\n"))
+        XCTAssertFalse(draft.blocksExecution)
+        XCTAssertEqual(draft.payload.context.excludedScopes, [root.appendingPathComponent("archives").path])
+        XCTAssertEqual(draft.payload.context.conditions.map(\.property.key), ["file_kind", "size"])
+        XCTAssertEqual(draft.payload.context.conditions.compactMap(\.operation?.code), ["any", "gt"])
+        XCTAssertTrue(draft.payload.context.conditions.allSatisfy(\.isExecutionReady))
+    }
+
     func testCollectionCatalogRemapsExclusionsAndCapturesDirectoryPolicy() async throws {
         let root = try ComposerHostFixtureTestResources.root()
         let definitions = try ComposerHostFixtureTestResources.collections()
@@ -305,10 +326,10 @@ extension ComposerHostFixtureTests {
         )
 
         XCTAssertEqual(scopedDraft.payload.context.scopes, [root.path])
-        XCTAssertTrue(scopedDraft.payload.context.excludedScopes.isEmpty)
+        XCTAssertEqual(scopedDraft.payload.context.excludedScopes, [root.appendingPathComponent("archives").path])
         XCTAssertTrue(scopedDraft.payload.context.includeSubfolders)
-        XCTAssertEqual(scopedDraft.payload.context.conditions.map(\.property.key), ["name_stem", "kind"])
-        XCTAssertEqual(scopedDraft.diagnostics.count, 2)
+        XCTAssertEqual(scopedDraft.payload.context.conditions.map(\.property.key), ["name_stem", "file_kind"])
+        XCTAssertEqual(scopedDraft.diagnostics.count, 1)
         XCTAssertTrue(scopedDraft.diagnostics.allSatisfy { $0.hasPrefix("Excluded scope does not exist: ") })
         XCTAssertTrue(scopedDraft.blocksExecution)
         XCTAssertTrue(directoryDraft.searchPolicy.includeDirectories)

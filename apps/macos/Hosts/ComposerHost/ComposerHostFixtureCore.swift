@@ -412,7 +412,7 @@ public enum ComposerHostFixtureConditionNormalization {
         case "created", "createddate", "creationdate": "created_date"
         case "modified", "modifieddate", "modificationdate": "modified_date"
         case "tag", "tagnames": "tag_names"
-        case "hidden", "ishidden": "is_hidden"
+        case "hidden", "ishidden", "isinvisible": "is_hidden"
         default: key
         }
     }
@@ -604,7 +604,13 @@ public enum ComposerHostCollectionCatalog {
         let remappedScopes = [fixtureRoot.standardizedFileURL.path]
         let exclusionRemapping = remapExclusions(loaded.file.excludedScopes, fixtureRoot: fixtureRoot)
         let remappedExclusions = exclusionRemapping.scopes
-        let conditions = loaded.file.conditions.map(ComposerHostFixtureConditionNormalization.normalized)
+        let conditions = loaded.file.conditions.map {
+            SearchConditionPayload(
+                propertyKey: $0.propertyKey,
+                operator: $0.operatorCode,
+                value: $0.value,
+            )
+        }
         let resolved = AppliedFilterResolver.resolveDetailed(
             .init(
                 scopes: remappedScopes,
@@ -654,6 +660,8 @@ public enum ComposerHostCollectionCatalog {
             let remappedScope: String
             if standardized == rootPath || standardized.hasPrefix(rootPath + "/") {
                 remappedScope = standardized
+            } else if standardized == "/VoyagerFixtures/Documents/Archive" {
+                remappedScope = ((rootPath + "/archives") as NSString).standardizingPath
             } else if standardized == "/VoyagerFixtures" || standardized.hasPrefix("/VoyagerFixtures/") {
                 let suffix = standardized.dropFirst("/VoyagerFixtures".count)
                     .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
