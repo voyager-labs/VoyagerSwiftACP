@@ -4,6 +4,8 @@
 # ── Tools (pinned versions) ───────────────────────────────────
 
 [tools]
+node = "24"
+pnpm = "11.16.0"
 lefthook = "2.1.9"
 swiftlint = "0.63.3"
 xcodes = "1.6.2"
@@ -43,6 +45,7 @@ mise run xcode
 mise run hooks
 mise run submodules
 mise run docs-setup
+mise run storybook-setup
 """
 
 # .xcode-version 기준 Xcode 설치 및 선택
@@ -141,3 +144,24 @@ run = "python3 -m scripts.validate_harness"
 [tasks.verify-plan]
 description = "계획 Markdown 구조 검증"
 run = "python3 -m scripts.verify_plan"
+
+[tasks.storybook]
+description = "Storybook 개발 서버 실행 (기본 포트: 6006)"
+run = "cd apps/storybook && pnpm storybook \"$@\""
+
+[tasks.storybook-setup]
+description = "Storybook pnpm 의존성 동기화"
+run = "pnpm --dir apps/storybook install --frozen-lockfile"
+
+[tasks.swiftui-tokens]
+description = "SwiftUI system color와 material metadata를 Storybook에 동기화"
+run = """
+xcrun swift run \
+  --package-path apps/macos/Packages/06_Shared/VoyagerShared \
+  VoyagerDesignTokenExporter \
+  --css-output apps/storybook/packages/file-manager-illustration/src/styles/macos-tokens.css \
+  --metadata-output apps/storybook/packages/file-manager-illustration/src/foundations/swiftui-material-metadata.generated.ts \
+  "$@"
+"""
+
+
