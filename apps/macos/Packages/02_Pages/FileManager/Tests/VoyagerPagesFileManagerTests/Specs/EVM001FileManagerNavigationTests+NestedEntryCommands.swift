@@ -2,6 +2,7 @@ import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -31,6 +32,39 @@ extension EVM001FileManagerNavigationTests {
             XCTAssertEqual(context.selectedIds, [child.id])
             XCTAssertEqual(context.displayItems.map(\.id), [root.id, child.id])
             return true
+        }
+    }
+
+    /// Return key rename이 expanded folder의 nested child를 command 대상으로 사용하는지 검증한다.
+    func testRenameKeyCommandStartsRenameForNestedChild() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/folder", name: "folder")
+        let child = EntryModel.temporaryFolder(id: "/root/folder/child", name: "child")
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/root")
+        state.entryViewLayout.entries = [folder]
+        state.entryViewLayout.selectedIds = [child.id]
+        state.entryViewLayout.hierarchy = .init(
+            rootPath: "/root",
+            expandedFolderIDs: [folder.id],
+            foldersByID: [folder.id: .init(children: [child], phase: .loaded)],
+        )
+        let command = KeyCommand(
+            keyCode: 36,
+            modifiers: [],
+            characters: "\r",
+            charactersIgnoringModifiers: "\r",
+        )
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerContentState, FileManagerContentAction> { state, action in
+                guard case let .view(.handleKeyCommand(command)) = action else { return .none }
+                return FileManagerContentKeyCommandHandler.effect(for: command, state: state)
+            }
+        }
+
+        await store.send(.view(.handleKeyCommand(command)))
+        await store.receive { action in
+            guard case let .entryViewLayout(.delegate(.startRename(item, text))) = action else { return false }
+            return item == child && text == child.name
         }
     }
 

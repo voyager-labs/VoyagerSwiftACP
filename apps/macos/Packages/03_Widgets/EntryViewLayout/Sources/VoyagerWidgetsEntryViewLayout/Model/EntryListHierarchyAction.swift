@@ -10,6 +10,7 @@ public enum EntryLoadFailure: Error, Equatable, Sendable {
 @CasePathable
 public enum EntryListHierarchyAction: CasePathable, Sendable {
     case rootContextChanged(path: String)
+    case hiddenFilesSettingChanged
     case hierarchyInvalidated(affectedPaths: [String], removedPrefixes: [String])
     case folderExpansionRequested(id: EntryModel.ID)
     case folderCollapseRequested(id: EntryModel.ID)

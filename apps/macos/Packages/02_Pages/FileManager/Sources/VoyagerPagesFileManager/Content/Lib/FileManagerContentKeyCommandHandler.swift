@@ -233,7 +233,9 @@ enum FileManagerContentKeyCommandHandler {
     }
 
     private static func commandEntries(state: FileManagerContentState) -> [EntryModel] {
-        state.entryViewLayout.entries
+        state.entryViewLayout.visibleSelectableEntries(
+            isNormalDirectoryPage: isNormalDirectoryPage(state),
+        )
     }
 
     private static func isTextEditingResponder() -> Bool {

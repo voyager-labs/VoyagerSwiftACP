@@ -27,6 +27,60 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(state.entries, [entry])
     }
 
+    /// 첫 root batch 전에 stream이 실패하면 이전 Directory의 표시 행이 남지 않는지 검증한다.
+    func testRootStreamFailureBeforeFirstBatchClearsRenderedEntries() {
+        let staleEntry = makeHierarchyIntegrationEntry(id: "/previous/stale.txt", name: "stale.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [staleEntry]
+        state.entryOperations.isLoading = true
+        state.entryOperations.loadingContext.generation = 1
+        state.entryOperations.loadingContext.sourceKind = .directory
+
+        _ = EntryViewLayoutFeature().reduce(
+            into: &state,
+            action: .entryOperations(.loading(.streamFailed(generation: 1))),
+        )
+
+        XCTAssertTrue(state.entryOperations.items.isEmpty)
+        XCTAssertTrue(state.entries.isEmpty)
+    }
+
+    /// 숨김 파일 설정 변경 시 expanded folder cache를 새 설정으로 다시 로드하는지 검증한다.
+    func testHiddenFilesChangeReloadsExpandedFolderCache() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let staleChild = makeHierarchyIntegrationEntry(id: "/root/a/visible.txt", name: "visible.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.showHiddenFiles = true
+        state.hierarchy = .init(
+            rootPath: "/root",
+            expandedFolderIDs: [folder.id],
+            foldersByID: [
+                folder.id: .init(
+                    children: [staleChild],
+                    phase: .loaded,
+                    generation: 4,
+                ),
+            ],
+        )
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+
+        await store.send(.hierarchy(.hiddenFilesSettingChanged)) {
+            $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 5)
+            $0.outlineProjectionRevision = 2
+        }
+        await store.receive { action in
+            guard case let .entryOperations(.loading(.cancelFolderItems(requestID))) = action else { return false }
+            return requestID.folderID == folder.id
+        }
+        await store.receive { action in
+            guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
+            return request.id.folderID == folder.id && request.showHidden
+        }
+    }
+
     /// 계층 projection의 child payload가 command와 selection에서 사용할 실제 EntryModel 목록으로 노출되는지 검증한다.
     func testVisibleSelectableEntriesIncludeNestedPayloads() {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")

@@ -191,8 +191,7 @@ public struct EntryViewLayoutFeature {
                 state.listTextSize = preferences.listTextSize
                 state.gridIconSize = preferences.gridIconSize
                 state.gridTextSize = preferences.gridTextSize
-                state.showHiddenFiles = preferences.showHiddenFiles
-                return .none
+                return Self.setShowHiddenFiles(preferences.showHiddenFiles, state: &state)
 
             case let .view(.setDropTargeted(isTargeted)):
                 state.isDropTargeted = isTargeted
@@ -208,12 +207,10 @@ public struct EntryViewLayoutFeature {
                 return .none
 
             case let .internal(.setShowHiddenFiles(show)):
-                state.showHiddenFiles = show
-                return .none
+                return Self.setShowHiddenFiles(show, state: &state)
 
             case .view(.toggleShowHiddenFiles):
-                state.showHiddenFiles.toggle()
-                return .none
+                return Self.setShowHiddenFiles(!state.showHiddenFiles, state: &state)
 
             case let .internal(.setCollectionMode(isCollectionMode)):
                 state.isCollectionMode = isCollectionMode
@@ -424,7 +421,8 @@ public struct EntryViewLayoutFeature {
 
                 case .loading(.itemsLoaded),
                      .loading(.itemsLoadFailed),
-                     .loading(.streamEvent):
+                     .loading(.streamEvent),
+                     .loading(.streamFailed):
                     return Self.updateEntriesAndReapply(&state)
 
                 default:
@@ -470,6 +468,13 @@ public struct EntryViewLayoutFeature {
         state.entries = state.displayOrderItems
         reconcileSelectionWithVisibleEntries(&state)
         return .send(.entryArrangements(.reapply))
+    }
+
+    static func setShowHiddenFiles(_ showHiddenFiles: Bool, state: inout State) -> Effect<Action> {
+        guard state.showHiddenFiles != showHiddenFiles else { return .none }
+        state.showHiddenFiles = showHiddenFiles
+        guard !state.hierarchy.foldersByID.isEmpty else { return .none }
+        return .send(.hierarchy(.hiddenFilesSettingChanged))
     }
 
     static func updateEntriesPreservingOrder(_ state: inout State) {

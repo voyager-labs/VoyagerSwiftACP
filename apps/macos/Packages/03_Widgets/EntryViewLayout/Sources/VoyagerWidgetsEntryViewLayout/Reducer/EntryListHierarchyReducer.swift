@@ -27,6 +27,9 @@ struct EntryListHierarchyReducer {
                         + [.send(.internal(.applyClearSelection)), .send(.internal(.reconcileHierarchySelection))],
                 )
 
+            case .hiddenFilesSettingChanged:
+                return reloadFoldersForHiddenFilesChange(state: &state)
+
             case let .hierarchyInvalidated(affectedPaths, removedPrefixes):
                 return invalidateHierarchy(
                     affectedPaths: affectedPaths,
@@ -172,6 +175,40 @@ struct EntryListHierarchyReducer {
 
         EntryViewLayoutFeature.reconcileSelectionWithVisibleEntries(&state)
         return .merge(effects)
+    }
+
+    private func reloadFoldersForHiddenFilesChange(state: inout State) -> Effect<Action> {
+        let folderIDs = Array(state.hierarchy.foldersByID.keys)
+        let expandedFolders = folderIDs.compactMap { id -> (EntryModel.ID, EntryModel)? in
+            guard state.hierarchy.expandedFolderIDs.contains(id),
+                  let folder = folder(id: id, in: state)
+            else { return nil }
+            return (id, folder)
+        }
+        let expandedFolderIDs = Set(expandedFolders.map(\.0))
+        let rootContextGeneration = state.hierarchy.rootContextGeneration
+        var effects: [Effect<Action>] = folderIDs.map { id in
+            .send(.entryOperations(.loading(.cancelFolderItems(.init(
+                rootContextGeneration: rootContextGeneration,
+                folderID: id,
+            )))))
+        }
+
+        for id in folderIDs where !expandedFolderIDs.contains(id) {
+            var folderState = state.hierarchy.foldersByID[id] ?? .init()
+            folderState.children = []
+            folderState.phase = .idle
+            folderState.generation &+= 1
+            folderState.expectedBatchIndex = 0
+            folderState.coreFinished = false
+            state.hierarchy.foldersByID[id] = folderState
+        }
+        for (id, folder) in expandedFolders {
+            effects.append(startLoad(folder: folder, id: id, state: &state))
+        }
+
+        EntryViewLayoutFeature.reconcileSelectionWithVisibleEntries(&state)
+        return .concatenate(effects)
     }
 
     private func folder(id: EntryModel.ID, in state: State) -> EntryModel? {
