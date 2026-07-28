@@ -7,6 +7,7 @@ import VoyagerEntitiesTag
 @ObservableState
 public struct EntryOperationsState: Equatable {
     public var loadingContext: EntryLoadingContextState = .init()
+    public var folderLoadingContexts: [EntryFolderLoadRequest.RequestID: EntryFolderLoadingContext] = [:]
     public var isLoading: Bool = false
     public var isReloading: Bool = false
     public var renamingItemId: EntryModel.ID?
@@ -39,6 +40,7 @@ public struct EntryOperationsState: Equatable {
 
     public mutating func resetForDuplicate(windowID: UUID) {
         loadingContext = .init()
+        folderLoadingContexts = [:]
         isLoading = false
         isReloading = false
         renamingItemId = nil
@@ -97,8 +99,86 @@ public struct EntryOperationsState: Equatable {
     }
 }
 
+public struct EntryFolderLoadRequest: Equatable, Sendable {
+    public struct RequestID: Hashable, Sendable {
+        public let rootContextGeneration: Int
+        public let folderID: EntryModel.ID
+
+        public init(rootContextGeneration: Int, folderID: EntryModel.ID) {
+            self.rootContextGeneration = rootContextGeneration
+            self.folderID = folderID
+        }
+    }
+
+    public let id: RequestID
+    public let folderGeneration: Int
+    public let path: String
+    public let showHidden: Bool
+    public let priority: EntryMetadataPriority
+
+    public init(
+        rootContextGeneration: Int,
+        folderID: EntryModel.ID,
+        folderGeneration: Int,
+        path: String,
+        showHidden: Bool,
+        priority: EntryMetadataPriority,
+    ) {
+        id = .init(rootContextGeneration: rootContextGeneration, folderID: folderID)
+        self.folderGeneration = folderGeneration
+        self.path = path
+        self.showHidden = showHidden
+        self.priority = priority
+    }
+}
+
+public struct EntryFolderLoadingContext: Equatable, Sendable {
+    public var request: EntryFolderLoadRequest
+    public var expectedCoreBatchIndex = 0
+    public var coreFinished = false
+    public var terminal = false
+
+    public init(request: EntryFolderLoadRequest) {
+        self.request = request
+    }
+}
+
 public struct EntryLoadingContextState: Equatable, Sendable {
     public var items: IdentifiedArrayOf<EntryModel> = []
+    public var generation = 0
+    public var expectedCoreBatchIndex = 0
+    public var coreFinished = false
+    public var streamTerminal = false
+    public var isIncomplete = false
+    public var sourceKind: EntryLoadingSourceKind?
+
+    public mutating func begin(sourceKind: EntryLoadingSourceKind, preservesSnapshot: Bool) -> Int {
+        generation &+= 1
+        expectedCoreBatchIndex = 0
+        coreFinished = false
+        streamTerminal = false
+        isIncomplete = false
+        self.sourceKind = sourceKind
+        if !preservesSnapshot {
+            items = []
+        }
+        return generation
+    }
+
+    public mutating func invalidate() {
+        generation &+= 1
+        expectedCoreBatchIndex = 0
+        coreFinished = false
+        streamTerminal = false
+        isIncomplete = false
+        sourceKind = nil
+    }
+}
+
+public enum EntryLoadingSourceKind: Equatable, Sendable {
+    case directory
+    case recents
+    case tags
 }
 
 public extension EntryOperationsState {

@@ -280,7 +280,6 @@ struct EntryClipboardOperationsReducer {
                                 destURL.deletingLastPathComponent().path,
                             ]
                             entryFileOpsClient.postFileSystemChanged(Array(Set(changedPaths)))
-                            await send(.lifecycle(.pathsMutated([sourcePath, destURL.path])))
                             targets.append(.init(beforePath: sourcePath, afterPath: destURL.path))
                             await send(.lifecycle(.operationFinished(sourcePath, kind, .success(()))))
                         } catch let error as FileOpError where error.isFileExists {
