@@ -644,6 +644,32 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         XCTAssertEqual(metadataCalls.value, 1)
     }
 
+    /// EVM-001-progressive_entry_materialization: Directory enumeration starts on first stream demand.
+    /// staged loader 호출은 동기 파일시스템 작업 없이 즉시 stream을 반환하는 경계를 검증한다.
+    /// - 검증 내용: stream 생성 전후 열거 호출 수와 첫 iterator demand 뒤 호출 수
+    /// - 사전 조건: 호출 횟수를 기록하고 빈 URL 목록을 반환하는 EntryLoadingClient override를 사용한다.
+    /// - 기대 결과: stream 생성 시 열거하지 않고 첫 next에서 정확히 한 번 열거한다.
+    func testDirectoryStagedLoaderDefersEnumerationUntilFirstDemand() async throws {
+        let enumerationCalls = LockedCounter()
+        var client = EntryLoadingClient.testValue
+        client.contentsOfDirectory = { _, _, _ in
+            enumerationCalls.increment()
+            return []
+        }
+
+        let stream = withDependencies {
+            $0.entryLoadingClient = client
+            $0.workspaceClient = .testValue
+        } operation: {
+            EntryLoadingClient.liveValue.loadItems(URL(fileURLWithPath: "/fixture"), false, .none)
+        }
+
+        XCTAssertEqual(enumerationCalls.value, 0)
+        var iterator = stream.makeAsyncIterator()
+        _ = try await iterator.next()
+        XCTAssertEqual(enumerationCalls.value, 1)
+    }
+
     // MARK: - EVM-001-entry_loading_performance
 
     /// EVM-001-entry_loading_performance: Core-only consumption closes its active instrumentation intervals.

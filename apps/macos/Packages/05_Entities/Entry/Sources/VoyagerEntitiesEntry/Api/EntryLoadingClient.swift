@@ -293,7 +293,7 @@ enum EntryLoadingLive {
             var finderFavoritesTagClient
             @Dependency(\.entryLoadingClient)
             var entryLoadingClient
-            do {
+            let sequence = DeferredEntryLoadSequence {
                 let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
                 let urls = try entryLoadingClient.contentsOfDirectory(directoryURL, [], options)
                 return EntryStagedMaterializerLive.materializeURLs(
@@ -308,9 +308,8 @@ enum EntryLoadingLive {
                         favoriteTags: finderFavoritesTagClient.favoriteTags(),
                     ),
                 )
-            } catch {
-                return .init { $0.finish(throwing: error) }
             }
+            return AsyncThrowingStream(unfolding: { try await sequence.next() })
         }
     }
 
@@ -593,5 +592,34 @@ enum EntryLoadingLive {
         } catch {
             return []
         }
+    }
+}
+
+private actor DeferredEntryLoadSequence {
+    private let makeStream: @Sendable () async throws -> AsyncThrowingStream<EntryLoadEvent, Error>
+    private var iterator: EntryLoadIteratorBox?
+
+    init(makeStream: @escaping @Sendable () async throws -> AsyncThrowingStream<EntryLoadEvent, Error>) {
+        self.makeStream = makeStream
+    }
+
+    func next() async throws -> EntryLoadEvent? {
+        if iterator == nil {
+            let stream = try await makeStream()
+            iterator = EntryLoadIteratorBox(stream.makeAsyncIterator())
+        }
+        return try await iterator?.next()
+    }
+}
+
+private final class EntryLoadIteratorBox: @unchecked Sendable {
+    private var iterator: AsyncThrowingStream<EntryLoadEvent, Error>.Iterator
+
+    init(_ iterator: AsyncThrowingStream<EntryLoadEvent, Error>.Iterator) {
+        self.iterator = iterator
+    }
+
+    func next() async throws -> EntryLoadEvent? {
+        try await iterator.next()
     }
 }
