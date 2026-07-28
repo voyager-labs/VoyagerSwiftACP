@@ -11,7 +11,7 @@
   font-family: "Voyager SF Pro Text";
   font-display: swap;
   font-style: normal;
-  font-weight: 520;
+  font-weight: 500;
   src: local("SF Pro Text Medium"), local("SFProText-Medium"),
     url("/fonts/sf-pro/SF-Pro-Text-Medium.otf") format("opentype");
 }
@@ -20,7 +20,7 @@
   font-family: "Voyager SF Pro Text";
   font-display: swap;
   font-style: normal;
-  font-weight: 650;
+  font-weight: 600;
   src: local("SF Pro Text Semibold"), local("SFProText-Semibold"),
     url("/fonts/sf-pro/SF-Pro-Text-Semibold.otf") format("opentype");
 }
@@ -29,7 +29,7 @@
   font-family: "Voyager SF Pro Text";
   font-display: swap;
   font-style: normal;
-  font-weight: 720;
+  font-weight: 700;
   src: local("SF Pro Text Bold"), local("SFProText-Bold"), url("/fonts/sf-pro/SF-Pro-Text-Bold.otf")
     format("opentype");
 }
@@ -47,7 +47,7 @@
   font-family: "Voyager SF Pro Display";
   font-display: swap;
   font-style: normal;
-  font-weight: 520;
+  font-weight: 500;
   src: local("SF Pro Display Medium"), local("SFProDisplay-Medium"),
     url("/fonts/sf-pro/SF-Pro-Display-Medium.otf") format("opentype");
 }
@@ -56,7 +56,7 @@
   font-family: "Voyager SF Pro Display";
   font-display: swap;
   font-style: normal;
-  font-weight: 650;
+  font-weight: 600;
   src: local("SF Pro Display Semibold"), local("SFProDisplay-Semibold"),
     url("/fonts/sf-pro/SF-Pro-Display-Semibold.otf") format("opentype");
 }
@@ -65,14 +65,24 @@
   font-family: "Voyager SF Pro Display";
   font-display: swap;
   font-style: normal;
-  font-weight: 720;
+  font-weight: 700;
   src: local("SF Pro Display Bold"), local("SFProDisplay-Bold"),
     url("/fonts/sf-pro/SF-Pro-Display-Bold.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "Voyager SF Pro Symbols";
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+  src: local(".SF Symbols"), local("SF Pro Symbols"),
+    url("/fonts/sf-pro/SF-Pro-Symbols.otf") format("opentype");
 }
 
 [data-file-manager-illustration] {
   --fm-font-ui: "Voyager SF Pro Text", "Voyager SF Pro Display", -apple-system, BlinkMacSystemFont,
     "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
+  --fm-font-symbols: "Voyager SF Pro Symbols", ".SF Symbols", "SF Pro Symbols";
   --fm-font-size-caption-2: 11px;
   --fm-font-size-caption: 12px;
   --fm-font-size-body: 13px;
@@ -80,12 +90,12 @@
   --fm-line-tight: 1.14;
   --fm-line-body: 1.35;
   --fm-weight-regular: 400;
-  --fm-weight-medium: 520;
-  --fm-weight-semibold: 650;
-  --fm-weight-bold: 720;
+  --fm-weight-medium: 500;
+  --fm-weight-semibold: 600;
+  --fm-weight-bold: 700;
 
   --fm-blue: var(--macos-system-blue);
-  --fm-blue-pressed: #006edb;
+  --fm-blue-pressed: color-mix(in srgb, var(--macos-system-blue) 82%, black);
   --fm-amber: var(--macos-system-orange);
   --fm-green: var(--macos-system-green);
   --fm-red: var(--macos-system-red);
@@ -97,7 +107,7 @@
   --fm-canvas-glow: #ffffff12;
   --fm-window: var(--macos-window-background-color);
   --fm-window-border: var(--macos-window-border-color);
-  --fm-window-hairline: #ffffff5c;
+  --fm-window-hairline: var(--macos-window-border-color);
   --fm-titlebar: var(--macos-material-titlebar);
   --fm-stage-padding: var(--fm-space-10);
   --fm-window-max-width: 1280px;
@@ -205,7 +215,7 @@
   --fm-radius-md: 8px;
   --fm-radius-lg: 12px;
   --fm-radius-xl: 16px;
-  --fm-radius-window: 16px;
+  --fm-radius-window: 10px;
   --fm-radius-round: 999px;
 
   --fm-space-1: 2px;
@@ -226,7 +236,6 @@
   --fm-home-card-target-width: 160px;
   --fm-home-card-height: 48px;
   --fm-home-card-icon-size: 31px;
-  --fm-home-chat-icon-size: 40px;
   --fm-home-card-label-size: 14px;
   --fm-sidebar-location-cell-size: 42px;
   --fm-sidebar-tab-action-size: 18px;
@@ -1180,106 +1189,12 @@
   font-weight: var(--fm-weight-semibold);
 }
 
-[data-file-manager-illustration] .home-chat-list {
-  display: grid;
-  gap: var(--fm-space-4);
-}
-
-[data-file-manager-illustration] .home-chat-row {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: var(--fm-home-chat-icon-size) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--fm-home-card-gap);
-  border: 0;
-  border-radius: var(--fm-radius-md);
-  background: transparent;
-  padding: var(--fm-space-5);
-  color: var(--fm-text-primary);
-  text-align: left;
-  transition: background-color var(--fm-motion-fast) ease, transform var(--fm-motion-fast) ease;
-}
-
-[data-file-manager-illustration] .home-chat-row:hover {
-  background: var(--fm-home-row-hover);
-  transform: scale(var(--fm-home-card-hover-scale));
-}
-
-[data-file-manager-illustration] .home-chat-icon {
-  display: grid;
-  width: var(--fm-home-chat-icon-size);
-  height: var(--fm-home-chat-icon-size);
-  place-items: center;
-  border-radius: var(--fm-radius-sm);
-  background: var(--fm-home-icon-tile);
-  color: var(--fm-selection-label);
-  font-weight: var(--fm-weight-semibold);
-}
-
-[data-file-manager-illustration] .home-chat-copy {
-  display: grid;
-  min-width: 0;
-  gap: var(--fm-space-1);
-}
-
-[data-file-manager-illustration] .home-chat-copy strong,
-[data-file-manager-illustration] .home-chat-copy span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-[data-file-manager-illustration] .home-chat-copy strong {
-  font-size: var(--fm-home-card-label-size);
-  font-weight: var(--fm-weight-semibold);
-}
-
-[data-file-manager-illustration] .home-chat-copy span,
-[data-file-manager-illustration] .home-chat-timestamp,
-[data-file-manager-illustration] .home-empty {
-  color: var(--fm-text-secondary);
-  font-size: var(--fm-font-size-caption);
-}
-
-[data-file-manager-illustration] .home-chat-timestamp {
-  color: var(--fm-text-tertiary);
-  white-space: nowrap;
-}
-
-[data-file-manager-illustration] .home-empty {
-  margin: 0;
-  padding: var(--fm-space-6) 0;
-}
-
-[data-file-manager-illustration] .home-new-chat {
-  border: 0;
-  border-radius: var(--fm-radius-sm);
-  background: transparent;
-  padding: var(--fm-space-3) var(--fm-space-4);
-  color: var(--fm-selection-label);
-  font-size: var(--fm-font-size-caption);
-  font-weight: var(--fm-weight-semibold);
-  transition: background-color var(--fm-motion-fast) ease;
-}
-
-[data-file-manager-illustration] .home-new-chat:hover {
-  background: var(--fm-control-hover);
-}
-
-[data-file-manager-illustration] .home-chat-row:focus-visible,
-[data-file-manager-illustration] .home-new-chat:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--fm-focus-ring);
-}
-
 @media (prefers-reduced-motion: reduce) {
   [data-file-manager-illustration] .location-shortcuts button,
   [data-file-manager-illustration] .nav-item,
   [data-file-manager-illustration] .nav-item-action,
   [data-file-manager-illustration] .sidebar-new-tab,
-  [data-file-manager-illustration] .home-card,
-  [data-file-manager-illustration] .home-chat-row,
-  [data-file-manager-illustration] .home-new-chat {
+  [data-file-manager-illustration] .home-card {
     transition: none;
   }
 }
