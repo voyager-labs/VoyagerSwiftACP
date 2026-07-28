@@ -18,7 +18,7 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>MachServices</key>
 	<dict>
-		<key>$(XPC_MACH_SERVICE_NAME)</key>
+		<key>fm.voyager.Voyager.FilterSearchXPC</key>
 		<true/>
 	</dict>
 	<key>XPCService</key>
