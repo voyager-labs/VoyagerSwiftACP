@@ -1,7 +1,7 @@
 // `mise run swiftui-tokens`로 생성됩니다. 직접 수정하지 마세요.
 export const swiftUIMaterialMetadata = {
-  sourceRuntime: "macOS 15.6.1",
-  sourceBaseline: "sequoia",
+  sourceRuntime: "macOS 26.1.0",
+  sourceBaseline: "tahoe",
   colorEnvironments: ["light-standard", "dark-standard", "light-increased", "dark-increased"],
   contrastResolution: "EnvironmentValues._colorSchemeContrast",
   rgbaPolicy: "materials-and-glass-are-contextual-shape-styles",
@@ -17,5 +17,5 @@ export const swiftUIMaterialMetadata = {
     { name: "Clear glass", expression: "Glass.clear", availability: "macOS 26.0+" },
     { name: "Identity glass", expression: "Glass.identity", availability: "macOS 26.0+" },
   ],
-  tahoeRuntimeMeasured: false,
+  tahoeRuntimeMeasured: true,
 } as const

@@ -547,3 +547,148 @@
   --swiftui-clear: #00000000;
 }
 /* SWIFTUI-FIXED-COLORS:END */
+
+/* SWIFTUI-SYSTEM-COLORS:tahoe:BEGIN */
+/* SwiftUI runtime: macOS 26.1.0, Color.resolve(in:), sRGB */
+:root[data-voyager-visual-baseline="tahoe"] [data-file-manager-illustration] {
+  --swiftui-primary: #000000d8;
+  --swiftui-secondary: #0000007f;
+  --swiftui-accent-color: #0088ffff;
+  --swiftui-blue: #0088ffff;
+  --swiftui-brown: #ac7f5eff;
+  --swiftui-cyan: #00c0e8ff;
+  --swiftui-gray: #8e8e93ff;
+  --swiftui-green: #34c759ff;
+  --swiftui-indigo: #6155f5ff;
+  --swiftui-mint: #00c8b3ff;
+  --swiftui-orange: #ff8d28ff;
+  --swiftui-pink: #ff2d55ff;
+  --swiftui-purple: #cb30e0ff;
+  --swiftui-red: #ff383cff;
+  --swiftui-teal: #00c3d0ff;
+  --swiftui-yellow: #ffcc00ff;
+  --macos-label-color: var(--swiftui-primary);
+  --macos-secondary-label-color: var(--swiftui-secondary);
+  --macos-control-accent-color: var(--swiftui-accent-color);
+  --macos-selected-content-background-color: var(--swiftui-accent-color);
+  --macos-system-blue: var(--swiftui-blue);
+  --macos-system-brown: var(--swiftui-brown);
+  --macos-system-cyan: var(--swiftui-cyan);
+  --macos-system-gray: var(--swiftui-gray);
+  --macos-system-green: var(--swiftui-green);
+  --macos-system-indigo: var(--swiftui-indigo);
+  --macos-system-mint: var(--swiftui-mint);
+  --macos-system-orange: var(--swiftui-orange);
+  --macos-system-pink: var(--swiftui-pink);
+  --macos-system-purple: var(--swiftui-purple);
+  --macos-system-red: var(--swiftui-red);
+  --macos-system-teal: var(--swiftui-teal);
+  --macos-system-yellow: var(--swiftui-yellow);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-voyager-visual-baseline="tahoe"]:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration] {
+    --swiftui-primary: #ffffffd8;
+    --swiftui-secondary: #ffffff8c;
+    --swiftui-accent-color: #0091ffff;
+    --swiftui-blue: #0091ffff;
+    --swiftui-brown: #b78a66ff;
+    --swiftui-cyan: #3cd3feff;
+    --swiftui-gray: #98989dff;
+    --swiftui-green: #30d158ff;
+    --swiftui-indigo: #6d7cffff;
+    --swiftui-mint: #00dac3ff;
+    --swiftui-orange: #ff9230ff;
+    --swiftui-pink: #ff375fff;
+    --swiftui-purple: #db34f2ff;
+    --swiftui-red: #ff4245ff;
+    --swiftui-teal: #00d2e0ff;
+    --swiftui-yellow: #ffd600ff;
+  }
+}
+
+:root[data-voyager-visual-baseline="tahoe"][data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration] {
+  --swiftui-primary: #ffffffd8;
+  --swiftui-secondary: #ffffff8c;
+  --swiftui-accent-color: #0091ffff;
+  --swiftui-blue: #0091ffff;
+  --swiftui-brown: #b78a66ff;
+  --swiftui-cyan: #3cd3feff;
+  --swiftui-gray: #98989dff;
+  --swiftui-green: #30d158ff;
+  --swiftui-indigo: #6d7cffff;
+  --swiftui-mint: #00dac3ff;
+  --swiftui-orange: #ff9230ff;
+  --swiftui-pink: #ff375fff;
+  --swiftui-purple: #db34f2ff;
+  --swiftui-red: #ff4245ff;
+  --swiftui-teal: #00d2e0ff;
+  --swiftui-yellow: #ffd600ff;
+}
+
+:root[data-voyager-visual-baseline="tahoe"][data-voyager-color-scheme-contrast="increased"]
+  [data-file-manager-illustration] {
+  --swiftui-primary: #000000ff;
+  --swiftui-secondary: #000000c1;
+  --swiftui-accent-color: #1e6ef4ff;
+  --swiftui-blue: #1e6ef4ff;
+  --swiftui-brown: #956d51ff;
+  --swiftui-cyan: #007eaeff;
+  --swiftui-gray: #69696eff;
+  --swiftui-green: #008932ff;
+  --swiftui-indigo: #564adeff;
+  --swiftui-mint: #008575ff;
+  --swiftui-orange: #c55300ff;
+  --swiftui-pink: #e7124dff;
+  --swiftui-purple: #b02fc2ff;
+  --swiftui-red: #e9152dff;
+  --swiftui-teal: #008198ff;
+  --swiftui-yellow: #a16a00ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-voyager-visual-baseline="tahoe"][data-voyager-color-scheme-contrast="increased"]:not(
+      [data-voyager-color-scheme="light"]
+    )
+    [data-file-manager-illustration] {
+    --swiftui-primary: #ffffffff;
+    --swiftui-secondary: #ffffffb2;
+    --swiftui-accent-color: #5cb8ffff;
+    --swiftui-blue: #5cb8ffff;
+    --swiftui-brown: #dba679ff;
+    --swiftui-cyan: #6dd9ffff;
+    --swiftui-gray: #98989dff;
+    --swiftui-green: #4ad968ff;
+    --swiftui-indigo: #a7aaffff;
+    --swiftui-mint: #54dfcbff;
+    --swiftui-orange: #ffa056ff;
+    --swiftui-pink: #ff8ac4ff;
+    --swiftui-purple: #ea8dffff;
+    --swiftui-red: #ff6165ff;
+    --swiftui-teal: #3bddecff;
+    --swiftui-yellow: #fedf43ff;
+  }
+}
+
+:root[data-voyager-visual-baseline="tahoe"][data-voyager-color-scheme="dark"][data-voyager-color-scheme-contrast="increased"]
+  [data-file-manager-illustration] {
+  --swiftui-primary: #ffffffff;
+  --swiftui-secondary: #ffffffb2;
+  --swiftui-accent-color: #5cb8ffff;
+  --swiftui-blue: #5cb8ffff;
+  --swiftui-brown: #dba679ff;
+  --swiftui-cyan: #6dd9ffff;
+  --swiftui-gray: #98989dff;
+  --swiftui-green: #4ad968ff;
+  --swiftui-indigo: #a7aaffff;
+  --swiftui-mint: #54dfcbff;
+  --swiftui-orange: #ffa056ff;
+  --swiftui-pink: #ff8ac4ff;
+  --swiftui-purple: #ea8dffff;
+  --swiftui-red: #ff6165ff;
+  --swiftui-teal: #3bddecff;
+  --swiftui-yellow: #fedf43ff;
+}
+/* SWIFTUI-SYSTEM-COLORS:tahoe:END */
