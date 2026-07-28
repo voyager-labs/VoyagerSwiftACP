@@ -564,5 +564,662 @@ class MainFunctionTests(unittest.TestCase):
             self.assertNotEqual(exit_code, 0)
 
 
+# ── Env key parity, duplicate, launch-surface, deprecated, and allowed-control tests ──
+
+TRACKED_KEY_A = "PUBLIC_APP_NAME"
+TRACKED_KEY_B = "PUBLIC_GATEWAY_URL"
+DEPRECATED_KEY = "VOYAGER_ONBOARDING_MOCK_BETA"
+
+
+class ParseEnvKeysTests(unittest.TestCase):
+    """Tests for _parse_env_keys."""
+
+    def test_parses_simple_keys(self) -> None:
+        from scripts.validate_build_matrix import _parse_env_keys
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
+            f.write("KEY_A=value1\nKEY_B=value2\n")
+            path = f.name
+        try:
+            keys = _parse_env_keys(Path(path))
+            self.assertEqual(keys, ["KEY_A", "KEY_B"])
+        finally:
+            Path(path).unlink()
+
+    def test_ignores_comments_and_blanks(self) -> None:
+        from scripts.validate_build_matrix import _parse_env_keys
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
+            f.write("# comment\n\nKEY_A=value1\n  \n# another\nKEY_B=value2\n")
+            path = f.name
+        try:
+            keys = _parse_env_keys(Path(path))
+            self.assertEqual(keys, ["KEY_A", "KEY_B"])
+        finally:
+            Path(path).unlink()
+
+    def test_rejects_duplicate_keys(self) -> None:
+        from scripts.validate_build_matrix import _parse_env_keys
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
+            f.write("KEY_A=value1\nKEY_A=value2\n")
+            path = f.name
+        try:
+            with self.assertRaises(ValueError):
+                _parse_env_keys(Path(path))
+        finally:
+            Path(path).unlink()
+
+    def test_handles_empty_file(self) -> None:
+        from scripts.validate_build_matrix import _parse_env_keys
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
+            f.write("# only comments\n\n")
+            path = f.name
+        try:
+            keys = _parse_env_keys(Path(path))
+            self.assertEqual(keys, [])
+        finally:
+            Path(path).unlink()
+
+
+class CheckEnvKeyParityTests(unittest.TestCase):
+    """Tests for check_env_key_parity."""
+
+    def test_passes_when_keys_equal(self) -> None:
+        from scripts.validate_build_matrix import check_env_key_parity
+
+        errors: list[str] = []
+        check_env_key_parity(errors)
+        self.assertEqual(errors, [])
+
+    def test_fails_when_key_missing_from_example(self) -> None:
+        from scripts.validate_build_matrix import check_env_key_parity
+
+        with (
+            mock.patch("scripts.validate_build_matrix.ENV_EXAMPLE_PATH") as mock_ex,
+            mock.patch("scripts.validate_build_matrix.ENV_PROD_PATH") as mock_pr,
+        ):
+            mock_ex.read_text.return_value = "KEY_A=val1\n"
+            mock_pr.read_text.return_value = "KEY_A=val1\nKEY_B=val2\n"
+            errors: list[str] = []
+            check_env_key_parity(errors)
+            self.assertGreater(len(errors), 0)
+            self.assertIn("KEY_B", errors[0])
+
+
+class CheckExpectedTrackedEnvKeysTests(unittest.TestCase):
+    def test_fails_when_matching_templates_add_an_unapproved_key(self) -> None:
+        from scripts.validate_build_matrix import (
+            EXPECTED_TRACKED_ENV_KEYS,
+            check_expected_tracked_env_keys,
+        )
+
+        with tempfile.TemporaryDirectory() as temp:
+            env_path = Path(temp) / ".env.example"
+            env_path.write_text(
+                "".join(f"{key}=value\n" for key in sorted(EXPECTED_TRACKED_ENV_KEYS))
+                + "UNAPPROVED_SECRET_KEY=value\n"
+            )
+            errors: list[str] = []
+            check_expected_tracked_env_keys(errors, paths=[env_path])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("UNAPPROVED_SECRET_KEY", errors[0])
+
+    def test_passes_for_exact_contract(self) -> None:
+        from scripts.validate_build_matrix import (
+            EXPECTED_TRACKED_ENV_KEYS,
+            check_expected_tracked_env_keys,
+        )
+
+        with tempfile.TemporaryDirectory() as temp:
+            env_path = Path(temp) / ".env.example"
+            env_path.write_text(
+                "".join(f"{key}=value\n" for key in sorted(EXPECTED_TRACKED_ENV_KEYS))
+            )
+            errors: list[str] = []
+            check_expected_tracked_env_keys(errors, paths=[env_path])
+            self.assertEqual(errors, [])
+
+    def test_reports_missing_env_file(self) -> None:
+        from scripts.validate_build_matrix import check_expected_tracked_env_keys
+
+        with tempfile.TemporaryDirectory() as temp:
+            missing_path = Path(temp) / ".env.prod"
+            errors: list[str] = []
+            check_expected_tracked_env_keys(errors, paths=[missing_path])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("missing", errors[0])
+
+    def test_fails_when_key_missing_from_prod(self) -> None:
+        from scripts.validate_build_matrix import check_env_key_parity
+
+        with (
+            mock.patch("scripts.validate_build_matrix.ENV_EXAMPLE_PATH") as mock_ex,
+            mock.patch("scripts.validate_build_matrix.ENV_PROD_PATH") as mock_pr,
+        ):
+            mock_ex.read_text.return_value = "KEY_A=val1\nKEY_B=val2\n"
+            mock_pr.read_text.return_value = "KEY_A=val1\n"
+            errors: list[str] = []
+            check_env_key_parity(errors)
+            self.assertGreater(len(errors), 0)
+            self.assertIn("KEY_B", errors[0])
+
+
+class CheckNoDuplicateEnvKeysTests(unittest.TestCase):
+    """Tests for check_no_duplicate_env_keys."""
+
+    def test_passes_without_duplicates(self) -> None:
+        from scripts.validate_build_matrix import check_no_duplicate_env_keys
+
+        errors: list[str] = []
+        check_no_duplicate_env_keys(errors)
+        self.assertEqual(errors, [])
+
+    def test_fails_on_duplicate_in_example(self) -> None:
+        from scripts.validate_build_matrix import check_no_duplicate_env_keys
+
+        with mock.patch("scripts.validate_build_matrix.ENV_EXAMPLE_PATH") as mock_ex:
+            mock_ex.read_text.return_value = "KEY_A=val1\nKEY_A=val2\n"
+            errors: list[str] = []
+            check_no_duplicate_env_keys(errors)
+            self.assertGreater(len(errors), 0)
+            self.assertIn("Duplicate key", errors[0])
+            self.assertIn("KEY_A", errors[0])
+
+    def test_fails_on_duplicate_in_prod(self) -> None:
+        from scripts.validate_build_matrix import check_no_duplicate_env_keys
+
+        with mock.patch("scripts.validate_build_matrix.ENV_PROD_PATH") as mock_pr:
+            mock_pr.read_text.return_value = "KEY_B=val1\nKEY_B=val2\n"
+            errors: list[str] = []
+            check_no_duplicate_env_keys(errors)
+            self.assertGreater(len(errors), 0)
+            self.assertIn("Duplicate key", errors[0])
+            self.assertIn("KEY_B", errors[0])
+
+
+class CheckNoTrackedKeysInXcschemesTests(unittest.TestCase):
+    """Tests for check_no_tracked_keys_in_xcschemes."""
+
+    def test_passes_with_no_tracked_keys(self) -> None:
+        from scripts.validate_build_matrix import check_no_tracked_keys_in_xcschemes
+
+        tracked = {TRACKED_KEY_A, TRACKED_KEY_B}
+        with tempfile.TemporaryDirectory() as temp:
+            sd = Path(temp)
+            (sd / "Voyager-Dev.xcscheme").write_text(
+                '<?xml version="1.0" encoding="UTF-8"?>\n<Scheme version="1.7">\n'
+                '  <LaunchAction buildConfiguration="Dev-Debug">\n'
+                "    <EnvironmentVariables>\n"
+                '      <EnvironmentVariable key="VOYAGER_PROJECT_ROOT" value="x" isEnabled="YES"/>\n'
+                "    </EnvironmentVariables>\n"
+                "  </LaunchAction>\n"
+                "</Scheme>\n"
+            )
+            errors: list[str] = []
+            check_no_tracked_keys_in_xcschemes(tracked, errors, scheme_dirs=[sd])
+            self.assertEqual(errors, [])
+
+    def test_fails_on_tracked_key_in_scheme(self) -> None:
+        from scripts.validate_build_matrix import check_no_tracked_keys_in_xcschemes
+
+        tracked = {TRACKED_KEY_A, TRACKED_KEY_B}
+        with tempfile.TemporaryDirectory() as temp:
+            sd = Path(temp)
+            (sd / "Bad.xcscheme").write_text(
+                '<?xml version="1.0" encoding="UTF-8"?>\n<Scheme version="1.7">\n'
+                '  <LaunchAction buildConfiguration="Dev-Debug">\n'
+                "    <EnvironmentVariables>\n"
+                '      <EnvironmentVariable key="PUBLIC_APP_NAME" value="Voyager" isEnabled="YES"/>\n'
+                "    </EnvironmentVariables>\n"
+                "  </LaunchAction>\n"
+                "</Scheme>\n"
+            )
+            errors: list[str] = []
+            check_no_tracked_keys_in_xcschemes(tracked, errors, scheme_dirs=[sd])
+            self.assertGreater(len(errors), 0)
+            self.assertIn(TRACKED_KEY_A, errors[0])
+
+    def test_allows_untracked_launch_control(self) -> None:
+        from scripts.validate_build_matrix import check_no_tracked_keys_in_xcschemes
+
+        with tempfile.TemporaryDirectory() as temp:
+            schemes_dir = Path(temp)
+            (schemes_dir / "Bad.xcscheme").write_text(
+                "<Scheme><LaunchAction><EnvironmentVariables>"
+                '<EnvironmentVariable key="ARBITRARY_PROCESS_OVERRIDE" value="1" isEnabled="YES"/>'
+                "</EnvironmentVariables></LaunchAction></Scheme>"
+            )
+            errors: list[str] = []
+            check_no_tracked_keys_in_xcschemes(set(), errors, scheme_dirs=[schemes_dir])
+            self.assertEqual(errors, [])
+
+
+class CheckNoTrackedKeysInVscodeTests(unittest.TestCase):
+    """Tests for check_no_tracked_keys_in_vscode."""
+
+    def test_passes_with_allowed_controls_only(self) -> None:
+        from scripts.validate_build_matrix import check_no_tracked_keys_in_vscode
+
+        tracked = {TRACKED_KEY_A, TRACKED_KEY_B}
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(
+                '{"version": "2.0.0", "tasks": ['
+                '{"label": "test", "launchEnv": {"VOYAGER_PROJECT_ROOT": "${workspaceFolder}"}}'
+                "]}"
+            )
+            path = f.name
+        try:
+            errors: list[str] = []
+            check_no_tracked_keys_in_vscode(tracked, errors, path_override=Path(path))
+            self.assertEqual(errors, [])
+        finally:
+            Path(path).unlink()
+
+    def test_allows_untracked_launch_control(self) -> None:
+        from scripts.validate_build_matrix import check_no_tracked_keys_in_vscode
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(
+                '{"tasks": [{"label": "test", "launchEnv": '
+                '{"ARBITRARY_PROCESS_OVERRIDE": "1"}}]}'
+            )
+            path = Path(f.name)
+        try:
+            errors: list[str] = []
+            check_no_tracked_keys_in_vscode(set(), errors, path_override=path)
+            self.assertEqual(errors, [])
+        finally:
+            path.unlink()
+
+    def test_allows_untracked_options_environment(self) -> None:
+        from scripts.validate_build_matrix import check_no_tracked_keys_in_vscode
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(
+                '{"tasks": [{"label": "test", "options": {"env": '
+                '{"ARBITRARY_PROCESS_OVERRIDE": "1"}}}]}'
+            )
+            path = Path(f.name)
+        try:
+            errors: list[str] = []
+            check_no_tracked_keys_in_vscode(set(), errors, path_override=path)
+            self.assertEqual(errors, [])
+        finally:
+            path.unlink()
+
+    def test_fails_on_tracked_key_in_launch_env(self) -> None:
+        from scripts.validate_build_matrix import check_no_tracked_keys_in_vscode
+
+        tracked = {TRACKED_KEY_A, TRACKED_KEY_B}
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(
+                '{"version": "2.0.0", "tasks": ['
+                '{"label": "test", "launchEnv": {"PUBLIC_APP_NAME": "Voyager"}}'
+                "]}"
+            )
+            path = f.name
+        try:
+            errors: list[str] = []
+            check_no_tracked_keys_in_vscode(tracked, errors, path_override=Path(path))
+            self.assertGreater(len(errors), 0)
+            self.assertIn(TRACKED_KEY_A, errors[0])
+        finally:
+            Path(path).unlink()
+
+
+class CheckNoTrackedKeysInZedTests(unittest.TestCase):
+    """Tests for check_no_tracked_keys_in_zed."""
+
+    def test_passes_with_allowed_controls_only(self) -> None:
+        from scripts.validate_build_matrix import check_no_tracked_keys_in_zed
+
+        tracked = {TRACKED_KEY_A, TRACKED_KEY_B}
+        tasks = [
+            {
+                "label": "test",
+                "command": "./script.sh",
+                "args": [
+                    "--env",
+                    "VOYAGER_PROJECT_ROOT=$ZED_WORKTREE_ROOT",
+                ],
+            }
+        ]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(str(tasks).replace("'", '"'))
+            path = f.name
+        try:
+            errors: list[str] = []
+            check_no_tracked_keys_in_zed(tracked, errors, path_override=Path(path))
+            self.assertEqual(errors, [])
+        finally:
+            Path(path).unlink()
+
+    def test_allows_untracked_launch_control(self) -> None:
+        from scripts.validate_build_matrix import check_no_tracked_keys_in_zed
+
+        tasks = [{"label": "test", "args": ["--env", "ARBITRARY_PROCESS_OVERRIDE=1"]}]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(str(tasks).replace("'", '"'))
+            path = Path(f.name)
+        try:
+            errors: list[str] = []
+            check_no_tracked_keys_in_zed(set(), errors, path_override=path)
+            self.assertEqual(errors, [])
+        finally:
+            path.unlink()
+
+    def test_allows_untracked_environment_dictionary(self) -> None:
+        from scripts.validate_build_matrix import check_no_tracked_keys_in_zed
+
+        tasks = [{"label": "test", "env": {"ARBITRARY_PROCESS_OVERRIDE": "1"}}]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(str(tasks).replace("'", '"'))
+            path = Path(f.name)
+        try:
+            errors: list[str] = []
+            check_no_tracked_keys_in_zed(set(), errors, path_override=path)
+            self.assertEqual(errors, [])
+        finally:
+            path.unlink()
+
+    def test_fails_on_tracked_key_in_zed_env(self) -> None:
+        from scripts.validate_build_matrix import check_no_tracked_keys_in_zed
+
+        tracked = {TRACKED_KEY_A, TRACKED_KEY_B}
+        tasks = [
+            {
+                "label": "test",
+                "command": "./script.sh",
+                "args": [
+                    "--env",
+                    "PUBLIC_GATEWAY_URL=https://example.com",
+                ],
+            }
+        ]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(str(tasks).replace("'", '"'))
+            path = f.name
+        try:
+            errors: list[str] = []
+            check_no_tracked_keys_in_zed(tracked, errors, path_override=Path(path))
+            self.assertGreater(len(errors), 0)
+            self.assertIn(TRACKED_KEY_B, errors[0])
+        finally:
+            Path(path).unlink()
+
+
+class CheckNoDeprecatedKeysTests(unittest.TestCase):
+    """Tests for check_no_deprecated_keys."""
+
+    def test_passes_when_deprecated_absent(self) -> None:
+        from scripts.validate_build_matrix import (
+            check_no_deprecated_keys,
+            DEPRECATED_KEYS,
+        )
+
+        with (
+            mock.patch(
+                "scripts.validate_build_matrix.VSCodeTasksPath",
+                Path("/nonexistent/vscode.json"),
+            ),
+            mock.patch(
+                "scripts.validate_build_matrix.ZedTasksPath",
+                Path("/nonexistent/zed.json"),
+            ),
+        ):
+            errors: list[str] = []
+            check_no_deprecated_keys(errors)
+            self.assertEqual(errors, [])
+
+    def test_fails_when_deprecated_in_scheme(self) -> None:
+        from scripts.validate_build_matrix import check_no_deprecated_keys
+
+        with tempfile.TemporaryDirectory() as temp:
+            sd = Path(temp)
+            (sd / "Bad.xcscheme").write_text(
+                '<?xml version="1.0" encoding="UTF-8"?>\n<Scheme version="1.7">\n'
+                '  <LaunchAction buildConfiguration="Dev-Debug">\n'
+                "    <EnvironmentVariables>\n"
+                '      <EnvironmentVariable key="VOYAGER_ONBOARDING_MOCK_BETA" value="1" isEnabled="YES"/>\n'
+                "    </EnvironmentVariables>\n"
+                "  </LaunchAction>\n"
+                "</Scheme>\n"
+            )
+            errors: list[str] = []
+            check_no_deprecated_keys(errors, scheme_dirs=[sd])
+            self.assertGreater(len(errors), 0)
+            self.assertIn(DEPRECATED_KEY, errors[0])
+
+    def test_fails_when_deprecated_in_vscode_options_environment(self) -> None:
+        from scripts.validate_build_matrix import check_no_deprecated_keys
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(
+                '{"tasks": [{"label": "test", "options": {"env": '
+                '{"VOYAGER_ONBOARDING_MOCK_BETA": "1"}}}]}'
+            )
+            path = Path(f.name)
+        try:
+            with (
+                mock.patch("scripts.validate_build_matrix.VSCodeTasksPath", path),
+                mock.patch(
+                    "scripts.validate_build_matrix.ZedTasksPath",
+                    Path("/nonexistent/zed.json"),
+                ),
+            ):
+                errors: list[str] = []
+                check_no_deprecated_keys(errors, scheme_dirs=[])
+            self.assertEqual(len(errors), 1)
+            self.assertIn(DEPRECATED_KEY, errors[0])
+        finally:
+            path.unlink()
+
+    def test_fails_when_deprecated_in_zed_environment_dictionary(self) -> None:
+        from scripts.validate_build_matrix import check_no_deprecated_keys
+
+        tasks = [{"label": "test", "env": {"VOYAGER_ONBOARDING_MOCK_BETA": "1"}}]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(str(tasks).replace("'", '"'))
+            path = Path(f.name)
+        try:
+            with (
+                mock.patch(
+                    "scripts.validate_build_matrix.VSCodeTasksPath",
+                    Path("/nonexistent/vscode.json"),
+                ),
+                mock.patch("scripts.validate_build_matrix.ZedTasksPath", path),
+            ):
+                errors: list[str] = []
+                check_no_deprecated_keys(errors, scheme_dirs=[])
+            self.assertEqual(len(errors), 1)
+            self.assertIn(DEPRECATED_KEY, errors[0])
+        finally:
+            path.unlink()
+
+    def test_fails_when_removed_codex_key_is_in_env_template(self) -> None:
+        from scripts.validate_build_matrix import check_no_deprecated_keys
+
+        with tempfile.TemporaryDirectory() as temp:
+            env_path = Path(temp) / ".env.example"
+            env_path.write_text("OPENAI_CODEX_OAUTH_CLIENT_ID=value\n")
+            errors: list[str] = []
+            check_no_deprecated_keys(
+                errors,
+                scheme_dirs=[],
+                env_paths=[env_path],
+                source_roots=[],
+            )
+            self.assertEqual(len(errors), 1)
+            self.assertIn("OPENAI_CODEX_OAUTH_CLIENT_ID", errors[0])
+
+    def test_fails_when_removed_codex_key_is_in_swift_source(self) -> None:
+        from scripts.validate_build_matrix import check_no_deprecated_keys
+
+        with tempfile.TemporaryDirectory() as temp:
+            source_root = Path(temp)
+            (source_root / "Config.swift").write_text(
+                'let key = "VOYAGER_CODEX_WORKING_DIRECTORY"\n'
+            )
+            errors: list[str] = []
+            check_no_deprecated_keys(
+                errors,
+                scheme_dirs=[],
+                env_paths=[],
+                source_roots=[source_root],
+            )
+            self.assertEqual(len(errors), 1)
+            self.assertIn("VOYAGER_CODEX_WORKING_DIRECTORY", errors[0])
+
+
+class CheckProcessInfoEnvironmentOwnershipTests(unittest.TestCase):
+    def test_fails_on_unapproved_literal_key(self) -> None:
+        from scripts.validate_build_matrix import (
+            check_process_info_environment_ownership,
+        )
+
+        with tempfile.TemporaryDirectory() as temp:
+            source_root = Path(temp)
+            source_path = source_root / "Config.swift"
+            source_path.write_text(
+                'let value = ProcessInfo.processInfo.environment["NEW_PROCESS_CONTROL"]\n'
+            )
+            with mock.patch(
+                "scripts.validate_build_matrix.ALLOWED_PROCESS_INFO_LITERAL_KEYS",
+                {},
+            ):
+                errors: list[str] = []
+                check_process_info_environment_ownership(errors, [source_root])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("NEW_PROCESS_CONTROL", errors[0])
+
+    def test_fails_on_dynamic_key_access(self) -> None:
+        from scripts.validate_build_matrix import (
+            check_process_info_environment_ownership,
+        )
+
+        with tempfile.TemporaryDirectory() as temp:
+            source_root = Path(temp)
+            (source_root / "Config.swift").write_text(
+                "let value = ProcessInfo.processInfo.environment[key]\n"
+            )
+            errors: list[str] = []
+            check_process_info_environment_ownership(errors, [source_root])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("dynamic", errors[0])
+
+    def test_fails_on_unapproved_full_snapshot(self) -> None:
+        from scripts.validate_build_matrix import (
+            check_process_info_environment_ownership,
+        )
+
+        with tempfile.TemporaryDirectory() as temp:
+            source_root = Path(temp)
+            (source_root / "Config.swift").write_text(
+                "let environment = ProcessInfo.processInfo.environment\n"
+            )
+            with mock.patch(
+                "scripts.validate_build_matrix.ALLOWED_PROCESS_INFO_SNAPSHOT_FILES",
+                set(),
+            ):
+                errors: list[str] = []
+                check_process_info_environment_ownership(errors, [source_root])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("snapshot", errors[0])
+
+    def test_passes_for_manifested_literal_and_snapshot_access(self) -> None:
+        from scripts.validate_build_matrix import (
+            check_process_info_environment_ownership,
+        )
+
+        with tempfile.TemporaryDirectory() as temp:
+            source_root = Path(temp)
+            literal_path = source_root / "Literal.swift"
+            snapshot_path = source_root / "Snapshot.swift"
+            literal_path.write_text(
+                'let value = ProcessInfo.processInfo.environment["HOST_SMOKE"]\n'
+            )
+            snapshot_path.write_text(
+                "let environment = ProcessInfo.processInfo.environment\n"
+            )
+            with (
+                mock.patch(
+                    "scripts.validate_build_matrix.ALLOWED_PROCESS_INFO_LITERAL_KEYS",
+                    {literal_path.as_posix(): {"HOST_SMOKE"}},
+                ),
+                mock.patch(
+                    "scripts.validate_build_matrix.ALLOWED_PROCESS_INFO_SNAPSHOT_FILES",
+                    {snapshot_path.as_posix()},
+                ),
+            ):
+                errors: list[str] = []
+                check_process_info_environment_ownership(errors, [source_root])
+            self.assertEqual(errors, [])
+
+
+class AllowedControlsNotFlaggedTests(unittest.TestCase):
+    """Test that allowed controls in launch surfaces are not flagged."""
+
+    def test_allowed_control_in_scheme_not_flagged(self) -> None:
+        from scripts.validate_build_matrix import check_no_tracked_keys_in_xcschemes
+
+        tracked = {TRACKED_KEY_A, TRACKED_KEY_B}
+        with tempfile.TemporaryDirectory() as temp:
+            sd = Path(temp)
+            (sd / "Ok.xcscheme").write_text(
+                '<?xml version="1.0" encoding="UTF-8"?>\n<Scheme version="1.7">\n'
+                '  <LaunchAction buildConfiguration="Dev-Debug">\n'
+                "    <EnvironmentVariables>\n"
+                '      <EnvironmentVariable key="VOYAGER_PROJECT_ROOT" value="x" isEnabled="YES"/>\n'
+                '      <EnvironmentVariable key="ONBOARDING_HOST_SMOKE" value="1" isEnabled="YES"/>\n'
+                "    </EnvironmentVariables>\n"
+                "  </LaunchAction>\n"
+                "</Scheme>\n"
+            )
+            errors: list[str] = []
+            check_no_tracked_keys_in_xcschemes(tracked, errors, scheme_dirs=[sd])
+            self.assertEqual(errors, [])
+
+    def test_allowed_control_in_vscode_not_flagged(self) -> None:
+        from scripts.validate_build_matrix import check_no_tracked_keys_in_vscode
+
+        tracked = {TRACKED_KEY_A, TRACKED_KEY_B}
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(
+                '{"version": "2.0.0", "tasks": ['
+                '{"label": "t", "launchEnv": {"ONBOARDING_HOST_RESET_PROGRESS": "1"}}'
+                "]}"
+            )
+            path = f.name
+        try:
+            errors: list[str] = []
+            check_no_tracked_keys_in_vscode(tracked, errors, path_override=Path(path))
+            self.assertEqual(errors, [])
+        finally:
+            Path(path).unlink()
+
+    def test_allowed_control_in_zed_not_flagged(self) -> None:
+        from scripts.validate_build_matrix import check_no_tracked_keys_in_zed
+
+        tracked = {TRACKED_KEY_A, TRACKED_KEY_B}
+        tasks = [
+            {
+                "label": "t",
+                "command": "./script.sh",
+                "args": ["--env", "SETTINGS_HOST_SMOKE=1"],
+            }
+        ]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(str(tasks).replace("'", '"'))
+            path = f.name
+        try:
+            errors: list[str] = []
+            check_no_tracked_keys_in_zed(tracked, errors, path_override=Path(path))
+            self.assertEqual(errors, [])
+        finally:
+            Path(path).unlink()
+
+
 if __name__ == "__main__":
     unittest.main()

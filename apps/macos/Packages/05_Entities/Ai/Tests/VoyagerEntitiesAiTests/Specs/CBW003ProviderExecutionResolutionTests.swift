@@ -175,6 +175,31 @@ final class CBW003ProviderExecutionResolutionTests: XCTestCase {
         RedactionTestHelper().assertNoRawSecrets(in: prompt)
         XCTAssertFalse(prompt.contains("/Users/me/secret"), prompt)
     }
+
+    func testCodexProcessEnvironmentExcludesUnrelatedParentSecrets() {
+        let environment = AiChatProviderExecutionClient.codexProcessEnvironment(
+            codexHomeURL: URL(fileURLWithPath: "/tmp/voyager-codex-home"),
+            parentEnvironment: [
+                "HOME": "/Users/test",
+                "HTTPS_PROXY": "https://proxy.example.com",
+                "LANG": "en_US.UTF-8",
+                "OPENAI_API_KEY": "secret",
+                "PATH": "/custom/bin",
+                "UNRELATED_SECRET": "secret",
+            ],
+        )
+
+        XCTAssertEqual(environment["CODEX_HOME"], "/tmp/voyager-codex-home")
+        XCTAssertEqual(environment["HOME"], "/Users/test")
+        XCTAssertEqual(environment["HTTPS_PROXY"], "https://proxy.example.com")
+        XCTAssertEqual(environment["LANG"], "en_US.UTF-8")
+        XCTAssertEqual(
+            environment["PATH"],
+            "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/custom/bin",
+        )
+        XCTAssertNil(environment["OPENAI_API_KEY"])
+        XCTAssertNil(environment["UNRELATED_SECRET"])
+    }
 }
 
 private extension CBW003ProviderExecutionResolutionTests {
