@@ -14,7 +14,9 @@ final class TemporaryHomeFixture {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         homeURL = tmp
-        voyagerHomeURL = tmp.appendingPathComponent(".voyager", isDirectory: true)
+        voyagerHomeURL = tmp
+            .appendingPathComponent(".voyager", isDirectory: true)
+            .appendingPathComponent("dev", isDirectory: true)
         accountTokensFileURL = voyagerHomeURL.appendingPathComponent("account_tokens.json")
 
         if createVoyagerDirectory {
