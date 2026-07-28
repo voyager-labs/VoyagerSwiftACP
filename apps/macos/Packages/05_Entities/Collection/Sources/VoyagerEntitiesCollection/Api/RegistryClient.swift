@@ -50,6 +50,28 @@ public enum PropertyKeyResolution: Equatable, Sendable {
     case unknown(String)
 }
 
+private struct RegistryLiveContext {
+    let allProperties: [RegistrySnapshot.PropertyEntry]
+    let labels: [String: String]
+    let types: [String: String]
+    let unitSpecs: [String: SystemPropertyUnitSpec]
+    let operatorMap: [String: [String]]
+    let operatorDefinitions: [String: OperatorDefinition]
+    let legacyKeyMap: [String: String]
+    let propertiesByKey: [String: RegistrySnapshot.PropertyEntry]
+
+    init(snapshot: RegistrySnapshot) {
+        allProperties = snapshot.allProperties
+        labels = snapshot.propertyKeyToLabel
+        types = snapshot.propertyKeyToType
+        unitSpecs = snapshot.propertyKeyToUnitSpec
+        operatorMap = snapshot.operatorCodesByKey
+        operatorDefinitions = snapshot.operatorDefinitions
+        legacyKeyMap = snapshot.legacyKeyMap
+        propertiesByKey = Dictionary(uniqueKeysWithValues: allProperties.map { ($0.key, $0) })
+    }
+}
+
 public extension RegistryClient {
     func label(for key: String) -> String {
         labelForKey(key)
@@ -157,19 +179,17 @@ public extension RegistryClient {
         key: String,
         label: String,
         type: SystemPropertyTypeKey,
-        unitSpec: SystemPropertyUnitSpec?,
-        operatorCodes: [String],
-        operatorDefinitions: [String: OperatorDefinition],
+        context: RegistryLiveContext,
     ) -> Condition.Property {
-        let options = operatorCodes.compactMap { code -> Condition.OperatorOption? in
-            guard let label = operatorDefinitions[code]?.uiLabel else { return nil }
+        let options = (context.operatorMap[key] ?? []).compactMap { code -> Condition.OperatorOption? in
+            guard let label = context.operatorDefinitions[code]?.uiLabel else { return nil }
             return Condition.OperatorOption(code: code, label: label)
         }
         return .init(
             key: key,
             label: label,
             type: type,
-            unitContract: unitSpec.flatMap(Condition.UnitContract.init),
+            unitContract: context.unitSpecs[key].flatMap(Condition.UnitContract.init),
             operatorOptions: options,
         )
     }
@@ -210,6 +230,31 @@ public extension RegistryClient {
         return (entry, label)
     }
 
+    nonisolated private static func resolvedPropertyContext(
+        for propertyKey: String,
+        context: RegistryLiveContext,
+    ) -> (canonicalKey: String, property: Condition.Property)? {
+        guard let canonicalKey = canonicalKey(
+            for: propertyKey,
+            labels: context.labels,
+            legacyKeyMap: context.legacyKeyMap,
+        ), let (propertyEntry, label) = propertyEntry(
+            for: canonicalKey,
+            properties: context.propertiesByKey,
+            labels: context.labels,
+        ) else {
+            return nil
+        }
+        let type = SystemPropertyTypeKey(rawType: propertyEntry.definition.type)
+        let property = resolvedProperty(
+            key: canonicalKey,
+            label: label,
+            type: type,
+            context: context,
+        )
+        return (canonicalKey, property)
+    }
+
     nonisolated private static func resolvedCondition(
         property: Condition.Property,
         operation: Condition.Operation,
@@ -236,95 +281,84 @@ public extension RegistryClient {
     }
 
     static func live(snapshot: RegistrySnapshot) -> RegistryClient {
-        let allProperties = snapshot.allProperties
-        let labels = snapshot.propertyKeyToLabel
-        let types = snapshot.propertyKeyToType
-        let unitSpecs = snapshot.propertyKeyToUnitSpec
-        let operatorMap = snapshot.operatorCodesByKey
-        let operatorDefinitions = snapshot.operatorDefinitions
-        let legacyKeyMap = snapshot.legacyKeyMap
-        let propertiesByKey = Dictionary(uniqueKeysWithValues: allProperties.map { ($0.key, $0) })
+        let context = RegistryLiveContext(snapshot: snapshot)
 
         return RegistryClient(
-            allProperties: { allProperties },
-            labelForKey: { requiredValue(from: labels, key: $0, missingMessage: "ui_label 누락") },
-            propertyTypeString: { requiredValue(from: types, key: $0, missingMessage: "type 누락") },
-            propertyUnitSpec: { unitSpecs[$0] },
-            operatorCodes: { requiredValue(from: operatorMap, key: $0, missingMessage: "operator 옵션 누락") },
-            operatorDefinition: { requiredValue(from: operatorDefinitions, key: $0, missingMessage: "operator 정의 누락") },
-            resolvePropertyKey: { resolveKey($0, labels: labels, legacyKeyMap: legacyKeyMap) },
+            allProperties: { context.allProperties },
+            labelForKey: { requiredValue(from: context.labels, key: $0, missingMessage: "ui_label 누락") },
+            propertyTypeString: { requiredValue(from: context.types, key: $0, missingMessage: "type 누락") },
+            propertyUnitSpec: { context.unitSpecs[$0] },
+            operatorCodes: { requiredValue(from: context.operatorMap, key: $0, missingMessage: "operator 옵션 누락") },
+            operatorDefinition: { requiredValue(
+                from: context.operatorDefinitions,
+                key: $0,
+                missingMessage: "operator 정의 누락",
+            )
+            },
+            resolvePropertyKey: { resolveKey($0, labels: context.labels, legacyKeyMap: context.legacyKeyMap) },
             resolveCondition: { propertyKey, operatorCode, values, sourcePayload in
-                let originalSource = defaultSourcePayload(
+                try resolveConditionValue(
                     propertyKey: propertyKey,
                     operatorCode: operatorCode,
-                    sourcePayload: sourcePayload,
-                )
-                guard let canonicalKey = canonicalKey(
-                    for: propertyKey,
-                    labels: labels,
-                    legacyKeyMap: legacyKeyMap,
-                ) else {
-                    return opaqueCondition(
-                        key: propertyKey,
-                        source: originalSource,
-                        availability: .unsupportedProperty,
-                    )
-                }
-                guard let (propertyEntry, label) = propertyEntry(
-                    for: canonicalKey,
-                    properties: propertiesByKey,
-                    labels: labels,
-                )
-                else {
-                    return opaqueCondition(
-                        key: propertyKey,
-                        source: originalSource,
-                        availability: .unsupportedProperty,
-                    )
-                }
-                let type = SystemPropertyTypeKey(rawType: propertyEntry.definition.type)
-                let property = resolvedProperty(
-                    key: canonicalKey,
-                    label: label,
-                    type: type,
-                    unitSpec: unitSpecs[canonicalKey],
-                    operatorCodes: operatorMap[canonicalKey] ?? [],
-                    operatorDefinitions: operatorDefinitions,
-                )
-                guard let operatorCode else {
-                    return Condition(
-                        property: property,
-                        operation: nil,
-                        values: nil,
-                        availability: .available,
-                        opaqueSource: nil,
-                    )
-                }
-                guard property.operatorOptions.contains(where: { $0.code == operatorCode }),
-                      let definition = operatorDefinitions[operatorCode]
-                else {
-                    return Condition(
-                        property: property,
-                        operation: nil,
-                        values: nil,
-                        availability: .unsupportedOperator,
-                        opaqueSource: originalSource,
-                    )
-                }
-                let operation = try resolvedOperation(
-                    propertyKey: canonicalKey,
-                    operatorCode: operatorCode,
-                    type: type,
-                    definition: definition,
-                )
-                return resolvedCondition(
-                    property: property,
-                    operation: operation,
                     values: values,
                     sourcePayload: sourcePayload,
-                    originalSource: originalSource,
+                    context: context,
                 )
             },
+        )
+    }
+
+    nonisolated private static func resolveConditionValue(
+        propertyKey: String,
+        operatorCode: String?,
+        values: [String]?,
+        sourcePayload: CollectionCondition?,
+        context: RegistryLiveContext,
+    ) throws -> Condition {
+        let originalSource = defaultSourcePayload(
+            propertyKey: propertyKey,
+            operatorCode: operatorCode,
+            sourcePayload: sourcePayload,
+        )
+        guard let resolvedProperty = resolvedPropertyContext(for: propertyKey, context: context) else {
+            return opaqueCondition(
+                key: propertyKey,
+                source: originalSource,
+                availability: .unsupportedProperty,
+            )
+        }
+        guard let operatorCode else {
+            return Condition(
+                property: resolvedProperty.property,
+                operation: nil,
+                values: nil,
+                availability: .available,
+                opaqueSource: nil,
+            )
+        }
+        guard resolvedProperty.property.operatorOptions.contains(where: { $0.code == operatorCode }),
+              let definition = context.operatorDefinitions[operatorCode]
+        else {
+            return Condition(
+                property: resolvedProperty.property,
+                operation: nil,
+                values: nil,
+                availability: .unsupportedOperator,
+                opaqueSource: originalSource,
+            )
+        }
+        let operation = try resolvedOperation(
+            propertyKey: resolvedProperty.canonicalKey,
+            operatorCode: operatorCode,
+            type: resolvedProperty.property.type,
+            definition: definition,
+        )
+        return resolvedCondition(
+            property: resolvedProperty.property,
+            operation: operation,
+            values: values,
+            sourcePayload: sourcePayload,
+            originalSource: originalSource,
         )
     }
 

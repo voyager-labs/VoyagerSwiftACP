@@ -262,9 +262,6 @@ func applyAppliedFilters(
     if let includeSubfolders = appliedFilters?.includeSubfolders {
         state.scopeEditor.includeSubfolders = includeSubfolders
     }
-    let previousEditorsByKey = Dictionary(uniqueKeysWithValues: state.conditionEditors.map {
-        ($0.condition.property.key, $0)
-    })
     let resolved = AppliedFilterResolver.resolveDetailed(
         appliedFilters,
         fallbackScopes: state.scopeEditor.selection.legacyScopePaths,
@@ -283,7 +280,24 @@ func applyAppliedFilters(
     if !shouldPreserveLocalMultiScope {
         state.scopeEditor.selection = selection
     }
-    let canonicalKeys = resolved.conditions.map(\.property.key)
+    applyResolvedConditions(
+        resolved.conditions,
+        state: &state,
+        registryClient: registryClient,
+        uuid: uuid,
+    )
+}
+
+private func applyResolvedConditions(
+    _ conditions: [Condition],
+    state: inout ComposerFeature.State,
+    registryClient: RegistryClient,
+    uuid: () -> UUID,
+) {
+    let previousEditorsByKey = Dictionary(uniqueKeysWithValues: state.conditionEditors.map {
+        ($0.condition.property.key, $0)
+    })
+    let canonicalKeys = conditions.map(\.property.key)
     guard Set(canonicalKeys).count == canonicalKeys.count else {
         state.transientFeedback = .init(
             id: UUID(),
@@ -294,7 +308,7 @@ func applyAppliedFilters(
         )
         return
     }
-    state.conditionEditors = IdentifiedArray(uniqueElements: resolved.conditions.map { condition in
+    state.conditionEditors = IdentifiedArray(uniqueElements: conditions.map { condition in
         let displayState: ConditionDisplayState? = if let previous = previousEditorsByKey[condition.property.key]?
             .displayState
         {

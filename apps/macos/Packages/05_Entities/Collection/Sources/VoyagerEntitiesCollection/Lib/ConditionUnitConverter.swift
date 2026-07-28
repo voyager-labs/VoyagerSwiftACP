@@ -13,17 +13,21 @@ public enum ConditionUnitConverter {
         contract.options.first(where: { $0.label == contract.defaultDisplayUnit })?.code ?? contract.canonicalUnit
     }
 
-    public static func toCanonical(displayValueText: String, from unit: String,
-                                   contract: Condition.UnitContract) -> String?
-    {
+    public static func toCanonical(
+        displayValueText: String,
+        from unit: String,
+        contract: Condition.UnitContract,
+    ) -> String? {
         guard let value = decimal(displayValueText),
               let factor = contract.options.first(where: { $0.code == unit })?.factorToCanonical else { return nil }
         return formatted(value * factor)
     }
 
-    public static func fromCanonical(canonicalText: String, to unit: String,
-                                     contract: Condition.UnitContract) -> String?
-    {
+    public static func fromCanonical(
+        canonicalText: String,
+        to unit: String,
+        contract: Condition.UnitContract,
+    ) -> String? {
         guard let value = decimal(canonicalText),
               let factor = contract.options.first(where: { $0.code == unit })?.factorToCanonical,
               factor != .zero else { return nil }

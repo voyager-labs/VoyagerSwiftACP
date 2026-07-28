@@ -66,9 +66,10 @@ public enum AppliedFilterResolver {
         return (result.scopes, result.conditions)
     }
 
-    private static func resolve(_ payload: SearchConditionPayload,
-                                registryClient: RegistryClient) -> (condition: Condition, unknownKey: String?)
-    {
+    private static func resolve(
+        _ payload: SearchConditionPayload,
+        registryClient: RegistryClient,
+    ) -> (condition: Condition, unknownKey: String?) {
         let source = CollectionCondition(
             propertyKey: payload.propertyKey,
             operatorCode: payload.operator,
@@ -95,9 +96,11 @@ public enum AppliedFilterResolver {
             }
             guard let values = ConditionCodec.decode(payload.value, contract: operation.valueContract) else {
                 return (
-                    RegistryClient
-                        .opaqueCondition(key: payload.propertyKey, source: source,
-                                         availability: .invalidPersistedValue),
+                    RegistryClient.opaqueCondition(
+                        key: payload.propertyKey,
+                        source: source,
+                        availability: .invalidPersistedValue,
+                    ),
                     unknownKey,
                 )
             }

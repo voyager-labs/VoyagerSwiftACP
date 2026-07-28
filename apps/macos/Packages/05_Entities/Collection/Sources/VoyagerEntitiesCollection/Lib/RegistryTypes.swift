@@ -182,7 +182,8 @@ public struct RegistryContractValidationError: Error, CustomStringConvertible, S
     public let reason: String
 
     public var description: String {
-        "Invalid condition registry contract for property \(propertyKey), operator \(operatorCode), type \(type.rawValue): \(reason)"
+        let contract = "property \(propertyKey), operator \(operatorCode), type \(type.rawValue)"
+        return "Invalid condition registry contract for \(contract): \(reason)"
     }
 }
 

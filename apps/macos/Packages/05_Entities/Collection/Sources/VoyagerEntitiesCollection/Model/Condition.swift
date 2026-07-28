@@ -24,38 +24,38 @@ public struct Condition: Equatable, Sendable {
         }
     }
 
-    public struct UnitContract: Equatable, Sendable {
-        public struct Option: Equatable, Sendable {
-            public let code: String
-            public let label: String
-            public let factorToCanonical: Decimal
+    public struct UnitOption: Equatable, Sendable {
+        public let code: String
+        public let label: String
+        public let factorToCanonical: Decimal
 
-            public init(code: String, label: String, factorToCanonical: Decimal) {
-                self.code = code
-                self.label = label
-                self.factorToCanonical = factorToCanonical
-            }
+        public init(code: String, label: String, factorToCanonical: Decimal) {
+            self.code = code
+            self.label = label
+            self.factorToCanonical = factorToCanonical
         }
+    }
 
+    public struct UnitContract: Equatable, Sendable {
         public let canonicalUnit: String
-        public let options: [Option]
+        public let options: [UnitOption]
         public let defaultDisplayUnit: String
 
-        public init(canonicalUnit: String, options: [Option], defaultDisplayUnit: String) {
+        public init(canonicalUnit: String, options: [UnitOption], defaultDisplayUnit: String) {
             self.canonicalUnit = canonicalUnit
             self.options = options
             self.defaultDisplayUnit = defaultDisplayUnit
         }
 
         init?(systemPropertyUnitSpec: SystemPropertyUnitSpec) {
-            let options = systemPropertyUnitSpec.units.compactMap { option -> Option? in
+            let options = systemPropertyUnitSpec.units.compactMap { option -> UnitOption? in
                 guard let factor = Decimal(
                     string: option.factorToCanonical,
                     locale: Locale(identifier: "en_US_POSIX"),
                 ) else {
                     return nil
                 }
-                return Option(code: option.code, label: option.label, factorToCanonical: factor)
+                return UnitOption(code: option.code, label: option.label, factorToCanonical: factor)
             }
             guard options.count == systemPropertyUnitSpec.units.count else { return nil }
             self.init(
