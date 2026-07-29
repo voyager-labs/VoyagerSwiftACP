@@ -7,6 +7,7 @@ export type FileEntry = {
   readonly kind: EntryKind
   readonly extension: string | null
   readonly secondaryLabel: string | null
+  readonly thumbnailSrc?: string
 }
 
 export type SidebarIconKind = "home" | "folder" | "folder-blue" | "collection" | "chat"
@@ -94,6 +95,7 @@ export type Entry = {
   readonly kind: EntryKind
   readonly meta?: string
   readonly count?: string
+  readonly thumbnailSrc?: string
 }
 
 export type FileManagerIllustrationProps = {

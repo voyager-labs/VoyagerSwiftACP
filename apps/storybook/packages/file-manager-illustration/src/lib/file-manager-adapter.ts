@@ -14,6 +14,7 @@ export function toEntry(f: FileEntry): Entry {
     name: f.displayName,
     kind: f.kind,
     meta: f.secondaryLabel ?? f.extension ?? undefined,
+    thumbnailSrc: f.thumbnailSrc,
   }
 }
 
