@@ -87,7 +87,10 @@ extension EntryListCoordinator {
         if selectedIds.isEmpty {
             return rowEntry.map { [$0] } ?? []
         }
-        return state.entries.filter { selectedIds.contains($0.id) }
+        let displayEntries = state.visibleSelectableEntries(
+            isNormalDirectoryPage: state.hierarchyProjectionIsActive,
+        )
+        return displayEntries.filter { selectedIds.contains($0.id) }
     }
 
     var isTrashFolder: Bool {
@@ -115,7 +118,9 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
         updateContextMenuAnchor(forRow: row)
         let rowEntry = entryForRow(row)
         let target = EntryContextMenuTarget.resolve(
-            displayEntries: state.entries,
+            displayEntries: state.visibleSelectableEntries(
+                isNormalDirectoryPage: state.hierarchyProjectionIsActive,
+            ),
             selectedIds: state.selectedIds,
             rowEntry: rowEntry,
         )

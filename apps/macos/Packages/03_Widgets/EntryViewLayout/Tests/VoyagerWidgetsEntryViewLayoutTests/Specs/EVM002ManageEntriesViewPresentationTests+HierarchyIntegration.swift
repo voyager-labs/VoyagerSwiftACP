@@ -191,6 +191,50 @@ extension EVM002ManageEntriesViewPresentationTests {
         }
     }
 
+    /// EVM-002-update_entry_selection: nested child context menu는 visible hierarchy row를 현재 대상으로 사용한다.
+    /// expanded child를 우클릭한 뒤 Rename이 root-only snapshot 때문에 no-op 되지 않는지 검증한다.
+    /// - 검증 내용: child row context menu target의 Rename delegate action
+    /// - 사전 조건: root folder 아래 child가 visible·selected 상태임
+    /// - 기대 결과: child EntryModel을 대상으로 startRename action이 실행됨
+    func testNestedChildContextMenuStartsRename() throws {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let child = makeHierarchyIntegrationEntry(id: "/root/a/file.txt", name: "file.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.selectedIds = [child.id]
+        state.hierarchy = .init(
+            rootPath: "/root",
+            expandedFolderIDs: [folder.id],
+            foldersByID: [folder.id: .init(children: [child], phase: .loaded)],
+        )
+        let store = Store(initialState: state) {
+            Reduce<EntryViewLayoutState, EntryViewLayoutAction> { state, action in
+                guard case let .delegate(.startRename(item, _)) = action else { return .none }
+                state.entryOperations.renamingItemId = item.id
+                return .none
+            }
+        }
+        let coordinator = EntryListCoordinator(store: store)
+        let view = EntryListView(frame: .zero)
+        let event = try XCTUnwrap(NSEvent.otherEvent(
+            with: .applicationDefined,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            subtype: 0,
+            data1: 0,
+            data2: 0,
+        ))
+
+        coordinator.bind(to: view)
+        _ = coordinator.contextMenu(forRow: 1, event: event)
+        coordinator.contextMenuCoordinator?.contextMenuStartRename()
+
+        XCTAssertEqual(store.state.entryOperations.renamingItemId, child.id)
+    }
+
     private func makeHierarchyIntegrationEntry(id: String, name: String) -> EntryModel {
         EntryModel(
             name: name,

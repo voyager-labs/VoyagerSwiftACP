@@ -35,7 +35,9 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
 
     private var canPerformTargetBoundCommand: Bool {
         target.isCurrent(
-            displayEntries: store.state.entries,
+            displayEntries: store.state.visibleSelectableEntries(
+                isNormalDirectoryPage: store.state.hierarchyProjectionIsActive,
+            ),
             selectedIds: store.state.selectedIds,
         )
             && (!store.state.entryOperations.isLoading || store.state.isCollectionMode)
