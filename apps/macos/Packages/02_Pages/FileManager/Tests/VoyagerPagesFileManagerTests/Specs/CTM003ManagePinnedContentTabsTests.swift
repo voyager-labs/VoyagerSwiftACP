@@ -8,6 +8,149 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 import XCTest
 
+@Reducer
+private struct CTM003PinnedPersistenceHarness {
+    typealias State = ContentTabState
+    typealias Action = ContentTabAction
+
+    @Dependency(\.contentTabPinnedRecordClient)
+    var client
+    @Dependency(\.userDefaultsClient)
+    var defaults
+
+    var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            guard case let .pinnedRecordPersistenceRequested(request) = action else {
+                return ContentTabFeature().reduce(into: &state, action: action)
+            }
+
+            let generation = client.reserveMutationGeneration(request.tabID)
+            let context = ContentTabPinnedRecordTerminalContext(
+                intentID: request.intentID,
+                generation: generation,
+            )
+            let client = client
+            let defaults = defaults
+            return .run { send in
+                do {
+                    let disposition = try await client.updateStoreGuarded(generation, defaults) { store in
+                        request.mutation.applying(to: store)
+                    }
+                    switch disposition {
+                    case .applied:
+                        await send(.pinnedRecordSaveSucceeded(tabID: request.tabID, context: context))
+                    case .superseded:
+                        await send(.pinnedRecordSaveNotApplied(
+                            tabID: request.tabID,
+                            context: context,
+                            reason: .superseded,
+                            rollback: request.rollback,
+                        ))
+                    }
+                } catch is CancellationError {
+                    await send(.pinnedRecordSaveNotApplied(
+                        tabID: request.tabID,
+                        context: context,
+                        reason: .cancelled,
+                        rollback: request.rollback,
+                    ))
+                } catch {
+                    await send(.pinnedRecordSaveFailed(
+                        tabID: request.tabID,
+                        context: context,
+                        rollback: request.rollback,
+                    ))
+                }
+            }
+            .cancellable(
+                id: PinnedRecordPersistenceCancelID(
+                    scopeID: state.pinnedRecordPersistenceScopeID,
+                    tabID: request.tabID,
+                ),
+                cancelInFlight: true,
+            )
+        }
+    }
+}
+
+@Reducer
+struct CTM003FileManagerPersistenceHarness {
+    typealias State = FileManagerWindowState
+    typealias Action = FileManagerWindowAction
+
+    @Dependency(\.contentTabPinnedRecordClient)
+    var client
+    @Dependency(\.userDefaultsClient)
+    var defaults
+
+    var body: some Reducer<State, Action> {
+        FileManagerFeature()
+
+        Reduce { _, action in
+            guard case let .delegate(.pinnedRecordPersistenceRequested(routedRequest)) = action else {
+                return .none
+            }
+            let request = routedRequest.request
+            let generation = client.reserveMutationGeneration(request.tabID)
+            let context = ContentTabPinnedRecordTerminalContext(
+                intentID: request.intentID,
+                generation: generation,
+            )
+            let client = client
+            let defaults = defaults
+            return .run { send in
+                let terminal: ContentTabAction
+                do {
+                    let disposition = try await client.updateStoreGuarded(generation, defaults) { store in
+                        request.mutation.applying(to: store)
+                    }
+                    switch disposition {
+                    case .applied:
+                        terminal = .pinnedRecordSaveSucceeded(tabID: request.tabID, context: context)
+                    case .superseded:
+                        terminal = .pinnedRecordSaveNotApplied(
+                            tabID: request.tabID,
+                            context: context,
+                            reason: .superseded,
+                            rollback: request.rollback,
+                        )
+                    }
+                } catch is CancellationError {
+                    terminal = .pinnedRecordSaveNotApplied(
+                        tabID: request.tabID,
+                        context: context,
+                        reason: .cancelled,
+                        rollback: request.rollback,
+                    )
+                } catch {
+                    terminal = .pinnedRecordSaveFailed(
+                        tabID: request.tabID,
+                        context: context,
+                        rollback: request.rollback,
+                    )
+                }
+
+                switch routedRequest.route {
+                case .single:
+                    await send(.contentTabs(terminal))
+                case let .selectedPin(operationID):
+                    await send(.performSelectedContentTabPinMutation(
+                        operationID: operationID,
+                        tabID: request.tabID,
+                        action: terminal,
+                    ))
+                case let .selectedClose(operationID):
+                    await send(.performSelectedContentTabCloseMutation(
+                        operationID: operationID,
+                        tabID: request.tabID,
+                        action: terminal,
+                    ))
+                }
+            }
+        }
+    }
+}
+
 private final class PinnedRecordStoreRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var savedStores: [ContentTabPinnedRecordStore] = []
@@ -837,7 +980,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 activeTabID: tabID,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = .constant(Self.pinnedAt)
             $0.contentTabPinnedRecordClient.reserveMutationGeneration = { _ in generation }
@@ -854,6 +997,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             )
             $0.pendingPinnedRecordIDs.insert(tabID)
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive { action in
             guard case let .pinnedRecordSaveNotApplied(receivedTabID, context, reason, _) = action else {
                 return false
@@ -893,7 +1037,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 activeTabID: tabID,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = .constant(Self.pinnedAt)
             $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, _ in
@@ -911,6 +1055,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             )
             $0.pendingPinnedRecordIDs.insert(tabID)
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive { action in
             guard case let .pinnedRecordSaveNotApplied(receivedTabID, _, reason, _) = action else {
                 return false
@@ -970,7 +1115,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
@@ -981,6 +1126,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[tabID] = Self.pinnedRecord(id: tabID, anchor: directoryAnchor)
             $0.pendingPinnedRecordIDs.insert(tabID)
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveSucceeded) {
             $0.pendingPinnedRecordIDs.remove(tabID)
         }
@@ -1012,7 +1158,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
@@ -1029,6 +1175,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             )
             $0.pendingPinnedRecordIDs.insert(tabID)
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveSucceeded) {
             $0.pendingPinnedRecordIDs.remove(tabID)
         }
@@ -1063,7 +1210,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, _ in
@@ -1101,7 +1248,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 activeTabID: tabID,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, _ in
@@ -1139,7 +1286,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
@@ -1172,7 +1319,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
@@ -1217,7 +1364,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 pinnedRecords: [pinnedID: Self.pinnedRecord(id: pinnedID, anchor: sameAnchor)],
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
@@ -1233,6 +1380,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[unpinnedID] = Self.pinnedRecord(id: unpinnedID, anchor: sameAnchor)
             $0.pendingPinnedRecordIDs.insert(unpinnedID)
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveSucceeded) {
             $0.pendingPinnedRecordIDs.remove(unpinnedID)
         }
@@ -1273,7 +1421,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 pinnedRecords: [tabID: originalRecord],
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, _ in
@@ -1317,7 +1465,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             record: originalRecord,
         )
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.entryLoadingClient.displayName = { URL(fileURLWithPath: $0).lastPathComponent }
@@ -1407,7 +1555,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
@@ -1424,6 +1572,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pendingPinnedRecordIDs.insert(firstID)
             $0.pinnedRecordPersistenceError = nil
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveSucceeded) {
             $0.pendingPinnedRecordIDs.remove(firstID)
         }
@@ -1439,6 +1588,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pendingPinnedRecordIDs.insert(firstID)
             $0.pinnedRecordPersistenceError = nil
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveSucceeded) {
             $0.pendingPinnedRecordIDs.remove(firstID)
         }
@@ -1452,6 +1602,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pendingPinnedRecordIDs.insert(secondID)
             $0.pinnedRecordPersistenceError = nil
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveSucceeded) {
             $0.pendingPinnedRecordIDs.remove(secondID)
         }
@@ -1669,7 +1820,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     ) -> TestStore<FileManagerFeature.State, FileManagerWindowAction> {
         let restoredSnapshot = fixture.restoredSnapshot
         let store = TestStore(initialState: fixture.state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.aiChatSessionPersistenceClient.loadSession = { requestedSessionID in
                 loadedSessionIDs.withValue { $0.append(requestedSessionID) }
@@ -1923,7 +2074,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         _ state: FileManagerFeature.State,
     ) -> TestStore<FileManagerFeature.State, FileManagerWindowAction> {
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_608))
         }
@@ -1973,7 +2124,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             struct SaveError: Error {}
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
@@ -1985,6 +2136,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[tabID] = Self.pinnedRecord(id: tabID, anchor: directoryAnchor)
             $0.pendingPinnedRecordIDs.insert(tabID)
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveFailed) {
             $0.tabs[id: tabID]?.isPinned = false
             $0.pinnedRecords.removeAll()
@@ -2028,7 +2180,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             pinnedRecords: [activeID: Self.pinnedRecord(id: activeID, anchor: anchor)],
         )
 
-        let feature = ContentTabFeature()
+        let feature = CTM003PinnedPersistenceHarness()
         let successIntentID = state.markLatestPinnedRecordPersistenceIntent(for: activeID)
         _ = feature.reduce(
             into: &state,
@@ -2102,7 +2254,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
@@ -2134,6 +2286,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[firstID] = firstRecord
             $0.pendingPinnedRecordIDs.insert(firstID)
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveSucceeded) {
             $0.pendingPinnedRecordIDs.remove(firstID)
         }
@@ -2142,6 +2295,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[secondID] = secondRecord
             $0.pendingPinnedRecordIDs.insert(secondID)
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveFailed) {
             $0.tabs[id: secondID]?.isPinned = false
             $0.pinnedRecords.removeValue(forKey: secondID)
@@ -2203,7 +2357,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
@@ -2219,6 +2373,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[firstID] = firstRecord
             $0.pendingPinnedRecordIDs.insert(firstID)
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveSucceeded) {
             $0.pendingPinnedRecordIDs.remove(firstID)
         }
@@ -2227,6 +2382,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[secondID] = secondRecord
             $0.pendingPinnedRecordIDs.insert(secondID)
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveSucceeded) {
             $0.pendingPinnedRecordIDs.remove(secondID)
         }
@@ -2274,7 +2430,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         contentTabState.pendingPinnedRecordIDs = [tabID]
         let olderIntent = contentTabState.markLatestPinnedRecordPersistenceIntent(for: tabID)
         let latestIntent = contentTabState.markLatestPinnedRecordPersistenceIntent(for: tabID)
-        let feature = ContentTabFeature()
+        let feature = CTM003PinnedPersistenceHarness()
 
         _ = feature.reduce(
             into: &contentTabState,
@@ -2332,7 +2488,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             batchOperationID: operationID,
         )
         let store = TestStore(initialState: initialState) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         }
 
         await store.send(.performSelectedContentTabCloseMutation(
@@ -2394,7 +2550,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
@@ -2408,6 +2564,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecords[currentID] = currentRecord
             $0.pendingPinnedRecordIDs.insert(currentID)
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveSucceeded) {
             $0.pendingPinnedRecordIDs.remove(currentID)
         }
@@ -2456,7 +2613,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 pinnedRecords: [currentID: currentRecord],
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
                 let savedStore = try transform(ContentTabPinnedRecordStore(records: [otherRecord, currentRecord]))
@@ -2467,8 +2624,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.unpin(currentID)) {
             $0.tabs[id: currentID]?.isPinned = false
             $0.pinnedRecords.removeAll()
+            $0.pendingPinnedRecordIDs.insert(currentID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordPersistenceRequested)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(currentID)
+        }
         await store.finish()
 
         XCTAssertEqual(recorder.stores(), [
@@ -2499,7 +2660,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         )
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
@@ -2517,6 +2678,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.contentTabs.pendingPinnedRecordIDs.insert(tabID)
             $0.syncContentTabSidebarItems()
         }
+        await store.receive(\.contentTabs.pinnedRecordPersistenceRequested)
+        await store.receive(\.delegate.pinnedRecordPersistenceRequested)
         await store.receive(\.contentTabs.pinnedRecordSaveSucceeded) {
             $0.contentTabs.pendingPinnedRecordIDs.remove(tabID)
         }
@@ -2534,7 +2697,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         state.syncContentTabSidebarItems()
         let alertRecorder = CollectionPinAlertRecorder()
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
                 alertRecorder.record(title: title, message: message)
@@ -2581,7 +2744,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         state.syncActiveTabContentState()
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         }
 
         await store.send(FileManagerWindowAction.request(.toggleActiveContentTabPin))
@@ -2602,7 +2765,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         state.syncContentTabSidebarItems()
         let alertRecorder = CollectionPinAlertRecorder()
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
                 alertRecorder.record(title: title, message: message)
@@ -2710,7 +2873,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         state.syncActiveTabContentState()
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         }
 
         await store.send(FileManagerWindowAction.request(.toggleActiveContentTabPin))
@@ -2754,7 +2917,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         state.syncActiveTabContentState()
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         }
 
         await store.send(FileManagerWindowAction.request(.toggleActiveContentTabPin))
@@ -2788,7 +2951,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         )
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
@@ -2797,9 +2960,14 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.receive(\.contentTabs) {
             $0.contentTabs.tabs[id: tabID]?.isPinned = false
             $0.contentTabs.pinnedRecords.removeAll()
+            $0.contentTabs.pendingPinnedRecordIDs.insert(tabID)
             $0.syncContentTabSidebarItems()
         }
-        await store.receive(\.contentTabs.pinnedRecordSaveSucceeded)
+        await store.receive(\.contentTabs.pinnedRecordPersistenceRequested)
+        await store.receive(\.delegate.pinnedRecordPersistenceRequested)
+        await store.receive(\.contentTabs.pinnedRecordSaveSucceeded) {
+            $0.contentTabs.pendingPinnedRecordIDs.remove(tabID)
+        }
         await store.finish()
     }
 
@@ -2822,7 +2990,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         )
 
         let successStore = TestStore(initialState: initialState) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
@@ -2832,6 +3000,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await successStore.send(.pin(targetID)) {
             Self.expectPinnedState(&$0, targetID: targetID, targetAnchor: targetAnchor)
         }
+        await successStore.receive(\.pinnedRecordPersistenceRequested)
         await successStore.receive(\.pinnedRecordSaveSucceeded) {
             $0.pendingPinnedRecordIDs.remove(targetID)
         }
@@ -2839,7 +3008,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         Self.assertSelection(successStore.state, targetID: targetID, anchorID: anchorID)
 
         let rollbackStore = TestStore(initialState: initialState) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
@@ -2847,6 +3016,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await rollbackStore.send(.pin(targetID)) {
             Self.expectPinnedState(&$0, targetID: targetID, targetAnchor: targetAnchor)
         }
+        await rollbackStore.receive(\.pinnedRecordPersistenceRequested)
         await rollbackStore.receive(\.pinnedRecordSaveFailed) {
             Self.expectPinRollbackState(&$0, targetID: targetID)
         }
@@ -2874,7 +3044,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let fixture = Self.ordinaryPinOrderingFixture
         let recorder = fixture.recorder
         let store = TestStore(initialState: fixture.state) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = .constant(Self.pinnedAt)
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
@@ -2892,6 +3062,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             )
             $0.pendingPinnedRecordIDs.insert(fixture.firstID)
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveSucceeded) {
             $0.pendingPinnedRecordIDs.remove(fixture.firstID)
         }
@@ -2905,6 +3076,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             )
             $0.pendingPinnedRecordIDs.insert(fixture.secondID)
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveSucceeded) {
             $0.pendingPinnedRecordIDs.remove(fixture.secondID)
         }
@@ -2926,7 +3098,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         for fixture in Self.pinFailureRollbackFixtures {
             let store = TestStore(initialState: fixture.state) {
-                ContentTabFeature()
+                CTM003PinnedPersistenceHarness()
             } withDependencies: {
                 $0.date = .constant(Self.pinnedAt)
                 $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
@@ -2935,6 +3107,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             store.exhaustivity = .off
 
             await store.send(.pin(fixture.targetID))
+            await store.receive(\.pinnedRecordPersistenceRequested)
             await store.receive(\.pinnedRecordSaveFailed)
             await store.finish()
 
@@ -2950,7 +3123,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     func testPinNotAppliedRestoresExactOriginalOrderingAndSelection() async {
         let fixture = Self.pinOrderingRollbackFixture
         let store = TestStore(initialState: fixture.state) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = .constant(Self.pinnedAt)
             $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, _ in .superseded }
@@ -2959,6 +3132,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.pin(fixture.targetID)) {
             Self.expectOptimisticOrderedPin(&$0, fixture: fixture)
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveNotApplied) {
             Self.expectOrderedPinRollback(&$0, fixture: fixture, hasError: false)
         }
@@ -2982,7 +3156,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 records: Array(fixture.state.contentTabs.pinnedRecords.values),
             )
             let store = TestStore(initialState: fixture.state) {
-                FileManagerFeature()
+                CTM003FileManagerPersistenceHarness()
             } withDependencies: {
                 $0.contentTabPinnedRecordClient.updateStore = { _, transform in
                     _ = try transform(persistedStore)
@@ -3021,7 +3195,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         struct SaveError: Error {}
         let fixture = try XCTUnwrap(legacyUnsupportedUnpinFixtures.first { $0.aiSessionID != nil })
         let store = TestStore(initialState: fixture.state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
         }
@@ -3053,7 +3227,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         for fixture in Self.unpinFailureRollbackFixtures {
             let store = TestStore(initialState: fixture.state) {
-                ContentTabFeature()
+                CTM003PinnedPersistenceHarness()
             } withDependencies: {
                 $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
             }
@@ -3061,6 +3235,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             store.exhaustivity = .off
 
             await store.send(.unpin(fixture.targetID))
+            await store.receive(\.pinnedRecordPersistenceRequested)
             await store.receive(\.pinnedRecordSaveFailed)
             await store.finish()
 
@@ -3093,7 +3268,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 pinnedRecords: [tabID: Self.pinnedRecord(id: tabID, anchor: directoryAnchor)],
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
@@ -3101,8 +3276,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.unpin(tabID)) {
             $0.tabs[id: tabID]?.isPinned = false
             $0.pinnedRecords.removeAll()
+            $0.pendingPinnedRecordIDs.insert(tabID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordPersistenceRequested)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(tabID)
+        }
         await store.finish()
     }
 
@@ -3149,7 +3328,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 pinnedRecords: [pinnedID: Self.pinnedRecord(id: pinnedID, anchor: pinnedAnchor)],
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
@@ -3160,8 +3339,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.tabs.remove(id: pinnedID)
             $0.tabs.append(unpinnedTab)
             $0.pinnedRecords.removeAll()
+            $0.pendingPinnedRecordIDs.insert(pinnedID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordPersistenceRequested)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(pinnedID)
+        }
         await store.finish()
 
         XCTAssertEqual(store.state.tabs.map(\.id), [firstUnpinnedID, secondUnpinnedID, pinnedID])
@@ -3192,7 +3375,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
@@ -3225,7 +3408,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 recentlyClosed: nil,
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
@@ -3259,7 +3442,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 pinnedRecords: [tabID: Self.pinnedRecord(id: tabID, anchor: directoryAnchor)],
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             struct SaveError: Error {}
             $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
@@ -3268,8 +3451,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.unpin(tabID)) {
             $0.tabs[id: tabID]?.isPinned = false
             $0.pinnedRecords.removeAll()
+            $0.pendingPinnedRecordIDs.insert(tabID)
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveFailed) {
+            $0.pendingPinnedRecordIDs.remove(tabID)
             $0.tabs[id: tabID]?.isPinned = true
             $0.pinnedRecords[tabID] = Self.pinnedRecord(id: tabID, anchor: directoryAnchor)
             $0.pinnedRecordPersistenceError = "pinned_record_save_failed"
@@ -3302,7 +3488,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 pinnedRecords: [pinnedID: Self.pinnedRecord(id: pinnedID, anchor: directoryAnchor)],
             ),
         ) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
@@ -3310,8 +3496,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.close(pinnedID)) {
             $0.tabs[id: pinnedID]?.isPinned = false
             $0.pinnedRecords.removeAll()
+            $0.pendingPinnedRecordIDs.insert(pinnedID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordPersistenceRequested)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(pinnedID)
+        }
         await store.finish()
     }
 
@@ -3341,7 +3531,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         initialState.selectionAnchorID = targetID
 
         let successStore = TestStore(initialState: initialState) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
                 _ = try transform(ContentTabPinnedRecordStore(records: [pinnedRecord]))
@@ -3352,13 +3542,16 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.selectedTabIDs.insert(targetID)
             $0.selectionAnchorID = targetID
         }
-        await successStore.receive(\.pinnedRecordSaveSucceeded)
+        await successStore.receive(\.pinnedRecordPersistenceRequested)
+        await successStore.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(targetID)
+        }
         await successStore.finish()
         XCTAssertEqual(successStore.state.selectedTabIDs, [targetID, anchorID])
         XCTAssertEqual(successStore.state.selectionAnchorID, targetID)
 
         let rollbackStore = TestStore(initialState: initialState) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
         }
@@ -3367,7 +3560,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.selectedTabIDs.insert(targetID)
             $0.selectionAnchorID = targetID
         }
+        await rollbackStore.receive(\.pinnedRecordPersistenceRequested)
         await rollbackStore.receive(\.pinnedRecordSaveFailed) {
+            $0.pendingPinnedRecordIDs.remove(targetID)
             $0.tabs.move(fromOffsets: [1], toOffset: 0)
             $0.tabs[id: targetID]?.isPinned = true
             $0.pinnedRecords[targetID] = pinnedRecord
@@ -3415,7 +3610,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         initialState.selectedTabIDs = [firstPinnedID]
         initialState.selectionAnchorID = firstPinnedID
         let store = TestStore(initialState: initialState) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
         }
@@ -3424,8 +3619,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.tabs[id: rollbackTargetID]?.isPinned = false
             $0.tabs.move(fromOffsets: [1], toOffset: 3)
             $0.pinnedRecords.removeValue(forKey: rollbackTargetID)
+            $0.pendingPinnedRecordIDs.insert(rollbackTargetID)
         }
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.receive(\.pinnedRecordSaveFailed) {
+            $0.pendingPinnedRecordIDs.remove(rollbackTargetID)
             $0.tabs.move(fromOffsets: [2], toOffset: 1)
             $0.tabs[id: rollbackTargetID]?.isPinned = true
             $0.pinnedRecords[rollbackTargetID] = targetRecord
@@ -3911,7 +4109,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             ],
         )
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
@@ -4729,7 +4927,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         _ = recorder.record(store)
 
         let testStore = TestStore(initialState: restore.state) {
-            ContentTabFeature()
+            CTM003PinnedPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { pinnedAt }
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
@@ -4745,8 +4943,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             state.tabs.remove(id: tabID)
             state.tabs.append(unpinnedTab)
             state.pinnedRecords[tabID] = nil
+            state.pendingPinnedRecordIDs.insert(tabID)
         }
-        await testStore.receive(\.pinnedRecordSaveSucceeded)
+        await testStore.receive(\.pinnedRecordPersistenceRequested)
+        await testStore.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(tabID)
+        }
 
         // saveStore 결과에 orig-dir-1 record가 없어야 함 (unpin으로 제거됨)
         let ids = recorder.stores().last?.records.map(\.id) ?? []
@@ -4778,10 +4980,48 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             return XCTFail("selected pinned row should keep the bulk Unpin command")
         }
         XCTAssertEqual(target, .unpinned)
-        guard case let .setSelectedContentTabsPinned(delegateTarget) = presentation.delegateAction else {
-            return XCTFail("bulk Unpin should map to the semantic Sidebar delegate")
+        guard case let .setSelectedContentTabsPinned(delegateTarget) = presentation.viewAction else {
+            return XCTFail("bulk Unpin should map to the semantic Sidebar View action")
         }
         XCTAssertEqual(delegateTarget, .unpinned)
+    }
+
+    /// CTM-003-unpin_selected_content_tabs: Sidebar View pin 계열 intent는 기존 Delegate로 각각 한 번 relay한다.
+    /// View가 Window 경계 action을 직접 만들지 않고 Sidebar reducer가 semantic outward event를 소유하는지 검증한다.
+    /// - 검증 내용: single Pin, single Unpin, selected bulk target별 View -> Delegate 1:1 routing과 state 불변
+    /// - 사전 조건: 기본 Sidebar state와 세 pin 계열 View action
+    /// - 기대 결과: 각 action마다 대응 Delegate 하나만 receive하고 추가 action이나 state 변경이 없다.
+    func testSidebarPinViewActionsRelayExactlyOnceToDelegate() async {
+        let tabID = ContentTabID(rawValue: "sidebar-view-pin-route")
+        let routes: [FileManagerSidebarAction.View] = [
+            .pinContentTab(tabID),
+            .unpinContentTab(tabID),
+            .setSelectedContentTabsPinned(target: .pinned),
+            .setSelectedContentTabsPinned(target: .unpinned),
+        ]
+
+        for (index, viewAction) in routes.enumerated() {
+            let initialState = FileManagerSidebarFeature.State()
+            let store = TestStore(initialState: initialState) {
+                FileManagerSidebarFeature()
+            }
+
+            await store.send(.view(viewAction))
+            await store.receive { action in
+                switch (index, action) {
+                case (0, .delegate(.pinContentTab(tabID))),
+                     (1, .delegate(.unpinContentTab(tabID))):
+                    tabID == ContentTabID(rawValue: "sidebar-view-pin-route")
+                case (2, .delegate(.setSelectedContentTabsPinned(target: .pinned))),
+                     (3, .delegate(.setSelectedContentTabsPinned(target: .unpinned))):
+                    true
+                default:
+                    false
+                }
+            }
+            XCTAssertEqual(store.state, initialState)
+            await store.finish()
+        }
     }
 
     /// CTM-003-unpin_selected_content_tabs: Sidebar bulk Unpin delegate는 Window request를 정확히 한 번 전달한다.
@@ -4823,17 +5063,17 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             return XCTFail("selected unpinned row should keep the bulk Pin command")
         }
         XCTAssertEqual(target, .pinned)
-        guard case let .setSelectedContentTabsPinned(delegateTarget) = presentation.delegateAction else {
-            return XCTFail("bulk Pin should map to the semantic Sidebar delegate")
+        guard case let .setSelectedContentTabsPinned(delegateTarget) = presentation.viewAction else {
+            return XCTFail("bulk Pin should map to the semantic Sidebar View action")
         }
         XCTAssertEqual(delegateTarget, .pinned)
     }
 
     /// CTM-003-pin_selected_content_tabs: unselected row와 normalized count 0/1은 exact single Pin/Unpin으로 fallback한다.
     /// bulk eligibility가 없을 때 기존 clicked-row command와 identifier를 그대로 보존하는지 검증한다.
-    /// - 검증 내용: unselected/count 0/1의 title, identifier, enabled state, single delegate payload
+    /// - 검증 내용: unselected/count 0/1의 title, identifier, enabled state, single View payload
     /// - 사전 조건: 2-selection 밖 unpinned row, empty selection unpinned row, 1-selection pinned row
-    /// - 기대 결과: row별 `Pin`/`Unpin`과 tab ID 기반 single delegate가 유지됨
+    /// - 기대 결과: row별 `Pin`/`Unpin`과 tab ID 기반 single View action이 유지됨
     func testPinPresentationFallsBackToExistingSingleCommands() {
         let clickedID = ContentTabID(rawValue: "single-clicked")
         let unselected = ContentTabPinPresentation(
@@ -4865,7 +5105,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             XCTAssertEqual(presentation.title, "Pin")
             XCTAssertEqual(presentation.accessibilityIdentifier, "pin-content-tab-\(clickedID)")
             XCTAssertTrue(presentation.isEnabled)
-            guard case let .pinContentTab(tabID) = presentation.delegateAction else {
+            guard case let .pinContentTab(tabID) = presentation.viewAction else {
                 return XCTFail("unpinned single fallback should retain pinContentTab")
             }
             XCTAssertEqual(tabID, clickedID)
@@ -4873,7 +5113,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(countOnePinned.title, "Unpin")
         XCTAssertEqual(countOnePinned.accessibilityIdentifier, "unpin-content-tab-\(clickedID)")
         XCTAssertTrue(countOnePinned.isEnabled)
-        guard case let .unpinContentTab(tabID) = countOnePinned.delegateAction else {
+        guard case let .unpinContentTab(tabID) = countOnePinned.viewAction else {
             return XCTFail("pinned single fallback should retain unpinContentTab")
         }
         XCTAssertEqual(tabID, clickedID)
@@ -4881,7 +5121,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
     /// CTM-003-pin_selected_content_tabs: busy bulk는 disabled bulk intent를 유지하고 single로 우회하지 않는다.
     /// stale UI enablement와 무관하게 reducer gate가 authoritative인 동안 presentation도 bulk identity를 보존하는지 검증한다.
-    /// - 검증 내용: 양 target의 exact bulk title, identifier, disabled state, selected delegate payload
+    /// - 검증 내용: 양 target의 exact bulk title, identifier, disabled state, selected View payload
     /// - 사전 조건: clicked row가 normalized 2-selection에 포함되고 `canStartSelectedContentTabPinMutation == false`
     /// - 기대 결과: `Pin 2 Tabs`/`Unpin 2 Tabs` bulk command가 disabled이며 single command가 생성되지 않음
     func testBusyBulkPinPresentationRemainsBulkAndDisabled() {
@@ -4914,8 +5154,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             presentations,
             [SelectedContentTabPinMutationTargetState.pinned, .unpinned],
         ) {
-            guard case let .setSelectedContentTabsPinned(target) = presentation.delegateAction else {
-                return XCTFail("busy bulk must not fall back to a single delegate")
+            guard case let .setSelectedContentTabsPinned(target) = presentation.viewAction else {
+                return XCTFail("busy bulk must not fall back to a single View action")
             }
             XCTAssertEqual(target, expectedTarget)
         }
@@ -4991,7 +5231,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         var initialState = fixture.state
         initialState.contentTabs.selectedTabIDs.insert(ContentTabID(rawValue: "stale-selected"))
         let store = TestStore(initialState: initialState) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.uuid = .constant(operationID)
             $0.date = .constant(Self.pinnedAt)
@@ -5034,7 +5274,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 if case let .selectedPinMutationBatchCompleted(result) = action {
                     completedResults.withValue { $0.append(result) }
                 }
-                return FileManagerFeature().reduce(into: &state, action: action)
+                return CTM003FileManagerPersistenceHarness().reduce(into: &state, action: action)
             }
         } withDependencies: {
             $0.uuid = .constant(operationID)
@@ -5087,7 +5327,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let persistedStore = ContentTabPinnedRecordStore(
             records: fixture.orderedIDs.compactMap { fixture.state.contentTabs.pinnedRecords[$0] },
         )
-        let store = TestStore(initialState: fixture.state) { FileManagerFeature() } withDependencies: {
+        let store = TestStore(initialState: fixture.state) { CTM003FileManagerPersistenceHarness() } withDependencies: {
             $0.uuid = .constant(operationID)
             $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, transform in
                 _ = try transform(persistedStore)
@@ -5122,7 +5362,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let operationID = fixture.operationID
         let tabID = fixture.tabID
         let context = fixture.context
-        let store = TestStore(initialState: fixture.state) { FileManagerFeature() } withDependencies: {
+        let store = TestStore(initialState: fixture.state) { CTM003FileManagerPersistenceHarness() } withDependencies: {
             $0.contentTabPinnedRecordClient.isCurrentMutationGeneration = { _ in false }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
         }
@@ -5199,7 +5439,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         var countOne = fixture.state
         countOne.contentTabs.selectedTabIDs = [fixture.orderedIDs[0]]
-        let store = TestStore(initialState: countOne) { FileManagerFeature() }
+        let store = TestStore(initialState: countOne) { CTM003FileManagerPersistenceHarness() }
         await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
         XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
     }
@@ -5209,7 +5449,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     /// - 검증 내용: wrapper pre-reduction operation/current/local-intent validation
     /// - 사전 조건: 첫 item 처리 중인 coordinator와 다른 operation/tab 및 stale intent terminal
     /// - 기대 결과: 세 wrapper 모두 Window/ContentTab/sidebar state를 전혀 변경하지 않음
-    func testPinSelectedWrapperRejectsWrongCorrelationAndStaleLocalTerminal() async throws {
+    func testPinSelectedWrapperRejectsWrongCorrelationAndStaleLocalTerminal() async {
         let fixture = allUnpinnedSelectedPinMutationFixture()
         let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3))
         let wrongOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4))
@@ -5220,7 +5460,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             orderedTargetIDs: fixture.orderedIDs,
             currentTabID: fixture.orderedIDs[0],
         )
-        let staleContext = try ContentTabPinnedRecordTerminalContext(
+        let staleContext = ContentTabPinnedRecordTerminalContext(
             intentID: UUID(),
             generation: ContentTabPinnedRecordMutationGeneration(tabID: fixture.orderedIDs[0], value: UUID()),
         )
@@ -5229,7 +5469,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             previousPinnedRecord: nil,
             previousTabIndex: 0,
         )
-        let store = TestStore(initialState: initialState) { FileManagerFeature() }
+        let store = TestStore(initialState: initialState) { CTM003FileManagerPersistenceHarness() }
         let originalState = store.state
 
         await store.send(.performSelectedContentTabPinMutation(
@@ -5270,7 +5510,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             orderedTargetIDs: fixture.orderedIDs,
             currentTabID: fixture.orderedIDs[0],
         )
-        let store = TestStore(initialState: initialState) { FileManagerFeature() }
+        let store = TestStore(initialState: initialState) { CTM003FileManagerPersistenceHarness() }
         let originalState = store.state
 
         await store.send(.contentTabs(.pin(fixture.orderedIDs[1])))
@@ -5399,7 +5639,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                     completedResults.withValue { $0.append(result) }
                     return .none
                 }
-                return FileManagerFeature().reduce(into: &state, action: action)
+                return CTM003FileManagerPersistenceHarness().reduce(into: &state, action: action)
             }
         } withDependencies: {
             $0.date = .constant(Self.pinnedAt)
@@ -5437,12 +5677,98 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(result.remainingCount, 0)
     }
 
+    /// CTM-003-pin_selected_content_tabs: anchor replacement 실패 계열은 pre-item snapshot으로 rollback한다.
+    /// authoritative empty snapshot이 대기 중이어도 failed/superseded/cancelled가 current item 상태를 누출하지 않는지 검증한다.
+    /// - 검증 내용: replacement rollback payload, content/inspector/active/selection exact 복원, deferred authoritative
+    /// replay
+    /// - 사전 조건: optimistic selected Pin current item과 empty authoritative snapshot, 세 terminal outcome
+    /// - 기대 결과: 원래 unpinned tab/runtime가 보존되고 coordinator/current snapshot/deferred가 모두 정리된다.
+    func testPinSelectedAnchorReplacementRollbackReplaysEmptyAuthoritativeSnapshot() async throws {
+        for terminal in SelectedPinReplacementTerminal.allCases {
+            let fixture = try selectedPinPersistenceReplacementFixture()
+            let original = try XCTUnwrap(
+                fixture.state.pendingSelectedContentTabPinMutation?.currentItemRollbackSnapshot,
+            )
+            let completedResults = LockIsolated<[SelectedContentTabPinMutationResult]>([])
+            let store = TestStore(initialState: fixture.state) {
+                Reduce<FileManagerFeature.State, FileManagerFeature.Action> { state, action in
+                    if case let .selectedPinMutationBatchCompleted(result) = action {
+                        completedResults.withValue { $0.append(result) }
+                    }
+                    return CTM003FileManagerPersistenceHarness().reduce(into: &state, action: action)
+                }
+            } withDependencies: {
+                $0.date = .constant(Self.pinnedAt)
+                $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, _ in
+                    switch terminal {
+                    case .failed:
+                        throw SelectedPinMatrixError.persistenceFailed
+                    case .superseded:
+                        return .superseded
+                    case .cancelled:
+                        throw CancellationError()
+                    }
+                }
+                $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+            }
+            // store.exhaustivity = .off: replacement terminal context보다 최종 rollback/replay snapshot을 검증함
+            store.exhaustivity = .off
+
+            let empty = ContentTabState.restoringPinnedRecords(from: ContentTabPinnedRecordStore()).state
+            await store.send(.applyAuthoritativePinnedContentTabs(empty))
+            await store.send(.contentTabs(.updateActivePageAnchor(fixture.tabID, fixture.changedAnchor)))
+            await store.skipReceivedActions()
+            await store.finish()
+
+            let label = "replacement-\(terminal)"
+            guard let result = completedResults.value.first else {
+                return XCTFail("missing replacement completion: \(label)")
+            }
+            assertSelectedPinReplacementRollback(
+                state: store.state,
+                original: original,
+                terminal: terminal,
+                result: result,
+                label: label,
+            )
+        }
+    }
+
+    private func assertSelectedPinReplacementRollback(
+        state: FileManagerFeature.State,
+        original: SelectedContentTabPinMutationCurrentItemRollbackSnapshot,
+        terminal: SelectedPinReplacementTerminal,
+        result: SelectedContentTabPinMutationResult,
+        label: String,
+    ) {
+        XCTAssertNil(state.pendingSelectedContentTabPinMutation, label)
+        XCTAssertNil(state.deferredPinnedContentTabs, label)
+        XCTAssertNil(state.deferredPinnedContentTabsMode, label)
+        XCTAssertEqual(state.contentTabs.tabs, original.contentTabs.tabs, label)
+        XCTAssertEqual(state.contentTabs.pinnedRecords, original.contentTabs.pinnedRecords, label)
+        XCTAssertEqual(state.contentTabs.pendingPinnedRecordIDs, [], label)
+        XCTAssertEqual(state.contentTabs.activeTabID, original.contentTabs.activeTabID, label)
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, original.contentTabs.selectedTabIDs, label)
+        XCTAssertEqual(state.contentTabs.selectionAnchorID, original.contentTabs.selectionAnchorID, label)
+        XCTAssertEqual(
+            state.contentTabs.pinnedRecordPersistenceError,
+            terminal == .failed ? "pinned_record_save_failed" : nil,
+            label,
+        )
+        XCTAssertEqual(state.content, original.content, label)
+        XCTAssertEqual(state.tabContentStates, original.tabContentStates, label)
+        XCTAssertEqual(state.inspector, original.inspector, label)
+        XCTAssertEqual(state.tabInspectorStates, original.tabInspectorStates, label)
+        XCTAssertEqual(result.failureCount, terminal == .failed ? 1 : 0, label)
+        XCTAssertEqual(result.remainingCount, terminal == .failed ? 0 : 1, label)
+    }
+
     /// CTM-003-pin_selected_content_tabs: onDisappear가 operation을 정리하고 late terminal을 무시한다.
     /// window teardown 이후 wrapper terminal이 coordinator나 child state를 부활시키지 않는지 검증한다.
     /// - 검증 내용: coordinator clear/cancel과 late wrapped success zero mutation
     /// - 사전 조건: optimistic Pin persistence가 pending인 current item
     /// - 기대 결과: isClosing=true, coordinator=nil이며 late terminal 전후 state가 동일함
-    func testPinSelectedOnDisappearClearsCoordinatorAndIgnoresLateTerminal() async throws {
+    func testPinSelectedOnDisappearClearsCoordinatorAndIgnoresLateTerminal() async {
         let fixture = allUnpinnedSelectedPinMutationFixture()
         let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 6))
         let tabID = fixture.orderedIDs[0]
@@ -5455,11 +5781,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         )
         let intentID = initialState.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)
         initialState.contentTabs.pendingPinnedRecordIDs.insert(tabID)
-        let context = try ContentTabPinnedRecordTerminalContext(
+        let context = ContentTabPinnedRecordTerminalContext(
             intentID: intentID,
             generation: ContentTabPinnedRecordMutationGeneration(tabID: tabID, value: UUID()),
         )
-        let store = TestStore(initialState: initialState) { FileManagerFeature() }
+        let store = TestStore(initialState: initialState) { CTM003FileManagerPersistenceHarness() }
         // store.exhaustivity = .off: cancellation effect 자체보다 teardown 후 late terminal의 zero mutation을 검증함
         store.exhaustivity = .off
 
@@ -5623,7 +5949,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         for testCase in cases {
             let recorder = CollectionPinAlertRecorder()
-            let store = TestStore(initialState: FileManagerFeature.State()) { FileManagerFeature() } withDependencies: {
+            let store = TestStore(initialState: FileManagerFeature.State()) { CTM003FileManagerPersistenceHarness()
+            } withDependencies: {
                 $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
                     recorder.record(title: title, message: message)
                 }
@@ -5649,7 +5976,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     func testPinSelectedFeedbackUsesFailurePrecedenceWithoutPerItemAlerts() async {
         let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 7))
         let recorder = CollectionPinAlertRecorder()
-        let store = TestStore(initialState: FileManagerFeature.State()) { FileManagerFeature() } withDependencies: {
+        let store = TestStore(initialState: FileManagerFeature.State()) { CTM003FileManagerPersistenceHarness()
+        } withDependencies: {
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
                 recorder.record(title: title, message: message)
             }
@@ -5883,8 +6211,14 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                     return value
                 }
                 if callIndex == targetOffset {
-                    if terminal == .failed { throw SelectedPinMatrixError.persistenceFailed }
-                    return .superseded
+                    switch terminal {
+                    case .failed:
+                        throw SelectedPinMatrixError.persistenceFailed
+                    case .superseded:
+                        return .superseded
+                    case .cancelled:
+                        throw CancellationError()
+                    }
                 }
                 _ = try transform(ContentTabPinnedRecordStore())
                 return .applied
@@ -5930,7 +6264,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             results,
             success: 2,
             failure: terminal == .failed ? 1 : 0,
-            remaining: terminal == .notApplied ? 1 : 0,
+            remaining: terminal == .failed ? 0 : 1,
             label: label,
         )
     }
@@ -5943,6 +6277,13 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     ) {
         let targetID = fixture.orderedIDs[targetOffset]
         XCTAssertNil(state.pendingSelectedContentTabPinMutation, label)
+        XCTAssertEqual(state.content, fixture.state.content, label)
+        XCTAssertEqual(state.tabContentStates, fixture.state.tabContentStates, label)
+        XCTAssertEqual(state.inspector, fixture.state.inspector, label)
+        XCTAssertEqual(state.tabInspectorStates, fixture.state.tabInspectorStates, label)
+        XCTAssertEqual(state.contentTabs.activeTabID, fixture.state.contentTabs.activeTabID, label)
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, fixture.state.contentTabs.selectedTabIDs, label)
+        XCTAssertEqual(state.contentTabs.selectionAnchorID, fixture.state.contentTabs.selectionAnchorID, label)
         XCTAssertEqual(
             state.contentTabs.tabs.map(\.id),
             fixture.orderedIDs.filter { $0 != targetID } + [targetID],
@@ -5964,7 +6305,14 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
     private enum SelectedPinMatrixTerminal: Int, CaseIterable {
         case failed
-        case notApplied
+        case superseded
+        case cancelled
+    }
+
+    private enum SelectedPinReplacementTerminal: CaseIterable {
+        case failed
+        case superseded
+        case cancelled
     }
 
     private enum SelectedPinMatrixError: Error {
@@ -6012,7 +6360,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             if case let .selectedPinMutationBatchCompleted(result) = action {
                 completedResults.withValue { $0.append(result) }
             }
-            return FileManagerFeature().reduce(into: &state, action: action)
+            return CTM003FileManagerPersistenceHarness().reduce(into: &state, action: action)
         }
     }
 
@@ -6129,7 +6477,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             orderedTargetIDs: [tabID],
             currentTabID: tabID,
         )
-        let context = try ContentTabPinnedRecordTerminalContext(
+        let context = ContentTabPinnedRecordTerminalContext(
             intentID: intentID,
             generation: ContentTabPinnedRecordMutationGeneration(tabID: tabID, value: UUID()),
         )
@@ -6152,6 +6500,10 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 7))
         let tabID = fixture.orderedIDs[0]
         var state = fixture.state
+        let rollbackSnapshot = SelectedContentTabPinMutationCurrentItemRollbackSnapshot(
+            state: state,
+            tabID: tabID,
+        )
         state.contentTabs.tabs[id: tabID]?.isPinned = true
         state.contentTabs.pinnedRecords[tabID] = try Self.pinnedRecord(
             id: tabID,
@@ -6166,6 +6518,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             target: .pinned,
             orderedTargetIDs: [tabID],
             currentTabID: tabID,
+            currentItemRollbackSnapshot: rollbackSnapshot,
         )
         return SelectedPinPersistenceReplacementFixture(
             state: state,
@@ -7027,6 +7380,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         state.tabs.remove(id: targetID)
         state.tabs.append(unpinnedTab)
         state.pinnedRecords.removeAll()
+        state.pendingPinnedRecordIDs.insert(targetID)
     }
 
     private static func assertSelection(

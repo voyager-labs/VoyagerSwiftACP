@@ -293,12 +293,44 @@ public struct PendingContentTabTeardown: Equatable, Sendable {
     }
 }
 
-public struct PendingSelectedContentTabPinMutation: Equatable, Sendable {
+public struct SelectedContentTabPinMutationCurrentItemRollbackSnapshot: Equatable {
+    let contentTabs: ContentTabState
+    let content: FileManagerContentFeature.State
+    let tabContentStates: [ContentTabID: FileManagerContentFeature.State]
+    let inspector: FileManagerInspectorFeature.State
+    let tabInspectorStates: [ContentTabID: FileManagerInspectorFeature.State]
+    let persistenceRollback: ContentTabPinnedRecordRollbackSnapshot
+
+    init(state: FileManagerWindowState, tabID: ContentTabID) {
+        contentTabs = state.contentTabs
+        content = state.content
+        tabContentStates = state.tabContentStates
+        inspector = state.inspector
+        tabInspectorStates = state.tabInspectorStates
+        persistenceRollback = ContentTabPinnedRecordRollbackSnapshot(
+            previousIsPinned: state.contentTabs.tabs[id: tabID]?.isPinned ?? false,
+            previousPinnedRecord: state.contentTabs.pinnedRecords[tabID],
+            previousTabIndex: state.contentTabs.tabs.index(id: tabID),
+        )
+    }
+
+    func restore(into state: inout FileManagerWindowState) {
+        state.contentTabs = contentTabs
+        state.content = content
+        state.tabContentStates = tabContentStates
+        state.inspector = inspector
+        state.tabInspectorStates = tabInspectorStates
+        state.syncContentTabSidebarItems()
+    }
+}
+
+public struct PendingSelectedContentTabPinMutation: Equatable {
     public let operationID: UUID
     public let target: SelectedContentTabPinMutationTargetState
     public let orderedTargetIDs: [ContentTabID]
     public var cursor: Int
     public var currentTabID: ContentTabID?
+    public var currentItemRollbackSnapshot: SelectedContentTabPinMutationCurrentItemRollbackSnapshot?
     public var successCount: Int
     public var failureCount: Int
     public var remainingCount: Int
@@ -313,6 +345,7 @@ public struct PendingSelectedContentTabPinMutation: Equatable, Sendable {
         orderedTargetIDs: [ContentTabID],
         cursor: Int = 0,
         currentTabID: ContentTabID? = nil,
+        currentItemRollbackSnapshot: SelectedContentTabPinMutationCurrentItemRollbackSnapshot? = nil,
         successCount: Int = 0,
         failureCount: Int = 0,
         remainingCount: Int = 0,
@@ -322,6 +355,7 @@ public struct PendingSelectedContentTabPinMutation: Equatable, Sendable {
         self.orderedTargetIDs = orderedTargetIDs
         self.cursor = cursor
         self.currentTabID = currentTabID
+        self.currentItemRollbackSnapshot = currentItemRollbackSnapshot
         self.successCount = successCount
         self.failureCount = failureCount
         self.remainingCount = remainingCount
@@ -824,11 +858,15 @@ extension FileManagerWindowState {
         let currentUnpinnedTabs = contentTabs.tabs.filter { !$0.isPinned && !mergedPinnedIDs.contains($0.id) }
         let currentPinnedIDs = Set(currentPinnedTabs.map(\.id))
 
-        let retainedPendingPinnedIDs = Set(pendingPinnedTabs.map(\.id))
+        let currentTabIDs = Set(contentTabs.tabs.ids)
+        let retainedPendingPinnedIDs = pendingPinnedIDs.intersection(currentTabIDs)
         let pendingPinnedRecords = contentTabs.pinnedRecords.filter { retainedPendingPinnedIDs.contains($0.key) }
+        let synchronizedPinnedRecords = restoredPinnedState.pinnedRecords.filter {
+            !retainedPendingPinnedIDs.contains($0.key)
+        }
 
         contentTabs.tabs = IdentifiedArrayOf(uniqueElements: mergedPinnedTabs + currentUnpinnedTabs)
-        contentTabs.pinnedRecords = restoredPinnedState.pinnedRecords
+        contentTabs.pinnedRecords = synchronizedPinnedRecords
             .merging(pendingPinnedRecords) { _, pending in pending }
         contentTabs.pendingPinnedRecordIDs = retainedPendingPinnedIDs
         contentTabs.previousActiveTabID = nil

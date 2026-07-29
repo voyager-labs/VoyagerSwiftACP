@@ -27,6 +27,44 @@ public struct ContentTabPinnedRecordRollbackSnapshot: Equatable, Sendable {
     let previousTabIndex: Int?
 }
 
+public enum ContentTabPinnedRecordMutation: Equatable, Sendable {
+    case upsert(ContentTabPinnedRecord)
+    case remove(recordID: String)
+
+    public func applying(
+        to existingStore: ContentTabPinnedRecordStore,
+    ) -> ContentTabPinnedRecordStore {
+        switch self {
+        case let .upsert(record):
+            upsertPinnedRecord(record, in: existingStore)
+        case let .remove(recordID):
+            removePinnedRecord(id: recordID, from: existingStore)
+        }
+    }
+}
+
+public struct ContentTabPinnedRecordPersistenceRequest: Equatable, Sendable {
+    public let mutationID: UUID
+    public let tabID: ContentTabID
+    public let intentID: UUID
+    public let mutation: ContentTabPinnedRecordMutation
+    public let rollback: ContentTabPinnedRecordRollbackSnapshot
+
+    public init(
+        mutationID: UUID,
+        tabID: ContentTabID,
+        intentID: UUID,
+        mutation: ContentTabPinnedRecordMutation,
+        rollback: ContentTabPinnedRecordRollbackSnapshot,
+    ) {
+        self.mutationID = mutationID
+        self.tabID = tabID
+        self.intentID = intentID
+        self.mutation = mutation
+        self.rollback = rollback
+    }
+}
+
 public struct ContentTabPinnedRecordTerminalContext: Equatable, Sendable {
     public let intentID: UUID
     public let generation: ContentTabPinnedRecordMutationGeneration
@@ -69,6 +107,7 @@ public enum ContentTabAction: Sendable {
     case unpin(ContentTabID)
     case updateActivePageAnchor(ContentTabID, ContentTabPageAnchor)
     case updateRuntimePageAnchor(ContentTabID, ContentTabPageAnchor)
+    case pinnedRecordPersistenceRequested(ContentTabPinnedRecordPersistenceRequest)
     case pinnedRecordSaveSucceeded(
         tabID: ContentTabID,
         context: ContentTabPinnedRecordTerminalContext,

@@ -54,6 +54,25 @@ public enum SelectedContentTabCloseOutcome: Equatable, Sendable {
     case missing
 }
 
+public enum FileManagerPinnedRecordPersistenceRoute: Equatable, Sendable {
+    case single
+    case selectedPin(operationID: UUID)
+    case selectedClose(operationID: UUID)
+}
+
+public struct FileManagerPinnedRecordPersistenceRequest: Equatable, Sendable {
+    public let request: ContentTabPinnedRecordPersistenceRequest
+    public let route: FileManagerPinnedRecordPersistenceRoute
+
+    public init(
+        request: ContentTabPinnedRecordPersistenceRequest,
+        route: FileManagerPinnedRecordPersistenceRoute,
+    ) {
+        self.request = request
+        self.route = route
+    }
+}
+
 public enum PinnedContentTabsApplicationMode: Equatable, Sendable {
     case preservingRuntime
     case authoritative
@@ -261,5 +280,6 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
             tabID: ContentTabID,
             navigationState: ContentPageNavigationRoute,
         )
+        case pinnedRecordPersistenceRequested(FileManagerPinnedRecordPersistenceRequest)
     }
 }

@@ -69,9 +69,6 @@ struct WindowManagerFeature {
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
-            if let terminalEffect = selectedPinMutationTerminalEffect(action, state: state) {
-                return terminalEffect
-            }
             switch action {
             case .lifecycle(.openInitialWindowIfNeeded):
                 guard state.windows.isEmpty else { return .none }
@@ -355,71 +352,35 @@ struct WindowManagerFeature {
 
             case let .windows(.element(
                 id: sourceWindowID,
-                action: .window(.contentTabs(.pinnedRecordSaveSucceeded(tabID, context))),
+                action: .window(.delegate(.pinnedRecordPersistenceRequested(request))),
             )):
-                guard isCurrentPinnedRecordTerminal(
+                let mutationID = request.request.mutationID
+                guard state.inFlightPinnedRecordMutations[mutationID] == nil else { return .none }
+                let generation = contentTabPinnedRecordClient.reserveMutationGeneration(request.request.tabID)
+                state.inFlightPinnedRecordMutations[mutationID] = WindowManagerInFlightPinnedRecordMutation(
                     sourceWindowID: sourceWindowID,
-                    tabID: tabID,
-                    context: context,
-                    state: state,
-                ), contentTabPinnedRecordClient.isCurrentMutationGeneration(context.generation)
-                else { return .none }
-                return .send(.pinnedContentTabsStoreChanged)
+                    request: request,
+                    generation: generation,
+                )
+                return runPinnedRecordMutation(
+                    mutationID: mutationID,
+                    request: request.request,
+                    generation: generation,
+                )
 
-            case let .windows(.element(
-                id: sourceWindowID,
-                action: .window(.performSelectedContentTabCloseMutation(
-                    operationID: _,
-                    tabID: tabID,
-                    action: .pinnedRecordSaveSucceeded(_, context),
-                )),
-            )):
-                guard isCurrentPinnedRecordTerminal(
-                    sourceWindowID: sourceWindowID,
-                    tabID: tabID,
-                    context: context,
+            case let .pinnedRecordMutationFinished(mutationID, outcome):
+                guard let mutation = state.inFlightPinnedRecordMutations.removeValue(forKey: mutationID) else {
+                    return .none
+                }
+                let localTerminal = localPinnedRecordTerminalAction(
+                    mutation: mutation,
+                    outcome: outcome,
                     state: state,
-                ), contentTabPinnedRecordClient.isCurrentMutationGeneration(context.generation)
-                else { return .none }
-                return .send(.pinnedContentTabsStoreChanged)
-
-            case let .windows(.element(
-                id: sourceWindowID,
-                action: .window(.contentTabs(.pinnedRecordSaveFailed(tabID, context, _))),
-            )), let .windows(.element(
-                id: sourceWindowID,
-                action: .window(.contentTabs(.pinnedRecordSaveNotApplied(tabID, context, _, _))),
-            )):
-                guard isCurrentPinnedRecordTerminal(
-                    sourceWindowID: sourceWindowID,
-                    tabID: tabID,
-                    context: context,
-                    state: state,
-                ) else { return .none }
-                return .send(.pinnedContentTabsStoreChanged)
-
-            case let .windows(.element(
-                id: sourceWindowID,
-                action: .window(.performSelectedContentTabCloseMutation(
-                    operationID: _,
-                    tabID: tabID,
-                    action: .pinnedRecordSaveFailed(_, context, _),
-                )),
-            )), let .windows(.element(
-                id: sourceWindowID,
-                action: .window(.performSelectedContentTabCloseMutation(
-                    operationID: _,
-                    tabID: tabID,
-                    action: .pinnedRecordSaveNotApplied(_, context, _, _),
-                )),
-            )):
-                guard isCurrentPinnedRecordTerminal(
-                    sourceWindowID: sourceWindowID,
-                    tabID: tabID,
-                    context: context,
-                    state: state,
-                ) else { return .none }
-                return .send(.pinnedContentTabsStoreChanged)
+                )
+                return .concatenate(
+                    localTerminal.map(Effect.send) ?? .none,
+                    .send(.pinnedContentTabsStoreChanged),
+                )
 
             case .pinnedContentTabsStoreChanged:
                 let syncEffect = syncPinnedContentTabsAcrossWindows(state: &state)
@@ -474,89 +435,6 @@ struct WindowManagerFeature {
 }
 
 extension WindowManagerFeature {
-    func selectedPinMutationTerminalEffect(
-        _ action: Action,
-        state: State,
-    ) -> Effect<Action>? {
-        switch action {
-        case let .windows(.element(
-            id: sourceWindowID,
-            action: .window(.performSelectedContentTabPinMutation(
-                operationID: operationID,
-                tabID: tabID,
-                action: .pinnedRecordSaveSucceeded(_, context),
-            )),
-        )):
-            guard isCurrentSelectedPinMutationTerminal(
-                sourceWindowID: sourceWindowID,
-                operationID: operationID,
-                tabID: tabID,
-                context: context,
-                state: state,
-            ), contentTabPinnedRecordClient.isCurrentMutationGeneration(context.generation)
-            else { return Effect<Action>.none }
-            return .send(.pinnedContentTabsStoreChanged)
-
-        case let .windows(.element(
-            id: sourceWindowID,
-            action: .window(.performSelectedContentTabPinMutation(
-                operationID: operationID,
-                tabID: tabID,
-                action: .pinnedRecordSaveFailed(_, context, _),
-            )),
-        )), let .windows(.element(
-            id: sourceWindowID,
-            action: .window(.performSelectedContentTabPinMutation(
-                operationID: operationID,
-                tabID: tabID,
-                action: .pinnedRecordSaveNotApplied(_, context, _, _),
-            )),
-        )):
-            guard isCurrentSelectedPinMutationTerminal(
-                sourceWindowID: sourceWindowID,
-                operationID: operationID,
-                tabID: tabID,
-                context: context,
-                state: state,
-            ) else { return Effect<Action>.none }
-            return .send(.pinnedContentTabsStoreChanged)
-
-        default:
-            return nil
-        }
-    }
-
-    func isCurrentPinnedRecordTerminal(
-        sourceWindowID: State.WindowID,
-        tabID: ContentTabID,
-        context: ContentTabPinnedRecordTerminalContext,
-        state: State,
-    ) -> Bool {
-        state.windows[id: sourceWindowID]?.window.contentTabs.isCurrentPinnedRecordPersistenceIntent(
-            tabID: tabID,
-            intentID: context.intentID,
-        ) == true
-    }
-
-    func isCurrentSelectedPinMutationTerminal(
-        sourceWindowID: State.WindowID,
-        operationID: UUID,
-        tabID: ContentTabID,
-        context: ContentTabPinnedRecordTerminalContext,
-        state: State,
-    ) -> Bool {
-        guard let window = state.windows[id: sourceWindowID]?.window,
-              !window.isClosing,
-              let pending = window.pendingSelectedContentTabPinMutation,
-              pending.operationID == operationID,
-              pending.currentTabID == tabID
-        else { return false }
-        return window.contentTabs.isCurrentPinnedRecordPersistenceIntent(
-            tabID: tabID,
-            intentID: context.intentID,
-        )
-    }
-
     func appPreferencesEffect(
         for id: UUID,
         preferences: AppPreferencesFeature.State,
@@ -703,16 +581,149 @@ extension WindowManagerFeature {
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }
 
+    private func runPinnedRecordMutation(
+        mutationID: UUID,
+        request: ContentTabPinnedRecordPersistenceRequest,
+        generation: ContentTabPinnedRecordMutationGeneration,
+    ) -> Effect<Action> {
+        let client = contentTabPinnedRecordClient
+        let defaults = userDefaultsClient
+        return .run { send in
+            let outcome: WindowManagerPinnedRecordMutationOutcome
+            do {
+                let disposition = try await client.updateStoreGuarded(generation, defaults) { store in
+                    request.mutation.applying(to: store)
+                }
+                outcome = disposition == .applied ? .applied : .superseded
+            } catch is CancellationError {
+                outcome = .cancelled
+            } catch {
+                outcome = .failed
+            }
+            await send(.pinnedRecordMutationFinished(mutationID: mutationID, outcome: outcome))
+        }
+    }
+
+    private func localPinnedRecordTerminalAction(
+        mutation: WindowManagerInFlightPinnedRecordMutation,
+        outcome: WindowManagerPinnedRecordMutationOutcome,
+        state: State,
+    ) -> Action? {
+        let sourceWindowID = mutation.sourceWindowID
+        let request = mutation.request.request
+        guard let window = state.windows[id: sourceWindowID]?.window,
+              !window.isClosing,
+              !state.closingWindowIDs.contains(sourceWindowID),
+              window.contentTabs.isCurrentPinnedRecordPersistenceIntent(
+                  tabID: request.tabID,
+                  intentID: request.intentID,
+              ),
+              isCurrentLocalPinnedRecordRoute(
+                  mutation.request.route,
+                  tabID: request.tabID,
+                  window: window,
+              )
+        else { return nil }
+
+        let context = ContentTabPinnedRecordTerminalContext(
+            intentID: request.intentID,
+            generation: mutation.generation,
+        )
+        let terminal = pinnedRecordTerminal(
+            outcome: outcome,
+            request: request,
+            context: context,
+        )
+        let windowAction = routePinnedRecordTerminal(
+            terminal,
+            request: mutation.request,
+        )
+        return .windows(.element(id: sourceWindowID, action: .window(windowAction)))
+    }
+
+    private func isCurrentLocalPinnedRecordRoute(
+        _ route: FileManagerPinnedRecordPersistenceRoute,
+        tabID: ContentTabID,
+        window: FileManagerWindowFeature.State,
+    ) -> Bool {
+        switch route {
+        case .single:
+            true
+        case let .selectedPin(operationID):
+            window.pendingSelectedContentTabPinMutation?.operationID == operationID
+                && window.pendingSelectedContentTabPinMutation?.currentTabID == tabID
+        case let .selectedClose(operationID):
+            window.pendingSelectedContentTabClose?.operationID == operationID
+                && window.pendingSelectedContentTabClose?.currentTabID == tabID
+        }
+    }
+
+    private func pinnedRecordTerminal(
+        outcome: WindowManagerPinnedRecordMutationOutcome,
+        request: ContentTabPinnedRecordPersistenceRequest,
+        context: ContentTabPinnedRecordTerminalContext,
+    ) -> ContentTabAction {
+        switch outcome {
+        case .applied:
+            .pinnedRecordSaveSucceeded(tabID: request.tabID, context: context)
+        case .failed:
+            .pinnedRecordSaveFailed(
+                tabID: request.tabID,
+                context: context,
+                rollback: request.rollback,
+            )
+        case .cancelled:
+            .pinnedRecordSaveNotApplied(
+                tabID: request.tabID,
+                context: context,
+                reason: .cancelled,
+                rollback: request.rollback,
+            )
+        case .superseded:
+            .pinnedRecordSaveNotApplied(
+                tabID: request.tabID,
+                context: context,
+                reason: .superseded,
+                rollback: request.rollback,
+            )
+        }
+    }
+
+    private func routePinnedRecordTerminal(
+        _ terminal: ContentTabAction,
+        request: FileManagerPinnedRecordPersistenceRequest,
+    ) -> FileManagerWindowAction {
+        switch request.route {
+        case .single:
+            .contentTabs(terminal)
+        case let .selectedPin(operationID):
+            .performSelectedContentTabPinMutation(
+                operationID: operationID,
+                tabID: request.request.tabID,
+                action: terminal,
+            )
+        case let .selectedClose(operationID):
+            .performSelectedContentTabCloseMutation(
+                operationID: operationID,
+                tabID: request.request.tabID,
+                action: terminal,
+            )
+        }
+    }
+
     private func syncPinnedContentTabsAcrossWindows(state: inout State) -> Effect<Action> {
-        guard !state.windows.isEmpty else { return .none }
         do {
             let store = try contentTabPinnedRecordClient.loadStore(userDefaultsClient)
             let restoreResult = ContentTabState.restoringPinnedRecords(
                 from: store,
                 isRestorableAnchor: { _ in true },
             )
+            let survivingWindowIDs = state.windows.ids.filter { id in
+                guard let window = state.windows[id: id]?.window else { return false }
+                return !window.isClosing && !state.closingWindowIDs.contains(id)
+            }
             return .merge(
-                state.windows.ids.map { id in
+                survivingWindowIDs.map { id in
                     .send(.windows(.element(
                         id: id,
                         action: .window(.applyAuthoritativePinnedContentTabs(restoreResult.state)),

@@ -1699,6 +1699,12 @@ private extension FileManagerWindowRoutingReducer {
             )
         }
 
+        pending.currentItemRollbackSnapshot = SelectedContentTabPinMutationCurrentItemRollbackSnapshot(
+            state: state,
+            tabID: tabID,
+        )
+        state.pendingSelectedContentTabPinMutation = pending
+
         switch pending.target {
         case .pinned:
             guard !tab.isPinned, state.canPinContentTab(tabID) else {
@@ -1783,6 +1789,7 @@ private extension FileManagerWindowRoutingReducer {
         }
         pending.cursor += 1
         pending.currentTabID = nil
+        pending.currentItemRollbackSnapshot = nil
         state.pendingSelectedContentTabPinMutation = pending
         return .send(.processNextSelectedContentTabPinMutation(operationID: operationID))
     }

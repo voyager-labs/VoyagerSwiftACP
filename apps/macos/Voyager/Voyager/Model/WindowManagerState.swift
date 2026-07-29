@@ -13,6 +13,12 @@ struct WindowManagerRetainedExternalOpenPlacementOwnership: Equatable {
     var newWindowIDs: [UUID]
 }
 
+struct WindowManagerInFlightPinnedRecordMutation: Equatable {
+    let sourceWindowID: WindowManagerState.WindowID
+    let request: FileManagerPinnedRecordPersistenceRequest
+    let generation: ContentTabPinnedRecordMutationGeneration
+}
+
 @ObservableState
 struct WindowManagerState: Equatable {
     typealias WindowID = WindowSessionState.ID
@@ -32,6 +38,7 @@ struct WindowManagerState: Equatable {
     var authorizedTrackedSingletonRequestID: UUID?
     var trackedSingletonWindow: WindowManagerTrackedSingletonWindow?
     var externalOpenActivationAttempt: ExternalOpenActivationAttempt?
+    var inFlightPinnedRecordMutations: [UUID: WindowManagerInFlightPinnedRecordMutation] = [:]
 
     mutating func moveWindowToMRUFront(_ id: WindowID) {
         lastUsedWindowIDs.removeAll { $0 == id }

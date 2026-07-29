@@ -310,6 +310,13 @@ enum ExternalOpenPlacementApplication {
     }
 }
 
+enum WindowManagerPinnedRecordMutationOutcome: Equatable {
+    case applied
+    case failed
+    case cancelled
+    case superseded
+}
+
 @CasePathable
 enum WindowManagerAction: CasePathable {
     case delegate(Delegate)
@@ -322,6 +329,10 @@ enum WindowManagerAction: CasePathable {
     case placement(PlacementCommand)
     case trackedSingleton(TrackedSingletonCommand)
     case trackedSingletonNativeOpenCompleted(requestID: UUID)
+    case pinnedRecordMutationFinished(
+        mutationID: UUID,
+        outcome: WindowManagerPinnedRecordMutationOutcome,
+    )
     case pinnedContentTabsStoreChanged
     case defaultWindowBootstrapCompleted(requestID: UUID, contentTabs: ContentTabState)
     case defaultWindowBootstrapFailed(requestID: UUID)
