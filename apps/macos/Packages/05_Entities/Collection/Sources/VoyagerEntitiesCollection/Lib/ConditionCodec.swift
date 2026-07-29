@@ -14,7 +14,7 @@ public enum ConditionCodec {
         switch contract.input {
         case .none: value == nil ? [] : nil
         case .singleText: decodedSingleText(value)
-        case .listText: decodedTextArray(value)
+        case .listText: decodedTextList(value)
         case .singleNumber: decodedSingleNumber(value)
         case .listNumber: decodedNumberArray(value, requiresValues: true)
         case .singleDate: decodedSingleDate(value)
@@ -43,7 +43,10 @@ public enum ConditionCodec {
         return [text]
     }
 
-    private static func decodedTextArray(_ value: JSONValue?) -> [String]? {
+    private static func decodedTextList(_ value: JSONValue?) -> [String]? {
+        if case let .string(text) = value, !text.isEmpty {
+            return [text]
+        }
         guard case let .array(values) = value else { return nil }
         let texts = values.compactMap { if case let .string(text) = $0 { text } else { nil } }
         return texts.count == values.count && !texts.isEmpty ? texts : nil
