@@ -2,16 +2,24 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
 
+public struct EntryOperationsFolderLoadingCancelID: Hashable, Sendable {
+    public let requestID: EntryFolderLoadRequest.RequestID
+    public let windowID: UUID?
+    public let ownerID: UUID
+
+    public static func loadFolderItems(
+        requestID: EntryFolderLoadRequest.RequestID,
+        windowID: UUID?,
+        ownerID: UUID,
+    ) -> Self {
+        Self(requestID: requestID, windowID: windowID, ownerID: ownerID)
+    }
+}
+
 @Reducer
 public struct EntryOperationsFolderLoadingReducer {
     public typealias State = EntryOperationsState
     public typealias Action = EntryOperationsAction
-
-    private struct CancelID: Hashable {
-        let requestID: EntryFolderLoadRequest.RequestID
-        let windowID: UUID?
-        let ownerID: UUID
-    }
 
     @Dependency(\.entryLoadingClient)
     private var entryLoadingClient
@@ -23,7 +31,7 @@ public struct EntryOperationsFolderLoadingReducer {
             switch action {
             case let .loading(.loadFolderItems(request)):
                 state.folderLoadingContexts[request.id] = .init(request: request)
-                let cancelID = CancelID(
+                let cancelID = EntryOperationsFolderLoadingCancelID.loadFolderItems(
                     requestID: request.id,
                     windowID: state.windowID,
                     ownerID: state.loadingCancellationOwnerID,
@@ -47,11 +55,22 @@ public struct EntryOperationsFolderLoadingReducer {
 
             case let .loading(.cancelFolderItems(requestID)):
                 state.folderLoadingContexts[requestID] = nil
-                return .cancel(id: CancelID(
+                return .cancel(id: EntryOperationsFolderLoadingCancelID.loadFolderItems(
                     requestID: requestID,
                     windowID: state.windowID,
                     ownerID: state.loadingCancellationOwnerID,
                 ))
+
+            case .loading(.cancelAllFolderItems):
+                let requestIDs = state.folderLoadingContexts.keys
+                state.folderLoadingContexts = [:]
+                return .merge(requestIDs.map { requestID in
+                    .cancel(id: EntryOperationsFolderLoadingCancelID.loadFolderItems(
+                        requestID: requestID,
+                        windowID: state.windowID,
+                        ownerID: state.loadingCancellationOwnerID,
+                    ))
+                })
 
             case let .loading(.folderStreamEvent(request, event)):
                 guard var context = state.folderLoadingContexts[request.id],

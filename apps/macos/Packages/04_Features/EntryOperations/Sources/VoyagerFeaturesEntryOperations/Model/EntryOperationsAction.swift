@@ -54,6 +54,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case streamFailed(generation: Int)
         case loadFolderItems(EntryFolderLoadRequest)
         case cancelFolderItems(EntryFolderLoadRequest.RequestID)
+        case cancelAllFolderItems
         case folderStreamEvent(request: EntryFolderLoadRequest, event: EntryLoadEvent)
         case folderStreamFinished(request: EntryFolderLoadRequest)
         case folderStreamFailed(request: EntryFolderLoadRequest, failure: EntryFolderLoadFailure)

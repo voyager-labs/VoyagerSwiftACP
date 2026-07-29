@@ -995,6 +995,37 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await streamFactory.secondGate.resume(with: .entries([]))
         await store.finish()
     }
+
+    /// EOP-003-load_folder_items: owner teardown은 실행 중인 모든 folder stream을 취소한다.
+    /// 상위 tab lifecycle이 owner-scoped action 하나로 request context와 filesystem I/O를 함께 정리하는지 검증한다.
+    /// - 검증 내용: cancelAllFolderItems 이후 context 제거와 stream cancellation
+    /// - 사전 조건: 하나의 folder stream이 suspension gate에서 대기 중임
+    /// - 기대 결과: 모든 context가 제거되고 해당 stream이 취소됨
+    func testCancelAllFolderItemsCancelsOwnerStreams() async {
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 1,
+            folderID: "/tmp/folder",
+            folderGeneration: 1,
+            path: "/tmp/folder",
+            showHidden: false,
+            priority: .none,
+        )
+        let streamFactory = FolderStreamFactory()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in streamFactory.makeStream() }
+        }
+
+        await store.send(.loading(.loadFolderItems(request))) {
+            $0.folderLoadingContexts[request.id] = .init(request: request)
+        }
+        await streamFactory.firstGate.waitUntilWaiting()
+        await store.send(.loading(.cancelAllFolderItems)) {
+            $0.folderLoadingContexts = [:]
+        }
+        await store.finish()
+
+        XCTAssertTrue(streamFactory.firstCancellation.wasCancelled)
+    }
 }
 
 extension EOP003ManageEntryLifecycleTests {
