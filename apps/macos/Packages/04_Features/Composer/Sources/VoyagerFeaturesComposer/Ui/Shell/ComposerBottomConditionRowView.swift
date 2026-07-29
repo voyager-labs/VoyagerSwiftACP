@@ -83,13 +83,24 @@ struct ComposerBottomConditionRowView: View {
                     ComposerNativeMenuButton(
                         title: "",
                         accessibilityIdentifier: "composer.condition.add",
-                        minimumWidth: chipHeight,
+                        minimumWidth: ComposerUIMetrics.compactControlHeight,
                         isPlaceholder: false,
                         onOpen: {
                             pickerStore.send(.onAppear)
                             pickerStore.send(.setPresented(true))
                         },
-                        menuItems: {
+                        menuItems: { [] },
+                        onDismiss: {
+                            pickerStore.send(.setPresented(false))
+                        },
+                        imageName: "plus",
+                        accessibilityLabel: "Add condition",
+                        showsBorder: false,
+                        size: CGSize(
+                            width: ComposerUIMetrics.compactControlHeight,
+                            height: ComposerUIMetrics.compactControlHeight,
+                        ),
+                        searchableItems: { searchText in
                             ConditionPropertyPickerDisplay.nativeMenuItems(
                                 configuration: .init(
                                     properties: viewStore.properties,
@@ -98,18 +109,19 @@ struct ComposerBottomConditionRowView: View {
                                     defaults: viewStore.propertyDefaults,
                                     categories: viewStore.propertyCategories,
                                     labels: viewStore.propertyLabels,
+                                    types: viewStore.propertyTypes,
                                     selectedKey: nil,
+                                    searchText: searchText,
                                 ),
                                 onSelect: { pickerStore.send(.propertyTapped($0)) },
                             )
                         },
-                        onDismiss: {
-                            pickerStore.send(.setPresented(false))
-                        },
-                        imageName: "plus",
-                        accessibilityLabel: "Add condition",
+                        searchPlaceholder: "Search attributes",
                     )
-                    .frame(minWidth: chipHeight, minHeight: chipHeight)
+                    .frame(
+                        width: ComposerUIMetrics.compactControlHeight,
+                        height: ComposerUIMetrics.compactControlHeight,
+                    )
                 }
             },
         )

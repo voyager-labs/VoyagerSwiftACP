@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import SwiftUI
 import VoyagerEntitiesCollection
+import VoyagerShared
 
 private struct ConditionChipInlineTextFieldView: View {
     let placeholderText: String
@@ -48,7 +49,7 @@ private struct ConditionChipInlineTextFieldView: View {
     }
 
     private var fieldBorder: some View {
-        RoundedRectangle(cornerRadius: 4)
+        RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipItem)
             .stroke(
                 hasError ? Color.red.opacity(0.85) :
                     (isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.15)),
@@ -93,12 +94,12 @@ extension ConditionChipValueSectionView {
                 prepare(editingIndex: nil, valueStore: valueStore)
             } label: {
                 Text(ConditionChipDisplay.displayValueText(for: condition, displayValues: displayState?.values))
-                    .font(.system(size: 11, weight: .medium))
+                    .font(VoyagerDS.Typography.chip)
                     .foregroundColor(condition.values == nil ? .secondary.opacity(0.7) : .primary)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 2)
                     .background(
-                        RoundedRectangle(cornerRadius: 4)
+                        RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipItem)
                             .fill(isValueHovering
                                 ?
                                 (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black
@@ -107,7 +108,11 @@ extension ConditionChipValueSectionView {
                     )
             }
             .contentShape(Rectangle())
-            .frame(minWidth: 32, minHeight: 22, alignment: .center)
+            .frame(
+                minWidth: ComposerUIMetrics.valueControlMinimumWidth,
+                minHeight: ComposerUIMetrics.compactControlHeight,
+                alignment: .center,
+            )
             .buttonStyle(.plain)
             .onHover { isValueHovering = $0 }
 
@@ -145,7 +150,7 @@ extension ConditionChipValueSectionView {
 
                 if count >= 2, index == 0 {
                     Text(rangeSep)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(VoyagerDS.Typography.chip)
                         .foregroundColor(.secondary)
                         .fixedSize()
                 }
@@ -177,5 +182,40 @@ extension ConditionChipValueSectionView {
             case .none, .singleText, .listText, .singleDate, .rangeDate, .toggle: "Value"
             }
         }
+    }
+
+    func editUnitSelector(
+        valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+    ) -> AnyView? {
+        guard let state = valueStore.unitValueState else { return nil }
+        return AnyView(unitSelector(state: state) {
+            valuePickerStore.send(.selectUnit($0))
+        })
+    }
+
+    func displayUnitSelector(unitValueState: UnitValueState?) -> AnyView? {
+        guard let state = unitValueState else { return nil }
+        return AnyView(unitSelector(state: state) {
+            store.send(.view(.setDisplayUnit($0)))
+        })
+    }
+
+    private func unitSelector(
+        state: UnitValueState,
+        onSelect: @escaping (String) -> Void,
+    ) -> UnitSelectorView {
+        UnitSelectorView(
+            availableUnitCodes: state.availableUnitCodes,
+            selectedUnitCode: state.selectedUnitCode,
+            selectedUnitLabel: state.label(for: state.selectedUnitCode),
+            labelForUnit: { state.label(for: $0) },
+            onSelect: onSelect,
+        )
+    }
+
+    func updateInlineValueFocus(shouldFocus: Bool, targetIndex: Int?) {
+        let nextFocus = shouldFocus ? targetIndex : nil
+        guard focusedValueIndex != nextFocus else { return }
+        DispatchQueue.main.async { focusedValueIndex = nextFocus }
     }
 }

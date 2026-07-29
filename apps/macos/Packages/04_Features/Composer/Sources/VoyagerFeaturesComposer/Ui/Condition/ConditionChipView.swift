@@ -43,7 +43,7 @@ struct ConditionChipView: View {
                 .padding(.horizontal, 8)
                 .frame(height: defaultChipHeight)
                 .background(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
                         .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
                 )
                 .overlay(alignment: .topTrailing) {

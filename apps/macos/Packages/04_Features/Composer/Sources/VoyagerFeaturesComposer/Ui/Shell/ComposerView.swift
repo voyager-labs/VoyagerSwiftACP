@@ -1,8 +1,11 @@
 import ComposableArchitecture
+import HotSwiftUI
 import SwiftUI
 import VoyagerShared
 
 public struct ComposerView: View {
+    @ObserveInjection private var injection
+
     let store: StoreOf<ComposerFeature>
     let favorites: [ScopeFavoriteItem]
     let historyPaths: [String]

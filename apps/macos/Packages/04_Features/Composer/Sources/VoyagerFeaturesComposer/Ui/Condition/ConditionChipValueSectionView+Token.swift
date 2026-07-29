@@ -33,7 +33,11 @@ extension ConditionChipValueSectionView {
                         tokenButtonLabel()
                     }
                     .contentShape(Rectangle())
-                    .frame(minWidth: 32, minHeight: 22, alignment: .center)
+                    .frame(
+                        minWidth: ComposerUIMetrics.valueControlMinimumWidth,
+                        minHeight: ComposerUIMetrics.compactControlHeight,
+                        alignment: .center,
+                    )
                     .buttonStyle(.plain)
                     .onHover { hovering in
                         isValueHovering = hovering
@@ -45,14 +49,21 @@ extension ConditionChipValueSectionView {
         }
     }
 
+    private static func buttonText(values: [String]) -> String {
+        let committed = ConditionValueNormalizer.deduplicatedTokenValues(values)
+        guard !committed.isEmpty else { return "Value" }
+        if committed.count <= 2 { return committed.joined(separator: ", ") }
+        return "\(committed[0]), \(committed[1]) +\(committed.count - 2)"
+    }
+
     private func tokenButtonLabel() -> some View {
-        Text(ConditionTokenPresentation.buttonText(values: condition.values ?? []))
-            .font(.system(size: 11, weight: .medium))
+        Text(Self.buttonText(values: condition.values ?? []))
+            .font(VoyagerDS.Typography.chip)
             .foregroundColor((condition.values?.isEmpty ?? true) ? .secondary.opacity(0.7) : .primary)
             .padding(.horizontal, 4)
             .padding(.vertical, 2)
             .background(
-                RoundedRectangle(cornerRadius: 4)
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipItem)
                     .fill(
                         isValueHovering
                             ?
@@ -77,7 +88,7 @@ extension ConditionChipValueSectionView {
         return VStack(alignment: .leading, spacing: 8) {
             tokenInputRow(tokens: tokens, valueViewStore: valueViewStore)
                 .background(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
                         .stroke(
                             hasError
                                 ? Color.red.opacity(0.85)
@@ -99,7 +110,7 @@ extension ConditionChipValueSectionView {
         .padding(12)
         .frame(width: 260)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.control)
                 .fill(VoyagerDS.Surface.popoverBackground(for: isDark ? .dark : .light)),
         )
     }
@@ -138,7 +149,7 @@ extension ConditionChipValueSectionView {
     func tokenChip(_ token: String) -> some View {
         HStack(spacing: 4) {
             Text(token)
-                .font(.system(size: 11, weight: .medium))
+                .font(VoyagerDS.Typography.chip)
                 .foregroundColor(.primary)
 
             Button {

@@ -1,9 +1,12 @@
 import AppKit
 import ComposableArchitecture
+import HotSwiftUI
 import SwiftUI
 import VoyagerShared
 
 struct ComposerBottomRowView: View {
+    @ObserveInjection private var injection
+
     let store: StoreOf<ComposerFeature>
     let favorites: [ScopeFavoriteItem]
     let historyPaths: [String]
@@ -18,10 +21,7 @@ struct ComposerBottomRowView: View {
     private let chipSpacing: CGFloat = 8
     private let chipVerticalPadding: CGFloat = 8
     private let maxChipAreaHeight: CGFloat = 200
-    private let defaultChipHeight: CGFloat = 28
-    private var conditionChipHeight: CGFloat {
-        defaultChipHeight
-    }
+    private let chipHeight = ComposerUIMetrics.conditionChipHeight
 
     private let scopeRowVerticalPadding: CGFloat = 0
     private let defaultChipWidth: CGFloat = 120
@@ -29,7 +29,7 @@ struct ComposerBottomRowView: View {
     private let conditionRowHorizontalPadding: CGFloat = 0
 
     private var conditionRowHeight: CGFloat {
-        defaultChipHeight
+        chipHeight
     }
 
     var body: some View {
@@ -121,7 +121,7 @@ private extension ComposerBottomRowView {
             colorScheme: colorScheme,
             chipSpacing: chipSpacing,
             rowHeight: conditionRowHeight,
-            chipHeight: conditionChipHeight,
+            chipHeight: chipHeight,
         )
         .padding(.horizontal, conditionRowHorizontalPadding)
         .padding(.vertical, conditionRowVerticalPadding)
@@ -129,7 +129,7 @@ private extension ComposerBottomRowView {
     }
 
     private var scopeEditButtonWidth: CGFloat {
-        defaultChipHeight + chipSpacing
+        chipHeight + chipSpacing
     }
 
     private struct RowLayoutInput {
@@ -221,6 +221,10 @@ private extension ComposerBottomRowView {
                 }
             },
         )
+        .contentShape(RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer))
+        .onTapGesture {
+            store.send(.scopeEditorOpen(editingPath: nil, favorites: favorites, backHistory: historyPaths))
+        }
         .accessibilityIdentifier("composer.scopeRow")
     }
 
@@ -252,11 +256,11 @@ private extension ComposerBottomRowView {
                 .foregroundColor(.secondary)
                 .frame(width: 20, height: 20)
                 .background(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton, style: .continuous)
                         .fill(isScopeEditButtonHovering ? VoyagerDS.Interaction
                             .controlHoverFill(for: colorScheme) : .clear),
                 )
-                .frame(width: defaultChipHeight, height: defaultChipHeight)
+                .frame(width: chipHeight, height: chipHeight)
         }
         .buttonStyle(.borderless)
         .onHover { hovering in
@@ -320,7 +324,7 @@ private extension ComposerBottomRowView {
 
     private func scopeRowHeight(rowCount: Int) -> CGFloat {
         let safeRowCount = max(rowCount, 1)
-        let chipsHeight = CGFloat(safeRowCount) * defaultChipHeight
+        let chipsHeight = CGFloat(safeRowCount) * chipHeight
         let spacingHeight = CGFloat(max(0, safeRowCount - 1)) * chipSpacing
         return chipsHeight + spacingHeight + scopeRowVerticalPadding * 2
     }
@@ -330,7 +334,7 @@ private extension ComposerBottomRowView {
         minimumRowHeight: CGFloat = 0,
     ) -> CGFloat {
         let rowsHeight = rows.reduce(CGFloat.zero) { partialHeight, row in
-            let rowHeight = row.map { chipSizes[$0.id]?.height ?? defaultChipHeight }.max() ?? 0
+            let rowHeight = row.map { chipSizes[$0.id]?.height ?? chipHeight }.max() ?? 0
             return partialHeight + max(rowHeight, minimumRowHeight)
         }
         return rowsHeight + CGFloat(max(0, rows.count - 1)) * chipSpacing
@@ -389,5 +393,36 @@ private extension ComposerBottomRowView {
         let contentHeight = scopeHeight + chipSpacing + conditionHeight
         let paddingHeight = chipVerticalPadding * 2
         calculatedHeight = min(contentHeight + paddingHeight, maxChipAreaHeight)
+    }
+}
+
+enum ChipItemType: Identifiable, Hashable {
+    case scopeRoot
+    case scopeBase(path: String)
+    case condition(id: UUID)
+    case conditionAdd
+
+    var id: String {
+        switch self {
+        case .scopeRoot:
+            "scope-root"
+        case let .scopeBase(path):
+            "scope-base-\(path)"
+        case let .condition(id):
+            "condition-\(id.uuidString)"
+        case .conditionAdd:
+            "condition-add"
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func `if`(_ condition: Bool, transform: (Self) -> some View) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
     }
 }

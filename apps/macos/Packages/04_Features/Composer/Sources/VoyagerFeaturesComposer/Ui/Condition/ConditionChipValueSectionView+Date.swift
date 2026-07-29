@@ -46,7 +46,7 @@ private struct ConditionChipDateButtonLabelView: View {
 
     var body: some View {
         Text(labelText)
-            .font(.system(size: 11, weight: .medium))
+            .font(VoyagerDS.Typography.chip)
             .foregroundColor(config.currentText.isEmpty ? .secondary : .primary)
             .lineLimit(1)
             .truncationMode(.tail)
@@ -55,7 +55,7 @@ private struct ConditionChipDateButtonLabelView: View {
             .frame(minWidth: 50, alignment: .center)
             .fixedSize(horizontal: true, vertical: false)
             .background(
-                RoundedRectangle(cornerRadius: 4)
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipItem)
                     .fill(
                         isHovering
                             ? (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black.opacity(hoverFillOpacity))
@@ -63,7 +63,7 @@ private struct ConditionChipDateButtonLabelView: View {
                     ),
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 4)
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipItem)
                     .stroke(
                         config.hasError ? Color.red.opacity(0.85) : Color.clear,
                         lineWidth: config.hasError ? 1 : 0,
@@ -119,7 +119,7 @@ extension ConditionChipValueSectionView {
             HStack(spacing: 6) {
                 dateValueButton(config: fromConfig, valueViewStore: valueViewStore)
                 Text(rangeSep)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(VoyagerDS.Typography.chip)
                     .foregroundColor(.secondary)
                 dateValueButton(config: toConfig, valueViewStore: valueViewStore)
             }
@@ -390,7 +390,7 @@ extension ConditionChipValueSectionView {
             }
 
             Text(valueViewStore.dateValueState?.displayText() ?? "Value")
-                .font(.system(size: 11, weight: .medium))
+                .font(VoyagerDS.Typography.chip)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .center)
@@ -438,7 +438,7 @@ extension ConditionChipValueSectionView {
 
             if isPreviewOnly {
                 Text("Preview based on today")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(VoyagerDS.Typography.smallButton)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
             }
