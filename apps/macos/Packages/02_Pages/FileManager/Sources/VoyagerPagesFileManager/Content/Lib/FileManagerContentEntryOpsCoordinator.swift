@@ -27,10 +27,10 @@ enum FileManagerContentEntryOpsCoordinator {
             )
 
         case let .lifecycle(.pathsMutated(paths)):
-            handleMutatedPaths(paths, state: state)
+            handleMutatedPaths(paths, removedPrefixes: [], state: state)
 
-        case let .lifecycle(.operationFinished(_, kind, _)):
-            kind == .setTags ? .none : reloadEntryItemsEffect(state: state)
+        case let .lifecycle(.operationFinished(path, kind, result)):
+            handleOperationFinished(path: path, kind: kind, result: result, state: state)
 
         case .lifecycle(.emptyTrashCompleted):
             .send(.delegate(.closeWindow))
@@ -205,6 +205,7 @@ enum FileManagerContentEntryOpsCoordinator {
 
     private static func handleMutatedPaths(
         _ paths: [String],
+        removedPrefixes: [String],
         state: FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
         switch state.navigation.navigationState {
@@ -212,7 +213,7 @@ enum FileManagerContentEntryOpsCoordinator {
             guard !paths.isEmpty else { return .none }
             return .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
                 affectedPaths: paths.map(parentPath(for:)),
-                removedPrefixes: [],
+                removedPrefixes: removedPrefixes,
             ))))
 
         case .collection:
@@ -221,6 +222,25 @@ enum FileManagerContentEntryOpsCoordinator {
         default:
             return .none
         }
+    }
+
+    private static func handleOperationFinished(
+        path: String,
+        kind: OperationKind,
+        result: Result<Void, FileOpError>,
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        let removedPathEffect: Effect<FileManagerContentAction> = if kind == .deleteImmediately,
+                                                                     case .success = result
+        {
+            handleMutatedPaths([path], removedPrefixes: [path], state: state)
+        } else {
+            .none
+        }
+        return .merge(
+            removedPathEffect,
+            kind == .setTags ? .none : reloadEntryItemsEffect(state: state),
+        )
     }
 
     /// itemsLoaded 후 pendingSelectEntryID가 있으면 해당 엔트리를 선택 focus

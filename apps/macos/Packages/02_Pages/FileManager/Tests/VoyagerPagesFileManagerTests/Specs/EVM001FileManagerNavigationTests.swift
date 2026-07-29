@@ -682,6 +682,33 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.finish()
     }
 
+    /// EVM-001-reload_directory_page_on_external_change: 즉시 삭제 성공 시 hierarchy 제거 prefix 전달
+    /// undo record가 없는 deleteImmediately도 삭제된 folder cache를 제거하는지 검증한다.
+    /// - 검증 내용: operationFinished 성공 path가 parent invalidation과 removedPrefixes에 함께 전달됨
+    /// - 사전 조건: folder route에서 중첩 folder 즉시 삭제가 성공함
+    /// - 기대 결과: affectedPaths는 parent, removedPrefixes는 삭제된 folder path를 포함함
+    func testDeleteImmediatelySuccessInvalidatesRemovedHierarchyPrefix() async {
+        let folderPath = "/tmp/voyager"
+        let deletedPath = "/tmp/voyager/deleted"
+        let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            deletedPath,
+            .deleteImmediately,
+            .success(()),
+        ))))
+        await store.receive { action in
+            guard case let .forwarded(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [folderPath] && removedPrefixes == [deletedPath]
+        }
+    }
+
     /// EVM-001-reload_directory_page_on_external_change: recents route entry operation 완료 시 recents reload forwarding
     /// FileManager content entry operation lifecycle bridge가 navigation route별 reload/restore boundary를 지키는지 검증.
     /// - 검증 내용: recents route에서 entry operation 완료 액션이 recents loader로 전달되는지 검증
