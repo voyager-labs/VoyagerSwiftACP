@@ -356,7 +356,8 @@ public enum ComposerHostFixtureEvaluator {
     }
 
     nonisolated private static func matchesNumber(_ actual: Int64, operation: String, values: [String]) -> Bool {
-        let numbers = values.compactMap(Int64.init)
+        let actual = Double(actual)
+        let numbers = values.compactMap(Double.init)
         switch operation {
         case "exists": return true
         case "eq": return numbers.first == actual
@@ -468,8 +469,12 @@ public enum ComposerHostFixtureConditionNormalization {
     }
 
     nonisolated private static func stringValue(_ value: JSONValue) -> String? {
-        guard case let .string(string) = value else { return nil }
-        return string
+        switch value {
+        case let .string(string): string
+        case let .number(number): String(number)
+        case let .bool(value): String(value)
+        case .array, .object, .null: nil
+        }
     }
 }
 

@@ -94,6 +94,16 @@ final class ComposerHostFixtureTests: XCTestCase {
         assertTextAndSizeConditionEvaluation(corpus)
         assertDateTagAndHiddenConditionEvaluation(corpus)
     }
+
+    func testEvaluatorPreservesNumericRangeArrayValues() {
+        XCTAssertEqual(
+            evaluate(
+                syntheticCorpus,
+                filters: filters("file_size", "between", .array([.number(1000), .number(2000)])),
+            ),
+            ["documents/Example.pages", "documents/Quarterly Report.pdf"],
+        )
+    }
 }
 
 extension ComposerHostFixtureTests {
