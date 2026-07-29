@@ -193,6 +193,32 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         await store.receive(\.entryViewLayout.hierarchy.arrangementMetadataPriorityChanged)
     }
 
+    /// EVM-002-set_entries_view_as_list_table: collection metadata 정렬 변경 시 현재 path 재조회
+    /// Collection의 기존 core-only payload를 새 metadata priority로 다시 materialize하도록 요청하는지 검증한다.
+    /// - 검증 내용: collection mode에서 sortKey 변경이 현재 collection item path를 applyCollectionSearchPaths로 전달함
+    /// - 사전 조건: collection mode, sortKey == .name, 현재 collection item 두 개 존재
+    /// - 기대 결과: 두 item path와 현재 showHidden 값으로 collection materialization이 재요청됨
+    func testMetadataSortChangeRematerializesCurrentCollectionPaths() async {
+        var state = FileManagerContentState()
+        state.entryViewLayout.isCollectionMode = true
+        state.entryViewLayout.collectionItems = [
+            .temporaryFolder(id: "/collection/first", name: "first"),
+            .temporaryFolder(id: "/collection/second", name: "second"),
+        ]
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        // store.exhaustivity = .off: collection materialization 내부 stream은 현재 path 재요청 계약의 검증 대상이 아님
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryArrangements(.setSortKey(.kind)))) {
+            $0.entryViewLayout.entryArrangements.sortKey = .kind
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.internal(.applyCollectionSearchPaths(paths, showHidden))) = action
+            else { return false }
+            return paths == ["/collection/first", "/collection/second"] && !showHidden
+        }
+    }
+
     /// EVM-002-set_entries_view_as_list_table: metadata grouping 변경 시 현재 root와 expanded folder reload
     /// Tags 기반 grouping을 선택하면 기존 core-only payload를 현재 priority로 다시 materialize하는지 검증한다.
     /// - 검증 내용: folder root load와 hierarchy metadata reload 액션이 Tags 우선 priority를 사용함
