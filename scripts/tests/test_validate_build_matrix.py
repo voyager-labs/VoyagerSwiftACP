@@ -424,6 +424,21 @@ class CheckSchemeFilesTests(unittest.TestCase):
         self.assertGreater(len(errors), 0)
         self.assertIn("missing", errors[0].lower())
 
+    def test_validate_schemes_scans_all_host_projects(self) -> None:
+        from scripts.validate_build_matrix import HOST_PROJECTS, validate_schemes
+
+        with mock.patch(
+            "scripts.validate_build_matrix.check_scheme_files"
+        ) as check_scheme_files_mock:
+            validate_schemes([])
+
+        scanned = {call.args[0] for call in check_scheme_files_mock.call_args_list}
+        expected = {
+            Path(f"apps/macos/Hosts/{host}/{host}.xcodeproj/xcshareddata/xcschemes")
+            for host in HOST_PROJECTS
+        }
+        self.assertTrue(expected.issubset(scanned))
+
     def test_reports_error_on_legacy_schemes(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             schemes_dir = Path(temp)

@@ -122,6 +122,11 @@ SCHEMES_DIR = Path("apps/macos/Voyager/Voyager.xcodeproj/xcshareddata/xcschemes"
 WORKSPACE_SCHEMES_DIR = Path(
     "apps/macos/Voyager/Voyager.xcworkspace/xcshareddata/xcschemes"
 )
+HOST_SCHEMES_DIRS = [
+    Path(f"apps/macos/Hosts/{host}/{host}.xcodeproj/xcshareddata/xcschemes")
+    for host in sorted(HOST_PROJECTS)
+]
+ALL_SCHEMES_DIRS = [SCHEMES_DIR, WORKSPACE_SCHEMES_DIR, *HOST_SCHEMES_DIRS]
 
 # CI files to check for Prod-Release references
 CI_SCRIPT = Path("scripts/ci/release-macos-prod.sh")
@@ -1035,19 +1040,7 @@ def check_no_tracked_keys_in_xcschemes(
     Scans all repository xcscheme files under apps/macos/**/xcshareddata/xcschemes/.
     """
     if scheme_dirs is None:
-        scheme_dirs = [
-            SCHEMES_DIR,
-            WORKSPACE_SCHEMES_DIR,
-            Path(
-                "apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj/xcshareddata/xcschemes"
-            ),
-            Path(
-                "apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj/xcshareddata/xcschemes"
-            ),
-            Path(
-                "apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj/xcshareddata/xcschemes"
-            ),
-        ]
+        scheme_dirs = ALL_SCHEMES_DIRS
 
     for schemes_dir in scheme_dirs:
         if not schemes_dir.is_dir():
@@ -1162,19 +1155,7 @@ def check_no_deprecated_keys(
     Scans xcscheme EnvironmentVariables, VSCode launchEnv, and Zed --env args.
     """
     if scheme_dirs is None:
-        scheme_dirs = [
-            SCHEMES_DIR,
-            WORKSPACE_SCHEMES_DIR,
-            Path(
-                "apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj/xcshareddata/xcschemes"
-            ),
-            Path(
-                "apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj/xcshareddata/xcschemes"
-            ),
-            Path(
-                "apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj/xcshareddata/xcschemes"
-            ),
-        ]
+        scheme_dirs = ALL_SCHEMES_DIRS
     checked_env_paths = (
         env_paths if env_paths is not None else [ENV_EXAMPLE_PATH, ENV_PROD_PATH]
     )
@@ -1376,8 +1357,8 @@ def validate_host_projects(errors: list[str]) -> None:
 
 def validate_schemes(errors: list[str]) -> None:
     """Validate scheme files (project + workspace mirrors)."""
-    check_scheme_files(SCHEMES_DIR, errors)
-    check_scheme_files(WORKSPACE_SCHEMES_DIR, errors)
+    for schemes_dir in ALL_SCHEMES_DIRS:
+        check_scheme_files(schemes_dir, errors)
 
 
 def validate_ci(errors: list[str]) -> None:
