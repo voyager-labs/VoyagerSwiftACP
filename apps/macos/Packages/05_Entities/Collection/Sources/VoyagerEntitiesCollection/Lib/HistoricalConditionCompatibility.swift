@@ -132,7 +132,7 @@ private extension HistoricalConditionCompatibility {
         "tag_names",
         "uniform_type_identifier",
     ]
-    static let stableStringListProperties: Set<String> = [
+    static let scalarMDItemListProperties: Set<String> = [
         "city",
         "country",
         "extension",
@@ -260,8 +260,8 @@ private extension HistoricalConditionCompatibility {
         if alphaListOperators.contains(rawOperator) {
             return makeResolution(propertyKey: propertyKey, propertyType: .string, operatorCode: operatorCode)
         }
-        if stableStringListProperties.contains(propertyKey), ["all", "miss"].contains(operatorCode) {
-            return makeResolution(propertyKey: propertyKey, propertyType: .stringList, operatorCode: operatorCode)
+        if scalarMDItemListProperties.contains(propertyKey), ["all", "miss"].contains(operatorCode) {
+            return makeResolution(propertyKey: propertyKey, propertyType: .string, operatorCode: operatorCode)
         }
         guard scalarStringOperators.contains(operatorCode) else { return nil }
         let requiresPathEvaluation = propertyKey == "extension"

@@ -96,7 +96,7 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
                     operator: "all",
                     value: .array([.string("PDF"), .string("Document")]),
                 ),
-                ["kMDItemKind == \"PDF\"", "kMDItemKind == \"Document\"", " && "],
+                ["kMDItemKind == \"*PDF*\"", "kMDItemKind == \"*Document*\"", " && "],
             ),
             (
                 .init(propertyKey: "tag_names", operator: "cn", value: .string("work")),
@@ -191,6 +191,14 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
     func testConditionCompilerRestoresHistoricalNegativeStringListOperators() throws {
         let compiler = try makeCompiler()
         let cases: [(SearchConditionPayload, [String])] = [
+            (
+                .init(
+                    propertyKey: "file_kind",
+                    operator: "miss",
+                    value: .array([.string("PDF"), .string("Document")]),
+                ),
+                ["!(kMDItemKind == \"*PDF*\")", "!(kMDItemKind == \"*Document*\")", " || "],
+            ),
             (
                 .init(
                     propertyKey: "file_kind",
