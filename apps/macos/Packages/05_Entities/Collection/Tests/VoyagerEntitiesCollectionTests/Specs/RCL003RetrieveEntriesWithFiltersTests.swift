@@ -29,6 +29,18 @@ final class RCL003RetrieveEntriesWithFiltersTests: XCTestCase {
         ))
     }
 
+    /// RCL-003-mark_collection_results_as_stale: symlink alias event도 canonical collection scope에 포함된다.
+    /// gateway가 통과시킨 `/private/tmp` event를 `/tmp` scope와 같은 filesystem 위치로 판단한다.
+    /// - 검증 내용: canonical alias를 사용하는 changed path의 collection relevance
+    /// - 사전 조건: scope는 `/tmp`, event path는 `/private/tmp` 아래 동일 상대 경로
+    /// - 기대 결과: collection change가 relevant로 판정됨
+    func testCollectionChangeRelevance_resolvesSymlinkAliases() {
+        XCTAssertTrue(collectionChangeIsRelevant(
+            changedPaths: ["/private/tmp/VoyagerFixtures/report.md"],
+            scopes: ["/tmp/VoyagerFixtures"],
+        ))
+    }
+
     /// RCL-003-mark_collection_results_as_stale: 제외 scope 변경은 stale 전환에서 제외
     /// 제외된 하위 path의 변경은 collection 결과를 stale로 만들지 않는지 검증한다.
     /// - 검증 내용: excludedScopes에 포함된 path 변경이 phase를 유지하는지 확인
