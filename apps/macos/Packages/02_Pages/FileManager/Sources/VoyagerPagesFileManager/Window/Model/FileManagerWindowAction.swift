@@ -10,6 +10,42 @@ import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
+public enum SelectedContentTabPinMutationTargetState: Equatable, Sendable {
+    case pinned
+    case unpinned
+}
+
+public enum SelectedContentTabPinMutationOutcome: Equatable, Sendable {
+    case success
+    case failure
+    case remaining
+}
+
+public struct SelectedContentTabPinMutationResult: Equatable, Sendable {
+    public let operationID: UUID
+    public let target: SelectedContentTabPinMutationTargetState
+    public let totalCount: Int
+    public let successCount: Int
+    public let failureCount: Int
+    public let remainingCount: Int
+
+    public init(
+        operationID: UUID,
+        target: SelectedContentTabPinMutationTargetState,
+        totalCount: Int,
+        successCount: Int,
+        failureCount: Int,
+        remainingCount: Int,
+    ) {
+        self.operationID = operationID
+        self.target = target
+        self.totalCount = totalCount
+        self.successCount = successCount
+        self.failureCount = failureCount
+        self.remainingCount = remainingCount
+    }
+}
+
 public enum SelectedContentTabCloseOutcome: Equatable, Sendable {
     case removed
     case unpinned
@@ -67,6 +103,20 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case reserveExternalContentTabs([ExternalContentTabReservation])
     case activateExternalContentTabUndoScopes([ContentTabID])
     case resyncActiveCollectionNavigation
+
+    case requestSelectedContentTabPinMutation(target: SelectedContentTabPinMutationTargetState)
+    case processNextSelectedContentTabPinMutation(operationID: UUID)
+    case performSelectedContentTabPinMutation(
+        operationID: UUID,
+        tabID: ContentTabID,
+        action: ContentTabAction,
+    )
+    case selectedPinMutationItemCompleted(
+        operationID: UUID,
+        tabID: ContentTabID,
+        outcome: SelectedContentTabPinMutationOutcome,
+    )
+    case selectedPinMutationBatchCompleted(SelectedContentTabPinMutationResult)
 
     case requestCloseSelectedContentTabs
     case performSelectedContentTabCloseMutation(

@@ -36,6 +36,7 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case closeSelectedContentTabs
         case pinContentTab(ContentTabID)
         case unpinContentTab(ContentTabID)
+        case setSelectedContentTabsPinned(target: SelectedContentTabPinMutationTargetState)
         case openContentTab
         case duplicateContentTab(ContentTabID)
         case duplicateSelectedContentTabs

@@ -523,6 +523,11 @@ struct FileManagerWindowCommandRoutingReducer {
     }
 
     private func handleRequestedCommand(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
+        if state.pendingSelectedContentTabPinMutation != nil {
+            if case .toggleActiveContentTabPin = command {
+                return .none
+            }
+        }
         if state.pendingSelectedContentTabClose != nil {
             switch command {
             case .openNewContentTab,
@@ -624,7 +629,8 @@ struct FileManagerWindowCommandRoutingReducer {
     }
 
     private func toggleActiveContentTabPin(state: State) -> Effect<Action> {
-        guard state.pendingContentTabClose == nil,
+        guard state.pendingSelectedContentTabPinMutation == nil,
+              state.pendingContentTabClose == nil,
               let activeTabID = state.contentTabs.activeTabID,
               let activeTab = state.contentTabs.tabs[id: activeTabID]
         else { return .none }

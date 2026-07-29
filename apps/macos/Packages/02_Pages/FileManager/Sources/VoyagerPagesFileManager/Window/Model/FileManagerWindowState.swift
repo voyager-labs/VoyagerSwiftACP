@@ -13,11 +13,28 @@ struct ContentTabRowInteractionSurface: Equatable {
     let currentTabIDs: [ContentTabID]
     let validSelectedTabIDs: Set<ContentTabID>
     let isCloseEnabled: Bool
+    let isPinMutationEnabled: Bool
 
     init(state: FileManagerWindowState) {
-        currentTabIDs = Array(state.contentTabs.tabs.ids)
-        validSelectedTabIDs = Set(currentTabIDs).intersection(state.contentTabs.selectedTabIDs)
-        isCloseEnabled = state.canStartSelectedContentTabClose
+        let currentTabIDs = Array(state.contentTabs.tabs.ids)
+        self.init(
+            currentTabIDs: currentTabIDs,
+            validSelectedTabIDs: Set(currentTabIDs).intersection(state.contentTabs.selectedTabIDs),
+            isCloseEnabled: state.canStartSelectedContentTabClose,
+            isPinMutationEnabled: state.canStartSelectedContentTabPinMutation,
+        )
+    }
+
+    init(
+        currentTabIDs: [ContentTabID],
+        validSelectedTabIDs: Set<ContentTabID>,
+        isCloseEnabled: Bool,
+        isPinMutationEnabled: Bool,
+    ) {
+        self.currentTabIDs = currentTabIDs
+        self.validSelectedTabIDs = validSelectedTabIDs
+        self.isCloseEnabled = isCloseEnabled
+        self.isPinMutationEnabled = isPinMutationEnabled
     }
 }
 
@@ -78,6 +95,7 @@ public struct FileManagerWindowState: Equatable {
     public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
     public var pendingContentTabClose: PendingContentTabClose?
     public var pendingSelectedContentTabClose: PendingSelectedContentTabClose?
+    public var pendingSelectedContentTabPinMutation: PendingSelectedContentTabPinMutation?
     public var deferredPinnedContentTabs: ContentTabState?
     public var deferredPinnedContentTabsMode: PinnedContentTabsApplicationMode?
     public var pendingContentTabTeardown: PendingContentTabTeardown?
@@ -105,6 +123,7 @@ public struct FileManagerWindowState: Equatable {
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
         pendingSelectedContentTabClose = nil
+        pendingSelectedContentTabPinMutation = nil
         deferredPinnedContentTabs = nil
         deferredPinnedContentTabsMode = nil
         pendingContentTabTeardown = nil
@@ -242,6 +261,7 @@ public struct FileManagerWindowState: Equatable {
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
         pendingSelectedContentTabClose = nil
+        pendingSelectedContentTabPinMutation = nil
         deferredPinnedContentTabs = nil
         deferredPinnedContentTabsMode = nil
         pendingContentTabTeardown = nil
@@ -270,6 +290,41 @@ public struct PendingContentTabTeardown: Equatable, Sendable {
         self.requestID = requestID
         self.tabID = tabID
         self.ownerID = ownerID
+    }
+}
+
+public struct PendingSelectedContentTabPinMutation: Equatable, Sendable {
+    public let operationID: UUID
+    public let target: SelectedContentTabPinMutationTargetState
+    public let orderedTargetIDs: [ContentTabID]
+    public var cursor: Int
+    public var currentTabID: ContentTabID?
+    public var successCount: Int
+    public var failureCount: Int
+    public var remainingCount: Int
+
+    public var totalCount: Int {
+        orderedTargetIDs.count
+    }
+
+    public init(
+        operationID: UUID,
+        target: SelectedContentTabPinMutationTargetState,
+        orderedTargetIDs: [ContentTabID],
+        cursor: Int = 0,
+        currentTabID: ContentTabID? = nil,
+        successCount: Int = 0,
+        failureCount: Int = 0,
+        remainingCount: Int = 0,
+    ) {
+        self.operationID = operationID
+        self.target = target
+        self.orderedTargetIDs = orderedTargetIDs
+        self.cursor = cursor
+        self.currentTabID = currentTabID
+        self.successCount = successCount
+        self.failureCount = failureCount
+        self.remainingCount = remainingCount
     }
 }
 
@@ -415,11 +470,34 @@ public extension FileManagerWindowState {
         }
         guard !isClosing,
               pendingSelectedContentTabClose == nil,
+              pendingSelectedContentTabPinMutation == nil,
               pendingContentTabClose == nil,
               pendingContentTabTeardown == nil,
               !isSelectedContentTabCloseBusy(content),
               !selectedInactiveContentIsBusy,
               contentTabs.pendingPinnedRecordIDs.isEmpty
+        else { return false }
+
+        switch undoRedoPhase {
+        case .idle, .desynchronized:
+            return true
+        case .invoking, .replaying, .refreshing, .recovering, .tearingDownTab:
+            return false
+        }
+    }
+
+    internal var canStartSelectedContentTabPinMutation: Bool {
+        guard !isClosing,
+              pendingSelectedContentTabPinMutation == nil,
+              pendingSelectedContentTabClose == nil,
+              pendingContentTabClose == nil,
+              pendingContentTabTeardown == nil,
+              contentTabs.pendingPinnedRecordIDs.isEmpty,
+              !isSelectedContentTabCloseBusy(content),
+              !contentTabs.orderedValidSelectedTabIDs.contains(where: { tabID in
+                  tabID != contentTabs.activeTabID
+                      && tabContentStates[tabID].map(isSelectedContentTabCloseBusy) == true
+              })
         else { return false }
 
         switch undoRedoPhase {
@@ -828,46 +906,36 @@ extension FileManagerWindowState {
     }
 
     func canPinContentTab(_ tabID: ContentTabID) -> Bool {
-        let tab = contentTabs.tabs[id: tabID]
-        if let tab {
-            let pinnedRecord = ContentTabPinnedRecord(
-                id: tab.id.rawValue,
-                page: tab.page,
-                anchor: tab.anchor,
-                title: tab.title,
-                iconName: tab.iconName,
-                pinnedAt: .distantPast,
-            )
-            guard pinnedRecord.isPageAnchorCompatible else { return false }
-        }
+        guard let tab = contentTabs.tabs[id: tabID] else { return false }
 
-        let tabPage = tab?.page
         let contentState = contentTabs.activeTabID == tabID ? content : tabContentStates[tabID]
-
-        guard let contentState else { return tabPage != .collection }
-
-        let isShowingCollectionNavigation = if case .collection = contentState.navigation.navigationState {
-            true
-        } else {
-            false
-        }
-
-        guard tabPage == .collection || contentState.isCollectionMode || isShowingCollectionNavigation else {
-            return true
-        }
-
-        if case let .collection(navigation) = contentState.navigation.navigationState,
-           case .temporary = navigation.kind
-        {
+        switch tab.page {
+        case .home, .aiChat:
             return false
+        case .directory:
+            guard let contentState else { return true }
+            let isShowingCollectionNavigation = if case .collection = contentState.navigation.navigationState {
+                true
+            } else {
+                false
+            }
+            return !contentState.isCollectionMode && !isShowingCollectionNavigation
+        case .collection:
+            guard case .collectionFile = tab.anchor,
+                  let contentState,
+                  contentState.isCollectionMode,
+                  contentState.collection.collectionSession.document?.url != nil,
+                  contentState.collection.collectionSession.metadata.baseline != nil
+            else {
+                return false
+            }
+            if case let .collection(navigation) = contentState.navigation.navigationState,
+               case .temporary = navigation.kind
+            {
+                return false
+            }
+            return contentState.openedCollectionURLExists
         }
-        guard contentState.isCollectionMode else { return true }
-        guard contentState.collection.collectionSession.document?.url != nil,
-              contentState.collection.collectionSession.metadata.baseline != nil
-        else {
-            return false
-        }
-        return contentState.openedCollectionURLExists
     }
 }
 
