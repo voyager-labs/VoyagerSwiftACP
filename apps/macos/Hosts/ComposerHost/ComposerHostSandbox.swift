@@ -146,7 +146,7 @@ extension ComposerHostSandbox {
         .dateRange: .init(
             propertyKey: "modification_date",
             operatorCode: "btw",
-            values: ["2025-01-01", "2025-01-31"],
+            values: ["2024-01-01", "2024-12-31"],
             id: "00000000-0000-0000-0000-000000000105",
         ),
     ]

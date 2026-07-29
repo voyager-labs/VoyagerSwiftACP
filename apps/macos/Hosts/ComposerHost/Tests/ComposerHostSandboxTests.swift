@@ -107,6 +107,30 @@ final class ComposerHostSandboxTests: XCTestCase {
         )
     }
 
+    func testDateRangePresetMatchesFixtureCorpus() throws {
+        let corpus = try ComposerHostFixtureTestResources.corpus()
+        let fixture = try XCTUnwrap(ComposerHostSandbox.conditionFixtures[.dateRange])
+        let filters = SearchFiltersPayload(
+            scopes: [],
+            conditions: [
+                .init(
+                    propertyKey: fixture.propertyKey,
+                    operator: fixture.operatorCode,
+                    value: .array(fixture.values.map(JSONValue.string)),
+                ),
+            ],
+            excludedScopes: [],
+            includeSubfolders: true,
+        )
+
+        XCTAssertFalse(ComposerHostFixtureEvaluator.evaluate(
+            corpus: corpus,
+            query: "",
+            filters: filters,
+            policy: .init(),
+        ).isEmpty)
+    }
+
     func testSmokeContractValidatesAllPresetsAndConstruction() throws {
         let corpus = try ComposerHostFixtureTestResources.corpus()
         let collections = try ComposerHostFixtureTestResources.collections()
