@@ -167,6 +167,58 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         XCTAssertEqual(store.state.navigation.forwardHistory, preForwardHistory)
     }
 
+    /// EVM-002-set_entries_view_as_list_table: metadata 정렬 변경 시 현재 root와 expanded folder reload
+    /// Spotlight 기반 정렬을 선택하면 기존 core-only payload를 현재 priority로 다시 materialize하는지 검증한다.
+    /// - 검증 내용: folder root load와 hierarchy metadata reload 액션이 동일한 active priority를 사용함
+    /// - 사전 조건: folder route, sortKey == .kind, expanded hierarchy cache 존재
+    /// - 기대 결과: loadItems와 arrangementMetadataPriorityChanged가 차례로 전달됨
+    func testMetadataSortChangeReloadsRootAndExpandedHierarchy() async {
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/seed")
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        // store.exhaustivity = .off: arrangement apply 내부 액션은 metadata reload 계약의 검증 대상이 아님
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryArrangements(.setSortKey(.kind)))) {
+            $0.entryViewLayout.entryArrangements.sortKey = .kind
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(
+                path,
+                showHidden: _,
+                priority,
+            )))) = action else { return false }
+            return path == "/seed" && priority == .active([.spotlight])
+        }
+        await store.receive(\.entryViewLayout.hierarchy.arrangementMetadataPriorityChanged)
+    }
+
+    /// EVM-002-set_entries_view_as_list_table: metadata grouping 변경 시 현재 root와 expanded folder reload
+    /// Tags 기반 grouping을 선택하면 기존 core-only payload를 현재 priority로 다시 materialize하는지 검증한다.
+    /// - 검증 내용: folder root load와 hierarchy metadata reload 액션이 Tags 우선 priority를 사용함
+    /// - 사전 조건: folder route, groupKey == .tags
+    /// - 기대 결과: loadItems와 arrangementMetadataPriorityChanged가 차례로 전달됨
+    func testMetadataGroupChangeReloadsRootAndExpandedHierarchy() async {
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/seed")
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        // store.exhaustivity = .off: arrangement apply 내부 액션은 metadata reload 계약의 검증 대상이 아님
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryArrangements(.setGroupKey(.tags)))) {
+            $0.entryViewLayout.entryArrangements.groupKey = .tags
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(
+                path,
+                showHidden: _,
+                priority,
+            )))) = action else { return false }
+            return path == "/seed" && priority == .active([.tags])
+        }
+        await store.receive(\.entryViewLayout.hierarchy.arrangementMetadataPriorityChanged)
+    }
+
     // MARK: - EVM-002-set_entries_view_as_list_table
 
     /// EVM-002-set_entries_view_as_list_table: .grid → .list 전환 시 모드/영속성/composer 동기화 검증

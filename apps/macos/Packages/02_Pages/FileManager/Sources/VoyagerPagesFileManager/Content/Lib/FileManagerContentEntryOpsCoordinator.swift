@@ -63,11 +63,15 @@ enum FileManagerContentEntryOpsCoordinator {
                 priority: priority,
             )))
         case .recents:
-            sendEntryOperations(.loading(.loadRecentItems(showHidden: showHidden)))
+            sendEntryOperations(.loading(.loadRecentItems(
+                showHidden: showHidden,
+                priority: priority,
+            )))
         case let .tags(tagName):
             sendEntryOperations(.loading(.loadTagItems(
                 tagName: tagName,
                 showHidden: showHidden,
+                priority: priority,
             )))
         case .computer:
             sendEntryOperations(.loading(.loadComputerItems))
@@ -101,9 +105,19 @@ enum FileManagerContentEntryOpsCoordinator {
     static func rootMetadataPriority(
         for arrangements: EntryArrangementsFeature.State,
     ) -> EntryMetadataPriority {
+        rootMetadataPriority(
+            sortKey: arrangements.sortKey,
+            groupKey: arrangements.groupKey,
+        )
+    }
+
+    static func rootMetadataPriority(
+        sortKey: SortKey,
+        groupKey: GroupKey,
+    ) -> EntryMetadataPriority {
         let probes = [
-            metadataProbe(for: arrangements.sortKey),
-            metadataProbe(for: arrangements.groupKey),
+            metadataProbe(for: sortKey),
+            metadataProbe(for: groupKey),
         ].compactMap(\.self)
         return probes.isEmpty ? .none : .active(probes)
     }

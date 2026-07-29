@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
@@ -29,6 +30,24 @@ public struct FileManagerContentFeature {
             case let .entryViewLayout(.entryOperations(.lifecycle(.resetForDuplicate(windowID)))):
                 state.composer.cancellationOwnerID = windowID
                 return .none
+            case let .entryViewLayout(.entryArrangements(.setSortKey(key))):
+                guard state.entryViewLayout.entryArrangements.sortKey != key else { return .none }
+                return arrangementMetadataReloadEffect(
+                    priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
+                        sortKey: key,
+                        groupKey: state.entryViewLayout.entryArrangements.groupKey,
+                    ),
+                    state: state,
+                )
+            case let .entryViewLayout(.entryArrangements(.setGroupKey(key))):
+                guard state.entryViewLayout.entryArrangements.groupKey != key else { return .none }
+                return arrangementMetadataReloadEffect(
+                    priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
+                        sortKey: state.entryViewLayout.entryArrangements.sortKey,
+                        groupKey: key,
+                    ),
+                    state: state,
+                )
             default:
                 return .none
             }
@@ -143,6 +162,21 @@ public struct FileManagerContentFeature {
                 return .none
             }
         }
+    }
+
+    private func arrangementMetadataReloadEffect(
+        priority: EntryMetadataPriority,
+        state: State,
+    ) -> Effect<Action> {
+        guard !priority.probes.isEmpty else { return .none }
+        return .concatenate(
+            FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(
+                navigationState: state.navigation.navigationState,
+                showHidden: state.entryViewLayout.showHiddenFiles,
+                priority: priority,
+            ),
+            .send(.entryViewLayout(.hierarchy(.arrangementMetadataPriorityChanged))),
+        )
     }
 
     private func handlePendingSelectionAfterEntryLayoutLoaded(
