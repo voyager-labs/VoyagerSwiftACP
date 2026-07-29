@@ -11,6 +11,7 @@ import { VideoIcon } from "./entry-icons/VideoIcon"
 export interface EntryThumbnailEntry {
   readonly id: string
   readonly kind: EntryKind
+  readonly thumbnailSrc?: string
 }
 
 export interface EntryThumbnailProps {
@@ -25,7 +26,16 @@ export const EntryThumbnail: FC<EntryThumbnailProps> = ({ entry, size = "regular
 
   return (
     <span className={className} aria-hidden="true">
-      {entry.kind === "folder" ? (
+      {entry.thumbnailSrc ? (
+        <img
+          className="entry-thumbnail-image"
+          src={entry.thumbnailSrc}
+          alt=""
+          width={64}
+          height={64}
+          draggable={false}
+        />
+      ) : entry.kind === "folder" ? (
         <FolderIcon />
       ) : entry.kind === "image" ? (
         <ImageIcon />

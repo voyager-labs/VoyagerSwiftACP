@@ -1,18 +1,32 @@
 import { useMemo } from "react"
 import type { FC } from "react"
+import type { EntryViewMode } from "../Patterns/FileToolbar"
 import type { Entry } from "../model/types"
 import { EntryGrid } from "./EntryGrid"
 import type { EntryGridEntry } from "./EntryGrid"
 import { EntryList } from "./EntryList"
 import type { EntryListEntry } from "./EntryList"
-import type { EntryViewMode } from "../Patterns/FileToolbar"
 
 /* Structural map: Entry has the same shape as EntryGridEntry/EntryListEntry. */
 function toGridEntry(e: Entry): EntryGridEntry {
-  return { id: e.id, name: e.name, kind: e.kind, meta: e.meta, count: e.count }
+  return {
+    id: e.id,
+    name: e.name,
+    kind: e.kind,
+    meta: e.meta,
+    count: e.count,
+    thumbnailSrc: e.thumbnailSrc,
+  }
 }
 function toListEntry(e: Entry): EntryListEntry {
-  return { id: e.id, name: e.name, kind: e.kind, meta: e.meta, count: e.count }
+  return {
+    id: e.id,
+    name: e.name,
+    kind: e.kind,
+    meta: e.meta,
+    count: e.count,
+    thumbnailSrc: e.thumbnailSrc,
+  }
 }
 
 export interface FileBrowserProps {
