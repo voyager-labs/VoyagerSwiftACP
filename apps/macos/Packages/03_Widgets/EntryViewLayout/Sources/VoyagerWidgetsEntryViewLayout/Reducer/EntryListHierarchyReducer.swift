@@ -144,11 +144,13 @@ struct EntryListHierarchyReducer {
 
         var affectedIDs = Set<EntryModel.ID>()
         for path in affectedPaths {
-            let normalizedPath = normalizedPath(path)
-            if state.hierarchy.foldersByID[normalizedPath] != nil {
-                affectedIDs.insert(normalizedPath)
+            let canonicalPath = normalizedPath(path)
+            if let folderID = state.hierarchy.foldersByID.keys.first(where: {
+                normalizedPath($0) == canonicalPath
+            }) {
+                affectedIDs.insert(folderID)
             }
-            if let parentID = nearestLoadedParentID(for: normalizedPath, state: state) {
+            if let parentID = nearestLoadedParentID(for: canonicalPath, state: state) {
                 affectedIDs.insert(parentID)
             }
         }
@@ -316,7 +318,7 @@ struct EntryListHierarchyReducer {
     }
 
     private func normalizedPath(_ path: String) -> String {
-        URL(fileURLWithPath: path).standardizedFileURL.path
+        URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     private func pathComponents(for path: String) -> [String] {

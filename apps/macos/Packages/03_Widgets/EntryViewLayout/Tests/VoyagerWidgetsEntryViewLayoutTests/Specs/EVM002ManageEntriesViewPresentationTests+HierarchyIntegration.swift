@@ -153,6 +153,44 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertFalse(coordinator.outlineView(view.tableView, isItemExpandable: item))
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: canonical watcher path가 lexical hierarchy key를 다시 로드한다.
+    /// symlink를 통해 연 folder가 실경로 이벤트를 받아도 expanded child cache가 stale로 남지 않는지 검증한다.
+    /// - 검증 내용: `/private/var` affected path가 `/var` folder ID의 새 load request를 생성함
+    /// - 사전 조건: 실제 symlink인 lexical `/var` folder가 expanded loaded 상태임
+    /// - 기대 결과: lexical folder ID를 유지한 채 generation을 올리고 loading 상태로 전환함
+    func testCanonicalInvalidationReloadsLexicalHierarchyFolder() async {
+        let folder = EntryModel.temporaryFolder(id: "/var", name: "var")
+        let staleChild = makeHierarchyIntegrationEntry(id: "/var/stale.txt", name: "stale.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.hierarchy = .init(
+            rootPath: "/",
+            expandedFolderIDs: [folder.id],
+            foldersByID: [
+                folder.id: .init(
+                    children: [staleChild],
+                    phase: .loaded,
+                    generation: 2,
+                ),
+            ],
+        )
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+
+        await store.send(.hierarchy(.hierarchyInvalidated(
+            affectedPaths: ["/private/var"],
+            removedPrefixes: [],
+        ))) {
+            $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 3)
+            $0.outlineProjectionRevision = 2
+        }
+        await store.receive { action in
+            guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
+            return request.id.folderID == folder.id && request.path == folder.fullPath
+        }
+    }
+
     private func makeHierarchyIntegrationEntry(id: String, name: String) -> EntryModel {
         EntryModel(
             name: name,
