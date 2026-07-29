@@ -225,7 +225,7 @@ final class RCL003RetrieveEntriesWithFiltersTests: XCTestCase {
         ])
         XCTAssertEqual(
             resolved.conditions.compactMap(\.operation?.code),
-            ["in", "any", "any", "gt", "neq", "all", "cn", "any", "sw"],
+            ["in", "any", "any", "gt", "neq", "all", "cn", "contains_any", "sw"],
         )
         XCTAssertEqual(resolved.conditions[7].property.type, .string)
         XCTAssertEqual(resolved.conditions[7].values, ["PDF"])

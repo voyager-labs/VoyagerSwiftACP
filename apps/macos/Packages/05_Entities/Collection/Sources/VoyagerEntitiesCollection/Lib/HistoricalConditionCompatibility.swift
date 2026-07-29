@@ -70,8 +70,11 @@ extension HistoricalConditionCompatibility {
                 Condition.OperatorOption(code: code, label: registryClient.operatorLabel(for: code))
             }
         } ?? []
+        let operationCode = alphaListOperators.contains(payload.operator.lowercased())
+            ? payload.operator.lowercased()
+            : resolution.operatorCode
         let selectedOption = Condition.OperatorOption(
-            code: resolution.operatorCode,
+            code: operationCode,
             label: historicalOperatorLabels[resolution.operatorCode] ?? resolution.operatorCode,
         )
         let operatorOptions = currentOperatorOptions.contains(where: { $0.code == selectedOption.code })
@@ -92,7 +95,7 @@ extension HistoricalConditionCompatibility {
                 operatorOptions: operatorOptions,
             ),
             operation: .init(
-                code: resolution.operatorCode,
+                code: operationCode,
                 label: selectedOption.label,
                 valueContract: resolution.valueContract,
             ),
