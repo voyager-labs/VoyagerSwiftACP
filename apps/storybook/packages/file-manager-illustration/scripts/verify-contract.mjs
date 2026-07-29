@@ -165,7 +165,7 @@ const designTokensStory = fileManagerStories.find(
 assert.ok(designTokensStory, "Missing File Manager design tokens overview story")
 assert.equal(
   designTokensStory.importPath,
-  "./packages/file-manager-illustration/src/foundations/DesignTokens.stories.tsx",
+  "./packages/file-manager-illustration/src/Foundations/DesignTokens.stories.tsx",
 )
 assert.equal(fileManagerStories.length, 110)
 assert.equal(fileManagerPaths.size, 33)

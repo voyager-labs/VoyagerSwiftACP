@@ -5,7 +5,7 @@ import { EntryGrid } from "./EntryGrid"
 import type { EntryGridEntry } from "./EntryGrid"
 import { EntryList } from "./EntryList"
 import type { EntryListEntry } from "./EntryList"
-import type { EntryViewMode } from "../patterns/FileToolbar"
+import type { EntryViewMode } from "../Patterns/FileToolbar"
 
 /* Structural map: Entry has the same shape as EntryGridEntry/EntryListEntry. */
 function toGridEntry(e: Entry): EntryGridEntry {

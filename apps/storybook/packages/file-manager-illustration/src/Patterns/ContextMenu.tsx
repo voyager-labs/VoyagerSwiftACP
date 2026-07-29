@@ -1,5 +1,5 @@
 import type { FC } from "react"
-import { MenuItem } from "../ui/controls/MenuItem"
+import { MenuItem } from "../UI/Controls/MenuItem"
 import type { ContextMenuAction } from "../model/types"
 
 export interface ContextMenuProps {

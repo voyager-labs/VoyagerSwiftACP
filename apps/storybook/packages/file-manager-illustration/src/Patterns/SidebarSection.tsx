@@ -1,6 +1,6 @@
 import type { FC } from "react"
-import { DisclosureControl } from "../ui/navigation/DisclosureControl"
-import { SidebarNavItem } from "../ui/navigation/SidebarNavItem"
+import { DisclosureControl } from "../UI/Navigation/DisclosureControl"
+import { SidebarNavItem } from "../UI/Navigation/SidebarNavItem"
 import type { SidebarSectionProps } from "../model/types"
 
 export const SidebarSection: FC<SidebarSectionProps> = ({ items, title, compact = false }) => {
