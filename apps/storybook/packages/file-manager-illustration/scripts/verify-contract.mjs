@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import * as runtime from "../dist/index.js"
+import { verifyThumbnailFixtures } from "./verify-thumbnail-fixtures.mjs"
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const storybookRoot = resolve(packageRoot, "../..")
@@ -167,9 +168,55 @@ assert.equal(
   designTokensStory.importPath,
   "./packages/file-manager-illustration/src/Foundations/DesignTokens.stories.tsx",
 )
-assert.equal(fileManagerStories.length, 110)
+assert.equal(fileManagerStories.length, 111)
 assert.equal(fileManagerPaths.size, 33)
 assert.equal(nonFileManagerStories.length, 0)
+
+/* ── RED→GREEN contract: thumbnailSrc data path + asset verification ── */
+
+const thumbnailFiles = [
+  {
+    id: "img-1",
+    displayName: "Photo.png",
+    kind: "image",
+    extension: "png",
+    secondaryLabel: null,
+    thumbnailSrc: "https://example.com/photo.png",
+  },
+  {
+    id: "folder-1",
+    displayName: "Folder",
+    kind: "folder",
+    extension: null,
+    secondaryLabel: null,
+  },
+  {
+    id: "pdf-1",
+    displayName: "Doc.pdf",
+    kind: "pdf",
+    extension: "pdf",
+    secondaryLabel: null,
+  },
+  {
+    id: "doc-1",
+    displayName: "Notes.doc",
+    kind: "doc",
+    extension: "doc",
+    secondaryLabel: null,
+  },
+]
+
+function renderWithFiles(files) {
+  return renderToStaticMarkup(
+    createElement(runtime.FileManagerIllustration, {
+      files,
+      contentContext: { tabs, activeTabId: "directory" },
+    }),
+  )
+}
+
+const thumbnailMarkup = renderWithFiles(thumbnailFiles)
+verifyThumbnailFixtures(packageRoot, thumbnailMarkup)
 
 console.log("native layout contract: pass")
 console.log(`catalog: ${fileManagerStories.length} stories / ${fileManagerPaths.size} paths`)
