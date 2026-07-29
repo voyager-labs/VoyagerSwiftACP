@@ -32,6 +32,7 @@ private extension HistoricalPathConditionEvaluator {
     struct PathValues {
         let directoryPath: String
         let parentDirectoryName: String
+        let fileExtension: String
         let depthFromHome: Double?
         let relativePathFromHome: String?
 
@@ -40,6 +41,7 @@ private extension HistoricalPathConditionEvaluator {
             let parentURL = targetURL.deletingLastPathComponent()
             directoryPath = parentURL.path
             parentDirectoryName = parentURL.lastPathComponent
+            fileExtension = targetURL.pathExtension
 
             let homePath = homeURL.standardizedFileURL.path
             let targetPath = targetURL.path
@@ -63,6 +65,7 @@ private extension HistoricalPathConditionEvaluator {
         func string(for key: String) -> String? {
             switch key {
             case "dir_path": directoryPath
+            case "extension": fileExtension
             case "parent_dir_name": parentDirectoryName
             case "relative_path_from_home": relativePathFromHome
             default: nil

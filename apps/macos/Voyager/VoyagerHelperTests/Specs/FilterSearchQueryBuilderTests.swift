@@ -140,6 +140,33 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         }
     }
 
+    func testConditionCompilerEvaluatesHistoricalScalarExtensionAgainstPathExtension() throws {
+        let compiler = try makeCompiler()
+        let condition = SearchConditionPayload(
+            propertyKey: "extension",
+            operator: "contains",
+            value: .string("pdf"),
+        )
+
+        let plan = try compiler.compilePlan(conditions: [condition])
+
+        XCTAssertEqual(plan.predicate, SpotlightQueryCompiler.basePredicate)
+        XCTAssertEqual(
+            plan.pathConditions,
+            [.init(propertyKey: "extension", operator: "cn", value: .string("pdf"))],
+        )
+        XCTAssertTrue(HistoricalPathConditionEvaluator.matches(
+            "/Users/test/Documents/report.pdf",
+            conditions: plan.pathConditions,
+            homeURL: URL(fileURLWithPath: "/Users/test", isDirectory: true),
+        ))
+        XCTAssertFalse(HistoricalPathConditionEvaluator.matches(
+            "/Users/test/Documents/pdf_notes.txt",
+            conditions: plan.pathConditions,
+            homeURL: URL(fileURLWithPath: "/Users/test", isDirectory: true),
+        ))
+    }
+
     /// RCL-003-apply_deterministic_filters: historical string none/miss 조건을 컴파일함
     /// 과거 alpha-list 부정 연산자가 단일 문자열 decoder로 빠지지 않고 list clause를 생성하는지 검증한다.
     /// - 검증 내용: not_contains_any/not_contains_all의 none/miss 정규화와 부정 predicate

@@ -254,7 +254,14 @@ private extension HistoricalConditionCompatibility {
             return makeResolution(propertyKey: propertyKey, propertyType: .stringList, operatorCode: operatorCode)
         }
         guard scalarStringOperators.contains(operatorCode) else { return nil }
-        return makeResolution(propertyKey: propertyKey, propertyType: .string, operatorCode: operatorCode)
+        let requiresPathEvaluation = propertyKey == "extension"
+            && ["cn", "nc", "sw", "ew", "rx"].contains(operatorCode)
+        return makeResolution(
+            propertyKey: propertyKey,
+            propertyType: .string,
+            operatorCode: operatorCode,
+            isPathDerived: requiresPathEvaluation,
+        )
     }
 
     static func currentTypeResolution(
