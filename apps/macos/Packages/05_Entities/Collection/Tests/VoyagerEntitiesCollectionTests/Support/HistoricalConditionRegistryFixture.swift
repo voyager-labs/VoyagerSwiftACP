@@ -27,7 +27,11 @@ enum HistoricalConditionRegistryFixture {
     private static func operatorDefinition(_ code: String) -> OperatorDefinition {
         switch code {
         case "any":
-            OperatorDefinition(uiLabel: "Contains any", uiValueKind: ["categorical": "listText"])
+            OperatorDefinition(
+                uiLabel: "Contains any",
+                aliases: ["contains any"],
+                uiValueKind: ["categorical": "listText"],
+            )
         case "eq":
             OperatorDefinition(
                 uiLabel: "Is",
