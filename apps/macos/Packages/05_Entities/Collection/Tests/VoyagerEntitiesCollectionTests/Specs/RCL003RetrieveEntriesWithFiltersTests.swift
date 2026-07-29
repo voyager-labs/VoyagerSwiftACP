@@ -236,6 +236,23 @@ final class RCL003RetrieveEntriesWithFiltersTests: XCTestCase {
         XCTAssertEqual(resolved.unknownKeys, [])
     }
 
+    func testApplyDeterministicFilters_withHistoricalNotEmpty_restoresExistsAcrossPropertyTypes() {
+        let resolved = AppliedFilterResolver.resolveDetailed(
+            AppliedFiltersPayload(conditions: [
+                .init(propertyKey: "size", operator: "not_empty", value: nil),
+                .init(propertyKey: "file_kind", operator: "not_empty", value: nil),
+            ]),
+            fallbackScopes: [],
+            fallbackConditions: [],
+            registryClient: HistoricalConditionRegistryFixture.makeClient(),
+        )
+
+        XCTAssertEqual(resolved.conditions.map(\.property.key), ["size", "file_kind"])
+        XCTAssertEqual(resolved.conditions.compactMap(\.operation?.code), ["exists", "exists"])
+        XCTAssertTrue(resolved.conditions.allSatisfy { $0.values?.isEmpty == true })
+        XCTAssertTrue(resolved.conditions.allSatisfy(\.isExecutionReady))
+    }
+
     // MARK: - RCL-003-request_collection_results_refresh
 
     /// RCL-003-request_collection_results_refresh: dirty collection은 refresh 요청을 막음

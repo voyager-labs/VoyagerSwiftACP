@@ -279,6 +279,10 @@ private extension HistoricalConditionCompatibility {
         propertyType: SystemPropertyTypeKey?,
         operatorCode: String,
     ) -> Resolution? {
+        guard let propertyType else { return nil }
+        if ["empty", "exists"].contains(operatorCode) {
+            return makeResolution(propertyKey: propertyKey, propertyType: propertyType, operatorCode: operatorCode)
+        }
         if propertyType == .string, ["any", "all"].contains(operatorCode) {
             return makeResolution(propertyKey: propertyKey, propertyType: .string, operatorCode: operatorCode)
         }

@@ -98,6 +98,15 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         }
     }
 
+    func testConditionCompilerRestoresHistoricalNotEmptyAsExists() throws {
+        let compiler = try makeCompiler()
+        let plan = try compiler.compilePlan(conditions: [
+            .init(propertyKey: "size", operator: "not_empty", value: nil),
+        ])
+
+        XCTAssertTrue(plan.predicate.contains("kMDItemFSSize != nil"), plan.predicate)
+    }
+
     func testConditionCompilerRestoresHistoricalOperatorProfiles() throws {
         let compiler = try makeCompiler()
         let cases: [(SearchConditionPayload, [String])] = [
