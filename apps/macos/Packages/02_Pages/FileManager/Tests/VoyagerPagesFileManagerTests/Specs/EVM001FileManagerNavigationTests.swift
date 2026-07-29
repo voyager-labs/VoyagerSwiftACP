@@ -1042,6 +1042,32 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     }
 }
 
+extension EVM001FileManagerNavigationTests {
+    /// EVM-001-reload_directory_page_on_external_change: dot-segment watch root의 canonical event 보존
+    /// 표준화되지 않은 route root도 Shared canonical seam을 통해 FSEvent path와 같은 scope로 비교되는지 검증한다.
+    /// - 검증 내용: `/var/tmp/../tmp` interest에 대한 `/private/var/tmp` child event relevance
+    /// - 사전 조건: symlink와 parent dot-segment가 함께 포함된 visible-folder interest
+    /// - 기대 결과: 원본 FileChangeGatewayEvent가 필터에서 제거되지 않음
+    func testGatewayRelevanceStandardizesDotSegmentWatchRoot() {
+        let interest = FileChangeWatchInterest(
+            id: "visible-folder",
+            owner: .fileManager,
+            purpose: .visibleFolderReload,
+            roots: ["/var/tmp/../tmp"],
+            includeSubfolders: true,
+        )
+        let event = FileChangeGatewayEvent(
+            path: "/private/var/tmp/voyager-changed.txt",
+            flags: UInt32(kFSEventStreamEventFlagItemModified),
+        )
+
+        XCTAssertEqual(
+            gatewayRelevantChangedEvents([event], interest: interest, openedURL: nil),
+            [event],
+        )
+    }
+}
+
 private enum FixturePathError: Error, CustomStringConvertible {
     case repoRootNotFound(searchFrom: String)
 

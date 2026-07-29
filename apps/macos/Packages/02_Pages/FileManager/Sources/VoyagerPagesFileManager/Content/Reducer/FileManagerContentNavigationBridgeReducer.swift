@@ -403,16 +403,14 @@ nonisolated func gatewayRelevantChangedPaths(
     interest: FileChangeWatchInterest,
     openedURL: URL?,
 ) -> [String] {
-    let roots = interest.roots.map(canonicalFilePath(_:))
-    let excludedRoots = interest.excludedRoots.map(canonicalFilePath(_:))
     let relevantPaths = events.compactMap { event -> String? in
         guard event.isStaleWorthyPathChange else { return nil }
-        let path = canonicalFilePath(event.path)
-        guard roots.contains(where: {
-            canonicalPath($0, affects: path, includeSubfolders: interest.includeSubfolders)
+        let path = FileChangeScopePolicy.canonicalPath(event.path)
+        guard interest.roots.contains(where: {
+            FileChangeScopePolicy.affects(root: $0, path: path, includeSubfolders: interest.includeSubfolders)
         }) else { return nil }
-        guard !excludedRoots.contains(where: {
-            canonicalPath($0, affects: path, includeSubfolders: true)
+        guard !interest.excludedRoots.contains(where: {
+            FileChangeScopePolicy.affects(root: $0, path: path, includeSubfolders: true)
         }) else { return nil }
         return path
     }
@@ -428,57 +426,18 @@ nonisolated func gatewayRelevantChangedEvents(
     openedURL: URL?,
 ) -> [FileChangeGatewayEvent] {
     let relevantPaths = Set(gatewayRelevantChangedPaths(events, interest: interest, openedURL: openedURL))
-    return events.filter { relevantPaths.contains(canonicalFilePath($0.path)) }
+    return events.filter { relevantPaths.contains(FileChangeScopePolicy.canonicalPath($0.path)) }
 }
 
 nonisolated func collectionRelevantChangedPaths(_ paths: [String], openedURL: URL?) -> [String] {
     guard let openedURL else { return paths }
-    let normalizedOpenedPath = canonicalFilePath(openedURL.path)
+    let normalizedOpenedPath = FileChangeScopePolicy.canonicalPath(openedURL.path)
     return paths.filter { path in
-        let normalizedPath = canonicalFilePath(path)
+        let normalizedPath = FileChangeScopePolicy.canonicalPath(path)
         if normalizedPath == normalizedOpenedPath {
             return false
         }
         let packagePrefix = normalizedOpenedPath == "/" ? "/" : normalizedOpenedPath + "/"
         return !normalizedPath.hasPrefix(packagePrefix)
     }
-}
-
-nonisolated private func canonicalFilePath(_ path: String) -> String {
-    var pendingComponents = Array((path as NSString).pathComponents.dropFirst())
-    var resolvedURL = URL(fileURLWithPath: "/")
-    var resolvedSymlinkCount = 0
-
-    while let component = pendingComponents.first {
-        pendingComponents.removeFirst()
-        let candidateURL = resolvedURL.appendingPathComponent(component)
-        guard resolvedSymlinkCount < 40,
-              let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: candidateURL.path)
-        else {
-            resolvedURL = candidateURL
-            continue
-        }
-
-        let destinationURL = destination.hasPrefix("/")
-            ? URL(fileURLWithPath: destination)
-            : resolvedURL.appendingPathComponent(destination)
-        let destinationComponents = (destinationURL.path as NSString).pathComponents
-        pendingComponents = Array(destinationComponents.dropFirst()) + pendingComponents
-        resolvedURL = URL(fileURLWithPath: "/")
-        resolvedSymlinkCount += 1
-    }
-
-    return resolvedURL.path
-}
-
-nonisolated private func canonicalPath(
-    _ root: String,
-    affects path: String,
-    includeSubfolders: Bool,
-) -> Bool {
-    guard !root.isEmpty, !path.isEmpty else { return false }
-    if !includeSubfolders {
-        return path == root || (path as NSString).deletingLastPathComponent == root
-    }
-    return path == root || (root == "/" ? path.hasPrefix("/") : path.hasPrefix(root + "/"))
 }
