@@ -279,6 +279,12 @@ public struct ComposerHostFixtureSearchPolicy: Equatable, Sendable {
 private typealias FixtureEntry = ComposerHostFixtureEntry
 
 public enum ComposerHostFixtureEvaluator {
+    nonisolated private static var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? calendar.timeZone
+        return calendar
+    }
+
     nonisolated public static func evaluate(
         corpus: ComposerHostFixtureCorpus,
         query: String,
@@ -337,13 +343,37 @@ public enum ComposerHostFixtureEvaluator {
     }
 
     nonisolated private static func matchesString(_ actual: String, operation: String, values: [String]) -> Bool {
+        if let presence = matchesPresence(isEmpty: actual.isEmpty, operation: operation) {
+            return presence
+        }
         let normalized = actual.lowercased()
         let expected = values.map { $0.lowercased() }
+        if ["all", "none", "miss"].contains(operation) {
+            return matchesStringList(normalized, operation: operation, expected: expected)
+        }
+        return matchesSingleString(normalized, operation: operation, expected: expected)
+    }
+
+    nonisolated private static func matchesSingleString(
+        _ actual: String, operation: String, expected: [String],
+    ) -> Bool {
         switch operation {
-        case "exists": return !actual.isEmpty
-        case "contains": return expected.contains { normalized.contains($0) }
-        case "eq", "in", "any": return expected.contains(normalized)
-        default: return false
+        case "cn": expected.contains { actual.contains($0) }
+        case "nc": expected.allSatisfy { !actual.contains($0) }
+        case "sw": expected.contains { actual.hasPrefix($0) }
+        case "ew": expected.contains { actual.hasSuffix($0) }
+        case "eq", "in", "any": expected.contains(actual)
+        case "neq": !expected.contains(actual)
+        default: false
+        }
+    }
+
+    nonisolated private static func matchesStringList(_ actual: String, operation: String, expected: [String]) -> Bool {
+        switch operation {
+        case "all": expected.allSatisfy(actual.contains)
+        case "none": expected.allSatisfy { !actual.contains($0) }
+        case "miss": expected.contains { !actual.contains($0) }
+        default: false
         }
     }
 
@@ -352,22 +382,45 @@ public enum ComposerHostFixtureEvaluator {
         operation: String,
         values: [String],
     ) -> Bool {
-        matchesString(operation == "contains" ? entry.name : entry.nameStem, operation: operation, values: values)
+        matchesString(operation == "cn" ? entry.name : entry.nameStem, operation: operation, values: values)
     }
 
     nonisolated private static func matchesNumber(_ actual: Int64, operation: String, values: [String]) -> Bool {
-        let actual = Double(actual)
+        if let presence = matchesPresence(isEmpty: false, operation: operation) {
+            return presence
+        }
         let numbers = values.compactMap(Double.init)
+        return matchesNumberComparison(Double(actual), operation: operation, numbers: numbers)
+    }
+
+    nonisolated private static func matchesNumberComparison(
+        _ actual: Double, operation: String, numbers: [Double],
+    ) -> Bool {
         switch operation {
-        case "exists": return true
-        case "eq": return numbers.first == actual
-        case "gt": return numbers.first.map { actual > $0 } ?? false
-        case "btw": return numbers.count == 2 && actual >= numbers[0] && actual <= numbers[1]
-        default: return false
+        case "eq": numbers.first == actual
+        case "neq": numbers.first.map { actual != $0 } ?? false
+        case "gt": numbers.first.map { actual > $0 } ?? false
+        case "gte": numbers.first.map { actual >= $0 } ?? false
+        case "lt": numbers.first.map { actual < $0 } ?? false
+        case "lte": numbers.first.map { actual <= $0 } ?? false
+        case "btw": matchesRange(actual, numbers: numbers)
+        case "nbtw": numbers.count == 2 && !matchesRange(actual, numbers: numbers)
+        default: false
         }
     }
 
+    nonisolated private static func matchesRange(_ actual: Double, numbers: [Double]) -> Bool {
+        guard numbers.count == 2 else { return false }
+        return actual >= min(numbers[0], numbers[1]) && actual <= max(numbers[0], numbers[1])
+    }
+
     nonisolated private static func matchesDate(_ actual: Date, operation: String, values: [String]) -> Bool {
+        if let presence = matchesPresence(isEmpty: false, operation: operation) {
+            return presence
+        }
+        if operation == "today" {
+            return isSameDay(actual, Date())
+        }
         let formatter = ISO8601DateFormatter()
         let dateFormatter = DateFormatter()
         dateFormatter.calendar = Calendar(identifier: .gregorian)
@@ -375,35 +428,93 @@ public enum ComposerHostFixtureEvaluator {
         dateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
         dateFormatter.dateFormat = "yyyy-MM-dd"
         let dates = values.compactMap { formatter.date(from: $0) ?? dateFormatter.date(from: $0) }
+        return matchesDateComparison(actual, operation: operation, dates: dates)
+    }
+
+    nonisolated private static func matchesDateComparison(_ actual: Date, operation: String, dates: [Date]) -> Bool {
         switch operation {
-        case "exists": return true
-        case "eq": return dates.first.map { Calendar(identifier: .gregorian).isDate(actual, inSameDayAs: $0) } ?? false
-        case "before": return dates.first.map { actual < $0 } ?? false
-        case "after", "gt": return dates.first.map { actual > $0 } ?? false
-        case "btw": return dates.count == 2 && actual >= dates[0] && actual <= dates[1]
-        default: return false
+        case "eq": dates.first.map { isSameDay(actual, $0) } ?? false
+        case "neq": dates.first.map { !isSameDay(actual, $0) } ?? false
+        case "gt": dates.first.flatMap(dayInterval).map { actual >= $0.end } ?? false
+        case "gte": dates.first.flatMap(dayInterval).map { actual >= $0.start } ?? false
+        case "lt": dates.first.flatMap(dayInterval).map { actual < $0.start } ?? false
+        case "lte": dates.first.flatMap(dayInterval).map { actual < $0.end } ?? false
+        case "btw": matchesDateRange(actual, dates: dates)
+        case "nbtw": dates.count == 2 && !matchesDateRange(actual, dates: dates)
+        default: false
         }
     }
 
+    nonisolated private static func matchesDateRange(_ actual: Date, dates: [Date]) -> Bool {
+        guard dates.count == 2,
+              let first = dayInterval(dates[0]),
+              let second = dayInterval(dates[1])
+        else { return false }
+        return actual >= min(first.start, second.start) && actual < max(first.end, second.end)
+    }
+
+    nonisolated private static func isSameDay(_ lhs: Date, _ rhs: Date) -> Bool {
+        calendar.isDate(lhs, inSameDayAs: rhs)
+    }
+
+    nonisolated private static func dayInterval(_ date: Date) -> DateInterval? {
+        calendar.dateInterval(of: .day, for: date)
+    }
+
     nonisolated private static func matchesTags(_ actual: [String], operation: String, values: [String]) -> Bool {
-        switch operation {
-        case "exists": !actual.isEmpty
-        case "contains", "eq", "in",
-             "any": actual.contains { tag in values.contains { tag.caseInsensitiveCompare($0) == .orderedSame } }
+        if let presence = matchesPresence(isEmpty: actual.isEmpty, operation: operation) {
+            return presence
+        }
+        let actual = actual.map { $0.lowercased() }
+        let expected = values.map { $0.lowercased() }
+        return switch operation {
+        case "cn", "eq", "in", "any": actual.contains { expected.contains($0) }
+        case "neq", "none": actual.allSatisfy { !expected.contains($0) }
+        case "all": expected.allSatisfy(actual.contains)
+        case "miss": expected.contains { !actual.contains($0) }
         default: false
         }
     }
 
     nonisolated private static func matchesBool(_ actual: Bool, operation: String, values: [String]) -> Bool {
-        switch operation {
-        case "exists": true
+        if let presence = matchesPresence(isEmpty: false, operation: operation) {
+            return presence
+        }
+        return switch operation {
         case "eq": values.first.map { $0.lowercased() == String(actual) } ?? false
+        case "neq": values.first.map { $0.lowercased() != String(actual) } ?? false
         default: false
+        }
+    }
+
+    nonisolated private static func matchesPresence(isEmpty: Bool, operation: String) -> Bool? {
+        switch operation {
+        case "exists": !isEmpty
+        case "empty": isEmpty
+        default: nil
         }
     }
 }
 
 public enum ComposerHostFixtureConditionNormalization {
+    nonisolated private static let operatorAliases = [
+        "eq": "eq", "equals": "eq", "is": "eq",
+        "neq": "neq", "notequals": "neq", "isnot": "neq",
+        "cn": "cn", "contains": "cn",
+        "nc": "nc", "notcontains": "nc",
+        "sw": "sw", "startswith": "sw", "beginswith": "sw",
+        "ew": "ew", "endswith": "ew",
+        "in": "in",
+        "gt": "gt", "greaterthan": "gt", "after": "gt",
+        "gte": "gte", "greaterthanorequal": "gte", "greaterorequal": "gte",
+        "lt": "lt", "lessthan": "lt", "before": "lt",
+        "lte": "lte", "lessthanorequal": "lte", "lessorequal": "lte",
+        "exists": "exists", "empty": "empty",
+        "any": "any", "all": "all", "none": "none", "miss": "miss",
+        "btw": "btw", "between": "btw", "nbtw": "nbtw", "notbetween": "nbtw",
+        "today": "today",
+    ]
+
     nonisolated public static func canonicalPropertyKey(_ key: String) -> String {
         switch normalizedAlias(key) {
         case "name", "namestem": "name_stem"
@@ -419,18 +530,7 @@ public enum ComposerHostFixtureConditionNormalization {
     }
 
     nonisolated public static func canonicalOperator(_ value: String) -> String {
-        switch normalizedAlias(value) {
-        case "eq", "equals", "is": "eq"
-        case "contains": "contains"
-        case "in": "in"
-        case "gt", "greaterthan": "gt"
-        case "before": "before"
-        case "after": "after"
-        case "exists": "exists"
-        case "any": "any"
-        case "btw", "between": "btw"
-        default: value
-        }
+        operatorAliases[normalizedAlias(value)] ?? value
     }
 
     nonisolated public static func values(from value: JSONValue?) -> [String] {

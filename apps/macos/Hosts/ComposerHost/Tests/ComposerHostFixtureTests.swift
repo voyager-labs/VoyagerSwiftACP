@@ -104,9 +104,93 @@ final class ComposerHostFixtureTests: XCTestCase {
             ["documents/Example.pages", "documents/Quarterly Report.pdf"],
         )
     }
+
+    func testEvaluatorMatchesRegistryOperatorSemantics() {
+        assertRegistryStringOperators()
+        assertRegistryNumberOperators()
+        assertRegistryDateOperators()
+        assertRegistryListAndBooleanOperators()
+    }
 }
 
 extension ComposerHostFixtureTests {
+    private func assertRegistryStringOperators() {
+        assertRegistryMatch("name_stem", "cn", .string("voyager"), ["documents/Voyager Plan.md"])
+        assertRegistryMatch("name_stem", "nc", .string("report"), [
+            ".hidden/Secret.txt", "documents/Example.pages", "documents/Voyager Plan.md",
+        ])
+        assertRegistryMatch("extension", "sw", .string("p"), [
+            "documents/Example.pages", "documents/Quarterly Report.pdf",
+        ])
+        assertRegistryMatch("extension", "ew", .string("f"), ["documents/Quarterly Report.pdf"])
+        assertRegistryMatch("name_stem", "neq", .string("Secret"), [
+            "documents/Example.pages", "documents/Quarterly Report.pdf", "documents/Voyager Plan.md",
+        ])
+    }
+
+    private func assertRegistryNumberOperators() {
+        assertRegistryMatch("file_size", "lt", .number(1000), [
+            ".hidden/Secret.txt", "documents/Voyager Plan.md",
+        ])
+        assertRegistryMatch("file_size", "gte", .number(1500), [
+            "documents/Example.pages", "documents/Quarterly Report.pdf",
+        ])
+        assertRegistryMatch("file_size", "lte", .number(512), [
+            ".hidden/Secret.txt", "documents/Voyager Plan.md",
+        ])
+        assertRegistryMatch("file_size", "neq", .number(1500), [
+            ".hidden/Secret.txt", "documents/Example.pages", "documents/Voyager Plan.md",
+        ])
+        assertRegistryMatch("file_size", "nbtw", .array([.number(500), .number(1600)]), [
+            ".hidden/Secret.txt", "documents/Example.pages",
+        ])
+    }
+
+    private func assertRegistryDateOperators() {
+        assertRegistryMatch("modified_date", "lt", .string("2025-01-03"), [
+            ".hidden/Secret.txt", "documents/Voyager Plan.md",
+        ])
+        assertRegistryMatch("modified_date", "gte", .string("2025-01-03"), [
+            "documents/Example.pages", "documents/Quarterly Report.pdf",
+        ])
+        assertRegistryMatch("modified_date", "lte", .string("2025-01-01"), [
+            ".hidden/Secret.txt", "documents/Voyager Plan.md",
+        ])
+        assertRegistryMatch("modified_date", "neq", .string("2025-01-01"), [
+            "documents/Example.pages", "documents/Quarterly Report.pdf",
+        ])
+        assertRegistryMatch(
+            "modified_date",
+            "nbtw",
+            .array([.string("2025-01-01"), .string("2025-01-01")]),
+            ["documents/Example.pages", "documents/Quarterly Report.pdf"],
+        )
+    }
+
+    private func assertRegistryListAndBooleanOperators() {
+        assertRegistryMatch("tag_names", "none", .array([.string("Documents")]), [".hidden/Secret.txt"])
+        assertRegistryMatch("tag_names", "all", .array([.string("Documents"), .string("Work")]), [
+            "documents/Voyager Plan.md",
+        ])
+        assertRegistryMatch("tag_names", "miss", .array([.string("Documents")]), [".hidden/Secret.txt"])
+        assertRegistryMatch("is_hidden", "neq", .bool(true), [
+            "documents/Example.pages", "documents/Quarterly Report.pdf", "documents/Voyager Plan.md",
+        ])
+    }
+
+    private func assertRegistryMatch(
+        _ propertyKey: String,
+        _ operation: String,
+        _ value: JSONValue?,
+        _ expected: [String],
+    ) {
+        XCTAssertEqual(
+            evaluate(syntheticCorpus, filters: filters(propertyKey, operation, value)),
+            expected,
+            "\(propertyKey) \(operation)",
+        )
+    }
+
     private func assertQueryAndScopeEvaluation(_ corpus: ComposerHostFixtureCorpus) {
         XCTAssertEqual(evaluate(corpus, query: "voyager"), ["documents/Voyager Plan.md"])
         XCTAssertEqual(
