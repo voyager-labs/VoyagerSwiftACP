@@ -57,6 +57,37 @@ final class EOP005PackageEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    /// EOP-005-compress_entries: 서로 다른 계층의 선택 항목을 원본 부모별로 압축함
+    /// 계층 projection의 multi-parent 선택이 첫 번째 항목 부모 기준의 잘못된 archive 입력으로 합쳐지지 않는지 검증한다.
+    /// - 검증 내용: compress command plan이 선택 path를 원본 부모별 action으로 분리함
+    /// - 사전 조건: 서로 다른 부모를 가진 두 항목이 선택되고 currentPath는 상위 root임
+    /// - 기대 결과: 각 compress action은 동일 부모의 source path만 포함함
+    func testCompressCommandPlansEachSourceParentArchive() {
+        let first = EntryModelFixtures.makeEntry(path: "/root/first.txt")
+        let second = EntryModelFixtures.makeEntry(path: "/root/folder/second.txt")
+        let context = EntryOperationsCommandContext(
+            selectedIds: [first.id, second.id],
+            displayItems: [first, second],
+            currentPath: "/root",
+        )
+
+        let outputs = EntryOperationsCommandPlanner.plan(
+            command: .mutation(.compressSelectedItems),
+            context: context,
+        )
+
+        XCTAssertEqual(outputs.count, 2)
+        guard outputs.count == 2,
+              case let .entryOperations(.archive(.compressItems(firstPaths))) = outputs[0],
+              case let .entryOperations(.archive(.compressItems(secondPaths))) = outputs[1]
+        else {
+            XCTFail("Expected compress plans grouped by source parent")
+            return
+        }
+        XCTAssertEqual(firstPaths, [first.fullPath])
+        XCTAssertEqual(secondPaths, [second.fullPath])
+    }
+
     /// EOP-005-extract_compressed_files: 압축 파일 해제
     /// - 검증 내용: 압축 해제 action이 archive 추출 의존성을 호출하고 작업 상태를 완료하는지 확인합니다.
     /// - 사전 조건: `fixtures/fixtures/archives/COMPRESS-264.zip`를 FixtureSandbox로 복사

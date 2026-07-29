@@ -280,7 +280,18 @@ enum EntryOperationsCommandPlanner {
     {
         let selectedPaths = selectedPaths(in: context)
         guard !selectedPaths.isEmpty else { return [] }
-        return [.entryOperations(.archive(.compressItems(paths: selectedPaths)))]
+        var groups: [(parentPath: String, sourcePaths: [String])] = []
+        for sourcePath in selectedPaths {
+            let parentPath = URL(fileURLWithPath: sourcePath).deletingLastPathComponent().path
+            if let index = groups.firstIndex(where: { $0.parentPath == parentPath }) {
+                groups[index].sourcePaths.append(sourcePath)
+            } else {
+                groups.append((parentPath: parentPath, sourcePaths: [sourcePath]))
+            }
+        }
+        return groups.map { group in
+            .entryOperations(.archive(.compressItems(paths: group.sourcePaths)))
+        }
     }
 
     private static func planExtractSelectedItem(_ context: EntryOperationsCommandContext)
