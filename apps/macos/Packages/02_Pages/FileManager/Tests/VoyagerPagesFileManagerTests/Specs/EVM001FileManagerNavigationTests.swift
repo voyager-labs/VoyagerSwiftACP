@@ -228,6 +228,30 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.receive(\.externalFileSystemChanged, changedEvents)
     }
 
+    /// EVM-001-reload_directory_page_on_external_change: symlink-resolved gateway event 보존
+    /// lexical watch root와 canonical event path가 달라도 sync reducer까지 event가 전달되는지 검증한다.
+    /// - 검증 내용: `/var` interest에 대한 `/private/var` child event의 relevance 결과
+    /// - 사전 조건: includeSubfolders가 활성화된 visible-folder interest
+    /// - 기대 결과: 원본 FileChangeGatewayEvent가 필터에서 제거되지 않음
+    func testGatewayRelevancePreservesCanonicalSymlinkEvent() {
+        let interest = FileChangeWatchInterest(
+            id: "visible-folder",
+            owner: .fileManager,
+            purpose: .visibleFolderReload,
+            roots: ["/var/tmp"],
+            includeSubfolders: true,
+        )
+        let event = FileChangeGatewayEvent(
+            path: "/private/var/tmp/voyager-changed.txt",
+            flags: UInt32(kFSEventStreamEventFlagItemModified),
+        )
+
+        XCTAssertEqual(
+            gatewayRelevantChangedEvents([event], interest: interest, openedURL: nil),
+            [event],
+        )
+    }
+
     /// EVM-001-reload_directory_page_on_external_change: collection 이동 시 scope watcher 시작 및 외부 변경 전달
     /// Collection route 진입 시 `.voycoll` 위치가 아닌 collection scope 절대경로만 감시하고 변경을 전달하는지 검증.
     /// - 검증 내용: applyNavigationState(.collection) 전송 시 FileChangeGateway interest 등록, externalFileSystemChanged 수신
