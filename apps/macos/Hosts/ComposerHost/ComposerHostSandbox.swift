@@ -14,7 +14,7 @@ public enum ComposerHostSandbox {
     public static let documentsPath = "/Fixture/Documents"
     public static let projectsPath = "/Fixture/Projects"
     public static let downloadsPath = "/Fixture/Downloads"
-    public static let referenceDate = Date(timeIntervalSince1970: 1_735_689_600)
+    public static let referenceDate = composerHostFixtureReferenceDate
 
     public static let favorites: [ScopeFavoriteItem] = [
         .init(name: "Documents", url: URL(fileURLWithPath: documentsPath), iconName: "doc"),
@@ -40,7 +40,7 @@ public enum ComposerHostSandbox {
         dependencies.entryLoadingClient = makeEntryLoadingClient(corpus: corpus)
         dependencies.finderFavoritesTagClient = makeFinderFavoritesTagClient()
         dependencies.uuid = .incrementing
-        dependencies.date = .constant(referenceDate)
+        dependencies.date = .constant(corpus.referenceDate)
         dependencies.continuousClock = ImmediateClock()
         dependencies.composerMetricClient = .testValue
         dependencies.collectionSearchAISettingsClient = .init(
@@ -190,7 +190,7 @@ extension ComposerHostSandbox {
     static func makeEntryLoadingClient(corpus: ComposerHostFixtureCorpus = .empty) -> EntryLoadingClient {
         let documentsPath = Self.documentsPath
         let downloadsPath = Self.downloadsPath
-        let referenceDate = Self.referenceDate
+        let referenceDate = corpus.referenceDate
         let corpusEntriesByPath = corpus.entriesByAbsolutePath
         let paths = entryLoadingPaths(corpus: corpus)
         let childrenByDirectory = entryLoadingChildren(corpus: corpus)
