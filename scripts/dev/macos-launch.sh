@@ -73,8 +73,9 @@ if [[ -z "$SCHEME" ]]; then
 fi
 
 if [[ "$INJECTION_NEXT" -eq 1 ]]; then
-  if [[ "$SCHEME" != "FileManagerHost-Dev" || "$CONFIGURATION" != "Dev-Debug" ]]; then
-    echo "오류: --injection-next는 FileManagerHost-Dev Dev-Debug에서만 사용할 수 있습니다." >&2
+  if [[ "$CONFIGURATION" != "Dev-Debug" ]] ||
+    [[ "$SCHEME" != "FileManagerHost-Dev" && "$SCHEME" != "ComposerHost-Dev" ]]; then
+    echo "오류: --injection-next는 FileManagerHost-Dev 또는 ComposerHost-Dev의 Dev-Debug에서만 사용할 수 있습니다." >&2
     exit 1
   fi
 
