@@ -219,6 +219,37 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         }
     }
 
+    /// EVM-002-set_entries_view_as_list_table: in-flight collection 정렬 변경 시 원본 path 유지
+    /// partial batch만 도착한 replace stream을 새 metadata priority로 재시작해도 미도착 path가 보존되는지 검증한다.
+    /// - 검증 내용: arrangement 변경이 partial collectionItems가 아닌 active replace 원본 paths를 재사용함
+    /// - 사전 조건: 두 path replace가 진행 중이고 첫 번째 item만 materialize됨
+    /// - 기대 결과: applyCollectionSearchPaths 재요청에 원본 path 두 개가 모두 포함됨
+    func testMetadataSortChangePreservesInFlightCollectionSourcePaths() async {
+        let first = EntryModel.temporaryFolder(id: "/collection/first", name: "first")
+        let sourcePaths = [first.id, "/collection/second"]
+        var layoutState = EntryViewLayoutState()
+        layoutState.isCollectionMode = true
+        _ = EntryViewLayoutFeature().reduce(
+            into: &layoutState,
+            action: .internal(.applyCollectionSearchPaths(paths: sourcePaths, showHidden: false)),
+        )
+        layoutState.collectionItems = [first]
+        var state = FileManagerContentState()
+        state.entryViewLayout = layoutState
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        // store.exhaustivity = .off: collection materialization stream은 원본 path 재사용 계약의 검증 대상이 아님
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryArrangements(.setSortKey(.kind)))) {
+            $0.entryViewLayout.entryArrangements.sortKey = .kind
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.internal(.applyCollectionSearchPaths(paths, _))) = action
+            else { return false }
+            return paths == sourcePaths
+        }
+    }
+
     /// EVM-002-set_entries_view_as_list_table: metadata grouping 변경 시 현재 root와 expanded folder reload
     /// Tags 기반 grouping을 선택하면 기존 core-only payload를 현재 priority로 다시 materialize하는지 검증한다.
     /// - 검증 내용: folder root load와 hierarchy metadata reload 액션이 Tags 우선 priority를 사용함

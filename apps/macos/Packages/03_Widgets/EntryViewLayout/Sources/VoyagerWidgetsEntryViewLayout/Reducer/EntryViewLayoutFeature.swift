@@ -242,6 +242,7 @@ public struct EntryViewLayoutFeature {
                 state.collectionReplaceEpoch &+= 1
                 let epoch = state.collectionReplaceEpoch
                 state.collectionItems = []
+                state.activeCollectionReplacePaths = paths
                 state.expectedCollectionReplaceBatchIndex = 0
                 state.activeCollectionAppendExpectedBatchIndices = [:]
                 state.finishedCollectionAppendTokens = []
@@ -320,6 +321,7 @@ public struct EntryViewLayoutFeature {
                       !state.collectionStreamCompleted
                 else { return .none }
                 state.collectionStreamCompleted = true
+                state.activeCollectionReplacePaths = []
                 return .none
 
             case let .internal(.collectionReplaceFailed(epoch, message)):
@@ -328,6 +330,7 @@ public struct EntryViewLayoutFeature {
                 else { return .none }
                 state.collectionIncompleteFailure = message
                 state.collectionStreamCompleted = true
+                state.activeCollectionReplacePaths = []
                 state.isCollectionContentLoading = false
                 return Self.updateEntriesAndReapply(&state)
 
@@ -380,6 +383,7 @@ public struct EntryViewLayoutFeature {
                 state.collectionReplaceEpoch &+= 1
                 state.isCollectionMode = false
                 state.collectionItems = []
+                state.activeCollectionReplacePaths = []
                 state.isCollectionContentLoading = false
                 state.expectedCollectionReplaceBatchIndex = 0
                 state.activeCollectionAppendExpectedBatchIndices = [:]

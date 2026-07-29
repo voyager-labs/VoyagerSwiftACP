@@ -55,6 +55,7 @@ public struct EntryViewLayoutState: Equatable {
 
     /// Replacement streams are accepted only when their epoch matches this value.
     public var collectionReplaceEpoch = 0
+    public var activeCollectionReplacePaths: [String] = []
     public var expectedCollectionReplaceBatchIndex = 0
     public var activeCollectionAppendExpectedBatchIndices: [Int: Int] = [:]
     public var finishedCollectionAppendTokens: Set<Int> = []
@@ -123,6 +124,7 @@ public struct EntryViewLayoutState: Equatable {
         isCollectionMode = false
         collectionItems = []
         isCollectionContentLoading = false
+        activeCollectionReplacePaths = []
         entries = displayOrderItems
 
         let remainingIDs = Set(entries.map(\.id))
