@@ -90,6 +90,23 @@ final class ComposerHostSandboxTests: XCTestCase {
         XCTAssertEqual(tags.map(\.name), ["Work", "Pinned", "Archive"])
     }
 
+    func testEntryLoadingClientUsesFixtureCorpusPaths() throws {
+        let corpus = try ComposerHostFixtureTestResources.corpus()
+        let entryLoadingClient = ComposerHostSandbox.makeEntryLoadingClient(corpus: corpus)
+        let favorites = ComposerHostSandbox.favorites(for: corpus)
+
+        XCTAssertTrue(favorites.allSatisfy { entryLoadingClient.fileExists($0.url.path) })
+        XCTAssertTrue(ComposerHostSandbox.historyPaths(for: corpus).allSatisfy(entryLoadingClient.fileExists))
+        XCTAssertFalse(
+            try entryLoadingClient.contentsOfDirectory(
+                URL(fileURLWithPath: corpus.rootPath),
+                [],
+                [],
+            )
+            .isEmpty,
+        )
+    }
+
     func testSmokeContractValidatesAllPresetsAndConstruction() throws {
         let corpus = try ComposerHostFixtureTestResources.corpus()
         let collections = try ComposerHostFixtureTestResources.collections()

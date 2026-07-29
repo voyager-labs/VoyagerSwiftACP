@@ -37,7 +37,7 @@ public enum ComposerHostSandbox {
     ) {
         dependencies.registryClient = makeRegistryClient()
         dependencies.searchClient = makeSearchClient(corpus: corpus, policy: searchPolicy)
-        dependencies.entryLoadingClient = makeEntryLoadingClient()
+        dependencies.entryLoadingClient = makeEntryLoadingClient(corpus: corpus)
         dependencies.finderFavoritesTagClient = makeFinderFavoritesTagClient()
         dependencies.uuid = .incrementing
         dependencies.date = .constant(referenceDate)
@@ -187,48 +187,68 @@ extension ComposerHostSandbox {
         ]
     }
 
-    static func makeEntryLoadingClient() -> EntryLoadingClient {
+    static func makeEntryLoadingClient(corpus: ComposerHostFixtureCorpus = .empty) -> EntryLoadingClient {
         let documentsPath = Self.documentsPath
         let projectsPath = Self.projectsPath
         let downloadsPath = Self.downloadsPath
         let referenceDate = Self.referenceDate
+        let fixtureRootPath = corpus.entries.isEmpty ? nil : corpus.rootPath
+        let corpusEntriesByPath = corpus.entriesByAbsolutePath
+        let existingPaths = Set([documentsPath, projectsPath, downloadsPath])
+            .union(corpusEntriesByPath.keys)
+            .union(fixtureRootPath.map { [$0] } ?? [])
         let directories = Set([documentsPath, projectsPath, downloadsPath])
-        let children = [
+            .union(corpus.entries.filter(\.isDirectory).map(\.absolutePath))
+            .union(fixtureRootPath.map { [$0] } ?? [])
+        var children = [
             documentsPath: [URL(fileURLWithPath: "\(documentsPath)/Plans")],
             projectsPath: [URL(fileURLWithPath: "\(projectsPath)/Composer")],
             downloadsPath: [],
         ]
+        for entry in corpus.entries {
+            let url = URL(fileURLWithPath: entry.absolutePath)
+            children[url.deletingLastPathComponent().path, default: []].append(url)
+        }
+        let childrenByDirectory = children.mapValues { urls in
+            urls.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+        }
+        let resolvedDocumentsPath = fixtureRootPath
+            .map { URL(fileURLWithPath: $0).appendingPathComponent("documents").path }
+            ?? documentsPath
+        let resolvedDownloadsPath = fixtureRootPath
+            .map { URL(fileURLWithPath: $0).appendingPathComponent("downloads").path }
+            ?? downloadsPath
         return .init(
             loadItems: { _, _ in [] },
             loadComputerItems: { [] },
             loadRecentItems: { _, _ in [] },
             loadFilesWithTag: { _, _, _ in [] },
-            fileExists: { directories.contains($0) },
+            fileExists: { existingPaths.contains($0) },
             fileExistsAtPath: { path, isDirectory in
-                let exists = directories.contains(path)
-                isDirectory?.pointee = ObjCBool(exists)
+                let exists = existingPaths.contains(path)
+                isDirectory?.pointee = ObjCBool(directories.contains(path))
                 return exists
             },
-            contentsOfDirectory: { url, _, _ in children[url.path] ?? [] },
+            contentsOfDirectory: { url, _, _ in childrenByDirectory[url.path] ?? [] },
             mountedVolumeURLs: { _, _ in [] },
             urlsForDirectory: { directory, _ in
                 switch directory {
                 case .documentDirectory:
-                    [URL(fileURLWithPath: documentsPath)]
+                    [URL(fileURLWithPath: resolvedDocumentsPath)]
                 case .downloadsDirectory:
-                    [URL(fileURLWithPath: downloadsPath)]
+                    [URL(fileURLWithPath: resolvedDownloadsPath)]
                 default:
                     []
                 }
             },
-            homeDirectory: { "/Fixture" },
+            homeDirectory: { fixtureRootPath ?? "/Fixture" },
             getItemMetadata: { _, _, _ in
                 .init(kind: "Fixture", creatorApplication: nil, lastUsedDate: referenceDate)
             },
             getImageResolution: { _ in nil },
             getFileSizeInBytes: { _ in nil },
             getFolderItemCount: { _ in nil },
-            isPackageDirectory: { _ in false },
+            isPackageDirectory: { corpusEntriesByPath[$0.path]?.isPackage == true },
             displayName: { path in URL(fileURLWithPath: path).lastPathComponent },
         )
     }
