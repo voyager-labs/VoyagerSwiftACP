@@ -46,6 +46,7 @@ open apps/macos/Voyager/Voyager.xcworkspace
         - OnboardingHost-Dev (온보딩 호스트 개발)
         - SettingsHost-Dev (설정 호스트 개발)
         - FileManagerHost-Dev (File Manager mock-only fixture/smoke 개발)
+        - ComposerHost-Dev (Composer deterministic UI/search fixture 개발)
     - Test schemes: VoyagerTests, VoyagerUITests
 
 ## 빌드 및 실행
@@ -63,6 +64,12 @@ mise run macos-launch -- --scheme Voyager-Dev --configuration Dev-Debug --env VO
 
 # 특정 scheme/configuration 빌드 후 실행
 mise run macos-launch -- --scheme SettingsHost-Dev --configuration Dev-Debug
+
+# Composer만 독립 window에서 deterministic preset으로 실행
+mise run macos-launch -- --scheme ComposerHost-Dev --configuration Dev-Debug
+
+# ComposerHost fixture/store/view 조립 smoke 검증
+mise run macos-launch -- --scheme ComposerHost-Dev --configuration Dev-Debug --env COMPOSER_HOST_SMOKE=1
 
 # 빌드만 확인
 mise run macos-launch -- --scheme Voyager-Dev --configuration Dev-Debug --no-launch
@@ -165,6 +172,14 @@ log stream --predicate 'subsystem == "com.voyager.app"'
     - 전체 Voyager 앱 bootstrap 없이 실제 File Manager UI 조합을 deterministic mock state로 확인합니다
     - Host 앱은 별도 catalog 없이 기본 mock state를 사용해 실제 File Manager window view controller를 띄웁니다
     - smoke 검증은 `FILE_MANAGER_HOST_SMOKE=1`로 view controller mount 가능 여부를 빠르게 확인합니다
+
+**ComposerHost.xcodeproj** (별도 프로젝트)
+
+- **ComposerHost**: Composer 전용 deterministic UI/search fixture 호스트 앱 (`apps/macos/Hosts/ComposerHost/ComposerHost.xcodeproj`)
+    - 실제 `ComposerView`와 `ComposerFeature`를 독립 window에서 실행합니다
+    - Empty, Property Menu, Text Value, Number Range, Boolean, Token List, Date Range preset을 제공합니다
+    - Registry, scope, tag, search/filter 응답은 고정 fixture이며 XPC, network, 실제 파일시스템, persistence를 사용하지 않습니다
+    - `COMPOSER_HOST_PRESET`으로 초기 preset을 선택하고 `COMPOSER_HOST_SMOKE=1`로 fixture/store/view 조립을 검증합니다
 
 ## 의존성 관리
 
