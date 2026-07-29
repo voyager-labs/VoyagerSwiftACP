@@ -199,6 +199,7 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
             .init(propertyKey: "parent_dir_name", operator: "eq", value: .string("Documents")),
             .init(propertyKey: "depth_from_home", operator: "eq", value: .number(1)),
             .init(propertyKey: "relative_path_from_home", operator: "sw", value: .string("~/Documents")),
+            .init(propertyKey: "dir_path", operator: "rx", value: .string("/Users/test/Doc.*")),
         ]
 
         XCTAssertTrue(HistoricalPathConditionEvaluator.matches(path, conditions: conditions, homeURL: homeURL))

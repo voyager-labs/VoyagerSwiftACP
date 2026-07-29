@@ -105,8 +105,23 @@ private extension HistoricalPathConditionEvaluator {
         case "nc": candidate.contains(value) == false
         case "sw": candidate.hasPrefix(value)
         case "ew": candidate.hasSuffix(value)
+        case "rx": matchesWildcardPattern(candidate, pattern: value)
         default: false
         }
+    }
+
+    static func matchesWildcardPattern(_ candidate: String, pattern: String) -> Bool {
+        let normalized = pattern
+            .replacingOccurrences(of: "\\.\\*", with: "*")
+            .replacingOccurrences(of: ".*", with: "*")
+            .replacingOccurrences(of: "%", with: "*")
+        let escaped = normalized
+            .split(separator: "*", omittingEmptySubsequences: false)
+            .map { NSRegularExpression.escapedPattern(for: String($0)) }
+            .joined(separator: ".*")
+        guard let expression = try? NSRegularExpression(pattern: "^\(escaped)$") else { return false }
+        let range = NSRange(candidate.startIndex ..< candidate.endIndex, in: candidate)
+        return expression.firstMatch(in: candidate, range: range) != nil
     }
 
     static func matchesStringList(
