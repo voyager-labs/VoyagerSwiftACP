@@ -304,9 +304,10 @@ final class HelperRecentTagSearchSemanticsTests: XCTestCase {
         XCTAssertFalse(service.pathMatchesExactFolderScope("/tmp/rootSibling/file.txt", normalizedScopes: scopes))
     }
 
-    func testFilterCandidatePathMatcherCombinesScopeAndHistoricalPathConditions() {
+    func testFilterCandidatePathMatcherCombinesScopeExclusionsAndHistoricalPathConditions() {
         let homeURL = URL(fileURLWithPath: "/Users/test", isDirectory: true)
         let service = SpotlightSearchService(defaultScopeURL: { homeURL })
+        let excludedScopes = ["/Users/test/Documents/Archive"]
         let conditions = [
             SearchConditionPayload(
                 propertyKey: "relative_path_from_home",
@@ -317,22 +318,29 @@ final class HelperRecentTagSearchSemanticsTests: XCTestCase {
 
         XCTAssertTrue(service.shouldIncludeFilterCandidatePath(
             "/Users/test/Documents/report.pdf",
-            includeSubfolders: false,
-            normalizedScopes: ["/Users/test/Documents"],
+            exactFolderScopes: ["/Users/test/Documents"],
+            normalizedExcludedScopes: excludedScopes,
             pathConditions: conditions,
             homeURL: homeURL,
         ))
         XCTAssertFalse(service.shouldIncludeFilterCandidatePath(
             "/Users/test/Downloads/report.pdf",
-            includeSubfolders: false,
-            normalizedScopes: ["/Users/test/Documents"],
+            exactFolderScopes: ["/Users/test/Documents"],
+            normalizedExcludedScopes: excludedScopes,
             pathConditions: conditions,
             homeURL: homeURL,
         ))
         XCTAssertFalse(service.shouldIncludeFilterCandidatePath(
             "/Users/test/Documents/Quarterly/report.pdf",
-            includeSubfolders: false,
-            normalizedScopes: ["/Users/test/Documents"],
+            exactFolderScopes: ["/Users/test/Documents"],
+            normalizedExcludedScopes: excludedScopes,
+            pathConditions: conditions,
+            homeURL: homeURL,
+        ))
+        XCTAssertFalse(service.shouldIncludeFilterCandidatePath(
+            "/Users/test/Documents/Archive/report.pdf",
+            exactFolderScopes: [],
+            normalizedExcludedScopes: excludedScopes,
             pathConditions: conditions,
             homeURL: homeURL,
         ))

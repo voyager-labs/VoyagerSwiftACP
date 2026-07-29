@@ -107,7 +107,10 @@ struct SpotlightSearchService: SearchExecutionServicing {
     ) throws -> [String] {
         let pathConditions = compiledPlan.pathConditions
         let requiresExactFolderFiltering = !filters.includeSubfolders && !normalizedFilterScopes.isEmpty
-        guard requiresExactFolderFiltering || !pathConditions.isEmpty else {
+        let normalizedExcludedScopes = filters.includeSubfolders
+            ? SearchScopeNormalizer.normalizeScopes(filters.excludedScopes)
+            : []
+        guard requiresExactFolderFiltering || !pathConditions.isEmpty || !normalizedExcludedScopes.isEmpty else {
             return try executionEngine.loadPaths(
                 queryString: compiledPlan.predicate,
                 scopes: scopeURLs,
@@ -123,8 +126,8 @@ struct SpotlightSearchService: SearchExecutionServicing {
             shouldIncludePath: { path in
                 shouldIncludeFilterCandidatePath(
                     path,
-                    includeSubfolders: filters.includeSubfolders,
-                    normalizedScopes: normalizedFilterScopes,
+                    exactFolderScopes: filters.includeSubfolders ? [] : normalizedFilterScopes,
+                    normalizedExcludedScopes: normalizedExcludedScopes,
                     pathConditions: pathConditions,
                     homeURL: homeURL,
                 )
@@ -175,14 +178,18 @@ struct SpotlightSearchService: SearchExecutionServicing {
 extension SpotlightSearchService {
     func shouldIncludeFilterCandidatePath(
         _ path: String,
-        includeSubfolders: Bool,
-        normalizedScopes: [String],
+        exactFolderScopes: [String],
+        normalizedExcludedScopes: [String],
         pathConditions: [SearchConditionPayload],
         homeURL: URL,
     ) -> Bool {
-        if !includeSubfolders,
-           !normalizedScopes.isEmpty,
-           !pathMatchesExactFolderScope(path, normalizedScopes: normalizedScopes)
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        if normalizedExcludedScopes.contains(where: { pathIsDescendantOrEqual(normalizedPath, scope: $0) }) {
+            return false
+        }
+
+        if !exactFolderScopes.isEmpty,
+           !pathMatchesExactFolderScope(normalizedPath, normalizedScopes: exactFolderScopes)
         {
             return false
         }
@@ -192,7 +199,7 @@ extension SpotlightSearchService {
         }
 
         return HistoricalPathConditionEvaluator.matches(
-            path,
+            normalizedPath,
             conditions: pathConditions,
             homeURL: homeURL,
         )
