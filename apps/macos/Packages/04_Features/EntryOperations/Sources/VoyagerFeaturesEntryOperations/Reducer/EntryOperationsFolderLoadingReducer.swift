@@ -10,6 +10,7 @@ public struct EntryOperationsFolderLoadingReducer {
     private struct CancelID: Hashable {
         let requestID: EntryFolderLoadRequest.RequestID
         let windowID: UUID?
+        let ownerID: UUID
     }
 
     @Dependency(\.entryLoadingClient)
@@ -22,7 +23,11 @@ public struct EntryOperationsFolderLoadingReducer {
             switch action {
             case let .loading(.loadFolderItems(request)):
                 state.folderLoadingContexts[request.id] = .init(request: request)
-                let cancelID = CancelID(requestID: request.id, windowID: state.windowID)
+                let cancelID = CancelID(
+                    requestID: request.id,
+                    windowID: state.windowID,
+                    ownerID: state.loadingCancellationOwnerID,
+                )
                 return .run { [entryLoadingClient] send in
                     do {
                         let url = URL(fileURLWithPath: request.path)
@@ -42,7 +47,11 @@ public struct EntryOperationsFolderLoadingReducer {
 
             case let .loading(.cancelFolderItems(requestID)):
                 state.folderLoadingContexts[requestID] = nil
-                return .cancel(id: CancelID(requestID: requestID, windowID: state.windowID))
+                return .cancel(id: CancelID(
+                    requestID: requestID,
+                    windowID: state.windowID,
+                    ownerID: state.loadingCancellationOwnerID,
+                ))
 
             case let .loading(.folderStreamEvent(request, event)):
                 guard var context = state.folderLoadingContexts[request.id],

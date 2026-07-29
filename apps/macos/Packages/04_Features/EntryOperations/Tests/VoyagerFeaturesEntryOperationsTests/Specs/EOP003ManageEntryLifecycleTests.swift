@@ -942,6 +942,59 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         }
         await store.finish()
     }
+
+    /// EOP-003-load_folder_items: 동일 window의 다른 tab folder stream은 서로 취소하지 않는다.
+    /// 같은 request identity를 사용하는 두 content tab이 각각 독립된 cancellation owner를 유지하는지 검증한다.
+    /// - 검증 내용: 두 번째 folder load 시작 후 첫 번째 stream의 cancellation recorder 상태
+    /// - 사전 조건: 같은 windowID와 request, 서로 다른 loadingCancellationOwnerID를 가진 두 Store
+    /// - 기대 결과: 두 번째 load가 시작되어도 첫 번째 stream은 취소되지 않음
+    func testFolderLoadsWithDifferentOwnersDoNotCancelEachOther() async throws {
+        let windowID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"))
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 1,
+            folderID: "/tmp/shared-folder",
+            folderGeneration: 1,
+            path: "/tmp/shared-folder",
+            showHidden: false,
+            priority: .none,
+        )
+        var firstState = try EntryOperationsState(
+            loadingCancellationOwnerID: XCTUnwrap(UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")),
+        )
+        firstState.windowID = windowID
+        var secondState = try EntryOperationsState(
+            loadingCancellationOwnerID: XCTUnwrap(UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")),
+        )
+        secondState.windowID = windowID
+        let streamFactory = FolderStreamFactory()
+        let store = TestStore(initialState: FolderLoadOwnerHarness.State(
+            first: firstState,
+            second: secondState,
+        )) {
+            FolderLoadOwnerHarness()
+        } withDependencies: {
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                streamFactory.makeStream()
+            }
+        }
+        // store.exhaustivity = .off: stream 완료 액션은 정리 경로이며 cancellation 검증 대상이 아님
+        store.exhaustivity = .off
+
+        await store.send(.first(.loading(.loadFolderItems(request)))) {
+            $0.first.folderLoadingContexts[request.id] = .init(request: request)
+        }
+        await streamFactory.firstGate.waitUntilWaiting()
+        await store.send(.second(.loading(.loadFolderItems(request)))) {
+            $0.second.folderLoadingContexts[request.id] = .init(request: request)
+        }
+        await streamFactory.secondGate.waitUntilWaiting()
+
+        XCTAssertFalse(streamFactory.firstCancellation.wasCancelled)
+
+        await streamFactory.firstGate.resume(with: .entries([]))
+        await streamFactory.secondGate.resume(with: .entries([]))
+        await store.finish()
+    }
 }
 
 extension EOP003ManageEntryLifecycleTests {
@@ -1070,6 +1123,86 @@ private func failingOrEmptyStagedStream(
         Task {
             do {
                 let entries = try await gate.wait()
+                continuation.yield(.coreFinished(batchCount: entries.isEmpty ? 0 : 1))
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+    }
+}
+
+@Reducer
+private struct FolderLoadOwnerHarness {
+    @ObservableState
+    struct State: Equatable {
+        var first: EntryOperationsState
+        var second: EntryOperationsState
+    }
+
+    enum Action {
+        case first(EntryOperationsAction)
+        case second(EntryOperationsAction)
+    }
+
+    var body: some Reducer<State, Action> {
+        Scope(state: \.first, action: \.first) {
+            EntryOperationsFolderLoadingReducer()
+        }
+        Scope(state: \.second, action: \.second) {
+            EntryOperationsFolderLoadingReducer()
+        }
+    }
+}
+
+private final class FolderStreamCancellationRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    var wasCancelled: Bool {
+        lock.withLock { cancelled }
+    }
+
+    func recordCancellation() {
+        lock.withLock { cancelled = true }
+    }
+}
+
+private final class FolderStreamFactory: @unchecked Sendable {
+    let firstGate = EntryLoadSuspensionGate()
+    let secondGate = EntryLoadSuspensionGate()
+    let firstCancellation = FolderStreamCancellationRecorder()
+
+    private let lock = NSLock()
+    private var invocationCount = 0
+
+    func makeStream() -> AsyncThrowingStream<EntryLoadEvent, Error> {
+        let invocation = lock.withLock {
+            invocationCount += 1
+            return invocationCount
+        }
+        if invocation == 1 {
+            return suspendedFolderStream(gate: firstGate, cancellationRecorder: firstCancellation)
+        }
+        return suspendedFolderStream(gate: secondGate)
+    }
+}
+
+private func suspendedFolderStream(
+    gate: EntryLoadSuspensionGate,
+    cancellationRecorder: FolderStreamCancellationRecorder? = nil,
+) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+    AsyncThrowingStream { continuation in
+        continuation.onTermination = { termination in
+            guard case .cancelled = termination else { return }
+            cancellationRecorder?.recordCancellation()
+        }
+        Task {
+            do {
+                let entries = try await gate.wait()
+                if !entries.isEmpty {
+                    continuation.yield(.coreBatch(items: entries, batchIndex: 0))
+                }
                 continuation.yield(.coreFinished(batchCount: entries.isEmpty ? 0 : 1))
                 continuation.finish()
             } catch {
