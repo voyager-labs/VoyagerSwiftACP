@@ -30,6 +30,9 @@ struct EntryListHierarchyReducer {
             case .hiddenFilesSettingChanged:
                 return reloadFoldersForHiddenFilesChange(state: &state)
 
+            case .arrangementMetadataPriorityChanged:
+                return reloadExpandedFoldersForArrangementChange(state: &state)
+
             case let .hierarchyInvalidated(affectedPaths, removedPrefixes):
                 return invalidateHierarchy(
                     affectedPaths: affectedPaths,
@@ -211,6 +214,17 @@ struct EntryListHierarchyReducer {
 
         EntryViewLayoutFeature.reconcileSelectionWithVisibleEntries(&state)
         return .concatenate(effects)
+    }
+
+    private func reloadExpandedFoldersForArrangementChange(state: inout State) -> Effect<Action> {
+        let expandedFolders = state.hierarchy.expandedFolderIDs.compactMap { id -> (EntryModel.ID, EntryModel)? in
+            guard let folder = folder(id: id, in: state) else { return nil }
+            return (id, folder)
+        }
+        let effects = expandedFolders.map { id, folder in
+            startLoad(folder: folder, id: id, state: &state)
+        }
+        return .merge(effects)
     }
 
     private func folder(id: EntryModel.ID, in state: State) -> EntryModel? {

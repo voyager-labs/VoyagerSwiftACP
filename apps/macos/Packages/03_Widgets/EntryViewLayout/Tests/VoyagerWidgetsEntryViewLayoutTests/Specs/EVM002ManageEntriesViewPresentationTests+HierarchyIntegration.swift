@@ -81,6 +81,35 @@ extension EVM002ManageEntriesViewPresentationTests {
         }
     }
 
+    /// EVM-002-set_entries_view_as_list_table: metadata 정렬 변경 시 expanded folder cache reload
+    /// 현재 arrangement가 요구하는 metadata priority로 열린 folder child를 다시 materialize하는지 검증한다.
+    /// - 검증 내용: arrangement metadata 변경 액션이 expanded folder generation과 load request를 갱신함
+    /// - 사전 조건: sortKey == .kind, expanded folder cache가 loaded 상태임
+    /// - 기대 결과: 새 folder request가 Spotlight 우선 priority를 사용함
+    func testArrangementMetadataChangeReloadsExpandedFolderCache() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.entryArrangements.sortKey = .kind
+        state.hierarchy = .init(
+            rootPath: "/root",
+            expandedFolderIDs: [folder.id],
+            foldersByID: [folder.id: .init(phase: .loaded, generation: 2)],
+        )
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+
+        await store.send(.hierarchy(.arrangementMetadataPriorityChanged)) {
+            $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 3)
+            $0.outlineProjectionRevision = 1
+        }
+        await store.receive { action in
+            guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
+            return request.id.folderID == folder.id && request.priority == .active([.spotlight])
+        }
+    }
+
     /// 계층 projection의 child payload가 command와 selection에서 사용할 실제 EntryModel 목록으로 노출되는지 검증한다.
     func testVisibleSelectableEntriesIncludeNestedPayloads() {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
