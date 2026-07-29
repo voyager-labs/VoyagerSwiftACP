@@ -72,13 +72,12 @@ struct SpotlightSearchService: SearchExecutionServicing {
             includeSubfolders: filters.includeSubfolders,
             excludedScopes: filters.excludedScopes,
         )
-        let filteredPaths = applyPathConditions(compiledPlan, to: scopeFilteredPaths)
 
         if paths.count == maxCandidates {
             logger.warning("MDQuery result truncated at maxCandidates=\(maxCandidates): id=\(requestId)")
         }
 
-        let items = makeJSONItems(from: filteredPaths)
+        let items = makeJSONItems(from: scopeFilteredPaths)
 
         logApplyFiltersCompleted(
             requestId: requestId,
@@ -106,7 +105,9 @@ struct SpotlightSearchService: SearchExecutionServicing {
         scopeURLs: [URL]?,
         normalizedFilterScopes: [String],
     ) throws -> [String] {
-        if filters.includeSubfolders || normalizedFilterScopes.isEmpty {
+        let pathConditions = compiledPlan.pathConditions
+        let requiresExactFolderFiltering = !filters.includeSubfolders && !normalizedFilterScopes.isEmpty
+        guard requiresExactFolderFiltering || !pathConditions.isEmpty else {
             return try executionEngine.loadPaths(
                 queryString: compiledPlan.predicate,
                 scopes: scopeURLs,
@@ -114,32 +115,21 @@ struct SpotlightSearchService: SearchExecutionServicing {
             )
         }
 
+        let homeURL = defaultScopeURL()
         return try executionEngine.loadPaths(
             queryString: compiledPlan.predicate,
             scopes: scopeURLs,
             limit: maxCandidates,
             shouldIncludePath: { path in
-                pathMatchesExactFolderScope(path, normalizedScopes: normalizedFilterScopes)
+                shouldIncludeFilterCandidatePath(
+                    path,
+                    includeSubfolders: filters.includeSubfolders,
+                    normalizedScopes: normalizedFilterScopes,
+                    pathConditions: pathConditions,
+                    homeURL: homeURL,
+                )
             },
         )
-    }
-
-    private func applyPathConditions(
-        _ compiledPlan: SpotlightQueryCompiler.CompilePlan,
-        to paths: [String],
-    ) -> [String] {
-        guard !compiledPlan.pathConditions.isEmpty else {
-            return paths
-        }
-
-        let homeURL = defaultScopeURL()
-        return paths.filter { path in
-            HistoricalPathConditionEvaluator.matches(
-                path,
-                conditions: compiledPlan.pathConditions,
-                homeURL: homeURL,
-            )
-        }
     }
 
     private func logApplyFiltersCompleted(
@@ -183,6 +173,31 @@ struct SpotlightSearchService: SearchExecutionServicing {
 }
 
 extension SpotlightSearchService {
+    func shouldIncludeFilterCandidatePath(
+        _ path: String,
+        includeSubfolders: Bool,
+        normalizedScopes: [String],
+        pathConditions: [SearchConditionPayload],
+        homeURL: URL,
+    ) -> Bool {
+        if !includeSubfolders,
+           !normalizedScopes.isEmpty,
+           !pathMatchesExactFolderScope(path, normalizedScopes: normalizedScopes)
+        {
+            return false
+        }
+
+        guard !pathConditions.isEmpty else {
+            return true
+        }
+
+        return HistoricalPathConditionEvaluator.matches(
+            path,
+            conditions: pathConditions,
+            homeURL: homeURL,
+        )
+    }
+
     func makeRecentResponse(
         from matches: [SpotlightQueryEngine.QueryMatch],
         request: RecentSearchRequestPayload,

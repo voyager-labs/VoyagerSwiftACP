@@ -304,6 +304,40 @@ final class HelperRecentTagSearchSemanticsTests: XCTestCase {
         XCTAssertFalse(service.pathMatchesExactFolderScope("/tmp/rootSibling/file.txt", normalizedScopes: scopes))
     }
 
+    func testFilterCandidatePathMatcherCombinesScopeAndHistoricalPathConditions() {
+        let homeURL = URL(fileURLWithPath: "/Users/test", isDirectory: true)
+        let service = SpotlightSearchService(defaultScopeURL: { homeURL })
+        let conditions = [
+            SearchConditionPayload(
+                propertyKey: "relative_path_from_home",
+                operator: "sw",
+                value: .string("~/Documents"),
+            ),
+        ]
+
+        XCTAssertTrue(service.shouldIncludeFilterCandidatePath(
+            "/Users/test/Documents/report.pdf",
+            includeSubfolders: false,
+            normalizedScopes: ["/Users/test/Documents"],
+            pathConditions: conditions,
+            homeURL: homeURL,
+        ))
+        XCTAssertFalse(service.shouldIncludeFilterCandidatePath(
+            "/Users/test/Downloads/report.pdf",
+            includeSubfolders: false,
+            normalizedScopes: ["/Users/test/Documents"],
+            pathConditions: conditions,
+            homeURL: homeURL,
+        ))
+        XCTAssertFalse(service.shouldIncludeFilterCandidatePath(
+            "/Users/test/Documents/Quarterly/report.pdf",
+            includeSubfolders: false,
+            normalizedScopes: ["/Users/test/Documents"],
+            pathConditions: conditions,
+            homeURL: homeURL,
+        ))
+    }
+
     private func makeSandbox() throws -> URL {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
