@@ -202,6 +202,7 @@ final class RCL003RetrieveEntriesWithFiltersTests: XCTestCase {
             .init(propertyKey: "isInvisible", operator: "neq", value: .bool(true)),
             .init(propertyKey: "file_kind", operator: "all", value: .array([.string("PDF"), .string("Document")])),
             .init(propertyKey: "tag_names", operator: "cn", value: .string("work")),
+            .init(propertyKey: "file_kind", operator: "contains_any", value: .array([.string("PDF")])),
             .init(propertyKey: "relative_path_from_home", operator: "starts_with", value: .string("~/Documents")),
         ]
         let resolved = AppliedFilterResolver.resolveDetailed(
@@ -219,12 +220,15 @@ final class RCL003RetrieveEntriesWithFiltersTests: XCTestCase {
             "is_invisible",
             "file_kind",
             "tag_names",
+            "file_kind",
             "relative_path_from_home",
         ])
         XCTAssertEqual(
             resolved.conditions.compactMap(\.operation?.code),
-            ["in", "any", "any", "gt", "neq", "all", "cn", "sw"],
+            ["in", "any", "any", "gt", "neq", "all", "cn", "any", "sw"],
         )
+        XCTAssertEqual(resolved.conditions[7].property.type, .string)
+        XCTAssertEqual(resolved.conditions[7].values, ["PDF"])
         XCTAssertTrue(resolved.conditions.allSatisfy(\.isExecutionReady))
         XCTAssertEqual(resolved.unknownKeys, [])
     }

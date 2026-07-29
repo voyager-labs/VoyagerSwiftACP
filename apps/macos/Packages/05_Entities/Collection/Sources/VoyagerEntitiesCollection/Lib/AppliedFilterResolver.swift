@@ -208,6 +208,9 @@ public enum AppliedFilterResolver {
     ) -> String {
         let availableCodes = registryClient.operatorCodes(for: propertyKey)
         if availableCodes.contains(code) { return code }
+        if isHistoricalAlphaListOperator(code, propertyKey: propertyKey, registryClient: registryClient) {
+            return code
+        }
 
         if let aliasMatch = availableCodes.first(where: { availableCode in
             let definition = registryClient.operatorDefinition(availableCode)
@@ -226,6 +229,16 @@ public enum AppliedFilterResolver {
             return "none"
         }
         return code
+    }
+
+    private static func isHistoricalAlphaListOperator(
+        _ code: String,
+        propertyKey: String,
+        registryClient: RegistryClient,
+    ) -> Bool {
+        let operators = ["contains_any", "contains_all", "not_contains_any", "not_contains_all"]
+        return operators.contains(code)
+            && registryClient.propertyTypeString(for: propertyKey) == SystemPropertyTypeKey.categorical.rawValue
     }
 
     private static func operatorAlias(_ candidate: String, matches code: String) -> Bool {
