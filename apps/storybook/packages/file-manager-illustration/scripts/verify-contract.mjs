@@ -167,8 +167,8 @@ assert.equal(
   designTokensStory.importPath,
   "./packages/file-manager-illustration/src/foundations/DesignTokens.stories.tsx",
 )
-assert.equal(fileManagerStories.length, 92)
-assert.equal(fileManagerPaths.size, 28)
+assert.equal(fileManagerStories.length, 110)
+assert.equal(fileManagerPaths.size, 33)
 assert.equal(nonFileManagerStories.length, 0)
 
 console.log("native layout contract: pass")
