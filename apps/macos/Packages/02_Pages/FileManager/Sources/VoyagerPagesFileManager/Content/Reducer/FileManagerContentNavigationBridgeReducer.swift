@@ -366,13 +366,13 @@ struct FileManagerContentNavigationBridgeReducer {
             fileChangeGatewayClient.updateInterests([interest])
             await withTaskCancellationHandler {
                 for await events in fileChangeGatewayClient.observeEvents() {
-                    let changedPaths = gatewayRelevantChangedPaths(events, interest: interest, openedURL: openedURL)
-                    guard !changedPaths.isEmpty else { continue }
+                    let changedEvents = gatewayRelevantChangedEvents(events, interest: interest, openedURL: openedURL)
+                    guard !changedEvents.isEmpty else { continue }
 
                     if interest.purpose == .collectionStale {
-                        collectionStalenessClient.invalidateRecords(changedPaths)
+                        collectionStalenessClient.invalidateRecords(changedEvents.map(\.path))
                     }
-                    await send(.externalFileSystemChanged(changedPaths))
+                    await send(.externalFileSystemChanged(changedEvents))
                 }
                 fileChangeGatewayClient.removeInterests([interest.id])
             } onCancel: {
@@ -401,6 +401,15 @@ nonisolated func gatewayRelevantChangedPaths(
         FileChangeScopePolicy.interestAffectedPaths(events: events, interest: interest),
         openedURL: openedURL,
     )
+}
+
+nonisolated func gatewayRelevantChangedEvents(
+    _ events: [FileChangeGatewayEvent],
+    interest: FileChangeWatchInterest,
+    openedURL: URL?,
+) -> [FileChangeGatewayEvent] {
+    let relevantPaths = Set(gatewayRelevantChangedPaths(events, interest: interest, openedURL: openedURL))
+    return events.filter { relevantPaths.contains(FileChangeScopePolicy.normalizedPath($0.path)) }
 }
 
 nonisolated func collectionRelevantChangedPaths(_ paths: [String], openedURL: URL?) -> [String] {

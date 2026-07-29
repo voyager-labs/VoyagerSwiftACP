@@ -1,8 +1,10 @@
 import ComposableArchitecture
+import CoreServices
 import Foundation
 import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
+import VoyagerShared
 
 @Reducer
 struct FileManagerContentSyncReducer {
@@ -12,7 +14,8 @@ struct FileManagerContentSyncReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .externalFileSystemChanged(paths):
+            case let .externalFileSystemChanged(events):
+                let paths = events.map(\.path)
                 switch state.navigation.navigationState {
                 case .collection:
                     let affectsCollection = collectionPathsAffectCurrentContext(paths, state: state)
@@ -26,6 +29,7 @@ struct FileManagerContentSyncReducer {
                         return .none
                     }
                     let normalizedPaths = paths.map(normalizedPath(for:))
+                    let removedPrefixes = removedPrefixes(for: events)
                     let normalizedCurrentPath = normalizedPath(for: path)
                     let expandedHasFolder = !state.entryViewLayout.hierarchy.expandedFolderIDs.isEmpty
                     let coarseRefreshNeeded = normalizedPaths.count == 1
@@ -38,7 +42,7 @@ struct FileManagerContentSyncReducer {
                         return .concatenate(
                             .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
                                 affectedPaths: normalizedPaths.map(parentPath(for:)),
-                                removedPrefixes: [],
+                                removedPrefixes: removedPrefixes,
                             )))),
                             FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
                         )
@@ -46,7 +50,7 @@ struct FileManagerContentSyncReducer {
                     return .concatenate(
                         .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
                             affectedPaths: normalizedPaths.map(parentPath(for:)),
-                            removedPrefixes: [],
+                            removedPrefixes: removedPrefixes,
                         )))),
                         FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
                     )
@@ -96,6 +100,15 @@ struct FileManagerContentSyncReducer {
 
     private func normalizedPath(for path: String) -> String {
         URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    private func removedPrefixes(for events: [FileChangeGatewayEvent]) -> [String] {
+        Array(Set(events.compactMap { event in
+            let removesItem = event.flags & UInt32(kFSEventStreamEventFlagItemRemoved) != 0
+            let renamesItem = event.flags & UInt32(kFSEventStreamEventFlagItemRenamed) != 0
+            guard removesItem || renamesItem else { return nil }
+            return normalizedPath(for: event.path)
+        })).sorted()
     }
 
     private func collectionPathsAffectCurrentContext(_ paths: [String], state: State) -> Bool {

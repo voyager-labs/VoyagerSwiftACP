@@ -29,7 +29,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         state.entryViewLayout.showHiddenFiles = true
         let store = makeStore(initialState: state)
 
-        await store.send(.externalFileSystemChanged([changedPath]))
+        await store.send(.externalFileSystemChanged(Self.externalChangeEvents([changedPath])))
         await store.receive { action in
             guard case let .entryViewLayout(.hierarchy(.hierarchyInvalidated(affectedPaths, removedPrefixes))) = action
             else { return false }
@@ -38,6 +38,41 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.receive { action in
             guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
             return true
+        }
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: expanded folder 외부 삭제·rename 시 hierarchy identity 제거
+    /// watcher의 remove·rename event가 parent reload뿐 아니라 사라진 folder cache prefix도 전달하는지 검증한다.
+    /// - 검증 내용: identity 변경 path의 parent affected path와 removed prefix 분리
+    /// - 사전 조건: 현재 directory 아래 expanded folder에 remove 또는 rename event가 발생함
+    /// - 기대 결과: 두 event 모두 folder path를 removedPrefixes로 전달함
+    func testExternalExpandedFolderRemovalOrRenameEvictsHierarchyPrefix() async {
+        let folderPath = Self.fixtureDir("texts")
+        let removedFolderPath = Self.fixtureDir("texts/plain")
+        let canonicalFolderPath = URL(fileURLWithPath: folderPath).standardizedFileURL.resolvingSymlinksInPath().path
+        let canonicalRemovedPath = URL(fileURLWithPath: removedFolderPath).standardizedFileURL.resolvingSymlinksInPath()
+            .path
+        let identityChangeFlags = [
+            UInt32(kFSEventStreamEventFlagItemRemoved),
+            UInt32(kFSEventStreamEventFlagItemRenamed),
+        ]
+
+        for flags in identityChangeFlags {
+            var state = FileManagerContentState()
+            state.navigation.navigationState = .folder(folderPath)
+            let store = makeStore(initialState: state)
+
+            await store.send(.externalFileSystemChanged(Self.externalChangeEvents([removedFolderPath], flags: flags)))
+            await store.receive { action in
+                guard case let .entryViewLayout(.hierarchy(.hierarchyInvalidated(affectedPaths, removedPrefixes))) =
+                    action
+                else { return false }
+                return affectedPaths == [canonicalFolderPath] && removedPrefixes == [canonicalRemovedPath]
+            }
+            await store.receive { action in
+                guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
+                return true
+            }
         }
     }
 
@@ -53,7 +88,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         state.navigation.navigationState = .folder(folderPath)
         let store = makeStore(initialState: state)
 
-        await store.send(.externalFileSystemChanged([unrelatedPath]))
+        await store.send(.externalFileSystemChanged(Self.externalChangeEvents([unrelatedPath])))
     }
 
     /// EVM-001-reload_directory_page_on_external_change: Recents route에서 route loader refresh
@@ -68,7 +103,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         state.entryViewLayout.showHiddenFiles = true
         let store = makeStore(initialState: state)
 
-        await store.send(.externalFileSystemChanged([changedPath]))
+        await store.send(.externalFileSystemChanged(Self.externalChangeEvents([changedPath])))
         await store.receive { action in
             guard case .entryViewLayout(.entryOperations(.loading(.loadRecentItems))) = action else { return false }
             return true
@@ -86,7 +121,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         state.navigation.navigationState = .tags("Work")
         let store = makeStore(initialState: state)
 
-        await store.send(.externalFileSystemChanged([changedPath]))
+        await store.send(.externalFileSystemChanged(Self.externalChangeEvents([changedPath])))
         await store.receive { action in
             guard case .entryViewLayout(.entryOperations(.loading(.loadTagItems))) = action else { return false }
             return true
@@ -111,10 +146,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         state.collection.collectionSession.document = .init(url: collectionURL, name: "sample-config")
         let store = makeStore(initialState: state)
 
-        await store.send(.externalFileSystemChanged([
+        await store.send(.externalFileSystemChanged(Self.externalChangeEvents([
             collectionURL.path,
             collectionURL.appendingPathComponent("metadata.json").path,
-        ]))
+        ])))
     }
 
     /// EVM-001-reload_directory_page_on_external_change: folder 이동 시 watcher 시작 및 외부 변경 전달
@@ -126,6 +161,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     func testFolderNavigationStartsWatcherAndForwardsExternalChanges() async {
         let currentPath = Self.fixtureDir("texts/plain")
         let changedPath = "\(currentPath)/11.txt"
+        let changedEvents = Self.externalChangeEvents(
+            [changedPath],
+            flags: UInt32(kFSEventStreamEventFlagItemCreated),
+        )
         var state = FileManagerContentState()
         state.navigation.navigationState = .folder(currentPath)
         let store = TestStore(initialState: state) {
@@ -137,12 +176,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             }
             $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
-                    continuation.yield([
-                        FileChangeGatewayEvent(
-                            path: changedPath,
-                            flags: UInt32(kFSEventStreamEventFlagItemCreated),
-                        ),
-                    ])
+                    continuation.yield(changedEvents)
                     continuation.finish()
                 }
             }
@@ -155,7 +189,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
             return true
         }
-        await store.receive(\.externalFileSystemChanged, [changedPath])
+        await store.receive(\.externalFileSystemChanged, changedEvents)
     }
 
     /// EVM-001-reload_directory_page_on_external_change: collection 이동 시 scope watcher 시작 및 외부 변경 전달
@@ -216,6 +250,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         let firstScope = "/tmp/voyager/scope-a"
         let secondScope = "/tmp/voyager/scope-b/../scope-b"
         let changedPath = "/tmp/voyager/scope-a/changed.txt"
+        let changedEvents = Self.externalChangeEvents(
+            [changedPath],
+            flags: UInt32(kFSEventStreamEventFlagItemCreated),
+        )
         let collectionURL = URL(fileURLWithPath: "/tmp/voyager/collections/demo.voycoll")
         let context = CollectionContext(
             query: "",
@@ -241,12 +279,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             }
             $0.fileChangeGatewayClient.observeEvents = {
                 AsyncStream { continuation in
-                    continuation.yield([
-                        FileChangeGatewayEvent(
-                            path: changedPath,
-                            flags: UInt32(kFSEventStreamEventFlagItemCreated),
-                        ),
-                    ])
+                    continuation.yield(changedEvents)
                     continuation.finish()
                 }
             }
@@ -256,7 +289,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.send(.internal(.applyNavigationState(navigationState))) {
             $0.entryViewLayout.currentPath = "collection:\(collectionURL.standardizedFileURL.path)"
         }
-        await store.receive(\.externalFileSystemChanged, [changedPath])
+        await store.receive(\.externalFileSystemChanged, changedEvents)
     }
 
     func testCollectionNavigationIgnoresMetadataOnlyScopeEvents() async {
@@ -477,6 +510,13 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
         return root.appendingPathComponent("fixtures/fixtures")
             .appendingPathComponent(subpath).path
+    }
+
+    private static func externalChangeEvents(
+        _ paths: [String],
+        flags: UInt32 = UInt32(kFSEventStreamEventFlagItemModified),
+    ) -> [FileChangeGatewayEvent] {
+        paths.map { FileChangeGatewayEvent(path: $0, flags: flags, emittedAt: .distantPast) }
     }
 
     /// `fixtures/fixtures/` 하위 파일의 절대 경로를 반환.
