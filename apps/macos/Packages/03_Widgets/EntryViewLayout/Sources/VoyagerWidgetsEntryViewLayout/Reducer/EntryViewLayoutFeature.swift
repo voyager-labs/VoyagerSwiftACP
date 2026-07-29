@@ -245,6 +245,7 @@ public struct EntryViewLayoutFeature {
                 state.activeCollectionReplacePaths = paths
                 state.expectedCollectionReplaceBatchIndex = 0
                 state.activeCollectionAppendExpectedBatchIndices = [:]
+                state.activeCollectionAppendPaths = [:]
                 state.finishedCollectionAppendTokens = []
                 state.collectionCoreFinished = false
                 state.collectionStreamCompleted = false
@@ -284,6 +285,7 @@ public struct EntryViewLayoutFeature {
                 let priority = Self.collectionMetadataPriority(for: state)
                 let showHiddenFiles = state.showHiddenFiles
                 state.activeCollectionAppendExpectedBatchIndices[token] = 0
+                state.activeCollectionAppendPaths[token] = paths
                 let appendCancelID = Self.collectionCancelID(for: .append(token), state: state)
 
                 return .run { [entryLoadingClient, priority] send in
@@ -349,6 +351,7 @@ public struct EntryViewLayoutFeature {
                 guard epoch == state.collectionReplaceEpoch,
                       state.activeCollectionAppendExpectedBatchIndices.removeValue(forKey: token) != nil
                 else { return .none }
+                state.activeCollectionAppendPaths[token] = nil
                 state.finishedCollectionAppendTokens.remove(token)
                 return .none
 
@@ -356,6 +359,7 @@ public struct EntryViewLayoutFeature {
                 guard epoch == state.collectionReplaceEpoch,
                       state.activeCollectionAppendExpectedBatchIndices.removeValue(forKey: token) != nil
                 else { return .none }
+                state.activeCollectionAppendPaths[token] = nil
                 state.finishedCollectionAppendTokens.remove(token)
                 state.collectionIncompleteFailure = message
                 return Self.updateEntriesAndReapply(&state)
@@ -364,6 +368,15 @@ public struct EntryViewLayoutFeature {
                 guard state.isCollectionMode else { return .none }
                 let mutatedPaths = Set(paths.map(Self.normalizedPath(_:)))
                 guard !mutatedPaths.isEmpty else { return .none }
+                state.removedCollectionPaths.formUnion(mutatedPaths)
+                state.activeCollectionReplacePaths.removeAll {
+                    Self.matchesAnyMutatedPath($0, mutatedPaths: mutatedPaths)
+                }
+                for token in state.activeCollectionAppendPaths.keys {
+                    state.activeCollectionAppendPaths[token]?.removeAll {
+                        Self.matchesAnyMutatedPath($0, mutatedPaths: mutatedPaths)
+                    }
+                }
 
                 let remainingItems = state.collectionItems.filter { item in
                     !Self.matchesAnyMutatedPath(item.fullPath, mutatedPaths: mutatedPaths)
@@ -384,6 +397,7 @@ public struct EntryViewLayoutFeature {
                 state.isCollectionMode = false
                 state.collectionItems = []
                 state.activeCollectionReplacePaths = []
+                state.activeCollectionAppendPaths = [:]
                 state.isCollectionContentLoading = false
                 state.expectedCollectionReplaceBatchIndex = 0
                 state.activeCollectionAppendExpectedBatchIndices = [:]

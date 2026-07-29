@@ -58,6 +58,7 @@ public struct EntryViewLayoutState: Equatable {
     public var activeCollectionReplacePaths: [String] = []
     public var expectedCollectionReplaceBatchIndex = 0
     public var activeCollectionAppendExpectedBatchIndices: [Int: Int] = [:]
+    public var activeCollectionAppendPaths: [Int: [String]] = [:]
     public var finishedCollectionAppendTokens: Set<Int> = []
     public var nextCollectionAppendToken = 0
     public var collectionCoreFinished = false
@@ -125,6 +126,7 @@ public struct EntryViewLayoutState: Equatable {
         collectionItems = []
         isCollectionContentLoading = false
         activeCollectionReplacePaths = []
+        activeCollectionAppendPaths = [:]
         entries = displayOrderItems
 
         let remainingIDs = Set(entries.map(\.id))
