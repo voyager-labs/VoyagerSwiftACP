@@ -70,12 +70,9 @@ extension HistoricalConditionCompatibility {
                 Condition.OperatorOption(code: code, label: registryClient.operatorLabel(for: code))
             }
         } ?? []
-        let operationCode = alphaListOperators.contains(payload.operator.lowercased())
-            ? payload.operator.lowercased()
-            : resolution.operatorCode
-        let selectedOption = Condition.OperatorOption(
-            code: operationCode,
-            label: historicalOperatorLabels[resolution.operatorCode] ?? resolution.operatorCode,
+        let selectedOption = restoredOperatorOption(
+            rawOperator: payload.operator.lowercased(),
+            resolution: resolution,
         )
         let operatorOptions = currentOperatorOptions.contains(where: { $0.code == selectedOption.code })
             ? currentOperatorOptions
@@ -95,7 +92,7 @@ extension HistoricalConditionCompatibility {
                 operatorOptions: operatorOptions,
             ),
             operation: .init(
-                code: operationCode,
+                code: selectedOption.code,
                 label: selectedOption.label,
                 valueContract: resolution.valueContract,
             ),
@@ -107,6 +104,19 @@ extension HistoricalConditionCompatibility {
 }
 
 private extension HistoricalConditionCompatibility {
+    static func restoredOperatorOption(
+        rawOperator: String,
+        resolution: Resolution,
+    ) -> Condition.OperatorOption {
+        let preservesRawOperator = alphaListOperators.contains(rawOperator)
+            || (rawOperator == "in" && resolution.propertyKey == "color_space")
+        let operationCode = preservesRawOperator ? rawOperator : resolution.operatorCode
+        let label = historicalOperatorLabels[operationCode]
+            ?? historicalOperatorLabels[resolution.operatorCode]
+            ?? resolution.operatorCode
+        return Condition.OperatorOption(code: operationCode, label: label)
+    }
+
     static let numericOperators: Set<String> = ["eq", "neq", "gt", "gte", "lt", "lte", "btw", "nbtw"]
     static let scalarStringOperators: Set<String> = ["eq", "neq", "cn", "nc", "sw", "ew", "rx"]
     static let alphaListOperators: Set<String> = [

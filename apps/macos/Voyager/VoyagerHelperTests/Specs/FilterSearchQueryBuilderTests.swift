@@ -167,6 +167,22 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         ))
     }
 
+    func testConditionCompilerPreservesHistoricalColorSpaceInAsExactMembership() throws {
+        let compiler = try makeCompiler()
+        let plan = try compiler.compilePlan(conditions: [
+            .init(
+                propertyKey: "color_space",
+                operator: "in",
+                value: .array([.string("RGB"), .string("CMYK")]),
+            ),
+        ])
+
+        XCTAssertTrue(plan.predicate.contains("kMDItemColorSpace == \"RGB\""), plan.predicate)
+        XCTAssertTrue(plan.predicate.contains("kMDItemColorSpace == \"CMYK\""), plan.predicate)
+        XCTAssertFalse(plan.predicate.contains("*RGB*"), plan.predicate)
+        XCTAssertFalse(plan.predicate.contains("*CMYK*"), plan.predicate)
+    }
+
     /// RCL-003-apply_deterministic_filters: historical string none/miss 조건을 컴파일함
     /// 과거 alpha-list 부정 연산자가 단일 문자열 decoder로 빠지지 않고 list clause를 생성하는지 검증한다.
     /// - 검증 내용: not_contains_any/not_contains_all의 none/miss 정규화와 부정 predicate

@@ -196,6 +196,7 @@ final class RCL003RetrieveEntriesWithFiltersTests: XCTestCase {
     func testApplyDeterministicFilters_withHistoricalTypeMigrations_preservesLegacySemantics() {
         let payloads: [SearchConditionPayload] = [
             .init(propertyKey: "audioChannelCount", operator: "in", value: .array([.number(1), .number(2)])),
+            .init(propertyKey: "colorSpace", operator: "in", value: .array([.string("RGB"), .string("CMYK")])),
             .init(propertyKey: "extension", operator: "in", value: .array([.string("pdf"), .string("md")])),
             .init(propertyKey: "contentType", operator: "in", value: .array([.string("public.pdf")])),
             .init(propertyKey: "latitude", operator: "gt", value: .number(37.5)),
@@ -214,6 +215,7 @@ final class RCL003RetrieveEntriesWithFiltersTests: XCTestCase {
 
         XCTAssertEqual(resolved.conditions.map(\.property.key), [
             "audio_channel_count",
+            "color_space",
             "extension",
             "uniform_type_identifier",
             "latitude",
@@ -225,10 +227,10 @@ final class RCL003RetrieveEntriesWithFiltersTests: XCTestCase {
         ])
         XCTAssertEqual(
             resolved.conditions.compactMap(\.operation?.code),
-            ["in", "any", "any", "gt", "neq", "all", "cn", "contains_any", "sw"],
+            ["in", "in", "any", "any", "gt", "neq", "all", "cn", "contains_any", "sw"],
         )
-        XCTAssertEqual(resolved.conditions[7].property.type, .string)
-        XCTAssertEqual(resolved.conditions[7].values, ["PDF"])
+        XCTAssertEqual(resolved.conditions[8].property.type, .string)
+        XCTAssertEqual(resolved.conditions[8].values, ["PDF"])
         XCTAssertTrue(resolved.conditions.allSatisfy(\.isExecutionReady))
         XCTAssertEqual(resolved.unknownKeys, [])
     }
