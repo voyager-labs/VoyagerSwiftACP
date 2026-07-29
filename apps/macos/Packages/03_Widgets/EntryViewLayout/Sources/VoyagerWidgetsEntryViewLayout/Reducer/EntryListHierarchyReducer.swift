@@ -28,10 +28,10 @@ struct EntryListHierarchyReducer {
                 )
 
             case .hiddenFilesSettingChanged:
-                return reloadFoldersForHiddenFilesChange(state: &state)
+                return reloadFoldersForPresentationChange(state: &state)
 
             case .arrangementMetadataPriorityChanged:
-                return reloadExpandedFoldersForArrangementChange(state: &state)
+                return reloadFoldersForPresentationChange(state: &state)
 
             case let .hierarchyInvalidated(affectedPaths, removedPrefixes):
                 return invalidateHierarchy(
@@ -182,7 +182,7 @@ struct EntryListHierarchyReducer {
         return .merge(effects)
     }
 
-    private func reloadFoldersForHiddenFilesChange(state: inout State) -> Effect<Action> {
+    private func reloadFoldersForPresentationChange(state: inout State) -> Effect<Action> {
         let folderIDs = Array(state.hierarchy.foldersByID.keys)
         let expandedFolders = folderIDs.compactMap { id -> (EntryModel.ID, EntryModel)? in
             guard state.hierarchy.expandedFolderIDs.contains(id),
@@ -214,17 +214,6 @@ struct EntryListHierarchyReducer {
 
         EntryViewLayoutFeature.reconcileSelectionWithVisibleEntries(&state)
         return .concatenate(effects)
-    }
-
-    private func reloadExpandedFoldersForArrangementChange(state: inout State) -> Effect<Action> {
-        let expandedFolders = state.hierarchy.expandedFolderIDs.compactMap { id -> (EntryModel.ID, EntryModel)? in
-            guard let folder = folder(id: id, in: state) else { return nil }
-            return (id, folder)
-        }
-        let effects = expandedFolders.map { id, folder in
-            startLoad(folder: folder, id: id, state: &state)
-        }
-        return .merge(effects)
     }
 
     private func folder(id: EntryModel.ID, in state: State) -> EntryModel? {

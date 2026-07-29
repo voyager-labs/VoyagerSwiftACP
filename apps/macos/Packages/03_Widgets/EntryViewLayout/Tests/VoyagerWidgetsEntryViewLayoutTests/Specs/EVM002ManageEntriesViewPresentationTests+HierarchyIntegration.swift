@@ -102,7 +102,51 @@ extension EVM002ManageEntriesViewPresentationTests {
 
         await store.send(.hierarchy(.arrangementMetadataPriorityChanged)) {
             $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 3)
+            $0.outlineProjectionRevision = 2
+        }
+        await store.receive { action in
+            guard case let .entryOperations(.loading(.cancelFolderItems(requestID))) = action else { return false }
+            return requestID.folderID == folder.id
+        }
+        await store.receive { action in
+            guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
+            return request.id.folderID == folder.id && request.priority == .active([.spotlight])
+        }
+    }
+
+    /// EVM-002-set_entries_view_as_list_table: metadata 정렬 변경 시 collapsed folder cache 무효화
+    /// 접힌 folder의 기존 core-only payload가 다음 expansion에서 재사용되지 않는지 검증한다.
+    /// - 검증 내용: arrangement metadata 변경이 collapsed cache를 idle로 만들고 다음 load에 새 priority를 적용함
+    /// - 사전 조건: sortKey == .kind, collapsed folder cache가 loaded 상태임
+    /// - 기대 결과: 기존 load 취소 후 다음 expansion request가 Spotlight 우선 priority를 사용함
+    func testArrangementMetadataChangeInvalidatesCollapsedFolderCache() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let staleChild = makeHierarchyIntegrationEntry(id: "/root/a/file", name: "file")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.entryArrangements.sortKey = .kind
+        state.hierarchy = .init(
+            rootPath: "/root",
+            foldersByID: [
+                folder.id: .init(children: [staleChild], phase: .loaded, generation: 2),
+            ],
+        )
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+
+        await store.send(.hierarchy(.arrangementMetadataPriorityChanged)) {
+            $0.hierarchy.foldersByID[folder.id] = .init(phase: .idle, generation: 3)
             $0.outlineProjectionRevision = 1
+        }
+        await store.receive { action in
+            guard case let .entryOperations(.loading(.cancelFolderItems(requestID))) = action else { return false }
+            return requestID.folderID == folder.id
+        }
+        await store.send(.hierarchy(.folderExpansionRequested(id: folder.id))) {
+            $0.hierarchy.expandedFolderIDs = [folder.id]
+            $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 4)
+            $0.outlineProjectionRevision = 2
         }
         await store.receive { action in
             guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
