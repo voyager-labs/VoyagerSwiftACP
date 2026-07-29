@@ -204,18 +204,20 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
         guard let hostingView = contentHosting?.view else { return }
 
         let entryListViews = descendantViews(of: hostingView).compactMap { $0 as? EntryListView }
-        guard !entryListViews.isEmpty else { return }
-
         let existingChildren = hostingView.accessibilityChildren() ?? []
-        let unrepresentedEntryLists = entryListViews.filter { entryListView in
-            !existingChildren.contains { child in
-                (child as? NSView) === entryListView
-            }
-        }
-        guard !unrepresentedEntryLists.isEmpty else { return }
-
-        hostingView.setAccessibilityChildren(existingChildren + unrepresentedEntryLists)
+        let updatedChildren = Self.entryListAccessibilityChildren(
+            existingChildren: existingChildren,
+            currentEntryListViews: entryListViews,
+        )
+        hostingView.setAccessibilityChildren(updatedChildren)
         NSAccessibility.post(element: hostingView, notification: .layoutChanged)
+    }
+
+    static func entryListAccessibilityChildren(
+        existingChildren: [Any],
+        currentEntryListViews: [EntryListView],
+    ) -> [Any] {
+        existingChildren.filter { !($0 is EntryListView) } + currentEntryListViews
     }
 
     private func descendantViews(of view: NSView) -> [NSView] {

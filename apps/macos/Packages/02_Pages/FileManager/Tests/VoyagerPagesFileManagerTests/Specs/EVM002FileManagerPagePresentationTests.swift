@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import IdentifiedCollections
 import VoyagerEntitiesAppPreferences
@@ -483,6 +484,27 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
             FileManagerContentChromeProps.renderIdentity(activeTabID: tabID, activePageAnchor: collectionFile),
             FileManagerContentChromeProps.renderIdentity(activeTabID: tabID, activePageAnchor: virtualCollection),
         )
+    }
+
+    /// EVM-002-set_entries_view_as_list_table: root 교체 시 현재 list만 접근성 child로 유지함
+    /// content root가 바뀐 뒤 VoiceOver가 이전 EntryListView를 계속 탐색하지 않는지 검증한다.
+    /// - 검증 내용: non-list child 보존, stale list 제거, current descendant list 추가
+    /// - 사전 조건: 기존 accessibility children에 stale list와 일반 view가 있고 새 list가 렌더됨
+    /// - 기대 결과: 결과 children에는 일반 view와 current list만 포함됨
+    func testAccessibilityChildrenReplaceStaleEntryListWithCurrentList() {
+        let retainedView = NSView(frame: .zero)
+        let staleList = EntryListView()
+        let currentList = EntryListView()
+
+        let children = MainContainerSplitCoordinator.entryListAccessibilityChildren(
+            existingChildren: [retainedView, staleList],
+            currentEntryListViews: [currentList],
+        )
+
+        XCTAssertEqual(children.count, 2)
+        XCTAssertTrue(children.contains { ($0 as? NSView) === retainedView })
+        XCTAssertTrue(children.contains { ($0 as? NSView) === currentList })
+        XCTAssertFalse(children.contains { ($0 as? NSView) === staleList })
     }
 
     // MARK: - VOY-578-ordinary_directory_loading
