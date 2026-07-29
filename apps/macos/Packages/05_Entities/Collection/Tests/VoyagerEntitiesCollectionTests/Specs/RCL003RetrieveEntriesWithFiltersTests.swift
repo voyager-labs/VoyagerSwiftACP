@@ -41,6 +41,26 @@ final class RCL003RetrieveEntriesWithFiltersTests: XCTestCase {
         ))
     }
 
+    /// RCL-003-mark_collection_results_as_stale: persisted staleness도 symlink alias scope를 canonical 비교한다.
+    /// gateway의 `/private/tmp` event가 저장된 `/tmp` relevance root를 stale로 표시하는지 검증한다.
+    /// - 검증 내용: CollectionStalenessClient invalidateRecords의 canonical scope 비교
+    /// - 사전 조건: `/tmp/VoyagerFixtures` relevance root가 등록됨
+    /// - 기대 결과: `/private/tmp/VoyagerFixtures` 변경 후 invalidation을 consume할 수 있음
+    func testStalenessInvalidation_resolvesSymlinkAliases() {
+        let client = CollectionStalenessClient.live(userDefaultsClient: UserDefaultsClient.testValue)
+        let collectionPath = "/VoyagerFixtures/Collections/canonical-staleness.voycoll"
+        client.registerCollection(
+            collectionPath,
+            ["/tmp/VoyagerFixtures"],
+            [],
+            true,
+        )
+
+        client.invalidateRecords(["/private/tmp/VoyagerFixtures/report.md"])
+
+        XCTAssertTrue(client.consumeInvalidation(collectionPath))
+    }
+
     /// RCL-003-mark_collection_results_as_stale: 제외 scope 변경은 stale 전환에서 제외
     /// 제외된 하위 path의 변경은 collection 결과를 stale로 만들지 않는지 검증한다.
     /// - 검증 내용: excludedScopes에 포함된 path 변경이 phase를 유지하는지 확인
