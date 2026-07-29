@@ -218,6 +218,7 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
     func testHistoricalPathConditionEvaluatorHandlesNumericExistsAndEmpty() {
         let homeURL = URL(fileURLWithPath: "/Users/test", isDirectory: true)
         let path = "/Users/test/Documents/report.pdf"
+        let outsideHomePath = "/Volumes/External/report.pdf"
 
         XCTAssertTrue(HistoricalPathConditionEvaluator.matches(
             path,
@@ -227,6 +228,21 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         XCTAssertFalse(HistoricalPathConditionEvaluator.matches(
             path,
             conditions: [.init(propertyKey: "depth_from_home", operator: "empty", value: nil)],
+            homeURL: homeURL,
+        ))
+        XCTAssertFalse(HistoricalPathConditionEvaluator.matches(
+            outsideHomePath,
+            conditions: [.init(propertyKey: "depth_from_home", operator: "exists", value: nil)],
+            homeURL: homeURL,
+        ))
+        XCTAssertTrue(HistoricalPathConditionEvaluator.matches(
+            outsideHomePath,
+            conditions: [.init(propertyKey: "depth_from_home", operator: "empty", value: nil)],
+            homeURL: homeURL,
+        ))
+        XCTAssertFalse(HistoricalPathConditionEvaluator.matches(
+            outsideHomePath,
+            conditions: [.init(propertyKey: "depth_from_home", operator: "lt", value: .number(0))],
             homeURL: homeURL,
         ))
     }

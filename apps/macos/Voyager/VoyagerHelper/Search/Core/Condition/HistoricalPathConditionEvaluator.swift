@@ -32,7 +32,7 @@ private extension HistoricalPathConditionEvaluator {
     struct PathValues {
         let directoryPath: String
         let parentDirectoryName: String
-        let depthFromHome: Double
+        let depthFromHome: Double?
         let relativePathFromHome: String?
 
         init(path: String, homeURL: URL) {
@@ -44,7 +44,7 @@ private extension HistoricalPathConditionEvaluator {
             let homePath = homeURL.standardizedFileURL.path
             let targetPath = targetURL.path
             guard targetPath == homePath || targetPath.hasPrefix(homePath + "/") else {
-                depthFromHome = -1
+                depthFromHome = nil
                 relativePathFromHome = nil
                 return
             }
