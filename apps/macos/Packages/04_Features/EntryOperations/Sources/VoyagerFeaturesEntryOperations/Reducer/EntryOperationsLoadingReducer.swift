@@ -132,6 +132,21 @@ public struct EntryOperationsLoadingReducer {
                     cancelInFlight: true,
                 )
 
+            case .loading(.cancelAndClearItems):
+                state.loadingContext.invalidate()
+                state.loadingContext.items = []
+                state.isLoading = false
+                state.isReloading = false
+                state.renamingItemId = nil
+                state.renamingText = ""
+                state.renamingItem = nil
+                return .cancel(
+                    id: EntryOperationsLoadingCancelID.loadItems(
+                        windowID: state.windowID,
+                        ownerID: state.loadingCancellationOwnerID,
+                    ),
+                )
+
             case let .loading(.itemsLoaded(items)):
                 state.loadingContext.items = IdentifiedArray(uniqueElements: items)
                 state.isLoading = false

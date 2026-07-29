@@ -731,6 +731,35 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         ))))
     }
 
+    /// EOP-003-load_entry_items: route clear는 root load generation과 transient snapshot을 함께 무효화한다.
+    /// Home·AI Chat 전환 뒤 이미 enqueue된 이전 stream event가 빈 목록을 다시 채우지 않는지 검증한다.
+    /// - 검증 내용: cancelAndClearItems의 generation 증가와 stale batch 차단
+    /// - 사전 조건: generation 4의 directory load가 항목 하나를 표시하며 진행 중임
+    /// - 기대 결과: generation 5의 빈 idle context로 전환하고 generation 4 event를 무시함
+    func testCancelAndClearItemsInvalidatesRootStreamGeneration() async {
+        let currentEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/current.txt", name: "current.txt")
+        let staleEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/stale.txt", name: "stale.txt")
+        var state = EntryOperationsState()
+        state.items = [currentEntry]
+        state.isLoading = true
+        state.isReloading = true
+        state.loadingContext.generation = 4
+        state.loadingContext.sourceKind = .directory
+        let store = EntryOperationsTestSupport.makeStore(initialState: state)
+
+        await store.send(.loading(.cancelAndClearItems)) {
+            $0.items = []
+            $0.isLoading = false
+            $0.isReloading = false
+            $0.loadingContext.generation = 5
+            $0.loadingContext.sourceKind = nil
+        }
+        await store.send(.loading(.streamEvent(.init(
+            generation: 4,
+            event: .coreBatch(items: [staleEntry], batchIndex: 0),
+        ))))
+    }
+
     /// EOP-003-load_entry_items: empty core completion은 blocking loading을 해제한다.
     /// 빈 Recents 또는 Tags 결과도 stream terminal을 기다리지 않고 입력 가능한 상태가 되어야 한다.
     /// - 검증 내용: `.coreFinished(batchCount: 0)`가 isLoading과 isReloading을 해제하고 core completion을 기록한다.
