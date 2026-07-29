@@ -21,6 +21,8 @@ struct MenuCommandsState: Equatable {
     var canSaveCollection: Bool
     var canOpenNewContentTab: Bool
     var canToggleActiveContentTabPin: Bool
+    var canSetSelectedContentTabsPinned: Bool
+    var isSelectedContentTabPinTargetPinned: Bool
     var isActiveContentTabPinned: Bool
     var canRestoreLastClosedTab: Bool
     var selectedContentTabCount: Int
@@ -50,7 +52,15 @@ struct MenuCommandsState: Equatable {
     }
 
     var pinTabTitle: String {
-        isActiveContentTabPinned ? "Unpin Tab" : "Pin Tab"
+        let isPinned = selectedContentTabCount > 1
+            ? isSelectedContentTabPinTargetPinned
+            : isActiveContentTabPinned
+        let operation = isPinned ? "Unpin" : "Pin"
+        return selectedContentTabCount > 1 ? "\(operation) \(selectedContentTabCount) Tabs" : "\(operation) Tab"
+    }
+
+    var canPinTab: Bool {
+        selectedContentTabCount > 1 ? canSetSelectedContentTabsPinned : canToggleActiveContentTabPin
     }
 
     var sidebarVisible: Bool
@@ -89,6 +99,8 @@ struct MenuCommandsState: Equatable {
         canSaveCollection = false
         canOpenNewContentTab = false
         canToggleActiveContentTabPin = false
+        canSetSelectedContentTabsPinned = false
+        isSelectedContentTabPinTargetPinned = false
         isActiveContentTabPinned = false
         canRestoreLastClosedTab = false
         selectedContentTabCount = 0
@@ -135,6 +147,8 @@ struct MenuCommandsState: Equatable {
         canSaveCollection = projection.canSaveCollection
         canOpenNewContentTab = projection.canOpenNewContentTab
         canToggleActiveContentTabPin = projection.canToggleActiveContentTabPin
+        canSetSelectedContentTabsPinned = projection.canSetSelectedContentTabsPinned
+        isSelectedContentTabPinTargetPinned = projection.isSelectedContentTabPinTargetPinned
         isActiveContentTabPinned = projection.isActiveContentTabPinned
         canRestoreLastClosedTab = projection.canRestoreLastClosedTab
         selectedContentTabCount = projection.selectedContentTabCount

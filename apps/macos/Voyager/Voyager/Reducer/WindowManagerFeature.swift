@@ -69,6 +69,9 @@ struct WindowManagerFeature {
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
+            if let terminalEffect = selectedPinMutationTerminalEffect(action, state: state) {
+                return terminalEffect
+            }
             switch action {
             case .lifecycle(.openInitialWindowIfNeeded):
                 guard state.windows.isEmpty else { return .none }
@@ -126,11 +129,7 @@ struct WindowManagerFeature {
                 return sendCloseTabCommandToFocusedWindow(state)
 
             case .file(.togglePinTab):
-                return sendContentTabCommandToFocusedWindow(
-                    state,
-                    .toggleActiveContentTabPin,
-                    capability: \.canToggleActiveContentTabPin,
-                )
+                return sendPinTabCommandToFocusedWindow(state)
 
             case .file(.restoreLastClosedTab):
                 return sendContentTabCommandToFocusedWindow(
@@ -475,6 +474,58 @@ struct WindowManagerFeature {
 }
 
 extension WindowManagerFeature {
+    func selectedPinMutationTerminalEffect(
+        _ action: Action,
+        state: State,
+    ) -> Effect<Action>? {
+        switch action {
+        case let .windows(.element(
+            id: sourceWindowID,
+            action: .window(.performSelectedContentTabPinMutation(
+                operationID: operationID,
+                tabID: tabID,
+                action: .pinnedRecordSaveSucceeded(_, context),
+            )),
+        )):
+            guard isCurrentSelectedPinMutationTerminal(
+                sourceWindowID: sourceWindowID,
+                operationID: operationID,
+                tabID: tabID,
+                context: context,
+                state: state,
+            ), contentTabPinnedRecordClient.isCurrentMutationGeneration(context.generation)
+            else { return Effect<Action>.none }
+            return .send(.pinnedContentTabsStoreChanged)
+
+        case let .windows(.element(
+            id: sourceWindowID,
+            action: .window(.performSelectedContentTabPinMutation(
+                operationID: operationID,
+                tabID: tabID,
+                action: .pinnedRecordSaveFailed(_, context, _),
+            )),
+        )), let .windows(.element(
+            id: sourceWindowID,
+            action: .window(.performSelectedContentTabPinMutation(
+                operationID: operationID,
+                tabID: tabID,
+                action: .pinnedRecordSaveNotApplied(_, context, _, _),
+            )),
+        )):
+            guard isCurrentSelectedPinMutationTerminal(
+                sourceWindowID: sourceWindowID,
+                operationID: operationID,
+                tabID: tabID,
+                context: context,
+                state: state,
+            ) else { return Effect<Action>.none }
+            return .send(.pinnedContentTabsStoreChanged)
+
+        default:
+            return nil
+        }
+    }
+
     func isCurrentPinnedRecordTerminal(
         sourceWindowID: State.WindowID,
         tabID: ContentTabID,
@@ -485,6 +536,25 @@ extension WindowManagerFeature {
             tabID: tabID,
             intentID: context.intentID,
         ) == true
+    }
+
+    func isCurrentSelectedPinMutationTerminal(
+        sourceWindowID: State.WindowID,
+        operationID: UUID,
+        tabID: ContentTabID,
+        context: ContentTabPinnedRecordTerminalContext,
+        state: State,
+    ) -> Bool {
+        guard let window = state.windows[id: sourceWindowID]?.window,
+              !window.isClosing,
+              let pending = window.pendingSelectedContentTabPinMutation,
+              pending.operationID == operationID,
+              pending.currentTabID == tabID
+        else { return false }
+        return window.contentTabs.isCurrentPinnedRecordPersistenceIntent(
+            tabID: tabID,
+            intentID: context.intentID,
+        )
     }
 
     func appPreferencesEffect(
@@ -570,6 +640,31 @@ extension WindowManagerFeature {
               window.window.menuCommandProjection[keyPath: capability]
         else { return .none }
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
+    }
+
+    private func sendPinTabCommandToFocusedWindow(_ state: State) -> Effect<Action> {
+        guard let id = state.focusedWindowID,
+              !state.closingWindowIDs.contains(id),
+              let window = state.windows[id: id]
+        else { return .none }
+
+        let projection = window.window.menuCommandProjection
+        if projection.selectedContentTabCount > 1 {
+            guard projection.canSetSelectedContentTabsPinned else { return .none }
+            let target: SelectedContentTabPinMutationTargetState = projection.isSelectedContentTabPinTargetPinned
+                ? .unpinned
+                : .pinned
+            return .send(.windows(.element(
+                id: id,
+                action: .window(.requestSelectedContentTabPinMutation(target: target)),
+            )))
+        }
+
+        guard projection.canToggleActiveContentTabPin else { return .none }
+        return .send(.windows(.element(
+            id: id,
+            action: .window(.request(.toggleActiveContentTabPin)),
+        )))
     }
 
     private func sendCloseTabCommandToFocusedWindow(_ state: State) -> Effect<Action> {
