@@ -319,6 +319,10 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Composer Host (Debug)";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				"OTHER_LDFLAGS[arch=*]" = (
+					"-Xlinker",
+					"-interposable",
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
