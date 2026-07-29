@@ -151,7 +151,7 @@ struct FileManagerContentNavigationBridgeReducer {
             ),
         )
         return switch navigationState {
-        case .home: homeRouteEffect(rootContextChange: rootContextChange, cancelRootLoad: cancelRootLoad)
+        case .home: homeRouteEffect(rootContextChange: rootContextChange)
         case let .folder(path): folderRouteEffect(path: path, state: state, rootContextChange: rootContextChange)
         case .recents: recentsRouteEffect(
                 state: state,
@@ -172,27 +172,23 @@ struct FileManagerContentNavigationBridgeReducer {
         case let .aiChat(sessionID): aiChatRouteEffect(
                 sessionID: sessionID,
                 rootContextChange: rootContextChange,
-                cancelRootLoad: cancelRootLoad,
             )
         case let .aiChatSessions(sessionID): aiChatSessionsRouteEffect(
                 sessionID: sessionID,
                 rootContextChange: rootContextChange,
-                cancelRootLoad: cancelRootLoad,
             )
         }
     }
 
     private func homeRouteEffect(
         rootContextChange: Effect<Action>,
-        cancelRootLoad: Effect<Action>,
     ) -> Effect<Action> {
         .concatenate(
             rootContextChange,
             .cancel(id: CancelID.folderWatcher),
-            cancelRootLoad,
+            sendEntryOperations(.loading(.cancelAndClearItems)),
             .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
             .send(.entryViewLayout(.internal(.applyClearSelection))),
-            sendEntryOperations(.loading(.itemsLoaded([]))),
         )
     }
 
@@ -278,22 +274,20 @@ struct FileManagerContentNavigationBridgeReducer {
     private func aiChatRouteEffect(
         sessionID: String,
         rootContextChange: Effect<Action>,
-        cancelRootLoad: Effect<Action>,
     ) -> Effect<Action> {
         .concatenate(
             rootContextChange,
-            aiChatEntryRouteEffect(aiChatRouteEffect(sessionID: sessionID), cancelRootLoad: cancelRootLoad),
+            aiChatEntryRouteEffect(aiChatRouteEffect(sessionID: sessionID)),
         )
     }
 
     private func aiChatSessionsRouteEffect(
         sessionID: String,
         rootContextChange: Effect<Action>,
-        cancelRootLoad: Effect<Action>,
     ) -> Effect<Action> {
         .concatenate(
             rootContextChange,
-            aiChatEntryRouteEffect(aiChatSessionsRouteEffect(sessionID: sessionID), cancelRootLoad: cancelRootLoad),
+            aiChatEntryRouteEffect(aiChatSessionsRouteEffect(sessionID: sessionID)),
         )
     }
 
@@ -304,13 +298,11 @@ struct FileManagerContentNavigationBridgeReducer {
 
     private func aiChatEntryRouteEffect(
         _ routeEffect: Effect<Action>,
-        cancelRootLoad: Effect<Action>,
     ) -> Effect<Action> {
         .concatenate(
-            cancelRootLoad,
+            sendEntryOperations(.loading(.cancelAndClearItems)),
             .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
             .send(.entryViewLayout(.internal(.applyClearSelection))),
-            sendEntryOperations(.loading(.itemsLoaded([]))),
             routeEffect,
         )
     }

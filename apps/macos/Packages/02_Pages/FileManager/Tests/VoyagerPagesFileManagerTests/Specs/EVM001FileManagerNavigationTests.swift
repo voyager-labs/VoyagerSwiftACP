@@ -363,13 +363,17 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
     /// EVM-001-home_navigation_clears_hidden_entries: Home route 적용 시 숨은 folder selection 정리
     /// Home 화면 진입 후에도 이전 folder entry/selection이 메뉴 command projection에 남지 않도록 검증.
-    /// - 검증 내용: applyNavigationState(.home)이 selectedIds와 entry list를 명시적으로 비움
-    /// - 사전 조건: folder route에서 선택된 entry가 있는 상태
-    /// - 기대 결과: selectedIds와 entries가 비워지고 Home currentPath로 전환
+    /// - 검증 내용: applyNavigationState(.home)이 selection·entry list를 비우고 이전 generation batch를 무시함
+    /// - 사전 조건: generation 1의 folder load와 선택된 entry가 남아 있는 상태
+    /// - 기대 결과: generation을 무효화하고 Home 전환 뒤 도착한 generation 1 batch를 반영하지 않음
     func testHomeNavigationClearsHiddenEntrySelectionAndItems() async {
         let previousEntry = EntryModel.temporaryFolder(
             id: "/tmp/voyager-hidden-selection",
             name: "voyager-hidden-selection",
+        )
+        let staleEntry = EntryModel.temporaryFolder(
+            id: "/tmp/voyager-stale-root-batch",
+            name: "voyager-stale-root-batch",
         )
         var state = FileManagerContentState()
         state.navigation.navigationState = .folder("/tmp")
@@ -378,6 +382,9 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         state.entryViewLayout.lastSelectedId = previousEntry.id
         state.entryViewLayout.rangeAnchorId = previousEntry.id
         state.entryViewLayout.entryOperations.loadingContext.items = [previousEntry]
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
+        state.entryViewLayout.entryOperations.isLoading = true
 
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
@@ -387,15 +394,22 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.internal(.applyNavigationState(.home)))
+        await store.receive(\.entryViewLayout.entryOperations.loading.cancelAndClearItems)
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
         await store.receive(\.entryViewLayout.internal.applyClearSelection)
-        await store.receive(\.entryViewLayout.entryOperations.loading.itemsLoaded)
         await store.finish()
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreBatch(items: [staleEntry], batchIndex: 0),
+        ))))))
 
         XCTAssertEqual(store.state.entryViewLayout.currentPath, "Home")
         XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
         XCTAssertTrue(store.state.entryViewLayout.entries.isEmpty)
         XCTAssertTrue(store.state.entryViewLayout.entryOperations.loadingContext.items.isEmpty)
+        XCTAssertEqual(store.state.entryViewLayout.entryOperations.loadingContext.generation, 2)
+        XCTAssertNil(store.state.entryViewLayout.entryOperations.loadingContext.sourceKind)
     }
 
     /// EVM-001-ai_chat_navigation_clears_hidden_entries: AI Chat route 적용 시 숨은 folder selection 정리
@@ -435,9 +449,9 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.internal(.applyNavigationState(navigationState)))
+        await store.receive(\.entryViewLayout.entryOperations.loading.cancelAndClearItems)
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
         await store.receive(\.entryViewLayout.internal.applyClearSelection)
-        await store.receive(\.entryViewLayout.entryOperations.loading.itemsLoaded)
         await store.finish()
 
         XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)

@@ -419,7 +419,8 @@ public struct EntryViewLayoutFeature {
                         .failed(Self.hierarchyFailure(from: failure)),
                     )))
 
-                case .loading(.itemsLoaded),
+                case .loading(.cancelAndClearItems),
+                     .loading(.itemsLoaded),
                      .loading(.itemsLoadFailed),
                      .loading(.streamEvent),
                      .loading(.streamFailed):
