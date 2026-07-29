@@ -259,6 +259,39 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    /// EOP-002-duplicate_entries: 서로 다른 계층의 선택 항목을 각 원본 부모에 복제한다.
+    /// 계층 projection에서 선택된 중첩 항목이 현재 root로 이동하지 않고 원래 sibling 위치에 복제되는지 검증한다.
+    /// - 검증 내용: duplicate command plan이 선택 path를 원본 부모별 paste action으로 분리함
+    /// - 사전 조건: 서로 다른 부모를 가진 두 항목이 선택되고 currentPath는 상위 root임
+    /// - 기대 결과: 각 paste destination은 해당 source의 deletingLastPathComponent 경로임
+    func testDuplicateCommandPlansEachSourceParentDestination() {
+        let first = EntryModelFixtures.makeEntry(path: "/root/folder/first.txt")
+        let second = EntryModelFixtures.makeEntry(path: "/root/other/second.txt")
+        let context = EntryOperationsCommandContext(
+            selectedIds: [first.id, second.id],
+            displayItems: [first, second],
+            currentPath: "/root",
+        )
+
+        let outputs = EntryOperationsCommandPlanner.plan(
+            command: .clipboard(.duplicateSelectedItems),
+            context: context,
+        )
+
+        XCTAssertEqual(outputs.count, 2)
+        guard outputs.count == 2,
+              case let .entryOperations(.clipboard(.pasteItems(firstPaths, firstDestination, _, _))) = outputs[0],
+              case let .entryOperations(.clipboard(.pasteItems(secondPaths, secondDestination, _, _))) = outputs[1]
+        else {
+            XCTFail("Expected duplicate paste plans grouped by source parent")
+            return
+        }
+        XCTAssertEqual(firstPaths, [first.fullPath])
+        XCTAssertEqual(firstDestination, "/root/folder")
+        XCTAssertEqual(secondPaths, [second.fullPath])
+        XCTAssertEqual(secondDestination, "/root/other")
+    }
+
     /// EOP-002-duplicate_entries: 일부 선택 항목이 사라진 상태에서도 앞선 항목 복제는 유지되는지 검증한다.
     /// 사용자가 `fixtures/fixtures/images/jpeg/`에서 여러 항목을 duplicate할 때 중간 하나가 없어도 앞선 복제는 유지되는지 확인한다.
     /// - 검증 내용: `.clipboard(.pasteItems)`가 다중 선택을 순차 처리하면서 앞선 성공과 뒤늦은 실패를 분리한다.

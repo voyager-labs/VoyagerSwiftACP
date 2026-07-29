@@ -232,14 +232,23 @@ enum EntryOperationsCommandPlanner {
     {
         let selectedPaths = selectedPaths(in: context)
         guard !selectedPaths.isEmpty else { return [] }
-        return [
+        var groups: [(destinationPath: String, sourcePaths: [String])] = []
+        for sourcePath in selectedPaths {
+            let destinationPath = URL(fileURLWithPath: sourcePath).deletingLastPathComponent().path
+            if let index = groups.firstIndex(where: { $0.destinationPath == destinationPath }) {
+                groups[index].sourcePaths.append(sourcePath)
+            } else {
+                groups.append((destinationPath: destinationPath, sourcePaths: [sourcePath]))
+            }
+        }
+        return groups.map { group in
             .entryOperations(.clipboard(.pasteItems(
-                sourcePaths: selectedPaths,
-                destinationPath: context.currentPath,
+                sourcePaths: group.sourcePaths,
+                destinationPath: group.destinationPath,
                 operation: .copy,
                 operationKind: .pasteFileDuplicate,
-            ))),
-        ]
+            )))
+        }
     }
 
     private static func planCopySelectedAbsolutePaths(_ context: EntryOperationsCommandContext)
