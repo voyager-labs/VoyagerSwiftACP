@@ -147,6 +147,9 @@ extension ComposerHostFixtureTests {
     }
 
     private func assertRegistryDateOperators() {
+        assertRegistryMatch("modified_date", "today", nil, [
+            ".hidden/Secret.txt", "documents/Voyager Plan.md",
+        ])
         assertRegistryMatch("modified_date", "lt", .string("2025-01-03"), [
             ".hidden/Secret.txt", "documents/Voyager Plan.md",
         ])

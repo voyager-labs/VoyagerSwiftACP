@@ -4,6 +4,8 @@ import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
 import VoyagerShared
 
+nonisolated let composerHostFixtureReferenceDate = Date(timeIntervalSince1970: 1_735_689_600)
+
 public enum ComposerHostFixtureRootResolver {
     nonisolated public static func resolve(
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -121,6 +123,9 @@ public struct ComposerHostFixtureCorpus: Equatable, Sendable {
     public let rootPath: String
     public let entries: [ComposerHostFixtureEntry]
     public let entriesByAbsolutePath: [String: ComposerHostFixtureEntry]
+    nonisolated public var referenceDate: Date {
+        entries.first?.stableDate ?? composerHostFixtureReferenceDate
+    }
 
     nonisolated public init(rootPath: String, entries: [ComposerHostFixtureEntry]) {
         self.rootPath = (rootPath as NSString).standardizingPath
@@ -296,7 +301,7 @@ public enum ComposerHostFixtureEvaluator {
                 && matchesScope(entry, filters: filters)
                 && (!filters.includeSubfolders || !hasScope(entry, in: filters.excludedScopes, includeSubfolders: true))
                 && matchesQuery(entry, query: query)
-                && filters.conditions.allSatisfy { matches(entry, $0) }
+                && filters.conditions.allSatisfy { matches(entry, $0, referenceDate: corpus.referenceDate) }
         }
     }
 
@@ -305,9 +310,7 @@ public enum ComposerHostFixtureEvaluator {
     }
 
     nonisolated private static func hasScope(
-        _ entry: ComposerHostFixtureEntry,
-        in scopes: [String],
-        includeSubfolders: Bool,
+        _ entry: ComposerHostFixtureEntry, in scopes: [String], includeSubfolders: Bool,
     ) -> Bool {
         scopes.contains { scope in
             let standardized = (scope as NSString).standardizingPath
@@ -326,7 +329,9 @@ public enum ComposerHostFixtureEvaluator {
             .contains { $0.lowercased().contains(needle) }
     }
 
-    nonisolated private static func matches(_ entry: FixtureEntry, _ condition: SearchConditionPayload) -> Bool {
+    nonisolated private static func matches(
+        _ entry: FixtureEntry, _ condition: SearchConditionPayload, referenceDate: Date,
+    ) -> Bool {
         let key = ComposerHostFixtureConditionNormalization.canonicalPropertyKey(condition.propertyKey)
         let operation = ComposerHostFixtureConditionNormalization.canonicalOperator(condition.operator)
         let values = ComposerHostFixtureConditionNormalization.values(from: condition.value)
@@ -335,7 +340,10 @@ public enum ComposerHostFixtureEvaluator {
         case "extension": return matchesString(entry.fileExtension, operation: operation, values: values)
         case "kind": return matchesString(entry.kind, operation: operation, values: values)
         case "file_size": return matchesNumber(entry.size, operation: operation, values: values)
-        case "modified_date", "created_date": return matchesDate(entry.stableDate, operation: operation, values: values)
+        case "modified_date", "created_date":
+            return operation == "today"
+                ? isSameDay(entry.stableDate, referenceDate)
+                : matchesDate(entry.stableDate, operation: operation, values: values)
         case "tag_names": return matchesTags(entry.tags, operation: operation, values: values)
         case "is_hidden": return matchesBool(entry.isHidden, operation: operation, values: values)
         default: return false
@@ -377,11 +385,7 @@ public enum ComposerHostFixtureEvaluator {
         }
     }
 
-    nonisolated private static func matchesName(
-        _ entry: FixtureEntry,
-        operation: String,
-        values: [String],
-    ) -> Bool {
+    nonisolated private static func matchesName(_ entry: FixtureEntry, operation: String, values: [String]) -> Bool {
         matchesString(operation == "cn" ? entry.name : entry.nameStem, operation: operation, values: values)
     }
 
@@ -417,9 +421,6 @@ public enum ComposerHostFixtureEvaluator {
     nonisolated private static func matchesDate(_ actual: Date, operation: String, values: [String]) -> Bool {
         if let presence = matchesPresence(isEmpty: false, operation: operation) {
             return presence
-        }
-        if operation == "today" {
-            return isSameDay(actual, Date())
         }
         let formatter = ISO8601DateFormatter()
         let dateFormatter = DateFormatter()
