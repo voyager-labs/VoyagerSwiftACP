@@ -163,5 +163,3 @@ xcrun swift run \
   --metadata-output apps/storybook/packages/file-manager-illustration/src/foundations/swiftui-material-metadata.generated.ts \
   "$@"
 """
-
-

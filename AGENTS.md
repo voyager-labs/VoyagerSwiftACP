@@ -55,9 +55,6 @@ mise run xcode              # Reinstall/reselect the repository Xcode version
 mise run docs-setup         # Sync docs/canonical npm dependencies when its lock changes
 mise run macos-build        # Build macOS app (Voyager-Dev scheme)
 mise run macos-test         # Run macOS tests
-cd apps/backend && uv run pytest  # Run backend tests
-cd apps/backend && uv run pyright # Type-check backend
-cd apps/backend && uv run ruff check  # Lint backend
 python3 -m scripts.validate_harness  # Validates agent harness structure
 python3 -m scripts.verify_plan       # Validates plan structure
 mise exec -- swiftlint --config apps/macos/.swiftlint.yml apps/macos
@@ -77,7 +74,6 @@ git diff --check            # Check for whitespace errors before commit
 | `.pr-review/`                    | PR review policy, severity, and macOS Swift rules           |
 | `scripts/`                       | Validators, shadow corpus, build helpers                    |
 | `apps/macos/Voyager/`            | macOS SwiftUI + TCA app                                     |
-| `apps/backend/`                  | FastAPI backend                                             |
 
 ## Protected local files
 
@@ -114,15 +110,6 @@ Agents must never silence lint/type warnings with inline suppression comments or
 ## Validation
 
 Run the commands that match your change scope. Swift 컴파일·테스트 검증은 `lsp_diagnostics` 대신 `.agents/skills/code-tooling/SKILL.md`의 실행 매트릭스를 따르고, macOS 범위는 저장소 `mise` task를 사용한다.
-
-### Backend (Python/FastAPI)
-
-```bash
-cd apps/backend
-uv run pytest          # tests
-uv run pyright         # type check
-uv run ruff check      # linter
-```
 
 ### macOS (Voyager)
 

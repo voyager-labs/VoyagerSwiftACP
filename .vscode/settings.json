@@ -17,7 +17,6 @@
   "swiftformat.configSearchPaths": [
     "${workspaceFolder}/apps/macos/.swiftformat"
   ],
-  "notebook.formatOnSave.enabled": true,
   "cSpell.customDictionaries": {
     "custom-dictionary-workspace": {
       "name": "custom-dictionary-workspace",
@@ -28,15 +27,12 @@
   },
   "explorer.fileNesting.enabled": true,
   "explorer.fileNesting.patterns": {
-    "README.md": ".*, pyproject.toml, uv.lock, *.json"
+    "README.md": ".*, *.json"
   },
   "files.exclude": {
     "**/*cache": true,
     "**/__pycache__": true,
     ".venv": true
-  },
-  "search.exclude": {
-    "notebooks/test-files": true
   },
   "evenBetterToml.taplo.configFile.path": ".taplo.toml",
   "sweetpad.build.xcodeWorkspacePath": "apps/macos/Voyager/Voyager.xcworkspace",
@@ -49,7 +45,5 @@
   "swift.path": "/Applications/Xcode-26.1.0.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin",
   "swift.swiftEnvironmentVariables": {
     "DEVELOPER_DIR": "/Applications/Xcode-26.1.0.app/Contents/Developer"
-  },
-  "python.defaultInterpreterPath": "${workspaceFolder}/apps/backend/.venv/bin/python",
-  "python.analysis.extraPaths": ["${workspaceFolder}/apps/backend/src"]
+  }
 }
