@@ -328,6 +328,97 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(store.state.entryOperations.renamingItemId, child.id)
     }
 
+    /// EVM-002-set_entries_view_as_icon_grid: collection restore는 제거 tombstone을 해제함
+    /// Put Back/undo로 같은 path를 add할 때 append item이 tombstone에 다시 차단되지 않는지 검증한다.
+    /// - 검증 내용: addCollectionPaths가 canonical removedCollectionPaths를 제거하고 item append를 허용함
+    /// - 사전 조건: 복구 path가 removedCollectionPaths에 기록된 collection mode
+    /// - 기대 결과: tombstone이 제거되고 같은 path item이 collectionItems에 추가됨
+    func testAddCollectionPathsClearsRemovedPathTombstone() {
+        let restored = EntryModel.temporaryFolder(id: "/tmp/restored.txt", name: "restored.txt")
+        var state = EntryViewLayoutState()
+        state.isCollectionMode = true
+        state.removedCollectionPaths = [restored.id]
+
+        _ = EntryViewLayoutFeature().reduce(
+            into: &state,
+            action: .internal(.addCollectionPaths([restored.id])),
+        )
+        EntryViewLayoutFeature.appendCollectionItems([restored], state: &state)
+
+        XCTAssertFalse(state.removedCollectionPaths.contains(restored.id))
+        XCTAssertEqual(state.collectionItems.map(\.id), [restored.id])
+    }
+
+    /// EVM-002-update_entry_selection: root load 완료 뒤에도 visible nested child rename 유지
+    /// root-only itemsLoaded가 계층 projection에 남아 있는 child의 inline rename을 닫지 않는지 검증한다.
+    /// - 검증 내용: itemsLoaded 처리 후 projection-visible renamingItemId 유지
+    /// - 사전 조건: expanded folder child가 visible하고 rename 중임
+    /// - 기대 결과: root items 갱신 뒤에도 child rename state가 유지됨
+    func testRootItemsLoadedPreservesVisibleNestedChildRename() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let child = makeHierarchyIntegrationEntry(id: "/root/a/file.txt", name: "file.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.entryOperations.renamingItemId = child.id
+        state.entryOperations.renamingText = child.name
+        state.entryOperations.renamingItem = child
+        state.hierarchy = .init(
+            rootPath: "/root",
+            expandedFolderIDs: [folder.id],
+            foldersByID: [folder.id: .init(children: [child], phase: .loaded)],
+        )
+        let store = TestStore(initialState: state) {
+            EntryViewLayoutFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+        }
+        // store.exhaustivity = .off: arrangement reapply와 trash metadata 갱신은 rename visibility 계약의 검증 대상이 아님
+        store.exhaustivity = .off
+
+        await store.send(.entryOperations(.loading(.itemsLoaded([folder])))) {
+            $0.entryOperations.items = [folder]
+        }
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.entryOperations.renamingItemId, child.id)
+        XCTAssertEqual(store.state.entryOperations.renamingItem, child)
+    }
+
+    /// EVM-002-update_entry_selection: root load에서 사라진 visible item rename 취소
+    /// projection owner가 갱신 뒤 보이지 않는 root item의 rename state를 정리하는지 검증한다.
+    /// - 검증 내용: itemsLoaded 처리 후 projection에서 사라진 renamingItemId 취소
+    /// - 사전 조건: root item이 rename 중이고 새 root items에는 다른 item만 존재함
+    /// - 기대 결과: rename state가 nil/빈 문자열로 초기화됨
+    func testRootItemsLoadedCancelsRenameWhenItemLeavesVisibleProjection() async {
+        let renamed = makeHierarchyIntegrationEntry(id: "/root/renamed.txt", name: "renamed.txt")
+        let replacement = makeHierarchyIntegrationEntry(id: "/root/replacement.txt", name: "replacement.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [renamed]
+        state.entryOperations.items = [renamed]
+        state.entryOperations.renamingItemId = renamed.id
+        state.entryOperations.renamingText = renamed.name
+        state.entryOperations.renamingItem = renamed
+        let store = TestStore(initialState: state) {
+            EntryViewLayoutFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+        }
+        // store.exhaustivity = .off: arrangement reapply와 trash metadata 갱신은 rename visibility 계약의 검증 대상이 아님
+        store.exhaustivity = .off
+
+        await store.send(.entryOperations(.loading(.itemsLoaded([replacement])))) {
+            $0.entryOperations.items = [replacement]
+            $0.entries = [replacement]
+        }
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertNil(store.state.entryOperations.renamingItemId)
+        XCTAssertEqual(store.state.entryOperations.renamingText, "")
+        XCTAssertNil(store.state.entryOperations.renamingItem)
+    }
+
     private func makeHierarchyIntegrationEntry(id: String, name: String) -> EntryModel {
         EntryModel(
             name: name,

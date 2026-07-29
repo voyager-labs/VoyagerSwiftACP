@@ -279,6 +279,7 @@ public struct EntryViewLayoutFeature {
 
             case let .internal(.addCollectionPaths(paths)):
                 guard state.isCollectionMode else { return .none }
+                state.removedCollectionPaths.subtract(paths.map(Self.normalizedPath(_:)))
                 state.nextCollectionAppendToken &+= 1
                 let token = state.nextCollectionAppendToken
                 let epoch = state.collectionReplaceEpoch
@@ -506,7 +507,17 @@ public struct EntryViewLayoutFeature {
     static func updateEntriesAndReapply(_ state: inout State) -> Effect<Action> {
         state.entries = state.displayOrderItems
         reconcileSelectionWithVisibleEntries(&state)
-        return .send(.entryArrangements(.reapply))
+        return .merge(
+            .send(.entryArrangements(.reapply)),
+            reconcileRenamingItemWithVisibleEntries(state),
+        )
+    }
+
+    static func reconcileRenamingItemWithVisibleEntries(_ state: State) -> Effect<Action> {
+        guard let renamingID = state.entryOperations.renamingItemId,
+              !state.visibleSelectableEntryIDs(isNormalDirectoryPage: true).contains(renamingID)
+        else { return .none }
+        return .send(.entryOperations(.edit(.cancelRename)))
     }
 
     static func setShowHiddenFiles(_ showHiddenFiles: Bool, state: inout State) -> Effect<Action> {
