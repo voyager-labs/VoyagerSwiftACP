@@ -124,16 +124,17 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
     /// EVM-002-show_hide_hidden_entry: 숨김 파일 토글 + 리로드 시 네비게이션/히스토리 불변 검증
     /// FileManagerContentFeature 전체 리듀서에서 toggleShowHiddenFilesAndReload가 entryViewLayout.toggleShowHiddenFiles +
     /// reload 체인을 트리거하며 네비게이션 라우트와 히스토리가 변경되지 않음을 증명한다.
-    /// - 검증 내용: showHiddenFiles 토글, 현재 폴더 reload 액션 수신, navigationState/backHistory/forwardHistory 불변 확인
-    /// - 사전 조건: navigationState == .folder("/seed"), showHiddenFiles == false
+    /// - 검증 내용: showHiddenFiles 토글, 현재 정렬 metadata priority를 포함한 reload, navigation history 불변 확인
+    /// - 사전 조건: navigationState == .folder("/seed"), showHiddenFiles == false, sortKey == .kind
     /// - 기대 결과:
     ///   1) .entryViewLayout(.view(.toggleShowHiddenFiles)) 수신, showHiddenFiles == true
-    ///   2) .entryViewLayout(.entryOperations(.loading(.loadItems(path: "/seed", showHidden: true)))) 수신
+    ///   2) loadItems(path: "/seed", showHidden: true, priority: .active([.spotlight])) 수신
     ///   3) navigationState, backHistory, forwardHistory 변경 없음
     func testToggleShowHiddenFilesAndReloadPreservesNavigationHistory() async {
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath("/seed")
         state.entryViewLayout.showHiddenFiles = false
+        state.entryViewLayout.entryArrangements.sortKey = .kind
 
         let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
@@ -150,8 +151,14 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         }
 
         _ = await store.receive { action in
-            guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
-            return true
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(
+                path,
+                showHidden,
+                priority,
+            )))) = action else { return false }
+            return path == "/seed"
+                && showHidden
+                && priority == .active([.spotlight])
         }
 
         // 네비게이션 라우트와 히스토리가 변경되지 않았는지 확인

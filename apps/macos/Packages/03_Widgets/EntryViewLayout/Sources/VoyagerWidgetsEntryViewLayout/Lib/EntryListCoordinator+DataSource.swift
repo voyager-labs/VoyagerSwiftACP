@@ -16,7 +16,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         case .group:
             return !outlineItem.children.isEmpty
         case let .entry(entry):
-            return entry.supportsListHierarchyExpansion
+            return state.hierarchyProjectionIsActive && entry.supportsListHierarchyExpansion
         case .empty, .error:
             return false
         }

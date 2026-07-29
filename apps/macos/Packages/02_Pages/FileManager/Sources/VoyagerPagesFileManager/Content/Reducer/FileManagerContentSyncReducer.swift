@@ -38,7 +38,7 @@ struct FileManagerContentSyncReducer {
                         return .concatenate(
                             .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
                                 affectedPaths: normalizedPaths.map(parentPath(for:)),
-                                removedPrefixes: normalizedPaths,
+                                removedPrefixes: [],
                             )))),
                             FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
                         )
@@ -46,7 +46,7 @@ struct FileManagerContentSyncReducer {
                     return .concatenate(
                         .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
                             affectedPaths: normalizedPaths.map(parentPath(for:)),
-                            removedPrefixes: normalizedPaths,
+                            removedPrefixes: [],
                         )))),
                         FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
                     )

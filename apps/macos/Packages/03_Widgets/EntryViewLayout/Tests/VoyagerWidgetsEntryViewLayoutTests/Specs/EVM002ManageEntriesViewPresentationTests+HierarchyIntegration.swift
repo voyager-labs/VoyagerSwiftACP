@@ -132,6 +132,27 @@ extension EVM002ManageEntriesViewPresentationTests {
         )
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: 계층 projection 비활성 목록은 folder disclosure를 숨긴다.
+    /// Recents, Tags, collection, grouping 목록에서 동작하지 않는 빈 확장 UI가 노출되지 않는지 검증한다.
+    /// - 검증 내용: root hierarchy context가 없는 list folder의 isItemExpandable 결과
+    /// - 사전 조건: list mode root entries에 folder가 있지만 hierarchy.rootPath는 비어 있음
+    /// - 기대 결과: data source가 folder를 expandable로 보고하지 않음
+    func testInactiveHierarchyDoesNotExposeFolderDisclosure() throws {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        let store = Store(initialState: state) {
+            EntryViewLayoutFeature()
+        }
+        let coordinator = EntryListCoordinator(store: store)
+        let view = EntryListView(frame: .zero)
+
+        coordinator.bind(to: view)
+
+        let item = try XCTUnwrap(view.tableView.item(atRow: 0))
+        XCTAssertFalse(coordinator.outlineView(view.tableView, isItemExpandable: item))
+    }
+
     private func makeHierarchyIntegrationEntry(id: String, name: String) -> EntryModel {
         EntryModel(
             name: name,

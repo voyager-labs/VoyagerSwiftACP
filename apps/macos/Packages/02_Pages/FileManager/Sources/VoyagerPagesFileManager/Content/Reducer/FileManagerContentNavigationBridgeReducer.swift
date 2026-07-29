@@ -53,6 +53,9 @@ struct FileManagerContentNavigationBridgeReducer {
                     FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(
                         navigationState: state.navigation.navigationState,
                         showHidden: showHidden,
+                        priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
+                            for: state.entryViewLayout.entryArrangements,
+                        ),
                     ),
                 )
 
