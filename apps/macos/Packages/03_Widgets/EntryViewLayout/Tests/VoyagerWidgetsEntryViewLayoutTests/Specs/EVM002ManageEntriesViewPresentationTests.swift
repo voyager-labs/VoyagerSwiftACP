@@ -1099,6 +1099,32 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         XCTAssertEqual(state.entries.map(\.id), [item.id])
     }
 
+    /// EVM-002-progressive_entry_loading: 같은 window의 collection stream은 tab owner별 cancellation ID를 사용한다.
+    /// - 사전 조건: 같은 windowID와 서로 다른 loadingCancellationOwnerID를 가진 두 layout state
+    /// - 기대 결과: replace와 append cancellation ID가 모두 서로 다름
+    func testCollectionCancellationIDsAreScopedByLoadingOwner() throws {
+        let windowID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"))
+        var firstState = EntryViewLayoutState()
+        firstState.entryOperations.windowID = windowID
+        firstState.entryOperations.loadingCancellationOwnerID = try XCTUnwrap(
+            UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"),
+        )
+        var secondState = EntryViewLayoutState()
+        secondState.entryOperations.windowID = windowID
+        secondState.entryOperations.loadingCancellationOwnerID = try XCTUnwrap(
+            UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC"),
+        )
+
+        XCTAssertNotEqual(
+            EntryViewLayoutFeature.collectionCancelID(for: .replace, state: firstState),
+            EntryViewLayoutFeature.collectionCancelID(for: .replace, state: secondState),
+        )
+        XCTAssertNotEqual(
+            EntryViewLayoutFeature.collectionCancelID(for: .append(1), state: firstState),
+            EntryViewLayoutFeature.collectionCancelID(for: .append(1), state: secondState),
+        )
+    }
+
     /// EVM-002-set_entries_view_as_icon_grid: collection paths 제거는 items와 selection을 함께 정리함
     /// collection presentation에서 제거된 path가 display source와 selection state에서 빠지는지 검증한다.
     /// - 검증 내용: removeCollectionPaths 후 collectionItems, selectedIds, anchors, entries 확인

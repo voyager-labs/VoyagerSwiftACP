@@ -17,9 +17,15 @@ public struct EntryViewLayoutFeature {
 
     public init() {}
 
-    private enum CollectionCancelID: Hashable {
+    enum CollectionOperation: Hashable {
         case replace
         case append(Int)
+    }
+
+    struct CollectionCancelID: Hashable {
+        let windowID: UUID?
+        let ownerID: UUID
+        let operation: CollectionOperation
     }
 
     public var body: some Reducer<State, Action> {
@@ -230,8 +236,9 @@ public struct EntryViewLayoutFeature {
 
             case let .internal(.applyCollectionSearchPaths(paths, showHidden)):
                 let cancellationEffects = state.activeCollectionAppendExpectedBatchIndices.keys.map {
-                    Effect<Action>.cancel(id: CollectionCancelID.append($0))
+                    Effect<Action>.cancel(id: Self.collectionCancelID(for: .append($0), state: state))
                 }
+                let replaceCancelID = Self.collectionCancelID(for: .replace, state: state)
                 state.collectionReplaceEpoch &+= 1
                 let epoch = state.collectionReplaceEpoch
                 state.collectionItems = []
@@ -247,7 +254,7 @@ public struct EntryViewLayoutFeature {
 
                 return .merge(
                     cancellationEffects + [
-                        .cancel(id: CollectionCancelID.replace),
+                        .cancel(id: replaceCancelID),
                         Self.updateEntriesAndReapply(&state),
                         .run { [entryLoadingClient, priority] send in
                             do {
@@ -264,7 +271,7 @@ public struct EntryViewLayoutFeature {
                                 )))
                             }
                         }
-                        .cancellable(id: CollectionCancelID.replace, cancelInFlight: true),
+                        .cancellable(id: replaceCancelID, cancelInFlight: true),
                     ],
                 )
 
@@ -276,6 +283,7 @@ public struct EntryViewLayoutFeature {
                 let priority = Self.collectionMetadataPriority(for: state)
                 let showHiddenFiles = state.showHiddenFiles
                 state.activeCollectionAppendExpectedBatchIndices[token] = 0
+                let appendCancelID = Self.collectionCancelID(for: .append(token), state: state)
 
                 return .run { [entryLoadingClient, priority] send in
                     do {
@@ -295,7 +303,7 @@ public struct EntryViewLayoutFeature {
                         )))
                     }
                 }
-                .cancellable(id: CollectionCancelID.append(token))
+                .cancellable(id: appendCancelID)
 
             case let .internal(.collectionReplaceEvent(epoch, event)):
                 guard epoch == state.collectionReplaceEpoch,
@@ -366,8 +374,9 @@ public struct EntryViewLayoutFeature {
 
             case .internal(.clearCollectionPresentation):
                 let cancellationEffects = state.activeCollectionAppendExpectedBatchIndices.keys.map {
-                    Effect<Action>.cancel(id: CollectionCancelID.append($0))
+                    Effect<Action>.cancel(id: Self.collectionCancelID(for: .append($0), state: state))
                 }
+                let replaceCancelID = Self.collectionCancelID(for: .replace, state: state)
                 state.collectionReplaceEpoch &+= 1
                 state.isCollectionMode = false
                 state.collectionItems = []
@@ -380,7 +389,7 @@ public struct EntryViewLayoutFeature {
                 state.collectionIncompleteFailure = nil
                 state.removedCollectionPaths = []
                 return .merge(cancellationEffects + [
-                    .cancel(id: CollectionCancelID.replace),
+                    .cancel(id: replaceCancelID),
                     Self.updateEntriesAndReapply(&state),
                 ])
 
@@ -452,6 +461,17 @@ public struct EntryViewLayoutFeature {
                 }
             }
         }
+    }
+
+    nonisolated static func collectionCancelID(
+        for operation: CollectionOperation,
+        state: State,
+    ) -> CollectionCancelID {
+        CollectionCancelID(
+            windowID: state.entryOperations.windowID,
+            ownerID: state.entryOperations.loadingCancellationOwnerID,
+            operation: operation,
+        )
     }
 
     // MARK: - Helpers
