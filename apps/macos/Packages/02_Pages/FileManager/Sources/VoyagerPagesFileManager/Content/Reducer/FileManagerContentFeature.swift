@@ -183,7 +183,14 @@ public struct FileManagerContentFeature {
         _ action: Action,
         state: inout State,
     ) -> Effect<Action> {
-        guard case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(entries)))) = action else {
+        let entries: [EntryModel]
+        switch action {
+        case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(loadedEntries)))):
+            entries = loadedEntries
+        case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
+            guard case .coreBatch = streamEvent.event else { return .none }
+            entries = Array(state.entryViewLayout.entryOperations.loadingContext.items)
+        default:
             return .none
         }
         guard FileManagerContentEntryOpsCoordinator.applyPendingSelectionForLoadedEntries(

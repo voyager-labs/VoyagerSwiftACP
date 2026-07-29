@@ -243,6 +243,36 @@ final class FMW003PendingSelectionTests: XCTestCase {
         }
     }
 
+    /// FMW-003-handle_external_file_open_requests: 첫 core batch에 대상이 보이면 terminal 전에 선택한다.
+    /// - 사전 조건: pendingSelectEntryID 대상이 generation 1의 첫 core batch에 포함됨
+    /// - 기대 결과: pending을 지우고 대상 선택 및 selectionChanged를 즉시 발행함
+    func test_contentFeature_coreBatch_appliesPendingSelectionBeforeTerminal() async {
+        let targetID = "/test/doc.txt"
+        let entry = Self.makeEntry(fullPath: targetID)
+        var state = FileManagerContentState()
+        state.pendingSelectEntryID = targetID
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
+
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreBatch(items: [entry], batchIndex: 0),
+        )))))) {
+            $0.pendingSelectEntryID = nil
+            $0.entryViewLayout.selectedIds = Set([targetID])
+            $0.entryViewLayout.lastSelectedId = targetID
+            $0.entryViewLayout.rangeAnchorId = targetID
+            $0.entryViewLayout.shouldScrollToSelection = true
+        }
+        await store.receive { action in
+            guard case .entryViewLayout(.delegate(.selectionChanged)) = action else { return false }
+            return true
+        }
+    }
+
     /// FMW-003: pendingSelectEntryID가 nil인 경우 기존 동작 유지 (no-op).
     /// - 사전 조건: pendingSelectEntryID == nil
     /// - 기대 결과: state 변경 없음, 어떤 action도 수신하지 않음
