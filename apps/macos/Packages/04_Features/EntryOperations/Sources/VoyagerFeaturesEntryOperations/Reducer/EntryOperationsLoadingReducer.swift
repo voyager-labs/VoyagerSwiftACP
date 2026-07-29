@@ -151,13 +151,6 @@ public struct EntryOperationsLoadingReducer {
                 state.loadingContext.items = IdentifiedArray(uniqueElements: items)
                 state.isLoading = false
                 state.isReloading = false
-
-                if let renamingId = state.renamingItemId {
-                    let itemIds = Set(items.map(\.id))
-                    if !itemIds.contains(renamingId) {
-                        return .send(.edit(.cancelRename))
-                    }
-                }
                 return .none
 
             case let .loading(.streamEvent(streamEvent)):
@@ -195,7 +188,7 @@ public struct EntryOperationsLoadingReducer {
                     state.loadingContext.coreFinished = true
                     state.isLoading = false
                     state.isReloading = false
-                    return reconcileRenamingItem(&state)
+                    return .none
 
                 case let .metadataPatches(patches):
                     guard state.loadingContext.coreFinished else { return .none }
@@ -251,17 +244,6 @@ public struct EntryOperationsLoadingReducer {
             }
         }
     }
-}
-
-private func reconcileRenamingItem(
-    _ state: inout EntryOperationsLoadingReducer.State,
-) -> Effect<EntryOperationsLoadingReducer.Action> {
-    guard let renamingID = state.renamingItemId,
-          !state.loadingContext.items.ids.contains(renamingID)
-    else {
-        return .none
-    }
-    return .send(.edit(.cancelRename))
 }
 
 private extension EntryMetadataPatch {
