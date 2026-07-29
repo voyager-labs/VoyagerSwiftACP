@@ -1,9 +1,13 @@
 import type { FC } from "react"
-import { EntryThumbnail } from "./EntryThumbnail"
 import type { EntryThumbnailEntry } from "./EntryThumbnail"
+import { EntryThumbnail } from "./EntryThumbnail"
+
+export interface EntryThumbnailComparisonEntry extends EntryThumbnailEntry {
+  readonly label: string
+}
 
 export interface EntryThumbnailComparisonProps {
-  entries: readonly EntryThumbnailEntry[]
+  entries: readonly EntryThumbnailComparisonEntry[]
 }
 
 export const EntryThumbnailComparison: FC<EntryThumbnailComparisonProps> = ({ entries }) => (
@@ -12,7 +16,7 @@ export const EntryThumbnailComparison: FC<EntryThumbnailComparisonProps> = ({ en
       <span />
       {entries.map((entry) => (
         <span key={entry.id} className="comparison-kind">
-          {entry.kind}
+          {entry.label}
         </span>
       ))}
     </div>

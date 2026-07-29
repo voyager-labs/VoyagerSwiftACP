@@ -1,120 +1,111 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import type { EntryKind } from "../model/types"
+import { thumbnailComparisonEntries } from "../data/mock-data"
 import { EntryThumbnail } from "./EntryThumbnail"
-import type { EntryThumbnailEntry } from "./EntryThumbnail"
+import type { EntryThumbnailComparisonEntry } from "./EntryThumbnailComparison"
 import { EntryThumbnailComparison } from "./EntryThumbnailComparison"
-
-const entryKindEntries: readonly EntryThumbnailEntry[] = [
-  { id: "e01", kind: "pdf" },
-  { id: "e23", kind: "image" },
-  { id: "e20", kind: "folder" },
-  { id: "e53", kind: "sheet" },
-  { id: "e56", kind: "doc" },
-  { id: "e70", kind: "video" },
-  { id: "e40", kind: "archive" },
-]
+import { ThumbnailGallery } from "./ThumbnailGallery"
 
 const meta = {
   component: EntryThumbnail,
   tags: ["autodocs"],
   args: {
-    entry: entryKindEntries[0],
+    entry: thumbnailComparisonEntries[0],
     size: "regular",
   },
 } satisfies Meta<typeof EntryThumbnail>
 
 export default meta
-type Story = StoryObj<typeof meta>
 
-export const Pdf: Story = {}
-
-export const Image: Story = {
-  args: {
-    entry: entryKindEntries[1],
-  },
+// kind별 모든 배리에이션을 갤러리 그리드로 렌더링
+function renderKindVariations(kind: EntryKind, size?: "regular" | "small") {
+  const entries = thumbnailComparisonEntries.filter((e) => e.kind === kind)
+  return (
+    <div className="thumbnail-gallery">
+      <section className="gallery-section">
+        <div className="gallery-cards">
+          {entries.map((entry: EntryThumbnailComparisonEntry) => (
+            <div key={entry.id} className="gallery-card">
+              <span className="gallery-card-thumb">
+                <EntryThumbnail entry={entry} size={size} />
+              </span>
+              <span className="gallery-card-label">{entry.label}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  )
 }
 
-export const Folder: Story = {
-  args: {
-    entry: entryKindEntries[2],
-  },
+type VariationStory = StoryObj<typeof meta>
+
+export const Pdf: VariationStory = {
+  render: () => renderKindVariations("pdf"),
 }
 
-export const Sheet: Story = {
-  args: {
-    entry: entryKindEntries[3],
-  },
+export const Image: VariationStory = {
+  render: () => renderKindVariations("image"),
 }
 
-export const Doc: Story = {
-  args: {
-    entry: entryKindEntries[4],
-  },
+export const Folder: VariationStory = {
+  render: () => renderKindVariations("folder"),
 }
 
-export const Video: Story = {
-  args: {
-    entry: entryKindEntries[5],
-  },
+export const Sheet: VariationStory = {
+  render: () => renderKindVariations("sheet"),
 }
 
-export const Archive: Story = {
-  args: {
-    entry: entryKindEntries[6],
-  },
+export const Doc: VariationStory = {
+  render: () => renderKindVariations("doc"),
 }
 
-export const PdfSmall: Story = {
-  args: {
-    entry: entryKindEntries[0],
-    size: "small",
-  },
+export const Video: VariationStory = {
+  render: () => renderKindVariations("video"),
 }
 
-export const ImageSmall: Story = {
-  args: {
-    entry: entryKindEntries[1],
-    size: "small",
-  },
+export const Archive: VariationStory = {
+  render: () => renderKindVariations("archive"),
 }
 
-export const FolderSmall: Story = {
-  args: {
-    entry: entryKindEntries[2],
-    size: "small",
-  },
+export const PdfSmall: VariationStory = {
+  render: () => renderKindVariations("pdf", "small"),
 }
 
-export const SheetSmall: Story = {
-  args: {
-    entry: entryKindEntries[3],
-    size: "small",
-  },
+export const ImageSmall: VariationStory = {
+  render: () => renderKindVariations("image", "small"),
 }
 
-export const DocSmall: Story = {
-  args: {
-    entry: entryKindEntries[4],
-    size: "small",
-  },
+export const FolderSmall: VariationStory = {
+  render: () => renderKindVariations("folder", "small"),
 }
 
-export const VideoSmall: Story = {
-  args: {
-    entry: entryKindEntries[5],
-    size: "small",
-  },
+export const SheetSmall: VariationStory = {
+  render: () => renderKindVariations("sheet", "small"),
 }
 
-export const ArchiveSmall: Story = {
-  args: {
-    entry: entryKindEntries[6],
-    size: "small",
-  },
+export const DocSmall: VariationStory = {
+  render: () => renderKindVariations("doc", "small"),
+}
+
+export const VideoSmall: VariationStory = {
+  render: () => renderKindVariations("video", "small"),
+}
+
+export const ArchiveSmall: VariationStory = {
+  render: () => renderKindVariations("archive", "small"),
 }
 
 export const AllKindsAndSizes: StoryObj<{
   component: typeof EntryThumbnailComparison
-  args: { entries: readonly EntryThumbnailEntry[] }
+  args: { entries: readonly EntryThumbnailComparisonEntry[] }
 }> = {
-  render: () => <EntryThumbnailComparison entries={entryKindEntries} />,
+  render: () => <EntryThumbnailComparison entries={thumbnailComparisonEntries} />,
+}
+
+export const AllVariations: StoryObj<{
+  component: typeof ThumbnailGallery
+  args: { entries: readonly EntryThumbnailComparisonEntry[] }
+}> = {
+  render: () => <ThumbnailGallery entries={thumbnailComparisonEntries} />,
 }
