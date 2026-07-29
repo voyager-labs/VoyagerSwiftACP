@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { entryKindEntries } from "../data/mock-data"
+import { entryStoryFixtures } from "../data/mock-data"
 import { QuickLook } from "./QuickLook"
 
 const meta = {
@@ -9,17 +9,17 @@ const meta = {
     layout: "fullscreen",
   },
   args: {
-    entry: entryKindEntries[1],
+    entry: entryStoryFixtures.imagePreview,
   },
 } satisfies Meta<typeof QuickLook>
 
 export default meta
 type Story = StoryObj<typeof meta>
 
-export const ImageIcon: Story = {}
+export const ImageThumbnail: Story = {}
 
-export const PdfIcon: Story = {
+export const PdfThumbnail: Story = {
   args: {
-    entry: entryKindEntries[0],
+    entry: entryStoryFixtures.pdfPreview,
   },
 }

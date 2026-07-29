@@ -1,7 +1,7 @@
 import type { FC } from "react"
-import { Button } from "../UI/Controls/Button"
 import { EntryThumbnail } from "../Entries/EntryThumbnail"
 import type { EntryThumbnailEntry } from "../Entries/EntryThumbnail"
+import { Button } from "../UI/Controls/Button"
 import type { EntryKind } from "../model/types"
 
 export interface QuickLookEntry extends EntryThumbnailEntry {

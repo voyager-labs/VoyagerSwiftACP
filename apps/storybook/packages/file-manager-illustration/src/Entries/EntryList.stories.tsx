@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { entryKindEntries, files, selectedInitial } from "../data/mock-data"
+import { entryKindEntries, entryStoryFixtures, files, selectedInitial } from "../data/mock-data"
 import { EntryList } from "./EntryList"
 
 const meta = {
@@ -23,7 +23,7 @@ export const WithSelection: Story = {}
 export const AllEntryKinds: Story = {
   args: {
     entries: entryKindEntries,
-    selectedEntryIds: [entryKindEntries[1].id],
+    selectedEntryIds: [entryStoryFixtures.imageFallback.id],
   },
 }
 
