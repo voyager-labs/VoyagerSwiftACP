@@ -17,6 +17,9 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case toggleContentTabSelection(ContentTabID)
         case selectContentTabRange(to: ContentTabID)
         case collapseContentTabSelectionToActive
+        case pinContentTab(ContentTabID)
+        case unpinContentTab(ContentTabID)
+        case setSelectedContentTabsPinned(target: SelectedContentTabPinMutationTargetState)
         case entryDropRequested(FileManagerSidebarEntryDropRequest)
         case contentTabReorderRequested(
             sourceID: ContentTabID,
