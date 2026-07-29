@@ -1,4 +1,5 @@
 import type { FC } from "react"
+import { MenuItem } from "../atoms/MenuItem"
 import type { ContextMenuAction } from "../model/types"
 
 export interface ContextMenuProps {
@@ -9,16 +10,13 @@ export const ContextMenu: FC<ContextMenuProps> = ({ actions }) => {
   return (
     <div className="fm-context-menu" role="menu" aria-label="File context menu">
       {actions.map((action) => (
-        <button
+        <MenuItem
           key={action.id}
-          type="button"
-          role="menuitem"
+          label={action.label}
+          shortcut={action.shortcut}
+          destructive={action.destructive}
           disabled={action.disabled}
-          className={action.destructive ? "destructive" : undefined}
-        >
-          <span>{action.label}</span>
-          {action.shortcut ? <kbd>{action.shortcut}</kbd> : null}
-        </button>
+        />
       ))}
     </div>
   )

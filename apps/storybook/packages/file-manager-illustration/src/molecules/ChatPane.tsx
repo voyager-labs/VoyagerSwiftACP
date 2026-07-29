@@ -1,4 +1,5 @@
 import type { FC, FormEvent } from "react"
+import { IconButton } from "../atoms/IconButton"
 import type { Entry } from "../model/types"
 
 export interface ChatPaneProps {
@@ -34,7 +35,7 @@ export const ChatPane: FC<ChatPaneProps> = ({
         <span className="vc-composer-footer">
           <span>＋</span>
           <em>GPT-5.2</em>
-          <span className="vc-send-button">↑</span>
+          <IconButton aria-label="Send">↑</IconButton>
         </span>
       </label>
     </section>

@@ -46,31 +46,29 @@ export const FileToolbar: FC<FileToolbarProps> = ({
         <span className="toolbar-title-label">{title}</span>
         {content === "directory" && (
           <span className="toolbar-title-controls">
-            <button
-              className={`vc-icon-button${viewMode === "grid" ? " active" : ""}`}
-              type="button"
+            <IconButton
+              active={viewMode === "grid"}
               aria-label="Grid view"
               aria-pressed={viewMode === "grid"}
               onClick={() => onViewModeChange("grid")}
             >
               <FileManagerIcon name="grid" />
-            </button>
-            <button
-              className={`vc-icon-button${viewMode === "list" ? " active" : ""}`}
-              type="button"
+            </IconButton>
+            <IconButton
+              active={viewMode === "list"}
               aria-label="List view"
               aria-pressed={viewMode === "list"}
               onClick={() => onViewModeChange("list")}
             >
               <FileManagerIcon name="list" />
-            </button>
+            </IconButton>
             <span className="toolbar-control-divider" />
-            <button className="vc-icon-button" type="button" aria-label="Sort by name">
+            <IconButton aria-label="Sort by name">
               <FileManagerIcon name="sort" />
-            </button>
-            <button className="vc-icon-button" type="button" aria-label="Group by kind">
+            </IconButton>
+            <IconButton aria-label="Group by kind">
               <FileManagerIcon name="group" />
-            </button>
+            </IconButton>
           </span>
         )}
       </div>
