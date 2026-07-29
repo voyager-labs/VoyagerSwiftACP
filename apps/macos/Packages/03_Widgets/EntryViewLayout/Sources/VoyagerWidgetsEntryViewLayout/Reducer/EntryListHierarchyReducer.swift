@@ -248,10 +248,11 @@ struct EntryListHierarchyReducer {
     private static func metadataPriority(
         for arrangements: EntryArrangementsFeature.State,
     ) -> EntryMetadataPriority {
-        .active([
+        let probes = [
             EntryViewLayoutFeature.metadataProbe(for: arrangements.sortKey),
             EntryViewLayoutFeature.metadataProbe(for: arrangements.groupKey),
-        ].compactMap(\.self))
+        ].compactMap(\.self)
+        return probes.isEmpty ? .none : .active(probes)
     }
 
     private func apply(

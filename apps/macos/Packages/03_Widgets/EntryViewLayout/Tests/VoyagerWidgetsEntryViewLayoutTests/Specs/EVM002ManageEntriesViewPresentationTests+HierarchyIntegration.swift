@@ -110,6 +110,26 @@ extension EVM002ManageEntriesViewPresentationTests {
         }
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: 기본 정렬의 folder expansion은 metadata probe를 생략한다.
+    /// - 사전 조건: metadata facet을 요구하지 않는 이름 정렬과 group 없음 상태
+    /// - 기대 결과: folder load request가 `.none` priority를 사용함
+    func testDefaultFolderExpansionUsesNoMetadataPriority() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.hierarchy = .init(rootPath: "/root")
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.hierarchy(.folderExpansionRequested(id: folder.id)))
+        await store.receive { action in
+            guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
+            return request.id.folderID == folder.id && request.priority == .none
+        }
+    }
+
     /// 계층 projection의 child payload가 command와 selection에서 사용할 실제 EntryModel 목록으로 노출되는지 검증한다.
     func testVisibleSelectableEntriesIncludeNestedPayloads() {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
