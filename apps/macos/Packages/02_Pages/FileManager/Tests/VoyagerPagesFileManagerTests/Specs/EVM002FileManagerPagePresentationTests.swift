@@ -250,6 +250,44 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         }
     }
 
+    /// EVM-002-set_entries_view_as_list_table: in-flight append 정렬 변경 시 원본 path 유지
+    /// partial append를 취소하고 metadata reload를 시작해도 미도착 path는 보존하고 제거 path는 제외하는지 검증한다.
+    /// - 검증 내용: active append 원본 paths 병합과 remove lifecycle pruning
+    /// - 사전 조건: 세 path append 중 하나만 도착했고 다른 하나는 제거됨
+    /// - 기대 결과: 현재 item과 미도착 유효 path만 applyCollectionSearchPaths에 포함됨
+    func testMetadataSortChangePreservesInFlightAppendPathsExceptRemovedPaths() async {
+        let base = EntryModel.temporaryFolder(id: "/collection/base", name: "base")
+        let arrived = EntryModel.temporaryFolder(id: "/collection/arrived", name: "arrived")
+        let pendingPath = "/collection/pending"
+        let removedPath = "/collection/removed"
+        var layoutState = EntryViewLayoutState()
+        layoutState.isCollectionMode = true
+        layoutState.collectionItems = [base]
+        _ = EntryViewLayoutFeature().reduce(
+            into: &layoutState,
+            action: .internal(.addCollectionPaths([arrived.id, pendingPath, removedPath])),
+        )
+        layoutState.collectionItems.append(arrived)
+        _ = EntryViewLayoutFeature().reduce(
+            into: &layoutState,
+            action: .internal(.removeCollectionPaths([removedPath])),
+        )
+        var state = FileManagerContentState()
+        state.entryViewLayout = layoutState
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        // store.exhaustivity = .off: collection materialization stream은 append 원본 path 재사용 계약의 검증 대상이 아님
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryArrangements(.setSortKey(.kind)))) {
+            $0.entryViewLayout.entryArrangements.sortKey = .kind
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.internal(.applyCollectionSearchPaths(paths, _))) = action
+            else { return false }
+            return paths == [base.id, arrived.id, pendingPath]
+        }
+    }
+
     /// EVM-002-set_entries_view_as_list_table: metadata grouping 변경 시 현재 root와 expanded folder reload
     /// Tags 기반 grouping을 선택하면 기존 core-only payload를 현재 priority로 다시 materialize하는지 검증한다.
     /// - 검증 내용: folder root load와 hierarchy metadata reload 액션이 Tags 우선 priority를 사용함

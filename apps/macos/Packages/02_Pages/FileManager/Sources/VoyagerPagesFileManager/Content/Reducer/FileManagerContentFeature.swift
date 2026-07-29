@@ -171,9 +171,14 @@ public struct FileManagerContentFeature {
         guard !priority.probes.isEmpty else { return .none }
         let rootReloadEffect: Effect<Action>
         if state.entryViewLayout.isCollectionMode {
-            let sourcePaths = state.entryViewLayout.activeCollectionReplacePaths.isEmpty
+            let basePaths = state.entryViewLayout.activeCollectionReplacePaths.isEmpty
                 ? state.entryViewLayout.collectionItems.map(\.id)
                 : state.entryViewLayout.activeCollectionReplacePaths
+            let appendPaths = state.entryViewLayout.activeCollectionAppendPaths.keys.sorted().flatMap {
+                state.entryViewLayout.activeCollectionAppendPaths[$0] ?? []
+            }
+            var seenPaths = Set<String>()
+            let sourcePaths = (basePaths + appendPaths).filter { seenPaths.insert($0).inserted }
             rootReloadEffect = .send(.entryViewLayout(.internal(.applyCollectionSearchPaths(
                 paths: sourcePaths,
                 showHidden: state.entryViewLayout.showHiddenFiles,
