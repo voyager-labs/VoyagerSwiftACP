@@ -1,8 +1,8 @@
 import type { FC } from "react"
+import { LocationShortcuts } from "../Patterns/LocationShortcuts"
 import { FileManagerIcon } from "../UI/Display/FileManagerIcon"
 import { SidebarNavItem } from "../UI/Navigation/SidebarNavItem"
 import type { LocationShortcut, SidebarTabAction, SidebarTabItem } from "../model/types"
-import { LocationShortcuts } from "../Patterns/LocationShortcuts"
 
 export interface SidebarProps {
   readonly locationShortcuts: readonly LocationShortcut[]

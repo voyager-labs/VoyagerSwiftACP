@@ -72,7 +72,6 @@ export const Home: FC<HomeProps> = ({
           </div>
         </section>
       )}
-
     </section>
   )
 }

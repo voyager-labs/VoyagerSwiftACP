@@ -1,9 +1,9 @@
 import type { FC } from "react"
+import { FileBrowser } from "../Entries/FileBrowser"
+import type { EntryViewMode } from "../Patterns/FileToolbar"
 import type { ContentRoute } from "../model/content-route"
 import type { HomeFavorite, HomeLocation } from "../model/home"
 import type { Entry } from "../model/types"
-import type { EntryViewMode } from "../Patterns/FileToolbar"
-import { FileBrowser } from "../Entries/FileBrowser"
 import { Home } from "./Home"
 
 export interface FileManagerPrimaryContentProps {
@@ -31,12 +31,7 @@ export const FileManagerPrimaryContent: FC<FileManagerPrimaryContentProps> = ({
 }) => {
   switch (route.kind) {
     case "home":
-      return (
-        <Home
-          onFavoriteSelect={onFavoriteSelect}
-          onLocationSelect={onLocationSelect}
-        />
-      )
+      return <Home onFavoriteSelect={onFavoriteSelect} onLocationSelect={onLocationSelect} />
     case "browser":
       return (
         <FileBrowser
