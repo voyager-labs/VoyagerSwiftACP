@@ -162,7 +162,7 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
                     operator: "not_contains_all",
                     value: .array([.string("pdf"), .string("md")]),
                 ),
-                ["!(kMDItemFSName == \"*pdf*\")", "!(kMDItemFSName == \"*md*\")", " || "],
+                ["!(kMDItemFSName == \"*.pdf\")", "!(kMDItemFSName == \"*.md\")", " || "],
             ),
         ]
 

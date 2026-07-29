@@ -452,7 +452,10 @@ extension SpotlightQueryCompiler {
             operatorCode: condition.operator,
         )
         let comparisons = values.map { value in
-            "\(attribute) == \"*\(escapeLiteral(value))*\""
+            let pattern = condition.propertyKey == "extension"
+                ? token(for: value, propertyKey: condition.propertyKey)
+                : "*\(value)*"
+            return "\(attribute) == \"\(escapeLiteral(pattern))\""
         }
         switch condition.operator {
         case "any":
