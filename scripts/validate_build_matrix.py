@@ -175,6 +175,9 @@ ALLOWED_PROCESS_INFO_LITERAL_KEYS: dict[str, set[str]] = {
     "apps/macos/Packages/03_Widgets/EntryViewLayout/Package.swift": {
         "RUNNING_VIA_INJECTION_NEXT",
     },
+    "apps/macos/Packages/04_Features/Composer/Package.swift": {
+        "RUNNING_VIA_INJECTION_NEXT",
+    },
     "apps/macos/Hosts/SettingsHost/SettingsHostApp.swift": {
         "SETTINGS_HOST_RESET_PROGRESS",
         "SETTINGS_HOST_SCENARIO",
