@@ -671,7 +671,7 @@ public struct EntryViewLayoutFeature {
         if state.entryArrangements.groupKey == .tags {
             probes.append(.tags)
         }
-        return .active(probes)
+        return probes.isEmpty ? .none : .active(probes)
     }
 
     static func reconcileSelectionWithVisibleEntries(_ state: inout State) {

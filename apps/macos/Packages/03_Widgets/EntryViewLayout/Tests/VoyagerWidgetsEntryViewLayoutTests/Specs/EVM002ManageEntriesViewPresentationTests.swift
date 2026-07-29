@@ -948,6 +948,17 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         )
     }
 
+    /// EVM-002-set_entries_view_as_icon_grid: 기본 collection materialization은 metadata probe를 요청하지 않는다.
+    /// 이름 정렬과 grouping 없음인 기본 화면은 staged core loading만 수행해야 한다.
+    /// - 검증 내용: collection metadata priority의 probe 목록
+    /// - 사전 조건: name sort와 group none인 기본 EntryViewLayout state
+    /// - 기대 결과: priority는 `.none`이고 probe 목록이 비어 있음
+    func testDefaultCollectionMetadataPrioritySkipsProbes() {
+        let state = EntryViewLayoutState()
+
+        XCTAssertEqual(EntryViewLayoutFeature.collectionMetadataPriority(for: state), .none)
+    }
+
     /// EVM-002-set_entries_view_as_icon_grid: collection mode 중 collection items 갱신은 entries를 collection source로 맞춤
     /// collection mode가 켜진 상태의 collection items 설정이 entries와 arrangement source를 동기화하는지 검증한다.
     /// - 검증 내용: collection mode 상태의 items 설정과 reapply sequence 확인
