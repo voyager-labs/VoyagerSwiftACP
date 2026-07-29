@@ -15,6 +15,7 @@ struct EntryListHierarchyReducer {
 
             switch hierarchyAction {
             case let .rootContextChanged(path):
+                guard normalizedPath(path) != normalizedPath(state.hierarchy.rootPath) else { return .none }
                 let cancellationRequests = state.hierarchy.foldersByID.keys.map {
                     EntryFolderLoadRequest.RequestID(
                         rootContextGeneration: state.hierarchy.rootContextGeneration,

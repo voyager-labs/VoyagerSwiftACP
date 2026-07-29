@@ -419,6 +419,31 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertNil(store.state.entryOperations.renamingItem)
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: 동일 root reload는 hierarchy와 selection을 보존함
+    /// canonical path가 같은 rootContextChanged가 펼침 상태와 child cache를 초기화하지 않는지 검증한다.
+    /// - 검증 내용: same-root action 처리 후 hierarchy generation, expansion, cache, selection 유지
+    /// - 사전 조건: expanded folder child가 선택된 `/root` hierarchy와 canonical-equivalent `/root/./` action
+    /// - 기대 결과: reducer state가 변경되지 않고 후속 취소·selection clear action이 발생하지 않음
+    func testSameRootContextChangePreservesHierarchyAndSelection() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/folder", name: "folder")
+        let child = makeHierarchyIntegrationEntry(id: "/root/folder/child.txt", name: "child.txt")
+        var state = EntryViewLayoutState()
+        state.hierarchy = .init(
+            rootContextGeneration: 3,
+            rootPath: "/root",
+            expandedFolderIDs: [folder.id],
+            foldersByID: [folder.id: .init(children: [child], phase: .loaded, generation: 2)],
+        )
+        state.selectedIds = [child.id]
+        state.lastSelectedId = child.id
+        state.rangeAnchorId = child.id
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+
+        await store.send(.hierarchy(.rootContextChanged(path: "/root/./")))
+    }
+
     private func makeHierarchyIntegrationEntry(id: String, name: String) -> EntryModel {
         EntryModel(
             name: name,
