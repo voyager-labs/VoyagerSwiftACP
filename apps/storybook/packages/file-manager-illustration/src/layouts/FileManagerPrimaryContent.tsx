@@ -2,8 +2,8 @@ import type { FC } from "react"
 import type { ContentRoute } from "../model/content-route"
 import type { HomeFavorite, HomeLocation } from "../model/home"
 import type { Entry } from "../model/types"
-import type { EntryViewMode } from "../molecules/FileToolbar"
-import { FileBrowser } from "./FileBrowser"
+import type { EntryViewMode } from "../patterns/FileToolbar"
+import { FileBrowser } from "../entries/FileBrowser"
 import { Home } from "./Home"
 
 export interface FileManagerPrimaryContentProps {

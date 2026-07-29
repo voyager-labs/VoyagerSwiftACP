@@ -1,11 +1,11 @@
 import { useMemo } from "react"
 import type { FC } from "react"
 import type { Entry } from "../model/types"
-import { EntryGrid } from "../molecules/EntryGrid"
-import type { EntryGridEntry } from "../molecules/EntryGrid"
-import { EntryList } from "../molecules/EntryList"
-import type { EntryListEntry } from "../molecules/EntryList"
-import type { EntryViewMode } from "../molecules/FileToolbar"
+import { EntryGrid } from "./EntryGrid"
+import type { EntryGridEntry } from "./EntryGrid"
+import { EntryList } from "./EntryList"
+import type { EntryListEntry } from "./EntryList"
+import type { EntryViewMode } from "../patterns/FileToolbar"
 
 /* Structural map: Entry has the same shape as EntryGridEntry/EntryListEntry. */
 function toGridEntry(e: Entry): EntryGridEntry {

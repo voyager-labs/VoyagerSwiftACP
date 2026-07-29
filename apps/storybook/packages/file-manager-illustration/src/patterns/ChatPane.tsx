@@ -1,5 +1,5 @@
 import type { FC, FormEvent } from "react"
-import { IconButton } from "../atoms/IconButton"
+import { IconButton } from "../ui/controls/IconButton"
 import type { Entry } from "../model/types"
 
 export interface ChatPaneProps {

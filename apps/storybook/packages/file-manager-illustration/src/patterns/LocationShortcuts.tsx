@@ -1,5 +1,5 @@
 import type { FC } from "react"
-import { IconButton } from "../atoms/IconButton"
+import { IconButton } from "../ui/controls/IconButton"
 import type { LocationShortcutsProps } from "../model/types"
 
 export const LocationShortcuts: FC<LocationShortcutsProps> = ({ shortcuts, onSelect }) => {

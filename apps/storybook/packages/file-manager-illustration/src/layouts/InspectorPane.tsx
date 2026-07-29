@@ -1,5 +1,5 @@
 import type { FC } from "react"
-import { FileManagerIcon } from "../atoms/FileManagerIcon"
+import { FileManagerIcon } from "../ui/display/FileManagerIcon"
 import type { Entry } from "../model/types"
 
 export type InspectorChatHeader = "sessions" | "chat"

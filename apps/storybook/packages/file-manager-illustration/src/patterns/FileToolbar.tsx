@@ -1,6 +1,6 @@
 import type { FC } from "react"
-import { FileManagerIcon } from "../atoms/FileManagerIcon"
-import { IconButton } from "../atoms/IconButton"
+import { FileManagerIcon } from "../ui/display/FileManagerIcon"
+import { IconButton } from "../ui/controls/IconButton"
 
 export type EntryViewMode = "grid" | "list"
 

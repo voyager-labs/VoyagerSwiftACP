@@ -1,6 +1,6 @@
 import type { FC } from "react"
-import { EntryListRow } from "../atoms/EntryListRow"
-import type { EntryListRowEntry } from "../atoms/EntryListRow"
+import { EntryListRow } from "./EntryListRow"
+import type { EntryListRowEntry } from "./EntryListRow"
 import type { EntryKind } from "../model/types"
 
 export interface EntryListEntry extends EntryListRowEntry {

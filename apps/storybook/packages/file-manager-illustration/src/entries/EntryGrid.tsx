@@ -1,6 +1,6 @@
 import type { FC } from "react"
-import { EntryTile } from "../atoms/EntryTile"
-import type { EntryTileEntry } from "../atoms/EntryTile"
+import { EntryTile } from "./EntryTile"
+import type { EntryTileEntry } from "./EntryTile"
 import type { EntryKind } from "../model/types"
 
 export interface EntryGridEntry extends EntryTileEntry {

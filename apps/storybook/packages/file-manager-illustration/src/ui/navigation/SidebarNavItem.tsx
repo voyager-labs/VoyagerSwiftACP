@@ -1,5 +1,5 @@
 import type { FC } from "react"
-import type { SidebarNavItemProps } from "../model/types"
+import type { SidebarNavItemProps } from "../../model/types"
 import { SidebarIcon } from "./SidebarIcon"
 
 export const SidebarNavItem: FC<SidebarNavItemProps> = ({
