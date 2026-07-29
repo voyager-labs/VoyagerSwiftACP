@@ -29,6 +29,7 @@ struct FileManagerContentSyncReducer {
                         return .none
                     }
                     let normalizedPaths = paths.map(normalizedPath(for:))
+                    let affectedPaths = hierarchyAffectedPaths(for: normalizedPaths)
                     let removedPrefixes = removedPrefixes(for: events)
                     let normalizedCurrentPath = normalizedPath(for: path)
                     let expandedHasFolder = !state.entryViewLayout.hierarchy.expandedFolderIDs.isEmpty
@@ -41,7 +42,7 @@ struct FileManagerContentSyncReducer {
                     if coarseRefreshNeeded {
                         return .concatenate(
                             .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
-                                affectedPaths: normalizedPaths.map(parentPath(for:)),
+                                affectedPaths: affectedPaths,
                                 removedPrefixes: removedPrefixes,
                             )))),
                             FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
@@ -49,7 +50,7 @@ struct FileManagerContentSyncReducer {
                     }
                     return .concatenate(
                         .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
-                            affectedPaths: normalizedPaths.map(parentPath(for:)),
+                            affectedPaths: affectedPaths,
                             removedPrefixes: removedPrefixes,
                         )))),
                         FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
@@ -96,6 +97,14 @@ struct FileManagerContentSyncReducer {
 
     private func parentPath(for path: String) -> String {
         URL(fileURLWithPath: normalizedPath(for: path)).deletingLastPathComponent().path
+    }
+
+    private func hierarchyAffectedPaths(for normalizedPaths: [String]) -> [String] {
+        (normalizedPaths + normalizedPaths.map(parentPath(for:))).reduce(into: []) { paths, path in
+            if !paths.contains(path) {
+                paths.append(path)
+            }
+        }
     }
 
     private func normalizedPath(for path: String) -> String {

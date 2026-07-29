@@ -17,13 +17,14 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
     /// EVM-001-reload_directory_page_on_external_change: folder 내부 child path 변경 시 reload
     /// 현재 folder 경로 하위의 file 또는 nested child path가 외부에서 변경되면 현재 폴더를 reload하는지 검증.
-    /// - 검증 내용: folder route에서 child path 변경을 affected parent로 전달하고 loadItems 수신
+    /// - 검증 내용: folder route에서 child path 변경을 event path와 affected parent로 전달하고 loadItems 수신
     /// - 사전 조건: navigationState == .folder(fixtures/fixtures/texts/plain), showHiddenFiles == true
     /// - 기대 결과: removed prefix 없이 hierarchy invalidation 후 entryOperations.loading.loadItems 수신
     func testExternalFolderChildChangeReloadsCurrentFolder() async {
         let folderPath = Self.fixtureDir("texts/plain")
         let changedPath = "\(folderPath)/11.txt"
         let canonicalFolderPath = URL(fileURLWithPath: folderPath).standardizedFileURL.resolvingSymlinksInPath().path
+        let canonicalChangedPath = URL(fileURLWithPath: changedPath).standardizedFileURL.resolvingSymlinksInPath().path
         var state = FileManagerContentState()
         state.navigation.navigationState = .folder(folderPath)
         state.entryViewLayout.showHiddenFiles = true
@@ -33,7 +34,34 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.receive { action in
             guard case let .entryViewLayout(.hierarchy(.hierarchyInvalidated(affectedPaths, removedPrefixes))) = action
             else { return false }
-            return affectedPaths == [canonicalFolderPath] && removedPrefixes.isEmpty
+            return affectedPaths == [canonicalChangedPath, canonicalFolderPath] && removedPrefixes.isEmpty
+        }
+        await store.receive { action in
+            guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
+            return true
+        }
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: expanded folder 자체 변경 시 child cache reload
+    /// folder path 자체에 modified/rescan event가 발생해도 해당 folder hierarchy cache를 갱신하는지 검증한다.
+    /// - 검증 내용: changed folder path와 parent path를 hierarchy invalidation에 함께 전달
+    /// - 사전 조건: 현재 directory 아래 expanded folder path에 non-deletion event가 발생함
+    /// - 기대 결과: removed prefix 없이 folder path와 parent path가 affectedPaths에 포함됨
+    func testExternalExpandedFolderChangeInvalidatesFolderAndParent() async {
+        let folderPath = Self.fixtureDir("texts")
+        let changedFolderPath = Self.fixtureDir("texts/plain")
+        let canonicalFolderPath = URL(fileURLWithPath: folderPath).standardizedFileURL.resolvingSymlinksInPath().path
+        let canonicalChangedFolderPath = URL(fileURLWithPath: changedFolderPath).standardizedFileURL
+            .resolvingSymlinksInPath().path
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder(folderPath)
+        let store = makeStore(initialState: state)
+
+        await store.send(.externalFileSystemChanged(Self.externalChangeEvents([changedFolderPath])))
+        await store.receive { action in
+            guard case let .entryViewLayout(.hierarchy(.hierarchyInvalidated(affectedPaths, removedPrefixes))) = action
+            else { return false }
+            return affectedPaths == [canonicalChangedFolderPath, canonicalFolderPath] && removedPrefixes.isEmpty
         }
         await store.receive { action in
             guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
@@ -67,7 +95,8 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
                 guard case let .entryViewLayout(.hierarchy(.hierarchyInvalidated(affectedPaths, removedPrefixes))) =
                     action
                 else { return false }
-                return affectedPaths == [canonicalFolderPath] && removedPrefixes == [canonicalRemovedPath]
+                return affectedPaths == [canonicalRemovedPath, canonicalFolderPath]
+                    && removedPrefixes == [canonicalRemovedPath]
             }
             await store.receive { action in
                 guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
@@ -101,12 +130,14 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         var state = FileManagerContentState()
         state.navigation.navigationState = .recents
         state.entryViewLayout.showHiddenFiles = true
+        state.entryViewLayout.entryArrangements.sortKey = .kind
         let store = makeStore(initialState: state)
 
         await store.send(.externalFileSystemChanged(Self.externalChangeEvents([changedPath])))
         await store.receive { action in
-            guard case .entryViewLayout(.entryOperations(.loading(.loadRecentItems))) = action else { return false }
-            return true
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadRecentItems(showHidden, priority)))) =
+                action else { return false }
+            return showHidden && priority == .active([.spotlight])
         }
     }
 
@@ -119,12 +150,17 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         let changedPath = Self.fixturePath("texts/plain/11.txt")
         var state = FileManagerContentState()
         state.navigation.navigationState = .tags("Work")
+        state.entryViewLayout.entryArrangements.groupKey = .tags
         let store = makeStore(initialState: state)
 
         await store.send(.externalFileSystemChanged(Self.externalChangeEvents([changedPath])))
         await store.receive { action in
-            guard case .entryViewLayout(.entryOperations(.loading(.loadTagItems))) = action else { return false }
-            return true
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadTagItems(
+                tagName,
+                showHidden,
+                priority,
+            )))) = action else { return false }
+            return tagName == "Work" && !showHidden && priority == .active([.tags])
         }
     }
 
