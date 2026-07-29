@@ -189,44 +189,30 @@ extension ComposerHostSandbox {
 
     static func makeEntryLoadingClient(corpus: ComposerHostFixtureCorpus = .empty) -> EntryLoadingClient {
         let documentsPath = Self.documentsPath
-        let projectsPath = Self.projectsPath
         let downloadsPath = Self.downloadsPath
         let referenceDate = Self.referenceDate
-        let fixtureRootPath = corpus.entries.isEmpty ? nil : corpus.rootPath
         let corpusEntriesByPath = corpus.entriesByAbsolutePath
-        let existingPaths = Set([documentsPath, projectsPath, downloadsPath])
-            .union(corpusEntriesByPath.keys)
-            .union(fixtureRootPath.map { [$0] } ?? [])
-        let directories = Set([documentsPath, projectsPath, downloadsPath])
-            .union(corpus.entries.filter(\.isDirectory).map(\.absolutePath))
-            .union(fixtureRootPath.map { [$0] } ?? [])
-        var children = [
-            documentsPath: [URL(fileURLWithPath: "\(documentsPath)/Plans")],
-            projectsPath: [URL(fileURLWithPath: "\(projectsPath)/Composer")],
-            downloadsPath: [],
-        ]
-        for entry in corpus.entries {
-            let url = URL(fileURLWithPath: entry.absolutePath)
-            children[url.deletingLastPathComponent().path, default: []].append(url)
-        }
-        let childrenByDirectory = children.mapValues { urls in
-            urls.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-        }
-        let resolvedDocumentsPath = fixtureRootPath
-            .map { URL(fileURLWithPath: $0).appendingPathComponent("documents").path }
-            ?? documentsPath
-        let resolvedDownloadsPath = fixtureRootPath
-            .map { URL(fileURLWithPath: $0).appendingPathComponent("downloads").path }
-            ?? downloadsPath
+        let paths = entryLoadingPaths(corpus: corpus)
+        let childrenByDirectory = entryLoadingChildren(corpus: corpus)
+        let resolvedDocumentsPath = fixturePath(
+            rootPath: paths.root,
+            component: "documents",
+            fallback: documentsPath,
+        )
+        let resolvedDownloadsPath = fixturePath(
+            rootPath: paths.root,
+            component: "downloads",
+            fallback: downloadsPath,
+        )
         return .init(
             loadItems: { _, _ in [] },
             loadComputerItems: { [] },
             loadRecentItems: { _, _ in [] },
             loadFilesWithTag: { _, _, _ in [] },
-            fileExists: { existingPaths.contains($0) },
+            fileExists: { paths.existing.contains($0) },
             fileExistsAtPath: { path, isDirectory in
-                let exists = existingPaths.contains(path)
-                isDirectory?.pointee = ObjCBool(directories.contains(path))
+                let exists = paths.existing.contains(path)
+                isDirectory?.pointee = ObjCBool(paths.directories.contains(path))
                 return exists
             },
             contentsOfDirectory: { url, _, _ in childrenByDirectory[url.path] ?? [] },
@@ -241,7 +227,7 @@ extension ComposerHostSandbox {
                     []
                 }
             },
-            homeDirectory: { fixtureRootPath ?? "/Fixture" },
+            homeDirectory: { paths.root ?? "/Fixture" },
             getItemMetadata: { _, _, _ in
                 .init(kind: "Fixture", creatorApplication: nil, lastUsedDate: referenceDate)
             },
@@ -251,6 +237,45 @@ extension ComposerHostSandbox {
             isPackageDirectory: { corpusEntriesByPath[$0.path]?.isPackage == true },
             displayName: { path in URL(fileURLWithPath: path).lastPathComponent },
         )
+    }
+
+    private static func entryLoadingPaths(
+        corpus: ComposerHostFixtureCorpus,
+    ) -> EntryLoadingPaths {
+        let root = corpus.entries.isEmpty ? nil : corpus.rootPath
+        let synthetic = Set([documentsPath, projectsPath, downloadsPath])
+        return .init(
+            existing: synthetic.union(corpus.entriesByAbsolutePath.keys).union(root.map { [$0] } ?? []),
+            directories: synthetic
+                .union(corpus.entries.filter(\.isDirectory).map(\.absolutePath))
+                .union(root.map { [$0] } ?? []),
+            root: root,
+        )
+    }
+
+    private struct EntryLoadingPaths {
+        let existing: Set<String>
+        let directories: Set<String>
+        let root: String?
+    }
+
+    private static func entryLoadingChildren(corpus: ComposerHostFixtureCorpus) -> [String: [URL]] {
+        var children = [
+            documentsPath: [URL(fileURLWithPath: "\(documentsPath)/Plans")],
+            projectsPath: [URL(fileURLWithPath: "\(projectsPath)/Composer")],
+            downloadsPath: [],
+        ]
+        for entry in corpus.entries {
+            let url = URL(fileURLWithPath: entry.absolutePath)
+            children[url.deletingLastPathComponent().path, default: []].append(url)
+        }
+        return children.mapValues { urls in
+            urls.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+        }
+    }
+
+    private static func fixturePath(rootPath: String?, component: String, fallback: String) -> String {
+        rootPath.map { URL(fileURLWithPath: $0).appendingPathComponent(component).path } ?? fallback
     }
 
     static func makeFinderFavoritesTagClient() -> FinderFavoritesTagClient {
