@@ -46,6 +46,71 @@ struct ContentTabDuplicatePresentation: Equatable {
     }
 }
 
+struct ContentTabPinPresentation: Equatable {
+    enum Command: Equatable {
+        case pinContentTab(ContentTabID)
+        case unpinContentTab(ContentTabID)
+        case setSelectedContentTabsPinned(target: SelectedContentTabPinMutationTargetState)
+    }
+
+    let title: String
+    let accessibilityIdentifier: String
+    let isEnabled: Bool
+    let command: Command
+
+    init(
+        clickedTabID: ContentTabID,
+        isPinned: Bool,
+        validSelectedTabIDs: Set<ContentTabID>,
+        isPinMutationEnabled: Bool,
+        isSingleUnpinEnabled: Bool,
+    ) {
+        if validSelectedTabIDs.count > 1, validSelectedTabIDs.contains(clickedTabID) {
+            let target: SelectedContentTabPinMutationTargetState = isPinned ? .unpinned : .pinned
+            title = isPinned
+                ? "Unpin \(validSelectedTabIDs.count) Tabs"
+                : "Pin \(validSelectedTabIDs.count) Tabs"
+            accessibilityIdentifier = isPinned
+                ? "unpin-selected-content-tabs"
+                : "pin-selected-content-tabs"
+            isEnabled = isPinMutationEnabled
+            command = .setSelectedContentTabsPinned(target: target)
+        } else if isPinned {
+            title = "Unpin"
+            accessibilityIdentifier = "unpin-content-tab-\(clickedTabID)"
+            isEnabled = isSingleUnpinEnabled
+            command = .unpinContentTab(clickedTabID)
+        } else {
+            title = "Pin"
+            accessibilityIdentifier = "pin-content-tab-\(clickedTabID)"
+            isEnabled = true
+            command = .pinContentTab(clickedTabID)
+        }
+    }
+
+    var usesUnpinCommand: Bool {
+        switch command {
+        case .unpinContentTab,
+             .setSelectedContentTabsPinned(target: .unpinned):
+            true
+        case .pinContentTab,
+             .setSelectedContentTabsPinned(target: .pinned):
+            false
+        }
+    }
+
+    var delegateAction: FileManagerSidebarAction.Delegate {
+        switch command {
+        case let .pinContentTab(tabID):
+            .pinContentTab(tabID)
+        case let .unpinContentTab(tabID):
+            .unpinContentTab(tabID)
+        case let .setSelectedContentTabsPinned(target):
+            .setSelectedContentTabsPinned(target: target)
+        }
+    }
+}
+
 struct ContentTabClosePresentation: Equatable {
     enum Command: Equatable {
         case closeContentTab(ContentTabID)
@@ -438,6 +503,7 @@ struct SidebarView: View {
             currentTabIDs: Array(contentTabStore.tabs.ids),
             tabCount: contentTabStore.tabs.count,
         )
+        let pinPresentation = contentTabPinPresentation(for: item)
         let closePresentation = ContentTabClosePresentation(
             clickedTabID: item.id,
             isPinned: item.isPinned,
@@ -451,6 +517,7 @@ struct SidebarView: View {
             isDropTarget: sidebarEntryDropTarget == .contentTab(item.id),
             isSelected: contentTabSelectionPresentation.isSelected(item.id),
             duplicatePresentation: duplicatePresentation,
+            pinPresentation: pinPresentation,
             closePresentation: closePresentation,
             onActivate: {
                 sidebarStore.send(.delegate(.selectContentTab(item.id)))
@@ -464,12 +531,12 @@ struct SidebarView: View {
             onDuplicate: duplicatePresentation.isEnabled ? {
                 sidebarStore.send(.delegate(duplicatePresentation.delegateAction))
             } : nil,
-            onPin: {
-                sidebarStore.send(.delegate(.pinContentTab(item.id)))
-            },
-            onUnpin: {
-                sidebarStore.send(.delegate(closePresentation.delegateAction))
-            },
+            onPin: pinPresentation.isEnabled ? {
+                sidebarStore.send(.delegate(pinPresentation.delegateAction))
+            } : nil,
+            onUnpin: pinPresentation.isEnabled ? {
+                sidebarStore.send(.delegate(pinPresentation.delegateAction))
+            } : nil,
             onClose: {
                 sidebarStore.send(.delegate(.closeContentTab(item.id)))
             },
@@ -479,6 +546,18 @@ struct SidebarView: View {
             onHover: { isHovered in
                 contentTabHoveredItemID = isHovered ? item.id : nil
             },
+        )
+    }
+
+    private func contentTabPinPresentation(
+        for item: ContentTabProjection.ContentTabSidebarItem,
+    ) -> ContentTabPinPresentation {
+        ContentTabPinPresentation(
+            clickedTabID: item.id,
+            isPinned: item.isPinned,
+            validSelectedTabIDs: interactionStore.validSelectedTabIDs,
+            isPinMutationEnabled: interactionStore.isPinMutationEnabled,
+            isSingleUnpinEnabled: interactionStore.isCloseEnabled,
         )
     }
 
@@ -525,13 +604,14 @@ private struct ContentTabSidebarRow: View {
     let isDropTarget: Bool
     let isSelected: Bool
     let duplicatePresentation: ContentTabDuplicatePresentation
+    let pinPresentation: ContentTabPinPresentation
     let closePresentation: ContentTabClosePresentation
     let onActivate: () -> Void
     let onToggleSelection: () -> Void
     let onSelectRange: () -> Void
     let onDuplicate: (() -> Void)?
-    let onPin: () -> Void
-    let onUnpin: () -> Void
+    let onPin: (() -> Void)?
+    let onUnpin: (() -> Void)?
     let onClose: () -> Void
     let onContextMenuClose: () -> Void
     let onHover: (Bool) -> Void
@@ -553,10 +633,13 @@ private struct ContentTabSidebarRow: View {
             duplicateTitle: duplicatePresentation.title,
             duplicateAccessibilityIdentifier: duplicatePresentation.accessibilityIdentifier,
             isDuplicateEnabled: duplicatePresentation.isEnabled,
+            pinTitle: pinPresentation.title,
+            pinAccessibilityIdentifier: pinPresentation.accessibilityIdentifier,
+            isPinEnabled: pinPresentation.isEnabled,
             closeTitle: closePresentation.title,
             closeAccessibilityIdentifier: closePresentation.accessibilityIdentifier,
             isCloseEnabled: closePresentation.isEnabled,
-            usesUnpinCommand: closePresentation.usesUnpinCommand,
+            usesUnpinCommand: pinPresentation.usesUnpinCommand,
             onActivate: handlePrimaryAction,
             onToggleSelection: handleToggleSelection,
             onSelectRange: handleSelectRange,
@@ -634,6 +717,9 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
     let duplicateTitle: String
     let duplicateAccessibilityIdentifier: String
     let isDuplicateEnabled: Bool
+    let pinTitle: String
+    let pinAccessibilityIdentifier: String
+    let isPinEnabled: Bool
     let closeTitle: String
     let closeAccessibilityIdentifier: String
     let isCloseEnabled: Bool
@@ -642,8 +728,8 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
     let onToggleSelection: () -> Void
     let onSelectRange: () -> Void
     let onDuplicate: (() -> Void)?
-    let onPin: () -> Void
-    let onUnpin: () -> Void
+    let onPin: (() -> Void)?
+    let onUnpin: (() -> Void)?
     let onClose: () -> Void
 
     func makeNSView(context _: Context) -> ContentTabSidebarButton {
@@ -681,6 +767,9 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
             onClose: onClose,
             duplicateTitle: duplicateTitle,
             isDuplicateEnabled: isDuplicateEnabled,
+            pinTitle: pinTitle,
+            pinAccessibilityIdentifier: pinAccessibilityIdentifier,
+            isPinEnabled: isPinEnabled,
             closeTitle: closeTitle,
             closeAccessibilityIdentifier: closeAccessibilityIdentifier,
             isCloseEnabled: isCloseEnabled,
@@ -728,12 +817,15 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     private var onToggleSelection: () -> Void = {}
     private var onSelectRange: () -> Void = {}
     private var onDuplicate: (() -> Void)?
-    private var onPin: () -> Void = {}
-    private var onUnpin: () -> Void = {}
+    private var onPin: (() -> Void)?
+    private var onUnpin: (() -> Void)?
     private var onClose: () -> Void = {}
     private var duplicateTitle = "Duplicate"
     private var duplicateAccessibilityIdentifier = ""
     private var isDuplicateEnabled = true
+    private var pinTitle = "Pin"
+    private var pinAccessibilityIdentifier = ""
+    private var isPinEnabled = true
     private var closeTitle = "Close"
     private var closeAccessibilityIdentifier = ""
     private var isCloseEnabled = true
@@ -768,11 +860,14 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         onToggleSelection: @escaping () -> Void,
         onSelectRange: @escaping () -> Void,
         onDuplicate: (() -> Void)?,
-        onPin: @escaping () -> Void,
-        onUnpin: @escaping () -> Void,
+        onPin: (() -> Void)?,
+        onUnpin: (() -> Void)?,
         onClose: @escaping () -> Void,
         duplicateTitle: String = "Duplicate",
         isDuplicateEnabled: Bool = true,
+        pinTitle: String? = nil,
+        pinAccessibilityIdentifier: String = "",
+        isPinEnabled: Bool? = nil,
         closeTitle: String? = nil,
         closeAccessibilityIdentifier: String = "",
         isCloseEnabled: Bool? = nil,
@@ -789,6 +884,9 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         self.duplicateTitle = duplicateTitle
         self.duplicateAccessibilityIdentifier = duplicateAccessibilityIdentifier
         self.isDuplicateEnabled = isDuplicateEnabled
+        self.pinTitle = pinTitle ?? (isPinned ? "Unpin" : "Pin")
+        self.pinAccessibilityIdentifier = pinAccessibilityIdentifier
+        self.isPinEnabled = isPinEnabled ?? isEnabled
         self.closeTitle = closeTitle ?? (isPinned ? "Unpin" : "Close")
         self.closeAccessibilityIdentifier = closeAccessibilityIdentifier
         self.isCloseEnabled = isCloseEnabled ?? isEnabled
@@ -1041,18 +1139,19 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         duplicateItem.identifier = NSUserInterfaceItemIdentifier(duplicateAccessibilityIdentifier)
         duplicateItem.isEnabled = isDuplicateEnabled && onDuplicate != nil
         menu.addItem(duplicateItem)
-        let closeItem: NSMenuItem
-        if usesUnpinCommand {
-            closeItem = menuItem(title: closeTitle, action: #selector(unpin))
-        } else {
-            if !isPinned {
-                menu.addItem(menuItem(title: "Pin", action: #selector(pin)))
-            }
-            closeItem = menuItem(title: closeTitle, action: #selector(close))
+        let pinItem = menuItem(
+            title: pinTitle,
+            action: usesUnpinCommand ? #selector(unpin) : #selector(pin),
+        )
+        pinItem.identifier = NSUserInterfaceItemIdentifier(pinAccessibilityIdentifier)
+        pinItem.isEnabled = isPinEnabled && (usesUnpinCommand ? onUnpin != nil : onPin != nil)
+        menu.addItem(pinItem)
+        if !usesUnpinCommand {
+            let closeItem = menuItem(title: closeTitle, action: #selector(close))
+            closeItem.identifier = NSUserInterfaceItemIdentifier(closeAccessibilityIdentifier)
+            closeItem.isEnabled = isCloseEnabled
+            menu.addItem(closeItem)
         }
-        closeItem.identifier = NSUserInterfaceItemIdentifier(closeAccessibilityIdentifier)
-        closeItem.isEnabled = isCloseEnabled
-        menu.addItem(closeItem)
         return menu
     }
 
@@ -1068,12 +1167,13 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     }
 
     @objc private func pin() {
-        onPin()
+        guard isPinEnabled else { return }
+        onPin?()
     }
 
     @objc private func unpin() {
-        guard isCloseEnabled else { return }
-        onUnpin()
+        guard isPinEnabled else { return }
+        onUnpin?()
     }
 
     @objc private func close() {
