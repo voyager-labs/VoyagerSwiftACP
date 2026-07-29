@@ -6,6 +6,7 @@ import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
@@ -1181,6 +1182,122 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertEqual(cancellationCount.value, 1)
         XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
         XCTAssertNil(store.state.tabContentStates[inactiveID])
+    }
+
+    /// CTM-005-independent_content_tab_session: active tab 전환 시 nested folder stream 취소
+    /// 탭별 loading owner 경계가 root load뿐 아니라 확장 폴더의 staged stream도 종료하는지 검증한다.
+    /// - 검증 내용: previous A로 cancelAllFolderItems 전달과 A folder loading context 정리
+    /// - 사전 조건: A에 nested folder loading context가 있고 B Directory tab이 존재함
+    /// - 기대 결과: A의 context가 제거되고 B가 active로 복원됨
+    func testTabSwitchCancelsPreviousTabFolderLoad() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 1,
+            folderID: "/tmp/A/folder",
+            folderGeneration: 1,
+            path: "/tmp/A/folder",
+            showHidden: false,
+            priority: .none,
+        )
+        var contentA = makeCloseTestDirectoryContent(path: "/tmp/A")
+        contentA.entryViewLayout.entryOperations.folderLoadingContexts[request.id] = .init(request: request)
+        let state = makeCloseTestState(
+            tabs: [
+                makeCloseTestDirectoryTab(id: tabA, path: "/tmp/A", title: "A"),
+                makeCloseTestDirectoryTab(id: tabB, path: "/tmp/B", title: "B"),
+            ],
+            activeTabID: tabA,
+            contentStates: [
+                tabA: contentA,
+                tabB: makeCloseTestDirectoryContent(path: "/tmp/B"),
+            ],
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: handoff 부수 action보다 previous tab cancellation routing을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(tabB)))
+        await store.receive { action in
+            guard case .tabContent(
+                tabID: tabA,
+                action: .entryViewLayout(.entryOperations(.loading(.cancelAllFolderItems))),
+            ) = action else { return false }
+            return true
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabB)
+        XCTAssertEqual(
+            store.state.tabContentStates[tabA]?.entryViewLayout.entryOperations.folderLoadingContexts.isEmpty,
+            true,
+        )
+    }
+
+    /// CTM-005-independent_content_tab_session: inactive tab close 시 nested folder stream 취소
+    /// 제거되는 snapshot의 loading owner를 사용해 해당 탭의 확장 폴더 I/O까지 종료하는지 검증한다.
+    /// - 검증 내용: inactive B의 folder stream cancellation 1회와 active A session 보존
+    /// - 사전 조건: B의 nested folder stream이 대기 중이고 A Directory tab이 active임
+    /// - 기대 결과: B folder stream과 state만 제거되고 A는 active로 유지됨
+    func testInactiveCloseCancelsClosedTabFolderLoad() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let loadStarted = expectation(description: "folder load started")
+        let loadCancelled = expectation(description: "folder load cancelled")
+        let cancellationCount = LockIsolated(0)
+        let loadGate = AsyncStream<Void>.makeStream()
+        let state = makeCloseTestState(
+            tabs: [
+                makeCloseTestDirectoryTab(id: tabA, path: "/tmp/A", title: "A"),
+                makeCloseTestDirectoryTab(id: tabB, path: "/tmp/B", title: "B"),
+            ],
+            activeTabID: tabA,
+            contentStates: [
+                tabA: makeCloseTestDirectoryContent(path: "/tmp/A"),
+                tabB: makeCloseTestDirectoryContent(path: "/tmp/B"),
+            ],
+        )
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 1,
+            folderID: "/tmp/B/folder",
+            folderGeneration: 1,
+            path: "/tmp/B/folder",
+            showHidden: false,
+            priority: .none,
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.stagedLoadItems = nil
+            $0.entryLoadingClient.loadItems = { _, _ in
+                loadStarted.fulfill()
+                return await withTaskCancellationHandler {
+                    for await _ in loadGate.stream {}
+                    return []
+                } onCancel: {
+                    cancellationCount.withValue { $0 += 1 }
+                    loadGate.continuation.finish()
+                    loadCancelled.fulfill()
+                }
+            }
+        }
+        // store.exhaustivity = .off: inactive close 부수 action보다 closed tab folder stream cancellation을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.tabContent(
+            tabID: tabB,
+            action: .entryViewLayout(.entryOperations(.loading(.loadFolderItems(request)))),
+        ))
+        await fulfillment(of: [loadStarted], timeout: 1)
+        await store.send(.contentTabs(.close(tabB)))
+        await fulfillment(of: [loadCancelled], timeout: 1)
+        await store.finish()
+
+        XCTAssertEqual(cancellationCount.value, 1)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabA)
+        XCTAssertNil(store.state.tabContentStates[tabB])
     }
 
     /// CTM-005-independent_content_tab_session: inactive tab close 시 active load 보존

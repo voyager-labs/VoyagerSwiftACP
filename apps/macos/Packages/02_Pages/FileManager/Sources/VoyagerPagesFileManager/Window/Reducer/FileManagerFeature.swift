@@ -46,6 +46,24 @@ public struct FileManagerFeature {
                     )
                 }
 
+            case .contentTabs(.setCurrent):
+                guard let activeTabID = state.contentTabs.activeTabID else { return .none }
+                return .send(.tabContent(
+                    tabID: activeTabID,
+                    action: .entryViewLayout(.entryOperations(.loading(.cancelAllFolderItems))),
+                ))
+
+            case let .contentTabs(.close(tabID)):
+                guard let content = fileManagerContentState(for: tabID, state: state) else { return .none }
+                let entryOperations = content.entryViewLayout.entryOperations
+                return .merge(entryOperations.folderLoadingContexts.keys.map { requestID in
+                    .cancel(id: EntryOperationsFolderLoadingCancelID.loadFolderItems(
+                        requestID: requestID,
+                        windowID: entryOperations.windowID,
+                        ownerID: entryOperations.loadingCancellationOwnerID,
+                    ))
+                })
+
             case let .internal(.entryActionCompleted(tabID, record, expectedGeneration)):
                 guard record.operationKind.isUndoable,
                       let expectedGeneration,
