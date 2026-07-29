@@ -444,6 +444,48 @@ extension EVM002ManageEntriesViewPresentationTests {
         await store.send(.hierarchy(.rootContextChanged(path: "/root/./")))
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: 빈 sentinel에서 cwd folder root로 전환
+    /// hierarchy 비활성 sentinel과 process cwd가 canonical 비교에서 같은 root로 취급되지 않는지 검증한다.
+    /// - 검증 내용: rootContextChanged(cwd) 이후 generation과 rootPath 갱신
+    /// - 사전 조건: hierarchy.rootPath가 빈 sentinel임
+    /// - 기대 결과: hierarchy가 cwd root로 활성화됨
+    func testEmptyRootSentinelTransitionsToCurrentDirectoryRoot() async {
+        let currentDirectory = FileManager.default.currentDirectoryPath
+        let store = TestStore(initialState: EntryViewLayoutState()) {
+            EntryListHierarchyReducer()
+        }
+        // store.exhaustivity = .off: root 전환의 state contract만 검증하고 selection 후속 action은 별도 owner가 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.hierarchy(.rootContextChanged(path: currentDirectory))) {
+            $0.hierarchy = .init(rootContextGeneration: 1, rootPath: currentDirectory)
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: cwd folder root에서 빈 sentinel로 전환
+    /// 비폴더 route 진입 시 process cwd와 같던 hierarchy root도 반드시 비활성화되는지 검증한다.
+    /// - 검증 내용: rootContextChanged("") 이후 generation과 빈 rootPath 갱신
+    /// - 사전 조건: hierarchy.rootPath가 process cwd임
+    /// - 기대 결과: hierarchy가 빈 sentinel로 reset됨
+    func testCurrentDirectoryRootTransitionsToEmptySentinel() async {
+        let currentDirectory = FileManager.default.currentDirectoryPath
+        var state = EntryViewLayoutState()
+        state.hierarchy = .init(rootContextGeneration: 4, rootPath: currentDirectory)
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+        // store.exhaustivity = .off: root reset의 state contract만 검증하고 selection 후속 action은 별도 owner가 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.hierarchy(.rootContextChanged(path: ""))) {
+            $0.hierarchy = .init(rootContextGeneration: 5, rootPath: "")
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
     private func makeHierarchyIntegrationEntry(id: String, name: String) -> EntryModel {
         EntryModel(
             name: name,

@@ -323,7 +323,8 @@ struct EntryListHierarchyReducer {
     }
 
     private func normalizedPath(_ path: String) -> String {
-        URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+        guard !path.isEmpty else { return path }
+        return URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     private func pathComponents(for path: String) -> [String] {
