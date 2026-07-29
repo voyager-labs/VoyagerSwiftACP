@@ -265,7 +265,7 @@ private extension HistoricalConditionCompatibility {
         }
         guard scalarStringOperators.contains(operatorCode) else { return nil }
         let requiresPathEvaluation = propertyKey == "extension"
-            && ["cn", "nc", "sw", "ew", "rx"].contains(operatorCode)
+            && ["eq", "neq", "cn", "nc", "sw", "ew", "rx"].contains(operatorCode)
         return makeResolution(
             propertyKey: propertyKey,
             propertyType: .string,

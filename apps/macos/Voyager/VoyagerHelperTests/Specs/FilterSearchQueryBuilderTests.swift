@@ -73,18 +73,29 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         XCTAssertEqual(plan.pushdownConditions, [condition])
     }
 
-    func testConditionCompilerEqOnExtensionUsesMditemAttribute() throws {
+    func testConditionCompilerEqAndNeqOnExtensionUsePathExtension() throws {
         let compiler = try makeCompiler()
-        let condition = SearchConditionPayload(
-            propertyKey: "extension",
-            operator: "eq",
-            value: .string("pdf"),
-        )
+        let homeURL = URL(fileURLWithPath: "/Users/test", isDirectory: true)
 
-        let plan = try compiler.compilePlan(conditions: [condition])
+        for operatorCode in ["eq", "neq"] {
+            let condition = SearchConditionPayload(
+                propertyKey: "extension",
+                operator: operatorCode,
+                value: .string("pdf"),
+            )
+            let plan = try compiler.compilePlan(conditions: [condition])
 
-        XCTAssertTrue(plan.predicate.contains("kMDItemFSName == \"pdf\""))
-        XCTAssertEqual(plan.pushdownConditions, [condition])
+            XCTAssertEqual(plan.predicate, SpotlightQueryCompiler.basePredicate)
+            XCTAssertEqual(plan.pathConditions, [condition])
+            XCTAssertEqual(
+                HistoricalPathConditionEvaluator.matches(
+                    "/Users/test/Documents/report.pdf",
+                    conditions: plan.pathConditions,
+                    homeURL: homeURL,
+                ),
+                operatorCode == "eq",
+            )
+        }
     }
 
     func testConditionCompilerRestoresHistoricalOperatorProfiles() throws {
