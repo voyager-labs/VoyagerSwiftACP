@@ -155,6 +155,99 @@ func TestSocketDestinationTypesRemainUntouched(t *testing.T) {
 	}
 }
 
+func TestLifecycleLockRejectsUnsafePreexistingFiles(t *testing.T) {
+	setups := []struct {
+		name  string
+		setup func(*testing.T, string)
+	}{
+		{name: "permissive mode", setup: func(t *testing.T, path string) {
+			mustWriteFile(t, path, []byte("keep"), 0o600)
+			if err := os.Chmod(path, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "directory", setup: func(t *testing.T, path string) {
+			mustMkdir(t, path, 0o600)
+		}},
+		{name: "symlink", setup: func(t *testing.T, path string) {
+			target := path + "-target"
+			mustWriteFile(t, target, []byte("keep"), 0o600)
+			if err := os.Symlink(target, path); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "multiple links", setup: func(t *testing.T, path string) {
+			mustWriteFile(t, path, []byte("keep"), 0o600)
+			if err := os.Link(path, path+"-alias"); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+
+	for _, test := range setups {
+		t.Run(test.name, func(t *testing.T) {
+			root := secureTempDir(t)
+			path := filepath.Join(root, "entry.sock")
+			lockPath := path + ".lock"
+			test.setup(t, lockPath)
+			before, err := os.Lstat(lockPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := NewServer(path, entryruntime.New(), nil); err == nil {
+				t.Fatal("NewServer() succeeded with unsafe lifecycle lock")
+			}
+			after, err := os.Lstat(lockPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !os.SameFile(before, after) || before.Mode() != after.Mode() {
+				t.Fatal("unsafe lifecycle lock was replaced or changed")
+			}
+			if _, err := os.Lstat(path); !os.IsNotExist(err) {
+				t.Fatalf("socket Lstat error = %v, want not exist", err)
+			}
+		})
+	}
+}
+
+func TestLifecycleLockRequiresEffectiveOwner(t *testing.T) {
+	path := filepath.Join(secureTempDir(t), "entry.sock.lock")
+	lock, err := acquireLifecycleLock(path, os.Geteuid()+1)
+	if lock != nil || err == nil {
+		if lock != nil {
+			_ = lock.Close()
+		}
+		t.Fatalf("acquireLifecycleLock() = %#v, %v, want owner rejection", lock, err)
+	}
+}
+
+func TestSocketCreationFailsClosedUnderRestrictiveCallerUmask(t *testing.T) {
+	path := filepath.Join(secureTempDir(t), "entry.sock")
+	originalMask := syscall.Umask(0o777)
+	defer syscall.Umask(originalMask)
+
+	server, err := NewServer(path, entryruntime.New(), nil)
+	observedMask := syscall.Umask(0o777)
+	syscall.Umask(observedMask)
+	if server != nil || err == nil {
+		t.Fatalf("NewServer() = %#v, %v, want exact-mode startup failure", server, err)
+	}
+	if observedMask != 0o777 {
+		t.Fatalf("caller umask after NewServer() = %03o, want 777", observedMask)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("socket Lstat after failed startup = %v, want not exist", err)
+	}
+	lockInfo, err := os.Lstat(path + ".lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !lockInfo.Mode().IsRegular() || lockInfo.Mode().Perm() != 0o600 {
+		t.Fatalf("lifecycle lock mode = %v, want regular 0600", lockInfo.Mode())
+	}
+}
+
 func TestSocketModeAndReplacementSafeCleanup(t *testing.T) {
 	root := secureTempDir(t)
 	path := filepath.Join(root, "entry.sock")
@@ -189,9 +282,20 @@ func TestSocketOwnedCleanup(t *testing.T) {
 	root := secureTempDir(t)
 	path := filepath.Join(root, "entry.sock")
 	server := startServer(t, path, testDurations())
+	lockBefore, err := os.Lstat(path + ".lock")
+	if err != nil {
+		t.Fatal(err)
+	}
 	shutdownServer(t, server, nil)
 	if _, err := os.Lstat(path); !os.IsNotExist(err) {
 		t.Fatalf("socket Lstat after shutdown = %v, want not exist", err)
+	}
+	lockAfter, err := os.Lstat(path + ".lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(lockBefore, lockAfter) {
+		t.Fatal("shutdown removed or replaced the persistent lifecycle lock file")
 	}
 }
 
@@ -213,13 +317,58 @@ func TestSocketStartupRollback(t *testing.T) {
 		if _, err := os.Lstat(path); !os.IsNotExist(err) {
 			t.Fatalf("owned socket Lstat after rollback = %v, want not exist", err)
 		}
-		listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+		fresh, err := newServer(path, entryruntime.New(), nil, testDurations())
 		if err != nil {
-			t.Fatalf("listener remained open after rollback: %v", err)
+			t.Fatalf("lifecycle lock remained held after rollback: %v", err)
 		}
-		listener.SetUnlinkOnClose(false)
-		_ = listener.Close()
-		_ = os.Remove(path)
+		go func() { _ = fresh.Serve() }()
+		shutdownServer(t, fresh, nil)
+	})
+
+	t.Run("preserves replacement identity and mode without pathname chmod", func(t *testing.T) {
+		path := filepath.Join(secureTempDir(t), "entry.sock")
+		content := []byte("replacement")
+		var replacement os.FileInfo
+		server, err := newServerWithHooks(
+			path,
+			entryruntime.New(),
+			nil,
+			testDurations(),
+			serverStartupHooks{afterBind: func(path string, _ os.FileInfo) error {
+				if err := os.Remove(path); err != nil {
+					return err
+				}
+				if err := os.WriteFile(path, content, 0o644); err != nil {
+					return err
+				}
+				if err := os.Chmod(path, 0o644); err != nil {
+					return err
+				}
+				var err error
+				replacement, err = os.Lstat(path)
+				return err
+			}},
+		)
+		if err == nil || server != nil {
+			t.Fatalf("newServerWithHooks() = %#v, %v, want startup failure", server, err)
+		}
+		current, err := os.Lstat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if replacement == nil || !os.SameFile(replacement, current) {
+			t.Fatal("startup rollback removed or replaced non-owned destination")
+		}
+		if current.Mode().Perm() != 0o644 {
+			t.Fatalf("replacement mode = %o, want 644", current.Mode().Perm())
+		}
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != string(content) {
+			t.Fatalf("replacement content = %q, want %q", got, content)
+		}
 	})
 
 	t.Run("preserves replacement identity", func(t *testing.T) {

@@ -3,9 +3,14 @@ package unixsocket
 import (
 	"io"
 	"net"
+	"os"
+	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	entryruntime "github.com/voyager-labs/voyager-app/apps/entry-core/internal/runtime"
 )
 
 func TestShutdownGraceCompletion(t *testing.T) {
@@ -99,6 +104,93 @@ func TestShutdownBoundedFinalWait(t *testing.T) {
 	}
 	close(block)
 	_ = connection.Close()
+}
+
+func TestShutdownIsIdempotent(t *testing.T) {
+	server, _ := runningServer(t, nil, testDurations())
+	if err := server.Shutdown(nil); err != nil {
+		t.Fatalf("first Shutdown() error = %v", err)
+	}
+	if err := server.Shutdown(nil); err != nil {
+		t.Fatalf("second Shutdown() error = %v", err)
+	}
+}
+
+func TestConcurrentShutdownRunsCleanupOnce(t *testing.T) {
+	path := filepath.Join(secureTempDir(t), "entry.sock")
+	server := startServer(t, path, testDurations())
+	cleanupStarted := make(chan struct{})
+	releaseCleanup := make(chan struct{})
+	var cleanupSignal sync.Once
+	var cleanupCalls atomic.Int32
+	server.setBeforeRemove(func() {
+		cleanupCalls.Add(1)
+		cleanupSignal.Do(func() { close(cleanupStarted) })
+		<-releaseCleanup
+	})
+
+	shutdownResults := make(chan error, 2)
+	go func() { shutdownResults <- server.Shutdown(nil) }()
+	<-cleanupStarted
+	go func() { shutdownResults <- server.Shutdown(nil) }()
+	close(releaseCleanup)
+
+	for range 2 {
+		if err := <-shutdownResults; err != nil {
+			t.Fatalf("concurrent Shutdown() error = %v", err)
+		}
+	}
+	if calls := cleanupCalls.Load(); calls != 1 {
+		t.Fatalf("cleanup calls = %d, want 1", calls)
+	}
+
+	successor := startServer(t, path, testDurations())
+	if _, err := os.Lstat(path); err != nil {
+		t.Fatalf("inspect successor socket: %v", err)
+	}
+	shutdownServer(t, successor, nil)
+}
+
+func TestShutdownLifecycleLockBlocksSuccessorUntilCleanup(t *testing.T) {
+	path := filepath.Join(secureTempDir(t), "entry.sock")
+	server := startServer(t, path, testDurations())
+	validated := make(chan struct{})
+	resumeCleanup := make(chan struct{})
+	server.setBeforeRemove(func() {
+		close(validated)
+		<-resumeCleanup
+	})
+
+	shutdownDone := make(chan error, 1)
+	go func() { shutdownDone <- server.Shutdown(nil) }()
+	<-validated
+	if err := os.Remove(path); err != nil {
+		close(resumeCleanup)
+		t.Fatal(err)
+	}
+	successor, successorErr := newServer(path, entryruntime.New(), nil, testDurations())
+	if successor != nil {
+		_ = successor.listener.Close()
+		_ = os.Remove(path)
+	}
+	close(resumeCleanup)
+	shutdownErr := <-shutdownDone
+	if successorErr == nil {
+		t.Fatal("successor NewServer() succeeded while predecessor cleanup held the lifecycle lock")
+	}
+	if shutdownErr != nil {
+		t.Fatalf("Shutdown() error = %v", shutdownErr)
+	}
+
+	fresh := startServer(t, path, testDurations())
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSocket == 0 || info.Mode().Perm() != 0o600 {
+		t.Fatalf("fresh socket mode = %v, want socket 0600", info.Mode())
+	}
+	shutdownServer(t, fresh, nil)
 }
 
 func TestAcceptRaceDoesNotStartHandlerAfterStopping(t *testing.T) {

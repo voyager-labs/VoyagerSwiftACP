@@ -23,7 +23,10 @@ const (
 	serverFinalTimeout = 2 * time.Second
 )
 
-var errHandlersDidNotStop = errors.New("Unix socket handlers did not stop within the final deadline")
+var (
+	errHandlersDidNotStop = errors.New("Unix socket handlers did not stop within the final deadline")
+	bindUmaskMu           sync.Mutex
+)
 
 type serverDurations struct {
 	readTimeout  time.Duration
@@ -46,12 +49,13 @@ func defaultServerDurations() serverDurations {
 }
 
 type Server struct {
-	path      string
-	runtime   *entryruntime.Runtime
-	logger    *log.Logger
-	durations serverDurations
-	listener  *net.UnixListener
-	owned     os.FileInfo
+	path          string
+	runtime       *entryruntime.Runtime
+	logger        *log.Logger
+	durations     serverDurations
+	listener      *net.UnixListener
+	owned         os.FileInfo
+	lifecycleLock *os.File
 
 	mu              sync.Mutex
 	stopping        bool
@@ -59,8 +63,11 @@ type Server struct {
 	handle          func(net.Conn)
 	beforeAdmission func()
 	graceStarted    func()
+	beforeRemove    func()
 	handlers        sync.WaitGroup
 	acceptDone      chan struct{}
+	shutdownOnce    sync.Once
+	shutdownErr     error
 }
 
 func NewServer(path string, runtime *entryruntime.Runtime, logger *log.Logger) (*Server, error) {
@@ -81,39 +88,57 @@ func newServerWithHooks(
 	if runtime == nil {
 		return nil, errors.New("runtime is required")
 	}
-	parent, err := validateSocketPath(path, os.Geteuid())
+	effectiveUID := os.Geteuid()
+	parent, err := validateSocketParent(path, effectiveUID)
 	if err != nil {
 		return nil, err
 	}
-
-	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	lifecycleLock, err := acquireLifecycleLock(path+".lock", effectiveUID)
 	if err != nil {
-		return nil, fmt.Errorf("listen on Unix socket: %w", err)
+		return nil, err
+	}
+	failWithLock := func(cause error) (*Server, error) {
+		return nil, errors.Join(cause, lifecycleLock.Close())
+	}
+
+	currentParent, err := os.Lstat(filepath.Dir(path))
+	if err != nil {
+		return failWithLock(fmt.Errorf("reinspect Unix socket parent after locking: %w", err))
+	}
+	if !os.SameFile(parent, currentParent) {
+		return failWithLock(errors.New("Unix socket parent changed while acquiring lifecycle lock"))
+	}
+	if err := validateSecureDirectory(currentParent, effectiveUID); err != nil {
+		return failWithLock(err)
+	}
+	if err := validateSocketDestination(path); err != nil {
+		return failWithLock(err)
+	}
+
+	listener, err := listenUnixPrivate(path)
+	if err != nil {
+		return failWithLock(err)
 	}
 	listener.SetUnlinkOnClose(false)
 
 	owned, err := os.Lstat(path)
 	if err != nil {
-		_ = listener.Close()
-		return nil, fmt.Errorf("inspect bound Unix socket: %w", err)
+		closeErr := listener.Close()
+		return failWithLock(errors.Join(fmt.Errorf("inspect bound Unix socket: %w", err), closeErr))
 	}
 	rollback := func(cause error) (*Server, error) {
-		_ = listener.Close()
-		if cleanupErr := removeIfSame(path, owned); cleanupErr != nil {
-			return nil, errors.Join(cause, cleanupErr)
-		}
-		return nil, cause
+		closeErr := listener.Close()
+		cleanupErr := removeIfSame(path, owned, nil)
+		lockErr := lifecycleLock.Close()
+		return nil, errors.Join(cause, closeErr, cleanupErr, lockErr)
 	}
-	if owned.Mode()&os.ModeSocket == 0 {
-		return rollback(errors.New("bound destination is not a socket"))
+	if owned.Mode()&os.ModeSocket == 0 || owned.Mode().Perm() != 0o600 {
+		return rollback(errors.New("bound destination is not a socket with exact mode 0600"))
 	}
 	if hooks.afterBind != nil {
 		if err := hooks.afterBind(path, owned); err != nil {
 			return rollback(err)
 		}
-	}
-	if err := os.Chmod(path, 0o600); err != nil {
-		return rollback(fmt.Errorf("set Unix socket mode: %w", err))
 	}
 	current, err := os.Lstat(path)
 	if err != nil {
@@ -122,29 +147,57 @@ func newServerWithHooks(
 	if !os.SameFile(owned, current) || current.Mode()&os.ModeSocket == 0 || current.Mode().Perm() != 0o600 {
 		return rollback(errors.New("Unix socket identity or mode changed during startup"))
 	}
-	currentParent, err := os.Lstat(filepath.Dir(path))
+	currentParent, err = os.Lstat(filepath.Dir(path))
 	if err != nil || !os.SameFile(parent, currentParent) {
 		return rollback(errors.New("Unix socket parent changed during startup"))
 	}
-	if err := validateSecureDirectory(currentParent, os.Geteuid()); err != nil {
+	if err := validateSecureDirectory(currentParent, effectiveUID); err != nil {
 		return rollback(err)
 	}
 
 	server := &Server{
-		path:       path,
-		runtime:    runtime,
-		logger:     logger,
-		durations:  durations,
-		listener:   listener,
-		owned:      owned,
-		active:     make(map[net.Conn]struct{}),
-		acceptDone: make(chan struct{}),
+		path:          path,
+		runtime:       runtime,
+		logger:        logger,
+		durations:     durations,
+		listener:      listener,
+		owned:         owned,
+		lifecycleLock: lifecycleLock,
+		active:        make(map[net.Conn]struct{}),
+		acceptDone:    make(chan struct{}),
 	}
 	server.handle = server.handleConnection
 	return server, nil
 }
 
+func listenUnixPrivate(path string) (*net.UnixListener, error) {
+	bindUmaskMu.Lock()
+	originalMask := syscall.Umask(0o777)
+	syscall.Umask(originalMask | 0o177)
+	defer func() {
+		syscall.Umask(originalMask)
+		bindUmaskMu.Unlock()
+	}()
+
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	if err != nil {
+		return nil, fmt.Errorf("listen on Unix socket: %w", err)
+	}
+	return listener, nil
+}
+
 func validateSocketPath(path string, effectiveUID int) (os.FileInfo, error) {
+	parent, err := validateSocketParent(path, effectiveUID)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateSocketDestination(path); err != nil {
+		return nil, err
+	}
+	return parent, nil
+}
+
+func validateSocketParent(path string, effectiveUID int) (os.FileInfo, error) {
 	if !filepath.IsAbs(path) {
 		return nil, errors.New("Unix socket path must be absolute")
 	}
@@ -166,12 +219,16 @@ func validateSocketPath(path string, effectiveUID int) (os.FileInfo, error) {
 	if err := validateSecureDirectory(parent, effectiveUID); err != nil {
 		return nil, err
 	}
-	if _, err := os.Lstat(path); err == nil {
-		return nil, errors.New("Unix socket destination already exists")
-	} else if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("inspect Unix socket destination: %w", err)
-	}
 	return parent, nil
+}
+
+func validateSocketDestination(path string) error {
+	if _, err := os.Lstat(path); err == nil {
+		return errors.New("Unix socket destination already exists")
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect Unix socket destination: %w", err)
+	}
+	return nil
 }
 
 func validateSecureDirectory(info os.FileInfo, effectiveUID int) error {
@@ -279,6 +336,13 @@ func (server *Server) handleConnection(connection net.Conn) {
 }
 
 func (server *Server) Shutdown(force <-chan struct{}) error {
+	server.shutdownOnce.Do(func() {
+		server.shutdownErr = server.shutdown(force)
+	})
+	return server.shutdownErr
+}
+
+func (server *Server) shutdown(force <-chan struct{}) error {
 	server.mu.Lock()
 	server.stopping = true
 	server.runtime.BeginStopping()
@@ -331,14 +395,18 @@ func (server *Server) Shutdown(force <-chan struct{}) error {
 		}
 	}
 
-	cleanupErr := removeIfSame(server.path, server.owned)
+	server.mu.Lock()
+	beforeRemove := server.beforeRemove
+	server.mu.Unlock()
+	cleanupErr := removeIfSame(server.path, server.owned, beforeRemove)
+	lockErr := server.lifecycleLock.Close()
 	if closeErr != nil && !errors.Is(closeErr, net.ErrClosed) {
-		return errors.Join(closeErr, waitErr, cleanupErr)
+		return errors.Join(closeErr, waitErr, cleanupErr, lockErr)
 	}
-	return errors.Join(waitErr, cleanupErr)
+	return errors.Join(waitErr, cleanupErr, lockErr)
 }
 
-func removeIfSame(path string, owned os.FileInfo) error {
+func removeIfSame(path string, owned os.FileInfo, beforeRemove func()) error {
 	current, err := os.Lstat(path)
 	if os.IsNotExist(err) {
 		return nil
@@ -349,7 +417,12 @@ func removeIfSame(path string, owned os.FileInfo) error {
 	if !os.SameFile(owned, current) {
 		return nil
 	}
-	if err := os.Remove(path); err != nil {
+	if beforeRemove != nil {
+		beforeRemove()
+	}
+	if err := os.Remove(path); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("remove owned Unix socket: %w", err)
 	}
 	return nil
@@ -371,4 +444,10 @@ func (server *Server) setGraceStarted(graceStarted func()) {
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	server.graceStarted = graceStarted
+}
+
+func (server *Server) setBeforeRemove(beforeRemove func()) {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	server.beforeRemove = beforeRemove
 }
