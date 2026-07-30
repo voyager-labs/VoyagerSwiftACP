@@ -8,8 +8,17 @@ public struct FileManagerSidebarState: Equatable {
     var allFixedLocationItems: [FileManagerFixedLocationItem] = []
     var fixedLocationItems: [FileManagerFixedLocationItem] = []
     var hiddenFixedLocationItemIDs: Set<FileManagerFixedLocationItem.ID> = []
+    private var orderedTopNavigationItems: [FileManagerSidebarTopNavigationItem] = []
+    var topNavigationItems: [FileManagerSidebarTopNavigationItem] = []
+    var unpinnedContentTabItems: [ContentTabProjection.ContentTabSidebarItem] = ContentTabProjection
+        .sidebarItems(from: .withHomeTab())
     var contentTabSidebarItems: [ContentTabProjection.ContentTabSidebarItem] = ContentTabProjection
         .sidebarItems(from: .withHomeTab())
+    var topNavigationArrangementPresentation: FileManagerTopNavigationArrangementPresentation?
+
+    var showsTopNavigationDivider: Bool {
+        !topNavigationItems.isEmpty
+    }
 
     mutating func setFixedLocationItems(
         _ items: [FileManagerFixedLocationItem],
@@ -22,6 +31,11 @@ public struct FileManagerSidebarState: Equatable {
         applyFixedLocationVisibility()
     }
 
+    mutating func setOrderedTopNavigationItems(_ items: [FileManagerSidebarTopNavigationItem]) {
+        orderedTopNavigationItems = items
+        applyTopNavigationVisibility()
+    }
+
     mutating func setFixedLocationVisibility(id: FileManagerFixedLocationItem.ID, isVisible: Bool) {
         if isVisible {
             hiddenFixedLocationItemIDs.remove(id)
@@ -29,11 +43,13 @@ public struct FileManagerSidebarState: Equatable {
             hiddenFixedLocationItemIDs.insert(id)
         }
         applyFixedLocationVisibility()
+        applyTopNavigationVisibility()
     }
 
     mutating func setAllFixedLocationVisibility(_ isVisible: Bool) {
         hiddenFixedLocationItemIDs = isVisible ? [] : Set(allFixedLocationItems.map(\.id))
         applyFixedLocationVisibility()
+        applyTopNavigationVisibility()
     }
 
     func isFixedLocationVisible(_ id: FileManagerFixedLocationItem.ID) -> Bool {
@@ -42,5 +58,12 @@ public struct FileManagerSidebarState: Equatable {
 
     private mutating func applyFixedLocationVisibility() {
         fixedLocationItems = allFixedLocationItems.filter { !hiddenFixedLocationItemIDs.contains($0.id) }
+    }
+
+    private mutating func applyTopNavigationVisibility() {
+        topNavigationItems = orderedTopNavigationItems.filter { item in
+            guard case let .location(location) = item else { return true }
+            return !hiddenFixedLocationItemIDs.contains(location.id)
+        }
     }
 }

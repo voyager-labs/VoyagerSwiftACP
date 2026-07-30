@@ -10,7 +10,21 @@ public struct FileManagerSidebarFeature {
         FileManagerSidebarContentTabSyncReducer()
         FileManagerSidebarContentTabSelectionRoutingReducer()
         FileManagerSidebarEntryDropRoutingReducer()
-        FileManagerSidebarContentTabReorderRoutingReducer()
+        FileManagerSidebarTopNavigationReorderRoutingReducer()
+        FileManagerSidebarPresentationRoutingReducer()
+    }
+}
+
+@Reducer
+struct FileManagerSidebarPresentationRoutingReducer {
+    typealias State = FileManagerSidebarState
+    typealias Action = FileManagerSidebarAction
+
+    var body: some Reducer<State, Action> {
+        Reduce { _, action in
+            guard case .view(.dismissTopNavigationPresentation) = action else { return .none }
+            return .send(.delegate(.dismissTopNavigationPresentation))
+        }
     }
 }
 
@@ -72,18 +86,19 @@ struct FileManagerSidebarEntryDropRoutingReducer {
 }
 
 @Reducer
-struct FileManagerSidebarContentTabReorderRoutingReducer {
+struct FileManagerSidebarTopNavigationReorderRoutingReducer {
     typealias State = FileManagerSidebarState
     typealias Action = FileManagerSidebarAction
 
     var body: some Reducer<State, Action> {
         Reduce { _, action in
-            guard case let .view(.contentTabReorderRequested(sourceID, targetID, placement)) = action else {
+            guard case let .view(.fileManagerTopNavigationReorderRequested(sourceID, anchorID, placement)) = action
+            else {
                 return .none
             }
-            return .send(.delegate(.contentTabReorderRequested(
+            return .send(.delegate(.fileManagerTopNavigationReorderRequested(
                 sourceID: sourceID,
-                targetID: targetID,
+                anchorID: anchorID,
                 placement: placement,
             )))
         }
