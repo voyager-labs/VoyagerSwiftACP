@@ -5039,6 +5039,95 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-003-unpin_selected_content_tabs: Unpin terminal 뒤 authoritative Pin replay는 live runtime을 보존한다.
+    /// persistence 실패 중 바뀐 탐색·content·inspector가 오래된 persisted anchor로 되돌아가지 않는지 검증한다.
+    /// - 검증 내용: failed/superseded/cancelled의 durable Pin 복구와 runtime anchor/cache 보존
+    /// - 사전 조건: optimistic selected Unpin current item, 이전 persisted authoritative snapshot, terminal 전 peer 전환과 target
+    /// anchor 변경
+    /// - 기대 결과: Pin 상태·record·index는 복구되지만 최신 active/selection/anchor/content/inspector는 유지됨
+    func testUnpinSelectedRollbackReplaysAuthoritativePinWithoutReplacingLiveRuntime() async throws {
+        for terminal in SelectedPinReplacementTerminal.allCases {
+            try await assertUnpinAuthoritativeReplayPreservesRuntime(for: terminal)
+        }
+    }
+
+    private func assertUnpinAuthoritativeReplayPreservesRuntime(
+        for terminal: SelectedPinReplacementTerminal,
+    ) async throws {
+        let fixture = currentOptimisticSelectedUnpinFixture()
+        let completedResults = LockIsolated<[SelectedContentTabPinMutationResult]>([])
+        let store = TestStore(initialState: fixture.state) {
+            selectedPinMatrixReducer(completedResults: completedResults)
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+        }
+        // store.exhaustivity = .off: terminal 세부 action보다 authoritative replay 이후 durable/runtime 분리를 검증함
+        store.exhaustivity = .off
+
+        let previousRecord = try XCTUnwrap(fixture.rollback.previousPinnedRecord)
+        let peerRecord = try XCTUnwrap(fixture.state.contentTabs.pinnedRecords[fixture.peerID])
+        let authoritative = ContentTabState.restoringPinnedRecords(
+            from: ContentTabPinnedRecordStore(records: [previousRecord, peerRecord]),
+        ).state
+        await store.send(.contentTabs(.setCurrent(fixture.peerID)))
+        await store.skipReceivedActions()
+        await store.send(.contentTabs(.toggleSelection(fixture.tabID)))
+        await store.send(.contentTabs(.updateActivePageAnchor(fixture.tabID, fixture.changedAnchor)))
+        let liveState = store.state
+        await store.send(.performSelectedContentTabPinMutation(
+            operationID: fixture.operationID,
+            tabID: fixture.tabID,
+            action: selectedPinReplacementTerminalAction(
+                terminal,
+                tabID: fixture.tabID,
+                context: fixture.context,
+                rollback: fixture.rollback,
+            ),
+        ))
+        await store.skipReceivedActions()
+        await store.send(.applyAuthoritativePinnedContentTabs(authoritative))
+        await store.finish()
+
+        let label = "unpin-authoritative-\(terminal)"
+        guard let result = completedResults.value.first else {
+            return XCTFail("missing Unpin completion: \(label)")
+        }
+        XCTAssertEqual(result.failureCount, terminal == .failed ? 1 : 0, label)
+        XCTAssertEqual(result.remainingCount, terminal == .failed ? 0 : 1, label)
+        assertUnpinAuthoritativeRuntimeState(
+            store.state,
+            matches: liveState,
+            fixture: fixture,
+            previousRecord: previousRecord,
+            label: label,
+        )
+    }
+
+    private func assertUnpinAuthoritativeRuntimeState(
+        _ state: FileManagerFeature.State,
+        matches liveState: FileManagerFeature.State,
+        fixture: CurrentOptimisticSelectedUnpinFixture,
+        previousRecord: ContentTabPinnedRecord,
+        label: String,
+    ) {
+        XCTAssertNil(state.pendingSelectedContentTabPinMutation, label)
+        XCTAssertNil(state.deferredPinnedContentTabs, label)
+        XCTAssertNil(state.deferredPinnedContentTabsMode, label)
+        XCTAssertTrue(state.pendingRuntimePreservationRecords.isEmpty, label)
+        XCTAssertEqual(state.contentTabs.tabs[id: fixture.tabID]?.isPinned, true, label)
+        XCTAssertEqual(state.contentTabs.pinnedRecords[fixture.tabID], previousRecord, label)
+        XCTAssertEqual(state.contentTabs.tabs.index(id: fixture.tabID), fixture.rollback.previousTabIndex, label)
+        XCTAssertEqual(state.contentTabs.tabs[id: fixture.tabID]?.anchor, fixture.changedAnchor, label)
+        XCTAssertEqual(state.contentTabs.activeTabID, fixture.peerID, label)
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, liveState.contentTabs.selectedTabIDs, label)
+        XCTAssertEqual(state.contentTabs.selectionAnchorID, liveState.contentTabs.selectionAnchorID, label)
+        XCTAssertEqual(state.content, liveState.content, label)
+        XCTAssertEqual(state.tabContentStates, liveState.tabContentStates, label)
+        XCTAssertEqual(state.inspector, liveState.inspector, label)
+        XCTAssertEqual(state.tabInspectorStates, liveState.tabInspectorStates, label)
+    }
+
     // MARK: - CTM-003-pin_selected_content_tabs
 
     /// CTM-003-pin_selected_content_tabs: selected unpinned clicked row는 bulk Pin presentation을 노출한다.
@@ -6341,6 +6430,32 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         case cancelled
     }
 
+    private func selectedPinReplacementTerminalAction(
+        _ terminal: SelectedPinReplacementTerminal,
+        tabID: ContentTabID,
+        context: ContentTabPinnedRecordTerminalContext,
+        rollback: ContentTabPinnedRecordRollbackSnapshot,
+    ) -> ContentTabAction {
+        switch terminal {
+        case .failed:
+            .pinnedRecordSaveFailed(tabID: tabID, context: context, rollback: rollback)
+        case .superseded:
+            .pinnedRecordSaveNotApplied(
+                tabID: tabID,
+                context: context,
+                reason: .superseded,
+                rollback: rollback,
+            )
+        case .cancelled:
+            .pinnedRecordSaveNotApplied(
+                tabID: tabID,
+                context: context,
+                reason: .cancelled,
+                rollback: rollback,
+            )
+        }
+    }
+
     private enum SelectedPinMatrixError: Error {
         case persistenceFailed
     }
@@ -6428,7 +6543,10 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let state: FileManagerFeature.State
         let operationID: UUID
         let tabID: ContentTabID
+        let peerID: ContentTabID
+        let changedAnchor: ContentTabPageAnchor
         let context: ContentTabPinnedRecordTerminalContext
+        let rollback: ContentTabPinnedRecordRollbackSnapshot
     }
 
     private func currentOptimisticSelectedUnpinFixture() -> CurrentOptimisticSelectedUnpinFixture {
@@ -6439,17 +6557,23 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         guard var currentTab = state.contentTabs.tabs[id: tabID] else {
             preconditionFailure("Current selected Unpin tab must exist")
         }
+        let rollback = ContentTabPinnedRecordRollbackSnapshot(
+            previousIsPinned: currentTab.isPinned,
+            previousPinnedRecord: state.contentTabs.pinnedRecords[tabID],
+            previousTabIndex: state.contentTabs.tabs.index(id: tabID),
+        )
         state.contentTabs.tabs.remove(id: tabID)
         currentTab.isPinned = false
         state.contentTabs.tabs.append(currentTab)
         state.contentTabs.pinnedRecords.removeValue(forKey: tabID)
-        state.contentTabs.pendingPinnedRecordIDs.remove(tabID)
+        state.contentTabs.pendingPinnedRecordIDs.insert(tabID)
         let intentID = state.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)
         state.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
             operationID: operationID,
             target: .unpinned,
             orderedTargetIDs: [tabID],
             currentTabID: tabID,
+            currentItemRollbackSnapshot: rollback,
         )
         state.windowID = matrixOperationID(group: 8, offset: 3)
         state.syncContentTabSidebarItems()
@@ -6457,6 +6581,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             state: state,
             operationID: operationID,
             tabID: tabID,
+            peerID: fixture.orderedIDs[1],
+            changedAnchor: .directory(path: "/Users/test/Selected/UnpinChanged"),
             context: ContentTabPinnedRecordTerminalContext(
                 intentID: intentID,
                 generation: ContentTabPinnedRecordMutationGeneration(
@@ -6464,6 +6590,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                     value: matrixOperationID(group: 8, offset: 4),
                 ),
             ),
+            rollback: rollback,
         )
     }
 
