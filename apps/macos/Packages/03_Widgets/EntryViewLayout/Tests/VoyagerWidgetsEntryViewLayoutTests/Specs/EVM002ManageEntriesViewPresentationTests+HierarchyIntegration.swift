@@ -323,6 +323,40 @@ extension EVM002ManageEntriesViewPresentationTests {
         }
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: coarse invalidation은 expanded descendant cache를 모두 재로드한다.
+    /// ancestor path만 보고된 rescan에서도 중첩 folder snapshot이 stale로 남지 않는지 검증한다.
+    /// - 검증 내용: cached folder 전체 generation 증가와 expanded A/B loading 전환
+    /// - 사전 조건: A와 자식 B가 모두 expanded·loaded 상태임
+    /// - 기대 결과: A/B children을 비우고 각각 새 generation load를 시작함
+    func testCoarseInvalidationReloadsExpandedDescendantCaches() async {
+        let folderA = EntryModel.temporaryFolder(id: "/root/A", name: "A")
+        let folderB = EntryModel.temporaryFolder(id: "/root/A/B", name: "B")
+        let staleChild = makeHierarchyIntegrationEntry(id: "/root/A/B/stale.txt", name: "stale.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [folderA]
+        state.hierarchy = .init(
+            rootPath: "/root",
+            expandedFolderIDs: [folderA.id, folderB.id],
+            foldersByID: [
+                folderA.id: .init(children: [folderB], phase: .loaded, generation: 2),
+                folderB.id: .init(children: [staleChild], phase: .loaded, generation: 4),
+            ],
+        )
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+        // store.exhaustivity = .off: effect 순서보다 모든 cached descendant의 동기 state 전환을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.hierarchy(.coarseHierarchyInvalidated(removedPrefixes: []))) {
+            $0.hierarchy.foldersByID[folderA.id] = .init(phase: .loading, generation: 3)
+            $0.hierarchy.foldersByID[folderB.id] = .init(phase: .loading, generation: 5)
+            $0.outlineProjectionRevision = 3
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
     /// EVM-002-update_entry_selection: nested child context menu는 visible hierarchy row를 현재 대상으로 사용한다.
     /// expanded child를 우클릭한 뒤 Rename이 root-only snapshot 때문에 no-op 되지 않는지 검증한다.
     /// - 검증 내용: child row context menu target의 Rename delegate action

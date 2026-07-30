@@ -38,6 +38,15 @@ struct EntryListHierarchyReducer {
                 return invalidateHierarchy(
                     affectedPaths: affectedPaths,
                     removedPrefixes: removedPrefixes,
+                    reloadCachedFolders: false,
+                    state: &state,
+                )
+
+            case let .coarseHierarchyInvalidated(removedPrefixes):
+                return invalidateHierarchy(
+                    affectedPaths: [],
+                    removedPrefixes: removedPrefixes,
+                    reloadCachedFolders: true,
                     state: &state,
                 )
 
@@ -128,6 +137,7 @@ struct EntryListHierarchyReducer {
     private func invalidateHierarchy(
         affectedPaths: [String],
         removedPrefixes: [String],
+        reloadCachedFolders: Bool,
         state: inout State,
     ) -> Effect<Action> {
         let removedIDs = Set(state.hierarchy.foldersByID.keys.filter { id in
@@ -144,6 +154,10 @@ struct EntryListHierarchyReducer {
         for id in removedIDs {
             state.hierarchy.expandedFolderIDs.remove(id)
             state.hierarchy.foldersByID[id] = nil
+        }
+
+        if reloadCachedFolders {
+            return .merge(effects + [reloadFoldersForPresentationChange(state: &state)])
         }
 
         var affectedIDs = Set<EntryModel.ID>()
