@@ -5,6 +5,7 @@ import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 @Reducer
 struct FileManagerContentSyncReducer {
@@ -31,28 +32,15 @@ struct FileManagerContentSyncReducer {
                     let normalizedPaths = paths.map(normalizedPath(for:))
                     let affectedPaths = hierarchyAffectedPaths(for: normalizedPaths)
                     let removedPrefixes = removedPrefixes(for: events)
-                    let normalizedCurrentPath = normalizedPath(for: path)
-                    let expandedHasFolder = !state.entryViewLayout.hierarchy.expandedFolderIDs.isEmpty
-                    let coarseRefreshNeeded = normalizedPaths.count == 1
-                        && expandedHasFolder
-                        && isProperAncestor(
-                            normalizedPaths[0],
-                            of: normalizedCurrentPath,
-                        )
-                    if coarseRefreshNeeded {
-                        return .concatenate(
-                            .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
-                                affectedPaths: affectedPaths,
-                                removedPrefixes: removedPrefixes,
-                            )))),
-                            FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
-                        )
-                    }
-                    return .concatenate(
-                        .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                    let hierarchyAction: EntryListHierarchyAction = events
+                        .contains(where: requiresCoarseHierarchyReload)
+                        ? .coarseHierarchyInvalidated(removedPrefixes: removedPrefixes)
+                        : .hierarchyInvalidated(
                             affectedPaths: affectedPaths,
                             removedPrefixes: removedPrefixes,
-                        )))),
+                        )
+                    return .concatenate(
+                        .send(.entryViewLayout(.hierarchy(hierarchyAction))),
                         FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
                     )
 
@@ -88,13 +76,6 @@ struct FileManagerContentSyncReducer {
         return pathComponents.starts(with: ancestorComponents)
     }
 
-    private func isProperAncestor(_ candidate: String, of path: String) -> Bool {
-        let candidateComponents = URL(fileURLWithPath: candidate).pathComponents
-        let pathComponents = URL(fileURLWithPath: path).pathComponents
-        return candidateComponents.count < pathComponents.count
-            && pathComponents.starts(with: candidateComponents)
-    }
-
     private func parentPath(for path: String) -> String {
         URL(fileURLWithPath: normalizedPath(for: path)).deletingLastPathComponent().path
     }
@@ -118,6 +99,14 @@ struct FileManagerContentSyncReducer {
             guard removesItem || renamesItem else { return nil }
             return normalizedPath(for: event.path)
         })).sorted()
+    }
+
+    private func requiresCoarseHierarchyReload(_ event: FileChangeGatewayEvent) -> Bool {
+        [
+            kFSEventStreamEventFlagMustScanSubDirs,
+            kFSEventStreamEventFlagUserDropped,
+            kFSEventStreamEventFlagKernelDropped,
+        ].contains { event.flags & UInt32($0) != 0 }
     }
 
     private func collectionPathsAffectCurrentContext(_ paths: [String], state: State) -> Bool {

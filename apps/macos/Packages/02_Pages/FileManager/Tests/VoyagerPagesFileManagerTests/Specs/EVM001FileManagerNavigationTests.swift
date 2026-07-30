@@ -69,6 +69,34 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
     }
 
+    /// EVM-001-reload_directory_page_on_external_change: coarse rescan flag는 hierarchy cache 전체 reload로 전달된다.
+    /// ancestor path 하나만 포함한 dropped event가 expanded descendant cache를 남기지 않는지 검증한다.
+    /// - 검증 내용: MustScanSubDirs event가 coarseHierarchyInvalidated action을 생성함
+    /// - 사전 조건: 현재 folder 아래 expanded hierarchy가 있고 root path에 coarse event가 도착함
+    /// - 기대 결과: removed prefix 없이 coarse hierarchy invalidation 후 root load가 이어짐
+    func testCoarseExternalChangeRequestsCachedHierarchyReload() async {
+        let folderPath = Self.fixtureDir("texts")
+        let expandedFolderPath = Self.fixtureDir("texts/plain")
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder(folderPath)
+        state.entryViewLayout.hierarchy.expandedFolderIDs = [expandedFolderPath]
+        let store = makeStore(initialState: state)
+
+        await store.send(.externalFileSystemChanged(Self.externalChangeEvents(
+            [folderPath],
+            flags: UInt32(kFSEventStreamEventFlagMustScanSubDirs),
+        )))
+        await store.receive { action in
+            guard case let .entryViewLayout(.hierarchy(.coarseHierarchyInvalidated(removedPrefixes))) = action
+            else { return false }
+            return removedPrefixes.isEmpty
+        }
+        await store.receive { action in
+            guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
+            return true
+        }
+    }
+
     /// EVM-001-reload_directory_page_on_external_change: expanded folder 외부 삭제·rename 시 hierarchy identity 제거
     /// watcher의 remove·rename event가 parent reload뿐 아니라 사라진 folder cache prefix도 전달하는지 검증한다.
     /// - 검증 내용: identity 변경 path의 parent affected path와 removed prefix 분리
