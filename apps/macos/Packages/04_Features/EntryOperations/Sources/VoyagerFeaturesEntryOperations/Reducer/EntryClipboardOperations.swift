@@ -373,7 +373,6 @@ private enum EntryClipboardOperationsSupport {
                     destinationURL: destinationURL,
                     reservedBasenames: reservedBasenames,
                     entryFileOpsClient: entryFileOpsClient,
-                    operation: operation,
                 )
             }
 
@@ -389,7 +388,6 @@ private enum EntryClipboardOperationsSupport {
         destinationURL: URL,
         reservedBasenames: Set<String>,
         entryFileOpsClient: EntryFileOpsClient,
-        operation: ClipboardOperation,
     ) -> URL {
         let nameWithoutExtension = URL(fileURLWithPath: baseName)
             .deletingPathExtension()
@@ -408,8 +406,7 @@ private enum EntryClipboardOperationsSupport {
             }
             let candidate = destinationURL.appendingPathComponent(name)
             let reserved = reservedBasenames.contains(candidate.lastPathComponent)
-            let filesystemCollision = operation == .copy
-                && entryFileOpsClient.fileExists(candidate.path)
+            let filesystemCollision = entryFileOpsClient.fileExists(candidate.path)
             if !reserved, !filesystemCollision {
                 return candidate
             }

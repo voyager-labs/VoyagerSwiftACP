@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+import VoyagerWidgetsEntryViewLayout
 
 @Reducer
 public struct FileManagerFeature {
@@ -45,6 +46,47 @@ public struct FileManagerFeature {
                         undoManagerGeneration: generation,
                     )
                 }
+
+            case let .contentTabs(.setCurrent(targetTabID)):
+                guard let activeTabID = state.contentTabs.activeTabID,
+                      state.contentTabs.tabs[id: targetTabID] != nil,
+                      targetTabID != activeTabID
+                else { return .none }
+                return .merge(
+                    .send(.tabContent(
+                        tabID: activeTabID,
+                        action: .entryViewLayout(.entryOperations(.loading(.cancelAllFolderItems))),
+                    )),
+                    .send(.tabContent(
+                        tabID: activeTabID,
+                        action: .entryViewLayout(.internal(.cancelCollectionMaterialization)),
+                    )),
+                )
+
+            case let .contentTabs(.close(tabID)):
+                guard let content = fileManagerContentState(for: tabID, state: state) else { return .none }
+                let entryOperations = content.entryViewLayout.entryOperations
+                let folderCancellationEffects = entryOperations.folderLoadingContexts.keys.map { requestID in
+                    Effect<Action>.cancel(id: EntryOperationsFolderLoadingCancelID.loadFolderItems(
+                        requestID: requestID,
+                        windowID: entryOperations.windowID,
+                        ownerID: entryOperations.loadingCancellationOwnerID,
+                    ))
+                }
+                let appendCancellationEffects = content.entryViewLayout
+                    .activeCollectionAppendExpectedBatchIndices.keys.map { token in
+                        Effect<Action>.cancel(id: EntryViewLayoutCollectionCancelID.append(
+                            token: token,
+                            windowID: entryOperations.windowID,
+                            ownerID: entryOperations.loadingCancellationOwnerID,
+                        ))
+                    }
+                return .merge(folderCancellationEffects + appendCancellationEffects + [
+                    .cancel(id: EntryViewLayoutCollectionCancelID.replace(
+                        windowID: entryOperations.windowID,
+                        ownerID: entryOperations.loadingCancellationOwnerID,
+                    )),
+                ])
 
             case let .internal(.entryActionCompleted(tabID, record, expectedGeneration)):
                 guard record.operationKind.isUndoable,

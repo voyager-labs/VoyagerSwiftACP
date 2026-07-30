@@ -114,6 +114,32 @@ public enum FileChangeScopePolicy {
         return URL(fileURLWithPath: path).standardizedFileURL.path
     }
 
+    nonisolated public static func canonicalPath(_ path: String) -> String {
+        var pendingComponents = Array((normalizedPath(path) as NSString).pathComponents.dropFirst())
+        var resolvedURL = URL(fileURLWithPath: "/")
+        var resolvedSymlinkCount = 0
+
+        while let component = pendingComponents.first {
+            pendingComponents.removeFirst()
+            let candidateURL = resolvedURL.appendingPathComponent(component)
+            guard resolvedSymlinkCount < 40,
+                  let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: candidateURL.path)
+            else {
+                resolvedURL = candidateURL
+                continue
+            }
+
+            pendingComponents = symlinkDestinationComponents(
+                destination,
+                relativeTo: resolvedURL,
+            ) + pendingComponents
+            resolvedURL = URL(fileURLWithPath: "/")
+            resolvedSymlinkCount += 1
+        }
+
+        return resolvedURL.path
+    }
+
     nonisolated public static func normalizedAbsolutePaths(_ paths: [String]) -> [String] {
         Array(Set(paths.filter { !$0.isEmpty && $0.hasPrefix("/") }.map(normalizedPath))).sorted()
     }
@@ -160,14 +186,35 @@ public enum FileChangeScopePolicy {
     }
 
     nonisolated public static func affects(root: String, path: String, includeSubfolders: Bool) -> Bool {
-        let root = normalizedPath(root)
-        let path = normalizedPath(path)
+        let root = canonicalPath(root)
+        let path = canonicalPath(path)
         guard !root.isEmpty, !path.isEmpty else { return false }
         if includeSubfolders == false {
-            return path == root || URL(fileURLWithPath: path).deletingLastPathComponent().standardizedFileURL
-                .path == root
+            return path == root || (path as NSString).deletingLastPathComponent == root
         }
         return path == root || (root == "/" ? path.hasPrefix("/") : path.hasPrefix(root + "/"))
+    }
+
+    nonisolated private static func symlinkDestinationComponents(
+        _ destination: String,
+        relativeTo resolvedURL: URL,
+    ) -> [String] {
+        var components = destination.hasPrefix("/")
+            ? []
+            : Array((resolvedURL.path as NSString).pathComponents.dropFirst())
+        for component in (destination as NSString).pathComponents {
+            switch component {
+            case "/", ".":
+                continue
+            case "..":
+                if !components.isEmpty {
+                    components.removeLast()
+                }
+            default:
+                components.append(component)
+            }
+        }
+        return components
     }
 }
 

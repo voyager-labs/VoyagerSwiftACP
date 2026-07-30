@@ -948,6 +948,17 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         )
     }
 
+    /// EVM-002-set_entries_view_as_icon_grid: 기본 collection materialization은 metadata probe를 요청하지 않는다.
+    /// 이름 정렬과 grouping 없음인 기본 화면은 staged core loading만 수행해야 한다.
+    /// - 검증 내용: collection metadata priority의 probe 목록
+    /// - 사전 조건: name sort와 group none인 기본 EntryViewLayout state
+    /// - 기대 결과: priority는 `.none`이고 probe 목록이 비어 있음
+    func testDefaultCollectionMetadataPrioritySkipsProbes() {
+        let state = EntryViewLayoutState()
+
+        XCTAssertEqual(EntryViewLayoutFeature.collectionMetadataPriority(for: state), .none)
+    }
+
     /// EVM-002-set_entries_view_as_icon_grid: collection mode 중 collection items 갱신은 entries를 collection source로 맞춤
     /// collection mode가 켜진 상태의 collection items 설정이 entries와 arrangement source를 동기화하는지 검증한다.
     /// - 검증 내용: collection mode 상태의 items 설정과 reapply sequence 확인
@@ -1097,6 +1108,32 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         let state = store.state
         XCTAssertFalse(state.isCollectionMode)
         XCTAssertEqual(state.entries.map(\.id), [item.id])
+    }
+
+    /// EVM-002-progressive_entry_loading: 같은 window의 collection stream은 tab owner별 cancellation ID를 사용한다.
+    /// - 사전 조건: 같은 windowID와 서로 다른 loadingCancellationOwnerID를 가진 두 layout state
+    /// - 기대 결과: replace와 append cancellation ID가 모두 서로 다름
+    func testCollectionCancellationIDsAreScopedByLoadingOwner() throws {
+        let windowID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"))
+        var firstState = EntryViewLayoutState()
+        firstState.entryOperations.windowID = windowID
+        firstState.entryOperations.loadingCancellationOwnerID = try XCTUnwrap(
+            UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"),
+        )
+        var secondState = EntryViewLayoutState()
+        secondState.entryOperations.windowID = windowID
+        secondState.entryOperations.loadingCancellationOwnerID = try XCTUnwrap(
+            UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC"),
+        )
+
+        XCTAssertNotEqual(
+            EntryViewLayoutFeature.collectionCancelID(for: .replace, state: firstState),
+            EntryViewLayoutFeature.collectionCancelID(for: .replace, state: secondState),
+        )
+        XCTAssertNotEqual(
+            EntryViewLayoutFeature.collectionCancelID(for: .append(1), state: firstState),
+            EntryViewLayoutFeature.collectionCancelID(for: .append(1), state: secondState),
+        )
     }
 
     /// EVM-002-set_entries_view_as_icon_grid: collection paths 제거는 items와 selection을 함께 정리함

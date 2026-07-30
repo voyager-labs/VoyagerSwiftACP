@@ -127,6 +127,12 @@ final class EntryListCoordinatorProjectionSession {
     private(set) var isApplyingStoreProjection = false
     private(set) var pendingProjection: EntryListOutlineProjection?
 
+    func reset() {
+        renderedProjectionRevision = nil
+        isApplyingStoreProjection = false
+        pendingProjection = nil
+    }
+
     func apply(
         _ projection: EntryListOutlineProjection,
         perform: (EntryListOutlineProjection, [EntryListOutlineItem]) -> Void,

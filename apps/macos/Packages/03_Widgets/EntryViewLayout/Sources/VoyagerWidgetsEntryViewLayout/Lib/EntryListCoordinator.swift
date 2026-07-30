@@ -129,34 +129,7 @@ typealias EntryListDateFormatting = EntryListCoordinatorDateFormatting
 @MainActor
 public final class EntryListCoordinator: NSObject {
     typealias RenderSnapshot = EntryListCoordinatorRenderSnapshot
-    enum EntryListOutlineItemKind {
-        case group(name: String, colorCode: Int?, isCollapsed: Bool)
-        case entry(EntryModel)
-    }
-
-    final class OutlineItem: Hashable {
-        let kind: EntryListOutlineItemKind
-        let children: [OutlineItem]
-        let id: String
-        init(kind: EntryListOutlineItemKind, children: [OutlineItem] = []) {
-            self.kind = kind
-            self.children = children
-            switch kind {
-            case let .group(name, _, _):
-                id = "group:\(name)"
-            case let .entry(entry):
-                id = entry.id
-            }
-        }
-
-        static func == (lhs: OutlineItem, rhs: OutlineItem) -> Bool {
-            lhs.id == rhs.id
-        }
-
-        func hash(into hasher: inout Hasher) {
-            hasher.combine(id)
-        }
-    }
+    typealias OutlineItem = EntryListOutlineItem
 
     let store: StoreOf<EntryViewLayoutFeature>
     var state: EntryViewLayoutState {
@@ -196,6 +169,8 @@ public final class EntryListCoordinator: NSObject {
     var isUpdatingSelectionFromStore = false
     var hasRestoredScrollPosition = false
     var isUpdatingGroupExpansion = false
+    var isApplyingHierarchyExpansion = false
+    let projectionSession = EntryListCoordinatorProjectionSession()
     var lastRenamingItemId: EntryModel.ID?
     var contextMenuAnchor: CGPoint?
     var contextMenuCoordinator: EntryContextMenuCoordinator?
@@ -290,8 +265,13 @@ public final class EntryListCoordinator: NSObject {
     }
 
     func rebuildRowsAndReload() {
-        let previousGraph = (outlineItems, entryItemById, groupItemByName)
+        let snapshot = RenderSnapshot(state: state)
+        if snapshot.isHierarchyOutlineEnabled {
+            applyStoreProjection(snapshot.outlineProjection)
+            return
+        }
 
+        projectionSession.reset()
         outlineItems = makeOutlineItems(state: state)
         entryItemById = Dictionary(uniqueKeysWithValues: outlineItems.flatMap { $0.flattenEntries() })
         groupItemByName = Dictionary(uniqueKeysWithValues: outlineItems.compactMap { item in
@@ -307,9 +287,35 @@ public final class EntryListCoordinator: NSObject {
         restoreScrollPositionIfNeeded()
         syncListRenamingFromStore()
         requestThumbnailsForVisibleRows()
+    }
 
-        DispatchQueue.main.async {
-            _ = previousGraph
+    func applyStoreProjection(_ projection: EntryListOutlineProjection) {
+        projectionSession.apply(projection) { [weak self] _, items in
+            guard let self else { return }
+            outlineItems = items
+            entryItemById = Dictionary(uniqueKeysWithValues: items.flatMap { $0.flattenEntries() })
+            groupItemByName = [:]
+            tableView.reloadData()
+            applyHierarchyExpansionState()
+            syncListSelectionFromStore()
+            scrollToSelectionIfNeeded()
+            restoreScrollPositionIfNeeded()
+            syncListRenamingFromStore()
+            requestThumbnailsForVisibleRows()
+        }
+    }
+
+    func applyHierarchyExpansionState() {
+        isApplyingHierarchyExpansion = true
+        defer { isApplyingHierarchyExpansion = false }
+
+        for (id, item) in outlineItems.flatMap({ $0.flattenEntries() }) {
+            guard case let .entry(entry) = item.kind, entry.supportsListHierarchyExpansion else { continue }
+            if state.hierarchy.expandedFolderIDs.contains(id) {
+                tableView.expandItem(item)
+            } else {
+                tableView.collapseItem(item)
+            }
         }
     }
 

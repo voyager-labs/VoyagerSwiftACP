@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
@@ -29,6 +30,24 @@ public struct FileManagerContentFeature {
             case let .entryViewLayout(.entryOperations(.lifecycle(.resetForDuplicate(windowID)))):
                 state.composer.cancellationOwnerID = windowID
                 return .none
+            case let .entryViewLayout(.entryArrangements(.setSortKey(key))):
+                guard state.entryViewLayout.entryArrangements.sortKey != key else { return .none }
+                return arrangementMetadataReloadEffect(
+                    priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
+                        sortKey: key,
+                        groupKey: state.entryViewLayout.entryArrangements.groupKey,
+                    ),
+                    state: state,
+                )
+            case let .entryViewLayout(.entryArrangements(.setGroupKey(key))):
+                guard state.entryViewLayout.entryArrangements.groupKey != key else { return .none }
+                return arrangementMetadataReloadEffect(
+                    priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
+                        sortKey: state.entryViewLayout.entryArrangements.sortKey,
+                        groupKey: key,
+                    ),
+                    state: state,
+                )
             default:
                 return .none
             }
@@ -145,11 +164,50 @@ public struct FileManagerContentFeature {
         }
     }
 
+    private func arrangementMetadataReloadEffect(
+        priority: EntryMetadataPriority,
+        state: State,
+    ) -> Effect<Action> {
+        guard !priority.probes.isEmpty else { return .none }
+        let rootReloadEffect: Effect<Action>
+        if state.entryViewLayout.isCollectionMode {
+            let basePaths = state.entryViewLayout.activeCollectionReplacePaths.isEmpty
+                ? state.entryViewLayout.collectionItems.map(\.id)
+                : state.entryViewLayout.activeCollectionReplacePaths
+            let appendPaths = state.entryViewLayout.activeCollectionAppendPaths.keys.sorted().flatMap {
+                state.entryViewLayout.activeCollectionAppendPaths[$0] ?? []
+            }
+            var seenPaths = Set<String>()
+            let sourcePaths = (basePaths + appendPaths).filter { seenPaths.insert($0).inserted }
+            rootReloadEffect = .send(.entryViewLayout(.internal(.applyCollectionSearchPaths(
+                paths: sourcePaths,
+                showHidden: state.entryViewLayout.showHiddenFiles,
+            ))))
+        } else {
+            rootReloadEffect = FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(
+                navigationState: state.navigation.navigationState,
+                showHidden: state.entryViewLayout.showHiddenFiles,
+                priority: priority,
+            )
+        }
+        return .concatenate(
+            rootReloadEffect,
+            .send(.entryViewLayout(.hierarchy(.arrangementMetadataPriorityChanged))),
+        )
+    }
+
     private func handlePendingSelectionAfterEntryLayoutLoaded(
         _ action: Action,
         state: inout State,
     ) -> Effect<Action> {
-        guard case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(entries)))) = action else {
+        let entries: [EntryModel]
+        switch action {
+        case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(loadedEntries)))):
+            entries = loadedEntries
+        case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
+            guard case .coreBatch = streamEvent.event else { return .none }
+            entries = Array(state.entryViewLayout.entryOperations.loadingContext.items)
+        default:
             return .none
         }
         guard FileManagerContentEntryOpsCoordinator.applyPendingSelectionForLoadedEntries(

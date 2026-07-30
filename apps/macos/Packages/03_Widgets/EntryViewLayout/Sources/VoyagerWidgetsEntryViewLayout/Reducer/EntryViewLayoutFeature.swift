@@ -7,6 +7,25 @@ import VoyagerFeaturesEntryOperations
 import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
+public struct EntryViewLayoutCollectionCancelID: Hashable, Sendable {
+    private enum Operation: Hashable {
+        case replace
+        case append(Int)
+    }
+
+    private let windowID: UUID?
+    private let ownerID: UUID
+    private let operation: Operation
+
+    public static func replace(windowID: UUID?, ownerID: UUID) -> Self {
+        Self(windowID: windowID, ownerID: ownerID, operation: .replace)
+    }
+
+    public static func append(token: Int, windowID: UUID?, ownerID: UUID) -> Self {
+        Self(windowID: windowID, ownerID: ownerID, operation: .append(token))
+    }
+}
+
 @Reducer
 public struct EntryViewLayoutFeature {
     public typealias State = EntryViewLayoutState
@@ -17,7 +36,7 @@ public struct EntryViewLayoutFeature {
 
     public init() {}
 
-    private enum CollectionCancelID: Hashable {
+    enum CollectionOperation: Hashable {
         case replace
         case append(Int)
     }
@@ -191,8 +210,7 @@ public struct EntryViewLayoutFeature {
                 state.listTextSize = preferences.listTextSize
                 state.gridIconSize = preferences.gridIconSize
                 state.gridTextSize = preferences.gridTextSize
-                state.showHiddenFiles = preferences.showHiddenFiles
-                return .none
+                return Self.setShowHiddenFiles(preferences.showHiddenFiles, state: &state)
 
             case let .view(.setDropTargeted(isTargeted)):
                 state.isDropTargeted = isTargeted
@@ -208,12 +226,10 @@ public struct EntryViewLayoutFeature {
                 return .none
 
             case let .internal(.setShowHiddenFiles(show)):
-                state.showHiddenFiles = show
-                return .none
+                return Self.setShowHiddenFiles(show, state: &state)
 
             case .view(.toggleShowHiddenFiles):
-                state.showHiddenFiles.toggle()
-                return .none
+                return Self.setShowHiddenFiles(!state.showHiddenFiles, state: &state)
 
             case let .internal(.setCollectionMode(isCollectionMode)):
                 state.isCollectionMode = isCollectionMode
@@ -233,13 +249,16 @@ public struct EntryViewLayoutFeature {
 
             case let .internal(.applyCollectionSearchPaths(paths, showHidden)):
                 let cancellationEffects = state.activeCollectionAppendExpectedBatchIndices.keys.map {
-                    Effect<Action>.cancel(id: CollectionCancelID.append($0))
+                    Effect<Action>.cancel(id: Self.collectionCancelID(for: .append($0), state: state))
                 }
+                let replaceCancelID = Self.collectionCancelID(for: .replace, state: state)
                 state.collectionReplaceEpoch &+= 1
                 let epoch = state.collectionReplaceEpoch
                 state.collectionItems = []
+                state.activeCollectionReplacePaths = paths
                 state.expectedCollectionReplaceBatchIndex = 0
                 state.activeCollectionAppendExpectedBatchIndices = [:]
+                state.activeCollectionAppendPaths = [:]
                 state.finishedCollectionAppendTokens = []
                 state.collectionCoreFinished = false
                 state.collectionStreamCompleted = false
@@ -250,7 +269,7 @@ public struct EntryViewLayoutFeature {
 
                 return .merge(
                     cancellationEffects + [
-                        .cancel(id: CollectionCancelID.replace),
+                        .cancel(id: replaceCancelID),
                         Self.updateEntriesAndReapply(&state),
                         .run { [entryLoadingClient, priority] send in
                             do {
@@ -267,18 +286,21 @@ public struct EntryViewLayoutFeature {
                                 )))
                             }
                         }
-                        .cancellable(id: CollectionCancelID.replace, cancelInFlight: true),
+                        .cancellable(id: replaceCancelID, cancelInFlight: true),
                     ],
                 )
 
             case let .internal(.addCollectionPaths(paths)):
                 guard state.isCollectionMode else { return .none }
+                state.removedCollectionPaths.subtract(paths.map(Self.normalizedPath(_:)))
                 state.nextCollectionAppendToken &+= 1
                 let token = state.nextCollectionAppendToken
                 let epoch = state.collectionReplaceEpoch
                 let priority = Self.collectionMetadataPriority(for: state)
                 let showHiddenFiles = state.showHiddenFiles
                 state.activeCollectionAppendExpectedBatchIndices[token] = 0
+                state.activeCollectionAppendPaths[token] = paths
+                let appendCancelID = Self.collectionCancelID(for: .append(token), state: state)
 
                 return .run { [entryLoadingClient, priority] send in
                     do {
@@ -298,7 +320,7 @@ public struct EntryViewLayoutFeature {
                         )))
                     }
                 }
-                .cancellable(id: CollectionCancelID.append(token))
+                .cancellable(id: appendCancelID)
 
             case let .internal(.collectionReplaceEvent(epoch, event)):
                 guard epoch == state.collectionReplaceEpoch,
@@ -315,6 +337,7 @@ public struct EntryViewLayoutFeature {
                       !state.collectionStreamCompleted
                 else { return .none }
                 state.collectionStreamCompleted = true
+                state.activeCollectionReplacePaths = []
                 return .none
 
             case let .internal(.collectionReplaceFailed(epoch, message)):
@@ -323,6 +346,7 @@ public struct EntryViewLayoutFeature {
                 else { return .none }
                 state.collectionIncompleteFailure = message
                 state.collectionStreamCompleted = true
+                state.activeCollectionReplacePaths = []
                 state.isCollectionContentLoading = false
                 return Self.updateEntriesAndReapply(&state)
 
@@ -341,6 +365,7 @@ public struct EntryViewLayoutFeature {
                 guard epoch == state.collectionReplaceEpoch,
                       state.activeCollectionAppendExpectedBatchIndices.removeValue(forKey: token) != nil
                 else { return .none }
+                state.activeCollectionAppendPaths[token] = nil
                 state.finishedCollectionAppendTokens.remove(token)
                 return .none
 
@@ -348,6 +373,7 @@ public struct EntryViewLayoutFeature {
                 guard epoch == state.collectionReplaceEpoch,
                       state.activeCollectionAppendExpectedBatchIndices.removeValue(forKey: token) != nil
                 else { return .none }
+                state.activeCollectionAppendPaths[token] = nil
                 state.finishedCollectionAppendTokens.remove(token)
                 state.collectionIncompleteFailure = message
                 return Self.updateEntriesAndReapply(&state)
@@ -356,6 +382,15 @@ public struct EntryViewLayoutFeature {
                 guard state.isCollectionMode else { return .none }
                 let mutatedPaths = Set(paths.map(Self.normalizedPath(_:)))
                 guard !mutatedPaths.isEmpty else { return .none }
+                state.removedCollectionPaths.formUnion(mutatedPaths)
+                state.activeCollectionReplacePaths.removeAll {
+                    Self.matchesAnyMutatedPath($0, mutatedPaths: mutatedPaths)
+                }
+                for token in state.activeCollectionAppendPaths.keys {
+                    state.activeCollectionAppendPaths[token]?.removeAll {
+                        Self.matchesAnyMutatedPath($0, mutatedPaths: mutatedPaths)
+                    }
+                }
 
                 let remainingItems = state.collectionItems.filter { item in
                     !Self.matchesAnyMutatedPath(item.fullPath, mutatedPaths: mutatedPaths)
@@ -367,13 +402,32 @@ public struct EntryViewLayoutFeature {
                 state.collectionItems = IdentifiedArrayOf(uniqueElements: Array(remainingItems))
                 return Self.updateEntriesAndReapply(&state)
 
+            case .internal(.cancelCollectionMaterialization):
+                let cancellationEffects = state.activeCollectionAppendExpectedBatchIndices.keys.map {
+                    Effect<Action>.cancel(id: Self.collectionCancelID(for: .append($0), state: state))
+                }
+                let replaceCancelID = Self.collectionCancelID(for: .replace, state: state)
+                state.collectionReplaceEpoch &+= 1
+                state.activeCollectionReplacePaths = []
+                state.expectedCollectionReplaceBatchIndex = 0
+                state.activeCollectionAppendExpectedBatchIndices = [:]
+                state.activeCollectionAppendPaths = [:]
+                state.finishedCollectionAppendTokens = []
+                state.collectionCoreFinished = false
+                state.collectionStreamCompleted = false
+                state.isCollectionContentLoading = false
+                return .merge(cancellationEffects + [.cancel(id: replaceCancelID)])
+
             case .internal(.clearCollectionPresentation):
                 let cancellationEffects = state.activeCollectionAppendExpectedBatchIndices.keys.map {
-                    Effect<Action>.cancel(id: CollectionCancelID.append($0))
+                    Effect<Action>.cancel(id: Self.collectionCancelID(for: .append($0), state: state))
                 }
+                let replaceCancelID = Self.collectionCancelID(for: .replace, state: state)
                 state.collectionReplaceEpoch &+= 1
                 state.isCollectionMode = false
                 state.collectionItems = []
+                state.activeCollectionReplacePaths = []
+                state.activeCollectionAppendPaths = [:]
                 state.isCollectionContentLoading = false
                 state.expectedCollectionReplaceBatchIndex = 0
                 state.activeCollectionAppendExpectedBatchIndices = [:]
@@ -383,7 +437,7 @@ public struct EntryViewLayoutFeature {
                 state.collectionIncompleteFailure = nil
                 state.removedCollectionPaths = []
                 return .merge(cancellationEffects + [
-                    .cancel(id: CollectionCancelID.replace),
+                    .cancel(id: replaceCancelID),
                     Self.updateEntriesAndReapply(&state),
                 ])
 
@@ -422,8 +476,11 @@ public struct EntryViewLayoutFeature {
                         .failed(Self.hierarchyFailure(from: failure)),
                     )))
 
-                case .loading(.itemsLoaded),
-                     .loading(.itemsLoadFailed):
+                case .loading(.cancelAndClearItems),
+                     .loading(.itemsLoaded),
+                     .loading(.itemsLoadFailed),
+                     .loading(.streamEvent),
+                     .loading(.streamFailed):
                     return Self.updateEntriesAndReapply(&state)
 
                 default:
@@ -454,6 +511,25 @@ public struct EntryViewLayoutFeature {
         }
     }
 
+    nonisolated static func collectionCancelID(
+        for operation: CollectionOperation,
+        state: State,
+    ) -> EntryViewLayoutCollectionCancelID {
+        switch operation {
+        case .replace:
+            EntryViewLayoutCollectionCancelID.replace(
+                windowID: state.entryOperations.windowID,
+                ownerID: state.entryOperations.loadingCancellationOwnerID,
+            )
+        case let .append(token):
+            EntryViewLayoutCollectionCancelID.append(
+                token: token,
+                windowID: state.entryOperations.windowID,
+                ownerID: state.entryOperations.loadingCancellationOwnerID,
+            )
+        }
+    }
+
     // MARK: - Helpers
 
     static func hierarchyFailure(from failure: EntryFolderLoadFailure) -> EntryLoadFailure {
@@ -468,7 +544,24 @@ public struct EntryViewLayoutFeature {
     static func updateEntriesAndReapply(_ state: inout State) -> Effect<Action> {
         state.entries = state.displayOrderItems
         reconcileSelectionWithVisibleEntries(&state)
-        return .send(.entryArrangements(.reapply))
+        return .merge(
+            .send(.entryArrangements(.reapply)),
+            reconcileRenamingItemWithVisibleEntries(state),
+        )
+    }
+
+    static func reconcileRenamingItemWithVisibleEntries(_ state: State) -> Effect<Action> {
+        guard let renamingID = state.entryOperations.renamingItemId,
+              !state.visibleSelectableEntryIDs(isNormalDirectoryPage: true).contains(renamingID)
+        else { return .none }
+        return .send(.entryOperations(.edit(.cancelRename)))
+    }
+
+    static func setShowHiddenFiles(_ showHiddenFiles: Bool, state: inout State) -> Effect<Action> {
+        guard state.showHiddenFiles != showHiddenFiles else { return .none }
+        state.showHiddenFiles = showHiddenFiles
+        guard !state.hierarchy.foldersByID.isEmpty else { return .none }
+        return .send(.hierarchy(.hiddenFilesSettingChanged))
     }
 
     static func updateEntriesPreservingOrder(_ state: inout State) {
@@ -644,7 +737,7 @@ public struct EntryViewLayoutFeature {
         if state.entryArrangements.groupKey == .tags {
             probes.append(.tags)
         }
-        return .active(probes)
+        return probes.isEmpty ? .none : .active(probes)
     }
 
     static func reconcileSelectionWithVisibleEntries(_ state: inout State) {

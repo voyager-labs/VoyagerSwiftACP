@@ -233,6 +233,42 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         XCTAssertEqual(calls.value, 0)
     }
 
+    /// EVM-001-progressive_entry_materialization: Releasing a partially consumed stream closes instrumentation.
+    /// 첫 core batch 뒤 stream 수명이 끝나면 추가 demand 없이 열린 request/core 계측을 닫는지 검증한다.
+    /// - 검증 내용: coreFinished 전 stream 해제와 request interval 종료
+    /// - 사전 조건: 두 batch가 필요한 33개 URL 중 첫 batch만 소비한다.
+    /// - 기대 결과: stream 해제 후 request interval 종료 callback이 호출된다.
+    func testReleasingStreamAfterFirstCoreBatchClosesInstrumentation() async throws {
+        let requestClosed = expectation(description: "Request instrumentation closed")
+        let instrumentation = EntryLoadingInstrumentation(
+            onBegin: { _, _ in },
+            onEnd: { interval, _, _ in
+                if interval == .request {
+                    requestClosed.fulfill()
+                }
+            },
+        )
+
+        for try await event in EntryStagedMaterializerLive.materializeURLs(
+            (0 ..< 33).map { URL(fileURLWithPath: "/fixture/File-\($0)") },
+            showHidden: false,
+            configuration: .init(
+                priority: .none,
+                entryLoadingClient: visibleEntryClient(),
+                workspaceClient: .testValue,
+                sourceKind: .direct,
+                instrumentation: instrumentation,
+                favoriteTags: [],
+            ),
+        ) {
+            if case .coreBatch = event {
+                break
+            }
+        }
+
+        await fulfillment(of: [requestClosed], timeout: 0.1)
+    }
+
     /// EVM-001-progressive_entry_materialization: Cancelling while metadata probing is in progress stops remaining
     /// probes.
     /// 첫 deferred probe가 시작된 뒤 취소하면 후속 항목을 탐침하거나 부분 patch를 전달하지 않는지 검증한다.
@@ -280,8 +316,8 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         XCTAssertEqual(instrumentationRecorder.intervalNames, [
             "entry_loading_first_core_batch",
             "entry_loading_core_complete",
-            "entry_loading_metadata_complete",
             "entry_loading_request",
+            "entry_loading_metadata_complete",
         ])
     }
 
@@ -585,13 +621,177 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         XCTAssertTrue(normalized.isPackage)
     }
 
+    /// EVM-001-progressive_entry_materialization: Directory staged loading forwards the injected client through
+    /// materialization.
+    /// 디렉터리 열거와 core/metadata 구체화가 동일한 dependency override를 사용하는 경계를 검증한다.
+    /// - 검증 내용: injected file existence, package classification, Spotlight metadata closure 호출
+    /// - 사전 조건: 실제 파일시스템에는 없는 package URL을 반환하는 EntryLoadingClient override를 사용한다.
+    /// - 기대 결과: 주입된 client로 core entry와 metadata patch가 생성되고 package 분류가 유지된다.
+    func testDirectoryStagedLoaderForwardsInjectedClientToMaterializer() async throws {
+        let directoryURL = URL(fileURLWithPath: "/fixture")
+        let packageURL = directoryURL.appendingPathComponent("Injected.app", isDirectory: true)
+        let fileExistenceCalls = LockedCounter()
+        let packageClassifierCalls = LockedCounter()
+        let metadataCalls = LockedCounter()
+        var client = EntryLoadingClient.testValue
+        client.contentsOfDirectory = { requestedURL, _, _ in
+            XCTAssertEqual(requestedURL, directoryURL)
+            return [packageURL]
+        }
+        client.fileExistsAtPath = { path, isDirectory in
+            XCTAssertEqual(path, packageURL.path)
+            fileExistenceCalls.increment()
+            isDirectory?.pointee = true
+            return true
+        }
+        client.isPackageDirectory = { url in
+            XCTAssertEqual(url.path, packageURL.path)
+            packageClassifierCalls.increment()
+            return true
+        }
+        client.getItemMetadata = { url, isDirectory, _ in
+            XCTAssertEqual(url.path, packageURL.path)
+            XCTAssertTrue(isDirectory)
+            metadataCalls.increment()
+            return .init(kind: "Injected Package", creatorApplication: "Injected App", lastUsedDate: nil)
+        }
+
+        let events = try await withDependencies {
+            $0.entryLoadingClient = client
+            $0.workspaceClient = .testValue
+        } operation: {
+            try await collect(EntryLoadingClient.liveValue.loadItems(
+                directoryURL,
+                false,
+                .active([.spotlight]),
+            ))
+        }
+
+        XCTAssertEqual(events.coreBatches.flatMap(\.items).map(\.id), [packageURL.path])
+        XCTAssertTrue(events.coreBatches.flatMap(\.items).allSatisfy(\.isPackage))
+        XCTAssertTrue(events.metadataPatches.contains(.spotlight(
+            id: packageURL.path,
+            kind: "Injected Package",
+            creatorApplication: "Injected App",
+            lastOpenedDate: nil,
+        )))
+        XCTAssertEqual(fileExistenceCalls.value, 1)
+        XCTAssertGreaterThanOrEqual(packageClassifierCalls.value, 1)
+        XCTAssertEqual(metadataCalls.value, 1)
+    }
+
+    /// EVM-001-progressive_entry_materialization: Directory enumeration starts on first stream demand.
+    /// staged loader 호출은 동기 파일시스템 작업 없이 즉시 stream을 반환하는 경계를 검증한다.
+    /// - 검증 내용: stream 생성 전후 열거 호출 수와 첫 iterator demand 뒤 호출 수
+    /// - 사전 조건: 호출 횟수를 기록하고 빈 URL 목록을 반환하는 EntryLoadingClient override를 사용한다.
+    /// - 기대 결과: stream 생성 시 열거하지 않고 첫 next에서 정확히 한 번 열거한다.
+    func testDirectoryStagedLoaderDefersEnumerationUntilFirstDemand() async throws {
+        let enumerationCalls = LockedCounter()
+        var client = EntryLoadingClient.testValue
+        client.contentsOfDirectory = { _, _, _ in
+            enumerationCalls.increment()
+            return []
+        }
+
+        let stream = withDependencies {
+            $0.entryLoadingClient = client
+            $0.workspaceClient = .testValue
+        } operation: {
+            EntryLoadingClient.liveValue.loadItems(URL(fileURLWithPath: "/fixture"), false, .none)
+        }
+
+        XCTAssertEqual(enumerationCalls.value, 0)
+        var iterator = stream.makeAsyncIterator()
+        _ = try await iterator.next()
+        XCTAssertEqual(enumerationCalls.value, 1)
+    }
+
+    /// EVM-001-progressive_entry_materialization: First core demand consumes only one directory URL batch.
+    /// 대용량 directory source의 첫 core batch가 전체 열거 완료를 기다리지 않는 경계를 검증한다.
+    /// - 검증 내용: 첫 stream event까지 요청된 URL source batch 수와 core item 수
+    /// - 사전 조건: 32개와 1개 URL을 순서대로 반환하는 lazy directory batch override를 사용한다.
+    /// - 기대 결과: 첫 event는 32개 core item이며 두 번째 source batch는 아직 요청되지 않는다.
+    func testDirectoryStagedLoaderConsumesOneSourceBatchPerCoreDemand() async throws {
+        let batchRequests = LockedCounter()
+        let firstBatch = (0 ..< 32).map { URL(fileURLWithPath: "/fixture/File-\($0)") }
+        let secondBatch = [URL(fileURLWithPath: "/fixture/File-32")]
+        let batches = [firstBatch, secondBatch]
+        var client = visibleEntryClient()
+        client.contentsOfDirectory = { _, _, _ in
+            XCTFail("Expected lazy directory batches")
+            return []
+        }
+        client.directoryURLBatches = { _, _, requestedBatchSize in
+            XCTAssertEqual(requestedBatchSize, 32)
+            return AsyncThrowingStream(unfolding: {
+                let index = batchRequests.value
+                guard index < batches.count else { return nil }
+                batchRequests.increment()
+                return batches[index]
+            })
+        }
+
+        let stream = withDependencies {
+            $0.entryLoadingClient = client
+            $0.workspaceClient = .testValue
+        } operation: {
+            EntryLoadingClient.liveValue.loadItems(URL(fileURLWithPath: "/fixture"), false, .none)
+        }
+        var iterator = stream.makeAsyncIterator()
+        let firstEvent = try await iterator.next()
+
+        guard case let .coreBatch(items, batchIndex) = firstEvent else {
+            return XCTFail("Expected first core batch")
+        }
+        XCTAssertEqual(items.count, 32)
+        XCTAssertEqual(batchIndex, 0)
+        XCTAssertEqual(batchRequests.value, 1)
+    }
+
     // MARK: - EVM-001-entry_loading_performance
+
+    /// EVM-001-entry_loading_performance: Core-only consumption closes its active instrumentation intervals.
+    /// core 완료 직후 소비를 중단해도 metadata 계측을 열지 않고 request 계측을 닫는지 검증한다.
+    /// - 검증 내용: core 완료 시 request 종료, metadata probe 미실행, metadata interval 미시작
+    /// - 사전 조건: Spotlight metadata가 활성화된 단일 URL stream을 coreFinished까지만 소비한다.
+    /// - 기대 결과: first/core/request interval만 종료되고 metadata closure는 호출되지 않는다.
+    func testBreakingAfterCoreFinishedClosesRequestWithoutStartingMetadata() async throws {
+        let recorder = EntryLoadingInstrumentationRecorder()
+        let metadataCalls = LockedCounter()
+        var client = visibleEntryClient()
+        client.getItemMetadata = { _, _, _ in
+            metadataCalls.increment()
+            return .init(kind: "File", creatorApplication: nil, lastUsedDate: nil)
+        }
+
+        for try await event in EntryStagedMaterializerLive.materializeURLs(
+            [URL(fileURLWithPath: "/fixture/File-0")],
+            showHidden: false,
+            configuration: .init(
+                priority: .active([.spotlight]),
+                entryLoadingClient: client,
+                workspaceClient: .testValue,
+                sourceKind: .direct,
+                instrumentation: recorder.instrumentation,
+                favoriteTags: [],
+            ),
+        ) where event.isCoreFinished {
+            break
+        }
+
+        XCTAssertEqual(metadataCalls.value, 0)
+        XCTAssertEqual(recorder.intervalNames, [
+            "entry_loading_first_core_batch",
+            "entry_loading_core_complete",
+            "entry_loading_request",
+        ])
+    }
 
     /// EVM-001-entry_loading_performance: Staged URL loading closes each interval once in stream order.
     /// 빈 입력과 deferred probe 실패가 있어도 계측 interval과 work count가 결정론적으로 닫히는지 검증한다.
     /// - 검증 내용: request/first/core/metadata interval 순서, empty 완료, probe 실패 후 종료, folder-count work 수
     /// - 사전 조건: 빈 URL 입력과 supplementary probe가 nil을 반환하는 폴더 URL을 각각 사용한다.
-    /// - 기대 결과: 각 request의 네 interval은 정확히 한 번씩 닫히고, metadata interval은 core 완료 뒤에만 시작한다.
+    /// - 기대 결과: request는 core 완료와 함께 닫히고 metadata interval은 실제 probe가 있을 때만 뒤이어 닫힌다.
     func testStagedLoadingInstrumentationClosesIntervalsForEmptyAndProbeFailure() async throws {
         let emptyRecorder = EntryLoadingInstrumentationRecorder()
         _ = try await collect(EntryStagedMaterializerLive.materializeURLs(
@@ -610,7 +810,6 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         XCTAssertEqual(emptyRecorder.intervalNames, [
             "entry_loading_first_core_batch",
             "entry_loading_core_complete",
-            "entry_loading_metadata_complete",
             "entry_loading_request",
         ])
         XCTAssertEqual(emptyRecorder.workCounts.folderCountProbes, 0)
@@ -638,8 +837,8 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         XCTAssertEqual(probeRecorder.intervalNames, [
             "entry_loading_first_core_batch",
             "entry_loading_core_complete",
-            "entry_loading_metadata_complete",
             "entry_loading_request",
+            "entry_loading_metadata_complete",
         ])
         XCTAssertEqual(calls.value, 1)
         XCTAssertEqual(probeRecorder.workCounts.folderCountProbes, 1)

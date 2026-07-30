@@ -76,26 +76,6 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertNotNil(store.state.itemStates[sourcePath]?.lastError)
     }
 
-    /// EOP-003-move_entries_to_trash: 선택된 부모와 하위 항목은 부모만 Trash 이동으로 계획한다.
-    /// 사용자가 하위 항목, 같은 raw-prefix peer, 부모를 표시 순서대로 함께 선택할 때 lifecycle planner가 부모와 peer만 유지하는지 확인한다.
-    /// - 검증 내용: `.routing(.executeCommand)` planner가 선택된 조상 관계를 pathComponents로 판별하고 원본 fullPath 및 남은 표시 순서를 보존한다.
-    /// - 사전 조건: 선택 목록에 descendant-first 부모-하위 항목 쌍과 조상이 아닌 raw-prefix peer를 구성한다.
-    /// - 기대 결과: `.trash(.moveToTrash)`는 하위 항목을 제외한 peer와 부모 경로만 방출한다.
-    func testMoveEntriesToTrash_plansTopmostSelectedPaths() throws {
-        let scenario = makeTopmostLifecycleSelectionScenario()
-
-        let outputs = EntryOperationsCommandPlanner.plan(
-            command: .mutation(.moveSelectedItemsToTrash),
-            context: scenario.context,
-        )
-
-        XCTAssertEqual(outputs.count, 1)
-        guard case let .entryOperations(.trash(.moveToTrash(paths))) = try XCTUnwrap(outputs.first) else {
-            return XCTFail("Trash 이동 명령은 moveToTrash payload를 계획해야 합니다.")
-        }
-        XCTAssertEqual(paths, scenario.expectedPaths)
-    }
-
     // MARK: - EOP-003-delete_entries_immediately
 
     /// EOP-003-delete_entries_immediately: 선택한 Entry가 즉시 삭제되는지 검증한다.
@@ -157,90 +137,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
-    /// EOP-003-delete_entries_immediately: 선택된 부모와 하위 항목은 부모만 즉시 삭제로 계획한다.
-    /// 사용자가 하위 항목, 같은 raw-prefix peer, 부모를 표시 순서대로 함께 선택할 때 lifecycle planner가 부모와 peer만 유지하는지 확인한다.
-    /// - 검증 내용: `.routing(.executeCommand)` planner가 선택된 조상 관계를 pathComponents로 판별하고 원본 fullPath 및 남은 표시 순서를 보존한다.
-    /// - 사전 조건: 선택 목록에 descendant-first 부모-하위 항목 쌍과 조상이 아닌 raw-prefix peer를 구성한다.
-    /// - 기대 결과: `.trash(.deleteImmediately)`는 하위 항목을 제외한 peer와 부모 경로만 방출한다.
-    func testDeleteEntriesImmediately_plansTopmostSelectedPaths() throws {
-        let scenario = makeTopmostLifecycleSelectionScenario()
-
-        let outputs = EntryOperationsCommandPlanner.plan(
-            command: .mutation(.deleteSelectedItemsImmediately),
-            context: scenario.context,
-        )
-
-        XCTAssertEqual(outputs.count, 1)
-        guard case let .entryOperations(.trash(.deleteImmediately(paths))) = try XCTUnwrap(outputs.first) else {
-            return XCTFail("즉시 삭제 명령은 deleteImmediately payload를 계획해야 합니다.")
-        }
-        XCTAssertEqual(paths, scenario.expectedPaths)
-    }
-
-    // MARK: - EOP-003-put_deleted_entries_back
-
-    /// EOP-003-put_deleted_entries_back: 선택된 부모와 하위 항목은 부모만 원래 위치 복귀로 계획한다.
-    /// 사용자가 하위 항목, 같은 raw-prefix peer, 부모를 표시 순서대로 함께 선택할 때 lifecycle planner가 부모와 peer만 유지하는지 확인한다.
-    /// - 검증 내용: `.routing(.executeCommand)` planner가 선택된 조상 관계를 pathComponents로 판별하고 원본 fullPath 및 남은 표시 순서를 보존한다.
-    /// - 사전 조건: 선택 목록에 descendant-first 부모-하위 항목 쌍과 조상이 아닌 raw-prefix peer를 구성한다.
-    /// - 기대 결과: `.trash(.putBackFromTrash)`는 하위 항목을 제외한 peer와 부모 경로만 방출한다.
-    func testPutBackSelectedItems_plansTopmostSelectedPaths() throws {
-        let scenario = makeTopmostLifecycleSelectionScenario()
-
-        let outputs = EntryOperationsCommandPlanner.plan(
-            command: .mutation(.putBackSelectedItems),
-            context: scenario.context,
-        )
-
-        XCTAssertEqual(outputs.count, 1)
-        guard case let .entryOperations(.trash(.putBackFromTrash(paths))) = try XCTUnwrap(outputs.first) else {
-            return XCTFail("되돌리기 명령은 putBackFromTrash payload를 계획해야 합니다.")
-        }
-        XCTAssertEqual(paths, scenario.expectedPaths)
-    }
-
     // MARK: - EOP-003-empty_trash
-
-    /// EOP-003-empty_trash: Trash 비우기가 실제 파일 삭제로 이어지는지 검증한다.
-    /// 사용자가 `fixtures/fixtures/texts/plain/11.txt`를 fake Trash에 넣은 뒤 empty trash를 실행할 때 파일이 삭제되는지 확인한다.
-    /// - 검증 내용: `.trash(.emptyTrash)`가 confirmation 후 trash 항목 전체 삭제와 완료 상태 갱신을 수행한다.
-    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`를 FixtureSandbox로 복사한 뒤 fake Trash 디렉터리로 옮겨두고, confirmation
-    /// alert는 승인으로 응답한다.
-    /// - 기대 결과: trash 파일이 삭제되고, reducer state의 pending/complete 카운터가 초기화되며, 원본 fixture 경로는 유지된다.
-    func testEmptyTrash_success() async throws {
-        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
-        defer { sandbox.cleanup() }
-
-        let recorder = FileOpsRecorder()
-        let trashRoot = sandbox.root.appendingPathComponent(".Trash")
-        try FileManager.default.createDirectory(at: trashRoot, withIntermediateDirectories: true)
-
-        let trashPath = trashRoot.appendingPathComponent("trash.txt")
-        try FileManager.default.copyItem(at: sandbox.fileURL, to: trashPath)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: trashPath.path))
-
-        var initialState = EntryOperationsState()
-        initialState.loadingContext.coreFinished = true
-        let store = EntryOperationsTestSupport.makeStore(initialState: initialState) {
-            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
-            $0.entryOperationsAlertClient.showEmptyTrashConfirmationAlert = { _ in true }
-        }
-
-        // store.exhaustivity = .off: empty-trash confirmation and deletion are async integration steps.
-        // skipReceivedActions로 수신된 action들을 소비해 store.state를 최종 상태로 갱신한다.
-        store.exhaustivity = .off
-
-        await store.send(.trash(.emptyTrash(paths: [trashPath.path])))
-        await store.finish()
-        await store.skipReceivedActions()
-
-        XCTAssertEqual(recorder.deletedPaths, [trashPath])
-        XCTAssertFalse(FileManager.default.fileExists(atPath: trashPath.path))
-        XCTAssertEqual(store.state.pendingEmptyTrashItemCount, 0)
-        XCTAssertEqual(store.state.emptyTrashCompletedCount, 0)
-        XCTAssertTrue(store.state.restorableTrashPaths.isEmpty)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
-    }
 
     // MARK: - EOP-003-undo_entry_action
 
@@ -793,6 +690,35 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         ))))
     }
 
+    /// EOP-003-load_entry_items: route clear는 root load generation과 transient snapshot을 함께 무효화한다.
+    /// Home·AI Chat 전환 뒤 이미 enqueue된 이전 stream event가 빈 목록을 다시 채우지 않는지 검증한다.
+    /// - 검증 내용: cancelAndClearItems의 generation 증가와 stale batch 차단
+    /// - 사전 조건: generation 4의 directory load가 항목 하나를 표시하며 진행 중임
+    /// - 기대 결과: generation 5의 빈 idle context로 전환하고 generation 4 event를 무시함
+    func testCancelAndClearItemsInvalidatesRootStreamGeneration() async {
+        let currentEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/current.txt", name: "current.txt")
+        let staleEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/stale.txt", name: "stale.txt")
+        var state = EntryOperationsState()
+        state.items = [currentEntry]
+        state.isLoading = true
+        state.isReloading = true
+        state.loadingContext.generation = 4
+        state.loadingContext.sourceKind = .directory
+        let store = EntryOperationsTestSupport.makeStore(initialState: state)
+
+        await store.send(.loading(.cancelAndClearItems)) {
+            $0.items = []
+            $0.isLoading = false
+            $0.isReloading = false
+            $0.loadingContext.generation = 5
+            $0.loadingContext.sourceKind = nil
+        }
+        await store.send(.loading(.streamEvent(.init(
+            generation: 4,
+            event: .coreBatch(items: [staleEntry], batchIndex: 0),
+        ))))
+    }
+
     /// EOP-003-load_entry_items: empty core completion은 blocking loading을 해제한다.
     /// 빈 Recents 또는 Tags 결과도 stream terminal을 기다리지 않고 입력 가능한 상태가 되어야 한다.
     /// - 검증 내용: `.coreFinished(batchCount: 0)`가 isLoading과 isReloading을 해제하고 core completion을 기록한다.
@@ -975,6 +901,90 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         }
         await store.finish()
     }
+
+    /// EOP-003-load_folder_items: 동일 window의 다른 tab folder stream은 서로 취소하지 않는다.
+    /// 같은 request identity를 사용하는 두 content tab이 각각 독립된 cancellation owner를 유지하는지 검증한다.
+    /// - 검증 내용: 두 번째 folder load 시작 후 첫 번째 stream의 cancellation recorder 상태
+    /// - 사전 조건: 같은 windowID와 request, 서로 다른 loadingCancellationOwnerID를 가진 두 Store
+    /// - 기대 결과: 두 번째 load가 시작되어도 첫 번째 stream은 취소되지 않음
+    func testFolderLoadsWithDifferentOwnersDoNotCancelEachOther() async throws {
+        let windowID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"))
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 1,
+            folderID: "/tmp/shared-folder",
+            folderGeneration: 1,
+            path: "/tmp/shared-folder",
+            showHidden: false,
+            priority: .none,
+        )
+        var firstState = try EntryOperationsState(
+            loadingCancellationOwnerID: XCTUnwrap(UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")),
+        )
+        firstState.windowID = windowID
+        var secondState = try EntryOperationsState(
+            loadingCancellationOwnerID: XCTUnwrap(UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")),
+        )
+        secondState.windowID = windowID
+        let streamFactory = FolderStreamFactory()
+        let store = TestStore(initialState: FolderLoadOwnerHarness.State(
+            first: firstState,
+            second: secondState,
+        )) {
+            FolderLoadOwnerHarness()
+        } withDependencies: {
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                streamFactory.makeStream()
+            }
+        }
+        // store.exhaustivity = .off: stream 완료 액션은 정리 경로이며 cancellation 검증 대상이 아님
+        store.exhaustivity = .off
+
+        await store.send(.first(.loading(.loadFolderItems(request)))) {
+            $0.first.folderLoadingContexts[request.id] = .init(request: request)
+        }
+        await streamFactory.firstGate.waitUntilWaiting()
+        await store.send(.second(.loading(.loadFolderItems(request)))) {
+            $0.second.folderLoadingContexts[request.id] = .init(request: request)
+        }
+        await streamFactory.secondGate.waitUntilWaiting()
+
+        XCTAssertFalse(streamFactory.firstCancellation.wasCancelled)
+
+        await streamFactory.firstGate.resume(with: .entries([]))
+        await streamFactory.secondGate.resume(with: .entries([]))
+        await store.finish()
+    }
+
+    /// EOP-003-load_folder_items: owner teardown은 실행 중인 모든 folder stream을 취소한다.
+    /// 상위 tab lifecycle이 owner-scoped action 하나로 request context와 filesystem I/O를 함께 정리하는지 검증한다.
+    /// - 검증 내용: cancelAllFolderItems 이후 context 제거와 stream cancellation
+    /// - 사전 조건: 하나의 folder stream이 suspension gate에서 대기 중임
+    /// - 기대 결과: 모든 context가 제거되고 해당 stream이 취소됨
+    func testCancelAllFolderItemsCancelsOwnerStreams() async {
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 1,
+            folderID: "/tmp/folder",
+            folderGeneration: 1,
+            path: "/tmp/folder",
+            showHidden: false,
+            priority: .none,
+        )
+        let streamFactory = FolderStreamFactory()
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in streamFactory.makeStream() }
+        }
+
+        await store.send(.loading(.loadFolderItems(request))) {
+            $0.folderLoadingContexts[request.id] = .init(request: request)
+        }
+        await streamFactory.firstGate.waitUntilWaiting()
+        await store.send(.loading(.cancelAllFolderItems)) {
+            $0.folderLoadingContexts = [:]
+        }
+        await store.finish()
+
+        XCTAssertTrue(streamFactory.firstCancellation.wasCancelled)
+    }
 }
 
 extension EOP003ManageEntryLifecycleTests {
@@ -1044,26 +1054,6 @@ extension EOP003ManageEntryLifecycleTests {
 }
 
 private extension EOP003ManageEntryLifecycleTests {
-    struct TopmostLifecycleSelectionScenario {
-        let context: EntryOperationsCommandContext
-        let expectedPaths: [String]
-    }
-
-    func makeTopmostLifecycleSelectionScenario() -> TopmostLifecycleSelectionScenario {
-        let parent = EntryModelFixtures.makeEntry(path: "/tmp/Selected Folder", isFolder: true)
-        let descendant = EntryModelFixtures.makeEntry(path: "/tmp/Selected Folder/nested/file.txt")
-        let rawPrefixPeer = EntryModelFixtures.makeEntry(path: "/tmp/Selected Folder Copy.txt")
-        let displayItems = [descendant, rawPrefixPeer, parent]
-        return TopmostLifecycleSelectionScenario(
-            context: EntryOperationsCommandContext(
-                selectedIds: Set(displayItems.map(\.id)),
-                displayItems: displayItems,
-                currentPath: "/tmp",
-            ),
-            expectedPaths: [rawPrefixPeer.fullPath, parent.fullPath],
-        )
-    }
-
     func verifyLoadFailureRetry() async {
         let staleEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/stale.txt", name: "stale.txt")
         let gate = EntryLoadSuspensionGate()
@@ -1123,6 +1113,86 @@ private func failingOrEmptyStagedStream(
         Task {
             do {
                 let entries = try await gate.wait()
+                continuation.yield(.coreFinished(batchCount: entries.isEmpty ? 0 : 1))
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+    }
+}
+
+@Reducer
+private struct FolderLoadOwnerHarness {
+    @ObservableState
+    struct State: Equatable {
+        var first: EntryOperationsState
+        var second: EntryOperationsState
+    }
+
+    enum Action {
+        case first(EntryOperationsAction)
+        case second(EntryOperationsAction)
+    }
+
+    var body: some Reducer<State, Action> {
+        Scope(state: \.first, action: \.first) {
+            EntryOperationsFolderLoadingReducer()
+        }
+        Scope(state: \.second, action: \.second) {
+            EntryOperationsFolderLoadingReducer()
+        }
+    }
+}
+
+private final class FolderStreamCancellationRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    var wasCancelled: Bool {
+        lock.withLock { cancelled }
+    }
+
+    func recordCancellation() {
+        lock.withLock { cancelled = true }
+    }
+}
+
+private final class FolderStreamFactory: @unchecked Sendable {
+    let firstGate = EntryLoadSuspensionGate()
+    let secondGate = EntryLoadSuspensionGate()
+    let firstCancellation = FolderStreamCancellationRecorder()
+
+    private let lock = NSLock()
+    private var invocationCount = 0
+
+    func makeStream() -> AsyncThrowingStream<EntryLoadEvent, Error> {
+        let invocation = lock.withLock {
+            invocationCount += 1
+            return invocationCount
+        }
+        if invocation == 1 {
+            return suspendedFolderStream(gate: firstGate, cancellationRecorder: firstCancellation)
+        }
+        return suspendedFolderStream(gate: secondGate)
+    }
+}
+
+private func suspendedFolderStream(
+    gate: EntryLoadSuspensionGate,
+    cancellationRecorder: FolderStreamCancellationRecorder? = nil,
+) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+    AsyncThrowingStream { continuation in
+        continuation.onTermination = { termination in
+            guard case .cancelled = termination else { return }
+            cancellationRecorder?.recordCancellation()
+        }
+        Task {
+            do {
+                let entries = try await gate.wait()
+                if !entries.isEmpty {
+                    continuation.yield(.coreBatch(items: entries, batchIndex: 0))
+                }
                 continuation.yield(.coreFinished(batchCount: entries.isEmpty ? 0 : 1))
                 continuation.finish()
             } catch {

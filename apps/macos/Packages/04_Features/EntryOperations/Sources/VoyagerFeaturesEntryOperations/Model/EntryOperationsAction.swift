@@ -46,6 +46,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case loadRecentItems(showHidden: Bool, priority: EntryMetadataPriority = .none)
         case loadTagItems(tagName: String, showHidden: Bool, priority: EntryMetadataPriority = .none)
         case loadComputerItems
+        case cancelAndClearItems
         case itemsLoaded([EntryModel])
         case itemsLoadFailed
         case streamEvent(EntryLoadingStreamEvent)
@@ -53,6 +54,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case streamFailed(generation: Int)
         case loadFolderItems(EntryFolderLoadRequest)
         case cancelFolderItems(EntryFolderLoadRequest.RequestID)
+        case cancelAllFolderItems
         case folderStreamEvent(request: EntryFolderLoadRequest, event: EntryLoadEvent)
         case folderStreamFinished(request: EntryFolderLoadRequest)
         case folderStreamFailed(request: EntryFolderLoadRequest, failure: EntryFolderLoadFailure)

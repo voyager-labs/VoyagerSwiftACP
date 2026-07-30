@@ -15,6 +15,7 @@ struct EntryListHierarchyReducer {
 
             switch hierarchyAction {
             case let .rootContextChanged(path):
+                guard normalizedPath(path) != normalizedPath(state.hierarchy.rootPath) else { return .none }
                 let cancellationRequests = state.hierarchy.foldersByID.keys.map {
                     EntryFolderLoadRequest.RequestID(
                         rootContextGeneration: state.hierarchy.rootContextGeneration,
@@ -27,10 +28,25 @@ struct EntryListHierarchyReducer {
                         + [.send(.internal(.applyClearSelection)), .send(.internal(.reconcileHierarchySelection))],
                 )
 
+            case .hiddenFilesSettingChanged:
+                return reloadFoldersForPresentationChange(state: &state)
+
+            case .arrangementMetadataPriorityChanged:
+                return reloadFoldersForPresentationChange(state: &state)
+
             case let .hierarchyInvalidated(affectedPaths, removedPrefixes):
                 return invalidateHierarchy(
                     affectedPaths: affectedPaths,
                     removedPrefixes: removedPrefixes,
+                    reloadCachedFolders: false,
+                    state: &state,
+                )
+
+            case let .coarseHierarchyInvalidated(removedPrefixes):
+                return invalidateHierarchy(
+                    affectedPaths: [],
+                    removedPrefixes: removedPrefixes,
+                    reloadCachedFolders: true,
                     state: &state,
                 )
 
@@ -121,6 +137,7 @@ struct EntryListHierarchyReducer {
     private func invalidateHierarchy(
         affectedPaths: [String],
         removedPrefixes: [String],
+        reloadCachedFolders: Bool,
         state: inout State,
     ) -> Effect<Action> {
         let removedIDs = Set(state.hierarchy.foldersByID.keys.filter { id in
@@ -139,13 +156,19 @@ struct EntryListHierarchyReducer {
             state.hierarchy.foldersByID[id] = nil
         }
 
+        if reloadCachedFolders {
+            return .merge(effects + [reloadFoldersForPresentationChange(state: &state)])
+        }
+
         var affectedIDs = Set<EntryModel.ID>()
         for path in affectedPaths {
-            let normalizedPath = normalizedPath(path)
-            if state.hierarchy.foldersByID[normalizedPath] != nil {
-                affectedIDs.insert(normalizedPath)
+            let canonicalPath = normalizedPath(path)
+            if let folderID = state.hierarchy.foldersByID.keys.first(where: {
+                normalizedPath($0) == canonicalPath
+            }) {
+                affectedIDs.insert(folderID)
             }
-            if let parentID = nearestLoadedParentID(for: normalizedPath, state: state) {
+            if let parentID = nearestRefreshableParentID(for: canonicalPath, state: state) {
                 affectedIDs.insert(parentID)
             }
         }
@@ -174,6 +197,40 @@ struct EntryListHierarchyReducer {
         return .merge(effects)
     }
 
+    private func reloadFoldersForPresentationChange(state: inout State) -> Effect<Action> {
+        let folderIDs = Array(state.hierarchy.foldersByID.keys)
+        let expandedFolders = folderIDs.compactMap { id -> (EntryModel.ID, EntryModel)? in
+            guard state.hierarchy.expandedFolderIDs.contains(id),
+                  let folder = folder(id: id, in: state)
+            else { return nil }
+            return (id, folder)
+        }
+        let expandedFolderIDs = Set(expandedFolders.map(\.0))
+        let rootContextGeneration = state.hierarchy.rootContextGeneration
+        var effects: [Effect<Action>] = folderIDs.map { id in
+            .send(.entryOperations(.loading(.cancelFolderItems(.init(
+                rootContextGeneration: rootContextGeneration,
+                folderID: id,
+            )))))
+        }
+
+        for id in folderIDs where !expandedFolderIDs.contains(id) {
+            var folderState = state.hierarchy.foldersByID[id] ?? .init()
+            folderState.children = []
+            folderState.phase = .idle
+            folderState.generation &+= 1
+            folderState.expectedBatchIndex = 0
+            folderState.coreFinished = false
+            state.hierarchy.foldersByID[id] = folderState
+        }
+        for (id, folder) in expandedFolders {
+            effects.append(startLoad(folder: folder, id: id, state: &state))
+        }
+
+        EntryViewLayoutFeature.reconcileSelectionWithVisibleEntries(&state)
+        return .concatenate(effects)
+    }
+
     private func folder(id: EntryModel.ID, in state: State) -> EntryModel? {
         state.entries.first(where: { $0.id == id })
             ?? state.hierarchy.foldersByID.values.lazy
@@ -195,10 +252,11 @@ struct EntryListHierarchyReducer {
     private static func metadataPriority(
         for arrangements: EntryArrangementsFeature.State,
     ) -> EntryMetadataPriority {
-        .active([
+        let probes = [
             EntryViewLayoutFeature.metadataProbe(for: arrangements.sortKey),
             EntryViewLayoutFeature.metadataProbe(for: arrangements.groupKey),
-        ].compactMap(\.self))
+        ].compactMap(\.self)
+        return probes.isEmpty ? .none : .active(probes)
     }
 
     private func apply(
@@ -263,9 +321,12 @@ struct EntryListHierarchyReducer {
         return true
     }
 
-    private func nearestLoadedParentID(for path: String, state: State) -> EntryModel.ID? {
+    private func nearestRefreshableParentID(for path: String, state: State) -> EntryModel.ID? {
         state.hierarchy.foldersByID
-            .filter { $0.value.phase == .loaded && isSameOrDescendant(path: path, of: $0.key) }
+            .filter {
+                ($0.value.phase == .loaded || $0.value.phase == .loading)
+                    && isSameOrDescendant(path: path, of: $0.key)
+            }
             .map(\.key)
             .max { lhs, rhs in
                 pathComponents(for: lhs).count < pathComponents(for: rhs).count
@@ -279,7 +340,8 @@ struct EntryListHierarchyReducer {
     }
 
     private func normalizedPath(_ path: String) -> String {
-        URL(fileURLWithPath: path).standardizedFileURL.path
+        guard !path.isEmpty else { return path }
+        return URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     private func pathComponents(for path: String) -> [String] {

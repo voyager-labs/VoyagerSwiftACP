@@ -73,6 +73,19 @@ enum EntryOperationsCommandPlanner {
         }
     }
 
+    static func topLevelPaths(from paths: [String]) -> [String] {
+        let pathComponents = paths.map { URL(fileURLWithPath: $0).standardizedFileURL.pathComponents }
+        return paths.enumerated().compactMap { index, path in
+            let components = pathComponents[index]
+            let hasSelectedAncestor = pathComponents.enumerated().contains { candidateIndex, candidateComponents in
+                candidateIndex != index &&
+                    candidateComponents.count < components.count &&
+                    components.starts(with: candidateComponents)
+            }
+            return hasSelectedAncestor ? nil : path
+        }
+    }
+
     private static func planNavigation(
         _ command: EntryOperationsNavigationCommand,
         context: EntryOperationsCommandContext,

@@ -18,6 +18,11 @@ public struct EntryLoadingClient: Sendable {
         [URLResourceKey],
         FileManager.DirectoryEnumerationOptions,
     ) throws -> [URL]
+    public var directoryURLBatches: (@Sendable (
+        URL,
+        FileManager.DirectoryEnumerationOptions,
+        Int,
+    ) -> AsyncThrowingStream<[URL], Error>)?
     public var mountedVolumeURLs: @Sendable (
         [URLResourceKey],
         FileManager.VolumeEnumerationOptions,
@@ -58,6 +63,11 @@ public struct EntryLoadingClient: Sendable {
         ) -> Bool,
         contentsOfDirectory: @escaping @Sendable (URL, [URLResourceKey], FileManager.DirectoryEnumerationOptions) throws
             -> [URL],
+        directoryURLBatches: (@Sendable (
+            URL,
+            FileManager.DirectoryEnumerationOptions,
+            Int,
+        ) -> AsyncThrowingStream<[URL], Error>)? = nil,
         mountedVolumeURLs: @escaping @Sendable ([URLResourceKey], FileManager.VolumeEnumerationOptions) -> [URL]?,
         urlsForDirectory: @escaping @Sendable (FileManager.SearchPathDirectory, FileManager.SearchPathDomainMask)
             -> [URL],
@@ -88,6 +98,7 @@ public struct EntryLoadingClient: Sendable {
         self.fileExists = fileExists
         self.fileExistsAtPath = fileExistsAtPath
         self.contentsOfDirectory = contentsOfDirectory
+        self.directoryURLBatches = directoryURLBatches
         self.mountedVolumeURLs = mountedVolumeURLs
         self.urlsForDirectory = urlsForDirectory
         self.homeDirectory = homeDirectory
@@ -117,6 +128,7 @@ extension EntryLoadingClient: DependencyKey {
             fileExists: EntryLoadingLive.fileExists,
             fileExistsAtPath: EntryLoadingLive.fileExistsAtPath,
             contentsOfDirectory: EntryLoadingLive.contentsOfDirectory,
+            directoryURLBatches: EntryLoadingLive.directoryURLBatches,
             mountedVolumeURLs: EntryLoadingLive.mountedVolumeURLs,
             urlsForDirectory: EntryLoadingLive.urlsForDirectory,
             homeDirectory: EntryLoadingLive.homeDirectory,
@@ -293,24 +305,31 @@ enum EntryLoadingLive {
             var finderFavoritesTagClient
             @Dependency(\.entryLoadingClient)
             var entryLoadingClient
-            do {
-                let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
+            let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
+            let configuration = EntryStagedMaterializerLive.URLMaterializationConfiguration(
+                priority: priority,
+                entryLoadingClient: entryLoadingClient,
+                workspaceClient: workspaceClient,
+                sourceKind: .directory,
+                instrumentation: .live(),
+                favoriteTags: finderFavoritesTagClient.favoriteTags(),
+            )
+            if let directoryURLBatches = entryLoadingClient.directoryURLBatches {
+                return EntryStagedMaterializerLive.materializeURLBatches(
+                    directoryURLBatches(directoryURL, options, EntryStagedMaterializerLive.batchSize),
+                    showHidden: showHidden,
+                    configuration: configuration,
+                )
+            }
+            let sequence = DeferredEntryLoadSequence {
                 let urls = try entryLoadingClient.contentsOfDirectory(directoryURL, [], options)
                 return EntryStagedMaterializerLive.materializeURLs(
                     urls,
                     showHidden: showHidden,
-                    configuration: .init(
-                        priority: priority,
-                        entryLoadingClient: .liveValue,
-                        workspaceClient: workspaceClient,
-                        sourceKind: .directory,
-                        instrumentation: .live(),
-                        favoriteTags: finderFavoritesTagClient.favoriteTags(),
-                    ),
+                    configuration: configuration,
                 )
-            } catch {
-                return .init { $0.finish(throwing: error) }
             }
+            return AsyncThrowingStream(unfolding: { try await sequence.next() })
         }
     }
 
@@ -436,6 +455,24 @@ enum EntryLoadingLive {
     ) throws -> [URL] {
         { url, keys, options in
             try FileManagerClient.liveValue.contentsOfDirectory(url, keys, options)
+        }
+    }
+
+    nonisolated static var directoryURLBatches: @Sendable (
+        URL,
+        FileManager.DirectoryEnumerationOptions,
+        Int,
+    ) -> AsyncThrowingStream<[URL], Error> {
+        { directoryURL, options, batchSize in
+            let source = DirectoryURLBatchSource(
+                directoryURL: directoryURL,
+                options: options.union(.skipsSubdirectoryDescendants),
+                batchSize: batchSize,
+            )
+            return AsyncThrowingStream(unfolding: {
+                try Task.checkCancellation()
+                return try source.nextBatch()
+            })
         }
     }
 
@@ -593,5 +630,73 @@ enum EntryLoadingLive {
         } catch {
             return []
         }
+    }
+}
+
+private actor DeferredEntryLoadSequence {
+    private let makeStream: @Sendable () async throws -> AsyncThrowingStream<EntryLoadEvent, Error>
+    private var iterator: EntryLoadIteratorBox?
+
+    init(makeStream: @escaping @Sendable () async throws -> AsyncThrowingStream<EntryLoadEvent, Error>) {
+        self.makeStream = makeStream
+    }
+
+    func next() async throws -> EntryLoadEvent? {
+        if iterator == nil {
+            let stream = try await makeStream()
+            iterator = EntryLoadIteratorBox(stream.makeAsyncIterator())
+        }
+        return try await iterator?.next()
+    }
+}
+
+private final class EntryLoadIteratorBox: @unchecked Sendable {
+    private var iterator: AsyncThrowingStream<EntryLoadEvent, Error>.Iterator
+
+    init(_ iterator: AsyncThrowingStream<EntryLoadEvent, Error>.Iterator) {
+        self.iterator = iterator
+    }
+
+    func next() async throws -> EntryLoadEvent? {
+        try await iterator.next()
+    }
+}
+
+private final class DirectoryURLBatchSource: @unchecked Sendable {
+    private let directoryURL: URL
+    private let options: FileManager.DirectoryEnumerationOptions
+    private let batchSize: Int
+    private var enumerator: FileManager.DirectoryEnumerator?
+    private var enumerationError: Error?
+
+    init(directoryURL: URL, options: FileManager.DirectoryEnumerationOptions, batchSize: Int) {
+        self.directoryURL = directoryURL
+        self.options = options
+        self.batchSize = batchSize
+    }
+
+    func nextBatch() throws -> [URL]? {
+        if enumerator == nil {
+            enumerator = FileManager.default.enumerator(
+                at: directoryURL,
+                includingPropertiesForKeys: [],
+                options: options,
+                errorHandler: { [weak self] _, error in
+                    self?.enumerationError = error
+                    return false
+                },
+            )
+            guard enumerator != nil else { throw CocoaError(.fileReadNoSuchFile) }
+        }
+
+        var urls: [URL] = []
+        while urls.count < batchSize, let value = enumerator?.nextObject() {
+            if let error = enumerationError { throw error }
+            if let url = value as? URL {
+                urls.append(url)
+            }
+        }
+        if let error = enumerationError { throw error }
+        return urls.isEmpty ? nil : urls
     }
 }

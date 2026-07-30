@@ -6,6 +6,7 @@ import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
@@ -433,7 +434,11 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.contentTabs(.setCurrent(directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(directoryPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
 
         XCTAssertEqual(loadPaths.value, [directoryPath])
@@ -470,7 +475,11 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.contentTabs(.setCurrent(directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(directoryPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
 
         XCTAssertEqual(loadPaths.value, [directoryPath])
@@ -538,7 +547,11 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.navigation(.view(.navigateToPath(secondPath))))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(secondPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await gate.waitUntilWaiting()
         XCTAssertEqual(store.state.contentTabs.tabs[id: directoryID]?.anchor, .directory(path: secondPath))
         XCTAssertEqual(store.state.content.entryViewLayout.entries.map(\.fullPath), [firstEntry.fullPath])
@@ -557,7 +570,11 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.contentTabs(.setCurrent(directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(secondPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
         XCTAssertEqual(loadPaths.value, [secondPath, secondPath])
         XCTAssertTrue(store.state.content.entryViewLayout.entries.isEmpty)
@@ -567,7 +584,11 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.contentTabs(.setCurrent(directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(secondPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
         XCTAssertEqual(loadPaths.value, [secondPath, secondPath, secondPath])
         XCTAssertTrue(store.state.content.entryViewLayout.entries.isEmpty)
@@ -610,7 +631,11 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.contentTabs(.setCurrent(directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(directoryPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await gate.waitUntilWaiting()
         XCTAssertEqual(store.state.content.entryViewLayout.entries, [staleEntry])
 
@@ -655,13 +680,21 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.contentTabs(.setCurrent(firstID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(firstPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
 
         await store.send(.contentTabs(.setCurrent(secondID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(secondPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
 
         XCTAssertEqual(loadPaths.value, [firstPath, secondPath])
@@ -1151,6 +1184,259 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertNil(store.state.tabContentStates[inactiveID])
     }
 
+    /// CTM-005-independent_content_tab_session: active tab 전환 시 nested folder stream 취소
+    /// 탭별 loading owner 경계가 root load뿐 아니라 확장 폴더의 staged stream도 종료하는지 검증한다.
+    /// - 검증 내용: previous A로 cancelAllFolderItems 전달과 A folder loading context 정리
+    /// - 사전 조건: A에 nested folder loading context가 있고 B Directory tab이 존재함
+    /// - 기대 결과: A의 context가 제거되고 B가 active로 복원됨
+    func testTabSwitchCancelsPreviousTabFolderLoad() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 1,
+            folderID: "/tmp/A/folder",
+            folderGeneration: 1,
+            path: "/tmp/A/folder",
+            showHidden: false,
+            priority: .none,
+        )
+        var contentA = makeCloseTestDirectoryContent(path: "/tmp/A")
+        contentA.entryViewLayout.entryOperations.folderLoadingContexts[request.id] = .init(request: request)
+        let state = makeCloseTestState(
+            tabs: [
+                makeCloseTestDirectoryTab(id: tabA, path: "/tmp/A", title: "A"),
+                makeCloseTestDirectoryTab(id: tabB, path: "/tmp/B", title: "B"),
+            ],
+            activeTabID: tabA,
+            contentStates: [
+                tabA: contentA,
+                tabB: makeCloseTestDirectoryContent(path: "/tmp/B"),
+            ],
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: handoff 부수 action보다 previous tab cancellation routing을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(tabB)))
+        await store.receive { action in
+            guard case .tabContent(
+                tabID: tabA,
+                action: .entryViewLayout(.entryOperations(.loading(.cancelAllFolderItems))),
+            ) = action else { return false }
+            return true
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabB)
+        XCTAssertEqual(
+            store.state.tabContentStates[tabA]?.entryViewLayout.entryOperations.folderLoadingContexts.isEmpty,
+            true,
+        )
+    }
+
+    /// CTM-005-independent_content_tab_session: active tab 전환 시 collection materialization 취소
+    /// 이전 탭의 replace·append I/O owner를 종료하고 partial collection snapshot만 보존하는지 검증한다.
+    /// - 검증 내용: previous A로 cancelCollectionMaterialization 전달과 transient loading state 정리
+    /// - 사전 조건: A에 진행 중인 collection replace와 append가 있고 B tab이 존재함
+    /// - 기대 결과: A의 collection mode/items는 유지되고 replace·append lifecycle만 초기화됨
+    func testTabSwitchCancelsPreviousTabCollectionMaterialization() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let collectionItem = EntryModel.temporaryFolder(id: "/tmp/A/item.txt", name: "item.txt")
+        var contentA = makeCloseTestDirectoryContent(path: "/tmp/A")
+        contentA.entryViewLayout.isCollectionMode = true
+        contentA.entryViewLayout.collectionItems = [collectionItem]
+        contentA.entryViewLayout.isCollectionContentLoading = true
+        contentA.entryViewLayout.activeCollectionReplacePaths = ["/tmp/A/pending.txt"]
+        contentA.entryViewLayout.expectedCollectionReplaceBatchIndex = 1
+        contentA.entryViewLayout.activeCollectionAppendExpectedBatchIndices = [7: 1]
+        contentA.entryViewLayout.activeCollectionAppendPaths = [7: ["/tmp/A/appending.txt"]]
+        let state = makeCloseTestState(
+            tabs: [
+                makeCloseTestDirectoryTab(id: tabA, path: "/tmp/A", title: "A"),
+                makeCloseTestDirectoryTab(id: tabB, path: "/tmp/B", title: "B"),
+            ],
+            activeTabID: tabA,
+            contentStates: [
+                tabA: contentA,
+                tabB: makeCloseTestDirectoryContent(path: "/tmp/B"),
+            ],
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: handoff 부수 action보다 previous collection owner 정리에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(tabB)))
+        await store.receive { action in
+            guard case .tabContent(
+                tabID: tabA,
+                action: .entryViewLayout(.internal(.cancelCollectionMaterialization)),
+            ) = action else { return false }
+            return true
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let previousLayout = store.state.tabContentStates[tabA]?.entryViewLayout
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabB)
+        XCTAssertEqual(previousLayout?.isCollectionMode, true)
+        XCTAssertEqual(Array(previousLayout?.collectionItems ?? []), [collectionItem])
+        XCTAssertEqual(previousLayout?.isCollectionContentLoading, false)
+        XCTAssertEqual(previousLayout?.activeCollectionReplacePaths, [])
+        XCTAssertEqual(previousLayout?.activeCollectionAppendExpectedBatchIndices, [:])
+        XCTAssertEqual(previousLayout?.activeCollectionAppendPaths, [:])
+    }
+
+    /// CTM-005-independent_content_tab_session: 현재 탭 재선택은 진행 중 load를 유지함
+    /// 실제 tab 전환이 없는 setCurrent가 현재 folder·collection owner를 취소하지 않는지 검증한다.
+    /// - 검증 내용: same-tab setCurrent 이후 folder context와 collection transient state 보존
+    /// - 사전 조건: active A에 진행 중인 folder load와 collection replace·append가 있음
+    /// - 기대 결과: 취소 action 없이 모든 in-flight state가 그대로 유지됨
+    func testSameTabSelectionPreservesInFlightContentLoads() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 1,
+            folderID: "/tmp/A/folder",
+            folderGeneration: 1,
+            path: "/tmp/A/folder",
+            showHidden: false,
+            priority: .none,
+        )
+        var contentA = makeCloseTestDirectoryContent(path: "/tmp/A")
+        contentA.entryViewLayout.entryOperations.folderLoadingContexts[request.id] = .init(request: request)
+        contentA.entryViewLayout.isCollectionMode = true
+        contentA.entryViewLayout.isCollectionContentLoading = true
+        contentA.entryViewLayout.activeCollectionReplacePaths = ["/tmp/A/pending.txt"]
+        contentA.entryViewLayout.activeCollectionAppendExpectedBatchIndices = [7: 1]
+        contentA.entryViewLayout.activeCollectionAppendPaths = [7: ["/tmp/A/appending.txt"]]
+        let state = makeCloseTestState(
+            tabs: [makeCloseTestDirectoryTab(id: tabA, path: "/tmp/A", title: "A")],
+            activeTabID: tabA,
+            contentStates: [tabA: contentA],
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+
+        await store.send(.contentTabs(.setCurrent(tabA)))
+        await store.finish()
+
+        XCTAssertNotNil(store.state.content.entryViewLayout.entryOperations.folderLoadingContexts[request.id])
+        XCTAssertTrue(store.state.content.entryViewLayout.isCollectionContentLoading)
+        XCTAssertEqual(store.state.content.entryViewLayout.activeCollectionReplacePaths, ["/tmp/A/pending.txt"])
+        XCTAssertEqual(store.state.content.entryViewLayout.activeCollectionAppendExpectedBatchIndices, [7: 1])
+    }
+
+    /// CTM-005-independent_content_tab_session: 존재하지 않는 tab 선택은 진행 중 load를 유지함
+    /// 실제 전환이 불가능한 setCurrent가 현재 folder·collection owner를 취소하지 않는지 검증한다.
+    /// - 검증 내용: invalid-tab setCurrent 이후 folder context와 collection transient state 보존
+    /// - 사전 조건: active A에 진행 중인 folder load와 collection replace·append가 있고 target은 존재하지 않음
+    /// - 기대 결과: 취소 action 없이 active A와 모든 in-flight state가 그대로 유지됨
+    func testInvalidTabSelectionPreservesInFlightContentLoads() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let invalidTabID = ContentTabID(rawValue: "missing")
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 1,
+            folderID: "/tmp/A/folder",
+            folderGeneration: 1,
+            path: "/tmp/A/folder",
+            showHidden: false,
+            priority: .none,
+        )
+        var contentA = makeCloseTestDirectoryContent(path: "/tmp/A")
+        contentA.entryViewLayout.entryOperations.folderLoadingContexts[request.id] = .init(request: request)
+        contentA.entryViewLayout.isCollectionMode = true
+        contentA.entryViewLayout.isCollectionContentLoading = true
+        contentA.entryViewLayout.activeCollectionReplacePaths = ["/tmp/A/pending.txt"]
+        contentA.entryViewLayout.activeCollectionAppendExpectedBatchIndices = [7: 1]
+        contentA.entryViewLayout.activeCollectionAppendPaths = [7: ["/tmp/A/appending.txt"]]
+        let state = makeCloseTestState(
+            tabs: [makeCloseTestDirectoryTab(id: tabA, path: "/tmp/A", title: "A")],
+            activeTabID: tabA,
+            contentStates: [tabA: contentA],
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+
+        await store.send(.contentTabs(.setCurrent(invalidTabID)))
+        await store.finish()
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabA)
+        XCTAssertNotNil(store.state.content.entryViewLayout.entryOperations.folderLoadingContexts[request.id])
+        XCTAssertTrue(store.state.content.entryViewLayout.isCollectionContentLoading)
+        XCTAssertEqual(store.state.content.entryViewLayout.activeCollectionReplacePaths, ["/tmp/A/pending.txt"])
+        XCTAssertEqual(store.state.content.entryViewLayout.activeCollectionAppendExpectedBatchIndices, [7: 1])
+    }
+
+    /// CTM-005-independent_content_tab_session: inactive tab close 시 nested folder stream 취소
+    /// 제거되는 snapshot의 loading owner를 사용해 해당 탭의 확장 폴더 I/O까지 종료하는지 검증한다.
+    /// - 검증 내용: inactive B의 folder stream cancellation 1회와 active A session 보존
+    /// - 사전 조건: B의 nested folder stream이 대기 중이고 A Directory tab이 active임
+    /// - 기대 결과: B folder stream과 state만 제거되고 A는 active로 유지됨
+    func testInactiveCloseCancelsClosedTabFolderLoad() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let loadStarted = expectation(description: "folder load started")
+        let loadCancelled = expectation(description: "folder load cancelled")
+        let cancellationCount = LockIsolated(0)
+        let loadGate = AsyncStream<Void>.makeStream()
+        let state = makeCloseTestState(
+            tabs: [
+                makeCloseTestDirectoryTab(id: tabA, path: "/tmp/A", title: "A"),
+                makeCloseTestDirectoryTab(id: tabB, path: "/tmp/B", title: "B"),
+            ],
+            activeTabID: tabA,
+            contentStates: [
+                tabA: makeCloseTestDirectoryContent(path: "/tmp/A"),
+                tabB: makeCloseTestDirectoryContent(path: "/tmp/B"),
+            ],
+        )
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 1,
+            folderID: "/tmp/B/folder",
+            folderGeneration: 1,
+            path: "/tmp/B/folder",
+            showHidden: false,
+            priority: .none,
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.stagedLoadItems = nil
+            $0.entryLoadingClient.loadItems = { _, _ in
+                loadStarted.fulfill()
+                return await withTaskCancellationHandler {
+                    for await _ in loadGate.stream {}
+                    return []
+                } onCancel: {
+                    cancellationCount.withValue { $0 += 1 }
+                    loadGate.continuation.finish()
+                    loadCancelled.fulfill()
+                }
+            }
+        }
+        // store.exhaustivity = .off: inactive close 부수 action보다 closed tab folder stream cancellation을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.tabContent(
+            tabID: tabB,
+            action: .entryViewLayout(.entryOperations(.loading(.loadFolderItems(request)))),
+        ))
+        await fulfillment(of: [loadStarted], timeout: 1)
+        await store.send(.contentTabs(.close(tabB)))
+        await fulfillment(of: [loadCancelled], timeout: 1)
+        await store.finish()
+
+        XCTAssertEqual(cancellationCount.value, 1)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabA)
+        XCTAssertNil(store.state.tabContentStates[tabB])
+    }
+
     /// CTM-005-independent_content_tab_session: inactive tab close 시 active load 보존
     /// 닫힌 tab owner의 cancel effect가 같은 window의 active loading owner에 전파되지 않는지 검증한다.
     /// - 검증 내용: inactive close 후 active cancellation 0회와 active load 정상 완료
@@ -1279,7 +1565,11 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.contentTabs(.close(activeID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(fallbackPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await gate.waitUntilWaiting()
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, fallbackID)
@@ -10633,7 +10923,11 @@ private extension CTM005IndependentContentTabSessionTests {
         await store.receive { action in
             guard case let .tabContent(
                 receivedTabID,
-                .entryViewLayout(.entryOperations(.loading(.loadItems(path: receivedPath, showHidden: false)))),
+                .entryViewLayout(.entryOperations(.loading(.loadItems(
+                    path: receivedPath,
+                    showHidden: false,
+                    priority: _,
+                )))),
             ) = action else { return false }
             return receivedTabID == tabID && receivedPath == path
         }
@@ -10712,20 +11006,27 @@ private extension CTM005IndependentContentTabSessionTests {
         await store.send(.contentTabs(.setCurrent(fixture.directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(fixture.directoryPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await fixture.gate.waitUntilWaiting()
         XCTAssertEqual(store.state.content.entryViewLayout.entries, [fixture.staleEntry])
 
         await fixture.gate.resume(with: .failure)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoadFailed)
-        await store.skipReceivedActions()
+        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.streamFailed, 1)
 
         await store.send(.contentTabs(.setCurrent(fixture.homeID)))
         await store.skipReceivedActions()
         await store.send(.contentTabs(.setCurrent(fixture.directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(fixture.directoryPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await fixture.gate.waitUntilWaiting()
         await fixture.gate.resume(with: .entries([]))
         await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)
@@ -10737,7 +11038,11 @@ private extension CTM005IndependentContentTabSessionTests {
         await store.send(.contentTabs(.setCurrent(fixture.directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(fixture.directoryPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive { action in
+            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
+            else { return false }
+            return true
+        }
         await fixture.gate.waitUntilWaiting()
         await fixture.gate.resume(with: .entries([]))
         await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.itemsLoaded)

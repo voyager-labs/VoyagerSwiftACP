@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 
 enum FileManagerContentEntryOpsCoordinator {
@@ -26,10 +27,10 @@ enum FileManagerContentEntryOpsCoordinator {
             )
 
         case let .lifecycle(.pathsMutated(paths)):
-            handleMutatedPaths(paths, state: state)
+            handleMutatedPaths(paths, removedPrefixes: [], state: state)
 
-        case let .lifecycle(.operationFinished(_, kind, _)):
-            kind == .setTags ? .none : reloadEntryItemsEffect(state: state)
+        case let .lifecycle(.operationFinished(path, kind, result)):
+            handleOperationFinished(path: path, kind: kind, result: result, state: state)
 
         case .lifecycle(.emptyTrashCompleted):
             .send(.delegate(.closeWindow))
@@ -43,24 +44,34 @@ enum FileManagerContentEntryOpsCoordinator {
         reloadEntryItemsEffect(
             navigationState: state.navigation.navigationState,
             showHidden: state.entryViewLayout.showHiddenFiles,
+            priority: rootMetadataPriority(for: state.entryViewLayout.entryArrangements),
         )
     }
 
     static func reloadEntryItemsEffect(
         navigationState: ContentPageNavigationRoute,
         showHidden: Bool,
+        priority: EntryMetadataPriority = .none,
     ) -> Effect<FileManagerContentAction> {
         switch navigationState {
         case .home:
             .none
         case let .folder(path):
-            sendEntryOperations(.loading(.loadItems(path: path, showHidden: showHidden)))
+            sendEntryOperations(.loading(.loadItems(
+                path: path,
+                showHidden: showHidden,
+                priority: priority,
+            )))
         case .recents:
-            sendEntryOperations(.loading(.loadRecentItems(showHidden: showHidden)))
+            sendEntryOperations(.loading(.loadRecentItems(
+                showHidden: showHidden,
+                priority: priority,
+            )))
         case let .tags(tagName):
             sendEntryOperations(.loading(.loadTagItems(
                 tagName: tagName,
                 showHidden: showHidden,
+                priority: priority,
             )))
         case .computer:
             sendEntryOperations(.loading(.loadComputerItems))
@@ -91,6 +102,26 @@ enum FileManagerContentEntryOpsCoordinator {
         return didChangeSelection
     }
 
+    static func rootMetadataPriority(
+        for arrangements: EntryArrangementsFeature.State,
+    ) -> EntryMetadataPriority {
+        rootMetadataPriority(
+            sortKey: arrangements.sortKey,
+            groupKey: arrangements.groupKey,
+        )
+    }
+
+    static func rootMetadataPriority(
+        sortKey: SortKey,
+        groupKey: GroupKey,
+    ) -> EntryMetadataPriority {
+        let probes = [
+            metadataProbe(for: sortKey),
+            metadataProbe(for: groupKey),
+        ].compactMap(\.self)
+        return probes.isEmpty ? .none : .active(probes)
+    }
+
     private static func setTagsRefreshEffect(
         record: EntryActionRecord,
         state: FileManagerContentState,
@@ -110,6 +141,28 @@ enum FileManagerContentEntryOpsCoordinator {
         _ record: EntryActionRecord,
         state: FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
+        if case let .folder(currentPath) = state.navigation.navigationState,
+           let updatedRootPath = record.targets.first(where: {
+               $0.beforePath.map { pathsEqual($0, currentPath) } == true && $0.afterPath != nil
+           })?.afterPath
+        {
+            return .send(.internal(.requestNavigation(.view(.navigateToPath(updatedRootPath)))))
+        }
+
+        if case .folder = state.navigation.navigationState {
+            let affectedPaths = record.targets.flatMap { target in
+                [target.beforePath, target.afterPath].compactMap(\.self)
+            }
+            let removedPrefixes = record.operationKind.sourcePathCeasesToExistAtOriginalLocation
+                ? record.targets.compactMap(\.beforePath)
+                : []
+            guard !affectedPaths.isEmpty else { return .none }
+            return .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths: affectedPaths.map(parentPath(for:)),
+                removedPrefixes: removedPrefixes,
+            ))))
+        }
+
         guard case .collection = state.navigation.navigationState,
               record.operationKind == .putBack
         else {
@@ -152,12 +205,42 @@ enum FileManagerContentEntryOpsCoordinator {
 
     private static func handleMutatedPaths(
         _ paths: [String],
+        removedPrefixes: [String],
         state: FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
-        guard case .collection = state.navigation.navigationState else {
+        switch state.navigation.navigationState {
+        case .folder:
+            guard !paths.isEmpty else { return .none }
+            return .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths: paths.map(parentPath(for:)),
+                removedPrefixes: removedPrefixes,
+            ))))
+
+        case .collection:
+            return .send(.entryViewLayout(.internal(.removeCollectionPaths(paths))))
+
+        default:
             return .none
         }
-        return .send(.entryViewLayout(.internal(.removeCollectionPaths(paths))))
+    }
+
+    private static func handleOperationFinished(
+        path: String,
+        kind: OperationKind,
+        result: Result<Void, FileOpError>,
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        let removedPathEffect: Effect<FileManagerContentAction> = if kind == .deleteImmediately,
+                                                                     case .success = result
+        {
+            handleMutatedPaths([path], removedPrefixes: [path], state: state)
+        } else {
+            .none
+        }
+        return .merge(
+            removedPathEffect,
+            kind == .setTags ? .none : reloadEntryItemsEffect(state: state),
+        )
     }
 
     /// itemsLoaded 후 pendingSelectEntryID가 있으면 해당 엔트리를 선택 focus
@@ -175,7 +258,49 @@ enum FileManagerContentEntryOpsCoordinator {
         URL(fileURLWithPath: path).resolvingSymlinksInPath().path
     }
 
+    private static func parentPath(for path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.deletingLastPathComponent().path
+    }
+
+    private static func pathsEqual(_ lhs: String, _ rhs: String) -> Bool {
+        URL(fileURLWithPath: lhs).standardizedFileURL.path
+            == URL(fileURLWithPath: rhs).standardizedFileURL.path
+    }
+
+    private static func metadataProbe(for key: SortKey) -> EntryMetadataProbe? {
+        switch key {
+        case .kind, .application, .dateLastOpened:
+            .spotlight
+        case .tags:
+            .tags
+        case .name, .size, .dateModified, .dateCreated, .dateAdded:
+            nil
+        }
+    }
+
+    private static func metadataProbe(for key: GroupKey) -> EntryMetadataProbe? {
+        switch key {
+        case .kind, .application, .dateLastOpened:
+            .spotlight
+        case .tags:
+            .tags
+        case .none, .name, .size, .dateModified, .dateCreated, .dateAdded:
+            nil
+        }
+    }
+
     private static func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<FileManagerContentAction> {
         .send(.entryViewLayout(.entryOperations(action)))
+    }
+}
+
+private extension OperationKind {
+    var sourcePathCeasesToExistAtOriginalLocation: Bool {
+        switch self {
+        case .pasteFileMove, .rename, .moveToTrash, .putBack:
+            true
+        default:
+            false
+        }
     }
 }

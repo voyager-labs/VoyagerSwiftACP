@@ -55,8 +55,10 @@ public struct EntryViewLayoutState: Equatable {
 
     /// Replacement streams are accepted only when their epoch matches this value.
     public var collectionReplaceEpoch = 0
+    public var activeCollectionReplacePaths: [String] = []
     public var expectedCollectionReplaceBatchIndex = 0
     public var activeCollectionAppendExpectedBatchIndices: [Int: Int] = [:]
+    public var activeCollectionAppendPaths: [Int: [String]] = [:]
     public var finishedCollectionAppendTokens: Set<Int> = []
     public var nextCollectionAppendToken = 0
     public var collectionCoreFinished = false
@@ -80,6 +82,21 @@ public struct EntryViewLayoutState: Equatable {
     public var entries: [EntryModel] = []
 
     public func visibleSelectableEntryIDs(isNormalDirectoryPage: Bool) -> [EntryModel.ID] {
+        outlineProjection(isNormalDirectoryPage: isNormalDirectoryPage).visibleSelectableEntryIDs
+    }
+
+    public func visibleSelectableEntries(isNormalDirectoryPage: Bool) -> [EntryModel] {
+        outlineProjection(isNormalDirectoryPage: isNormalDirectoryPage).visibleSelectableEntries
+    }
+
+    public var hierarchyProjectionIsActive: Bool {
+        mode == .list
+            && !isCollectionMode
+            && !hierarchy.rootPath.isEmpty
+            && entryArrangements.groupKey == .none
+    }
+
+    private func outlineProjection(isNormalDirectoryPage: Bool) -> EntryListOutlineProjection {
         EntryListOutlineProjection(
             revision: outlineProjectionRevision,
             rootEntries: entries,
@@ -91,7 +108,7 @@ public struct EntryViewLayoutState: Equatable {
             ),
             sortKey: entryArrangements.sortKey,
             sortOrder: entryArrangements.sortOrder,
-        ).visibleSelectableEntryIDs
+        )
     }
 
     var selectionProjectionIsHierarchyEnabled: Bool {
@@ -108,6 +125,8 @@ public struct EntryViewLayoutState: Equatable {
         isCollectionMode = false
         collectionItems = []
         isCollectionContentLoading = false
+        activeCollectionReplacePaths = []
+        activeCollectionAppendPaths = [:]
         entries = displayOrderItems
 
         let remainingIDs = Set(entries.map(\.id))

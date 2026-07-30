@@ -45,9 +45,20 @@ struct EntryOperationsCommandRoutingReducer {
 
             case let .routing(.dropItems(sourcePaths, destinationPath, isOptionDrag)):
                 let operation: ClipboardOperation = isOptionDrag ? .copy : .cut
+                let topmostSourcePaths = topmostPaths(sourcePaths)
+                if operation == .cut,
+                   moveRejection(destinationPath: destinationPath, sourcePaths: topmostSourcePaths) != nil
+                {
+                    return .none
+                }
+                if operation == .copy,
+                   rejectsCopyDescendantSelf(destinationPath: destinationPath, sourcePaths: topmostSourcePaths)
+                {
+                    return .none
+                }
                 let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
                 return .send(.clipboard(.pasteItems(
-                    sourcePaths: topmostPaths(sourcePaths),
+                    sourcePaths: topmostSourcePaths,
                     destinationPath: destinationPath,
                     operation: operation,
                     operationKind: operationKind,
