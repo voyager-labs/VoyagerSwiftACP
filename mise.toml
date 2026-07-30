@@ -9,6 +9,7 @@ swiftlint = "0.63.3"
 xcodes = "1.6.2"
 python = "3.13"
 uv = "0.8.13"
+go = "1.26.5"
 
 # SwiftFormat: GitHub releases backend
 [tools."github:nicklockwood/SwiftFormat"]
@@ -141,3 +142,38 @@ run = "python3 -m scripts.validate_harness"
 [tasks.verify-plan]
 description = "계획 Markdown 구조 검증"
 run = "python3 -m scripts.verify_plan"
+
+# Entry Core Go 모듈 표준 명령
+[tasks.entry-core-build]
+description = "Entry Core CLI와 daemon compile 검증"
+dir = "apps/entry-core"
+run = "go build ./cmd/entry-core ./cmd/entry-core-daemon"
+
+[tasks.entry-core-test]
+description = "Entry Core 전체 테스트"
+dir = "apps/entry-core"
+run = "go test ./..."
+
+[tasks.entry-core-test-race]
+description = "Entry Core 전체 race 테스트"
+dir = "apps/entry-core"
+run = "go test -race ./..."
+
+[tasks.entry-core-smoke]
+description = "Entry Core 실제 process smoke 테스트"
+dir = "apps/entry-core"
+run = "go test ./integration -run '^TestDaemonProcessSmoke$' -count=1"
+
+[tasks.entry-core-check]
+description = "Entry Core build, test, race, smoke, 정적 검사와 module 불변식 검증"
+depends = ["entry-core-build", "entry-core-test", "entry-core-test-race", "entry-core-smoke"]
+dir = "apps/entry-core"
+run = '''
+set -eu
+go vet ./...
+test -z "$(gofmt -l .)"
+test "$(go list -m all)" = "github.com/voyager-labs/voyager-app/apps/entry-core"
+test ! -f go.sum
+test ! -f go.work
+test ! -f ../../go.work
+'''
