@@ -1,6 +1,20 @@
 import Foundation
 import VoyagerEntitiesCollection
 
+public enum FileManagerSidebarTopNavigationItem: Equatable, Sendable, Identifiable {
+    case location(FileManagerFixedLocationItem)
+    case contentTab(ContentTabProjection.ContentTabSidebarItem)
+
+    public var id: FileManagerTopNavigationItemID {
+        switch self {
+        case let .location(item):
+            .location(item.id)
+        case let .contentTab(item):
+            .contentTab(item.id)
+        }
+    }
+}
+
 public enum SidebarItems {
     public struct LocationItem: Equatable, Sendable {
         public enum Kind: Equatable, Sendable {
