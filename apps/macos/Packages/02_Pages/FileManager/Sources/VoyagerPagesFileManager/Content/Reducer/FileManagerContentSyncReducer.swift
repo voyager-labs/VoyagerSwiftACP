@@ -1,7 +1,11 @@
 import ComposableArchitecture
+import CoreServices
 import Foundation
 import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
+import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 @Reducer
 struct FileManagerContentSyncReducer {
@@ -11,7 +15,8 @@ struct FileManagerContentSyncReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .externalFileSystemChanged(paths):
+            case let .externalFileSystemChanged(events):
+                let paths = events.map(\.path)
                 switch state.navigation.navigationState {
                 case .collection:
                     let affectsCollection = collectionPathsAffectCurrentContext(paths, state: state)
@@ -24,7 +29,20 @@ struct FileManagerContentSyncReducer {
                     guard pathsAffectCurrentFolder(paths, currentPath: path) else {
                         return .none
                     }
-                    return FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state)
+                    let normalizedPaths = paths.map(normalizedPath(for:))
+                    let affectedPaths = hierarchyAffectedPaths(for: normalizedPaths)
+                    let removedPrefixes = removedPrefixes(for: events)
+                    let hierarchyAction: EntryListHierarchyAction = events
+                        .contains(where: requiresCoarseHierarchyReload)
+                        ? .coarseHierarchyInvalidated(removedPrefixes: removedPrefixes)
+                        : .hierarchyInvalidated(
+                            affectedPaths: affectedPaths,
+                            removedPrefixes: removedPrefixes,
+                        )
+                    return .concatenate(
+                        .send(.entryViewLayout(.hierarchy(hierarchyAction))),
+                        FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
+                    )
 
                 case .recents, .tags, .computer:
                     return FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state)
@@ -40,22 +58,60 @@ struct FileManagerContentSyncReducer {
     }
 
     private func pathsAffectCurrentFolder(_ paths: [String], currentPath: String) -> Bool {
-        let normalizedCurrentPath = URL(fileURLWithPath: currentPath).standardizedFileURL.path
+        let normalizedCurrentPath = normalizedPath(for: currentPath)
 
         return paths.contains { path in
-            let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
-            if normalizedPath == normalizedCurrentPath {
+            let candidatePath = normalizedPath(for: path)
+            if candidatePath == normalizedCurrentPath {
                 return true
             }
 
-            let folderPrefix = normalizedCurrentPath == "/" ? "/" : normalizedCurrentPath + "/"
-            return normalizedPath.hasPrefix(folderPrefix)
+            return isSameOrDescendant(path: candidatePath, of: normalizedCurrentPath)
         }
+    }
+
+    private func isSameOrDescendant(path: String, of ancestor: String) -> Bool {
+        let pathComponents = URL(fileURLWithPath: path).pathComponents
+        let ancestorComponents = URL(fileURLWithPath: ancestor).pathComponents
+        return pathComponents.starts(with: ancestorComponents)
+    }
+
+    private func parentPath(for path: String) -> String {
+        URL(fileURLWithPath: normalizedPath(for: path)).deletingLastPathComponent().path
+    }
+
+    private func hierarchyAffectedPaths(for normalizedPaths: [String]) -> [String] {
+        (normalizedPaths + normalizedPaths.map(parentPath(for:))).reduce(into: []) { paths, path in
+            if !paths.contains(path) {
+                paths.append(path)
+            }
+        }
+    }
+
+    private func normalizedPath(for path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    private func removedPrefixes(for events: [FileChangeGatewayEvent]) -> [String] {
+        Array(Set(events.compactMap { event in
+            let removesItem = event.flags & UInt32(kFSEventStreamEventFlagItemRemoved) != 0
+            let renamesItem = event.flags & UInt32(kFSEventStreamEventFlagItemRenamed) != 0
+            guard removesItem || renamesItem else { return nil }
+            return normalizedPath(for: event.path)
+        })).sorted()
+    }
+
+    private func requiresCoarseHierarchyReload(_ event: FileChangeGatewayEvent) -> Bool {
+        [
+            kFSEventStreamEventFlagMustScanSubDirs,
+            kFSEventStreamEventFlagUserDropped,
+            kFSEventStreamEventFlagKernelDropped,
+        ].contains { event.flags & UInt32($0) != 0 }
     }
 
     private func collectionPathsAffectCurrentContext(_ paths: [String], state: State) -> Bool {
         let relevantPaths = paths.filter {
-            !isOpenedCollectionDocumentPath($0, openedURL: state.collection.collectionSession.document?.url)
+            !isOpenedCollectionDocumentPath($0, openedURL: state.openedCollectionURL)
         }
         guard !relevantPaths.isEmpty else {
             return false
@@ -76,13 +132,20 @@ struct FileManagerContentSyncReducer {
             return false
         }
 
-        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
-        let normalizedOpenedPath = openedURL.standardizedFileURL.path
-        if normalizedPath == normalizedOpenedPath {
+        let lexicalPath = URL(fileURLWithPath: path).path
+        let lexicalOpenedPath = openedURL.path
+        let lexicalPackagePrefix = lexicalOpenedPath == "/" ? "/" : lexicalOpenedPath + "/"
+        if lexicalPath == lexicalOpenedPath || lexicalPath.hasPrefix(lexicalPackagePrefix) {
+            return true
+        }
+
+        let candidatePath = normalizedPath(for: path)
+        let normalizedOpenedPath = normalizedPath(for: openedURL.path)
+        if candidatePath == normalizedOpenedPath {
             return true
         }
 
         let packagePrefix = normalizedOpenedPath == "/" ? "/" : normalizedOpenedPath + "/"
-        return normalizedPath.hasPrefix(packagePrefix)
+        return candidatePath.hasPrefix(packagePrefix)
     }
 }

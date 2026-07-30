@@ -13,14 +13,26 @@ public enum FileManagerHostSessionLapseScenario: String, Sendable, Equatable, Ca
     case signInFailed
 }
 
+/// Progressive entry loading host QA 시나리오 축.
+public enum FileManagerHostProgressiveEntryLoadingScenario: String, Sendable, Equatable {
+    case none
+    case success
+    case partialFailure
+}
+
 // MARK: - FileManagerHostScenario
 
 /// Host 주입 시나리오 struct. 향후 축 추가 가능한 구조.
 public struct FileManagerHostScenario: Sendable, Equatable {
     public var sessionLapse: FileManagerHostSessionLapseScenario
+    public var progressiveEntryLoading: FileManagerHostProgressiveEntryLoadingScenario
 
-    public init(sessionLapse: FileManagerHostSessionLapseScenario = .none) {
+    public init(
+        sessionLapse: FileManagerHostSessionLapseScenario = .none,
+        progressiveEntryLoading: FileManagerHostProgressiveEntryLoadingScenario = .none,
+    ) {
         self.sessionLapse = sessionLapse
+        self.progressiveEntryLoading = progressiveEntryLoading
     }
 }
 
@@ -31,6 +43,8 @@ public enum FileManagerHostPreset: String, Sendable, Equatable, CaseIterable {
     case `default`
     case sessionLapseGuard = "session-lapse-guard"
     case sessionLapseSignInFailed = "session-lapse-sign-in-failed"
+    case progressiveEntryLoading = "progressive-entry-loading"
+    case progressiveEntryLoadingFailure = "progressive-entry-loading-failure"
 
     public var scenario: FileManagerHostScenario {
         switch self {
@@ -40,6 +54,10 @@ public enum FileManagerHostPreset: String, Sendable, Equatable, CaseIterable {
             FileManagerHostScenario(sessionLapse: .active)
         case .sessionLapseSignInFailed:
             FileManagerHostScenario(sessionLapse: .signInFailed)
+        case .progressiveEntryLoading:
+            FileManagerHostScenario(progressiveEntryLoading: .success)
+        case .progressiveEntryLoadingFailure:
+            FileManagerHostScenario(progressiveEntryLoading: .partialFailure)
         }
     }
 

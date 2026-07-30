@@ -46,7 +46,7 @@ enum FileManagerContentKeyCommandHandler {
 
     private static func deleteKeyEffect(
         for command: KeyCommand,
-        state: FileManagerContentState,
+        state _: FileManagerContentState,
     ) -> Effect<FileManagerContentAction>? {
         guard command.keyCode == 51,
               command.modifiers.contains(.command)
@@ -54,18 +54,13 @@ enum FileManagerContentKeyCommandHandler {
             return nil
         }
 
-        let selectedIds = state.entryViewLayout.selectedIds
-        let selectedEntries = state.entryViewLayout.entries.filter { selectedIds.contains($0.id) }
-        guard !selectedEntries.isEmpty else { return .none }
-        let selectedPaths = selectedEntries.map(\.fullPath)
-
         if command.modifiers.contains(.option) {
-            return .send(.entryViewLayout(.entryOperations(.trash(
-                EntryOperationsAction.Trash.deleteImmediately(paths: selectedPaths),
+            return .send(.entryViewLayout(.delegate(.executeCommand(
+                .mutation(.deleteSelectedItemsImmediately),
             ))))
         }
-        return .send(.entryViewLayout(.entryOperations(.trash(
-            EntryOperationsAction.Trash.moveToTrash(paths: selectedPaths),
+        return .send(.entryViewLayout(.delegate(.executeCommand(
+            .mutation(.moveSelectedItemsToTrash),
         ))))
     }
 
@@ -83,7 +78,7 @@ enum FileManagerContentKeyCommandHandler {
         let selectedIds = state.entryViewLayout.selectedIds
         guard selectedIds.count == 1,
               let selectedId = selectedIds.first,
-              let entry = state.entryViewLayout.displayItems[id: selectedId]
+              let entry = commandEntries(state: state).first(where: { $0.id == selectedId })
         else { return .none }
 
         return .send(.entryViewLayout(.delegate(.startRename(item: entry, text: entry.name))))
@@ -224,8 +219,23 @@ enum FileManagerContentKeyCommandHandler {
         .send(.entryViewLayout(.internal(.applySelectionOffset(
             offset: offset,
             isShiftPressed: isShiftPressed,
-            orderedItemIds: state.entryViewLayout.entries.map(\.id),
+            orderedItemIds: state.entryViewLayout.visibleSelectableEntryIDs(
+                isNormalDirectoryPage: isNormalDirectoryPage(state),
+            ),
         ))))
+    }
+
+    private static func isNormalDirectoryPage(_ state: FileManagerContentState) -> Bool {
+        if case .folder = state.navigation.navigationState {
+            return true
+        }
+        return false
+    }
+
+    private static func commandEntries(state: FileManagerContentState) -> [EntryModel] {
+        state.entryViewLayout.visibleSelectableEntries(
+            isNormalDirectoryPage: isNormalDirectoryPage(state),
+        )
     }
 
     private static func isTextEditingResponder() -> Bool {

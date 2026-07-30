@@ -136,6 +136,56 @@ final class EntryListGroupHeaderCellView: NSTableCellView {
 
 final class EntryListEmptyCellView: NSTableCellView {}
 
+final class EntryListStatusCellView: NSTableCellView {
+    private let titleField = NSTextField(labelWithString: "")
+    private let retryButton = NSButton(title: "Retry", target: nil, action: nil)
+    private var onRetry: (() -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupViews()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupViews()
+    }
+
+    func configure(title: String, onRetry: (() -> Void)?) {
+        titleField.stringValue = title
+        self.onRetry = onRetry
+        retryButton.isHidden = onRetry == nil
+    }
+
+    @objc
+    private func retry() {
+        onRetry?()
+    }
+
+    private func setupViews() {
+        titleField.textColor = .secondaryLabelColor
+        titleField.font = .systemFont(ofSize: 11)
+        retryButton.bezelStyle = .inline
+        retryButton.controlSize = .small
+        retryButton.target = self
+        retryButton.action = #selector(retry)
+
+        let stackView = NSStackView(views: [titleField, retryButton])
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.orientation = .horizontal
+        stackView.alignment = .centerY
+        stackView.spacing = 8
+        addSubview(stackView)
+        textField = titleField
+
+        NSLayoutConstraint.activate([
+            stackView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stackView.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            stackView.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+}
+
 final class EntryListEntryCellView: NSTableCellView {
     private let customImageView = NSImageView()
     private let customTextField = NSTextField(string: "")

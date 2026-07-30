@@ -25,6 +25,9 @@ public enum EntryOperationsAction: CasePathable, Sendable {
     public enum Delegate: CasePathable, Sendable {
         case navigateToPath(String)
         case openCollectionFile(URL)
+        case folderLoadEvent(request: EntryFolderLoadRequest, event: EntryLoadEvent)
+        case folderLoadFinished(request: EntryFolderLoadRequest)
+        case folderLoadFailed(request: EntryFolderLoadRequest, failure: EntryFolderLoadFailure)
     }
 
     @CasePathable
@@ -39,12 +42,22 @@ public enum EntryOperationsAction: CasePathable, Sendable {
 
     @CasePathable
     public enum Loading: CasePathable, Sendable {
-        case loadItems(path: String, showHidden: Bool)
-        case loadRecentItems(showHidden: Bool)
-        case loadTagItems(tagName: String, showHidden: Bool)
+        case loadItems(path: String, showHidden: Bool, priority: EntryMetadataPriority = .none)
+        case loadRecentItems(showHidden: Bool, priority: EntryMetadataPriority = .none)
+        case loadTagItems(tagName: String, showHidden: Bool, priority: EntryMetadataPriority = .none)
         case loadComputerItems
+        case cancelAndClearItems
         case itemsLoaded([EntryModel])
         case itemsLoadFailed
+        case streamEvent(EntryLoadingStreamEvent)
+        case streamFinished(generation: Int)
+        case streamFailed(generation: Int)
+        case loadFolderItems(EntryFolderLoadRequest)
+        case cancelFolderItems(EntryFolderLoadRequest.RequestID)
+        case cancelAllFolderItems
+        case folderStreamEvent(request: EntryFolderLoadRequest, event: EntryLoadEvent)
+        case folderStreamFinished(request: EntryFolderLoadRequest)
+        case folderStreamFailed(request: EntryFolderLoadRequest, failure: EntryFolderLoadFailure)
     }
 
     @CasePathable
@@ -143,6 +156,21 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case redoEntryAction(EntryActionRecord)
         case replayEntryAction(direction: EntryActionDirection, record: EntryActionRecord)
         case entryActionApplied(direction: EntryActionDirection, record: EntryActionRecord)
+    }
+}
+
+public enum EntryFolderLoadFailure: Equatable, Sendable {
+    case permissionDenied
+    case unavailable(description: String)
+}
+
+public struct EntryLoadingStreamEvent: Equatable, Sendable {
+    public let generation: Int
+    public let event: EntryLoadEvent
+
+    public init(generation: Int, event: EntryLoadEvent) {
+        self.generation = generation
+        self.event = event
     }
 }
 

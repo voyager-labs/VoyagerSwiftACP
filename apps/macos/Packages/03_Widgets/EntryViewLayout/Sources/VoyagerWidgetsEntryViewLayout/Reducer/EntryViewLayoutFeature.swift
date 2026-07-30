@@ -7,6 +7,25 @@ import VoyagerFeaturesEntryOperations
 import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
+public struct EntryViewLayoutCollectionCancelID: Hashable, Sendable {
+    private enum Operation: Hashable {
+        case replace
+        case append(Int)
+    }
+
+    private let windowID: UUID?
+    private let ownerID: UUID
+    private let operation: Operation
+
+    public static func replace(windowID: UUID?, ownerID: UUID) -> Self {
+        Self(windowID: windowID, ownerID: ownerID, operation: .replace)
+    }
+
+    public static func append(token: Int, windowID: UUID?, ownerID: UUID) -> Self {
+        Self(windowID: windowID, ownerID: ownerID, operation: .append(token))
+    }
+}
+
 @Reducer
 public struct EntryViewLayoutFeature {
     public typealias State = EntryViewLayoutState
@@ -14,12 +33,17 @@ public struct EntryViewLayoutFeature {
 
     @Dependency(\.entryLoadingClient)
     private var entryLoadingClient
-    @Dependency(\.workspaceClient)
-    private var workspaceClient
 
     public init() {}
 
+    enum CollectionOperation: Hashable {
+        case replace
+        case append(Int)
+    }
+
     public var body: some Reducer<State, Action> {
+        EntryListHierarchyReducer()
+
         Scope(state: \.entryOperations, action: \.entryOperations) {
             EntryOperationsFeature()
         }
@@ -74,6 +98,10 @@ public struct EntryViewLayoutFeature {
                 state.shouldScrollToSelection = false
                 guard !previousSelection.isEmpty else { return .none }
                 return .send(.delegate(.selectionChanged))
+
+            case .internal(.reconcileHierarchySelection):
+                Self.reconcileSelectionWithVisibleEntries(&state)
+                return .none
 
             case let .internal(.applySelectionOffset(offset, isShiftPressed, orderedItemIds)):
                 guard !orderedItemIds.isEmpty else { return .none }
@@ -134,6 +162,11 @@ public struct EntryViewLayoutFeature {
                 state.gridColumnCount = max(1, count)
                 return .none
 
+            case let .internal(.setMode(mode)):
+                state.mode = mode
+                Self.reconcileSelectionWithVisibleEntries(&state)
+                return .none
+
             case let .internal(.setListVisibleColumns(columns)):
                 state.listVisibleColumns = EntryListColumn.normalizeVisibleColumns(columns)
                 return .none
@@ -177,8 +210,7 @@ public struct EntryViewLayoutFeature {
                 state.listTextSize = preferences.listTextSize
                 state.gridIconSize = preferences.gridIconSize
                 state.gridTextSize = preferences.gridTextSize
-                state.showHiddenFiles = preferences.showHiddenFiles
-                return .none
+                return Self.setShowHiddenFiles(preferences.showHiddenFiles, state: &state)
 
             case let .view(.setDropTargeted(isTargeted)):
                 state.isDropTargeted = isTargeted
@@ -194,12 +226,10 @@ public struct EntryViewLayoutFeature {
                 return .none
 
             case let .internal(.setShowHiddenFiles(show)):
-                state.showHiddenFiles = show
-                return .none
+                return Self.setShowHiddenFiles(show, state: &state)
 
             case .view(.toggleShowHiddenFiles):
-                state.showHiddenFiles.toggle()
-                return .none
+                return Self.setShowHiddenFiles(!state.showHiddenFiles, state: &state)
 
             case let .internal(.setCollectionMode(isCollectionMode)):
                 state.isCollectionMode = isCollectionMode
@@ -218,37 +248,149 @@ public struct EntryViewLayoutFeature {
                 return Self.updateEntriesAndReapply(&state)
 
             case let .internal(.applyCollectionSearchPaths(paths, showHidden)):
-                let converted = EntryViewLayoutCollectionItemsConverter.convert(
-                    paths,
-                    showHidden: showHidden,
-                    entryLoadingClient: entryLoadingClient,
-                    workspaceClient: workspaceClient,
+                let cancellationEffects = state.activeCollectionAppendExpectedBatchIndices.keys.map {
+                    Effect<Action>.cancel(id: Self.collectionCancelID(for: .append($0), state: state))
+                }
+                let replaceCancelID = Self.collectionCancelID(for: .replace, state: state)
+                state.collectionReplaceEpoch &+= 1
+                let epoch = state.collectionReplaceEpoch
+                state.collectionItems = []
+                state.activeCollectionReplacePaths = paths
+                state.expectedCollectionReplaceBatchIndex = 0
+                state.activeCollectionAppendExpectedBatchIndices = [:]
+                state.activeCollectionAppendPaths = [:]
+                state.finishedCollectionAppendTokens = []
+                state.collectionCoreFinished = false
+                state.collectionStreamCompleted = false
+                state.collectionIncompleteFailure = nil
+                state.removedCollectionPaths = []
+                state.isCollectionContentLoading = true
+                let priority = Self.collectionMetadataPriority(for: state)
+
+                return .merge(
+                    cancellationEffects + [
+                        .cancel(id: replaceCancelID),
+                        Self.updateEntriesAndReapply(&state),
+                        .run { [entryLoadingClient, priority] send in
+                            do {
+                                for try await event in entryLoadingClient
+                                    .materializePaths(paths, showHidden, priority)
+                                {
+                                    await send(.internal(.collectionReplaceEvent(epoch: epoch, event: event)))
+                                }
+                                await send(.internal(.collectionReplaceStreamCompleted(epoch: epoch)))
+                            } catch {
+                                await send(.internal(.collectionReplaceFailed(
+                                    epoch: epoch,
+                                    message: error.localizedDescription,
+                                )))
+                            }
+                        }
+                        .cancellable(id: replaceCancelID, cancelInFlight: true),
+                    ],
                 )
-                state.collectionItems = IdentifiedArrayOf(uniqueElements: converted)
-                state.isCollectionContentLoading = false
-                return Self.updateEntriesAndReapply(&state)
 
             case let .internal(.addCollectionPaths(paths)):
                 guard state.isCollectionMode else { return .none }
-                let restoredItems = EntryViewLayoutCollectionItemsConverter.convert(
-                    paths,
-                    showHidden: state.showHiddenFiles,
-                    entryLoadingClient: entryLoadingClient,
-                    workspaceClient: workspaceClient,
+                state.removedCollectionPaths.subtract(paths.map(Self.normalizedPath(_:)))
+                state.nextCollectionAppendToken &+= 1
+                let token = state.nextCollectionAppendToken
+                let epoch = state.collectionReplaceEpoch
+                let priority = Self.collectionMetadataPriority(for: state)
+                let showHiddenFiles = state.showHiddenFiles
+                state.activeCollectionAppendExpectedBatchIndices[token] = 0
+                state.activeCollectionAppendPaths[token] = paths
+                let appendCancelID = Self.collectionCancelID(for: .append(token), state: state)
+
+                return .run { [entryLoadingClient, priority] send in
+                    do {
+                        for try await event in entryLoadingClient.materializePaths(
+                            paths,
+                            showHiddenFiles,
+                            priority,
+                        ) {
+                            await send(.internal(.collectionAppendEvent(epoch: epoch, token: token, event: event)))
+                        }
+                        await send(.internal(.collectionAppendStreamCompleted(epoch: epoch, token: token)))
+                    } catch {
+                        await send(.internal(.collectionAppendFailed(
+                            epoch: epoch,
+                            token: token,
+                            message: error.localizedDescription,
+                        )))
+                    }
+                }
+                .cancellable(id: appendCancelID)
+
+            case let .internal(.collectionReplaceEvent(epoch, event)):
+                guard epoch == state.collectionReplaceEpoch,
+                      !state.collectionStreamCompleted
+                else { return .none }
+                return Self.applyCollectionEvent(
+                    event,
+                    state: &state,
+                    expectedBatchIndex: \State.expectedCollectionReplaceBatchIndex,
                 )
-                guard !restoredItems.isEmpty else { return .none }
 
-                let existingIDs = Set(state.collectionItems.map(\.id))
-                let appendedItems = restoredItems.filter { !existingIDs.contains($0.id) }
-                guard !appendedItems.isEmpty else { return .none }
+            case let .internal(.collectionReplaceStreamCompleted(epoch)):
+                guard epoch == state.collectionReplaceEpoch,
+                      !state.collectionStreamCompleted
+                else { return .none }
+                state.collectionStreamCompleted = true
+                state.activeCollectionReplacePaths = []
+                return .none
 
-                state.collectionItems.append(contentsOf: appendedItems)
+            case let .internal(.collectionReplaceFailed(epoch, message)):
+                guard epoch == state.collectionReplaceEpoch,
+                      !state.collectionStreamCompleted
+                else { return .none }
+                state.collectionIncompleteFailure = message
+                state.collectionStreamCompleted = true
+                state.activeCollectionReplacePaths = []
+                state.isCollectionContentLoading = false
+                return Self.updateEntriesAndReapply(&state)
+
+            case let .internal(.collectionAppendEvent(epoch, token, event)):
+                guard epoch == state.collectionReplaceEpoch,
+                      let expectedBatchIndex = state.activeCollectionAppendExpectedBatchIndices[token]
+                else { return .none }
+                return Self.applyCollectionAppendEvent(
+                    event,
+                    token: token,
+                    expectedBatchIndex: expectedBatchIndex,
+                    state: &state,
+                )
+
+            case let .internal(.collectionAppendStreamCompleted(epoch, token)):
+                guard epoch == state.collectionReplaceEpoch,
+                      state.activeCollectionAppendExpectedBatchIndices.removeValue(forKey: token) != nil
+                else { return .none }
+                state.activeCollectionAppendPaths[token] = nil
+                state.finishedCollectionAppendTokens.remove(token)
+                return .none
+
+            case let .internal(.collectionAppendFailed(epoch, token, message)):
+                guard epoch == state.collectionReplaceEpoch,
+                      state.activeCollectionAppendExpectedBatchIndices.removeValue(forKey: token) != nil
+                else { return .none }
+                state.activeCollectionAppendPaths[token] = nil
+                state.finishedCollectionAppendTokens.remove(token)
+                state.collectionIncompleteFailure = message
                 return Self.updateEntriesAndReapply(&state)
 
             case let .internal(.removeCollectionPaths(paths)):
                 guard state.isCollectionMode else { return .none }
                 let mutatedPaths = Set(paths.map(Self.normalizedPath(_:)))
                 guard !mutatedPaths.isEmpty else { return .none }
+                state.removedCollectionPaths.formUnion(mutatedPaths)
+                state.activeCollectionReplacePaths.removeAll {
+                    Self.matchesAnyMutatedPath($0, mutatedPaths: mutatedPaths)
+                }
+                for token in state.activeCollectionAppendPaths.keys {
+                    state.activeCollectionAppendPaths[token]?.removeAll {
+                        Self.matchesAnyMutatedPath($0, mutatedPaths: mutatedPaths)
+                    }
+                }
 
                 let remainingItems = state.collectionItems.filter { item in
                     !Self.matchesAnyMutatedPath(item.fullPath, mutatedPaths: mutatedPaths)
@@ -260,9 +402,44 @@ public struct EntryViewLayoutFeature {
                 state.collectionItems = IdentifiedArrayOf(uniqueElements: Array(remainingItems))
                 return Self.updateEntriesAndReapply(&state)
 
+            case .internal(.cancelCollectionMaterialization):
+                let cancellationEffects = state.activeCollectionAppendExpectedBatchIndices.keys.map {
+                    Effect<Action>.cancel(id: Self.collectionCancelID(for: .append($0), state: state))
+                }
+                let replaceCancelID = Self.collectionCancelID(for: .replace, state: state)
+                state.collectionReplaceEpoch &+= 1
+                state.activeCollectionReplacePaths = []
+                state.expectedCollectionReplaceBatchIndex = 0
+                state.activeCollectionAppendExpectedBatchIndices = [:]
+                state.activeCollectionAppendPaths = [:]
+                state.finishedCollectionAppendTokens = []
+                state.collectionCoreFinished = false
+                state.collectionStreamCompleted = false
+                state.isCollectionContentLoading = false
+                return .merge(cancellationEffects + [.cancel(id: replaceCancelID)])
+
             case .internal(.clearCollectionPresentation):
-                state.clearCollectionPresentation()
-                return .send(.entryArrangements(.reapply))
+                let cancellationEffects = state.activeCollectionAppendExpectedBatchIndices.keys.map {
+                    Effect<Action>.cancel(id: Self.collectionCancelID(for: .append($0), state: state))
+                }
+                let replaceCancelID = Self.collectionCancelID(for: .replace, state: state)
+                state.collectionReplaceEpoch &+= 1
+                state.isCollectionMode = false
+                state.collectionItems = []
+                state.activeCollectionReplacePaths = []
+                state.activeCollectionAppendPaths = [:]
+                state.isCollectionContentLoading = false
+                state.expectedCollectionReplaceBatchIndex = 0
+                state.activeCollectionAppendExpectedBatchIndices = [:]
+                state.finishedCollectionAppendTokens = []
+                state.collectionCoreFinished = false
+                state.collectionStreamCompleted = false
+                state.collectionIncompleteFailure = nil
+                state.removedCollectionPaths = []
+                return .merge(cancellationEffects + [
+                    .cancel(id: replaceCancelID),
+                    Self.updateEntriesAndReapply(&state),
+                ])
 
             case .delegate:
                 return .none
@@ -270,10 +447,40 @@ public struct EntryViewLayoutFeature {
             case .entryThumbnail:
                 return .none
 
+            case .hierarchy:
+                return .none
+
             case let .entryOperations(entryOperationsAction):
                 switch entryOperationsAction {
-                case .loading(.itemsLoaded),
-                     .loading(.itemsLoadFailed):
+                case let .delegate(.folderLoadEvent(request, event)):
+                    return .send(.hierarchy(.folderChildrenResponse(
+                        rootContextGeneration: request.id.rootContextGeneration,
+                        folderID: request.id.folderID,
+                        folderGeneration: request.folderGeneration,
+                        .event(event),
+                    )))
+
+                case let .delegate(.folderLoadFinished(request)):
+                    return .send(.hierarchy(.folderChildrenResponse(
+                        rootContextGeneration: request.id.rootContextGeneration,
+                        folderID: request.id.folderID,
+                        folderGeneration: request.folderGeneration,
+                        .streamCompleted,
+                    )))
+
+                case let .delegate(.folderLoadFailed(request, failure)):
+                    return .send(.hierarchy(.folderChildrenResponse(
+                        rootContextGeneration: request.id.rootContextGeneration,
+                        folderID: request.id.folderID,
+                        folderGeneration: request.folderGeneration,
+                        .failed(Self.hierarchyFailure(from: failure)),
+                    )))
+
+                case .loading(.cancelAndClearItems),
+                     .loading(.itemsLoaded),
+                     .loading(.itemsLoadFailed),
+                     .loading(.streamEvent),
+                     .loading(.streamFailed):
                     return Self.updateEntriesAndReapply(&state)
 
                 default:
@@ -282,6 +489,10 @@ public struct EntryViewLayoutFeature {
 
             case let .entryArrangements(entryArrangementsAction):
                 switch entryArrangementsAction {
+                case .setSortKey, .setSortOrder, .setGroupKey:
+                    Self.reconcileSelectionWithVisibleEntries(&state)
+                    return .none
+
                 case .delegate(.requestApply):
                     return .send(.entryArrangements(.apply(
                         items: state.entries,
@@ -290,6 +501,7 @@ public struct EntryViewLayoutFeature {
 
                 case let .delegate(.applied(sortedItems, _)):
                     state.entries = sortedItems
+                    Self.reconcileSelectionWithVisibleEntries(&state)
                     return .none
 
                 default:
@@ -299,17 +511,241 @@ public struct EntryViewLayoutFeature {
         }
     }
 
+    nonisolated static func collectionCancelID(
+        for operation: CollectionOperation,
+        state: State,
+    ) -> EntryViewLayoutCollectionCancelID {
+        switch operation {
+        case .replace:
+            EntryViewLayoutCollectionCancelID.replace(
+                windowID: state.entryOperations.windowID,
+                ownerID: state.entryOperations.loadingCancellationOwnerID,
+            )
+        case let .append(token):
+            EntryViewLayoutCollectionCancelID.append(
+                token: token,
+                windowID: state.entryOperations.windowID,
+                ownerID: state.entryOperations.loadingCancellationOwnerID,
+            )
+        }
+    }
+
     // MARK: - Helpers
+
+    static func hierarchyFailure(from failure: EntryFolderLoadFailure) -> EntryLoadFailure {
+        switch failure {
+        case .permissionDenied:
+            .permissionDenied
+        case let .unavailable(description):
+            .unavailable(description: description)
+        }
+    }
 
     static func updateEntriesAndReapply(_ state: inout State) -> Effect<Action> {
         state.entries = state.displayOrderItems
-        reconcileSelectionWithEntries(&state)
-        return .send(.entryArrangements(.reapply))
+        reconcileSelectionWithVisibleEntries(&state)
+        return .merge(
+            .send(.entryArrangements(.reapply)),
+            reconcileRenamingItemWithVisibleEntries(state),
+        )
     }
 
-    static func reconcileSelectionWithEntries(_ state: inout State) {
-        let remainingIds = Set(state.entries.map(\.id))
+    static func reconcileRenamingItemWithVisibleEntries(_ state: State) -> Effect<Action> {
+        guard let renamingID = state.entryOperations.renamingItemId,
+              !state.visibleSelectableEntryIDs(isNormalDirectoryPage: true).contains(renamingID)
+        else { return .none }
+        return .send(.entryOperations(.edit(.cancelRename)))
+    }
+
+    static func setShowHiddenFiles(_ showHiddenFiles: Bool, state: inout State) -> Effect<Action> {
+        guard state.showHiddenFiles != showHiddenFiles else { return .none }
+        state.showHiddenFiles = showHiddenFiles
+        guard !state.hierarchy.foldersByID.isEmpty else { return .none }
+        return .send(.hierarchy(.hiddenFilesSettingChanged))
+    }
+
+    static func updateEntriesPreservingOrder(_ state: inout State) {
+        let currentItems = Dictionary(uniqueKeysWithValues: state.displayOrderItems.map { ($0.id, $0) })
+        let existingIDs = Set(state.entries.map(\.id))
+        state.entries = state.entries.compactMap { currentItems[$0.id] }
+            + state.displayOrderItems.filter { !existingIDs.contains($0.id) }
+        reconcileSelectionWithVisibleEntries(&state)
+    }
+
+    static func metadataPatchesAffectActiveArrangement(
+        _ patches: [EntryMetadataPatch],
+        state: State,
+    ) -> Bool {
+        let activeProbes = [
+            metadataProbe(for: state.entryArrangements.sortKey),
+            metadataProbe(for: state.entryArrangements.groupKey),
+        ].compactMap(\.self)
+        guard !activeProbes.isEmpty else { return false }
+        return patches.contains { patch in
+            switch patch {
+            case .spotlight:
+                activeProbes.contains(.spotlight)
+            case .tags:
+                activeProbes.contains(.tags)
+            case .supplementaryMetadata:
+                activeProbes.contains(.supplementaryMetadata)
+            }
+        }
+    }
+
+    static func metadataProbe(for key: SortKey) -> EntryMetadataProbe? {
+        switch key {
+        case .kind, .application, .dateLastOpened:
+            .spotlight
+        case .tags:
+            .tags
+        case .name, .size, .dateModified, .dateCreated, .dateAdded:
+            nil
+        }
+    }
+
+    static func metadataProbe(for key: GroupKey) -> EntryMetadataProbe? {
+        switch key {
+        case .kind, .application, .dateLastOpened:
+            .spotlight
+        case .tags:
+            .tags
+        case .none, .name, .size, .dateModified, .dateCreated, .dateAdded:
+            nil
+        }
+    }
+
+    static func applyCollectionEvent(
+        _ event: EntryLoadEvent,
+        state: inout State,
+        expectedBatchIndex: WritableKeyPath<State, Int>,
+    ) -> Effect<Action> {
+        switch event {
+        case let .coreBatch(items, batchIndex):
+            guard !state.collectionCoreFinished,
+                  batchIndex == state[keyPath: expectedBatchIndex]
+            else { return .none }
+            state[keyPath: expectedBatchIndex] += 1
+            appendCollectionItems(items, state: &state)
+            state.isCollectionContentLoading = false
+            return updateEntriesAndReapply(&state)
+
+        case let .coreFinished(batchCount):
+            guard !state.collectionCoreFinished,
+                  batchCount == state[keyPath: expectedBatchIndex]
+            else { return .none }
+            state.collectionCoreFinished = true
+            state.isCollectionContentLoading = false
+            return updateEntriesAndReapply(&state)
+
+        case let .metadataPatches(patches):
+            guard state.collectionCoreFinished else { return .none }
+            return applyCollectionMetadataPatches(patches, state: &state)
+        }
+    }
+
+    static func applyCollectionAppendEvent(
+        _ event: EntryLoadEvent,
+        token: Int,
+        expectedBatchIndex: Int,
+        state: inout State,
+    ) -> Effect<Action> {
+        switch event {
+        case let .coreBatch(items, batchIndex):
+            guard !state.finishedCollectionAppendTokens.contains(token),
+                  batchIndex == expectedBatchIndex else { return .none }
+            state.activeCollectionAppendExpectedBatchIndices[token] = expectedBatchIndex + 1
+            appendCollectionItems(items, state: &state)
+            return updateEntriesAndReapply(&state)
+
+        case let .coreFinished(batchCount):
+            guard !state.finishedCollectionAppendTokens.contains(token),
+                  batchCount == expectedBatchIndex else { return .none }
+            state.finishedCollectionAppendTokens.insert(token)
+            return .none
+
+        case let .metadataPatches(patches):
+            guard state.finishedCollectionAppendTokens.contains(token) else { return .none }
+            return applyCollectionMetadataPatches(patches, state: &state)
+        }
+    }
+
+    static func appendCollectionItems(_ items: [EntryModel], state: inout State) {
+        var acceptedIDs = Set(state.collectionItems.map(\.id))
+        let appendedItems = items.filter { item in
+            guard !matchesAnyMutatedPath(item.fullPath, mutatedPaths: state.removedCollectionPaths),
+                  acceptedIDs.insert(item.id).inserted
+            else { return false }
+            return true
+        }
+        state.collectionItems.append(contentsOf: appendedItems)
+    }
+
+    static func applyCollectionMetadataPatches(
+        _ patches: [EntryMetadataPatch],
+        state: inout State,
+    ) -> Effect<Action> {
+        var arrangementChanged = false
+        var updated = false
+        for patch in patches {
+            guard let id = collectionItemID(for: patch),
+                  let item = state.collectionItems[id: id]
+            else { continue }
+            let patchedItem = item.applying(patch)
+            guard patchedItem != item else { continue }
+            state.collectionItems[id: id] = patchedItem
+            updated = true
+            arrangementChanged = arrangementChanged || patchAffectsActiveArrangement(patch, state: state)
+        }
+        guard updated else { return .none }
+        guard arrangementChanged else {
+            state.entries = state.entries.map { state.collectionItems[id: $0.id] ?? $0 }
+            return .none
+        }
+        return updateEntriesAndReapply(&state)
+    }
+
+    static func collectionItemID(for patch: EntryMetadataPatch) -> EntryModel.ID? {
+        switch patch {
+        case let .spotlight(id, _, _, _), let .tags(id, _), let .supplementaryMetadata(id, _): id
+        }
+    }
+
+    static func patchAffectsActiveArrangement(_ patch: EntryMetadataPatch, state: State) -> Bool {
+        switch patch {
+        case .spotlight:
+            [SortKey.kind, .application, .dateLastOpened].contains(state.entryArrangements.sortKey)
+                || [GroupKey.kind, .application, .dateLastOpened].contains(state.entryArrangements.groupKey)
+        case .tags:
+            state.entryArrangements.sortKey == .tags || state.entryArrangements.groupKey == .tags
+        case .supplementaryMetadata:
+            false
+        }
+    }
+
+    static func collectionMetadataPriority(for state: State) -> EntryMetadataPriority {
+        var probes: [EntryMetadataProbe] = []
+        if [.kind, .application, .dateLastOpened].contains(state.entryArrangements.sortKey) {
+            probes.append(.spotlight)
+        }
+        if state.entryArrangements.sortKey == .tags {
+            probes.append(.tags)
+        }
+        if [.kind, .application, .dateLastOpened].contains(state.entryArrangements.groupKey) {
+            probes.append(.spotlight)
+        }
+        if state.entryArrangements.groupKey == .tags {
+            probes.append(.tags)
+        }
+        return probes.isEmpty ? .none : .active(probes)
+    }
+
+    static func reconcileSelectionWithVisibleEntries(_ state: inout State) {
+        let remainingIds = Set(state.visibleSelectableEntryIDs(
+            isNormalDirectoryPage: state.selectionProjectionIsHierarchyEnabled,
+        ))
         state.selectedIds = state.selectedIds.intersection(remainingIds)
+        state.advanceOutlineProjectionRevision()
 
         guard !state.selectedIds.isEmpty else {
             state.lastSelectedId = nil
@@ -319,7 +755,10 @@ public struct EntryViewLayoutFeature {
         }
 
         if state.lastSelectedId.map(state.selectedIds.contains) != true {
-            state.lastSelectedId = state.entries.first { state.selectedIds.contains($0.id) }?.id
+            let visibleIDs = state.visibleSelectableEntryIDs(
+                isNormalDirectoryPage: state.selectionProjectionIsHierarchyEnabled,
+            )
+            state.lastSelectedId = visibleIDs.first { state.selectedIds.contains($0) }
         }
         if state.rangeAnchorId.map(state.selectedIds.contains) != true {
             state.rangeAnchorId = state.lastSelectedId

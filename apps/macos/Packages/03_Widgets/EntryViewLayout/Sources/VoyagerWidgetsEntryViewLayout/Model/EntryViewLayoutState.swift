@@ -28,6 +28,8 @@ public struct EntryViewLayoutState: Equatable {
     public var entryOperations: EntryOperationsFeature.State = .init()
     public var entryThumbnail: EntryThumbnailFeature.State = .init()
     public var entryArrangements: EntryArrangementsFeature.State = .init()
+    public var hierarchy: EntryListHierarchyState = .init()
+    public var outlineProjectionRevision: Int = 0
 
     public var currentPath: String = ""
     public var selectedIds: Set<EntryModel.ID> = []
@@ -51,6 +53,19 @@ public struct EntryViewLayoutState: Equatable {
     /// Indicates a collection file is being opened before snapshot/search results are applied.
     public var isCollectionContentLoading = false
 
+    /// Replacement streams are accepted only when their epoch matches this value.
+    public var collectionReplaceEpoch = 0
+    public var activeCollectionReplacePaths: [String] = []
+    public var expectedCollectionReplaceBatchIndex = 0
+    public var activeCollectionAppendExpectedBatchIndices: [Int: Int] = [:]
+    public var activeCollectionAppendPaths: [Int: [String]] = [:]
+    public var finishedCollectionAppendTokens: Set<Int> = []
+    public var nextCollectionAppendToken = 0
+    public var collectionCoreFinished = false
+    public var collectionStreamCompleted = false
+    public var collectionIncompleteFailure: String?
+    public var removedCollectionPaths: Set<String> = []
+
     /// When true, `displayItems` returns `collectionItems`; otherwise `entryOperations.items`.
     public var isCollectionMode: Bool = false
 
@@ -66,12 +81,52 @@ public struct EntryViewLayoutState: Equatable {
 
     public var entries: [EntryModel] = []
 
+    public func visibleSelectableEntryIDs(isNormalDirectoryPage: Bool) -> [EntryModel.ID] {
+        outlineProjection(isNormalDirectoryPage: isNormalDirectoryPage).visibleSelectableEntryIDs
+    }
+
+    public func visibleSelectableEntries(isNormalDirectoryPage: Bool) -> [EntryModel] {
+        outlineProjection(isNormalDirectoryPage: isNormalDirectoryPage).visibleSelectableEntries
+    }
+
+    public var hierarchyProjectionIsActive: Bool {
+        mode == .list
+            && !isCollectionMode
+            && !hierarchy.rootPath.isEmpty
+            && entryArrangements.groupKey == .none
+    }
+
+    private func outlineProjection(isNormalDirectoryPage: Bool) -> EntryListOutlineProjection {
+        EntryListOutlineProjection(
+            revision: outlineProjectionRevision,
+            rootEntries: entries,
+            hierarchyState: hierarchy,
+            context: .init(
+                mode: mode,
+                isNormalDirectoryPage: isNormalDirectoryPage && !isCollectionMode,
+                hasActiveGrouping: entryArrangements.groupKey != .none,
+            ),
+            sortKey: entryArrangements.sortKey,
+            sortOrder: entryArrangements.sortOrder,
+        )
+    }
+
+    var selectionProjectionIsHierarchyEnabled: Bool {
+        !hierarchy.rootPath.isEmpty
+    }
+
+    mutating func advanceOutlineProjectionRevision() {
+        outlineProjectionRevision &+= 1
+    }
+
     public init() {}
 
     public mutating func clearCollectionPresentation() {
         isCollectionMode = false
         collectionItems = []
         isCollectionContentLoading = false
+        activeCollectionReplacePaths = []
+        activeCollectionAppendPaths = [:]
         entries = displayOrderItems
 
         let remainingIDs = Set(entries.map(\.id))
