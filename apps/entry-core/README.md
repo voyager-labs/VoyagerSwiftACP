@@ -84,6 +84,8 @@ In another terminal:
 
 Send `SIGINT` or `SIGTERM` to start graceful shutdown. The daemon stops accepting requests, allows active handlers a bounded grace period, force-closes remaining owned connections when needed, and removes the socket only when the path still identifies the socket it created. A second signal skips the remaining grace period. Replacement paths and pre-existing paths are never removed.
 
+The daemon serializes the socket lifecycle with a persistent `<socket>.lock` file. It acquires an exclusive advisory lock before inspecting or binding the socket and releases it only after startup rollback or shutdown cleanup finishes. The lock file must be a non-symlink regular file owned by the effective user, have exact mode `0600`, and have exactly one link. It remains after a clean shutdown so later daemon starts can reuse the same inode safely. Entry Core fails closed without changing the socket or lock when the lock is active or its metadata is unsafe.
+
 ## Troubleshooting
 
 - `usage: entry-core...` or `usage: entry-core-daemon...`: pass `--socket` followed by a non-empty absolute path.
