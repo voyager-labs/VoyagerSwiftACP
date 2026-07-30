@@ -103,6 +103,37 @@ class MacOSTestFlowTests(unittest.TestCase):
         self.assertEqual(mapping.class_name, "AccessUnlockFlowTests")
         self.assertEqual(mapping.selector, "VoyagerTests/AccessUnlockFlowTests")
 
+    def test_rcl_mappings(self) -> None:
+        scope = macos_test_flow.resolve_mapping(
+            *macos_test_flow.parse_flow_id("rcl.collection_scope_editing")
+        )
+        condition = macos_test_flow.resolve_mapping(
+            *macos_test_flow.parse_flow_id("rcl.collection_condition_editing")
+        )
+
+        self.assertEqual(
+            scope.document_path,
+            "rcl/flows/collection_scope_editing_flow.md",
+        )
+        self.assertEqual(
+            scope.swift_path,
+            "apps/macos/Voyager/VoyagerTests/Flows/RCL/CollectionScopeEditingFlowTests.swift",
+        )
+        self.assertEqual(scope.class_name, "CollectionScopeEditingFlowTests")
+        self.assertEqual(scope.selector, "VoyagerTests/CollectionScopeEditingFlowTests")
+        self.assertEqual(
+            condition.document_path,
+            "rcl/flows/collection_condition_editing_flow.md",
+        )
+        self.assertEqual(
+            condition.swift_path,
+            "apps/macos/Voyager/VoyagerTests/Flows/RCL/CollectionConditionEditingFlowTests.swift",
+        )
+        self.assertEqual(condition.class_name, "CollectionConditionEditingFlowTests")
+        self.assertEqual(
+            condition.selector, "VoyagerTests/CollectionConditionEditingFlowTests"
+        )
+
     def test_invalid_flow_ids(self) -> None:
         for flow_id in (
             "ONB.access_unlock",
@@ -442,6 +473,23 @@ class MacOSTestFlowTests(unittest.TestCase):
                 f"{self.shell} -only-testing:VoyagerTests/AccessUnlockFlowTests",
                 f"{self.shell} -only-testing:VoyagerTests/PermissionReadinessFlowTests",
                 f"{self.shell} -only-testing:VoyagerTests/ZebraFlowTests",
+            ],
+        )
+
+    def test_rcl_category_dry_run_runs_each_sorted_suite_once(self) -> None:
+        for slug in ("collection_scope_editing", "collection_condition_editing"):
+            self.add_doc("rcl", slug)
+            self.add_suite("rcl", slug)
+        result, stdout, stderr = self.run_main(
+            ["--category", "rcl", "--docs-root", str(self.docs_root), "--dry-run"]
+        )
+        self.assertEqual(result, 0)
+        self.assertEqual(stderr, "")
+        self.assertEqual(
+            stdout.splitlines(),
+            [
+                f"{self.shell} -only-testing:VoyagerTests/CollectionConditionEditingFlowTests",
+                f"{self.shell} -only-testing:VoyagerTests/CollectionScopeEditingFlowTests",
             ],
         )
 
