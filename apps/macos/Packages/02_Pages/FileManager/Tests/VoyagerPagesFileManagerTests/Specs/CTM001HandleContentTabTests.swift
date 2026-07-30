@@ -690,9 +690,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
             .requestCloseSelectedContentTabs,
             .closeContentTabRequested(fixture.tabD),
             .request(.duplicateContentTab(fixture.tabA)),
-            .sidebar(.delegate(.contentTabReorderRequested(
-                sourceID: fixture.tabA,
-                targetID: fixture.tabD,
+            .sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
+                sourceID: .contentTab(fixture.tabA),
+                anchorID: .contentTab(fixture.tabD),
                 placement: .after,
             ))),
             .request(.openNewContentTab),

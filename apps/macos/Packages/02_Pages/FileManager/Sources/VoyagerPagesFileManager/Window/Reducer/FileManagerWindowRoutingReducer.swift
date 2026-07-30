@@ -363,13 +363,27 @@ struct FileManagerWindowRoutingReducer {
             case .sidebar(.delegate(.collapseContentTabSelectionToActive)):
                 return .send(.contentTabs(.collapseSelectionToActive))
 
-            case let .sidebar(.delegate(.contentTabReorderRequested(sourceID, targetID, placement))):
+            case .sidebar(.delegate(.dismissTopNavigationPresentation)):
+                state.sidebar.topNavigationArrangementPresentation = nil
+                return .none
+
+            case let .sidebar(.delegate(.fileManagerTopNavigationReorderRequested(sourceID, anchorID, placement))):
                 guard state.pendingSelectedContentTabClose == nil else { return .none }
-                return .send(.contentTabs(.reorder(
-                    sourceID: sourceID,
-                    targetID: targetID,
-                    placement: placement,
-                )))
+                if case let .contentTab(sourceTabID) = sourceID,
+                   case let .contentTab(anchorTabID) = anchorID,
+                   state.contentTabs.tabs[id: sourceTabID]?.isPinned == false,
+                   state.contentTabs.tabs[id: anchorTabID]?.isPinned == false
+                {
+                    return .send(.contentTabs(.reorder(
+                        sourceID: sourceTabID,
+                        targetID: anchorTabID,
+                        placement: placement,
+                    )))
+                }
+                let destination: FileManagerTopNavigationMoveDestination = placement == .before
+                    ? .before(anchorID)
+                    : .after(anchorID)
+                return .send(.topNavigationMoveRequested(source: sourceID, destination: destination))
 
             case .content(.delegate(.requestDuplicate)):
                 let command: Action.WindowCommand = state.contentTabs.selectedTabIDs.count > 1
@@ -486,6 +500,7 @@ struct FileManagerWindowRoutingReducer {
                 return prepareContentTabTeardown(tabID: tabID, state: &state)
 
             case let .contentTabs(.close(tabID)):
+                guard state.contentTabs.tabs[id: tabID] == nil else { return .none }
                 return finalizeContentTabClose(tabID: tabID, state: &state)
 
             case let .contentTabs(.commitClose(tabID)):
@@ -1850,29 +1865,12 @@ private extension FileManagerWindowRoutingReducer {
                 )),
             )
 
-        case let .pinnedRecordSaveSucceeded(successTabID, context) where successTabID == tabID:
-            return .send(.selectedContentTabCloseItemCompleted(
-                operationID: operationID,
-                tabID: tabID,
-                outcome: contentTabPinnedRecordClient.isCurrentMutationGeneration(context.generation)
-                    ? .unpinned
-                    : .cancelled,
-            ))
-
-        case let .pinnedRecordSaveFailed(failedTabID, _, _) where failedTabID == tabID:
-            return .send(.selectedContentTabCloseItemCompleted(
-                operationID: operationID,
-                tabID: tabID,
-                outcome: .failed,
-            ))
-
-        case let .pinnedRecordSaveNotApplied(nonAppliedTabID, _, _, _)
-            where nonAppliedTabID == tabID:
-            return .send(.selectedContentTabCloseItemCompleted(
-                operationID: operationID,
-                tabID: tabID,
-                outcome: .cancelled,
-            ))
+        case .pinnedRecordSaveSucceeded,
+             .pinnedRecordSaveFailed,
+             .pinnedRecordStoreUnavailable,
+             .pinnedRecordSaveNotApplied:
+            // pinned batch close completion은 FileManagerFeature가 durable terminal 뒤 commitClose로 연결한다.
+            return .none
 
         default:
             return .none
