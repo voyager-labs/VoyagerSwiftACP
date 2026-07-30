@@ -9,6 +9,8 @@ public struct WorkspaceClient: Sendable {
     public var urlsForApplications: @Sendable (URL) -> [URL]
     public var iconForFile: @Sendable (String) -> NSImage
     public var iconForType: @Sendable (UTType) -> NSImage
+    public var prepareFileIcons: @Sendable ([String]) async -> Bool
+    public var cachedIconForFile: @MainActor @Sendable (String) -> NSImage?
     public var openApplication: @Sendable (URL) async throws -> Void
     public var openURL: @Sendable (URL) -> Bool
     public var currentEvent: @Sendable () -> NSEvent?
@@ -30,6 +32,8 @@ public struct WorkspaceClient: Sendable {
         urlsForApplications: @escaping @Sendable (URL) -> [URL],
         iconForFile: @escaping @Sendable (String) -> NSImage,
         iconForType: @escaping @Sendable (UTType) -> NSImage,
+        prepareFileIcons: @escaping @Sendable ([String]) async -> Bool,
+        cachedIconForFile: @escaping @MainActor @Sendable (String) -> NSImage?,
         openApplication: @escaping @Sendable (URL) async throws -> Void,
         openURL: @escaping @Sendable (URL) -> Bool,
         currentEvent: @escaping @Sendable () -> NSEvent?,
@@ -50,6 +54,8 @@ public struct WorkspaceClient: Sendable {
         self.urlsForApplications = urlsForApplications
         self.iconForFile = iconForFile
         self.iconForType = iconForType
+        self.prepareFileIcons = prepareFileIcons
+        self.cachedIconForFile = cachedIconForFile
         self.openApplication = openApplication
         self.openURL = openURL
         self.currentEvent = currentEvent
@@ -64,6 +70,69 @@ public struct WorkspaceClient: Sendable {
 
 private struct SendableWorkspaceImage: @unchecked Sendable {
     let value: NSImage
+}
+
+@MainActor
+private final class WorkspaceFileIconStore {
+    private var iconsByPath: [String: NSImage] = [:]
+
+    func icon(for path: String) -> NSImage? {
+        iconsByPath[normalizedPath(path)]
+    }
+
+    func prepare(paths: [String], resolve: (String) -> NSImage) -> Bool {
+        for path in paths {
+            let path = normalizedPath(path)
+            guard iconsByPath[path] == nil else { continue }
+            guard let image = Self.eagerlyDecodedImage(resolve(path)) else { return false }
+            iconsByPath[path] = image
+        }
+        return true
+    }
+
+    private func normalizedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.path
+    }
+
+    private static func eagerlyDecodedImage(_ image: NSImage) -> NSImage? {
+        let pointSize = NSSize(
+            width: max(image.size.width, 32),
+            height: max(image.size.height, 32),
+        )
+        let scale: CGFloat = 2
+        guard let representation = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(pointSize.width * scale),
+            pixelsHigh: Int(pointSize.height * scale),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0,
+        ) else { return nil }
+
+        representation.size = pointSize
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        guard let context = NSGraphicsContext(bitmapImageRep: representation) else { return nil }
+        NSGraphicsContext.current = context
+        image.draw(
+            in: NSRect(origin: .zero, size: pointSize),
+            from: .zero,
+            operation: .copy,
+            fraction: 1,
+            respectFlipped: false,
+            hints: [.interpolation: NSImageInterpolation.high],
+        )
+        context.flushGraphics()
+
+        let decodedImage = NSImage(size: pointSize)
+        decodedImage.addRepresentation(representation)
+        decodedImage.isTemplate = image.isTemplate
+        return decodedImage
+    }
 }
 
 public extension WorkspaceClient {
@@ -125,6 +194,14 @@ extension WorkspaceClient: DependencyKey {
             fileManager: FileManager.default,
             workspace: workspace,
         )
+        let fileIconStore = WorkspaceFileIconStore()
+        let resolveFileIcon: @Sendable (String) -> NSImage = { path in
+            resolvedIcon(
+                forFile: path,
+                workspace: workspace,
+                cloudStorageIconIndex: cloudStorageIconIndex,
+            )
+        }
         return WorkspaceClient(
             urlForApplication: { bundleID in
                 workspace.urlForApplication(withBundleIdentifier: bundleID)
@@ -135,15 +212,15 @@ extension WorkspaceClient: DependencyKey {
             urlsForApplications: { url in
                 workspace.urlsForApplications(toOpen: url)
             },
-            iconForFile: { path in
-                resolvedIcon(
-                    forFile: path,
-                    workspace: workspace,
-                    cloudStorageIconIndex: cloudStorageIconIndex,
-                )
-            },
+            iconForFile: resolveFileIcon,
             iconForType: { type in
                 workspace.icon(for: type)
+            },
+            prepareFileIcons: { paths in
+                await fileIconStore.prepare(paths: paths, resolve: resolveFileIcon)
+            },
+            cachedIconForFile: { path in
+                fileIconStore.icon(for: path)
             },
             openApplication: { url in
                 let config = NSWorkspace.OpenConfiguration()
@@ -193,6 +270,8 @@ extension WorkspaceClient: DependencyKey {
             urlsForApplications: { _ in [] },
             iconForFile: { _ in NSImage() },
             iconForType: { _ in NSImage() },
+            prepareFileIcons: { _ in true },
+            cachedIconForFile: { _ in nil },
             openApplication: { _ in },
             openURL: { _ in false },
             currentEvent: { nil },

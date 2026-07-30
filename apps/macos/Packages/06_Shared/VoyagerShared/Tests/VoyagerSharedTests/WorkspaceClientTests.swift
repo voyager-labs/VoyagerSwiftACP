@@ -19,4 +19,20 @@ final class WorkspaceClientTests: XCTestCase {
         XCTAssertFalse(resolverWasMainThread.value ?? true)
         XCTAssertIdentical(image, expectedImage)
     }
+
+    func testPrepareFileIconsPublishesStrongSynchronousFinalIcon() async throws {
+        let directory = FileManager.default.temporaryDirectory.standardizedFileURL.path
+        let client = WorkspaceClient.liveValue
+
+        XCTAssertNil(client.cachedIconForFile(directory))
+        let firstPreparationSucceeded = await client.prepareFileIcons([directory, directory])
+        XCTAssertTrue(firstPreparationSucceeded)
+        let firstIcon = try XCTUnwrap(client.cachedIconForFile(directory))
+        XCTAssertGreaterThan(firstIcon.representations.first?.pixelsWide ?? 0, 0)
+        XCTAssertGreaterThan(firstIcon.representations.first?.pixelsHigh ?? 0, 0)
+
+        let secondPreparationSucceeded = await client.prepareFileIcons([directory])
+        XCTAssertTrue(secondPreparationSucceeded)
+        XCTAssertIdentical(client.cachedIconForFile(directory), firstIcon)
+    }
 }
