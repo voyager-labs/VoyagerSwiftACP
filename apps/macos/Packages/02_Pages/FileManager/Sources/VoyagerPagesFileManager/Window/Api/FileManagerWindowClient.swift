@@ -4,6 +4,7 @@ import Foundation
 import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 public enum FileManagerWindowActivationResult: Sendable, Equatable {
     case becameKey
@@ -243,6 +244,7 @@ private func configureFileManagerWindowTabbingPolicyIfNeeded() {
 @MainActor
 public func makeFileManagerWindowClientLive(
     fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
+    workspaceClient: WorkspaceClient,
 ) -> FileManagerWindowClient {
     .init(
         open: { id in
@@ -251,6 +253,7 @@ public func makeFileManagerWindowClientLive(
                 fileManagerWindowOpen(
                     windowID: id,
                     fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+                    workspaceClient: workspaceClient,
                 )
             }
         },
@@ -259,6 +262,7 @@ public func makeFileManagerWindowClientLive(
                 fileManagerWindowOpenTab(
                     windowID: id,
                     fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+                    workspaceClient: workspaceClient,
                 )
             }
         },
@@ -353,6 +357,7 @@ public func requestFileManagerNewTab(path: String?) {
 private func fileManagerWindowOpen(
     windowID: UUID,
     fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
+    workspaceClient: WorkspaceClient,
 ) {
     configureFileManagerWindowTabbingPolicyIfNeeded()
 
@@ -370,6 +375,7 @@ private func fileManagerWindowOpen(
         windowID: windowID,
         fileManagerStore: fileManagerStore,
         fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+        workspaceClient: workspaceClient,
     )
     registerFileManagerWindowController(controller)
     controller.showWindow(nil as Any?)
@@ -379,6 +385,7 @@ private func fileManagerWindowOpen(
 private func fileManagerWindowOpenTab(
     windowID: UUID,
     fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
+    workspaceClient: WorkspaceClient,
 ) {
     configureFileManagerWindowTabbingPolicyIfNeeded()
 
@@ -393,6 +400,7 @@ private func fileManagerWindowOpenTab(
         fileManagerWindowOpen(
             windowID: windowID,
             fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+            workspaceClient: workspaceClient,
         )
         return
     }
@@ -406,6 +414,7 @@ private func fileManagerWindowOpenTab(
         windowID: windowID,
         fileManagerStore: fileManagerStore,
         fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+        workspaceClient: workspaceClient,
     )
     registerFileManagerWindowController(controller)
 
@@ -499,12 +508,14 @@ private func makeManagedWindowController(
     windowID: UUID,
     fileManagerStore: StoreOf<FileManagerFeature>,
     fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
+    workspaceClient: WorkspaceClient,
 ) -> FileManagerWindowCoordinator {
     FileManagerWindowCoordinator(
         windowID: windowID,
         store: fileManagerStore,
         fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
         path: nil,
+        workspaceClient: workspaceClient,
         sessionLapseGuardStore: fileManagerSessionLapseProvider?.resolveStore(),
         sessionLapseGuardState: fileManagerSessionLapseProvider?.resolveState,
         onBecameKey: { id in
