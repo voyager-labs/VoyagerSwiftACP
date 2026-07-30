@@ -47,8 +47,10 @@ public struct FileManagerFeature {
                     )
                 }
 
-            case .contentTabs(.setCurrent):
-                guard let activeTabID = state.contentTabs.activeTabID else { return .none }
+            case let .contentTabs(.setCurrent(targetTabID)):
+                guard let activeTabID = state.contentTabs.activeTabID,
+                      targetTabID != activeTabID
+                else { return .none }
                 return .merge(
                     .send(.tabContent(
                         tabID: activeTabID,

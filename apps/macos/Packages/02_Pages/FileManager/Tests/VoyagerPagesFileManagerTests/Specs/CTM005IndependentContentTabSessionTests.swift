@@ -1292,6 +1292,46 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertEqual(previousLayout?.activeCollectionAppendPaths, [:])
     }
 
+    /// CTM-005-independent_content_tab_session: 현재 탭 재선택은 진행 중 load를 유지함
+    /// 실제 tab 전환이 없는 setCurrent가 현재 folder·collection owner를 취소하지 않는지 검증한다.
+    /// - 검증 내용: same-tab setCurrent 이후 folder context와 collection transient state 보존
+    /// - 사전 조건: active A에 진행 중인 folder load와 collection replace·append가 있음
+    /// - 기대 결과: 취소 action 없이 모든 in-flight state가 그대로 유지됨
+    func testSameTabSelectionPreservesInFlightContentLoads() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 1,
+            folderID: "/tmp/A/folder",
+            folderGeneration: 1,
+            path: "/tmp/A/folder",
+            showHidden: false,
+            priority: .none,
+        )
+        var contentA = makeCloseTestDirectoryContent(path: "/tmp/A")
+        contentA.entryViewLayout.entryOperations.folderLoadingContexts[request.id] = .init(request: request)
+        contentA.entryViewLayout.isCollectionMode = true
+        contentA.entryViewLayout.isCollectionContentLoading = true
+        contentA.entryViewLayout.activeCollectionReplacePaths = ["/tmp/A/pending.txt"]
+        contentA.entryViewLayout.activeCollectionAppendExpectedBatchIndices = [7: 1]
+        contentA.entryViewLayout.activeCollectionAppendPaths = [7: ["/tmp/A/appending.txt"]]
+        let state = makeCloseTestState(
+            tabs: [makeCloseTestDirectoryTab(id: tabA, path: "/tmp/A", title: "A")],
+            activeTabID: tabA,
+            contentStates: [tabA: contentA],
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+
+        await store.send(.contentTabs(.setCurrent(tabA)))
+        await store.finish()
+
+        XCTAssertNotNil(store.state.content.entryViewLayout.entryOperations.folderLoadingContexts[request.id])
+        XCTAssertTrue(store.state.content.entryViewLayout.isCollectionContentLoading)
+        XCTAssertEqual(store.state.content.entryViewLayout.activeCollectionReplacePaths, ["/tmp/A/pending.txt"])
+        XCTAssertEqual(store.state.content.entryViewLayout.activeCollectionAppendExpectedBatchIndices, [7: 1])
+    }
+
     /// CTM-005-independent_content_tab_session: inactive tab close 시 nested folder stream 취소
     /// 제거되는 snapshot의 loading owner를 사용해 해당 탭의 확장 폴더 I/O까지 종료하는지 검증한다.
     /// - 검증 내용: inactive B의 folder stream cancellation 1회와 active A session 보존
