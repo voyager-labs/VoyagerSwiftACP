@@ -73,6 +73,19 @@ enum EntryOperationsCommandPlanner {
         }
     }
 
+    static func topLevelPaths(from paths: [String]) -> [String] {
+        let pathComponents = paths.map { URL(fileURLWithPath: $0).standardizedFileURL.pathComponents }
+        return paths.enumerated().compactMap { index, path in
+            let components = pathComponents[index]
+            let hasSelectedAncestor = pathComponents.enumerated().contains { candidateIndex, candidateComponents in
+                candidateIndex != index &&
+                    candidateComponents.count < components.count &&
+                    components.starts(with: candidateComponents)
+            }
+            return hasSelectedAncestor ? nil : path
+        }
+    }
+
     private static func planNavigation(
         _ command: EntryOperationsNavigationCommand,
         context: EntryOperationsCommandContext,
@@ -159,16 +172,8 @@ enum EntryOperationsCommandPlanner {
 
     private static func selectedTopLevelItems(in context: EntryOperationsCommandContext) -> [EntryModel] {
         let items = selectedItems(in: context)
-        let pathComponents = items.map { URL(fileURLWithPath: $0.fullPath).standardizedFileURL.pathComponents }
-        return items.enumerated().compactMap { index, item in
-            let components = pathComponents[index]
-            let hasSelectedAncestor = pathComponents.enumerated().contains { candidateIndex, candidateComponents in
-                candidateIndex != index &&
-                    candidateComponents.count < components.count &&
-                    components.starts(with: candidateComponents)
-            }
-            return hasSelectedAncestor ? nil : item
-        }
+        let topLevelPaths = Set(topLevelPaths(from: items.map(\.fullPath)))
+        return items.filter { topLevelPaths.contains($0.fullPath) }
     }
 
     private static func selectedTopLevelPaths(in context: EntryOperationsCommandContext) -> [String] {

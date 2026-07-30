@@ -32,12 +32,14 @@ struct EntryOperationsCommandRoutingReducer {
                 return .none
 
             case let .routing(.handleDrop(providers: _, destinationPath)):
-                let internalPaths = entryFileOpsClient.loadDragPaths()
-                guard !internalPaths.isEmpty else { return .none }
+                let sourcePaths = EntryOperationsCommandPlanner.topLevelPaths(
+                    from: entryFileOpsClient.loadDragPaths(),
+                )
+                guard !sourcePaths.isEmpty else { return .none }
                 let operation: ClipboardOperation = entryFileOpsClient.loadDragWithOption() ? .copy : .cut
                 let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
                 return .send(.clipboard(.pasteItems(
-                    sourcePaths: internalPaths,
+                    sourcePaths: sourcePaths,
                     destinationPath: destinationPath,
                     operation: operation,
                     operationKind: operationKind,
@@ -47,7 +49,7 @@ struct EntryOperationsCommandRoutingReducer {
                 let operation: ClipboardOperation = isOptionDrag ? .copy : .cut
                 let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
                 return .send(.clipboard(.pasteItems(
-                    sourcePaths: sourcePaths,
+                    sourcePaths: EntryOperationsCommandPlanner.topLevelPaths(from: sourcePaths),
                     destinationPath: destinationPath,
                     operation: operation,
                     operationKind: operationKind,
