@@ -5,6 +5,7 @@
 ## Monorepo Layout
 
 - `apps/backend`: FastAPI 백엔드 (uv)
+- `apps/entry-core`: Go CLI와 foreground daemon runtime foundation
 - `apps/macos/Voyager`: macOS SwiftUI + TCA 앱과 Helper
 - `docs/`: AI 에이전트용 PRD/아키텍처 문서 인덱스
 
@@ -50,6 +51,10 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
     - Setup: `cd apps/backend && uv sync && uv run pre-commit install`
     - Dev server: `uv run dev`
     - Tests: `uv run pytest`
+
+- Entry Core
+    - Guide: [`apps/entry-core/README.md`](apps/entry-core/README.md)
+    - Full check: `mise run entry-core-check`
 
 - macOS App
     - Xcode에서 시작(권장): `xed apps/macos/Voyager/Voyager.xcworkspace` (열기 후 `Cmd+R` 실행)

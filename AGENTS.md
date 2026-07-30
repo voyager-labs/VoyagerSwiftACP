@@ -53,6 +53,7 @@ You are a super-capable agent. Act like it.
 mise run setup              # Install pinned tools, Xcode, hooks, submodules, and docs dependencies
 mise run xcode              # Reinstall/reselect the repository Xcode version
 mise run docs-setup         # Sync docs/canonical npm dependencies when its lock changes
+mise run entry-core-check   # Run the complete Entry Core verification suite
 mise run macos-build        # Build macOS app (Voyager-Dev scheme)
 mise run macos-test         # Run macOS tests
 cd apps/backend && uv run pytest  # Run backend tests
@@ -76,6 +77,7 @@ git diff --check            # Check for whitespace errors before commit
 | `.agents/skills/rule-authoring/` | Rule v2 schema governance and placement strategy            |
 | `.pr-review/`                    | PR review policy, severity, and macOS Swift rules           |
 | `scripts/`                       | Validators, shadow corpus, build helpers                    |
+| `apps/entry-core/`               | Go CLI and foreground daemon runtime foundation             |
 | `apps/macos/Voyager/`            | macOS SwiftUI + TCA app                                     |
 | `apps/backend/`                  | FastAPI backend                                             |
 
@@ -114,6 +116,10 @@ Agents must never silence lint/type warnings with inline suppression comments or
 ## Validation
 
 Run the commands that match your change scope. Swift 컴파일·테스트 검증은 `lsp_diagnostics` 대신 `.agents/skills/code-tooling/SKILL.md`의 실행 매트릭스를 따르고, macOS 범위는 저장소 `mise` task를 사용한다.
+
+### Entry Core (Go)
+
+Read `apps/entry-core/AGENTS.md` before changing the module, then run `mise run entry-core-check`.
 
 ### Backend (Python/FastAPI)
 
