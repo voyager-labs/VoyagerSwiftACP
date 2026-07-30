@@ -5677,16 +5677,15 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(result.remainingCount, 0)
     }
 
-    /// CTM-003-pin_selected_content_tabs: anchor replacement 실패 계열은 pre-item snapshot으로 rollback한다.
-    /// authoritative empty snapshot이 대기 중이어도 failed/superseded/cancelled가 current item 상태를 누출하지 않는지 검증한다.
-    /// - 검증 내용: replacement rollback payload, content/inspector/active/selection exact 복원, deferred authoritative
-    /// replay
-    /// - 사전 조건: optimistic selected Pin current item과 empty authoritative snapshot, 세 terminal outcome
-    /// - 기대 결과: 원래 unpinned tab/runtime가 보존되고 coordinator/current snapshot/deferred가 모두 정리된다.
+    /// CTM-003-pin_selected_content_tabs: anchor replacement 실패 계열은 current item의 Pin 변경만 rollback한다.
+    /// persistence 대기 중 발생한 active/selection/content 변경을 failed/superseded/cancelled가 덮어쓰지 않는지 검증한다.
+    /// - 검증 내용: item-scoped Pin/order/record rollback, live content/inspector/active/selection 보존, deferred replay
+    /// - 사전 조건: optimistic selected Pin current item, empty authoritative snapshot, terminal 전 peer 전환과 target deselect
+    /// - 기대 결과: target만 unpinned 상태로 복구되고 최신 window runtime과 anchor는 보존된다.
     func testPinSelectedAnchorReplacementRollbackReplaysEmptyAuthoritativeSnapshot() async throws {
         for terminal in SelectedPinReplacementTerminal.allCases {
             let fixture = try selectedPinPersistenceReplacementFixture()
-            let original = try XCTUnwrap(
+            let rollback = try XCTUnwrap(
                 fixture.state.pendingSelectedContentTabPinMutation?.currentItemRollbackSnapshot,
             )
             let completedResults = LockIsolated<[SelectedContentTabPinMutationResult]>([])
@@ -5716,6 +5715,13 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
             let empty = ContentTabState.restoringPinnedRecords(from: ContentTabPinnedRecordStore()).state
             await store.send(.applyAuthoritativePinnedContentTabs(empty))
+            await store.send(.contentTabs(.setCurrent(fixture.peerID)))
+            await store.skipReceivedActions()
+            await store.send(.contentTabs(.toggleSelection(fixture.tabID)))
+            let liveContent = store.state.content
+            let liveTabContentStates = store.state.tabContentStates
+            let liveInspector = store.state.inspector
+            let liveTabInspectorStates = store.state.tabInspectorStates
             await store.send(.contentTabs(.updateActivePageAnchor(fixture.tabID, fixture.changedAnchor)))
             await store.skipReceivedActions()
             await store.finish()
@@ -5726,7 +5732,14 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             }
             assertSelectedPinReplacementRollback(
                 state: store.state,
-                original: original,
+                expectation: SelectedPinReplacementRollbackExpectation(
+                    rollback: rollback,
+                    fixture: fixture,
+                    liveContent: liveContent,
+                    liveTabContentStates: liveTabContentStates,
+                    liveInspector: liveInspector,
+                    liveTabInspectorStates: liveTabInspectorStates,
+                ),
                 terminal: terminal,
                 result: result,
                 label: label,
@@ -5734,31 +5747,44 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         }
     }
 
+    private struct SelectedPinReplacementRollbackExpectation {
+        let rollback: ContentTabPinnedRecordRollbackSnapshot
+        let fixture: SelectedPinPersistenceReplacementFixture
+        let liveContent: FileManagerContentFeature.State
+        let liveTabContentStates: [ContentTabID: FileManagerContentFeature.State]
+        let liveInspector: FileManagerInspectorFeature.State
+        let liveTabInspectorStates: [ContentTabID: FileManagerInspectorFeature.State]
+    }
+
     private func assertSelectedPinReplacementRollback(
         state: FileManagerFeature.State,
-        original: SelectedContentTabPinMutationCurrentItemRollbackSnapshot,
+        expectation: SelectedPinReplacementRollbackExpectation,
         terminal: SelectedPinReplacementTerminal,
         result: SelectedContentTabPinMutationResult,
         label: String,
     ) {
+        let rollback = expectation.rollback
+        let fixture = expectation.fixture
         XCTAssertNil(state.pendingSelectedContentTabPinMutation, label)
         XCTAssertNil(state.deferredPinnedContentTabs, label)
         XCTAssertNil(state.deferredPinnedContentTabsMode, label)
-        XCTAssertEqual(state.contentTabs.tabs, original.contentTabs.tabs, label)
-        XCTAssertEqual(state.contentTabs.pinnedRecords, original.contentTabs.pinnedRecords, label)
+        XCTAssertEqual(state.contentTabs.tabs[id: fixture.tabID]?.isPinned, rollback.previousIsPinned, label)
+        XCTAssertEqual(state.contentTabs.pinnedRecords[fixture.tabID], rollback.previousPinnedRecord, label)
+        XCTAssertEqual(state.contentTabs.tabs.index(id: fixture.tabID), rollback.previousTabIndex, label)
         XCTAssertEqual(state.contentTabs.pendingPinnedRecordIDs, [], label)
-        XCTAssertEqual(state.contentTabs.activeTabID, original.contentTabs.activeTabID, label)
-        XCTAssertEqual(state.contentTabs.selectedTabIDs, original.contentTabs.selectedTabIDs, label)
-        XCTAssertEqual(state.contentTabs.selectionAnchorID, original.contentTabs.selectionAnchorID, label)
+        XCTAssertEqual(state.contentTabs.activeTabID, fixture.peerID, label)
+        XCTAssertEqual(state.contentTabs.selectedTabIDs, [fixture.peerID], label)
+        XCTAssertEqual(state.contentTabs.selectionAnchorID, fixture.tabID, label)
+        XCTAssertEqual(state.contentTabs.tabs[id: fixture.tabID]?.anchor, fixture.changedAnchor, label)
         XCTAssertEqual(
             state.contentTabs.pinnedRecordPersistenceError,
             terminal == .failed ? "pinned_record_save_failed" : nil,
             label,
         )
-        XCTAssertEqual(state.content, original.content, label)
-        XCTAssertEqual(state.tabContentStates, original.tabContentStates, label)
-        XCTAssertEqual(state.inspector, original.inspector, label)
-        XCTAssertEqual(state.tabInspectorStates, original.tabInspectorStates, label)
+        XCTAssertEqual(state.content, expectation.liveContent, label)
+        XCTAssertEqual(state.tabContentStates, expectation.liveTabContentStates, label)
+        XCTAssertEqual(state.inspector, expectation.liveInspector, label)
+        XCTAssertEqual(state.tabInspectorStates, expectation.liveTabInspectorStates, label)
         XCTAssertEqual(result.failureCount, terminal == .failed ? 1 : 0, label)
         XCTAssertEqual(result.remainingCount, terminal == .failed ? 0 : 1, label)
     }
@@ -6492,6 +6518,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     private struct SelectedPinPersistenceReplacementFixture {
         let state: FileManagerFeature.State
         let tabID: ContentTabID
+        let peerID: ContentTabID
         let changedAnchor: ContentTabPageAnchor
     }
 
@@ -6500,9 +6527,10 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 7))
         let tabID = fixture.orderedIDs[0]
         var state = fixture.state
-        let rollbackSnapshot = SelectedContentTabPinMutationCurrentItemRollbackSnapshot(
-            state: state,
-            tabID: tabID,
+        let rollbackSnapshot = ContentTabPinnedRecordRollbackSnapshot(
+            previousIsPinned: state.contentTabs.tabs[id: tabID]?.isPinned ?? false,
+            previousPinnedRecord: state.contentTabs.pinnedRecords[tabID],
+            previousTabIndex: state.contentTabs.tabs.index(id: tabID),
         )
         state.contentTabs.tabs[id: tabID]?.isPinned = true
         state.contentTabs.pinnedRecords[tabID] = try Self.pinnedRecord(
@@ -6523,6 +6551,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         return SelectedPinPersistenceReplacementFixture(
             state: state,
             tabID: tabID,
+            peerID: fixture.orderedIDs[1],
             changedAnchor: .directory(path: "/Users/test/replaced-anchor"),
         )
     }
