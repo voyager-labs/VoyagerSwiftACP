@@ -292,6 +292,34 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(secondDestination, "/root/other")
     }
 
+    /// EOP-002-duplicate_entries: 부모와 자식을 함께 선택하면 부모만 복제한다.
+    /// 계층 projection에서 선택된 폴더의 하위 항목을 별도 복제해 중복 결과를 만들지 않는지 검증한다.
+    /// - 검증 내용: duplicate command plan이 선택된 ancestor의 descendant path를 제외함
+    /// - 사전 조건: 폴더와 해당 폴더의 자식 파일이 동시에 선택됨
+    /// - 기대 결과: paste source에는 부모 폴더만 포함됨
+    func testDuplicateCommandOmitsDescendantOfSelectedFolder() {
+        let folder = EntryModelFixtures.makeEntry(path: "/root/folder")
+        let child = EntryModelFixtures.makeEntry(path: "/root/folder/child.txt")
+        let context = EntryOperationsCommandContext(
+            selectedIds: [folder.id, child.id],
+            displayItems: [folder, child],
+            currentPath: "/root",
+        )
+
+        let outputs = EntryOperationsCommandPlanner.plan(
+            command: .clipboard(.duplicateSelectedItems),
+            context: context,
+        )
+
+        XCTAssertEqual(outputs.count, 1)
+        guard case let .entryOperations(.clipboard(.pasteItems(paths, destination, _, _))) = outputs.first else {
+            XCTFail("Expected one duplicate paste plan")
+            return
+        }
+        XCTAssertEqual(paths, [folder.fullPath])
+        XCTAssertEqual(destination, "/root")
+    }
+
     /// EOP-002-duplicate_entries: 일부 선택 항목이 사라진 상태에서도 앞선 항목 복제는 유지되는지 검증한다.
     /// 사용자가 `fixtures/fixtures/images/jpeg/`에서 여러 항목을 duplicate할 때 중간 하나가 없어도 앞선 복제는 유지되는지 확인한다.
     /// - 검증 내용: `.clipboard(.pasteItems)`가 다중 선택을 순차 처리하면서 앞선 성공과 뒤늦은 실패를 분리한다.

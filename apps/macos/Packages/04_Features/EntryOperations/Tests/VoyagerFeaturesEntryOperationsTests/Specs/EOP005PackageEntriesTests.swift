@@ -88,6 +88,33 @@ final class EOP005PackageEntriesTests: XCTestCase {
         XCTAssertEqual(secondPaths, [second.fullPath])
     }
 
+    /// EOP-005-compress_entries: 부모와 자식을 함께 선택하면 부모만 압축한다.
+    /// 계층 projection에서 선택된 폴더 내용이 별도 source로 중복 압축되지 않는지 검증한다.
+    /// - 검증 내용: compress command plan이 선택된 ancestor의 descendant path를 제외함
+    /// - 사전 조건: 폴더와 해당 폴더의 자식 파일이 동시에 선택됨
+    /// - 기대 결과: compress source에는 부모 폴더만 포함됨
+    func testCompressCommandOmitsDescendantOfSelectedFolder() {
+        let folder = EntryModelFixtures.makeEntry(path: "/root/folder")
+        let child = EntryModelFixtures.makeEntry(path: "/root/folder/child.txt")
+        let context = EntryOperationsCommandContext(
+            selectedIds: [folder.id, child.id],
+            displayItems: [folder, child],
+            currentPath: "/root",
+        )
+
+        let outputs = EntryOperationsCommandPlanner.plan(
+            command: .mutation(.compressSelectedItems),
+            context: context,
+        )
+
+        XCTAssertEqual(outputs.count, 1)
+        guard case let .entryOperations(.archive(.compressItems(paths))) = outputs.first else {
+            XCTFail("Expected one compress plan")
+            return
+        }
+        XCTAssertEqual(paths, [folder.fullPath])
+    }
+
     /// EOP-005-extract_compressed_files: 압축 파일 해제
     /// - 검증 내용: 압축 해제 action이 archive 추출 의존성을 호출하고 작업 상태를 완료하는지 확인합니다.
     /// - 사전 조건: `fixtures/fixtures/archives/COMPRESS-264.zip`를 FixtureSandbox로 복사
