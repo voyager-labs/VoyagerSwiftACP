@@ -76,6 +76,33 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertNotNil(store.state.itemStates[sourcePath]?.lastError)
     }
 
+    /// EOP-003-move_entries_to_trash: 부모와 자식을 함께 선택하면 부모만 Trash로 이동한다.
+    /// 계층 projection에서 부모 이동 뒤 자식 이동이 별도로 실패하지 않도록 command 경계를 검증한다.
+    /// - 검증 내용: move-to-trash command plan이 선택된 ancestor의 descendant path를 제외함
+    /// - 사전 조건: 폴더와 해당 폴더의 자식 파일이 동시에 선택됨
+    /// - 기대 결과: moveToTrash path에는 부모 폴더만 포함됨
+    func testMoveToTrashCommandOmitsDescendantOfSelectedFolder() {
+        let folder = EntryModelFixtures.makeEntry(path: "/root/folder")
+        let child = EntryModelFixtures.makeEntry(path: "/root/folder/./child.txt")
+        let context = EntryOperationsCommandContext(
+            selectedIds: [folder.id, child.id],
+            displayItems: [folder, child],
+            currentPath: "/root",
+        )
+
+        let outputs = EntryOperationsCommandPlanner.plan(
+            command: .mutation(.moveSelectedItemsToTrash),
+            context: context,
+        )
+
+        XCTAssertEqual(outputs.count, 1)
+        guard case let .entryOperations(.trash(.moveToTrash(paths))) = outputs.first else {
+            XCTFail("Expected one move-to-trash plan")
+            return
+        }
+        XCTAssertEqual(paths, [folder.fullPath])
+    }
+
     // MARK: - EOP-003-delete_entries_immediately
 
     /// EOP-003-delete_entries_immediately: 선택한 Entry가 즉시 삭제되는지 검증한다.
@@ -135,6 +162,33 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sourcePath))
         XCTAssertEqual(store.state.itemStates[sourcePath]?.lastError, error)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-003-delete_entries_immediately: 부모와 자식을 함께 선택하면 부모만 즉시 삭제한다.
+    /// 계층 projection에서 부모 삭제 뒤 자식 삭제가 별도로 실패하지 않도록 command 경계를 검증한다.
+    /// - 검증 내용: delete-immediately command plan이 선택된 ancestor의 descendant path를 제외함
+    /// - 사전 조건: 폴더와 해당 폴더의 자식 파일이 동시에 선택됨
+    /// - 기대 결과: deleteImmediately path에는 부모 폴더만 포함됨
+    func testDeleteImmediatelyCommandOmitsDescendantOfSelectedFolder() {
+        let folder = EntryModelFixtures.makeEntry(path: "/root/folder")
+        let child = EntryModelFixtures.makeEntry(path: "/root/folder/child.txt")
+        let context = EntryOperationsCommandContext(
+            selectedIds: [folder.id, child.id],
+            displayItems: [folder, child],
+            currentPath: "/root",
+        )
+
+        let outputs = EntryOperationsCommandPlanner.plan(
+            command: .mutation(.deleteSelectedItemsImmediately),
+            context: context,
+        )
+
+        XCTAssertEqual(outputs.count, 1)
+        guard case let .entryOperations(.trash(.deleteImmediately(paths))) = outputs.first else {
+            XCTFail("Expected one delete-immediately plan")
+            return
+        }
+        XCTAssertEqual(paths, [folder.fullPath])
     }
 
     // MARK: - EOP-003-empty_trash
