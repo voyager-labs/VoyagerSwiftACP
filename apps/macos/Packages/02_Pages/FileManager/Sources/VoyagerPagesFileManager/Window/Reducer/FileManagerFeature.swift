@@ -12,6 +12,10 @@ public struct FileManagerFeature {
 
     @Dependency(\.fileOperationUndoManagerClient)
     private var fileOperationUndoManagerClient
+    @Dependency(\.contentTabPinnedRecordClient)
+    private var contentTabPinnedRecordClient
+    @Dependency(\.userDefaultsClient)
+    private var userDefaultsClient
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -59,6 +63,139 @@ public struct FileManagerFeature {
                         undoManagerGeneration: generation,
                     )
                 }
+
+            case let .performSelectedContentTabCloseMutation(operationID, tabID, .close):
+                guard state.pendingSelectedContentTabClose?.operationID == operationID else { return .none }
+                return requestTopNavigationClose(tabID: tabID, state: &state)
+
+            case let .performSelectedContentTabCloseMutation(
+                _, tabID, .pinnedRecordSaveSucceeded(_, context),
+            ):
+                return completeTopNavigationLifecycleIfNeeded(
+                    tabID: tabID, context: context, terminal: nil, state: &state,
+                )
+
+            case let .performSelectedContentTabCloseMutation(
+                _, tabID, .pinnedRecordSaveFailed(_, context, _),
+            ):
+                return completeTopNavigationLifecycleIfNeeded(
+                    tabID: tabID, context: context, terminal: .failed(.save), state: &state,
+                )
+
+            case let .performSelectedContentTabCloseMutation(
+                _, tabID, .pinnedRecordStoreUnavailable(_, context, failure, _),
+            ):
+                return completeTopNavigationLifecycleIfNeeded(
+                    tabID: tabID,
+                    context: context,
+                    terminal: .failed(.storeUnavailable(failure)),
+                    state: &state,
+                )
+
+            case let .performSelectedContentTabCloseMutation(
+                _, tabID, .pinnedRecordSaveNotApplied(_, context, reason, _),
+            ):
+                let failure: FileManagerTopNavigationIntentFailure = switch reason {
+                case .superseded: .superseded
+                case .cancelled: .cancelled
+                }
+                return completeTopNavigationLifecycleIfNeeded(
+                    tabID: tabID, context: context, terminal: .failed(failure), state: &state,
+                )
+
+            case let .closeContentTabRequested(tabID):
+                guard state.pendingSelectedContentTabClose == nil else { return .none }
+                return requestTopNavigationClose(tabID: tabID, state: &state)
+
+            case let .contentTabs(.pin(tabID)):
+                guard state.pendingSelectedContentTabClose == nil else { return .none }
+                return requestTopNavigationPin(tabID: tabID, state: &state)
+
+            case let .contentTabs(.unpin(tabID)):
+                guard state.pendingSelectedContentTabClose == nil else { return .none }
+                prepareTopNavigationUnpin(tabID: tabID, state: &state)
+                return .none
+
+            case let .contentTabs(.commitClose(tabID)):
+                guard state.pendingSelectedContentTabClose == nil else { return .none }
+                state.dormantContentTabSlots.removeAll { $0.id == tabID }
+                state.replayTopNavigationOverlays()
+                return .none
+
+            case let .contentTabs(.pinnedRecordSaveSucceeded(tabID, context)):
+                return completeTopNavigationLifecycleIfNeeded(
+                    tabID: tabID,
+                    context: context,
+                    terminal: nil,
+                    state: &state,
+                )
+
+            case let .contentTabs(.pinnedRecordSaveFailed(tabID, context, _)):
+                return completeTopNavigationLifecycleIfNeeded(
+                    tabID: tabID,
+                    context: context,
+                    terminal: .failed(.save),
+                    state: &state,
+                )
+
+            case let .contentTabs(.pinnedRecordStoreUnavailable(tabID, context, failure, _)):
+                return completeTopNavigationLifecycleIfNeeded(
+                    tabID: tabID,
+                    context: context,
+                    terminal: .failed(.storeUnavailable(failure)),
+                    state: &state,
+                )
+
+            case let .contentTabs(.pinnedRecordSaveNotApplied(tabID, context, reason, _)):
+                let failure: FileManagerTopNavigationIntentFailure = switch reason {
+                case .superseded: .superseded
+                case .cancelled: .cancelled
+                }
+                return completeTopNavigationLifecycleIfNeeded(
+                    tabID: tabID,
+                    context: context,
+                    terminal: .failed(failure),
+                    state: &state,
+                )
+
+            case let .topNavigationMoveRequested(source, destination):
+                return requestTopNavigationMove(
+                    source: source,
+                    destination: destination,
+                    state: &state,
+                )
+
+            case let .internal(.topNavigationIntentCompleted(token, terminal)):
+                return completeTopNavigationIntent(token: token, terminal: terminal, state: &state)
+
+            case let .applyBootstrap(bootstrap):
+                state.applyBootstrap(bootstrap)
+                return .none
+
+            case let .applyExternalCommittedTopNavigationOrder(order, revision):
+                if let revision,
+                   state.lastConfirmedTopNavigationCommitRevision.map({ revision < $0 }) == true
+                {
+                    return .none
+                }
+                state.lastConfirmedTopNavigationOrder = order
+                state.lastConfirmedTopNavigationCommitRevision = revision
+                state.topNavigationArrangementAvailability = .available
+                state.topNavigationArrangementPresentation = nil
+                state.replayTopNavigationOverlays()
+                return .none
+
+            case let .applyFixedLocationItems(items):
+                state.applyFixedLocationItems(
+                    items,
+                    hiddenLocationIDs: state.sidebar.hiddenFixedLocationItemIDs,
+                )
+                return .none
+
+            case let .applyUnavailableTopNavigationArrangement(failure):
+                state.topNavigationArrangementAvailability = .unavailable(failure)
+                state.topNavigationArrangementPresentation = .loadUnavailable
+                return .none
 
             case let .internal(.entryActionCompleted(tabID, record, expectedGeneration)):
                 guard record.operationKind.isUndoable,
@@ -182,6 +319,227 @@ public struct FileManagerFeature {
         FileManagerWindowUndoRoutingReducer()
         FileManagerWindowCommandRoutingReducer()
     }
+}
+
+extension FileManagerFeature {
+    private func requestTopNavigationPin(
+        tabID: ContentTabID,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.contentTabs.tabs[id: tabID]?.isPinned == false else { return .none }
+        let dormantSlot = state.dormantContentTabSlots.first { $0.id == tabID }
+        let token = contentTabPinnedRecordClient.reserveTopNavigationOperationToken()
+        state.pendingTopNavigationIntents.append(.init(token: token, intent: .pin(tabID)))
+        state.optimisticTopNavigationOrder = FileManagerTopNavigationOrderPolicy.insertingPinnedItem(
+            tabID,
+            into: state.optimisticTopNavigationOrder,
+            dormantSlot: dormantSlot,
+        )
+        return .none
+    }
+
+    private func prepareTopNavigationUnpin(
+        tabID: ContentTabID,
+        state: inout State,
+    ) {
+        guard state.contentTabs.tabs[id: tabID]?.isPinned == true else { return }
+        let item = FileManagerTopNavigationItemID.contentTab(tabID)
+        guard let index = state.optimisticTopNavigationOrder.items.firstIndex(of: item) else { return }
+        let items = state.optimisticTopNavigationOrder.items
+        let slot = FileManagerTopNavigationOrderPolicy.DormantContentTabSlot(
+            id: tabID,
+            before: index > items.startIndex ? items[index - 1] : nil,
+            after: index + 1 < items.endIndex ? items[index + 1] : nil,
+        )
+        state.dormantContentTabSlots.removeAll { $0.id == tabID }
+        state.dormantContentTabSlots.append(slot)
+        let token = contentTabPinnedRecordClient.reserveTopNavigationOperationToken()
+        state.pendingTopNavigationIntents.append(.init(token: token, intent: .unpin(tabID)))
+        state.optimisticTopNavigationOrder = .init(items: items.filter { $0 != item })
+    }
+
+    private func requestTopNavigationClose(
+        tabID: ContentTabID,
+        state: inout State,
+    ) -> Effect<Action> {
+        state.dormantContentTabSlots.removeAll { $0.id == tabID }
+        guard state.contentTabs.tabs[id: tabID]?.isPinned == true else {
+            state.replayTopNavigationOverlays()
+            return .none
+        }
+        let token = contentTabPinnedRecordClient.reserveTopNavigationOperationToken()
+        state.pendingTopNavigationIntents.append(.init(token: token, intent: .close(tabID)))
+        state.optimisticTopNavigationOrder = .init(items: state.optimisticTopNavigationOrder.items.filter {
+            $0 != .contentTab(tabID)
+        })
+        return .none
+    }
+
+    private func completeTopNavigationLifecycleIfNeeded(
+        tabID: ContentTabID,
+        context: ContentTabPinnedRecordTerminalContext,
+        terminal: FileManagerTopNavigationIntentTerminal?,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.contentTabs.isCurrentPinnedRecordPersistenceIntent(
+            tabID: tabID,
+            intentID: context.intentID,
+        ) else { return .none }
+        guard let pending = state.pendingTopNavigationIntents.last(where: { candidate in
+            switch candidate.intent {
+            case let .pin(id), let .unpin(id), let .close(id): id == tabID
+            case .move: false
+            }
+        }) else {
+            if case let .failed(.storeUnavailable(failure)) = terminal {
+                state.topNavigationArrangementAvailability = .unavailable(failure)
+                state.topNavigationArrangementPresentation = .init(failure: .storeUnavailable(failure))
+            }
+            return .none
+        }
+
+        let resolvedTerminal = resolveTopNavigationTerminal(terminal, state: state)
+        let intent = pending.intent
+        switch (intent, resolvedTerminal) {
+        case (.pin(_), .committed(_)):
+            state.dormantContentTabSlots.removeAll { $0.id == tabID }
+        case (.unpin(_), .failed(_)):
+            state.dormantContentTabSlots.removeAll { $0.id == tabID }
+        default:
+            break
+        }
+        _ = completeTopNavigationIntent(token: pending.token, terminal: resolvedTerminal, state: &state)
+        state.replayTopNavigationOverlays()
+        return closeTopNavigationLifecycleEffect(
+            intent: intent,
+            terminal: resolvedTerminal,
+            tabID: tabID,
+            context: context,
+            state: state,
+        )
+    }
+
+    private func resolveTopNavigationTerminal(
+        _ terminal: FileManagerTopNavigationIntentTerminal?,
+        state: State,
+    ) -> FileManagerTopNavigationIntentTerminal {
+        if let terminal { return terminal }
+        do {
+            let commit = try contentTabPinnedRecordClient.loadTopNavigationCommit(
+                userDefaultsClient,
+                state.sidebar.allFixedLocationItems.map(\.id),
+            )
+            return .committed(commit)
+        } catch let error as ContentTabPinnedRecordStoreLoadError {
+            let failure: FileManagerTopNavigationArrangementLoadFailure = switch error {
+            case .corruptUnavailable: .corrupt
+            case let .futureSchemaUnavailable(schemaVersion): .unsupportedSchema(schemaVersion)
+            }
+            return .failed(.storeUnavailable(failure))
+        } catch {
+            return .failed(.save)
+        }
+    }
+
+    private func closeTopNavigationLifecycleEffect(
+        intent: FileManagerTopNavigationIntent,
+        terminal: FileManagerTopNavigationIntentTerminal,
+        tabID: ContentTabID,
+        context: ContentTabPinnedRecordTerminalContext,
+        state: State,
+    ) -> Effect<Action> {
+        guard case .close = intent else { return .none }
+        if let operationID = state.pendingContentTabClose?.batchOperationID {
+            let outcome: SelectedContentTabCloseOutcome = switch terminal {
+            case .committed:
+                contentTabPinnedRecordClient.isCurrentMutationGeneration(context.generation)
+                    ? .unpinned
+                    : .cancelled
+            case .failed(.save), .failed(.storeUnavailable):
+                .failed
+            case .failed(.superseded), .failed(.cancelled):
+                .cancelled
+            }
+            return .send(.selectedContentTabCloseItemCompleted(
+                operationID: operationID,
+                tabID: tabID,
+                outcome: outcome,
+            ))
+        }
+        guard case .committed = terminal else { return .none }
+        return .send(.contentTabs(.commitClose(tabID)))
+    }
+
+    private func requestTopNavigationMove(
+        source: FileManagerTopNavigationItemID,
+        destination: FileManagerTopNavigationMoveDestination,
+        state: inout State,
+    ) -> Effect<Action> {
+        let movedOrder = FileManagerTopNavigationOrderPolicy.moving(
+            source,
+            to: destination,
+            in: state.optimisticTopNavigationOrder,
+        )
+        guard movedOrder != state.optimisticTopNavigationOrder else { return .none }
+
+        let token = contentTabPinnedRecordClient.reserveTopNavigationOperationToken()
+        state.pendingTopNavigationIntents.append(.init(
+            token: token,
+            intent: .move(source: source, destination: destination),
+        ))
+        state.optimisticTopNavigationOrder = movedOrder
+
+        let discoveredLocationIDs = state.sidebar.allFixedLocationItems.map(\.id)
+        return .send(.delegate(.persistTopNavigationMove(
+            token: token,
+            source: source,
+            destination: destination,
+            discoveredLocationIDs: discoveredLocationIDs,
+        )))
+    }
+
+    private func completeTopNavigationIntent(
+        token: FileManagerTopNavigationOperationToken,
+        terminal: FileManagerTopNavigationIntentTerminal,
+        state: inout State,
+    ) -> Effect<Action> {
+        let hadPendingIntent = state.pendingTopNavigationIntents.contains { $0.token == token }
+        let isRelevantCurrentTerminal = hadPendingIntent
+            && contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken(token)
+        switch terminal {
+        case let .committed(commit):
+            if state.lastConfirmedTopNavigationCommitRevision.map({ commit.revision >= $0 }) != false {
+                state.lastConfirmedTopNavigationOrder = commit.order
+                state.lastConfirmedTopNavigationCommitRevision = commit.revision
+            }
+            if isRelevantCurrentTerminal {
+                state.topNavigationArrangementAvailability = .available
+                state.topNavigationArrangementPresentation = nil
+            }
+
+        case let .failed(.storeUnavailable(failure)):
+            if isRelevantCurrentTerminal {
+                state.topNavigationArrangementAvailability = .unavailable(failure)
+                state.topNavigationArrangementPresentation = .init(failure: .storeUnavailable(failure))
+            }
+
+        case .failed(.save):
+            if isRelevantCurrentTerminal {
+                state.topNavigationArrangementPresentation = .init(failure: .save)
+            }
+
+        case .failed(.cancelled), .failed(.superseded):
+            break
+        }
+
+        guard hadPendingIntent else {
+            state.replayTopNavigationOverlays()
+            return .none
+        }
+        state.pendingTopNavigationIntents.removeAll { $0.token == token }
+        state.replayTopNavigationOverlays()
+        return .none
+    }
 
     private func clearLogicalUndoHistory(tabID: ContentTabID, state: inout State) {
         let isActiveTab = state.contentTabs.activeTabID == tabID
@@ -233,6 +591,14 @@ public struct FileManagerFeature {
         _ action: ContentTabAction,
         state: inout State,
     ) -> Effect<Action> {
+        let reducedAction: ContentTabAction = if case let .pin(tabID) = action {
+            .pinUsingDormantSlot(
+                tabID,
+                state.dormantContentTabSlots.first { $0.id == tabID },
+            )
+        } else {
+            action
+        }
         let preReductionEffect: Effect<Action> = switch action {
         case let .duplicate(sourceID, duplicateID):
             .send(.internal(.duplicateContentTabReduced(
@@ -252,7 +618,7 @@ public struct FileManagerFeature {
         }
         let childEffect = ContentTabFeature().reduce(
             into: &state.contentTabs,
-            action: action,
+            action: reducedAction,
         )
         .map { Action.contentTabs($0) }
         return .merge(preReductionEffect, childEffect)
@@ -286,6 +652,7 @@ extension ContentTabAction {
              .collapseSelectionToActive,
              .pinnedRecordSaveSucceeded,
              .pinnedRecordSaveFailed,
+             .pinnedRecordStoreUnavailable,
              .pinnedRecordSaveNotApplied:
             true
         default:
@@ -297,6 +664,7 @@ extension ContentTabAction {
         switch self {
         case let .pinnedRecordSaveSucceeded(tabID, context),
              let .pinnedRecordSaveFailed(tabID, context, _),
+             let .pinnedRecordStoreUnavailable(tabID, context, _, _),
              let .pinnedRecordSaveNotApplied(tabID, context, _, _):
             !state.isCurrentPinnedRecordPersistenceIntent(tabID: tabID, intentID: context.intentID)
         default:
@@ -311,6 +679,7 @@ extension ContentTabAction {
              let .close(id),
              let .commitClose(id),
              let .pin(id),
+             let .pinUsingDormantSlot(id, _),
              let .unpin(id):
             id == tabID
         case let .updateActivePageAnchor(id, _):
@@ -318,6 +687,8 @@ extension ContentTabAction {
         case let .pinnedRecordSaveSucceeded(id, _):
             id == tabID
         case let .pinnedRecordSaveFailed(id, _, _):
+            id == tabID
+        case let .pinnedRecordStoreUnavailable(id, _, _, _):
             id == tabID
         case let .pinnedRecordSaveNotApplied(id, _, _, _):
             id == tabID

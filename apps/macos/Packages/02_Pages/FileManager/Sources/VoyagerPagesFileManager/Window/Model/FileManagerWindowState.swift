@@ -65,6 +65,74 @@ struct FileManagerAiChatSelection: Equatable {
     var thinking: AiThinkingSelection?
 }
 
+public struct FileManagerTopNavigationOperationToken: Equatable, Hashable, Sendable {
+    public let value: UUID
+
+    public init(value: UUID) {
+        self.value = value
+    }
+}
+
+public enum FileManagerTopNavigationIntent: Equatable, Sendable {
+    case move(
+        source: FileManagerTopNavigationItemID,
+        destination: FileManagerTopNavigationMoveDestination,
+    )
+    case pin(ContentTabID)
+    case unpin(ContentTabID)
+    case close(ContentTabID)
+}
+
+public struct FileManagerPendingTopNavigationIntent: Equatable, Sendable {
+    public let token: FileManagerTopNavigationOperationToken
+    public let intent: FileManagerTopNavigationIntent
+
+    public init(
+        token: FileManagerTopNavigationOperationToken,
+        intent: FileManagerTopNavigationIntent,
+    ) {
+        self.token = token
+        self.intent = intent
+    }
+}
+
+public enum FileManagerTopNavigationArrangementLoadFailure: Equatable, Sendable {
+    case corrupt
+    case unsupportedSchema(Int)
+}
+
+public enum FileManagerTopNavigationArrangementAvailability: Equatable, Sendable {
+    case available
+    case unavailable(FileManagerTopNavigationArrangementLoadFailure)
+}
+
+public enum FileManagerTopNavigationArrangementPresentation: Equatable, Sendable {
+    case saveRollback
+    case loadUnavailable
+}
+
+public extension FileManagerTopNavigationArrangementPresentation {
+    init?(failure: FileManagerTopNavigationIntentFailure) {
+        switch failure {
+        case .save:
+            self = .saveRollback
+        case .storeUnavailable:
+            self = .loadUnavailable
+        case .cancelled, .superseded:
+            return nil
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .saveRollback:
+            "Couldn’t save the sidebar order. Your previous order was restored."
+        case .loadUnavailable:
+            "Couldn’t load the saved sidebar arrangement. A default order is shown; the saved data was not changed."
+        }
+    }
+}
+
 @ObservableState
 public struct FileManagerWindowState: Equatable {
     public var content: FileManagerContentFeature.State
@@ -75,6 +143,17 @@ public struct FileManagerWindowState: Equatable {
     public var sidebar: FileManagerSidebarFeature.State
     public var inspector: FileManagerInspectorFeature.State
     public var contentTabs: ContentTabState
+    public var lastConfirmedTopNavigationOrder: FileManagerTopNavigationOrder
+    public var lastConfirmedTopNavigationCommitRevision: UInt64?
+    public var optimisticTopNavigationOrder: FileManagerTopNavigationOrder
+    public var dormantContentTabSlots: [FileManagerTopNavigationOrderPolicy.DormantContentTabSlot]
+    public var pendingTopNavigationIntents: [FileManagerPendingTopNavigationIntent]
+    public var topNavigationArrangementAvailability: FileManagerTopNavigationArrangementAvailability
+    public var topNavigationArrangementPresentation: FileManagerTopNavigationArrangementPresentation? {
+        get { sidebar.topNavigationArrangementPresentation }
+        set { sidebar.topNavigationArrangementPresentation = newValue }
+    }
+
     public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
     public var pendingContentTabClose: PendingContentTabClose?
     public var pendingSelectedContentTabClose: PendingSelectedContentTabClose?
@@ -98,6 +177,12 @@ public struct FileManagerWindowState: Equatable {
         sidebar = .init()
         inspector = .init()
         contentTabs = .withHomeTab()
+        lastConfirmedTopNavigationOrder = .init()
+        lastConfirmedTopNavigationCommitRevision = nil
+        optimisticTopNavigationOrder = .init()
+        dormantContentTabSlots = []
+        pendingTopNavigationIntents = []
+        topNavigationArrangementAvailability = .available
         tabContentStates = [:]
         tabInspectorStates = [:]
         backgroundAiChatStates = [:]
@@ -239,6 +324,12 @@ public struct FileManagerWindowState: Equatable {
         sidebar = .init()
         inspector = externalInspector
         contentTabs = externalContentTabs
+        lastConfirmedTopNavigationOrder = .init()
+        lastConfirmedTopNavigationCommitRevision = nil
+        optimisticTopNavigationOrder = .init()
+        dormantContentTabSlots = []
+        pendingTopNavigationIntents = []
+        topNavigationArrangementAvailability = .available
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
         pendingSelectedContentTabClose = nil
@@ -434,6 +525,45 @@ public extension FileManagerWindowState {
         ContentTabRowInteractionSurface(state: self)
     }
 
+    mutating func replayTopNavigationOverlays() {
+        var order = lastConfirmedTopNavigationOrder
+        for dormantSlot in dormantContentTabSlots
+            where FileManagerTopNavigationItemID.isValidRawID(dormantSlot.id.rawValue)
+        {
+            order = FileManagerTopNavigationOrderPolicy.insertingPinnedItem(
+                dormantSlot.id,
+                into: order,
+                dormantSlot: dormantSlot,
+            )
+        }
+        for pending in pendingTopNavigationIntents {
+            order = Self.applying(pending.intent, to: order, dormantSlots: dormantContentTabSlots)
+        }
+        optimisticTopNavigationOrder = order
+        syncSidebarTopNavigationItems()
+    }
+
+    private static func applying(
+        _ intent: FileManagerTopNavigationIntent,
+        to order: FileManagerTopNavigationOrder,
+        dormantSlots: [FileManagerTopNavigationOrderPolicy.DormantContentTabSlot],
+    ) -> FileManagerTopNavigationOrder {
+        switch intent {
+        case let .move(source, destination):
+            FileManagerTopNavigationOrderPolicy.moving(source, to: destination, in: order)
+
+        case let .pin(id):
+            FileManagerTopNavigationOrderPolicy.insertingPinnedItem(
+                id,
+                into: order,
+                dormantSlot: dormantSlots.first { $0.id == id },
+            )
+
+        case let .unpin(id), let .close(id):
+            FileManagerTopNavigationOrder(items: order.items.filter { $0 != .contentTab(id) })
+        }
+    }
+
     func appPreferencesPreservingSidebarState(from preferences: AppPreferencesState) -> AppPreferencesState {
         var result = preferences
         result.sidebarVisible = sidebar.sidebarVisible
@@ -606,6 +736,19 @@ extension FileManagerWindowState {
 
     mutating func syncContentTabSidebarItems() {
         sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: contentTabs)
+        syncSidebarTopNavigationItems()
+    }
+
+    mutating func syncSidebarTopNavigationItems() {
+        var synchronizedSidebar = sidebar
+        var synchronizedOrder = optimisticTopNavigationOrder
+        FileManagerSidebarSync.synchronizeTopNavigation(
+            sidebar: &synchronizedSidebar,
+            optimisticOrder: &synchronizedOrder,
+            dormantContentTabSlots: dormantContentTabSlots,
+        )
+        sidebar = synchronizedSidebar
+        optimisticTopNavigationOrder = synchronizedOrder
     }
 
     mutating func updateActiveAiChatTabTitle(_ title: String?) {
@@ -700,6 +843,30 @@ extension FileManagerWindowState {
     ) {
         sidebar.setFixedLocationItems(items, hiddenIDs: hiddenLocationIDs)
         content.homeLocationItems = items
+        lastConfirmedTopNavigationOrder = FileManagerTopNavigationOrderPolicy.reconcilingDiscoveredLocations(
+            in: lastConfirmedTopNavigationOrder,
+            discoveredLocationIDs: items.map(\.id),
+        )
+        syncSidebarTopNavigationItems()
+    }
+
+    mutating func applyBootstrap(_ bootstrap: FileManagerWindowBootstrap) {
+        applyPinnedContentTabs(bootstrap.authoritativePinnedContentTabs, mode: .authoritative)
+        switch bootstrap.arrangementAvailability {
+        case .available:
+            lastConfirmedTopNavigationOrder = bootstrap.committedTopNavigationOrder
+            lastConfirmedTopNavigationCommitRevision = nil
+            topNavigationArrangementAvailability = .available
+            topNavigationArrangementPresentation = nil
+        case let .unavailable(failure):
+            topNavigationArrangementAvailability = .unavailable(failure)
+            topNavigationArrangementPresentation = .loadUnavailable
+        }
+        applyFixedLocationItems(
+            bootstrap.fixedLocationItems,
+            hiddenLocationIDs: sidebar.hiddenFixedLocationItemIDs,
+        )
+        replayTopNavigationOverlays()
     }
 
     // MARK: - Home Dashboard Projection
