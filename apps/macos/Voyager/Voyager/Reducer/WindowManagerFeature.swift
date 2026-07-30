@@ -52,6 +52,8 @@ struct WindowManagerFeature {
     private var contentTabPinnedRecordClient
     @Dependency(\.fileManagerClient)
     private var fileManagerClient
+    @Dependency(\.fileManagerLocationsClient)
+    private var fileManagerLocationsClient
     @Dependency(\.fileManagerFavoritesClient)
     private var fileManagerFavoritesClient
     @Dependency(\.entryLoadingClient)
@@ -60,6 +62,8 @@ struct WindowManagerFeature {
     private var userDefaultsClient
     @Dependency(\.metricsClient)
     private var metricsClient
+    @Dependency(\.workspaceClient)
+    private var workspaceClient
 
     @Dependency(\.date)
     private var date
@@ -252,6 +256,12 @@ struct WindowManagerFeature {
                 guard shouldBootstrapDefaultWindow else { return .none }
                 return defaultWindowBootstrapEffectIfNeeded(for: id, state: &state)
 
+            case let .defaultWindowBootstrapRequested(id):
+                return handleDefaultWindowBootstrapRequested(id, state: &state)
+
+            case let .windowReadyToOpen(id):
+                return readyToOpenWindow(id, state: &state)
+
             case let .pendingWindowCloseFinalized(id):
                 return finalizePendingWindowClose(id, state: &state)
 
@@ -356,16 +366,39 @@ struct WindowManagerFeature {
 
             case let .windows(.element(
                 id: sourceWindowID,
+                action: .window(.delegate(.persistTopNavigationMove(
+                    token: token,
+                    source: source,
+                    destination: destination,
+                    discoveredLocationIDs: discoveredLocationIDs,
+                ))),
+            )):
+                return persistTopNavigationMove(
+                    sourceWindowID: sourceWindowID,
+                    token: token,
+                    source: source,
+                    destination: destination,
+                    discoveredLocationIDs: discoveredLocationIDs,
+                )
+
+            case let .topNavigationMovePersistenceCompleted(sourceWindowID, token, terminal):
+                return completeTopNavigationMovePersistence(
+                    sourceWindowID: sourceWindowID,
+                    token: token,
+                    terminal: terminal,
+                    state: state,
+                )
+
+            case let .windows(.element(
+                id: sourceWindowID,
                 action: .window(.contentTabs(.pinnedRecordSaveSucceeded(tabID, context))),
             )):
-                guard isCurrentPinnedRecordTerminal(
+                return handleCommittedPinnedRecordTerminal(
                     sourceWindowID: sourceWindowID,
                     tabID: tabID,
                     context: context,
                     state: state,
-                ), contentTabPinnedRecordClient.isCurrentMutationGeneration(context.generation)
-                else { return .none }
-                return .send(.pinnedContentTabsStoreChanged)
+                )
 
             case let .windows(.element(
                 id: sourceWindowID,
@@ -375,14 +408,12 @@ struct WindowManagerFeature {
                     action: .pinnedRecordSaveSucceeded(_, context),
                 )),
             )):
-                guard isCurrentPinnedRecordTerminal(
+                return handleCommittedPinnedRecordTerminal(
                     sourceWindowID: sourceWindowID,
                     tabID: tabID,
                     context: context,
                     state: state,
-                ), contentTabPinnedRecordClient.isCurrentMutationGeneration(context.generation)
-                else { return .none }
-                return .send(.pinnedContentTabsStoreChanged)
+                )
 
             case let .windows(.element(
                 id: sourceWindowID,
@@ -423,36 +454,13 @@ struct WindowManagerFeature {
                 return .send(.pinnedContentTabsStoreChanged)
 
             case .pinnedContentTabsStoreChanged:
-                let syncEffect = syncPinnedContentTabsAcrossWindows(state: &state)
-                state.defaultWindowBootstrapRequestID = nil
-                state.defaultWindowBootstrapWindowIDs.removeAll()
-                return .merge(
-                    .cancel(id: CancelID.defaultWindowBootstrap),
-                    syncEffect,
-                )
+                return handlePinnedContentTabsStoreChanged(state: &state)
 
-            case let .defaultWindowBootstrapCompleted(requestID, restoredState):
-                guard state.defaultWindowBootstrapRequestID == requestID else { return .none }
-                state.defaultWindowBootstrapRequestID = nil
-                let targetWindowIDs = state.windows.ids.filter {
-                    state.defaultWindowBootstrapWindowIDs.contains($0)
-                        && state.externalWindowBatchIDs[$0] == nil
-                }
-                state.defaultWindowBootstrapWindowIDs.removeAll()
-                return .merge(
-                    targetWindowIDs.map { id in
-                        .send(.windows(.element(
-                            id: id,
-                            action: .window(.applyPinnedContentTabs(restoredState)),
-                        )))
-                    },
-                )
+            case let .defaultWindowBootstrapCompleted(requestID, result):
+                return handleDefaultWindowBootstrapCompleted(requestID, result: result, state: &state)
 
             case let .defaultWindowBootstrapFailed(requestID):
-                guard state.defaultWindowBootstrapRequestID == requestID else { return .none }
-                state.defaultWindowBootstrapRequestID = nil
-                state.defaultWindowBootstrapWindowIDs.removeAll()
-                return .none
+                return handleDefaultWindowBootstrapFailed(requestID, state: &state)
 
             case let .windows(.element(id: _, action: .window(.inspector(.setInspectorWidth(width))))):
                 state.appPreferences.inspectorWidth = max(FileManagerInspectorLayoutMetrics.minWidth, width)
@@ -475,6 +483,135 @@ struct WindowManagerFeature {
 }
 
 extension WindowManagerFeature {
+    private func persistTopNavigationMove(
+        sourceWindowID: State.WindowID,
+        token: FileManagerTopNavigationOperationToken,
+        source: FileManagerTopNavigationItemID,
+        destination: FileManagerTopNavigationMoveDestination,
+        discoveredLocationIDs: [String],
+    ) -> Effect<Action> {
+        let client = contentTabPinnedRecordClient
+        let defaults = userDefaultsClient
+        return .run { send in
+            let terminal: FileManagerTopNavigationIntentTerminal
+            do {
+                let commit = try await client.moveTopNavigationItemCommitted(
+                    defaults,
+                    discoveredLocationIDs,
+                    source,
+                    destination,
+                )
+                terminal = .committed(commit)
+            } catch is CancellationError {
+                terminal = .failed(.cancelled)
+            } catch let error as ContentTabPinnedRecordStoreLoadError {
+                let failure: FileManagerTopNavigationArrangementLoadFailure = switch error {
+                case .corruptUnavailable:
+                    .corrupt
+                case let .futureSchemaUnavailable(schemaVersion):
+                    .unsupportedSchema(schemaVersion)
+                }
+                terminal = .failed(.storeUnavailable(failure))
+            } catch {
+                terminal = .failed(.save)
+            }
+            await send(.topNavigationMovePersistenceCompleted(
+                sourceWindowID: sourceWindowID,
+                token: token,
+                terminal: terminal,
+            ))
+        }
+    }
+
+    private func completeTopNavigationMovePersistence(
+        sourceWindowID: State.WindowID,
+        token: FileManagerTopNavigationOperationToken,
+        terminal: FileManagerTopNavigationIntentTerminal,
+        state: State,
+    ) -> Effect<Action> {
+        var effects: [Effect<Action>] = []
+        if state.windows[id: sourceWindowID] != nil {
+            effects.append(.send(.windows(.element(
+                id: sourceWindowID,
+                action: .window(.internal(.topNavigationIntentCompleted(
+                    token: token,
+                    terminal: terminal,
+                ))),
+            ))))
+        }
+        if case let .committed(commit) = terminal {
+            effects.append(fanOutCommittedTopNavigation(
+                commit,
+                excluding: sourceWindowID,
+                state: state,
+            ))
+        }
+        return .merge(effects)
+    }
+
+    private func handleCommittedPinnedRecordTerminal(
+        sourceWindowID: State.WindowID,
+        tabID: ContentTabID,
+        context: ContentTabPinnedRecordTerminalContext,
+        state: State,
+    ) -> Effect<Action> {
+        guard contentTabPinnedRecordClient.isCurrentMutationGeneration(context.generation) else {
+            return .none
+        }
+        if state.windows[id: sourceWindowID] != nil {
+            guard isCurrentPinnedRecordTerminal(
+                sourceWindowID: sourceWindowID,
+                tabID: tabID,
+                context: context,
+                state: state,
+            ) else { return .none }
+        }
+
+        return .merge(
+            .send(.pinnedContentTabsStoreChanged),
+            loadCommittedTopNavigationFanOut(excluding: sourceWindowID, state: state),
+        )
+    }
+
+    private func loadCommittedTopNavigationFanOut(
+        excluding sourceWindowID: State.WindowID,
+        state: State,
+    ) -> Effect<Action> {
+        do {
+            let fixedLocations = FileManagerHomeDashboardProjection.makeFixedLocations(
+                from: fileManagerLocationsClient.loadLocations(entryLoadingClient),
+            )
+            let discoveredLocationIDs = fixedLocations.map(\.id)
+            let commit = try contentTabPinnedRecordClient.loadTopNavigationCommit(
+                userDefaultsClient,
+                discoveredLocationIDs,
+            )
+            return fanOutCommittedTopNavigation(commit, excluding: sourceWindowID, state: state)
+        } catch {
+            return .none
+        }
+    }
+
+    private func fanOutCommittedTopNavigation(
+        _ commit: FileManagerTopNavigationCommit,
+        excluding sourceWindowID: State.WindowID,
+        state: State,
+    ) -> Effect<Action> {
+        .merge(
+            state.windows.ids
+                .filter { $0 != sourceWindowID && !state.closingWindowIDs.contains($0) }
+                .map { windowID in
+                    .send(.windows(.element(
+                        id: windowID,
+                        action: .window(.applyExternalCommittedTopNavigationOrder(
+                            commit.order,
+                            revision: commit.revision,
+                        )),
+                    )))
+                },
+        )
+    }
+
     func isCurrentPinnedRecordTerminal(
         sourceWindowID: State.WindowID,
         tabID: ContentTabID,
@@ -608,10 +745,17 @@ extension WindowManagerFeature {
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }
 
-    private func syncPinnedContentTabsAcrossWindows(state: inout State) -> Effect<Action> {
+    func syncPinnedContentTabsAcrossWindows(state: inout State) -> Effect<Action> {
         guard !state.windows.isEmpty else { return .none }
         do {
-            let store = try contentTabPinnedRecordClient.loadStore(userDefaultsClient)
+            let fixedLocations = FileManagerHomeDashboardProjection.makeFixedLocations(
+                from: fileManagerLocationsClient.loadLocations(entryLoadingClient),
+            )
+            let discoveredLocationIDs = fixedLocations.map(\.id)
+            guard let store = try contentTabPinnedRecordClient.loadStoreOutcome(
+                userDefaultsClient,
+                discoveredLocationIDs: discoveredLocationIDs,
+            ).writableStore else { return .none }
             let restoreResult = ContentTabState.restoringPinnedRecords(
                 from: store,
                 isRestorableAnchor: { _ in true },
@@ -651,18 +795,20 @@ extension WindowManagerFeature {
             pinnedRecordClient: contentTabPinnedRecordClient,
             favoritesClient: fileManagerFavoritesClient,
             managerClient: fileManagerClient,
+            locationsClient: fileManagerLocationsClient,
             loadingClient: entryLoadingClient,
             defaultsClient: userDefaultsClient,
             metricsClient: metricsClient,
+            workspaceClient: workspaceClient,
             now: { now() },
         )
 
         return .run { send in
-            guard let restoredState = await DefaultWindowBootstrap.run(dependencies) else { return }
-            await send(.defaultWindowBootstrapCompleted(
-                requestID: requestID,
-                contentTabs: restoredState,
-            ))
+            guard let result = await DefaultWindowBootstrap.run(dependencies) else {
+                await send(.defaultWindowBootstrapFailed(requestID: requestID))
+                return
+            }
+            await send(.defaultWindowBootstrapCompleted(requestID: requestID, result: result))
         }
     }
 
