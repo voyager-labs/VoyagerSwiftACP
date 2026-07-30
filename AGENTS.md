@@ -56,9 +56,6 @@ mise run docs-setup         # Sync docs/canonical npm dependencies when its lock
 mise run entry-core-check   # Run the complete Entry Core verification suite
 mise run macos-build        # Build macOS app (Voyager-Dev scheme)
 mise run macos-test         # Run macOS tests
-cd apps/backend && uv run pytest  # Run backend tests
-cd apps/backend && uv run pyright # Type-check backend
-cd apps/backend && uv run ruff check  # Lint backend
 python3 -m scripts.validate_harness  # Validates agent harness structure
 python3 -m scripts.verify_plan       # Validates plan structure
 mise exec -- swiftlint --config apps/macos/.swiftlint.yml apps/macos
@@ -79,7 +76,6 @@ git diff --check            # Check for whitespace errors before commit
 | `scripts/`                       | Validators, shadow corpus, build helpers                    |
 | `apps/entry-core/`               | Go CLI and foreground daemon runtime foundation             |
 | `apps/macos/Voyager/`            | macOS SwiftUI + TCA app                                     |
-| `apps/backend/`                  | FastAPI backend                                             |
 
 ## Protected local files
 
@@ -120,15 +116,6 @@ Run the commands that match your change scope. Swift 컴파일·테스트 검증
 ### Entry Core (Go)
 
 Read `apps/entry-core/AGENTS.md` before changing the module, then run `mise run entry-core-check`.
-
-### Backend (Python/FastAPI)
-
-```bash
-cd apps/backend
-uv run pytest          # tests
-uv run pyright         # type check
-uv run ruff check      # linter
-```
 
 ### macOS (Voyager)
 

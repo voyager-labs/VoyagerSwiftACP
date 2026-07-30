@@ -13,6 +13,9 @@ eggs/
 .eggs/
 lib/
 lib64/
+# File Manager illustration source modules
+!apps/storybook/packages/file-manager-illustration/src/lib/
+!apps/storybook/packages/file-manager-illustration/src/lib/**
 parts/
 sdist/
 var/
@@ -76,16 +79,12 @@ DerivedData/
 htmlcov/
 .tox/
 
-# Jupyter
-.ipynb_checkpoints
-*.ipynb
+# Removed backend local test corpus (prevent accidental restaging)
+apps/backend/notebooks/test-files/
 
 # Code coverage and profiling
 *.profraw
 default.profraw
-
-# Test files (369MB 불필요)
-apps/backend/notebooks/test-files/
 
 # Language Server Protocol
 buildServer.json
@@ -95,17 +94,12 @@ buildServer.json
 .env.dev
 .env.ci
 
-.backend_mode
-
 .history/
 
 # Logs
 apps/macos/logs/
 *.log
 # BMAD (local only)
-
-# Alembic
-apps/backend/alembic.ini.bak
 
 .serena/*
 
@@ -116,6 +110,7 @@ apps/backend/alembic.ini.bak
 /.codegraph/
 
 node_modules/
+storybook-static/
 
 # Voyager runtime credentials
 /.voyager/
