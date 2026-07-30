@@ -157,18 +157,22 @@ enum EntryOperationsCommandPlanner {
         selectedItems(in: context).map(\.fullPath)
     }
 
-    private static func selectedTopLevelPaths(in context: EntryOperationsCommandContext) -> [String] {
-        let paths = selectedPaths(in: context)
-        let pathComponents = paths.map { URL(fileURLWithPath: $0).standardizedFileURL.pathComponents }
-        return paths.enumerated().compactMap { index, path in
+    private static func selectedTopLevelItems(in context: EntryOperationsCommandContext) -> [EntryModel] {
+        let items = selectedItems(in: context)
+        let pathComponents = items.map { URL(fileURLWithPath: $0.fullPath).standardizedFileURL.pathComponents }
+        return items.enumerated().compactMap { index, item in
             let components = pathComponents[index]
             let hasSelectedAncestor = pathComponents.enumerated().contains { candidateIndex, candidateComponents in
                 candidateIndex != index &&
                     candidateComponents.count < components.count &&
                     components.starts(with: candidateComponents)
             }
-            return hasSelectedAncestor ? nil : path
+            return hasSelectedAncestor ? nil : item
         }
+    }
+
+    private static func selectedTopLevelPaths(in context: EntryOperationsCommandContext) -> [String] {
+        selectedTopLevelItems(in: context).map(\.fullPath)
     }
 
     private static func planOpenSelectedItem(_ selected: [EntryModel]) -> [EntryOperationsCommandOutput] {
@@ -225,7 +229,7 @@ enum EntryOperationsCommandPlanner {
     private static func planCopySelectedItems(_ context: EntryOperationsCommandContext)
         -> [EntryOperationsCommandOutput]
     {
-        let selected = selectedItems(in: context)
+        let selected = selectedTopLevelItems(in: context)
         guard !selected.isEmpty else { return [] }
         return [.entryOperations(.clipboard(.copySelectedItems(files: selected)))]
     }
@@ -233,7 +237,7 @@ enum EntryOperationsCommandPlanner {
     private static func planCutSelectedItems(_ context: EntryOperationsCommandContext)
         -> [EntryOperationsCommandOutput]
     {
-        let selected = selectedItems(in: context)
+        let selected = selectedTopLevelItems(in: context)
         guard !selected.isEmpty else { return [] }
         return [
             .entryOperations(.clipboard(.copySelectedItems(files: selected))),

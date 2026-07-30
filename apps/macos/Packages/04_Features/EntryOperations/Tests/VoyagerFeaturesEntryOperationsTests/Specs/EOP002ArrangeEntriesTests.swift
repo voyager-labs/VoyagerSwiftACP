@@ -81,6 +81,15 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    /// EOP-002-copy_entries: 부모와 자식을 함께 선택하면 부모만 file clipboard에 복사한다.
+    /// 계층 selection을 붙여넣을 때 자식이 부모 내용과 별도로 중복 복사되지 않는지 검증한다.
+    /// - 검증 내용: copy command plan이 선택된 ancestor의 descendant Entry를 제외함
+    /// - 사전 조건: 폴더와 해당 폴더의 자식 파일이 동시에 선택됨
+    /// - 기대 결과: copySelectedItems files에는 부모 폴더만 포함됨
+    func testCopyCommandOmitsDescendantOfSelectedFolder() {
+        assertClipboardCommandOmitsSelectedDescendant(.copySelectedItems)
+    }
+
     // MARK: - EOP-002-cut_entries
 
     /// EOP-002-cut_entries: 선택한 Entry가 이동용 잘라내기 상태로 저장되는지 검증한다.
@@ -129,6 +138,15 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(store.state.cutClearSession?.pasteboard.changeCount, 0)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-002-cut_entries: 부모와 자식을 함께 선택하면 부모만 cut clipboard에 저장한다.
+    /// 계층 selection을 이동할 때 부모 이동 뒤 자식 source가 사라져 부분 실패하지 않는지 검증한다.
+    /// - 검증 내용: cut command plan이 선택된 ancestor의 descendant Entry를 제외함
+    /// - 사전 조건: 폴더와 해당 폴더의 자식 파일이 동시에 선택됨
+    /// - 기대 결과: copySelectedItems files에는 부모 폴더만 포함되고 cut marker가 뒤따름
+    func testCutCommandOmitsDescendantOfSelectedFolder() {
+        assertClipboardCommandOmitsSelectedDescendant(.cutSelectedItems)
     }
 
     // MARK: - EOP-002-paste_entries
@@ -956,6 +974,26 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: aliasPath))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    private func assertClipboardCommandOmitsSelectedDescendant(
+        _ command: EntryOperationsClipboardCommand,
+    ) {
+        let folder = EntryModelFixtures.makeEntry(path: "/root/folder")
+        let child = EntryModelFixtures.makeEntry(path: "/root/folder/./child.txt")
+        let context = EntryOperationsCommandContext(
+            selectedIds: [folder.id, child.id],
+            displayItems: [folder, child],
+            currentPath: "/root",
+        )
+
+        let outputs = EntryOperationsCommandPlanner.plan(command: .clipboard(command), context: context)
+
+        guard case let .entryOperations(.clipboard(.copySelectedItems(files))) = outputs.first else {
+            XCTFail("Expected clipboard files plan")
+            return
+        }
+        XCTAssertEqual(files.map(\.fullPath), [folder.fullPath])
     }
 }
 
