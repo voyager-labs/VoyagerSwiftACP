@@ -98,6 +98,7 @@ public struct FileManagerWindowState: Equatable {
     public var pendingSelectedContentTabPinMutation: PendingSelectedContentTabPinMutation?
     public var deferredPinnedContentTabs: ContentTabState?
     public var deferredPinnedContentTabsMode: PinnedContentTabsApplicationMode?
+    var pendingRuntimePreservationRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
     public var pendingContentTabTeardown: PendingContentTabTeardown?
     public var isClosing: Bool
     public var pendingDirectoryReloadTabIDs: Set<ContentTabID>
@@ -801,6 +802,7 @@ extension FileManagerWindowState {
     mutating func applyPinnedContentTabs(
         _ restoredPinnedState: ContentTabState,
         mode: PinnedContentTabsApplicationMode = .preservingRuntime,
+        runtimePreservingTabIDs: Set<ContentTabID> = [],
     ) {
         let recentlyClosed = contentTabs.recentlyClosed
         let restoredPinnedTabs = restoredPinnedState.tabs.filter(\.isPinned)
@@ -815,8 +817,12 @@ extension FileManagerWindowState {
             .map { restoredTab in
                 let hasRuntimeState = tabContentStates[restoredTab.id] != nil
                     || tabInspectorStates[restoredTab.id] != nil
-                guard mode == .preservingRuntime,
-                      restoredTab.id != activeTabIDBeforeSync || hasRuntimeState,
+                let preservesRuntime = mode == .preservingRuntime
+                    || runtimePreservingTabIDs.contains(restoredTab.id)
+                guard preservesRuntime,
+                      runtimePreservingTabIDs.contains(restoredTab.id)
+                      || restoredTab.id != activeTabIDBeforeSync
+                      || hasRuntimeState,
                       let currentTab = currentPinnedTabsByID[restoredTab.id]
                 else { return restoredTab }
                 return currentTab
@@ -844,9 +850,12 @@ extension FileManagerWindowState {
             tabContentStates[removedID] = nil
             tabInspectorStates[removedID] = nil
         }
-        let changedPinnedTabIDs = mode == .authoritative
-            ? Set(restoredPinnedTabs.compactMap { tab in
-                previousPinnedAnchors[tab.id].map { $0 != tab.anchor } == true ? tab.id : nil
+        let changedPinnedTabIDs: Set<ContentTabID> = mode == .authoritative
+            ? Set(restoredPinnedTabs.compactMap { tab -> ContentTabID? in
+                guard !runtimePreservingTabIDs.contains(tab.id),
+                      previousPinnedAnchors[tab.id].map({ $0 != tab.anchor }) == true
+                else { return nil }
+                return tab.id
             })
             : []
         for changedID in changedPinnedTabIDs {

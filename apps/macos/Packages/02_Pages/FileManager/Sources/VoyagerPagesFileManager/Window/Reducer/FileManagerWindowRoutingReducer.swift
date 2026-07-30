@@ -1232,6 +1232,7 @@ private extension FileManagerWindowRoutingReducer {
         state.pendingContentTabClose = nil
         state.deferredPinnedContentTabs = nil
         state.deferredPinnedContentTabsMode = nil
+        state.pendingRuntimePreservationRecords.removeAll()
         state.pendingContentTabTeardown = nil
         var cancellationEffects: [Effect<Action>] = []
         if let closeOperationID {
@@ -1815,9 +1816,15 @@ private extension FileManagerWindowRoutingReducer {
             outcome = contentTabPinnedRecordClient.isCurrentMutationGeneration(context.generation)
                 ? .success
                 : .remaining
-        case let .pinnedRecordSaveFailed(failedTabID, _, _) where failedTabID == tabID:
+        case let .pinnedRecordSaveFailed(failedTabID, _, rollback) where failedTabID == tabID:
+            if pending.target == .unpinned, let previousRecord = rollback.previousPinnedRecord {
+                state.pendingRuntimePreservationRecords[tabID] = previousRecord
+            }
             outcome = .failure
-        case let .pinnedRecordSaveNotApplied(nonAppliedTabID, _, _, _) where nonAppliedTabID == tabID:
+        case let .pinnedRecordSaveNotApplied(nonAppliedTabID, _, _, rollback) where nonAppliedTabID == tabID:
+            if pending.target == .unpinned, let previousRecord = rollback.previousPinnedRecord {
+                state.pendingRuntimePreservationRecords[tabID] = previousRecord
+            }
             outcome = .remaining
         default:
             return .none
@@ -1919,7 +1926,19 @@ private extension FileManagerWindowRoutingReducer {
         let activeTabIDBeforeSync = state.contentTabs.activeTabID
         let activeAnchorBeforeSync = activeTabIDBeforeSync.flatMap { state.contentTabs.tabs[id: $0]?.anchor }
         let tabAnchorsBeforeSync = state.contentTabs.tabs.map { (id: $0.id, anchor: $0.anchor) }
-        state.applyPinnedContentTabs(contentTabs, mode: mode)
+        let runtimePreservingTabIDs: Set<ContentTabID> = mode == .authoritative
+            ? Set(state.pendingRuntimePreservationRecords.compactMap { tabID, record in
+                contentTabs.pinnedRecords[tabID] == record ? tabID : nil
+            })
+            : []
+        state.applyPinnedContentTabs(
+            contentTabs,
+            mode: mode,
+            runtimePreservingTabIDs: runtimePreservingTabIDs,
+        )
+        if mode == .authoritative {
+            state.pendingRuntimePreservationRecords.removeAll()
+        }
         cleanPendingDirectoryReloadTabIDs(state: &state)
         syncDashboardProjections(state: &state)
         let activeAnchorAfterSync = state.contentTabs.activeTabID
