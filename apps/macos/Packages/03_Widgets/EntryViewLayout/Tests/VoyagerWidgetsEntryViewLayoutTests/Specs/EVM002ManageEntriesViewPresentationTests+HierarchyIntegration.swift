@@ -284,6 +284,45 @@ extension EVM002ManageEntriesViewPresentationTests {
         }
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: loading folder의 watcher invalidation은 stream을 재시작한다.
+    /// 진행 중인 child snapshot이 외부 추가·삭제를 놓친 채 loaded로 고정되지 않는지 검증한다.
+    /// - 검증 내용: loading parent의 generation 증가와 새 load request 생성
+    /// - 사전 조건: expanded `/var` folder가 generation 2의 partial child stream을 로딩 중임
+    /// - 기대 결과: 기존 children을 비우고 generation 3 load를 같은 lexical folder ID로 요청함
+    func testInvalidationRestartsLoadingHierarchyFolder() async {
+        let folder = EntryModel.temporaryFolder(id: "/var", name: "var")
+        let partialChild = makeHierarchyIntegrationEntry(id: "/var/partial.txt", name: "partial.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.hierarchy = .init(
+            rootPath: "/",
+            expandedFolderIDs: [folder.id],
+            foldersByID: [
+                folder.id: .init(
+                    children: [partialChild],
+                    phase: .loading,
+                    generation: 2,
+                    expectedBatchIndex: 1,
+                ),
+            ],
+        )
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+
+        await store.send(.hierarchy(.hierarchyInvalidated(
+            affectedPaths: ["/var/new.txt"],
+            removedPrefixes: [],
+        ))) {
+            $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 3)
+            $0.outlineProjectionRevision = 2
+        }
+        await store.receive { action in
+            guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
+            return request.id.folderID == folder.id && request.folderGeneration == 3
+        }
+    }
+
     /// EVM-002-update_entry_selection: nested child context menu는 visible hierarchy row를 현재 대상으로 사용한다.
     /// expanded child를 우클릭한 뒤 Rename이 root-only snapshot 때문에 no-op 되지 않는지 검증한다.
     /// - 검증 내용: child row context menu target의 Rename delegate action

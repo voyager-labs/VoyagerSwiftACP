@@ -154,7 +154,7 @@ struct EntryListHierarchyReducer {
             }) {
                 affectedIDs.insert(folderID)
             }
-            if let parentID = nearestLoadedParentID(for: canonicalPath, state: state) {
+            if let parentID = nearestRefreshableParentID(for: canonicalPath, state: state) {
                 affectedIDs.insert(parentID)
             }
         }
@@ -307,9 +307,12 @@ struct EntryListHierarchyReducer {
         return true
     }
 
-    private func nearestLoadedParentID(for path: String, state: State) -> EntryModel.ID? {
+    private func nearestRefreshableParentID(for path: String, state: State) -> EntryModel.ID? {
         state.hierarchy.foldersByID
-            .filter { $0.value.phase == .loaded && isSameOrDescendant(path: path, of: $0.key) }
+            .filter {
+                ($0.value.phase == .loaded || $0.value.phase == .loading)
+                    && isSameOrDescendant(path: path, of: $0.key)
+            }
             .map(\.key)
             .max { lhs, rhs in
                 pathComponents(for: lhs).count < pathComponents(for: rhs).count
