@@ -293,44 +293,13 @@ public struct PendingContentTabTeardown: Equatable, Sendable {
     }
 }
 
-public struct SelectedContentTabPinMutationCurrentItemRollbackSnapshot: Equatable {
-    let contentTabs: ContentTabState
-    let content: FileManagerContentFeature.State
-    let tabContentStates: [ContentTabID: FileManagerContentFeature.State]
-    let inspector: FileManagerInspectorFeature.State
-    let tabInspectorStates: [ContentTabID: FileManagerInspectorFeature.State]
-    let persistenceRollback: ContentTabPinnedRecordRollbackSnapshot
-
-    init(state: FileManagerWindowState, tabID: ContentTabID) {
-        contentTabs = state.contentTabs
-        content = state.content
-        tabContentStates = state.tabContentStates
-        inspector = state.inspector
-        tabInspectorStates = state.tabInspectorStates
-        persistenceRollback = ContentTabPinnedRecordRollbackSnapshot(
-            previousIsPinned: state.contentTabs.tabs[id: tabID]?.isPinned ?? false,
-            previousPinnedRecord: state.contentTabs.pinnedRecords[tabID],
-            previousTabIndex: state.contentTabs.tabs.index(id: tabID),
-        )
-    }
-
-    func restore(into state: inout FileManagerWindowState) {
-        state.contentTabs = contentTabs
-        state.content = content
-        state.tabContentStates = tabContentStates
-        state.inspector = inspector
-        state.tabInspectorStates = tabInspectorStates
-        state.syncContentTabSidebarItems()
-    }
-}
-
 public struct PendingSelectedContentTabPinMutation: Equatable {
     public let operationID: UUID
     public let target: SelectedContentTabPinMutationTargetState
     public let orderedTargetIDs: [ContentTabID]
     public var cursor: Int
     public var currentTabID: ContentTabID?
-    public var currentItemRollbackSnapshot: SelectedContentTabPinMutationCurrentItemRollbackSnapshot?
+    public var currentItemRollbackSnapshot: ContentTabPinnedRecordRollbackSnapshot?
     public var successCount: Int
     public var failureCount: Int
     public var remainingCount: Int
@@ -345,7 +314,7 @@ public struct PendingSelectedContentTabPinMutation: Equatable {
         orderedTargetIDs: [ContentTabID],
         cursor: Int = 0,
         currentTabID: ContentTabID? = nil,
-        currentItemRollbackSnapshot: SelectedContentTabPinMutationCurrentItemRollbackSnapshot? = nil,
+        currentItemRollbackSnapshot: ContentTabPinnedRecordRollbackSnapshot? = nil,
         successCount: Int = 0,
         failureCount: Int = 0,
         remainingCount: Int = 0,

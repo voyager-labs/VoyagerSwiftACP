@@ -174,7 +174,7 @@ public struct FileManagerFeature {
                       let pending = state.pendingSelectedContentTabPinMutation,
                       pending.operationID == operationID,
                       pending.currentTabID == tabID,
-                      let rollback = pending.currentItemRollbackSnapshot?.persistenceRollback
+                      let rollback = pending.currentItemRollbackSnapshot
                 else { return .none }
                 let rebasedRequest = ContentTabPinnedRecordPersistenceRequest(
                     mutationID: request.mutationID,
@@ -201,11 +201,6 @@ public struct FileManagerFeature {
                           target: pending.target,
                       )
                 else { return .none }
-                if contentTabAction.requiresSelectedPinRollback,
-                   let rollback = pending.currentItemRollbackSnapshot
-                {
-                    rollback.restore(into: &state)
-                }
                 let previousActiveTabID = state.contentTabs.previousActiveTabID
                 let childEffect = ContentTabFeature().reduce(
                     into: &state.contentTabs,
@@ -437,15 +432,6 @@ extension ContentTabAction {
              let .pinnedRecordSaveFailed(id, _, _),
              let .pinnedRecordSaveNotApplied(id, _, _, _):
             id == tabID
-        default:
-            false
-        }
-    }
-
-    var requiresSelectedPinRollback: Bool {
-        switch self {
-        case .pinnedRecordSaveFailed, .pinnedRecordSaveNotApplied:
-            true
         default:
             false
         }

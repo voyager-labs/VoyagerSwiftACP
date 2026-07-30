@@ -1699,9 +1699,10 @@ private extension FileManagerWindowRoutingReducer {
             )
         }
 
-        pending.currentItemRollbackSnapshot = SelectedContentTabPinMutationCurrentItemRollbackSnapshot(
-            state: state,
-            tabID: tabID,
+        pending.currentItemRollbackSnapshot = ContentTabPinnedRecordRollbackSnapshot(
+            previousIsPinned: tab.isPinned,
+            previousPinnedRecord: state.contentTabs.pinnedRecords[tabID],
+            previousTabIndex: state.contentTabs.tabs.index(id: tabID),
         )
         state.pendingSelectedContentTabPinMutation = pending
 
