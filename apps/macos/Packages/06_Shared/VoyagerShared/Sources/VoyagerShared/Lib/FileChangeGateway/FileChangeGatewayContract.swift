@@ -129,10 +129,10 @@ public enum FileChangeScopePolicy {
                 continue
             }
 
-            let destinationURL = destination.hasPrefix("/")
-                ? URL(fileURLWithPath: destination)
-                : resolvedURL.appendingPathComponent(destination)
-            pendingComponents = Array((destinationURL.path as NSString).pathComponents.dropFirst()) + pendingComponents
+            pendingComponents = symlinkDestinationComponents(
+                destination,
+                relativeTo: resolvedURL,
+            ) + pendingComponents
             resolvedURL = URL(fileURLWithPath: "/")
             resolvedSymlinkCount += 1
         }
@@ -193,6 +193,28 @@ public enum FileChangeScopePolicy {
             return path == root || (path as NSString).deletingLastPathComponent == root
         }
         return path == root || (root == "/" ? path.hasPrefix("/") : path.hasPrefix(root + "/"))
+    }
+
+    nonisolated private static func symlinkDestinationComponents(
+        _ destination: String,
+        relativeTo resolvedURL: URL,
+    ) -> [String] {
+        var components = destination.hasPrefix("/")
+            ? []
+            : Array((resolvedURL.path as NSString).pathComponents.dropFirst())
+        for component in (destination as NSString).pathComponents {
+            switch component {
+            case "/", ".":
+                continue
+            case "..":
+                if !components.isEmpty {
+                    components.removeLast()
+                }
+            default:
+                components.append(component)
+            }
+        }
+        return components
     }
 }
 
