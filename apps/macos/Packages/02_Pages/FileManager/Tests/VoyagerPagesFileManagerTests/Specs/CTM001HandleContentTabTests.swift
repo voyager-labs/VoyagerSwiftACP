@@ -902,9 +902,11 @@ final class CTM001HandleContentTabTests: XCTestCase {
             batchOperationID: operationID,
         )
         let store = TestStore(initialState: state) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
-            $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SelectedClosePersistenceError() }
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, _ in
+                throw SelectedClosePersistenceError()
+            }
         }
         // store.exhaustivity = .off: rollback 내부 field diff보다 wrapped failure와 최종 identity를 검증한다.
         store.exhaustivity = .off
@@ -3377,10 +3379,10 @@ final class CTM001HandleContentTabTests: XCTestCase {
         initialState.contentTabs.selectedTabIDs = [fixture.tabD, fixture.tabA]
         initialState.contentTabs.selectionAnchorID = fixture.tabD
         let store = TestStore(initialState: initialState) {
-            FileManagerFeature()
+            CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.uuid = .constant(operationID)
-            $0.contentTabPinnedRecordClient.updateStore = { _, _ in }
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, _ in .applied }
         }
         // store.exhaustivity = .off: persistence와 Window projection의 파생 state보다 명시 terminal 순서와 최종 tab identity를 검증한다.
         store.exhaustivity = .off
@@ -4277,8 +4279,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         await store.send(.close(pinnedID)) {
             $0.tabs[id: pinnedID]?.isPinned = false
+            $0.pendingPinnedRecordIDs.insert(pinnedID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordPersistenceRequested)
         await store.finish()
 
         XCTAssertEqual(store.state.selectedTabIDs, [pinnedID])

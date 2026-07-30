@@ -13,6 +13,8 @@ public struct FileManagerWindowMenuCommandProjection: Equatable, Sendable {
     public let canSaveCollection: Bool
     public let canOpenNewContentTab: Bool
     public let canToggleActiveContentTabPin: Bool
+    public let canSetSelectedContentTabsPinned: Bool
+    public let isSelectedContentTabPinTargetPinned: Bool
     public let isActiveContentTabPinned: Bool
     public let canRestoreLastClosedTab: Bool
     public let selectedContentTabCount: Int
@@ -41,7 +43,13 @@ public extension FileManagerWindowState {
         let selectedIds = content.entryViewLayout.selectedIds
         let activeContentTab = contentTabs.activeTabID.flatMap { contentTabs.tabs[id: $0] }
         let canPerformEntryCommands = !content.isOrdinaryDirectoryLoading
-        let selectedContentTabCount = contentTabs.selectedTabCount
+        let orderedSelectedContentTabIDs = contentTabs.orderedValidSelectedTabIDs
+        let selectedContentTabCount = orderedSelectedContentTabIDs.count
+        let selectedContentTabPinTargetID = contentTabs.activeTabID.flatMap { activeTabID in
+            orderedSelectedContentTabIDs.contains(activeTabID) ? activeTabID : nil
+        } ?? orderedSelectedContentTabIDs.first
+        let isSelectedContentTabPinTargetPinned = selectedContentTabPinTargetID
+            .flatMap { contentTabs.tabs[id: $0]?.isPinned } == true
         let canCloseContentTabs = pendingSelectedContentTabClose == nil
             && pendingContentTabClose == nil
             && pendingContentTabTeardown == nil
@@ -64,6 +72,9 @@ public extension FileManagerWindowState {
             canToggleActiveContentTabPin: activeContentTab != nil
                 && isBatchCloseIdle
                 && pendingContentTabClose == nil,
+            canSetSelectedContentTabsPinned: selectedContentTabCount > 1
+                && canStartSelectedContentTabPinMutation,
+            isSelectedContentTabPinTargetPinned: isSelectedContentTabPinTargetPinned,
             isActiveContentTabPinned: activeContentTab?.isPinned == true,
             canRestoreLastClosedTab: ContentTabProjection.restoreCandidate(from: contentTabs) != nil && contentTabs.tabs
                 .count < ContentTabConstants.maxTabs && isBatchCloseIdle && pendingContentTabClose == nil,

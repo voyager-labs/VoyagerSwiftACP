@@ -103,10 +103,9 @@ public enum BuiltInContentTabPinnedRecordSeedPolicy {
         maxRecordCount: Int,
     ) -> Result {
         let metadata = metadata(for: descriptor.identity)
-        let stableIDMatch = store.records.first { $0.id == metadata.stableID }
-        let selectedRecord = stableIDMatch ?? store.records.first {
-            $0.collectionFileURL == descriptor.canonicalPackageURL
-        }
+        let selectedRecordIndex = store.records.firstIndex { $0.id == metadata.stableID }
+            ?? store.records.firstIndex { $0.collectionFileURL == descriptor.canonicalPackageURL }
+        let selectedRecord = selectedRecordIndex.map { store.records[$0] }
 
         guard selectedRecord != nil || store.records.count < maxRecordCount else {
             return .deferred
@@ -120,15 +119,14 @@ public enum BuiltInContentTabPinnedRecordSeedPolicy {
             iconName: metadata.iconName,
             pinnedAt: selectedRecord?.pinnedAt ?? now,
         )
-        let remainingRecords = store.records.filter {
-            $0.id != metadata.stableID && $0.collectionFileURL != descriptor.canonicalPackageURL
+        let isMatchingRecord: (ContentTabPinnedRecord) -> Bool = {
+            $0.id == metadata.stableID || $0.collectionFileURL == descriptor.canonicalPackageURL
         }
-        let records = switch descriptor.identity {
-        case .recents:
-            [canonicalRecord] + remainingRecords
-        case .allTags:
-            remainingRecords + [canonicalRecord]
-        }
+        var records = store.records.filter { !isMatchingRecord($0) }
+        let insertionIndex = selectedRecordIndex.map { selectedIndex in
+            store.records[..<selectedIndex].count { !isMatchingRecord($0) }
+        } ?? records.endIndex
+        records.insert(canonicalRecord, at: insertionIndex)
         let finalStore = ContentTabPinnedRecordStore(
             schemaVersion: store.schemaVersion,
             records: records,

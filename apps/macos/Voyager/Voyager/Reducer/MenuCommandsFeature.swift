@@ -19,7 +19,7 @@ struct MenuCommandsFeature {
                 return routeAppCommand(.closeTab)
 
             case .view(.app(.togglePinTab)):
-                guard state.canToggleActiveContentTabPin else { return .none }
+                guard state.canPinTab else { return .none }
                 return routeAppCommand(.togglePinTab)
 
             case .view(.app(.restoreLastClosedTab)):

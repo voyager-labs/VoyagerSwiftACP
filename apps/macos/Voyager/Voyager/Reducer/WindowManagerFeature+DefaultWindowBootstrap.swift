@@ -98,7 +98,6 @@ enum DefaultWindowBootstrap {
                 return mergingFinderRecords(
                     mappedRecords,
                     into: latestStore,
-                    applicationSupportURL: applicationSupportURL,
                 )
             }
             guard !Task.isCancelled else { return }
@@ -213,21 +212,12 @@ enum DefaultWindowBootstrap {
     nonisolated private static func mergingFinderRecords(
         _ records: [ContentTabPinnedRecord],
         into store: ContentTabPinnedRecordStore,
-        applicationSupportURL: URL?,
     ) -> ContentTabPinnedRecordStore {
-        let recentsResidue = BuiltInContentTabPinnedRecordSeedPolicy.records(
-            classifiedAs: .recents,
-            in: store,
-            applicationSupportURL: applicationSupportURL,
-        )
-        let allTagsResidue = BuiltInContentTabPinnedRecordSeedPolicy.records(
-            classifiedAs: .allTags,
-            in: store,
-            applicationSupportURL: applicationSupportURL,
-        )
+        var existingIDs = Set(store.records.map(\.id))
+        let missingRecords = records.filter { existingIDs.insert($0.id).inserted }
         return ContentTabPinnedRecordStore(
             schemaVersion: store.schemaVersion,
-            records: recentsResidue + records + allTagsResidue,
+            records: store.records + missingRecords,
         )
     }
 
