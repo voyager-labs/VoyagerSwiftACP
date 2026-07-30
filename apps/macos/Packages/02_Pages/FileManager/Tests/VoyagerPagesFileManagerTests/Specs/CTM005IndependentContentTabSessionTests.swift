@@ -1237,6 +1237,61 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         )
     }
 
+    /// CTM-005-independent_content_tab_session: active tab 전환 시 collection materialization 취소
+    /// 이전 탭의 replace·append I/O owner를 종료하고 partial collection snapshot만 보존하는지 검증한다.
+    /// - 검증 내용: previous A로 cancelCollectionMaterialization 전달과 transient loading state 정리
+    /// - 사전 조건: A에 진행 중인 collection replace와 append가 있고 B tab이 존재함
+    /// - 기대 결과: A의 collection mode/items는 유지되고 replace·append lifecycle만 초기화됨
+    func testTabSwitchCancelsPreviousTabCollectionMaterialization() async {
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let collectionItem = EntryModel.temporaryFolder(id: "/tmp/A/item.txt", name: "item.txt")
+        var contentA = makeCloseTestDirectoryContent(path: "/tmp/A")
+        contentA.entryViewLayout.isCollectionMode = true
+        contentA.entryViewLayout.collectionItems = [collectionItem]
+        contentA.entryViewLayout.isCollectionContentLoading = true
+        contentA.entryViewLayout.activeCollectionReplacePaths = ["/tmp/A/pending.txt"]
+        contentA.entryViewLayout.expectedCollectionReplaceBatchIndex = 1
+        contentA.entryViewLayout.activeCollectionAppendExpectedBatchIndices = [7: 1]
+        contentA.entryViewLayout.activeCollectionAppendPaths = [7: ["/tmp/A/appending.txt"]]
+        let state = makeCloseTestState(
+            tabs: [
+                makeCloseTestDirectoryTab(id: tabA, path: "/tmp/A", title: "A"),
+                makeCloseTestDirectoryTab(id: tabB, path: "/tmp/B", title: "B"),
+            ],
+            activeTabID: tabA,
+            contentStates: [
+                tabA: contentA,
+                tabB: makeCloseTestDirectoryContent(path: "/tmp/B"),
+            ],
+        )
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: handoff 부수 action보다 previous collection owner 정리에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(tabB)))
+        await store.receive { action in
+            guard case .tabContent(
+                tabID: tabA,
+                action: .entryViewLayout(.internal(.cancelCollectionMaterialization)),
+            ) = action else { return false }
+            return true
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let previousLayout = store.state.tabContentStates[tabA]?.entryViewLayout
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabB)
+        XCTAssertEqual(previousLayout?.isCollectionMode, true)
+        XCTAssertEqual(Array(previousLayout?.collectionItems ?? []), [collectionItem])
+        XCTAssertEqual(previousLayout?.isCollectionContentLoading, false)
+        XCTAssertEqual(previousLayout?.activeCollectionReplacePaths, [])
+        XCTAssertEqual(previousLayout?.activeCollectionAppendExpectedBatchIndices, [:])
+        XCTAssertEqual(previousLayout?.activeCollectionAppendPaths, [:])
+    }
+
     /// CTM-005-independent_content_tab_session: inactive tab close 시 nested folder stream 취소
     /// 제거되는 snapshot의 loading owner를 사용해 해당 탭의 확장 폴더 I/O까지 종료하는지 검증한다.
     /// - 검증 내용: inactive B의 folder stream cancellation 1회와 active A session 보존

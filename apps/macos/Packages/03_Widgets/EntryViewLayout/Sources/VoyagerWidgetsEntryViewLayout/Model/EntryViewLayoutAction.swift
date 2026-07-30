@@ -93,6 +93,7 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case collectionAppendStreamCompleted(epoch: Int, token: Int)
         case collectionAppendFailed(epoch: Int, token: Int, message: String)
         case removeCollectionPaths([String])
+        case cancelCollectionMaterialization
         case clearCollectionPresentation
         case reconcileHierarchySelection
     }

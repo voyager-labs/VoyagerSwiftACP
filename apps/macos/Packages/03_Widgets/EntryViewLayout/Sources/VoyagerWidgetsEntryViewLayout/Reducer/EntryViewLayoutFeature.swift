@@ -7,6 +7,25 @@ import VoyagerFeaturesEntryOperations
 import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
+public struct EntryViewLayoutCollectionCancelID: Hashable, Sendable {
+    private enum Operation: Hashable {
+        case replace
+        case append(Int)
+    }
+
+    private let windowID: UUID?
+    private let ownerID: UUID
+    private let operation: Operation
+
+    public static func replace(windowID: UUID?, ownerID: UUID) -> Self {
+        Self(windowID: windowID, ownerID: ownerID, operation: .replace)
+    }
+
+    public static func append(token: Int, windowID: UUID?, ownerID: UUID) -> Self {
+        Self(windowID: windowID, ownerID: ownerID, operation: .append(token))
+    }
+}
+
 @Reducer
 public struct EntryViewLayoutFeature {
     public typealias State = EntryViewLayoutState
@@ -20,12 +39,6 @@ public struct EntryViewLayoutFeature {
     enum CollectionOperation: Hashable {
         case replace
         case append(Int)
-    }
-
-    struct CollectionCancelID: Hashable {
-        let windowID: UUID?
-        let ownerID: UUID
-        let operation: CollectionOperation
     }
 
     public var body: some Reducer<State, Action> {
@@ -389,6 +402,22 @@ public struct EntryViewLayoutFeature {
                 state.collectionItems = IdentifiedArrayOf(uniqueElements: Array(remainingItems))
                 return Self.updateEntriesAndReapply(&state)
 
+            case .internal(.cancelCollectionMaterialization):
+                let cancellationEffects = state.activeCollectionAppendExpectedBatchIndices.keys.map {
+                    Effect<Action>.cancel(id: Self.collectionCancelID(for: .append($0), state: state))
+                }
+                let replaceCancelID = Self.collectionCancelID(for: .replace, state: state)
+                state.collectionReplaceEpoch &+= 1
+                state.activeCollectionReplacePaths = []
+                state.expectedCollectionReplaceBatchIndex = 0
+                state.activeCollectionAppendExpectedBatchIndices = [:]
+                state.activeCollectionAppendPaths = [:]
+                state.finishedCollectionAppendTokens = []
+                state.collectionCoreFinished = false
+                state.collectionStreamCompleted = false
+                state.isCollectionContentLoading = false
+                return .merge(cancellationEffects + [.cancel(id: replaceCancelID)])
+
             case .internal(.clearCollectionPresentation):
                 let cancellationEffects = state.activeCollectionAppendExpectedBatchIndices.keys.map {
                     Effect<Action>.cancel(id: Self.collectionCancelID(for: .append($0), state: state))
@@ -485,12 +514,20 @@ public struct EntryViewLayoutFeature {
     nonisolated static func collectionCancelID(
         for operation: CollectionOperation,
         state: State,
-    ) -> CollectionCancelID {
-        CollectionCancelID(
-            windowID: state.entryOperations.windowID,
-            ownerID: state.entryOperations.loadingCancellationOwnerID,
-            operation: operation,
-        )
+    ) -> EntryViewLayoutCollectionCancelID {
+        switch operation {
+        case .replace:
+            EntryViewLayoutCollectionCancelID.replace(
+                windowID: state.entryOperations.windowID,
+                ownerID: state.entryOperations.loadingCancellationOwnerID,
+            )
+        case let .append(token):
+            EntryViewLayoutCollectionCancelID.append(
+                token: token,
+                windowID: state.entryOperations.windowID,
+                ownerID: state.entryOperations.loadingCancellationOwnerID,
+            )
+        }
     }
 
     // MARK: - Helpers
