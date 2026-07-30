@@ -97,6 +97,45 @@ struct ContentTabClosePresentation: Equatable {
     }
 }
 
+enum FileManagerSidebarTopNavigationMoveDirection: Equatable {
+    case previous
+    case next
+}
+
+struct FileManagerSidebarTopNavigationMoveRequest: Equatable {
+    let sourceID: FileManagerTopNavigationItemID
+    let anchorID: FileManagerTopNavigationItemID
+    let placement: FileManagerTopNavigationReorderPlacement
+}
+
+enum FileManagerSidebarTopNavigationMoveAdapter {
+    static func request(
+        sourceID: FileManagerTopNavigationItemID,
+        direction: FileManagerSidebarTopNavigationMoveDirection,
+        visibleItemIDs: [FileManagerTopNavigationItemID],
+    ) -> FileManagerSidebarTopNavigationMoveRequest? {
+        guard let sourceIndex = visibleItemIDs.firstIndex(of: sourceID) else { return nil }
+
+        let anchorIndex: Int
+        let placement: FileManagerTopNavigationReorderPlacement
+        switch direction {
+        case .previous:
+            anchorIndex = sourceIndex - 1
+            placement = .before
+        case .next:
+            anchorIndex = sourceIndex + 1
+            placement = .after
+        }
+        guard visibleItemIDs.indices.contains(anchorIndex) else { return nil }
+
+        return FileManagerSidebarTopNavigationMoveRequest(
+            sourceID: sourceID,
+            anchorID: visibleItemIDs[anchorIndex],
+            placement: placement,
+        )
+    }
+}
+
 struct SidebarView: View {
     let sidebarStore: StoreOf<FileManagerSidebarFeature>
     let contentTabStore: StoreOf<ContentTabFeature>
@@ -114,9 +153,15 @@ struct SidebarView: View {
 
     @State private var sidebarEntryDropTarget: FileManagerSidebarEntryDropTarget?
 
-    @State private var contentTabReorderDragScopeID = ContentTabReorderDragScopeID()
-    @State private var contentTabReorderSessionStore = ContentTabReorderLocalSessionStore()
-    @State private var activeContentTabReorderBoundaryID: Int?
+    @State private var topNavigationReorderDragScopeID = FileManagerTopNavigationReorderDragScopeID(
+        boundaryOwner: .topNavigation,
+    )
+    @State private var unpinnedContentTabReorderDragScopeID = FileManagerTopNavigationReorderDragScopeID(
+        boundaryOwner: .unpinnedContentTabs,
+    )
+    @State private var reorderSessionStore = FileManagerTopNavigationReorderLocalSessionStore()
+    @State private var activeTopNavigationReorderBoundaryID: Int?
+    @State private var activeUnpinnedReorderBoundaryID: Int?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -127,26 +172,24 @@ struct SidebarView: View {
 
             GeometryReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        if !sidebarStore.contentTabSidebarItems.isEmpty {
-                            contentTabRows(pinnedContentTabSidebarItems)
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        reorderablePinnedContentTabRows(pinnedTopNavigationItems)
 
-                            if !pinnedContentTabSidebarItems.isEmpty,
-                               !unpinnedContentTabSidebarItems.isEmpty
-                            {
-                                contentTabSectionDivider
-                            }
-
-                            reorderableContentTabRows(unpinnedContentTabSidebarItems)
-
-                            Spacer()
-                                .frame(height: 4)
-
-                            newContentTabRow
-
-                            Spacer()
-                                .frame(height: 8)
+                        if !pinnedTopNavigationItems.isEmpty,
+                           !sidebarStore.unpinnedContentTabItems.isEmpty
+                        {
+                            contentTabSectionDivider
                         }
+
+                        reorderableContentTabRows(sidebarStore.unpinnedContentTabItems)
+
+                        Spacer()
+                            .frame(height: 4)
+
+                        newContentTabRow
+
+                        Spacer()
+                            .frame(height: 8)
 
                         Spacer(minLength: 0)
                             .frame(maxWidth: .infinity)
@@ -162,64 +205,100 @@ struct SidebarView: View {
         }
         .background(Color.clear)
         .navigationSplitViewColumnWidth(ideal: sidebarStore.sidebarWidth)
-        .onDisappear {
-            activeContentTabReorderBoundaryID = nil
+        .alert(
+            "Sidebar Arrangement",
+            isPresented: Binding(
+                get: { sidebarStore.topNavigationArrangementPresentation != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        sidebarStore.send(.view(.dismissTopNavigationPresentation))
+                    }
+                },
+            ),
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(sidebarStore.topNavigationArrangementPresentation?.message ?? "")
         }
-    }
-
-    private var pinnedContentTabSidebarItems: [ContentTabProjection.ContentTabSidebarItem] {
-        sidebarStore.contentTabSidebarItems.filter(\.isPinned)
-    }
-
-    private var unpinnedContentTabSidebarItems: [ContentTabProjection.ContentTabSidebarItem] {
-        sidebarStore.contentTabSidebarItems.filter { !$0.isPinned }
+        .onDisappear {
+            activeTopNavigationReorderBoundaryID = nil
+            activeUnpinnedReorderBoundaryID = nil
+            reorderSessionStore.clear()
+        }
     }
 
     private var contentTabSelectionPresentation: ContentTabSelectionPresentation {
         ContentTabSelectionPresentation(selectedTabIDs: contentTabStore.selectedTabIDs)
     }
 
+    private var fixedLocationTopNavigationItems: [FileManagerFixedLocationItem] {
+        sidebarStore.topNavigationItems.compactMap { item in
+            guard case let .location(location) = item else { return nil }
+            return location
+        }
+    }
+
+    private var pinnedTopNavigationItems: [ContentTabProjection.ContentTabSidebarItem] {
+        sidebarStore.topNavigationItems.compactMap { item in
+            guard case let .contentTab(contentTab) = item else { return nil }
+            return contentTab
+        }
+    }
+
     @ViewBuilder private var fixedLocationsGrid: some View {
-        if sidebarStore.fixedLocationItems.isEmpty {
+        if fixedLocationTopNavigationItems.isEmpty {
             Color.clear
-                .frame(height: fixedLocationGridHeight(for: 1))
+                .frame(height: fixedLocationGridVerticalPadding * 2 + fixedLocationCellHeight)
                 .contentShape(Rectangle())
                 .contextMenu { fixedLocationsVisibilityMenu }
                 .padding(.horizontal, fixedLocationGridHorizontalPadding)
                 .padding(.vertical, fixedLocationGridVerticalPadding)
                 .padding(.bottom, fixedLocationGridBottomSpacing)
         } else {
-            GeometryReader { proxy in
-                let metrics = fixedLocationGridMetrics(for: proxy.size.width)
-
-                LazyVGrid(columns: metrics.columns, alignment: .leading, spacing: fixedLocationGridGap) {
-                    ForEach(sidebarStore.fixedLocationItems) { item in
-                        let dropTarget = FileManagerSidebarEntryDropTarget.fixedLocation(item.id)
-                        FixedLocationButton(
-                            item: item,
-                            workspaceClient: workspaceClient,
-                            width: metrics.cellWidth,
-                            height: fixedLocationCellHeight,
-                            isHovered: fixedLocationHoveredItemID == item.id,
-                            isDropTarget: sidebarEntryDropTarget == dropTarget,
-                            onSelect: {
-                                sidebarStore.send(.delegate(.selectFixedLocation(item.id)))
-                            },
-                            onHover: { isHovered in
-                                fixedLocationHoveredItemID = isHovered ? item.id : nil
-                            },
-                        )
-                        .onDrop(
-                            of: [.fileURL],
-                            delegate: entryDropDelegate(for: dropTarget, allowsCopy: item.kind != .trash),
-                        )
+            LazyVGrid(
+                columns: [GridItem(
+                    .adaptive(minimum: fixedLocationMinimumCellWidth),
+                    spacing: fixedLocationGridGap,
+                    alignment: .center,
+                )],
+                alignment: .leading,
+                spacing: fixedLocationGridGap,
+            ) {
+                ForEach(Array(fixedLocationTopNavigationItems.enumerated()), id: \.element.id) { index, item in
+                    let dropTarget = FileManagerSidebarEntryDropTarget.fixedLocation(item.id)
+                    let itemID = FileManagerTopNavigationItemID.location(item.id)
+                    FixedLocationButton(
+                        item: item,
+                        workspaceClient: workspaceClient,
+                        height: fixedLocationCellHeight,
+                        isHovered: fixedLocationHoveredItemID == item.id,
+                        isDropTarget: sidebarEntryDropTarget == dropTarget,
+                        reorderDragSource: reorderDragSource(for: itemID, owner: .topNavigation),
+                        onSelect: {
+                            sidebarStore.send(.delegate(.selectFixedLocation(item.id)))
+                        },
+                        onHover: { isHovered in
+                            fixedLocationHoveredItemID = isHovered ? item.id : nil
+                        },
+                    )
+                    .overlay {
+                        fixedLocationReorderDropOverlay(itemID: itemID, index: index)
                     }
+                    .onDrop(
+                        of: [.fileURL],
+                        delegate: entryDropDelegate(for: dropTarget, allowsCopy: item.kind != .trash),
+                    )
+                    .topNavigationMoveCommands(
+                        sourceID: itemID,
+                        onMove: sendTopNavigationMoveRequest,
+                    )
                 }
-                .padding(.horizontal, fixedLocationGridHorizontalPadding)
-                .padding(.vertical, fixedLocationGridVerticalPadding)
             }
-            .frame(height: fixedLocationGridHeight(for: sidebarStore.fixedLocationItems.count))
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, fixedLocationGridHorizontalPadding)
+            .padding(.vertical, fixedLocationGridVerticalPadding)
             .padding(.bottom, fixedLocationGridBottomSpacing)
+            .animation(.easeInOut(duration: 0.15), value: fixedLocationTopNavigationItems.map(\.id))
             .contentShape(Rectangle())
             .contextMenu { fixedLocationsVisibilityMenu }
         }
@@ -277,39 +356,6 @@ struct SidebarView: View {
         42
     }
 
-    private func fixedLocationGridMetrics(for width: CGFloat) -> FixedLocationGridMetrics {
-        let availableWidth = max(0, width - fixedLocationGridHorizontalPadding * 2)
-        let columnCount = max(
-            1,
-            Int((availableWidth + fixedLocationGridGap) / (fixedLocationMinimumCellWidth + fixedLocationGridGap)),
-        )
-        let totalGapWidth = fixedLocationGridGap * CGFloat(max(0, columnCount - 1))
-        let cellWidth = max(
-            fixedLocationMinimumCellWidth,
-            floor((availableWidth - totalGapWidth) / CGFloat(columnCount)),
-        )
-
-        return FixedLocationGridMetrics(
-            columns: Array(
-                repeating: GridItem(.fixed(cellWidth), spacing: fixedLocationGridGap, alignment: .center),
-                count: columnCount,
-            ),
-            cellWidth: cellWidth,
-        )
-    }
-
-    private func fixedLocationGridHeight(for itemCount: Int) -> CGFloat {
-        let width = max(0, sidebarStore.sidebarWidth - fixedLocationGridHorizontalPadding * 2)
-        let columnCount = max(
-            1,
-            Int((width + fixedLocationGridGap) / (fixedLocationMinimumCellWidth + fixedLocationGridGap)),
-        )
-        let rowCount = max(1, Int(ceil(Double(itemCount) / Double(columnCount))))
-        return fixedLocationGridVerticalPadding * 2
-            + CGFloat(rowCount) * fixedLocationCellHeight
-            + CGFloat(max(0, rowCount - 1)) * fixedLocationGridGap
-    }
-
     private var contentTabSectionDivider: some View {
         Rectangle()
             .fill(Color.primary.opacity(0.12))
@@ -318,33 +364,23 @@ struct SidebarView: View {
             .padding(.vertical, 6)
     }
 
-    private func contentTabRows(
-        _ items: [ContentTabProjection.ContentTabSidebarItem],
-    ) -> some View {
-        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-            entryDroppableContentTabRow(item, reorderDragSource: nil)
-
-            if index < items.count - 1 {
-                Spacer()
-                    .frame(height: 4)
-            }
-        }
-    }
-
     @ViewBuilder
     private func reorderableContentTabRows(
         _ items: [ContentTabProjection.ContentTabSidebarItem],
     ) -> some View {
         if !items.isEmpty {
-            let boundaries = ContentTabReorderDropBoundary.make(for: items.map(\.id))
+            let boundaries = FileManagerTopNavigationReorderDropBoundary.make(
+                for: items.map { .contentTab($0.id) },
+                owner: .unpinnedContentTabs,
+            )
 
             VStack(alignment: .leading, spacing: 0) {
-                contentTabReorderDropSlot(boundaries[0])
+                fileManagerTopNavigationReorderDropSlot(boundaries[0])
                     .transaction { $0.animation = nil }
 
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     reorderableContentTabRow(item)
-                    contentTabReorderDropSlot(boundaries[index + 1])
+                    fileManagerTopNavigationReorderDropSlot(boundaries[index + 1])
                         .transaction { $0.animation = nil }
                 }
             }
@@ -383,25 +419,22 @@ struct SidebarView: View {
     ) -> some View {
         entryDroppableContentTabRow(
             item,
-            reorderDragSource: ContentTabReorderDragSourceConfiguration(
-                payload: ContentTabReorderDragPayload(
-                    sourceID: item.id,
-                    dragScopeID: contentTabReorderDragScopeID,
-                ),
-                sessionStore: contentTabReorderSessionStore,
+            reorderDragSource: reorderDragSource(
+                for: .contentTab(item.id),
+                owner: .unpinnedContentTabs,
             ),
         )
     }
 
-    private func contentTabReorderDropSlot(
-        _ boundary: ContentTabReorderDropBoundary,
+    private func fileManagerTopNavigationReorderDropSlot(
+        _ boundary: FileManagerTopNavigationReorderDropBoundary,
     ) -> some View {
         Rectangle()
             .fill(Color.clear)
             .frame(height: 4)
             .frame(maxWidth: .infinity)
             .overlay {
-                if activeContentTabReorderBoundaryID == boundary.id {
+                if activeReorderBoundaryID(for: boundary.owner) == boundary.id {
                     Rectangle()
                         .fill(Color.accentColor)
                         .frame(height: 2)
@@ -410,7 +443,7 @@ struct SidebarView: View {
             }
             .padding(.horizontal, 8)
             .background {
-                contentTabReorderDropDestination(for: boundary)
+                fileManagerTopNavigationReorderDropDestination(for: boundary)
             }
             .contentShape(Rectangle())
     }
@@ -418,7 +451,7 @@ struct SidebarView: View {
     @ViewBuilder
     private func entryDroppableContentTabRow(
         _ item: ContentTabProjection.ContentTabSidebarItem,
-        reorderDragSource: ContentTabReorderDragSourceConfiguration?,
+        reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration?,
     ) -> some View {
         if let dropTarget = FileManagerSidebarEntryDropDelegate.target(for: item) {
             contentTabSidebarRow(item, reorderDragSource: reorderDragSource)
@@ -430,7 +463,7 @@ struct SidebarView: View {
 
     private func contentTabSidebarRow(
         _ item: ContentTabProjection.ContentTabSidebarItem,
-        reorderDragSource: ContentTabReorderDragSourceConfiguration?,
+        reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration?,
     ) -> some View {
         let duplicatePresentation = ContentTabDuplicatePresentation(
             clickedTabID: item.id,
@@ -482,22 +515,28 @@ struct SidebarView: View {
         )
     }
 
-    private func contentTabReorderDropDestination(
-        for boundary: ContentTabReorderDropBoundary,
-    ) -> ContentTabReorderDropDestination {
-        ContentTabReorderDropDestination(
-            activeBoundaryID: $activeContentTabReorderBoundaryID,
+    private func fileManagerTopNavigationReorderDropDestination(
+        for boundary: FileManagerTopNavigationReorderDropBoundary,
+    ) -> FileManagerTopNavigationReorderDropDestination {
+        FileManagerTopNavigationReorderDropDestination(
+            activeBoundaryID: activeReorderBoundaryIDBinding(for: boundary.owner),
             boundary: boundary,
-            dragScopeID: contentTabReorderDragScopeID,
-            sessionStore: contentTabReorderSessionStore,
-            pinState: { id in
-                sidebarStore.contentTabSidebarItems.first(where: { $0.id == id })?.isPinned
+            dragScopeID: reorderDragScopeID(for: boundary.owner),
+            sessionStore: reorderSessionStore,
+            boundaryOwnerForItem: { id in
+                if sidebarStore.topNavigationItems.contains(where: { $0.id == id }) {
+                    return .topNavigation
+                }
+                if sidebarStore.unpinnedContentTabItems.contains(where: { .contentTab($0.id) == id }) {
+                    return .unpinnedContentTabs
+                }
+                return nil
             },
-            onReorder: { sourceID, targetID, placement in
-                sidebarStore.send(.view(.contentTabReorderRequested(
-                    sourceID: sourceID,
-                    targetID: targetID,
-                    placement: placement,
+            onReorder: { result in
+                sidebarStore.send(.view(.fileManagerTopNavigationReorderRequested(
+                    sourceID: result.sourceID,
+                    anchorID: result.anchorID,
+                    placement: result.placement,
                 )))
             },
         )
@@ -518,9 +557,196 @@ struct SidebarView: View {
     }
 }
 
+private extension SidebarView {
+    @ViewBuilder
+    private func reorderablePinnedContentTabRows(
+        _ items: [ContentTabProjection.ContentTabSidebarItem],
+    ) -> some View {
+        if !items.isEmpty {
+            let boundaries = FileManagerTopNavigationReorderDropBoundary.make(
+                for: items.map { .contentTab($0.id) },
+                owner: .topNavigation,
+            )
+
+            VStack(alignment: .leading, spacing: 0) {
+                fileManagerTopNavigationReorderDropSlot(boundaries[0])
+                    .transaction { $0.animation = nil }
+
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    entryDroppableContentTabRow(
+                        item,
+                        reorderDragSource: reorderDragSource(
+                            for: .contentTab(item.id),
+                            owner: .topNavigation,
+                        ),
+                    )
+                    .topNavigationMoveCommands(
+                        sourceID: .contentTab(item.id),
+                        onMove: sendTopNavigationMoveRequest,
+                    )
+                    fileManagerTopNavigationReorderDropSlot(boundaries[index + 1])
+                        .transaction { $0.animation = nil }
+                }
+            }
+            .animation(.easeInOut(duration: 0.15), value: items.map(\.id))
+        }
+    }
+
+    private func fixedLocationReorderDropOverlay(
+        itemID: FileManagerTopNavigationItemID,
+        index: Int,
+    ) -> some View {
+        HStack(spacing: 0) {
+            fixedLocationReorderDropZone(FileManagerTopNavigationReorderDropBoundary(
+                id: -(index * 2 + 1),
+                owner: .topNavigation,
+                anchorID: itemID,
+                placement: .before,
+            ))
+            fixedLocationReorderDropZone(FileManagerTopNavigationReorderDropBoundary(
+                id: -(index * 2 + 2),
+                owner: .topNavigation,
+                anchorID: itemID,
+                placement: .after,
+            ))
+        }
+    }
+
+    private func fixedLocationReorderDropZone(
+        _ boundary: FileManagerTopNavigationReorderDropBoundary,
+    ) -> some View {
+        fileManagerTopNavigationReorderDropDestination(for: boundary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .transaction { $0.animation = nil }
+    }
+
+    private func activeReorderBoundaryID(
+        for owner: FileManagerTopNavigationReorderBoundaryOwner,
+    ) -> Int? {
+        switch owner {
+        case .topNavigation:
+            activeTopNavigationReorderBoundaryID
+        case .unpinnedContentTabs:
+            activeUnpinnedReorderBoundaryID
+        }
+    }
+
+    private func activeReorderBoundaryIDBinding(
+        for owner: FileManagerTopNavigationReorderBoundaryOwner,
+    ) -> Binding<Int?> {
+        switch owner {
+        case .topNavigation:
+            $activeTopNavigationReorderBoundaryID
+        case .unpinnedContentTabs:
+            $activeUnpinnedReorderBoundaryID
+        }
+    }
+
+    private func reorderDragSource(
+        for sourceID: FileManagerTopNavigationItemID,
+        owner: FileManagerTopNavigationReorderBoundaryOwner,
+    ) -> FileManagerTopNavigationReorderDragSourceConfiguration {
+        FileManagerTopNavigationReorderDragSourceConfiguration(
+            payload: FileManagerTopNavigationReorderDragPayload(
+                sourceID: sourceID,
+                dragScopeID: reorderDragScopeID(for: owner),
+            ),
+            sessionStore: reorderSessionStore,
+        )
+    }
+
+    private func reorderDragScopeID(
+        for owner: FileManagerTopNavigationReorderBoundaryOwner,
+    ) -> FileManagerTopNavigationReorderDragScopeID {
+        switch owner {
+        case .topNavigation:
+            topNavigationReorderDragScopeID
+        case .unpinnedContentTabs:
+            unpinnedContentTabReorderDragScopeID
+        }
+    }
+
+    private func sendTopNavigationMoveRequest(
+        sourceID: FileManagerTopNavigationItemID,
+        direction: FileManagerSidebarTopNavigationMoveDirection,
+    ) {
+        let visibleItemIDs: [FileManagerTopNavigationItemID] = switch sourceID {
+        case .location:
+            fixedLocationTopNavigationItems.map { .location($0.id) }
+        case .contentTab:
+            pinnedTopNavigationItems.map { .contentTab($0.id) }
+        }
+        guard let request = FileManagerSidebarTopNavigationMoveAdapter.request(
+            sourceID: sourceID,
+            direction: direction,
+            visibleItemIDs: visibleItemIDs,
+        ) else { return }
+
+        sidebarStore.send(.view(.fileManagerTopNavigationReorderRequested(
+            sourceID: request.sourceID,
+            anchorID: request.anchorID,
+            placement: request.placement,
+        )))
+    }
+}
+
+private extension View {
+    func topNavigationMoveCommands(
+        sourceID: FileManagerTopNavigationItemID,
+        onMove: @escaping (
+            FileManagerTopNavigationItemID,
+            FileManagerSidebarTopNavigationMoveDirection,
+        ) -> Void,
+    ) -> some View {
+        modifier(FileManagerSidebarTopNavigationMoveCommandsModifier(
+            sourceID: sourceID,
+            onMove: onMove,
+        ))
+    }
+}
+
+enum FileManagerSidebarTopNavigationMoveKeyCommandClassifier {
+    static func matches(_ modifierFlags: NSEvent.ModifierFlags) -> Bool {
+        let expectedModifiers: NSEvent.ModifierFlags = [.option, .command]
+        let userModifiers: NSEvent.ModifierFlags = [.command, .option, .shift, .control]
+        return modifierFlags.intersection(userModifiers) == expectedModifiers
+    }
+}
+
+private struct FileManagerSidebarTopNavigationMoveCommandsModifier: ViewModifier {
+    let sourceID: FileManagerTopNavigationItemID
+    let onMove: (FileManagerTopNavigationItemID, FileManagerSidebarTopNavigationMoveDirection) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onMoveCommand { direction in
+                guard let modifierFlags = NSApp.currentEvent?.modifierFlags,
+                      FileManagerSidebarTopNavigationMoveKeyCommandClassifier.matches(modifierFlags)
+                else { return }
+
+                switch direction {
+                case .up:
+                    onMove(sourceID, .previous)
+                case .down:
+                    onMove(sourceID, .next)
+                case .left, .right:
+                    break
+                @unknown default:
+                    break
+                }
+            }
+            .accessibilityAction(named: Text("Move Up")) {
+                onMove(sourceID, .previous)
+            }
+            .accessibilityAction(named: Text("Move Down")) {
+                onMove(sourceID, .next)
+            }
+    }
+}
+
 private struct ContentTabSidebarRow: View {
     let item: ContentTabProjection.ContentTabSidebarItem
-    let reorderDragSource: ContentTabReorderDragSourceConfiguration?
+    let reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration?
     let isHovered: Bool
     let isDropTarget: Bool
     let isSelected: Bool
@@ -628,7 +854,7 @@ private struct ContentTabSidebarRow: View {
 
 private struct ContentTabSidebarButtonHost: NSViewRepresentable {
     let item: ContentTabProjection.ContentTabSidebarItem
-    let reorderDragSource: ContentTabReorderDragSourceConfiguration?
+    let reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration?
     let backgroundColor: Color
     let accessibilityStateValue: String
     let duplicateTitle: String
@@ -706,16 +932,15 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     }
 
     private struct PointerTracking {
-        let mouseDownEvent: NSEvent
         let route: PointerRoute
         let localOrigin: NSPoint
-        let dragSource: ContentTabReorderDragSourceConfiguration
+        let dragSource: FileManagerTopNavigationReorderDragSourceConfiguration
     }
 
     private enum PointerState {
         case idle
         case tracking(PointerTracking)
-        case dragging(ContentTabReorderPasteboardWriter)
+        case dragging(FileManagerTopNavigationReorderPasteboardWriter)
     }
 
     private static let reorderDragThreshold: CGFloat = 4
@@ -723,7 +948,7 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     private let presentationView = ContentTabSidebarPresentationHostingView(rootView: AnyView(EmptyView()))
     private var pointerState = PointerState.idle
     private var pointerRoute: PointerRoute?
-    private var reorderDragSource: ContentTabReorderDragSourceConfiguration?
+    private var reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration?
     private var onActivate: () -> Void = {}
     private var onToggleSelection: () -> Void = {}
     private var onSelectRange: () -> Void = {}
@@ -763,7 +988,7 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         duplicateAccessibilityIdentifier: String,
         isPinned: Bool,
         isEnabled: Bool,
-        reorderDragSource: ContentTabReorderDragSourceConfiguration?,
+        reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration?,
         onActivate: @escaping () -> Void,
         onToggleSelection: @escaping () -> Void,
         onSelectRange: @escaping () -> Void,
@@ -827,7 +1052,6 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
 
         trackPointer(
             from: PointerTracking(
-                mouseDownEvent: event,
                 route: route,
                 localOrigin: convert(event.locationInWindow, from: nil),
                 dragSource: reorderDragSource,
@@ -921,7 +1145,7 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
                 if movement(from: tracking.localOrigin, to: localLocation)
                     >= Self.reorderDragThreshold
                 {
-                    startDragging(from: tracking)
+                    startDragging(from: tracking, event: event)
                     return
                 }
             case .leftMouseUp:
@@ -948,9 +1172,12 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         }
     }
 
-    private func startDragging(from tracking: PointerTracking) {
+    private func startDragging(
+        from tracking: PointerTracking,
+        event: NSEvent,
+    ) {
         do {
-            let writer = try ContentTabReorderPasteboardWriter(
+            let writer = try FileManagerTopNavigationReorderPasteboardWriter(
                 payload: tracking.dragSource.payload,
                 sessionStore: tracking.dragSource.sessionStore,
             )
@@ -960,11 +1187,11 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
             isHighlighted = false
 
             if let dragSessionStartOverride {
-                dragSessionStartOverride([draggingItem], tracking.mouseDownEvent)
+                dragSessionStartOverride([draggingItem], event)
             } else {
                 beginDraggingSession(
                     with: [draggingItem],
-                    event: tracking.mouseDownEvent,
+                    event: event,
                     source: self,
                 )
             }
@@ -1141,11 +1368,6 @@ private func applicationsSidebarIcon() -> NSImage? {
     return appIcon
 }
 
-private struct FixedLocationGridMetrics {
-    let columns: [GridItem]
-    let cellWidth: CGFloat
-}
-
 private func normalizedSidebarIconName(_ iconName: String) -> String {
     iconName == "appstore" ? "folder.badge.gearshape" : iconName
 }
@@ -1191,61 +1413,53 @@ private struct SidebarSymbolIcon: View {
 private struct FixedLocationButton: View {
     let item: FileManagerFixedLocationItem
     let workspaceClient: WorkspaceClient
-    let width: CGFloat
     let height: CGFloat
     let isHovered: Bool
     let isDropTarget: Bool
+    let reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration?
     let onSelect: () -> Void
     let onHover: (Bool) -> Void
 
     @Environment(\.colorScheme)
     private var colorScheme
 
-    @State private var resolvedIcon: NSImage?
-
     var body: some View {
-        Button(action: onSelect) {
-            icon
-                .frame(width: width, height: height)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(backgroundColor),
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.primary.opacity(isHovered || isDropTarget ? 0.12 : 0.06), lineWidth: 1),
-                )
-        }
-        .buttonStyle(.plain)
+        FixedLocationSidebarButtonHost(
+            rootView: AnyView(tilePresentation),
+            accessibilityLabel: item.accessibilityLabel,
+            isEnabled: true,
+            reorderDragSource: reorderDragSource,
+            onActivate: onSelect,
+        )
+        .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
         .help("\(item.title)\n\(item.path)")
-        .accessibilityLabel(item.accessibilityLabel)
         .onHover(perform: onHover)
-        .task(id: item.path) {
-            resolvedIcon = nil
-            let icon = await workspaceClient.iconForFileAsync(item.path)
-            guard !Task.isCancelled else { return }
-            resolvedIcon = icon
-        }
     }
 
-    @ViewBuilder private var icon: some View {
-        if let resolvedIcon {
-            Image(nsImage: resolvedIcon)
-                .renderingMode(.original)
-                .resizable()
-                .interpolation(.high)
-                .antialiased(true)
-                .scaledToFit()
-                .frame(width: 20, height: 20)
-                .accessibilityHidden(true)
-        } else {
-            Image(systemName: "folder")
-                .font(.system(size: 16, weight: .medium))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.secondary)
-                .frame(width: 20, height: 20)
-                .accessibilityHidden(true)
-        }
+    private var tilePresentation: some View {
+        icon
+            .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(backgroundColor),
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.primary.opacity(isHovered || isDropTarget ? 0.12 : 0.06), lineWidth: 1),
+            )
+    }
+
+    private var icon: some View {
+        let finalIcon = workspaceClient.cachedIconForFile(item.path)
+            ?? workspaceClient.iconForFile(item.path)
+        return Image(nsImage: finalIcon)
+            .renderingMode(.original)
+            .resizable()
+            .interpolation(.high)
+            .antialiased(true)
+            .scaledToFit()
+            .frame(width: 20, height: 20)
+            .accessibilityHidden(true)
     }
 
     private var backgroundColor: Color {

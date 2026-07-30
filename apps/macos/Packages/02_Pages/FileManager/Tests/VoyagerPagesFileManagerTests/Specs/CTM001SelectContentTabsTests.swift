@@ -104,8 +104,8 @@ final class CTM001SelectContentTabsTests: XCTestCase {
     }
 
     /// CTM-001-select_content_tabs: reorder threshold를 넘으면 drag만 정확히 한 번 시작함
-    /// 실제 mouse-down event를 보존한 source가 selection callback 없이 native writer를 시작하는지 확인함
-    /// - 검증 내용: above-threshold drag의 session start 수, down event identity, writer token, primary callback 총합
+    /// 임계값을 넘긴 최신 drag event로 source가 selection callback 없이 native writer를 시작하는지 확인함
+    /// - 검증 내용: above-threshold drag의 session start 수, drag event identity, writer token, primary callback 총합
     /// - 사전 조건: 실제 NSWindow의 unpinned button과 4pt 임계값을 넘는 leftMouseDragged event
     /// - 기대 결과: drag-session은 1회, selection callback은 0회이고 dismantle은 writer-owned token만 제거함
     func testContentTabButton_thresholdDragStartsOnceWithoutPrimaryAction() throws {
@@ -114,9 +114,10 @@ final class CTM001SelectContentTabsTests: XCTestCase {
 
             XCTAssertTrue(fixture.recorder.routes.isEmpty)
             XCTAssertEqual(fixture.recorder.draggingItems.count, 1)
-            XCTAssertEqual(fixture.recorder.dragStartEvents.map(\.type), [.leftMouseDown])
+            XCTAssertEqual(fixture.recorder.dragStartEvents.map(\.type), [.leftMouseDragged])
+            XCTAssertEqual(fixture.recorder.dragStartEvents.map(\.eventNumber), [2])
             let draggingItem = try XCTUnwrap(fixture.recorder.draggingItems.first?.first)
-            let writer = try XCTUnwrap(draggingItem.item as? ContentTabReorderPasteboardWriter)
+            let writer = try XCTUnwrap(draggingItem.item as? FileManagerTopNavigationReorderPasteboardWriter)
             XCTAssertEqual(fixture.sessionStore.entry?.token, writer.token)
 
             fixture.button.dismantle()
@@ -161,7 +162,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
     func testContentTabButton_updateUsesNewestCallbacksAndControlState() throws {
         let oldRecorder = ContentTabButtonRecorder()
         let newRecorder = ContentTabButtonRecorder()
-        let updatedSessionStore = ContentTabReorderLocalSessionStore()
+        let updatedSessionStore = FileManagerTopNavigationReorderLocalSessionStore()
         let updatedSourceID = ContentTabID(rawValue: "updated-source")
 
         try withContentTabButtonFixture(recorder: oldRecorder) { fixture in
@@ -191,7 +192,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             XCTAssertNil(fixture.sessionStore.entry)
             XCTAssertEqual(newRecorder.routes, [.toggleSelection])
             XCTAssertEqual(newRecorder.draggingItems.count, 1)
-            XCTAssertEqual(updatedSessionStore.entry?.payload.sourceID, updatedSourceID)
+            XCTAssertEqual(updatedSessionStore.entry?.payload.sourceID, .contentTab(updatedSourceID))
             XCTAssertEqual(fixture.button.accessibilityValue() as? String, "Inactive, Selected")
             XCTAssertTrue(fixture.button.isEnabled)
             XCTAssertEqual(fixture.button.contentHuggingPriority(for: .horizontal), .defaultLow)
@@ -1029,7 +1030,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         let window: NSWindow
         let button: ContentTabSidebarButton
         let recorder: ContentTabButtonRecorder
-        let sessionStore: ContentTabReorderLocalSessionStore
+        let sessionStore: FileManagerTopNavigationReorderLocalSessionStore
     }
 
     private var insideButtonLocation: NSPoint {
@@ -1050,7 +1051,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         )
         let contentView = NSView(frame: window.contentLayoutRect)
         let button = ContentTabSidebarButton(frame: NSRect(x: 20, y: 40, width: 240, height: 28))
-        let sessionStore = ContentTabReorderLocalSessionStore()
+        let sessionStore = FileManagerTopNavigationReorderLocalSessionStore()
         configure(
             button,
             recorder: recorder,
@@ -1088,7 +1089,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
     private func configure(
         _ button: ContentTabSidebarButton,
         recorder: ContentTabButtonRecorder,
-        sessionStore: ContentTabReorderLocalSessionStore,
+        sessionStore: FileManagerTopNavigationReorderLocalSessionStore,
         sourceID: ContentTabID = ContentTabID(rawValue: "source"),
         rootView: AnyView = AnyView(Color.clear.frame(height: 24)),
         accessibilityValue: String = "Active, Not Selected",
@@ -1102,8 +1103,11 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             duplicateAccessibilityIdentifier: "duplicate-content-tab-test",
             isPinned: isPinned,
             isEnabled: isEnabled,
-            reorderDragSource: isPinned ? nil : ContentTabReorderDragSourceConfiguration(
-                payload: .init(sourceID: sourceID, dragScopeID: ContentTabReorderDragScopeID()),
+            reorderDragSource: isPinned ? nil : FileManagerTopNavigationReorderDragSourceConfiguration(
+                payload: .init(
+                    sourceID: .contentTab(sourceID),
+                    dragScopeID: FileManagerTopNavigationReorderDragScopeID(),
+                ),
                 sessionStore: sessionStore,
             ),
             onActivate: { recorder.routes.append(.activate) },
