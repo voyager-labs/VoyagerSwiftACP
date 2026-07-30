@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import Foundation
 
-public enum ContentTabReorderPlacement: Equatable, Sendable {
+public enum FileManagerTopNavigationReorderPlacement: Equatable, Sendable {
     case before
     case after
 }
@@ -63,9 +63,13 @@ public enum ContentTabAction: Sendable {
     case reorder(
         sourceID: ContentTabID,
         targetID: ContentTabID,
-        placement: ContentTabReorderPlacement,
+        placement: FileManagerTopNavigationReorderPlacement,
     )
     case pin(ContentTabID)
+    case pinUsingDormantSlot(
+        ContentTabID,
+        FileManagerTopNavigationOrderPolicy.DormantContentTabSlot?,
+    )
     case unpin(ContentTabID)
     case updateActivePageAnchor(ContentTabID, ContentTabPageAnchor)
     case updateRuntimePageAnchor(ContentTabID, ContentTabPageAnchor)
@@ -76,6 +80,12 @@ public enum ContentTabAction: Sendable {
     case pinnedRecordSaveFailed(
         tabID: ContentTabID,
         context: ContentTabPinnedRecordTerminalContext,
+        rollback: ContentTabPinnedRecordRollbackSnapshot,
+    )
+    case pinnedRecordStoreUnavailable(
+        tabID: ContentTabID,
+        context: ContentTabPinnedRecordTerminalContext,
+        failure: FileManagerTopNavigationArrangementLoadFailure,
         rollback: ContentTabPinnedRecordRollbackSnapshot,
     )
     case pinnedRecordSaveNotApplied(

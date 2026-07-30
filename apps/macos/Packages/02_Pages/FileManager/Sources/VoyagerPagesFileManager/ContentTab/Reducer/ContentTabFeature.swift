@@ -60,7 +60,10 @@ public struct ContentTabFeature {
                 return reorder(sourceID: sourceID, targetID: targetID, placement: placement, state: &state)
 
             case let .pin(id):
-                return pin(id: id, state: &state)
+                return pin(id: id, dormantSlot: nil, state: &state)
+
+            case let .pinUsingDormantSlot(id, dormantSlot):
+                return pin(id: id, dormantSlot: dormantSlot, state: &state)
 
             case let .unpin(id):
                 return unpin(id: id, state: &state)
@@ -82,6 +85,11 @@ public struct ContentTabFeature {
             case let .pinnedRecordSaveFailed(
                 tabID,
                 context,
+                rollback,
+            ), let .pinnedRecordStoreUnavailable(
+                tabID,
+                context,
+                _,
                 rollback,
             ):
                 guard state.isCurrentPinnedRecordPersistenceIntent(tabID: tabID, intentID: context.intentID) else {
@@ -428,7 +436,7 @@ extension ContentTabFeature {
     private func reorder(
         sourceID: ContentTabID,
         targetID: ContentTabID,
-        placement: ContentTabReorderPlacement,
+        placement: FileManagerTopNavigationReorderPlacement,
         state: inout ContentTabState,
     ) -> Effect<ContentTabAction> {
         guard sourceID != targetID,
@@ -492,7 +500,11 @@ extension ContentTabFeature {
         }
     }
 
-    private func pin(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {
+    private func pin(
+        id: ContentTabID,
+        dormantSlot: FileManagerTopNavigationOrderPolicy.DormantContentTabSlot?,
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
         state.previousActiveTabID = nil
         guard let tab = state.tabs[id: id], !tab.isPinned else { return .none }
 
@@ -533,7 +545,11 @@ extension ContentTabFeature {
                         tabID: id,
                         intentID: intentID,
                     )
-                    return upsertPinnedRecord(pinnedRecord, in: existingStore)
+                    return upsertPinnedRecord(
+                        pinnedRecord,
+                        in: existingStore,
+                        dormantSlot: dormantSlot,
+                    )
                 }
                 switch disposition {
                 case .applied:
@@ -555,6 +571,17 @@ extension ContentTabFeature {
                     tabID: id,
                     context: terminalContext,
                     reason: .cancelled,
+                    rollback: ContentTabPinnedRecordRollbackSnapshot(
+                        previousIsPinned: false,
+                        previousPinnedRecord: nil,
+                        previousTabIndex: nil,
+                    ),
+                ))
+            } catch let error as ContentTabPinnedRecordStoreLoadError {
+                await send(.pinnedRecordStoreUnavailable(
+                    tabID: id,
+                    context: terminalContext,
+                    failure: topNavigationLoadFailure(error),
                     rollback: ContentTabPinnedRecordRollbackSnapshot(
                         previousIsPinned: false,
                         previousPinnedRecord: nil,
@@ -641,6 +668,17 @@ extension ContentTabFeature {
                     tabID: id,
                     context: terminalContext,
                     reason: .cancelled,
+                    rollback: ContentTabPinnedRecordRollbackSnapshot(
+                        previousIsPinned: true,
+                        previousPinnedRecord: previousPinnedRecord,
+                        previousTabIndex: previousTabIndex,
+                    ),
+                ))
+            } catch let error as ContentTabPinnedRecordStoreLoadError {
+                await send(.pinnedRecordStoreUnavailable(
+                    tabID: id,
+                    context: terminalContext,
+                    failure: topNavigationLoadFailure(error),
                     rollback: ContentTabPinnedRecordRollbackSnapshot(
                         previousIsPinned: true,
                         previousPinnedRecord: previousPinnedRecord,
@@ -752,6 +790,17 @@ extension ContentTabFeature {
                     tabID: id,
                     context: terminalContext,
                     reason: .cancelled,
+                    rollback: ContentTabPinnedRecordRollbackSnapshot(
+                        previousIsPinned: true,
+                        previousPinnedRecord: previousPinnedRecord,
+                        previousTabIndex: nil,
+                    ),
+                ))
+            } catch let error as ContentTabPinnedRecordStoreLoadError {
+                await send(.pinnedRecordStoreUnavailable(
+                    tabID: id,
+                    context: terminalContext,
+                    failure: topNavigationLoadFailure(error),
                     rollback: ContentTabPinnedRecordRollbackSnapshot(
                         previousIsPinned: true,
                         previousPinnedRecord: previousPinnedRecord,
@@ -886,24 +935,62 @@ enum PinnedRecordPersistenceIntent {
 func upsertPinnedRecord(
     _ record: ContentTabPinnedRecord,
     in existingStore: ContentTabPinnedRecordStore,
+    dormantSlot: FileManagerTopNavigationOrderPolicy.DormantContentTabSlot? = nil,
 ) -> ContentTabPinnedRecordStore {
     var records = existingStore.records
-    if let existingIndex = records.firstIndex(where: { $0.id == record.id }) {
+    let existingIndex = records.firstIndex(where: { $0.id == record.id })
+    if let existingIndex {
         records[existingIndex] = record
     } else {
         records.append(record)
     }
-    return ContentTabPinnedRecordStore(schemaVersion: existingStore.schemaVersion, records: records)
+    let tabID = ContentTabID(rawValue: record.id)
+    let baseStore = ContentTabPinnedRecordStore(
+        schemaVersion: existingStore.schemaVersion,
+        records: records,
+        topNavigationOrder: existingStore.topNavigationOrder,
+    )
+    var normalizedStore = FileManagerTopNavigationOrderPolicy.normalize(
+        store: baseStore,
+        discoveredLocationIDs: [],
+    ).normalizedStore
+    if existingIndex == nil || dormantSlot != nil {
+        normalizedStore.topNavigationOrder = FileManagerTopNavigationOrderPolicy.insertingPinnedItem(
+            tabID,
+            into: normalizedStore.topNavigationOrder,
+            dormantSlot: dormantSlot,
+        )
+    }
+    return normalizedStore
 }
 
 func removePinnedRecord(
     id: String,
     from existingStore: ContentTabPinnedRecordStore,
 ) -> ContentTabPinnedRecordStore {
-    ContentTabPinnedRecordStore(
+    let tabID = ContentTabID(rawValue: id)
+    let baseStore = ContentTabPinnedRecordStore(
         schemaVersion: existingStore.schemaVersion,
         records: existingStore.records.filter { $0.id != id },
+        topNavigationOrder: .init(items: existingStore.topNavigationOrder.items.filter {
+            $0 != .contentTab(tabID)
+        }),
     )
+    return FileManagerTopNavigationOrderPolicy.normalize(
+        store: baseStore,
+        discoveredLocationIDs: [],
+    ).normalizedStore
+}
+
+private func topNavigationLoadFailure(
+    _ error: ContentTabPinnedRecordStoreLoadError,
+) -> FileManagerTopNavigationArrangementLoadFailure {
+    switch error {
+    case .corruptUnavailable:
+        .corrupt
+    case let .futureSchemaUnavailable(schemaVersion):
+        .unsupportedSchema(schemaVersion)
+    }
 }
 
 private extension String {

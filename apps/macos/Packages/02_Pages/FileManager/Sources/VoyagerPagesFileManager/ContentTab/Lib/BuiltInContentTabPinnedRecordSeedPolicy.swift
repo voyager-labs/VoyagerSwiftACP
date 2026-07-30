@@ -78,6 +78,7 @@ public enum BuiltInContentTabPinnedRecordSeedPolicy {
         store: ContentTabPinnedRecordStore,
         now: Date,
         maxRecordCount: Int = ContentTabConstants.maxTabs,
+        discoveredLocationIDs: [String] = [],
     ) -> Result {
         guard !completion else { return .suppressed }
 
@@ -88,6 +89,7 @@ public enum BuiltInContentTabPinnedRecordSeedPolicy {
                 store: store,
                 now: now,
                 maxRecordCount: maxRecordCount,
+                discoveredLocationIDs: discoveredLocationIDs,
             )
         case .deferred:
             .deferred
@@ -101,6 +103,7 @@ public enum BuiltInContentTabPinnedRecordSeedPolicy {
         store: ContentTabPinnedRecordStore,
         now: Date,
         maxRecordCount: Int,
+        discoveredLocationIDs: [String],
     ) -> Result {
         let metadata = metadata(for: descriptor.identity)
         let stableIDMatch = store.records.first { $0.id == metadata.stableID }
@@ -123,15 +126,26 @@ public enum BuiltInContentTabPinnedRecordSeedPolicy {
         let remainingRecords = store.records.filter {
             $0.id != metadata.stableID && $0.collectionFileURL != descriptor.canonicalPackageURL
         }
-        let records = switch descriptor.identity {
-        case .recents:
-            [canonicalRecord] + remainingRecords
-        case .allTags:
-            remainingRecords + [canonicalRecord]
+        let replacedRecords = store.records.lazy.filter { record in
+            record.id == metadata.stableID || record.collectionFileURL == descriptor.canonicalPackageURL
         }
-        let finalStore = ContentTabPinnedRecordStore(
+        let replacedRecordIDs = Set(replacedRecords.map { ContentTabID(rawValue: $0.id) })
+        let baseStore = ContentTabPinnedRecordStore(
             schemaVersion: store.schemaVersion,
-            records: records,
+            records: remainingRecords + [canonicalRecord],
+            topNavigationOrder: .init(items: store.topNavigationOrder.items.filter { item in
+                guard case let .contentTab(id) = item else { return true }
+                return !replacedRecordIDs.contains(id)
+            }),
+        )
+        let normalized = FileManagerTopNavigationOrderPolicy.normalize(
+            store: baseStore,
+            discoveredLocationIDs: discoveredLocationIDs,
+        ).normalizedStore
+        var finalStore = normalized
+        finalStore.topNavigationOrder = FileManagerTopNavigationOrderPolicy.insertingPinnedItem(
+            ContentTabID(rawValue: metadata.stableID),
+            into: normalized.topNavigationOrder,
         )
 
         return selectedRecord == nil ? .seed(finalStore) : .alreadyPresent(finalStore)
