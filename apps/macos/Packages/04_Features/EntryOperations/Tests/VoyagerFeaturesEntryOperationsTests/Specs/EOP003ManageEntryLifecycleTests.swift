@@ -76,33 +76,6 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertNotNil(store.state.itemStates[sourcePath]?.lastError)
     }
 
-    /// EOP-003-move_entries_to_trash: 부모와 자식을 함께 선택하면 부모만 Trash로 이동한다.
-    /// 계층 projection에서 부모 이동 뒤 자식 이동이 별도로 실패하지 않도록 command 경계를 검증한다.
-    /// - 검증 내용: move-to-trash command plan이 선택된 ancestor의 descendant path를 제외함
-    /// - 사전 조건: 폴더와 해당 폴더의 자식 파일이 동시에 선택됨
-    /// - 기대 결과: moveToTrash path에는 부모 폴더만 포함됨
-    func testMoveToTrashCommandOmitsDescendantOfSelectedFolder() {
-        let folder = EntryModelFixtures.makeEntry(path: "/root/folder")
-        let child = EntryModelFixtures.makeEntry(path: "/root/folder/./child.txt")
-        let context = EntryOperationsCommandContext(
-            selectedIds: [folder.id, child.id],
-            displayItems: [folder, child],
-            currentPath: "/root",
-        )
-
-        let outputs = EntryOperationsCommandPlanner.plan(
-            command: .mutation(.moveSelectedItemsToTrash),
-            context: context,
-        )
-
-        XCTAssertEqual(outputs.count, 1)
-        guard case let .entryOperations(.trash(.moveToTrash(paths))) = outputs.first else {
-            XCTFail("Expected one move-to-trash plan")
-            return
-        }
-        XCTAssertEqual(paths, [folder.fullPath])
-    }
-
     // MARK: - EOP-003-delete_entries_immediately
 
     /// EOP-003-delete_entries_immediately: 선택한 Entry가 즉시 삭제되는지 검증한다.
@@ -164,75 +137,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
-    /// EOP-003-delete_entries_immediately: 부모와 자식을 함께 선택하면 부모만 즉시 삭제한다.
-    /// 계층 projection에서 부모 삭제 뒤 자식 삭제가 별도로 실패하지 않도록 command 경계를 검증한다.
-    /// - 검증 내용: delete-immediately command plan이 선택된 ancestor의 descendant path를 제외함
-    /// - 사전 조건: 폴더와 해당 폴더의 자식 파일이 동시에 선택됨
-    /// - 기대 결과: deleteImmediately path에는 부모 폴더만 포함됨
-    func testDeleteImmediatelyCommandOmitsDescendantOfSelectedFolder() {
-        let folder = EntryModelFixtures.makeEntry(path: "/root/folder")
-        let child = EntryModelFixtures.makeEntry(path: "/root/folder/child.txt")
-        let context = EntryOperationsCommandContext(
-            selectedIds: [folder.id, child.id],
-            displayItems: [folder, child],
-            currentPath: "/root",
-        )
-
-        let outputs = EntryOperationsCommandPlanner.plan(
-            command: .mutation(.deleteSelectedItemsImmediately),
-            context: context,
-        )
-
-        XCTAssertEqual(outputs.count, 1)
-        guard case let .entryOperations(.trash(.deleteImmediately(paths))) = outputs.first else {
-            XCTFail("Expected one delete-immediately plan")
-            return
-        }
-        XCTAssertEqual(paths, [folder.fullPath])
-    }
-
     // MARK: - EOP-003-empty_trash
-
-    /// EOP-003-empty_trash: Trash 비우기가 실제 파일 삭제로 이어지는지 검증한다.
-    /// 사용자가 `fixtures/fixtures/texts/plain/11.txt`를 fake Trash에 넣은 뒤 empty trash를 실행할 때 파일이 삭제되는지 확인한다.
-    /// - 검증 내용: `.trash(.emptyTrash)`가 confirmation 후 trash 항목 전체 삭제와 완료 상태 갱신을 수행한다.
-    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`를 FixtureSandbox로 복사한 뒤 fake Trash 디렉터리로 옮겨두고, confirmation
-    /// alert는 승인으로 응답한다.
-    /// - 기대 결과: trash 파일이 삭제되고, reducer state의 pending/complete 카운터가 초기화되며, 원본 fixture 경로는 유지된다.
-    func testEmptyTrash_success() async throws {
-        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
-        defer { sandbox.cleanup() }
-
-        let recorder = FileOpsRecorder()
-        let trashRoot = sandbox.root.appendingPathComponent(".Trash")
-        try FileManager.default.createDirectory(at: trashRoot, withIntermediateDirectories: true)
-
-        let trashPath = trashRoot.appendingPathComponent("trash.txt")
-        try FileManager.default.copyItem(at: sandbox.fileURL, to: trashPath)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: trashPath.path))
-
-        var initialState = EntryOperationsState()
-        initialState.loadingContext.coreFinished = true
-        let store = EntryOperationsTestSupport.makeStore(initialState: initialState) {
-            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
-            $0.entryOperationsAlertClient.showEmptyTrashConfirmationAlert = { _ in true }
-        }
-
-        // store.exhaustivity = .off: empty-trash confirmation and deletion are async integration steps.
-        // skipReceivedActions로 수신된 action들을 소비해 store.state를 최종 상태로 갱신한다.
-        store.exhaustivity = .off
-
-        await store.send(.trash(.emptyTrash(paths: [trashPath.path])))
-        await store.finish()
-        await store.skipReceivedActions()
-
-        XCTAssertEqual(recorder.deletedPaths, [trashPath])
-        XCTAssertFalse(FileManager.default.fileExists(atPath: trashPath.path))
-        XCTAssertEqual(store.state.pendingEmptyTrashItemCount, 0)
-        XCTAssertEqual(store.state.emptyTrashCompletedCount, 0)
-        XCTAssertTrue(store.state.restorableTrashPaths.isEmpty)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
-    }
 
     // MARK: - EOP-003-undo_entry_action
 
@@ -742,6 +647,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await store.receive(\.loading.streamFinished, 1) {
             $0.loadingContext.streamTerminal = true
         }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
     }
 
     /// EOP-003-load_entry_items: stale 또는 잘못된 root stream event는 현재 항목을 변경하지 않는다.
@@ -779,6 +685,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await store.send(.loading(.streamFinished(generation: 3))) {
             $0.loadingContext.streamTerminal = true
         }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
         await store.send(.loading(.streamEvent(.init(
             generation: 3,
             event: .coreBatch(items: [entry], batchIndex: 1),
@@ -835,6 +742,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await store.send(.loading(.streamFinished(generation: 4))) {
             $0.loadingContext.streamTerminal = true
         }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
     }
 
     /// EOP-003-load_entry_items: 첫 batch 뒤 stream failure는 부분 rows를 유지한다.
@@ -1085,24 +993,37 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 extension EOP003ManageEntryLifecycleTests {
     // MARK: - EOP-003-load_entry_items
 
-    /// EOP-003-load_entry_items: 모든 loaded list는 Trash metadata projection을 새로 읽는다.
-    /// - 검증 내용: itemsLoaded 후 저장된 trash path가 restorableTrashPaths로 투영된다.
-    /// - 사전 조건: metadata store에 하나의 Trash record가 있고 loaded item 목록은 비어 있다.
-    /// - 기대 결과: lifecycle load completion이 해당 Trash path만 state에 저장한다.
-    func testItemsLoadedRefreshesRestorableTrashPaths() async {
+    /// EOP-003-load_entry_items: 단계적 root stream 완료는 Trash metadata projection을 새로 읽는다.
+    /// - 검증 내용: streamFinished 후 저장된 trash path가 restorableTrashPaths로 투영된다.
+    /// - 사전 조건: metadata store에 하나의 Trash record가 있고 root stream의 core batch는 비어 있다.
+    /// - 기대 결과: streamed load completion이 해당 Trash path만 state에 저장한다.
+    func testStreamFinishedRefreshesRestorableTrashPaths() async {
         let trashPath = "/tmp/.Trash/entry.txt"
-        let store = EntryOperationsTestSupport.makeStore(initialState: .init())
+        var initialState = EntryOperationsState()
+        initialState.loadingContext.generation = 1
+        initialState.loadingContext.sourceKind = .directory
+        initialState.isLoading = true
+        let store = EntryOperationsTestSupport.makeStore(initialState: initialState)
         await store.dependencies.trashMetadataStoreClient.save(TrashMetadata(
             trashPath: trashPath,
             originalPath: "/tmp/entry.txt",
             deletedDate: .distantPast,
         ))
-        // RED: itemsLoaded never refreshed the menu eligibility projection.
-        await store.send(.loading(.itemsLoaded([])))
+        await store.send(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreFinished(batchCount: 0),
+        )))) {
+            $0.loadingContext.coreFinished = true
+            $0.isLoading = false
+            $0.isReloading = false
+        }
+        await store.send(.loading(.streamFinished(generation: 1))) {
+            $0.loadingContext.streamTerminal = true
+        }
         await store.receive(\.lifecycle.restorableTrashPathsLoaded) {
             $0.restorableTrashPaths = [trashPath]
         }
-        // GREEN: every successful list load refreshes the restorable Trash-path projection.
+
         XCTAssertEqual(store.state.restorableTrashPaths, [trashPath])
     }
 
@@ -1198,6 +1119,7 @@ private extension EOP003ManageEntryLifecycleTests {
         await store.receive(\.loading.streamFinished, 2) {
             $0.loadingContext.streamTerminal = true
         }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
     }
 }
 

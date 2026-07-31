@@ -207,8 +207,7 @@ public struct EntryOperationsLoadingReducer {
                     return .none
                 }
                 state.loadingContext.streamTerminal = true
-                let items = Array(state.loadingContext.items)
-                return .send(.loading(.itemsLoaded(items)))
+                return .none
 
             case let .loading(.streamFailed(generation)):
                 guard generation == state.loadingContext.generation,

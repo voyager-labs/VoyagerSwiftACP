@@ -216,6 +216,7 @@ enum EntryOperationsTestSupport {
         await store.receive(\.loading.streamFinished, generation) { state in
             state.loadingContext.streamTerminal = true
         }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
         await gate.resume(with: staleCompletion)
         await store.finish()
     }

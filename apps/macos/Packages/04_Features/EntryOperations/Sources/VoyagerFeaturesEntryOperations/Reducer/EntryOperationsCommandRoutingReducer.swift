@@ -32,14 +32,12 @@ struct EntryOperationsCommandRoutingReducer {
                 return .none
 
             case let .routing(.handleDrop(providers: _, destinationPath)):
-                let sourcePaths = EntryOperationsCommandPlanner.topLevelPaths(
-                    from: entryFileOpsClient.loadDragPaths(),
-                )
-                guard !sourcePaths.isEmpty else { return .none }
+                let internalPaths = entryFileOpsClient.loadDragPaths()
+                guard !internalPaths.isEmpty else { return .none }
                 let operation: ClipboardOperation = entryFileOpsClient.loadDragWithOption() ? .copy : .cut
                 let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
                 return .send(.clipboard(.pasteItems(
-                    sourcePaths: sourcePaths,
+                    sourcePaths: topmostPaths(internalPaths),
                     destinationPath: destinationPath,
                     operation: operation,
                     operationKind: operationKind,
@@ -47,9 +45,20 @@ struct EntryOperationsCommandRoutingReducer {
 
             case let .routing(.dropItems(sourcePaths, destinationPath, isOptionDrag)):
                 let operation: ClipboardOperation = isOptionDrag ? .copy : .cut
+                let topmostSourcePaths = topmostPaths(sourcePaths)
+                if operation == .cut,
+                   moveRejection(destinationPath: destinationPath, sourcePaths: topmostSourcePaths) != nil
+                {
+                    return .none
+                }
+                if operation == .copy,
+                   rejectsCopyDescendantSelf(destinationPath: destinationPath, sourcePaths: topmostSourcePaths)
+                {
+                    return .none
+                }
                 let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
                 return .send(.clipboard(.pasteItems(
-                    sourcePaths: EntryOperationsCommandPlanner.topLevelPaths(from: sourcePaths),
+                    sourcePaths: topmostSourcePaths,
                     destinationPath: destinationPath,
                     operation: operation,
                     operationKind: operationKind,
@@ -86,33 +95,20 @@ struct EntryOperationsCommandRoutingReducer {
         let sourcePaths = context.sourcePaths
         let isInternalDrag = !sourcePaths.isEmpty
 
-        if isInternalDrag, !context.prefersCopy {
-            guard let sourcePath = sourcePaths.first else {
-                return .init(
-                    destinationPath: destinationPath,
-                    resolvedOperation: .none,
-                    isOptionDrag: false,
-                )
-            }
+        if isInternalDrag, !context.prefersCopy,
+           let rejection = moveRejection(destinationPath: destinationPath, sourcePaths: sourcePaths)
+        {
+            return rejection
+        }
 
-            let sourceParent = URL(fileURLWithPath: sourcePath).deletingLastPathComponent().path
-            if sourceParent == destinationPath {
-                return .init(
-                    destinationPath: destinationPath,
-                    resolvedOperation: .none,
-                    isOptionDrag: false,
-                )
-            }
-
-            for sourcePath in sourcePaths {
-                if destinationPath == sourcePath || isDescendantPath(destinationPath, of: sourcePath) {
-                    return .init(
-                        destinationPath: destinationPath,
-                        resolvedOperation: .none,
-                        isOptionDrag: false,
-                    )
-                }
-            }
+        if isInternalDrag, context.prefersCopy,
+           rejectsCopyDescendantSelf(destinationPath: destinationPath, sourcePaths: sourcePaths)
+        {
+            return .init(
+                destinationPath: destinationPath,
+                resolvedOperation: .none,
+                isOptionDrag: true,
+            )
         }
 
         let allowedOperations = NSDragOperation(rawValue: context.allowedOperationsRawValue)
@@ -140,6 +136,25 @@ struct EntryOperationsCommandRoutingReducer {
         )
     }
 
+    private func moveRejection(
+        destinationPath: String,
+        sourcePaths: [String],
+    ) -> EntryDropValidationResult? {
+        guard let sourcePath = sourcePaths.first else {
+            return .init(destinationPath: destinationPath, resolvedOperation: .none, isOptionDrag: false)
+        }
+        let sourceParent = URL(fileURLWithPath: sourcePath).deletingLastPathComponent().path
+        if sourceParent == destinationPath {
+            return .init(destinationPath: destinationPath, resolvedOperation: .none, isOptionDrag: false)
+        }
+        for sourcePath in sourcePaths {
+            if destinationPath == sourcePath || isDescendantPath(destinationPath, of: sourcePath) {
+                return .init(destinationPath: destinationPath, resolvedOperation: .none, isOptionDrag: false)
+            }
+        }
+        return nil
+    }
+
     private func contains(_ allowed: NSDragOperation, _ operation: EntryDropResolvedOperation) -> Bool {
         switch operation {
         case .none:
@@ -148,6 +163,12 @@ struct EntryOperationsCommandRoutingReducer {
             allowed.contains(.copy)
         case .move:
             allowed.contains(.move)
+        }
+    }
+
+    private func rejectsCopyDescendantSelf(destinationPath: String, sourcePaths: [String]) -> Bool {
+        sourcePaths.contains { sourcePath in
+            destinationPath == sourcePath || isDescendantPath(destinationPath, of: sourcePath)
         }
     }
 
@@ -162,6 +183,14 @@ struct EntryOperationsCommandRoutingReducer {
         }
 
         return Array(destinationComponents.prefix(sourceComponents.count)) == sourceComponents
+    }
+
+    private func topmostPaths(_ paths: [String]) -> [String] {
+        paths.filter { path in
+            !paths.contains { otherPath in
+                otherPath != path && isDescendantPath(path, of: otherPath)
+            }
+        }
     }
 }
 

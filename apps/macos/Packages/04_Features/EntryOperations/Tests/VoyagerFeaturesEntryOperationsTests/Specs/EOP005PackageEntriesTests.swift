@@ -6,6 +6,8 @@ import XCTest
 
 @MainActor
 final class EOP005PackageEntriesTests: XCTestCase {
+    // MARK: - EOP-005-compress_entries
+
     /// EOP-005-compress_entries: 엔트리 압축 생성
     /// - 검증 내용: 선택 항목 압축 action이 archive 생성 의존성을 호출하고 작업 상태를 완료하는지 확인합니다.
     /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`를 FixtureSandbox로 복사
@@ -57,49 +59,47 @@ final class EOP005PackageEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
-    /// EOP-005-compress_entries: 서로 다른 계층의 선택 항목을 원본 부모별로 압축함
-    /// 계층 projection의 multi-parent 선택이 첫 번째 항목 부모 기준의 잘못된 archive 입력으로 합쳐지지 않는지 검증한다.
-    /// - 검증 내용: compress command plan이 선택 path를 원본 부모별 action으로 분리함
-    /// - 사전 조건: 서로 다른 부모를 가진 두 항목이 선택되고 currentPath는 상위 root임
-    /// - 기대 결과: 각 compress action은 동일 부모의 source path만 포함함
-    func testCompressCommandPlansEachSourceParentArchive() {
-        let first = EntryModelFixtures.makeEntry(path: "/root/first.txt")
-        let second = EntryModelFixtures.makeEntry(path: "/root/folder/second.txt")
-        let context = EntryOperationsCommandContext(
-            selectedIds: [first.id, second.id],
-            displayItems: [first, second],
-            currentPath: "/root",
-        )
+    /// EOP-005-compress_entries: 서로 다른 부모의 엔트리를 단일 아카이브로 압축
+    /// - 검증 내용: zip 실행이 성공하고 공통 조상에 생성된 아카이브 목록이 두 상대 경로를 포함하는지 확인합니다.
+    /// - 사전 조건: 임시 샌드박스 아래에 `A` 디렉터리와 `B/file.txt` 파일을 생성합니다.
+    /// - 기대 결과: `Archive.zip` 하나가 공통 조상에 생성되고 `A/` 및 `B/file.txt`가 포함됩니다.
+    func testCompressEntries_crossParentItemsCreatesSingleArchiveWithRelativePaths() async throws {
+        let sandboxRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: sandboxRoot) }
 
-        let outputs = EntryOperationsCommandPlanner.plan(
-            command: .mutation(.compressSelectedItems),
-            context: context,
-        )
+        let directoryURL = sandboxRoot.appendingPathComponent("A", isDirectory: true)
+        let nestedParentURL = sandboxRoot.appendingPathComponent("B", isDirectory: true)
+        let nestedFileURL = nestedParentURL.appendingPathComponent("file.txt")
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: nestedParentURL, withIntermediateDirectories: true)
+        try "contents".write(to: nestedFileURL, atomically: true, encoding: .utf8)
 
-        XCTAssertEqual(outputs.count, 2)
-        guard outputs.count == 2,
-              case let .entryOperations(.archive(.compressItems(firstPaths))) = outputs[0],
-              case let .entryOperations(.archive(.compressItems(secondPaths))) = outputs[1]
-        else {
-            XCTFail("Expected compress plans grouped by source parent")
-            return
-        }
-        XCTAssertEqual(firstPaths, [first.fullPath])
-        XCTAssertEqual(secondPaths, [second.fullPath])
+        let archiveURL = try await EntryFileOpsClient.liveValue.compressItems([directoryURL, nestedFileURL])
+
+        XCTAssertEqual(archiveURL, sandboxRoot.appendingPathComponent("Archive.zip"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: archiveURL.path))
+
+        let entryNames = try archiveEntryNames(at: archiveURL)
+        XCTAssertTrue(entryNames.contains("A/"))
+        XCTAssertTrue(entryNames.contains("B/file.txt"))
     }
 
-    /// EOP-005-compress_entries: 부모와 자식을 함께 선택하면 부모만 압축한다.
-    /// 계층 projection에서 선택된 폴더 내용이 별도 source로 중복 압축되지 않는지 검증한다.
-    /// - 검증 내용: compress command plan이 선택된 ancestor의 descendant path를 제외함
-    /// - 사전 조건: 폴더와 해당 폴더의 자식 파일이 동시에 선택됨
-    /// - 기대 결과: compress source에는 부모 폴더만 포함됨
-    func testCompressCommandOmitsDescendantOfSelectedFolder() {
-        let folder = EntryModelFixtures.makeEntry(path: "/root/folder")
-        let child = EntryModelFixtures.makeEntry(path: "/root/folder/child.txt")
+    /// EOP-005-compress_entries: 선택된 부모와 하위 항목은 부모만 압축으로 계획한다.
+    /// 하위 항목, 같은 raw-prefix peer, 부모를 표시 순서대로 함께 선택할 때 archive planner가 부모와 peer만 유지하는지 확인한다.
+    /// - 검증 내용: `.mutation(.compressSelectedItems)` planner가 선택된 조상 관계를 pathComponents로 판별하고 원본 fullPath 및 남은 표시 순서를
+    /// 보존한다.
+    /// - 사전 조건: 선택 목록에 descendant-first 부모-하위 항목 쌍과 조상이 아닌 raw-prefix peer를 구성한다.
+    /// - 기대 결과: `.archive(.compressItems)`는 하위 항목을 제외한 peer와 부모 경로만 방출한다.
+    func testCompressEntries_plansTopmostSelectedPaths() throws {
+        let parent = EntryModelFixtures.makeEntry(path: "/tmp/Selected Folder", isFolder: true)
+        let descendant = EntryModelFixtures.makeEntry(path: "/tmp/Selected Folder/nested/file.txt")
+        let rawPrefixPeer = EntryModelFixtures.makeEntry(path: "/tmp/Selected Folder Copy.txt")
+        let displayItems = [descendant, rawPrefixPeer, parent]
         let context = EntryOperationsCommandContext(
-            selectedIds: [folder.id, child.id],
-            displayItems: [folder, child],
-            currentPath: "/root",
+            selectedIds: Set(displayItems.map(\.id)),
+            displayItems: displayItems,
+            currentPath: "/tmp",
         )
 
         let outputs = EntryOperationsCommandPlanner.plan(
@@ -108,11 +108,10 @@ final class EOP005PackageEntriesTests: XCTestCase {
         )
 
         XCTAssertEqual(outputs.count, 1)
-        guard case let .entryOperations(.archive(.compressItems(paths))) = outputs.first else {
-            XCTFail("Expected one compress plan")
-            return
+        guard case let .entryOperations(.archive(.compressItems(paths))) = try XCTUnwrap(outputs.first) else {
+            return XCTFail("압축 명령은 compressItems payload를 계획해야 합니다.")
         }
-        XCTAssertEqual(paths, [folder.fullPath])
+        XCTAssertEqual(paths, [rawPrefixPeer.fullPath, parent.fullPath])
     }
 
     /// EOP-005-extract_compressed_files: 압축 파일 해제

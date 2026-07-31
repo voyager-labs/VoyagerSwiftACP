@@ -422,16 +422,19 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(state.collectionItems.map(\.id), [restored.id])
     }
 
-    /// EVM-002-update_entry_selection: root load 완료 뒤에도 visible nested child rename 유지
-    /// root-only itemsLoaded가 계층 projection에 남아 있는 child의 inline rename을 닫지 않는지 검증한다.
-    /// - 검증 내용: itemsLoaded 처리 후 projection-visible renamingItemId 유지
+    /// EVM-002-update_entry_selection: 단계적 root load 완료 뒤에도 visible nested child rename 유지
+    /// root-only coreFinished가 계층 projection에 남아 있는 child의 inline rename을 닫지 않는지 검증한다.
+    /// - 검증 내용: coreFinished 처리 후 projection-visible renamingItemId 유지
     /// - 사전 조건: expanded folder child가 visible하고 rename 중임
     /// - 기대 결과: root items 갱신 뒤에도 child rename state가 유지됨
-    func testRootItemsLoadedPreservesVisibleNestedChildRename() async {
+    func testRootStreamCoreFinishedPreservesVisibleNestedChildRename() async {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         let child = makeHierarchyIntegrationEntry(id: "/root/a/file.txt", name: "file.txt")
         var state = EntryViewLayoutState()
         state.entries = [folder]
+        state.entryOperations.loadingContext.generation = 1
+        state.entryOperations.loadingContext.sourceKind = .directory
+        state.entryOperations.isLoading = true
         state.entryOperations.renamingItemId = child.id
         state.entryOperations.renamingText = child.name
         state.entryOperations.renamingItem = child
@@ -448,8 +451,21 @@ extension EVM002ManageEntriesViewPresentationTests {
         // store.exhaustivity = .off: arrangement reapply와 trash metadata 갱신은 rename visibility 계약의 검증 대상이 아님
         store.exhaustivity = .off
 
-        await store.send(.entryOperations(.loading(.itemsLoaded([folder])))) {
+        await store.send(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreBatch(items: [folder], batchIndex: 0),
+        ))))) {
             $0.entryOperations.items = [folder]
+            $0.entryOperations.loadingContext.expectedCoreBatchIndex = 1
+            $0.entryOperations.isLoading = false
+            $0.entryOperations.isReloading = false
+        }
+        await store.skipReceivedActions()
+        await store.send(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreFinished(batchCount: 1),
+        ))))) {
+            $0.entryOperations.loadingContext.coreFinished = true
         }
         await store.finish()
         await store.skipReceivedActions()
