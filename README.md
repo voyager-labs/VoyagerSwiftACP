@@ -4,6 +4,7 @@
 
 ## Monorepo Layout
 
+- `apps/entry-core`: Go CLI와 foreground daemon runtime foundation
 - `apps/macos/Voyager`: macOS SwiftUI + TCA 앱과 Helper/XPC
 - `docs/`: AI 에이전트용 PRD/아키텍처 문서 인덱스
 
@@ -44,6 +45,10 @@ macOS 앱은 로컬 Python API 서버를 번들하거나 실행하지 않습니�
 - VOY-580 목표 production packaging: `Prod-Release`에서만 시크릿 없는 `.env.prod`를 포함할 수 있음
 
 ## Quick Start
+
+- Entry Core
+    - Guide: [`apps/entry-core/README.md`](apps/entry-core/README.md)
+    - Full check: `mise run entry-core-check`
 
 - macOS App
     - Xcode에서 시작(권장): `xed apps/macos/Voyager/Voyager.xcworkspace` (열기 후 `Cmd+R` 실행)
