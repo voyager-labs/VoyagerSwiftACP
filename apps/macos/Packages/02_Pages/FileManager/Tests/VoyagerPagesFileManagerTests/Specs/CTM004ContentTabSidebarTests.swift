@@ -457,7 +457,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             "Macintosh HD",
             "Trash",
         ])
-        XCTAssertEqual(state.content.homeLocationItems.map(\.title), state.sidebar.fixedLocationItems.map(\.title))
+        XCTAssertTrue(state.content.homeLocationItems.isEmpty)
         XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.title), ["Projects"])
         XCTAssertTrue(state.sidebar.contentTabSidebarItems.allSatisfy(\.isPinned))
     }
@@ -541,6 +541,131 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
         XCTAssertEqual(store.state.content.homeFavoriteItems.map(\.title), ["Projects"])
         XCTAssertTrue(store.state.contentTabs.tabs.filter(\.isPinned).isEmpty)
+    }
+
+    /// CTM-004-home_dashboard_projection: active Home의 onAppear projection은 live/cache parity를 유지한다.
+    /// window bootstrap이 Sidebar와 Home dashboard를 갱신해도 transfer owner snapshot은 live content와 같아야 한다.
+    /// - 검증 내용: fixed Locations/Favorites completion 이후 active Home content와 tabContentStates parity
+    /// - 사전 조건: 기본 Home tab과 deterministic Locations/Favorites source가 있다.
+    /// - 기대 결과: active Home의 live/cache projection이 모두 최신 source와 일치한다.
+    func testWindowAppearanceKeepsActiveHomeLiveAndCachedDashboardProjectionsInParity() async throws {
+        let requestID = UUID()
+        let favoriteURL = URL(fileURLWithPath: "/Users/test/Projects")
+        let favorite = SidebarItems.FavoriteItem(name: "Projects", url: favoriteURL, iconName: "folder")
+        let sourceLocations = Self.fixedLocationClient().loadLocations(.testValue)
+        let expectedLocations = FileManagerHomeDashboardProjection.makeFixedLocations(from: sourceLocations)
+        let expectedFavorites = FileManagerHomeDashboardProjection.homeFavorites(
+            from: [favorite],
+            fileExistsWithIsDirectory: { _, isDirectory in
+                isDirectory?.pointee = true
+                return true
+            },
+        )
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(requestID)
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
+            $0.fileManagerLocationsClient.loadLocations = { _ in sourceLocations }
+            $0.fileManagerFavoritesClient.loadFavorites = { _, _ in [favorite] }
+            $0.entryLoadingClient.fileExistsAtPath = { path, isDirectory in
+                guard path == favoriteURL.path else { return false }
+                isDirectory?.pointee = true
+                return true
+            }
+            $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
+        }
+        // store.exhaustivity = .off: composed onAppear의 비관련 lifecycle action보다 최종 projection parity를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.onAppear)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let activeHomeID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+        XCTAssertEqual(store.state.content.homeLocationItems, expectedLocations)
+        XCTAssertEqual(store.state.content.homeFavoriteItems, expectedFavorites)
+        XCTAssertEqual(store.state.tabContentStates[activeHomeID], store.state.content)
+    }
+
+    /// CTM-004-home_dashboard_projection: active Directory의 onAppear는 inactive owner snapshot을 덮어쓰지 않는다.
+    /// window-level projection 갱신이 Home/Directory/AI tab의 의미 snapshot으로 새어 들어가지 않는지 검증한다.
+    /// - 검증 내용: active Directory live/cache와 inactive Home/AI snapshot 전체 equality
+    /// - 사전 조건: 서로 다른 sentinel을 가진 Directory, Home, AI tab이 있고 Directory가 active다.
+    /// - 기대 결과: Sidebar/window projection만 갱신되고 모든 tab owner snapshot은 그대로 유지된다.
+    func testWindowAppearancePreservesDirectoryAndInactiveHomeAiOwnerSnapshots() async {
+        let directoryID = ContentTabID(rawValue: "projection-directory")
+        let homeID = ContentTabID(rawValue: "projection-home")
+        let aiID = ContentTabID(rawValue: "projection-ai")
+        let aiSessionID = "00000000-0000-0000-0000-000000000450"
+        var directoryContent = FileManagerContentFeature.State.initialContent(
+            for: .directory(path: "/Users/test/Documents"),
+        )
+        directoryContent.pendingSelectEntryID = "directory-sentinel"
+        var homeContent = FileManagerContentFeature.State.initialContent(for: .homeDefault)
+        homeContent.pendingSelectEntryID = "home-sentinel"
+        var aiContent = FileManagerContentFeature.State.initialContent(for: .aiChat(sessionID: aiSessionID))
+        aiContent.pendingSelectEntryID = "ai-sentinel"
+        aiContent.aiChat.draftText = "preserved AI draft"
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: directoryID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Documents"),
+                    isPinned: false,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: aiID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: aiSessionID),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "message",
+                ),
+            ],
+            activeTabID: directoryID,
+        )
+        state.content = directoryContent
+        state.tabContentStates = [
+            directoryID: directoryContent,
+            homeID: homeContent,
+            aiID: aiContent,
+        ]
+        let ownerSnapshots = state.tabContentStates
+        let liveDirectory = state.content
+        let sourceLocations = Self.fixedLocationClient().loadLocations(.testValue)
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.uuid = .constant(UUID())
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
+            $0.fileManagerLocationsClient.loadLocations = { _ in sourceLocations }
+            $0.fileManagerFavoritesClient.loadFavorites = { _, _ in [] }
+            $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
+        }
+        // store.exhaustivity = .off: composed onAppear effect보다 owner snapshot 보존 경계를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.onAppear)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertFalse(store.state.sidebar.allFixedLocationItems.isEmpty)
+        XCTAssertEqual(store.state.content.homeFavoriteItems, liveDirectory.homeFavoriteItems)
+        XCTAssertEqual(store.state.content.homeLocationItems, liveDirectory.homeLocationItems)
+        XCTAssertEqual(store.state.tabContentStates[directoryID], store.state.content)
+        XCTAssertEqual(store.state.tabContentStates[homeID], ownerSnapshots[homeID])
+        XCTAssertEqual(store.state.tabContentStates[aiID], ownerSnapshots[aiID])
     }
 
     /// CTM-004-sidebar_fixed_locations_visibility: 사용자 토글은 hidden ID를 저장하고 Home projection을 즉시 갱신함

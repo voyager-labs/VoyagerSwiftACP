@@ -6288,6 +6288,395 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(Set(state.tabInspectorStates.keys), Set([fileID, collectionID]))
         XCTAssertNil(FileManagerWindowState.makeExternalInitial(reservations: []))
     }
+
+    // MARK: - CTM-001-move_content_tab_to_another_file_manager_window
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: dirty-only Collection과 unrelated pin pending은 이동 가능함
+    /// durable write가 실행 중이지 않은 로컬 draft와 다른 tab의 pin intent가 target tab을 불필요하게 막지 않는지 검증한다.
+    /// - 검증 내용: dirty Collection 및 unrelated pending pin의 typed eligibility와 호출 전후 state equality
+    /// - 사전 조건: active file-backed Collection draft, 별도 Home tab의 pending pin
+    /// - 기대 결과: 두 조건 모두 `.eligible`이고 window state는 변경되지 않음
+    func testTransferEligibility_allowsDirtyCollectionAndUnrelatedPinPending() {
+        let targetID = ContentTabID(rawValue: "target")
+        let unrelatedID = ContentTabID(rawValue: "unrelated")
+        var state = FileManagerWindowState.makeInitial(path: nil)
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: targetID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/target.voycoll")),
+                    isPinned: false,
+                    title: "Target",
+                    iconName: "rectangle.stack",
+                ),
+                ContentTabItem(
+                    id: unrelatedID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: targetID,
+            pendingPinnedRecordIDs: [unrelatedID],
+        )
+        let baseline = CollectionContext(query: "baseline", scopes: ["/tmp"], conditions: [])
+        state.content = .initialContent(for: state.contentTabs.tabs[id: targetID]?.anchor)
+        state.content.entryViewLayout.isCollectionMode = true
+        state.content.collection.collectionSession.metadata.baseline = .init(context: baseline)
+        state.content.collection.collectionContext = CollectionContext(
+            query: "dirty",
+            scopes: ["/tmp"],
+            conditions: [],
+        )
+        state.tabContentStates = [
+            targetID: state.content,
+            unrelatedID: .initialContent(for: .homeDefault),
+        ]
+        state.restoreInspectorStateForActiveTab()
+        let before = state
+
+        XCTAssertTrue(state.content.isOpenedCollectionDirty)
+        XCTAssertEqual(state.transferEligibility(tabID: targetID), .eligible)
+        XCTAssertEqual(state, before)
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: target tab의 durable pending operation은 typed rejection임
+    /// close, pin persistence, Collection write, AI stream을 각각 source of truth에서 판정하는지 검증한다.
+    /// - 검증 내용: 네 pending owner별 exact rejection case와 pure state projection
+    /// - 사전 조건: valid active Home tab에 각 pending marker를 하나씩 적용
+    /// - 기대 결과: close/pin/Collection/AI가 대응하는 typed rejection을 반환하고 state는 불변
+    func testTransferEligibility_rejectsTargetDurablePendingOperations() {
+        let tabID = ContentTabID(rawValue: "target")
+        var base = FileManagerWindowState.makeInitial(path: nil)
+        base.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: tabID,
+        )
+        base.content = .initialContent(for: .homeDefault)
+        base.tabContentStates = [tabID: base.content]
+        base.tabInspectorStates = [:]
+
+        var closing = base
+        closing.pendingContentTabClose = PendingContentTabClose(tabID: tabID)
+        XCTAssertEqual(
+            closing.transferEligibility(tabID: tabID),
+            .rejected(.pendingContentTabClose),
+        )
+
+        var pinning = base
+        pinning.contentTabs.pendingPinnedRecordIDs.insert(tabID)
+        XCTAssertEqual(
+            pinning.transferEligibility(tabID: tabID),
+            .rejected(.pendingPinnedRecordPersistence),
+        )
+
+        var saving = base
+        saving.content.collection.isSaving = true
+        saving.tabContentStates[tabID] = saving.content
+        XCTAssertEqual(
+            saving.transferEligibility(tabID: tabID),
+            .rejected(.pendingCollectionOperation),
+        )
+
+        var streaming = base
+        streaming.content.aiChat.streamingAssistantDraft = "partial"
+        streaming.tabContentStates[tabID] = streaming.content
+        XCTAssertEqual(
+            streaming.transferEligibility(tabID: tabID),
+            .rejected(.pendingAiChatOperation),
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: settled AI restore identity는 이동을 차단하지 않는다.
+    /// restoreSessionID는 provenance이고 실제 restore 실행 여부는 sessionStatus가 소유하는 계약을 검증한다.
+    /// - 검증 내용: restored/new/rebind source·destination eligibility와 actual restoring rejection
+    /// - 사전 조건: owner parity가 유효한 단일 AI tab에 각 session status와 restore identity를 적용한다.
+    /// - 기대 결과: settled 상태는 eligible이고 `.restoring`만 pending AI operation으로 거절된다.
+    func testTransferEligibility_allowsSettledAiRestoreIdentityAndRejectsActualRestore() throws {
+        let tabID = ContentTabID(rawValue: "ai-transfer")
+        let sessionID = try AiChatSessionID(rawValue: XCTUnwrap(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000451"),
+        ))
+
+        func makeWindow(status: AiChatSessionStatus) -> FileManagerWindowState {
+            var state = FileManagerWindowState.makeInitial(path: nil)
+            state.contentTabs = ContentTabState(
+                tabs: [ContentTabItem(
+                    id: tabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: sessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "message",
+                )],
+                activeTabID: tabID,
+            )
+            state.content = .initialContent(for: .aiChat(sessionID: sessionID.rawValue.uuidString))
+            state.content.aiChat.sessionID = sessionID
+            state.content.aiChat.restoreSessionID = sessionID
+            state.content.aiChat.sessionStatus = status
+            state.tabContentStates = [tabID: state.content]
+            state.tabInspectorStates = [:]
+            return state
+        }
+
+        for status in [AiChatSessionStatus.active, .idle, .rebindRequired] {
+            let settled = makeWindow(status: status)
+            XCTAssertEqual(settled.transferEligibility(tabID: tabID), .eligible)
+            XCTAssertEqual(settled.destinationTransferEligibility(), .eligible)
+        }
+
+        let restoring = makeWindow(status: .restoring)
+        XCTAssertEqual(
+            restoring.transferEligibility(tabID: tabID),
+            .rejected(.pendingAiChatOperation),
+        )
+        XCTAssertEqual(
+            restoring.destinationTransferEligibility(),
+            .rejected(.pendingAiChatOperation),
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: Collection open/load/restore pending owner는 이동을 차단함
+    /// save 외에도 active collection open request와 reopening session phase를 durable pending으로 분류하는지 검증한다.
+    /// - 검증 내용: pendingCollectionOpenRequest 및 CollectionSessionPhase.reopening의 typed rejection
+    /// - 사전 조건: owner parity가 유효한 active Home tab에 open request 또는 reopening phase가 있음
+    /// - 기대 결과: 두 source-of-truth 모두 `.pendingCollectionOperation`을 반환함
+    func testTransferEligibility_rejectsCollectionOpenLoadAndRestorePendingOwners() throws {
+        let tabID = ContentTabID(rawValue: "collection-pending")
+        var base = FileManagerWindowState.makeInitial(path: nil)
+        base.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: tabID,
+        )
+        base.content = .initialContent(for: .homeDefault)
+        base.tabContentStates = [tabID: base.content]
+        base.tabInspectorStates = [:]
+
+        var opening = base
+        opening.pendingCollectionOpenRequest = try ContentPageCollectionOpenRequest(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000450")),
+            url: URL(fileURLWithPath: "/tmp/open.voycoll"),
+            sourceRoute: .home,
+        )
+        XCTAssertEqual(
+            opening.transferEligibility(tabID: tabID),
+            .rejected(.pendingCollectionOperation),
+        )
+
+        var reopening = base
+        reopening.content.collection.collectionSession.phase = .reopening(
+            kind: .definition,
+            base: .ready,
+            inflight: .none,
+        )
+        reopening.tabContentStates[tabID] = reopening.content
+        XCTAssertEqual(
+            reopening.transferEligibility(tabID: tabID),
+            .rejected(.pendingCollectionOperation),
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: missing·orphan·ambiguous owner는 fail closed함
+    /// transfer 전 owner aggregate가 malformed이면 fresh state를 추정하거나 cache를 생성하지 않는지 검증한다.
+    /// - 검증 내용: missing active content, orphan content, live/cache parity mismatch의 exact invariant rejection
+    /// - 사전 조건: 동일 valid Home state에서 owner cache invariant를 하나씩 위반
+    /// - 기대 결과: 각 malformed 상태가 typed invariant rejection이고 projection 호출은 state를 변경하지 않음
+    func testTransferEligibility_rejectsMalformedOwnershipWithoutMutation() {
+        let tabID = ContentTabID(rawValue: "target")
+        var base = FileManagerWindowState.makeInitial(path: nil)
+        base.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: tabID,
+        )
+        base.content = .initialContent(for: .homeDefault)
+        base.tabContentStates = [tabID: base.content]
+        base.tabInspectorStates = [:]
+
+        var missing = base
+        missing.tabContentStates[tabID] = nil
+        let missingBefore = missing
+        XCTAssertEqual(
+            missing.transferEligibility(tabID: tabID),
+            .rejected(.malformedOwnership(.missingContent(tabID))),
+        )
+        XCTAssertEqual(missing, missingBefore)
+
+        let orphanID = ContentTabID(rawValue: "orphan")
+        var orphan = base
+        orphan.tabContentStates[orphanID] = .init()
+        XCTAssertEqual(
+            orphan.transferEligibility(tabID: tabID),
+            .rejected(.malformedOwnership(.orphanContent(orphanID))),
+        )
+
+        var ambiguous = base
+        ambiguous.content.pendingSelectEntryID = "/tmp/late"
+        XCTAssertEqual(
+            ambiguous.transferEligibility(tabID: tabID),
+            .rejected(.malformedOwnership(.ambiguousActiveContent(tabID))),
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: 닫힌 processing AI background owner는 unrelated tab을 막지
+    /// 않는다.
+    /// open tab owner가 0개인 window-global lifecycle과 중복 open owner ambiguity를 구분한다.
+    /// - 검증 내용: zero-owner background pending 허용
+    /// - 사전 조건: directory tab 하나와 닫힌 AI tab에서 보존된 streaming background state
+    /// - 기대 결과: unrelated directory tab은 eligible이고 background owner는 그대로 유지됨
+    func testTransferEligibilityAllowsClosedBackgroundAiLifecycleWithoutOpenOwner() throws {
+        let tabID = ContentTabID(rawValue: "unrelated-directory")
+        var state = FileManagerWindowState.makeInitial(path: "/tmp")
+        _ = try XCTUnwrap(state.contentTabs.activeTabID)
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .directory,
+                anchor: .directory(path: "/tmp"),
+                isPinned: false,
+                title: "tmp",
+                iconName: "folder",
+            )],
+            activeTabID: tabID,
+        )
+        state.tabContentStates = [tabID: state.content]
+        state.tabInspectorStates = [tabID: state.inspector.tabSnapshot()]
+        let sessionID = AiChatSessionID(rawValue: UUID(uuid: (90, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)))
+        var background = FileManagerContentState.initialContent(for: .aiChat(sessionID: sessionID.rawValue.uuidString))
+        background.aiChat.streamingAssistantDraft = "still processing"
+        state.backgroundAiChatStates[sessionID] = background
+        let before = state.backgroundAiChatStates
+
+        XCTAssertEqual(state.transferEligibility(tabID: tabID), .eligible)
+        XCTAssertEqual(state.backgroundAiChatStates, before)
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: 같은 processing AI session의 open owner가 둘이면 거절한다.
+    /// 닫힌 zero-owner lifecycle 허용이 실제 중복 owner ambiguity까지 완화하지 않는지 검증한다.
+    /// - 검증 내용: 동일 session을 소유한 두 open tab의 typed malformed rejection
+    /// - 사전 조건: directory tab 두 개와 동일 session의 streaming background state
+    /// - 기대 결과: `.ambiguousAiChatProvenance`로 거절되고 background owner는 그대로 유지됨
+    func testTransferEligibilityRejectsAmbiguousBackgroundAiOpenOwners() {
+        let firstID = ContentTabID(rawValue: "first-directory")
+        let secondID = ContentTabID(rawValue: "second-directory")
+        let sessionID = AiChatSessionID(
+            rawValue: UUID(uuid: (90, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2)),
+        )
+        let firstTab = ContentTabItem(
+            id: firstID,
+            page: .directory,
+            anchor: .directory(path: "/first"),
+            isPinned: false,
+            title: "first",
+            iconName: "folder",
+        )
+        let secondTab = ContentTabItem(
+            id: secondID,
+            page: .directory,
+            anchor: .directory(path: "/second"),
+            isPinned: false,
+            title: "second",
+            iconName: "folder",
+        )
+        var firstContent = FileManagerContentState.initialContent(for: firstTab.anchor)
+        firstContent.aiChat.sessionID = sessionID
+        var secondContent = FileManagerContentState.initialContent(for: secondTab.anchor)
+        secondContent.aiChat.sessionID = sessionID
+        var background = FileManagerContentState.initialContent(
+            for: .aiChat(sessionID: sessionID.rawValue.uuidString),
+        )
+        background.aiChat.streamingAssistantDraft = "still processing"
+        var state = FileManagerWindowState.makeInitial(path: "/first")
+        state.contentTabs = ContentTabState(
+            tabs: [firstTab, secondTab],
+            activeTabID: firstID,
+        )
+        state.content = firstContent
+        state.tabContentStates = [firstID: firstContent, secondID: secondContent]
+        state.inspector = .init()
+        state.tabInspectorStates = [
+            firstID: state.inspector.tabSnapshot(),
+            secondID: FileManagerInspectorFeature.State().tabSnapshot(),
+        ]
+        state.backgroundAiChatStates[sessionID] = background
+        let before = state.backgroundAiChatStates
+
+        XCTAssertEqual(
+            state.transferEligibility(tabID: firstID),
+            .rejected(.malformedOwnership(.ambiguousAiChatProvenance)),
+        )
+        XCTAssertEqual(state.backgroundAiChatStates, before)
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: Home anchor가 Inspector 지원 anchor로 바뀌면 owner를 설치한다.
+    /// child metadata mutation 뒤 parent reconciliation이 owner topology를 동기화하는지 검증한다.
+    /// - 검증 내용: Home→Directory owner 생성과 Directory→Home owner 제거
+    /// - 사전 조건: windowID가 있는 정상 Home window
+    /// - 기대 결과: 두 전환 모두 live/cache parity가 맞고 transfer eligibility가 eligible
+    func testAnchorTransitionReconcilesActiveInspectorOwner() async throws {
+        let windowID = UUID(uuid: (91, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1))
+        let initial = FileManagerWindowState.makeInitial(path: nil, windowID: windowID)
+        let tabID = try XCTUnwrap(initial.contentTabs.activeTabID)
+        let store = TestStore(initialState: initial) { FileManagerFeature() }
+        // store.exhaustivity = .off: child reducer의 내부 상태보다 parent owner reconciliation 결과를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.updateActivePageAnchor(tabID, .directory(path: "/tmp"))))
+        XCTAssertNotNil(store.state.tabInspectorStates[tabID])
+        XCTAssertEqual(store.state.transferEligibility(tabID: tabID), .eligible)
+
+        await store.send(.contentTabs(.updateActivePageAnchor(tabID, .homeDefault)))
+        XCTAssertNil(store.state.tabInspectorStates[tabID])
+        XCTAssertEqual(store.state.transferEligibility(tabID: tabID), .eligible)
+
+        let collectionURL = URL(fileURLWithPath: "/tmp/inspector-owner.voycoll")
+        await store.send(.contentTabs(.updateActivePageAnchor(tabID, .collectionFile(url: collectionURL))))
+        XCTAssertNotNil(store.state.tabInspectorStates[tabID])
+        XCTAssertEqual(store.state.transferEligibility(tabID: tabID), .eligible)
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: direct Inspector mutation은 active cache에 즉시 반영된다.
+    /// live Inspector와 tab snapshot의 parity가 일반 child action 뒤에도 유지되는지 검증한다.
+    /// - 검증 내용: width mutation 후 live/cache equality와 eligibility
+    /// - 사전 조건: Inspector를 지원하는 active Directory tab
+    /// - 기대 결과: active Inspector snapshot이 갱신되고 generic malformed rejection이 발생하지 않음
+    func testDirectInspectorMutationSynchronizesActiveTabSnapshot() async throws {
+        let windowID = UUID(uuid: (92, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1))
+        let initial = FileManagerWindowState.makeInitial(path: "/tmp", windowID: windowID)
+        let tabID = try XCTUnwrap(initial.contentTabs.activeTabID)
+        let store = TestStore(initialState: initial) { FileManagerFeature() }
+        // store.exhaustivity = .off: Inspector child 세부 상태보다 active tab snapshot parity를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.inspector(.setInspectorWidth(420)))
+
+        XCTAssertEqual(store.state.tabInspectorStates[tabID], store.state.inspector.tabSnapshot())
+        XCTAssertEqual(store.state.transferEligibility(tabID: tabID), .eligible)
+    }
 }
 
 private enum ExternalTabReservationTestFixture {

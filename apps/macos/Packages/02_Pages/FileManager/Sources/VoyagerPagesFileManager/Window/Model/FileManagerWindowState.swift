@@ -92,6 +92,7 @@ public struct FileManagerWindowState: Equatable {
     public var sidebar: FileManagerSidebarFeature.State
     public var inspector: FileManagerInspectorFeature.State
     public var contentTabs: ContentTabState
+    public var suppressedPinnedTabIDs: Set<ContentTabID> = []
     public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
     public var pendingContentTabClose: PendingContentTabClose?
     public var pendingSelectedContentTabClose: PendingSelectedContentTabClose?
@@ -106,6 +107,7 @@ public struct FileManagerWindowState: Equatable {
     public var undoRedoPhase: FileManagerUndoRedoPhase
     public var sidebarEntryDropOperations: EntryOperationsState
     public var pendingCollectionOpenRequest: ContentPageCollectionOpenRequest?
+    public var contentTabMoveFailurePresentation: ContentTabMoveFailurePresentation?
     var lastExplicitAiChatSelection: FileManagerAiChatSelection?
     var pendingAiChatInspectorOpen: FileManagerPendingAiChatInspectorOpen?
     var pendingAiChatNewChat: FileManagerPendingAiChatNewChat?
@@ -134,6 +136,7 @@ public struct FileManagerWindowState: Equatable {
         undoRedoPhase = .idle
         sidebarEntryDropOperations = .init()
         pendingCollectionOpenRequest = nil
+        contentTabMoveFailurePresentation = nil
         lastExplicitAiChatSelection = nil
         pendingAiChatInspectorOpen = nil
         pendingAiChatNewChat = nil
@@ -143,8 +146,15 @@ public struct FileManagerWindowState: Equatable {
         syncContentTabSidebarItems()
     }
 
-    public static func makeInitial(path: String?, selectEntryID: String? = nil) -> Self {
+    public static func makeInitial(
+        path: String?,
+        selectEntryID: String? = nil,
+        windowID: UUID? = nil,
+    ) -> Self {
         var state = Self()
+        if let windowID {
+            state.content.applyWindowContext(windowID: windowID)
+        }
         if let path {
             state.content.navigation.seedInitialFolderPath(path)
             state.syncActiveTabAnchorForInitialPath(path)
@@ -168,8 +178,12 @@ public struct FileManagerWindowState: Equatable {
         path: String?,
         contentTabs: ContentTabState?,
         selectEntryID: String? = nil,
+        windowID: UUID? = nil,
     ) -> Self {
         var state = Self()
+        if let windowID {
+            state.content.applyWindowContext(windowID: windowID)
+        }
         state.contentTabs = contentTabs.map { ContentTabState.bootstrapping(
             restoredTabs: $0.tabs,
             activeTabID: $0.activeTabID,
@@ -274,6 +288,7 @@ public struct FileManagerWindowState: Equatable {
         sidebarEntryDropOperations.windowID = initialWindowID
         self.sidebarEntryDropOperations = sidebarEntryDropOperations
         pendingCollectionOpenRequest = nil
+        contentTabMoveFailurePresentation = nil
         lastExplicitAiChatSelection = nil
         pendingAiChatInspectorOpen = nil
         pendingAiChatNewChat = nil
@@ -781,7 +796,9 @@ extension FileManagerWindowState {
         hiddenLocationIDs: Set<FileManagerFixedLocationItem.ID> = [],
     ) {
         sidebar.setFixedLocationItems(items, hiddenIDs: hiddenLocationIDs)
+        guard activeTabAnchor == .homeDefault else { return }
         content.homeLocationItems = items
+        syncActiveTabContentState()
     }
 
     // MARK: - Home Dashboard Projection
@@ -792,11 +809,19 @@ extension FileManagerWindowState {
     }
 
     mutating func syncHomeFavoriteItems() {
+        guard activeTabAnchor == .homeDefault else { return }
         content.homeFavoriteItems = homeFavoriteItems
+        syncActiveTabContentState()
     }
 
     mutating func syncHomeLocationItems() {
+        guard activeTabAnchor == .homeDefault else { return }
         content.homeLocationItems = sidebar.allFixedLocationItems
+        syncActiveTabContentState()
+    }
+
+    private var activeTabAnchor: ContentTabPageAnchor? {
+        contentTabs.activeTabID.flatMap { contentTabs.tabs[id: $0]?.anchor }
     }
 
     mutating func applyPinnedContentTabs(
@@ -805,8 +830,11 @@ extension FileManagerWindowState {
         runtimePreservingTabIDs: Set<ContentTabID> = [],
     ) {
         let recentlyClosed = contentTabs.recentlyClosed
-        let restoredPinnedTabs = restoredPinnedState.tabs.filter(\.isPinned)
-        let restoredTabIDs = Set(restoredPinnedTabs.map(\.id))
+        let existingTabIDs = Set(contentTabs.tabs.ids)
+        let allRestoredPinnedTabs = restoredPinnedState.tabs.filter(\.isPinned)
+        let restoredTabIDs = Set(allRestoredPinnedTabs.map(\.id))
+        suppressedPinnedTabIDs.formIntersection(restoredTabIDs)
+        let restoredPinnedTabs = allRestoredPinnedTabs.filter { !suppressedPinnedTabIDs.contains($0.id) }
         let currentPinnedTabs = contentTabs.tabs.filter(\.isPinned)
         let currentPinnedTabsByID = Dictionary(uniqueKeysWithValues: currentPinnedTabs.map { ($0.id, $0) })
         let previousPinnedAnchors = Dictionary(uniqueKeysWithValues: currentPinnedTabs.map { ($0.id, $0.anchor) })
@@ -830,6 +858,7 @@ extension FileManagerWindowState {
         let pendingPinnedTabs = currentPinnedTabs.filter { pendingPinnedIDs.contains($0.id) }
         let mergedPinnedTabs = synchronizedPinnedTabs + pendingPinnedTabs
         let mergedPinnedIDs = Set(mergedPinnedTabs.map(\.id))
+        let newlyInsertedPinnedIDs = mergedPinnedIDs.subtracting(existingTabIDs)
         let currentUnpinnedTabs = contentTabs.tabs.filter { !$0.isPinned && !mergedPinnedIDs.contains($0.id) }
         let currentPinnedIDs = Set(currentPinnedTabs.map(\.id))
 
@@ -845,6 +874,8 @@ extension FileManagerWindowState {
             .merging(pendingPinnedRecords) { _, pending in pending }
         contentTabs.pendingPinnedRecordIDs = retainedPendingPinnedIDs
         contentTabs.previousActiveTabID = nil
+
+        installSemanticOwners(forNewPinnedTabIDs: newlyInsertedPinnedIDs)
 
         for removedID in currentPinnedIDs.subtracting(restoredTabIDs) where contentTabs.tabs[id: removedID] == nil {
             tabContentStates[removedID] = nil
@@ -883,6 +914,25 @@ extension FileManagerWindowState {
         contentTabs.recentlyClosed = recentlyClosed
         contentTabs.reconcileSelection()
         syncContentTabSidebarItems()
+    }
+
+    private mutating func installSemanticOwners(forNewPinnedTabIDs tabIDs: Set<ContentTabID>) {
+        for tabID in tabIDs {
+            let anchor = contentTabs.tabs[id: tabID]?.anchor
+            if tabContentStates[tabID] == nil {
+                tabContentStates[tabID] = FileManagerContentFeature.State.initialContent(
+                    for: anchor,
+                    inheritingWindowContextFrom: content,
+                )
+            }
+            if supportsInspector(tabID: tabID) {
+                if tabInspectorStates[tabID] == nil {
+                    tabInspectorStates[tabID] = FileManagerInspectorFeature.State().tabSnapshot()
+                }
+            } else {
+                tabInspectorStates[tabID] = nil
+            }
+        }
     }
 
     mutating func addBackgroundAiChatState(sessionID: AiChatSessionID, state: FileManagerContentFeature.State) {
