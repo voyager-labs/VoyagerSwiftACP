@@ -2,6 +2,31 @@ import ComposableArchitecture
 import Foundation
 import VoyagerPagesFileManager
 
+struct WindowManagerTopNavigationPersistenceRequest: Equatable {
+    let sourceWindowID: WindowManagerState.WindowID
+    let token: FileManagerTopNavigationOperationToken
+    let operation: Operation
+
+    enum Operation: Equatable {
+        case move(
+            source: FileManagerTopNavigationItemID,
+            destination: FileManagerTopNavigationMoveDestination,
+            discoveredLocationIDs: [String],
+        )
+        case pinnedRecord(
+            source: FileManagerPinnedRecordPersistenceSource,
+            request: ContentTabPinnedRecordPersistenceRequest,
+            discoveredLocationIDs: [String],
+        )
+    }
+}
+
+struct WindowManagerTopNavigationPersistenceResult: Equatable {
+    let request: WindowManagerTopNavigationPersistenceRequest
+    let terminal: FileManagerTopNavigationIntentTerminal
+    let authoritativePinnedContentTabs: ContentTabState?
+}
+
 struct WindowManagerTrackedSingletonWindow: Equatable {
     var requestID: UUID
     var windowID: UUID
@@ -32,6 +57,8 @@ struct WindowManagerState: Equatable {
     var authorizedTrackedSingletonRequestID: UUID?
     var trackedSingletonWindow: WindowManagerTrackedSingletonWindow?
     var externalOpenActivationAttempt: ExternalOpenActivationAttempt?
+    var topNavigationPersistenceQueue: [WindowManagerTopNavigationPersistenceRequest] = []
+    var isTopNavigationPersistenceInFlight = false
 
     mutating func moveWindowToMRUFront(_ id: WindowID) {
         lastUsedWindowIDs.removeAll { $0 == id }
@@ -47,6 +74,7 @@ struct WindowSessionFeature {
     var body: some Reducer<State, Action> {
         Scope(state: \.window, action: \.window) {
             FileManagerWindowFeature()
+                .dependency(\.fileManagerPinnedRecordOwner, .windowManager)
         }
 
         Reduce { _, action in
