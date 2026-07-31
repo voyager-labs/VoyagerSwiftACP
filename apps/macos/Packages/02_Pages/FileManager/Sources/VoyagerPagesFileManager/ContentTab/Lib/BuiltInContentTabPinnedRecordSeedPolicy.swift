@@ -132,7 +132,11 @@ public enum BuiltInContentTabPinnedRecordSeedPolicy {
         let replacedRecordIDs = Set(replacedRecords.map { ContentTabID(rawValue: $0.id) })
         let baseStore = ContentTabPinnedRecordStore(
             schemaVersion: store.schemaVersion,
-            records: remainingRecords + [canonicalRecord],
+            records: placing(
+                canonicalRecord,
+                among: remainingRecords,
+                as: descriptor.identity,
+            ),
             topNavigationOrder: .init(items: store.topNavigationOrder.items.filter { item in
                 guard case let .contentTab(id) = item else { return true }
                 return !replacedRecordIDs.contains(id)
@@ -143,12 +147,53 @@ public enum BuiltInContentTabPinnedRecordSeedPolicy {
             discoveredLocationIDs: discoveredLocationIDs,
         ).normalizedStore
         var finalStore = normalized
-        finalStore.topNavigationOrder = FileManagerTopNavigationOrderPolicy.insertingPinnedItem(
+        finalStore.topNavigationOrder = placing(
             ContentTabID(rawValue: metadata.stableID),
-            into: normalized.topNavigationOrder,
+            in: normalized.topNavigationOrder,
+            as: descriptor.identity,
         )
 
         return selectedRecord == nil ? .seed(finalStore) : .alreadyPresent(finalStore)
+    }
+
+    private static func placing(
+        _ record: ContentTabPinnedRecord,
+        among records: [ContentTabPinnedRecord],
+        as identity: BuiltInCollectionIdentity,
+    ) -> [ContentTabPinnedRecord] {
+        switch identity {
+        case .recents:
+            [record] + records
+        case .allTags:
+            records + [record]
+        }
+    }
+
+    private static func placing(
+        _ id: ContentTabID,
+        in order: FileManagerTopNavigationOrder,
+        as identity: BuiltInCollectionIdentity,
+    ) -> FileManagerTopNavigationOrder {
+        let target = FileManagerTopNavigationItemID.contentTab(id)
+        var items = order.items.filter { $0 != target }
+        let insertionIndex: Int = switch identity {
+        case .recents:
+            items.firstIndex { item in
+                if case .contentTab = item { return true }
+                return false
+            } ?? items.endIndex
+        case .allTags:
+            if let index = items.lastIndex(where: { item in
+                if case .contentTab = item { return true }
+                return false
+            }) {
+                items.index(after: index)
+            } else {
+                items.endIndex
+            }
+        }
+        items.insert(target, at: insertionIndex)
+        return .init(items: items)
     }
 
     private static func metadata(

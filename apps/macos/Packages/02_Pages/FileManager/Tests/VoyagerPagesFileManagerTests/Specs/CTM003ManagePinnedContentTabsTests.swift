@@ -1809,11 +1809,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
     // MARK: - CTM-003-seed_built_in_pinned_content_tabs
 
-    /// CTM-003-seed_built_in_pinned_content_tabs: 기존 Finder/User 뒤에 Recents와 All Tags를 순서대로 추가한다.
-    /// 최초 built-in seed가 shared insertion 정책으로 canonical metadata와 전체 pinned ordering을 만드는지 검증한다.
-    /// - 검증 내용: Finder/User 상대 순서 보존, Recents와 All Tags의 순차 append 및 canonical page/anchor/title/icon
-    /// - 사전 조건: Finder와 user record가 있고 두 built-in ensure 결과가 ready, completion은 false
-    /// - 기대 결과: [finder, user, Recents, All Tags] records/order와 stable identity가 저장됨
+    /// CTM-003-seed_built_in_pinned_content_tabs: Recents와 All Tags 사이에 기존 Finder/User 순서를 보존한다.
+    /// 최초 built-in seed가 identity별 canonical 위치와 metadata를 전체 pinned ordering에 반영하는지 검증한다.
+    /// - 검증 내용: Location과 Finder/User 상대 순서 보존, Recents 첫 탭·All Tags 마지막 탭 배치 및 canonical metadata
+    /// - 사전 조건: Location 사이 Finder/User record가 있고 두 built-in ensure 결과가 ready, completion은 false
+    /// - 기대 결과: built-in canonical 위치와 기존 mixed-order 상대 순서가 함께 저장됨
     func testBuiltInSeed_ordersRecentsExistingAndAllTags() {
         let recentsURL = URL(fileURLWithPath: "/Application Support/Voyager/Collections/BuiltIn/recents.voycoll")
         let allTagsURL = URL(fileURLWithPath: "/Application Support/Voyager/Collections/BuiltIn/all-tags.voycoll")
@@ -1828,13 +1828,25 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             anchor: .collectionFile(url: URL(fileURLWithPath: "/Users/test/User.voycoll")),
             title: "User",
         )
-        let initialStore = ContentTabPinnedRecordStore(records: [finderRecord, userRecord])
+        let locationA = "fixed-location-a"
+        let locationB = "fixed-location-b"
+        let discoveredLocationIDs = [locationA, locationB]
+        let initialStore = ContentTabPinnedRecordStore(
+            records: [finderRecord, userRecord],
+            topNavigationOrder: .init(items: [
+                .location(locationA),
+                .contentTab(ContentTabID(rawValue: "finder")),
+                .location(locationB),
+                .contentTab(ContentTabID(rawValue: "user")),
+            ]),
+        )
 
         let recentsResult = BuiltInContentTabPinnedRecordSeedPolicy.evaluate(
             ensureResult: .ready(.init(identity: .recents, canonicalPackageURL: recentsURL)),
             completion: false,
             store: initialStore,
             now: Self.pinnedAt,
+            discoveredLocationIDs: discoveredLocationIDs,
         )
         guard case let .seed(recentsStore) = recentsResult else {
             return XCTFail("Recents는 새 record를 seed해야 함")
@@ -1844,15 +1856,16 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             completion: false,
             store: recentsStore,
             now: Self.pinnedAt,
+            discoveredLocationIDs: discoveredLocationIDs,
         )
         guard case let .seed(finalStore) = allTagsResult else {
             return XCTFail("All Tags는 새 record를 seed해야 함")
         }
 
         XCTAssertEqual(finalStore.records.map(\.id), [
+            "built-in-collection-recents",
             "finder",
             "user",
-            "built-in-collection-recents",
             "built-in-collection-all-tags",
         ])
         let recentsRecord = finalStore.records.first { $0.id == "built-in-collection-recents" }
@@ -1869,18 +1882,20 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             if case .virtualCollection = $0.anchor { true } else { false }
         })
         XCTAssertEqual(finalStore.topNavigationOrder.items, [
-            .contentTab(ContentTabID(rawValue: "finder")),
-            .contentTab(ContentTabID(rawValue: "user")),
+            .location(locationA),
             .contentTab(ContentTabID(rawValue: "built-in-collection-recents")),
+            .contentTab(ContentTabID(rawValue: "finder")),
+            .location(locationB),
+            .contentTab(ContentTabID(rawValue: "user")),
             .contentTab(ContentTabID(rawValue: "built-in-collection-all-tags")),
         ])
     }
 
-    /// CTM-003-seed_built_in_pinned_content_tabs: stable ID를 URL보다 우선해 중복을 canonicalize하고 끝에 배치한다.
+    /// CTM-003-seed_built_in_pinned_content_tabs: stable ID를 URL보다 우선해 중복을 canonicalize하고 선두에 배치한다.
     /// crash retry에서 ID/URL residue가 함께 남아도 nonmatching 상대 순서와 하나의 stable record만 유지되는지 검증한다.
-    /// - 검증 내용: stable ID match의 pinnedAt 보존, ID/URL 전체 duplicate 제거, nonmatching 상대 순서 보존 후 append
+    /// - 검증 내용: stable ID match의 pinnedAt 보존, ID/URL 전체 duplicate 제거, Recents 선두와 nonmatching 상대 순서 보존
     /// - 사전 조건: canonical URL duplicate 2개와 stable ID duplicate 1개가 섞인 store
-    /// - 기대 결과: [first-other, second-other, Recents] 순서와 stable ID record의 pinnedAt이 유지됨
+    /// - 기대 결과: [Recents, first-other, second-other] 순서와 stable ID record의 pinnedAt이 유지됨
     func testBuiltInSeed_deduplicatesStableIDAndCanonicalURLPreservingStableMatchTimestamp() {
         let canonicalURL = URL(fileURLWithPath: "/Application Support/Voyager/Collections/BuiltIn/recents.voycoll")
         let urlDuplicate = ContentTabPinnedRecord(
@@ -1930,7 +1945,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         }
 
         XCTAssertEqual(finalStore.records.map(\.id), [
-            "first-other", "second-other", "built-in-collection-recents",
+            "built-in-collection-recents", "first-other", "second-other",
         ])
         let recentsRecord = finalStore.records.first { $0.id == "built-in-collection-recents" }
         XCTAssertEqual(recentsRecord?.pinnedAt, Date(timeIntervalSince1970: 200))
