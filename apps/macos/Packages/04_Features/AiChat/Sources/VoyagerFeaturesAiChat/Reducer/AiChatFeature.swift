@@ -63,7 +63,7 @@ public struct AiChatFeature {
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
-            if action.invalidatesPendingNewChatPreparation {
+            if _invalidatesPendingNewChatPreparation(action) {
                 state.newChatPreparationMutationTracker.value &+= 1
             }
             switch action {
@@ -137,6 +137,7 @@ public struct AiChatFeature {
                     return .none
                 }
                 state.restoreSessionID = nil
+                state.settleCancelledSessionRestoreIfNeeded()
                 return .cancel(id: CancelID.restore)
 
             case let .showSessionsForChat(sessionID):
@@ -160,6 +161,7 @@ public struct AiChatFeature {
                 state.sessionList.errorMessage = nil
                 state.restoreOutcome = nil
                 state.restoreFailure = nil
+                state.settleCancelledSessionRestoreIfNeeded()
                 state.mode = .chat
                 return .cancel(id: CancelID.restore)
 
@@ -279,6 +281,7 @@ public struct AiChatFeature {
                     state.restoreSessionID = nil
                     state.restoreOutcome = nil
                     state.restoreFailure = nil
+                    state.settleCancelledSessionRestoreIfNeeded()
                 }
                 return .none
 
@@ -305,7 +308,10 @@ public struct AiChatFeature {
                 state.currentSessionCustomTitle = nil
                 apply(setup: setup, to: &state)
                 normalizeSelectionIfNeeded(&state)
-                guard let restoreSessionID = state.restoreSessionID else { return .none }
+                guard let restoreSessionID = state.restoreSessionID else {
+                    state.settleCancelledSessionRestoreIfNeeded()
+                    return .none
+                }
                 if restoreSessionID == state.sessionID,
                    state.transcriptHistory.isEmpty,
                    state.sessionStatus == .idle
@@ -314,7 +320,7 @@ public struct AiChatFeature {
                     state.restoreSessionID = nil
                     return .none
                 }
-                state.sessionStatus = .restoring
+                state.beginSessionRestore(for: restoreSessionID)
                 return restoreSession(sessionID: restoreSessionID, state: state)
 
             case let .providerConnectionsUpdated(file):
@@ -504,22 +510,20 @@ public struct AiChatFeature {
     }
 }
 
-private extension AiChatAction {
-    var invalidatesPendingNewChatPreparation: Bool {
-        switch self {
-        case .selectedModelChanged,
-             .selectedThinkingChanged,
-             .currentContextChanged,
-             .draftTextChanged,
-             .attachmentPickerSelection,
-             .attachmentDrop,
-             .attachmentDropSelection,
-             .removeAddedAttachment,
-             .folderStructureModeChanged:
-            true
-        default:
-            false
-        }
+private func _invalidatesPendingNewChatPreparation(_ action: AiChatAction) -> Bool {
+    switch action {
+    case .selectedModelChanged,
+         .selectedThinkingChanged,
+         .currentContextChanged,
+         .draftTextChanged,
+         .attachmentPickerSelection,
+         .attachmentDrop,
+         .attachmentDropSelection,
+         .removeAddedAttachment,
+         .folderStructureModeChanged:
+        true
+    default:
+        false
     }
 }
 

@@ -659,7 +659,8 @@ extension AiChatFeature {
     }
 
     func cancelAllInFlightWork(state: inout State) -> Effect<Action> {
-        .merge(
+        state.settleCancelledSessionRestoreIfNeeded()
+        return .merge(
             cancelAllRequestLifecycleWork(state: &state),
             .cancel(id: CancelID.restore),
             .cancel(id: CancelID.modelList),
