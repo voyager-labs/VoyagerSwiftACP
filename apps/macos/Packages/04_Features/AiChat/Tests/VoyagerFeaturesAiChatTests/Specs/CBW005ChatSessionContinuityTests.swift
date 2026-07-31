@@ -185,6 +185,460 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         ))
     }
 
+    /// CBW-005-start_chat_conversation_session: unavailable window-last는 available persisted default로 fallback한다.
+    /// 같은 handle이 catalog에 있어도 선택 불가능하면 window 우선순위를 얻지 못하는지 검증합니다.
+    /// - 검증 내용: window availability 검증과 persisted fallback precedence
+    /// - 사전 조건: window 후보 모델은 unavailable이고 persisted 후보 모델은 available입니다.
+    /// - 기대 결과: persisted 모델과 normalized thinking이 new-chat seed로 반환됩니다.
+    func testNewChatSelectionSeedFallsBackFromUnavailableWindowToAvailablePersistedDefault() {
+        let models = makeThinkingCapableProviderModels()
+        let unavailableWindowModel = AiProviderModel(
+            id: models[0].id,
+            provider: models[0].provider,
+            rawModelID: models[0].rawModelID,
+            displayName: models[0].displayName,
+            providerDisplayName: models[0].providerDisplayName,
+            thinkingCapability: models[0].thinkingCapability,
+            supportsThinkingNone: models[0].supportsThinkingNone,
+            unavailableReason: .init(message: "Model is temporarily unavailable."),
+        )
+        let windowCandidate = AiChatNewChatSelectionCandidate(
+            modelHandle: unavailableWindowModel.id,
+            selectedThinking: .effort(.high),
+        )
+        let persistedCandidate = makePersistedSelectionCandidate(
+            model: models[1],
+            thinking: .effort("low"),
+        )
+
+        let seed = AiChatNewChatSelectionSeedResolver.resolve(
+            windowLast: windowCandidate,
+            persistedDefault: persistedCandidate,
+            catalog: [unavailableWindowModel, models[1]],
+        )
+
+        XCTAssertEqual(seed, AiChatNewChatSelectionSeed(
+            modelHandle: models[1].id,
+            selectedThinking: .effort(.low),
+        ))
+    }
+
+    /// CBW-005-start_chat_conversation_session: unavailable persisted default는 new-chat seed가 되지 않는다.
+    /// 저장된 handle의 존재만으로 선택 불가능한 모델이 새 draft에 복원되지 않는지 검증합니다.
+    /// - 검증 내용: persisted candidate의 canonical availability 검증
+    /// - 사전 조건: window 후보는 없고 persisted 후보와 같은 handle의 catalog 모델은 unavailable입니다.
+    /// - 기대 결과: resolver는 nil을 반환하고 새 대화 선택을 만들지 않습니다.
+    func testNewChatSelectionSeedRejectsUnavailablePersistedDefault() {
+        let model = makeThinkingCapableProviderModels()[0]
+        let unavailableModel = AiProviderModel(
+            id: model.id,
+            provider: model.provider,
+            rawModelID: model.rawModelID,
+            displayName: model.displayName,
+            providerDisplayName: model.providerDisplayName,
+            thinkingCapability: model.thinkingCapability,
+            supportsThinkingNone: model.supportsThinkingNone,
+            unavailableReason: .init(message: "Model is temporarily unavailable."),
+        )
+        let persistedCandidate = makePersistedSelectionCandidate(
+            model: model,
+            thinking: .effort("medium"),
+        )
+
+        let seed = AiChatNewChatSelectionSeedResolver.resolve(
+            windowLast: nil,
+            persistedDefault: persistedCandidate,
+            catalog: [unavailableModel],
+        )
+
+        XCTAssertNil(seed)
+    }
+
+    /// CBW-005-start_chat_conversation_session: resolver 이후 stale unavailable seed도 적용 경계에서 거부한다.
+    /// 비동기 seed resolution 뒤 catalog availability가 바뀌어도 새 runtime/snapshot에 승격되지 않는지 검증합니다.
+    /// - 검증 내용: public new-chat seed action의 current-catalog 재검증
+    /// - 사전 조건: seed handle과 같은 loaded model이 action 적용 시점에는 unavailable입니다.
+    /// - 기대 결과: 새 chat은 unselected이며 저장 snapshot에도 provider/model/thinking이 없습니다.
+    func testDurableNewChatRejectsStaleUnavailableSelectionSeed() async {
+        let model = makeThinkingCapableProviderModels()[0]
+        let unavailableModel = AiProviderModel(
+            id: model.id,
+            provider: model.provider,
+            rawModelID: model.rawModelID,
+            displayName: model.displayName,
+            providerDisplayName: model.providerDisplayName,
+            thinkingCapability: model.thinkingCapability,
+            supportsThinkingNone: model.supportsThinkingNone,
+            unavailableReason: .init(message: "Model is temporarily unavailable."),
+        )
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: model.id,
+            selectedThinking: .effort(.high),
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            catalogRows: [makeCatalogRows()[0]],
+            modelListState: .loaded([unavailableModel]),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: stale seed의 runtime/persistence 차단만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.newChatTapped(seed: seed))
+        await store.skipReceivedActions()
+
+        XCTAssertNil(store.state.selectedModelHandle)
+        XCTAssertNil(store.state.selectedThinking)
+        XCTAssertEqual(savedSnapshots.value.count, 1)
+        XCTAssertNil(savedSnapshots.value.first?.provider)
+        XCTAssertNil(savedSnapshots.value.first?.model)
+        XCTAssertNil(savedSnapshots.value.first?.selectedThinking)
+    }
+
+    /// CBW-005-start_chat_conversation_session: durable New Chat은 known-disconnected provider seed를 제거한다.
+    /// 연결 authority가 provider 부재를 확정하면 catalog 미완료 seed가 snapshot에 승격되지 않는지 검증합니다.
+    /// - 검증 내용: generated session identity, unselected runtime/snapshot, save 1회
+    /// - 사전 조건: OpenAI seed와 Anthropic만 포함한 known 연결 목록이 있습니다.
+    /// - 기대 결과: 새 durable session은 유지되지만 model/thinking seed는 runtime과 snapshot에서 제거됩니다.
+    func testDurableNewChatRejectsKnownDisconnectedProviderSelectionSeed() async {
+        let selectedModel = makeThinkingCapableProviderModels()[0]
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: selectedModel.id,
+            selectedThinking: .effort(.high),
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            modelListState: .loading,
+            providerConnectionSnapshot: .known([.anthropic]),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs + 10))
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: known-disconnected durable seed의 제거와 snapshot 경계만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.newChatTapped(seed: seed))
+        await store.skipReceivedActions()
+
+        let sessionID = try? XCTUnwrap(store.state.sessionID)
+        XCTAssertEqual(store.state.mode, .chat)
+        XCTAssertNil(store.state.selectedModelHandle)
+        XCTAssertNil(store.state.selectedThinking)
+        XCTAssertEqual(savedSnapshots.value.count, 1)
+        XCTAssertEqual(savedSnapshots.value.first?.sessionID, sessionID)
+        XCTAssertNil(savedSnapshots.value.first?.provider)
+        XCTAssertNil(savedSnapshots.value.first?.model)
+        XCTAssertNil(savedSnapshots.value.first?.selectedThinking)
+    }
+
+    /// CBW-005-start_chat_conversation_session: explicit-ID transient는 known-disconnected provider seed를 제거한다.
+    /// transient identity와 provenance를 유지하면서 authoritative provider absence만 selection에 반영하는지 검증합니다.
+    /// - 검증 내용: explicit ID, prepared marker, current provenance, unselected runtime, save 0회
+    /// - 사전 조건: current provenance와 OpenAI seed, Anthropic만 포함한 known 연결 목록이 있습니다.
+    /// - 기대 결과: transient는 명시 ID로 준비되고 seed는 제거되며 persistence는 호출되지 않습니다.
+    func testExplicitIDTransientNewChatRejectsKnownDisconnectedProviderSelectionSeed() async {
+        let selectedModel = makeThinkingCapableProviderModels()[0]
+        let sessionID = makeCBW005SessionID("86868686-8686-8686-8686-868686868686")
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: selectedModel.id,
+            selectedThinking: .effort(.high),
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            modelListState: .loading,
+            providerConnectionSnapshot: .known([.anthropic]),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: known-disconnected transient seed와 zero-save 경계만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        let provenance = store.state.newChatPreparationProvenance
+        await store.send(.prepareTransientNewChatIfCurrent(
+            sessionID: sessionID,
+            provenance: provenance,
+            seed: seed,
+        ))
+
+        XCTAssertEqual(store.state.sessionID, sessionID)
+        XCTAssertEqual(store.state.preparedTransientSessionID, sessionID)
+        XCTAssertNil(store.state.selectedModelHandle)
+        XCTAssertNil(store.state.selectedThinking)
+        XCTAssertNil(store.state.unavailableSelectedModelHandle)
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+    }
+
+    /// CBW-005-start_chat_conversation_session: seed-only completion은 known-disconnected provider seed를 거부한다.
+    /// touched transient의 payload와 identity를 보존하면서 authoritative provider absence를 no-op으로 처리하는지 검증합니다.
+    /// - 검증 내용: 전체 state/provenance/context/attachment equality와 save 0회
+    /// - 사전 조건: touched transient와 current provenance, OpenAI seed, Anthropic만 포함한 known 연결 목록이 있습니다.
+    /// - 기대 결과: seed-only application은 전체 state를 변경하지 않고 persistence를 호출하지 않습니다.
+    func testSeedOnlyCompletionRejectsKnownDisconnectedProviderSelectionSeed() async {
+        let selectedModel = makeThinkingCapableProviderModels()[0]
+        let sessionID = makeCBW005SessionID("87878787-8787-8787-8787-878787878787")
+        let context = makeContextSnapshot(summary: "Known disconnected context")
+        let attachment = makeCBW005Attachment(path: "/tmp/Known-disconnected.txt")
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: selectedModel.id,
+            selectedThinking: .effort(.high),
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            preparedTransientSessionID: sessionID,
+            currentContext: context,
+            addedAttachments: [attachment],
+            draftText: "Known disconnected draft",
+            modelListState: .loading,
+            providerConnectionSnapshot: .known([.anthropic]),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        let provenance = store.state.newChatPreparationProvenance
+        let stateBeforeApplication = store.state
+
+        await store.send(.applyNewChatSelectionSeedIfCurrent(
+            provenance: provenance,
+            seed: seed,
+        ))
+
+        XCTAssertEqual(store.state, stateBeforeApplication)
+        XCTAssertEqual(store.state.newChatPreparationProvenance, provenance)
+        XCTAssertEqual(store.state.sessionID, sessionID)
+        XCTAssertEqual(store.state.currentContext, context)
+        XCTAssertEqual(store.state.addedAttachments, [attachment])
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+    }
+
+    /// CBW-005-start_chat_conversation_session: durable New Chat은 unknown catalog authority에서 resolved seed를 보존한다.
+    /// loading과 selected-provider failure는 unavailable 확정이 아니므로 frozen seed를 durable snapshot에 유지하는지 검증합니다.
+    /// - 검증 내용: loading/failure authority에서 runtime selection과 persisted snapshot seed 보존
+    /// - 사전 조건: OpenAI resolved seed와 unresolved loading 또는 OpenAI failure + Anthropic success aggregate가 있습니다.
+    /// - 기대 결과: 두 경우 모두 원래 model/thinking이 적용되고 snapshot은 한 번 저장됩니다.
+    func testDurableNewChatPreservesResolvedSeedWhenCatalogAuthorityIsUnknown() async {
+        let models = makeThinkingCapableProviderModels()
+        let selectedModel = models[0]
+        let otherProviderModel = models[1]
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: selectedModel.id,
+            selectedThinking: .effort(.high),
+        )
+        let failure = AiModelListFailure(message: "OpenAI model list request failed.")
+        let states = [
+            AiChatFeature.State(
+                mode: .sessions,
+                catalogRows: makeCatalogRows(),
+                modelListState: .loading,
+                modelListProviderOrder: [.openai],
+                modelListPendingProviders: [.openai],
+                providerConnectionSnapshot: .unknown,
+            ),
+            AiChatFeature.State(
+                mode: .sessions,
+                catalogRows: makeCatalogRows(),
+                modelListState: .loaded([otherProviderModel]),
+                modelListFailedProviders: [.openai: failure],
+                providerConnectionSnapshot: .unknown,
+                availableModelsByProvider: [.openai: [], .anthropic: [otherProviderModel]],
+            ),
+        ]
+
+        for (index, initialState) in states.enumerated() {
+            let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+            let store = TestStore(initialState: initialState) {
+                AiChatFeature()
+            } withDependencies: {
+                $0.uuid = .incrementing
+                $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs + Int64(index)))
+                $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
+                }
+            }
+            // store.exhaustivity = .off: unknown authority별 durable seed와 snapshot 보존만 선별 검증합니다.
+            store.exhaustivity = .off(showSkippedAssertions: false)
+
+            await store.send(.newChatTapped(seed: seed))
+            await store.skipReceivedActions()
+
+            XCTAssertEqual(store.state.selectedModelHandle, seed.modelHandle, "scenario \(index)")
+            XCTAssertEqual(store.state.selectedThinking, seed.selectedThinking, "scenario \(index)")
+            XCTAssertEqual(savedSnapshots.value.count, 1, "scenario \(index)")
+            XCTAssertEqual(savedSnapshots.value.first?.model, seed.modelHandle, "scenario \(index)")
+            XCTAssertEqual(savedSnapshots.value.first?.selectedThinking, seed.selectedThinking, "scenario \(index)")
+        }
+    }
+
+    /// CBW-005-start_chat_conversation_session: explicit-ID transient는 unknown catalog authority에서 resolved seed를 보존한다.
+    /// loading과 selected-provider failure 중에도 explicit session identity와 zero-save semantics를 유지하는지 검증합니다.
+    /// - 검증 내용: guarded transient의 seed, explicit ID, prepared marker, persistence 0회
+    /// - 사전 조건: current provenance와 unresolved loading 또는 OpenAI failure + Anthropic success aggregate가 있습니다.
+    /// - 기대 결과: 두 경우 모두 frozen seed가 적용되고 명시 ID로 transient가 준비됩니다.
+    func testExplicitIDTransientNewChatPreservesResolvedSeedWhenCatalogAuthorityIsUnknown() async {
+        let models = makeThinkingCapableProviderModels()
+        let selectedModel = models[0]
+        let otherProviderModel = models[1]
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: selectedModel.id,
+            selectedThinking: .effort(.high),
+        )
+        let failure = AiModelListFailure(message: "OpenAI model list request failed.")
+        let states = [
+            AiChatFeature.State(
+                mode: .sessions,
+                catalogRows: makeCatalogRows(),
+                modelListState: .loading,
+                modelListProviderOrder: [.openai],
+                modelListPendingProviders: [.openai],
+                providerConnectionSnapshot: .unknown,
+            ),
+            AiChatFeature.State(
+                mode: .sessions,
+                catalogRows: makeCatalogRows(),
+                modelListState: .loaded([otherProviderModel]),
+                modelListFailedProviders: [.openai: failure],
+                providerConnectionSnapshot: .unknown,
+                availableModelsByProvider: [.openai: [], .anthropic: [otherProviderModel]],
+            ),
+        ]
+
+        for (index, initialState) in states.enumerated() {
+            let sessionID = AiChatSessionID(rawValue: makeUUID(
+                index == 0
+                    ? "84848484-8484-8484-8484-848484848480"
+                    : "84848484-8484-8484-8484-848484848481",
+            ))
+            let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+            let store = TestStore(initialState: initialState) {
+                AiChatFeature()
+            } withDependencies: {
+                $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
+                }
+            }
+            // store.exhaustivity = .off: unknown authority별 explicit-ID seed와 zero-save 경계만 선별 검증합니다.
+            store.exhaustivity = .off(showSkippedAssertions: false)
+
+            let provenance = store.state.newChatPreparationProvenance
+            await store.send(.prepareTransientNewChatIfCurrent(
+                sessionID: sessionID,
+                provenance: provenance,
+                seed: seed,
+            ))
+
+            XCTAssertEqual(store.state.sessionID, sessionID, "scenario \(index)")
+            XCTAssertEqual(store.state.preparedTransientSessionID, sessionID, "scenario \(index)")
+            XCTAssertEqual(store.state.selectedModelHandle, seed.modelHandle, "scenario \(index)")
+            XCTAssertEqual(store.state.selectedThinking, seed.selectedThinking, "scenario \(index)")
+            XCTAssertNil(store.state.emptyDraftSessionID, "scenario \(index)")
+            XCTAssertTrue(savedSnapshots.value.isEmpty, "scenario \(index)")
+        }
+    }
+
+    /// CBW-005-start_chat_conversation_session: seed-only completion은 unknown catalog authority에서 resolved seed를 보존한다.
+    /// loading과 selected-provider failure 중에도 touched payload를 유지하며 frozen seed만 적용하는지 검증합니다.
+    /// - 검증 내용: seed-only model/thinking 적용과 session/context/attachment/draft/provenance owner 보존
+    /// - 사전 조건: touched transient와 unresolved loading 또는 OpenAI failure + Anthropic success aggregate가 있습니다.
+    /// - 기대 결과: 두 경우 모두 payload와 identity는 유지되고 frozen seed가 적용되며 save는 없습니다.
+    func testSeedOnlyCompletionPreservesResolvedSeedWhenCatalogAuthorityIsUnknown() async {
+        let models = makeThinkingCapableProviderModels()
+        let selectedModel = models[0]
+        let otherProviderModel = models[1]
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: selectedModel.id,
+            selectedThinking: .effort(.high),
+        )
+        let failure = AiModelListFailure(message: "OpenAI model list request failed.")
+        let sessionID = makeCBW005SessionID("85858585-8585-8585-8585-858585858585")
+        let context = makeContextSnapshot(summary: "Unknown authority context")
+        let attachment = makeCBW005Attachment(path: "/tmp/Unknown-authority.txt")
+        let states = [
+            AiChatFeature.State(
+                mode: .chat,
+                sessionID: sessionID,
+                currentContext: context,
+                addedAttachments: [attachment],
+                draftText: "Unknown authority draft",
+                catalogRows: makeCatalogRows(),
+                modelListState: .loading,
+                modelListProviderOrder: [.openai],
+                modelListPendingProviders: [.openai],
+                providerConnectionSnapshot: .unknown,
+            ),
+            AiChatFeature.State(
+                mode: .chat,
+                sessionID: sessionID,
+                currentContext: context,
+                addedAttachments: [attachment],
+                draftText: "Unknown authority draft",
+                catalogRows: makeCatalogRows(),
+                modelListState: .loaded([otherProviderModel]),
+                modelListFailedProviders: [.openai: failure],
+                providerConnectionSnapshot: .unknown,
+                availableModelsByProvider: [.openai: [], .anthropic: [otherProviderModel]],
+            ),
+        ]
+
+        for (index, initialState) in states.enumerated() {
+            let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+            let store = TestStore(initialState: initialState) {
+                AiChatFeature()
+            } withDependencies: {
+                $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
+                }
+            }
+            let provenance = store.state.newChatPreparationProvenance
+
+            await store.send(.applyNewChatSelectionSeedIfCurrent(
+                provenance: provenance,
+                seed: seed,
+            )) { state in
+                state.selectedModelHandle = seed.modelHandle
+                state.selectedThinking = seed.selectedThinking
+            }
+
+            XCTAssertEqual(store.state.sessionID, sessionID, "scenario \(index)")
+            XCTAssertEqual(store.state.currentContext, context, "scenario \(index)")
+            XCTAssertEqual(store.state.addedAttachments, [attachment], "scenario \(index)")
+            XCTAssertEqual(store.state.draftText, "Unknown authority draft", "scenario \(index)")
+            XCTAssertEqual(store.state.selectedModelHandle, seed.modelHandle, "scenario \(index)")
+            XCTAssertEqual(store.state.selectedThinking, seed.selectedThinking, "scenario \(index)")
+            XCTAssertNil(store.state.unavailableSelectedModelHandle, "scenario \(index)")
+            XCTAssertTrue(savedSnapshots.value.isEmpty, "scenario \(index)")
+        }
+    }
+
     /// CBW-005-start_chat_conversation_session: 후보가 없으면 catalog의 default/recommended model도 자동 선택하지 않는다.
     /// catalog metadata가 명시적 사용자 선택 정책을 우회하지 않는지 검증합니다.
     /// - 검증 내용: no-candidate resolver 결과
@@ -344,6 +798,116 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(savedSnapshots.value.count, 1)
         XCTAssertEqual(savedSnapshots.value.first?.sessionID, sessionID)
         stream.finish()
+    }
+
+    /// CBW-005-start_chat_conversation_session: guarded explicit-ID transient는 stale unavailable seed를 거부한다.
+    /// 비동기 seed resolution 뒤 catalog availability가 바뀐 application boundary를 검증합니다.
+    /// - 검증 내용: current provenance 재검증 뒤 stale seed 거부, explicit ID와 prepared marker 보존, save 0회
+    /// - 사전 조건: valid provenance와 seed handle이 unavailable인 loaded catalog가 있다.
+    /// - 기대 결과: transient chat은 unselected이며 explicit ID로 준비되고 persistence는 호출되지 않는다.
+    func testGuardedExplicitIDTransientNewChatRejectsStaleUnavailableSelectionSeed() async {
+        let model = makeThinkingCapableProviderModels()[0]
+        let unavailableModel = AiProviderModel(
+            id: model.id,
+            provider: model.provider,
+            rawModelID: model.rawModelID,
+            displayName: model.displayName,
+            providerDisplayName: model.providerDisplayName,
+            thinkingCapability: model.thinkingCapability,
+            supportsThinkingNone: model.supportsThinkingNone,
+            unavailableReason: .init(message: "Model is temporarily unavailable."),
+        )
+        let sessionID = makeCBW005SessionID("74747474-7474-7474-7474-747474747474")
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: model.id,
+            selectedThinking: .effort(.high),
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            catalogRows: [makeCatalogRows()[0]],
+            modelListState: .loaded([unavailableModel]),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: stale transient seed의 application boundary와 zero-save만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        let provenance = store.state.newChatPreparationProvenance
+        await store.send(.prepareTransientNewChatIfCurrent(
+            sessionID: sessionID,
+            provenance: provenance,
+            seed: seed,
+        ))
+
+        XCTAssertEqual(store.state.sessionID, sessionID)
+        XCTAssertNil(store.state.selectedModelHandle)
+        XCTAssertNil(store.state.selectedThinking)
+        XCTAssertEqual(store.state.preparedTransientSessionID, sessionID)
+        XCTAssertNil(store.state.emptyDraftSessionID)
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+    }
+
+    /// CBW-005-start_chat_conversation_session: seed-only completion은 stale unavailable seed를 거부한다.
+    /// current provenance여도 비동기 resolution 뒤 unavailable이 된 seed가 runtime state로 승격되지 않는지 검증합니다.
+    /// - 검증 내용: payload/identity/provenance 보존, model/thinking/unavailable presentation nil, save 0회
+    /// - 사전 조건: touched transient와 current provenance, seed handle이 unavailable인 loaded catalog가 있다.
+    /// - 기대 결과: seed-only application은 전체 state를 변경하지 않고 persistence를 호출하지 않는다.
+    func testGuardedSeedOnlyCompletionRejectsStaleUnavailableSelectionSeed() async {
+        let model = makeThinkingCapableProviderModels()[0]
+        let unavailableModel = AiProviderModel(
+            id: model.id,
+            provider: model.provider,
+            rawModelID: model.rawModelID,
+            displayName: model.displayName,
+            providerDisplayName: model.providerDisplayName,
+            thinkingCapability: model.thinkingCapability,
+            supportsThinkingNone: model.supportsThinkingNone,
+            unavailableReason: .init(message: "Model is temporarily unavailable."),
+        )
+        let sessionID = makeCBW005SessionID("75757575-7575-7575-7575-757575757575")
+        let context = makeContextSnapshot(summary: "Touched context")
+        let attachment = makeCBW005Attachment(path: "/tmp/Touched.txt")
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: model.id,
+            selectedThinking: .effort(.high),
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            currentContext: context,
+            addedAttachments: [attachment],
+            draftText: "Touched question",
+            catalogRows: [makeCatalogRows()[0]],
+            modelListState: .loaded([unavailableModel]),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        let provenance = store.state.newChatPreparationProvenance
+        let stateBeforeApplication = store.state
+
+        await store.send(.applyNewChatSelectionSeedIfCurrent(
+            provenance: provenance,
+            seed: seed,
+        ))
+
+        XCTAssertEqual(store.state, stateBeforeApplication)
+        XCTAssertEqual(store.state.newChatPreparationProvenance, provenance)
+        XCTAssertNil(store.state.selectedModelHandle)
+        XCTAssertNil(store.state.selectedThinking)
+        XCTAssertNil(store.state.unavailableSelectedModelHandle)
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
     }
 
     /// CBW-005-start_chat_conversation_session: seed-only completion은 touched transient payload와 identity를 보존한다.
