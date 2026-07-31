@@ -1681,6 +1681,85 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
     }
 
+    /// CTM-003-close_pinned_content_tab_s: authoritative fan-out 뒤 source terminal이 실제 close 정리를 완료한다.
+    /// - 검증 내용: 실제 close request, parent write gate, peer fan-out, recentlyClosed와 active handoff
+    /// - 사전 조건: 같은 pinned A를 가진 source/peer window와 source fallback Home
+    /// - 기대 결과: source A 제거·Home 활성화·unpinned 최근 닫힘 기록, peer global pin 제거, queue 정리
+    func testPinnedRecordPersistence_realCloseCompletesAfterAuthoritativeFanOut() async {
+        let sourceWindowID = UUID(41108)
+        let peerWindowID = UUID(41109)
+        let tabID = ContentTabID(rawValue: "fanout-before-close-terminal")
+        let record = ContentTabPinnedRecord(
+            id: tabID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/Users/test/FanoutBeforeClose"),
+            title: "Fanout Before Close",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 411),
+        )
+        let gate = PinnedRecordMutationGate()
+        let persistedStore = LockIsolated(ContentTabPinnedRecordStore(
+            records: [record],
+            topNavigationOrder: .init(items: [.contentTab(tabID)]),
+        ))
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            .init(
+                id: sourceWindowID,
+                window: lifecycleWindow(tabID: tabID, record: record, path: "/Users/test/Source"),
+            ),
+            .init(
+                id: peerWindowID,
+                window: lifecycleWindow(tabID: tabID, record: record, path: "/Users/test/Peer"),
+            ),
+        ]
+        let store = Store(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 412))
+            $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, discoveredLocationIDs, mutation in
+                await gate.wait()
+                let updated = persistedStore.withValue { store in
+                    store = applying(
+                        mutation,
+                        to: store,
+                        discoveredLocationIDs: discoveredLocationIDs,
+                    )
+                    return store
+                }
+                return .init(store: updated, topNavigation: .init(order: updated.topNavigationOrder, revision: 1))
+            }
+        }
+
+        let closeTask = store.send(.windows(.element(
+            id: sourceWindowID,
+            action: .window(.closeContentTabRequested(tabID)),
+        )))
+        await gate.waitUntilWaiting()
+        store.withState { state in
+            let source = state.windows[id: sourceWindowID]?.window
+            XCTAssertEqual(source?.contentTabs.tabs[id: tabID]?.isPinned, false)
+            XCTAssertEqual(source?.contentTabs.activeTabID, tabID)
+            XCTAssertFalse(source?.pendingTopNavigationIntents.isEmpty ?? true)
+        }
+
+        await gate.open()
+        await closeTask.finish()
+
+        XCTAssertTrue(persistedStore.value.records.isEmpty)
+        store.withState { state in
+            let source = state.windows[id: sourceWindowID]?.window
+            let peer = state.windows[id: peerWindowID]?.window
+            XCTAssertNil(source?.contentTabs.tabs[id: tabID])
+            XCTAssertEqual(source?.contentTabs.activeTabID?.rawValue, "home-\(tabID.rawValue)")
+            XCTAssertEqual(source?.contentTabs.recentlyClosed?.anchor, record.anchor)
+            XCTAssertEqual(source?.contentTabs.recentlyClosed?.wasPinned, false)
+            XCTAssertTrue(source?.pendingTopNavigationIntents.isEmpty ?? false)
+            XCTAssertNil(peer?.contentTabs.tabs[id: tabID])
+            XCTAssertEqual(peer?.lastConfirmedTopNavigationOrder.items, [])
+            XCTAssertTrue(state.topNavigationPersistenceQueue.isEmpty)
+            XCTAssertFalse(state.isTopNavigationPersistenceInFlight)
+        }
+    }
+
     /// CTM-003-unpin_content_tab_s: source window close 뒤에도 parent write와 peer fan-out이 완료된다.
     /// - 검증 내용: write gate 중 source 제거, committed authoritative peer snapshot
     /// - 사전 조건: 같은 pinned A를 가진 source/peer window
