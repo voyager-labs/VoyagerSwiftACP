@@ -913,6 +913,60 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         }
     }
 
+    /// CTM-003-pin_content_tab_s: v1 첫 lifecycle mutation은 발견된 Location identity를 보존한다.
+    /// lazy migration이 실제 window discovery를 사용해 mixed order를 완전한 schema v2로 기록하는지 검증한다.
+    /// - 검증 내용: 첫 pin 뒤 저장된 order의 non-empty Location ID와 신규 Content Tab
+    /// - 사전 조건: Location L1이 발견된 window, v1 records A, unpinned B
+    /// - 기대 결과: 저장된 schema v2 order가 `[L1,A,B]`를 유지함
+    func testLifecycle_firstV1PinMutationRetainsDiscoveredLocationIDs() async throws {
+        let existingTabID = ContentTabID(rawValue: "legacy-A")
+        let newTabID = ContentTabID(rawValue: "new-B")
+        let sourceData = try JSONEncoder().encode(ContentTabPinnedRecordStoreV1Fixture(records: [
+            Self.pinnedRecord(id: existingTabID, anchor: .directory(path: "/A")),
+        ]))
+        let defaultsRecorder = PinnedRecordDefaultsRecorder(data: sourceData)
+        let fixedLocation = FileManagerFixedLocationItem(
+            id: "L1",
+            title: "Location",
+            path: "/Users/test/Location",
+            iconName: "folder",
+            accessibilityLabel: "Location",
+        )
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: newTabID,
+                    page: .directory,
+                    anchor: .directory(path: "/B"),
+                    isPinned: false,
+                    title: "B",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: newTabID,
+        )
+        state.applyFixedLocationItems([fixedLocation])
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient = .liveValue
+            $0.userDefaultsClient = defaultsRecorder.client()
+            $0.date = .constant(Self.pinnedAt)
+        }
+        // store.exhaustivity = .off: lifecycle terminal 내부 action보다 migration 결과를 집중 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.contentTabs(.pin(newTabID)))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        let stored = try ContentTabPinnedRecordClient.liveValue.loadStore(defaultsRecorder.client())
+        XCTAssertEqual(stored.topNavigationOrder.items, [
+            .location(fixedLocation.id),
+            .contentTab(existingTabID),
+            .contentTab(newTabID),
+        ])
+    }
+
     private func topNavigationToken(_ value: UInt8) -> FileManagerTopNavigationOperationToken {
         FileManagerTopNavigationOperationToken(value: UUID(uuid: (
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, value,

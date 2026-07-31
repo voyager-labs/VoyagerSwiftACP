@@ -22,9 +22,19 @@ public enum ContentTabPinnedRecordSaveNonAppliedReason: Equatable, Sendable {
 }
 
 public struct ContentTabPinnedRecordRollbackSnapshot: Equatable, Sendable {
-    let previousIsPinned: Bool
-    let previousPinnedRecord: ContentTabPinnedRecord?
-    let previousTabIndex: Int?
+    public let previousIsPinned: Bool
+    public let previousPinnedRecord: ContentTabPinnedRecord?
+    public let previousTabIndex: Int?
+
+    public init(
+        previousIsPinned: Bool,
+        previousPinnedRecord: ContentTabPinnedRecord?,
+        previousTabIndex: Int?,
+    ) {
+        self.previousIsPinned = previousIsPinned
+        self.previousPinnedRecord = previousPinnedRecord
+        self.previousTabIndex = previousTabIndex
+    }
 }
 
 public struct ContentTabPinnedRecordTerminalContext: Equatable, Sendable {
@@ -40,8 +50,54 @@ public struct ContentTabPinnedRecordTerminalContext: Equatable, Sendable {
     }
 }
 
+public enum ContentTabPinnedRecordPersistenceMutation: Equatable, Sendable {
+    case upsert(
+        record: ContentTabPinnedRecord,
+        dormantSlot: FileManagerTopNavigationOrderPolicy.DormantContentTabSlot?,
+    )
+    case remove(recordID: String)
+}
+
+public struct ContentTabPinnedRecordPersistenceRequest: Equatable, Sendable {
+    public let tabID: ContentTabID
+    public let context: ContentTabPinnedRecordTerminalContext
+    public let rollback: ContentTabPinnedRecordRollbackSnapshot
+    public let mutation: ContentTabPinnedRecordPersistenceMutation
+
+    public init(
+        tabID: ContentTabID,
+        context: ContentTabPinnedRecordTerminalContext,
+        rollback: ContentTabPinnedRecordRollbackSnapshot,
+        mutation: ContentTabPinnedRecordPersistenceMutation,
+    ) {
+        self.tabID = tabID
+        self.context = context
+        self.rollback = rollback
+        self.mutation = mutation
+    }
+}
+
+public enum ContentTabPinnedRecordPersistenceRouting: Equatable, Sendable {
+    case local(discoveredLocationIDs: [String])
+    case delegate
+}
+
+extension ContentTabPinnedRecordPersistenceRouting: DependencyKey {
+    public static let liveValue: Self = .local(discoveredLocationIDs: [])
+    public static let testValue: Self = .local(discoveredLocationIDs: [])
+    public static let previewValue: Self = .local(discoveredLocationIDs: [])
+}
+
+public extension DependencyValues {
+    var contentTabPinnedRecordPersistenceRouting: ContentTabPinnedRecordPersistenceRouting {
+        get { self[ContentTabPinnedRecordPersistenceRouting.self] }
+        set { self[ContentTabPinnedRecordPersistenceRouting.self] = newValue }
+    }
+}
+
 @CasePathable
 public enum ContentTabAction: Sendable {
+    case delegate(Delegate)
     case open(ContentTabPageAnchor)
     case setCurrent(ContentTabID)
 
@@ -94,4 +150,9 @@ public enum ContentTabAction: Sendable {
         reason: ContentTabPinnedRecordSaveNonAppliedReason,
         rollback: ContentTabPinnedRecordRollbackSnapshot,
     )
+
+    @CasePathable
+    public enum Delegate: Sendable {
+        case persistPinnedRecord(ContentTabPinnedRecordPersistenceRequest)
+    }
 }
