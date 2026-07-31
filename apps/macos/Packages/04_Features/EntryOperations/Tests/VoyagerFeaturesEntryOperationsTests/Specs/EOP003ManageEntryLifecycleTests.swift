@@ -647,6 +647,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await store.receive(\.loading.streamFinished, 1) {
             $0.loadingContext.streamTerminal = true
         }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
     }
 
     /// EOP-003-load_entry_items: stale 또는 잘못된 root stream event는 현재 항목을 변경하지 않는다.
@@ -684,6 +685,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await store.send(.loading(.streamFinished(generation: 3))) {
             $0.loadingContext.streamTerminal = true
         }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
         await store.send(.loading(.streamEvent(.init(
             generation: 3,
             event: .coreBatch(items: [entry], batchIndex: 1),
@@ -740,6 +742,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await store.send(.loading(.streamFinished(generation: 4))) {
             $0.loadingContext.streamTerminal = true
         }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
     }
 
     /// EOP-003-load_entry_items: 첫 batch 뒤 stream failure는 부분 rows를 유지한다.
@@ -990,24 +993,37 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 extension EOP003ManageEntryLifecycleTests {
     // MARK: - EOP-003-load_entry_items
 
-    /// EOP-003-load_entry_items: 모든 loaded list는 Trash metadata projection을 새로 읽는다.
-    /// - 검증 내용: itemsLoaded 후 저장된 trash path가 restorableTrashPaths로 투영된다.
-    /// - 사전 조건: metadata store에 하나의 Trash record가 있고 loaded item 목록은 비어 있다.
-    /// - 기대 결과: lifecycle load completion이 해당 Trash path만 state에 저장한다.
-    func testItemsLoadedRefreshesRestorableTrashPaths() async {
+    /// EOP-003-load_entry_items: 단계적 root stream 완료는 Trash metadata projection을 새로 읽는다.
+    /// - 검증 내용: streamFinished 후 저장된 trash path가 restorableTrashPaths로 투영된다.
+    /// - 사전 조건: metadata store에 하나의 Trash record가 있고 root stream의 core batch는 비어 있다.
+    /// - 기대 결과: streamed load completion이 해당 Trash path만 state에 저장한다.
+    func testStreamFinishedRefreshesRestorableTrashPaths() async {
         let trashPath = "/tmp/.Trash/entry.txt"
-        let store = EntryOperationsTestSupport.makeStore(initialState: .init())
+        var initialState = EntryOperationsState()
+        initialState.loadingContext.generation = 1
+        initialState.loadingContext.sourceKind = .directory
+        initialState.isLoading = true
+        let store = EntryOperationsTestSupport.makeStore(initialState: initialState)
         await store.dependencies.trashMetadataStoreClient.save(TrashMetadata(
             trashPath: trashPath,
             originalPath: "/tmp/entry.txt",
             deletedDate: .distantPast,
         ))
-        // RED: itemsLoaded never refreshed the menu eligibility projection.
-        await store.send(.loading(.itemsLoaded([])))
+        await store.send(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreFinished(batchCount: 0),
+        )))) {
+            $0.loadingContext.coreFinished = true
+            $0.isLoading = false
+            $0.isReloading = false
+        }
+        await store.send(.loading(.streamFinished(generation: 1))) {
+            $0.loadingContext.streamTerminal = true
+        }
         await store.receive(\.lifecycle.restorableTrashPathsLoaded) {
             $0.restorableTrashPaths = [trashPath]
         }
-        // GREEN: every successful list load refreshes the restorable Trash-path projection.
+
         XCTAssertEqual(store.state.restorableTrashPaths, [trashPath])
     }
 
@@ -1103,6 +1119,7 @@ private extension EOP003ManageEntryLifecycleTests {
         await store.receive(\.loading.streamFinished, 2) {
             $0.loadingContext.streamTerminal = true
         }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
     }
 }
 

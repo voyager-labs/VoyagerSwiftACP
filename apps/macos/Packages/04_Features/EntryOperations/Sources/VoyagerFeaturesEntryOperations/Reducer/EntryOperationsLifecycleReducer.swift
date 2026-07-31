@@ -29,10 +29,15 @@ struct EntryOperationsLifecycleReducer {
                 return .none
 
             case .loading(.itemsLoaded):
-                return .run { [trashMetadataStoreClient] send in
-                    let paths = await Set(trashMetadataStoreClient.load().map(\.trashPath))
-                    await send(.lifecycle(.restorableTrashPathsLoaded(paths)))
+                return refreshRestorableTrashPaths()
+
+            case let .loading(.streamFinished(generation)):
+                guard generation == state.loadingContext.generation,
+                      state.loadingContext.streamTerminal
+                else {
+                    return .none
                 }
+                return refreshRestorableTrashPaths()
 
             case let .lifecycle(.restorableTrashPathsLoaded(paths)):
                 state.restorableTrashPaths = paths
@@ -135,6 +140,13 @@ struct EntryOperationsLifecycleReducer {
             default:
                 return .none
             }
+        }
+    }
+
+    private func refreshRestorableTrashPaths() -> Effect<Action> {
+        .run { [trashMetadataStoreClient] send in
+            let paths = await Set(trashMetadataStoreClient.load().map(\.trashPath))
+            await send(.lifecycle(.restorableTrashPathsLoaded(paths)))
         }
     }
 }
