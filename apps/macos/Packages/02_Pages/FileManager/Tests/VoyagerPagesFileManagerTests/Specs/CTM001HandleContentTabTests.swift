@@ -1753,14 +1753,38 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let duplicateA = ContentTabID(rawValue: "copy-a")
         var state = ContentTabState(
             tabs: [
-                ContentTabItem(id: pinnedA, page: .home, anchor: .homeDefault, isPinned: true,
-                               title: "Pinned A", iconName: "a"),
-                ContentTabItem(id: pinnedB, page: .directory, anchor: .directory(path: "/b"), isPinned: true,
-                               title: "Pinned B", iconName: "b"),
-                ContentTabItem(id: unpinnedA, page: .home, anchor: .homeDefault, isPinned: false,
-                               title: "A", iconName: "a"),
-                ContentTabItem(id: unpinnedB, page: .home, anchor: .homeDefault, isPinned: false,
-                               title: "B", iconName: "b"),
+                ContentTabItem(
+                    id: pinnedA,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: true,
+                    title: "Pinned A",
+                    iconName: "a",
+                ),
+                ContentTabItem(
+                    id: pinnedB,
+                    page: .directory,
+                    anchor: .directory(path: "/b"),
+                    isPinned: true,
+                    title: "Pinned B",
+                    iconName: "b",
+                ),
+                ContentTabItem(
+                    id: unpinnedA,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "A",
+                    iconName: "a",
+                ),
+                ContentTabItem(
+                    id: unpinnedB,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "B",
+                    iconName: "b",
+                ),
             ],
             activeTabID: unpinnedB,
         )
@@ -1797,14 +1821,38 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let ignored = ContentTabID(rawValue: "ignored")
         var state = ContentTabState(
             tabs: [
-                ContentTabItem(id: validA, page: .home, anchor: .homeDefault, isPinned: false,
-                               title: "A", iconName: "a"),
-                ContentTabItem(id: incompatible, page: .home, anchor: .directory(path: "/wrong"), isPinned: false,
-                               title: "Wrong", iconName: "wrong"),
-                ContentTabItem(id: validB, page: .directory, anchor: .directory(path: "/b"), isPinned: false,
-                               title: "B", iconName: "b"),
-                ContentTabItem(id: existing, page: .home, anchor: .homeDefault, isPinned: false,
-                               title: "Existing", iconName: "existing"),
+                ContentTabItem(
+                    id: validA,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "A",
+                    iconName: "a",
+                ),
+                ContentTabItem(
+                    id: incompatible,
+                    page: .home,
+                    anchor: .directory(path: "/wrong"),
+                    isPinned: false,
+                    title: "Wrong",
+                    iconName: "wrong",
+                ),
+                ContentTabItem(
+                    id: validB,
+                    page: .directory,
+                    anchor: .directory(path: "/b"),
+                    isPinned: false,
+                    title: "B",
+                    iconName: "b",
+                ),
+                ContentTabItem(
+                    id: existing,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Existing",
+                    iconName: "existing",
+                ),
             ],
             activeTabID: existing,
         )
@@ -1841,12 +1889,30 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let duplicateB = ContentTabID(rawValue: "duplicate-b")
         let duplicateC = ContentTabID(rawValue: "duplicate-c")
         var tabs: IdentifiedArrayOf<ContentTabItem> = [
-            ContentTabItem(id: sourceA, page: .home, anchor: .homeDefault, isPinned: false,
-                           title: "A", iconName: "a"),
-            ContentTabItem(id: sourceB, page: .directory, anchor: .directory(path: "/b"), isPinned: false,
-                           title: "B", iconName: "b"),
-            ContentTabItem(id: sourceC, page: .collection, anchor: .virtualCollection(id: "Recents"), isPinned: false,
-                           title: "C", iconName: "c"),
+            ContentTabItem(
+                id: sourceA,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "A",
+                iconName: "a",
+            ),
+            ContentTabItem(
+                id: sourceB,
+                page: .directory,
+                anchor: .directory(path: "/b"),
+                isPinned: false,
+                title: "B",
+                iconName: "b",
+            ),
+            ContentTabItem(
+                id: sourceC,
+                page: .collection,
+                anchor: .virtualCollection(id: "Recents"),
+                isPinned: false,
+                title: "C",
+                iconName: "c",
+            ),
         ]
         for index in 0 ..< ContentTabConstants.maxTabs - 5 {
             tabs.append(ContentTabItem(
@@ -1917,14 +1983,38 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let ordering = LockIsolated<[String]>([])
         let alerts = LockIsolated<[(title: String, message: String)]>([])
         var tabs: IdentifiedArrayOf<ContentTabItem> = [
-            ContentTabItem(id: homeID, page: .home, anchor: .homeDefault, isPinned: false,
-                           title: "Home", iconName: "house"),
-            ContentTabItem(id: missingDirectoryID, page: .directory, anchor: .directory(path: "/missing"),
-                           isPinned: true, title: "Missing Directory", iconName: "folder"),
-            ContentTabItem(id: collectionID, page: .collection, anchor: .collectionFile(url: collectionURL),
-                           isPinned: false, title: "Saved Collection", iconName: "rectangle.stack"),
-            ContentTabItem(id: aiID, page: .aiChat, anchor: .aiChat(sessionID: aiSessionID), isPinned: false,
-                           title: "AI Chat", iconName: "sparkles"),
+            ContentTabItem(
+                id: homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            ),
+            ContentTabItem(
+                id: missingDirectoryID,
+                page: .directory,
+                anchor: .directory(path: "/missing"),
+                isPinned: true,
+                title: "Missing Directory",
+                iconName: "folder",
+            ),
+            ContentTabItem(
+                id: collectionID,
+                page: .collection,
+                anchor: .collectionFile(url: collectionURL),
+                isPinned: false,
+                title: "Saved Collection",
+                iconName: "rectangle.stack",
+            ),
+            ContentTabItem(
+                id: aiID,
+                page: .aiChat,
+                anchor: .aiChat(sessionID: aiSessionID),
+                isPinned: false,
+                title: "AI Chat",
+                iconName: "sparkles",
+            ),
         ]
         for index in 0 ..< ContentTabConstants.maxTabs - 6 {
             tabs.append(ContentTabItem(
@@ -2002,12 +2092,30 @@ final class CTM001HandleContentTabTests: XCTestCase {
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
             tabs: [
-                ContentTabItem(id: collisionID, page: .home, anchor: .homeDefault, isPinned: false,
-                               title: "Existing", iconName: "house"),
-                ContentTabItem(id: firstSourceID, page: .home, anchor: .homeDefault, isPinned: false,
-                               title: "First", iconName: "house"),
-                ContentTabItem(id: secondSourceID, page: .home, anchor: .homeDefault, isPinned: false,
-                               title: "Second", iconName: "house"),
+                ContentTabItem(
+                    id: collisionID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Existing",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: firstSourceID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "First",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: secondSourceID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Second",
+                    iconName: "house",
+                ),
             ],
             activeTabID: firstSourceID,
         )
@@ -2050,16 +2158,38 @@ final class CTM001HandleContentTabTests: XCTestCase {
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
             tabs: [
-                ContentTabItem(id: temporaryID, page: .directory, anchor: .directory(path: "/temporary"),
-                               isPinned: false, title: "Temporary Collection", iconName: "folder"),
-                ContentTabItem(id: missingCollectionID, page: .collection,
-                               anchor: .collectionFile(url: missingCollectionURL), isPinned: false,
-                               title: "Missing Collection", iconName: "rectangle.stack"),
-                ContentTabItem(id: invalidAIID, page: .aiChat, anchor: .aiChat(sessionID: "not-a-uuid"),
-                               isPinned: false, title: "Broken AI Chat", iconName: "sparkles"),
-                ContentTabItem(id: savingCollectionID, page: .collection,
-                               anchor: .collectionFile(url: savingCollectionURL), isPinned: false,
-                               title: "Saving Collection", iconName: "rectangle.stack"),
+                ContentTabItem(
+                    id: temporaryID,
+                    page: .directory,
+                    anchor: .directory(path: "/temporary"),
+                    isPinned: false,
+                    title: "Temporary Collection",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: missingCollectionID,
+                    page: .collection,
+                    anchor: .collectionFile(url: missingCollectionURL),
+                    isPinned: false,
+                    title: "Missing Collection",
+                    iconName: "rectangle.stack",
+                ),
+                ContentTabItem(
+                    id: invalidAIID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: "not-a-uuid"),
+                    isPinned: false,
+                    title: "Broken AI Chat",
+                    iconName: "sparkles",
+                ),
+                ContentTabItem(
+                    id: savingCollectionID,
+                    page: .collection,
+                    anchor: .collectionFile(url: savingCollectionURL),
+                    isPinned: false,
+                    title: "Saving Collection",
+                    iconName: "rectangle.stack",
+                ),
             ],
             activeTabID: temporaryID,
         )
@@ -2116,8 +2246,14 @@ final class CTM001HandleContentTabTests: XCTestCase {
     /// - 기대 결과: 세 command 모두 emitted child action과 aggregate alert 없이 종료됨
     func testDuplicateSelectedCommand_emptyOrPendingLifecycleIsNoOp() async {
         let sourceID = ContentTabID(rawValue: "source")
-        let source = ContentTabItem(id: sourceID, page: .home, anchor: .homeDefault, isPinned: false,
-                                    title: "Home", iconName: "house")
+        let source = ContentTabItem(
+            id: sourceID,
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Home",
+            iconName: "house",
+        )
         let alerts = LockIsolated<[(title: String, message: String)]>([])
 
         var emptyState = FileManagerFeature.State()
@@ -2174,8 +2310,14 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let sourceID = ContentTabID(rawValue: "source")
         let alerts = LockIsolated<[(title: String, message: String)]>([])
         var tabs: IdentifiedArrayOf<ContentTabItem> = [
-            ContentTabItem(id: sourceID, page: .home, anchor: .homeDefault, isPinned: false,
-                           title: "Home", iconName: "house"),
+            ContentTabItem(
+                id: sourceID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            ),
         ]
         for index in 1 ..< ContentTabConstants.maxTabs {
             tabs.append(ContentTabItem(
@@ -3105,6 +3247,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             ),
         ))) {
             $0.contentTabs.pinnedRecordPersistenceError = nil
+            $0.syncActiveTabContentState()
         }
         let failureIntentID = store.state.contentTabs.markLatestPinnedRecordPersistenceIntent(for: fixture.tabD)
         await store.send(.contentTabs(.pinnedRecordSaveFailed(

@@ -344,6 +344,9 @@ public enum ContentTabTransfer {
         target.contentTabs.activeTabID = tabID
         target.contentTabs.previousActiveTabID = previousTargetActiveID
         target.contentTabs.pinnedRecords[tabID] = token.payload.pinnedRecord
+        if let pinnedRecord = token.payload.pinnedRecord {
+            target.pendingRuntimePreservationRecords[tabID] = pinnedRecord
+        }
         target.tabContentStates[tabID] = movedContent
         target.tabInspectorStates[tabID] = token.payload.inspector
         target.content = movedContent
@@ -439,6 +442,8 @@ private extension FileManagerWindowState {
         )
         passiveContent.entryViewLayout.entryOperations.loadingCancellationOwnerID = targetContent
             .entryViewLayout.entryOperations.loadingCancellationOwnerID
+        passiveContent.entryViewLayout.entryOperations.undoOwnerID = targetContent
+            .entryViewLayout.entryOperations.undoOwnerID
         guard targetContent.isPassiveProjection(matching: passiveContent) else { return false }
 
         if supportsInspector(tabID: tabID) {

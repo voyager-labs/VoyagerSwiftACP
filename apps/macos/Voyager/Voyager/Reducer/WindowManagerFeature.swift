@@ -366,7 +366,7 @@ struct WindowManagerFeature {
                 guard ContentTabDragPayload.isSupported(schemaVersion: payload.schemaVersion),
                       payload.sourceWindowID != targetWindowID,
                       isWindowReady(payload.sourceWindowID, state: state),
-                      isWindowReady(targetWindowID, state: state)
+                      state.windows[id: targetWindowID] != nil
                 else { return .none }
                 return .send(.windows(.element(
                     id: payload.sourceWindowID,

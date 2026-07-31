@@ -1,10 +1,13 @@
 import ComposableArchitecture
+import CoreServices
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
@@ -2555,6 +2558,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
         } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
             $0.fileManagerWindowClient.activate = { _ in .discarded }
             $0.fileManagerWindowClient.close = { _ in }
             $0.fileOperationUndoManagerClient.activate = { _ in nil }
@@ -2573,7 +2577,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.finish()
 
-        XCTAssertNil(store.state.windows[id: sourceWindowID])
+        XCTAssertEqual(store.state.windows[id: sourceWindowID]?.window.contentTabs.tabs.count, 0)
         XCTAssertTrue(store.state.closingWindowIDs.contains(sourceWindowID))
         XCTAssertEqual(
             store.state.windows[id: targetWindowID]?.window.contentTabs.tabs.count(where: { $0.id == movedTabID }),
@@ -2641,6 +2645,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [sourceWindowID, targetWindowID] }
             $0.fileManagerWindowClient.activate = { _ in .discarded }
             $0.fileManagerWindowClient.close = { _ in }
             $0.fileOperationUndoManagerClient.activate = { _ in nil }
@@ -2779,6 +2784,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             WindowManagerFeature()
         } withDependencies: {
             $0.uuid = .constant(requestID)
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
             $0.contentTabPinnedRecordClient.loadStore = { _ in pinnedStore }
             $0.fileManagerWindowClient.activate = { _ in .discarded }
             $0.fileOperationUndoManagerClient.activate = { _ in nil }
@@ -3482,12 +3488,15 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let eventContinuations = LockIsolated<[String: [AsyncStream<[FileChangeGatewayEvent]>.Continuation]]>([:])
         let notificationStarts = LockIsolated(0)
         let notificationStops = LockIsolated(0)
+        let observedStreamStarts = LockIsolated(0)
         let initialWatchersRegistered = expectation(description: "initial source and target watchers")
         initialWatchersRegistered.expectedFulfillmentCount = 2
         let initialNotificationsStopped = expectation(description: "initial source and target notifications stopped")
         initialNotificationsStopped.expectedFulfillmentCount = 2
         let reboundWatchersRegistered = expectation(description: "source fallback and target moved watchers")
         reboundWatchersRegistered.expectedFulfillmentCount = 2
+        let reboundStreamsStarted = expectation(description: "source fallback and target moved streams")
+        reboundStreamsStarted.expectedFulfillmentCount = 2
         let sourceEventReceived = expectation(description: "source fallback event")
         let targetEventReceived = expectation(description: "target moved event")
         let activationCalled = expectation(description: "target activation")
@@ -3509,6 +3518,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 }
             }
         } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
             $0.entryLoadingClient.loadItems = { _, _ in [] }
             $0.fileChangeGatewayClient.updateInterests = { interests in
                 pendingInterests.withValue { $0.append(contentsOf: interests) }
@@ -3528,8 +3538,15 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.fileChangeGatewayClient.observeEvents = {
                 let interest = pendingInterests.withValue { $0.removeFirst() }
                 let root = interest.roots[0]
+                let streamStart = observedStreamStarts.withValue { count in
+                    count += 1
+                    return count
+                }
                 return AsyncStream { continuation in
                     eventContinuations.withValue { $0[root, default: []].append(continuation) }
+                    if streamStart > 2 {
+                        reboundStreamsStarted.fulfill()
+                    }
                 }
             }
             $0.notificationCenterClient.notifications = { _, _ in
@@ -3589,7 +3606,12 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.send(.contentTabMoveRequest(request))
         await fulfillment(
-            of: [reboundWatchersRegistered, initialNotificationsStopped, activationCalled],
+            of: [
+                reboundWatchersRegistered,
+                reboundStreamsStarted,
+                initialNotificationsStopped,
+                activationCalled,
+            ],
             timeout: 1,
         )
 
@@ -3604,10 +3626,16 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(notificationStops.value, 2)
 
         eventContinuations.value[fallbackPath]?.last?.yield([
-            FileChangeGatewayEvent(path: "\(fallbackPath)/changed", flags: 0),
+            FileChangeGatewayEvent(
+                path: "\(fallbackPath)/changed",
+                flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified),
+            ),
         ])
         eventContinuations.value[movedPath]?.last?.yield([
-            FileChangeGatewayEvent(path: "\(movedPath)/changed", flags: 0),
+            FileChangeGatewayEvent(
+                path: "\(movedPath)/changed",
+                flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified),
+            ),
         ])
         await fulfillment(of: [sourceEventReceived, targetEventReceived], timeout: 1)
 
@@ -3663,6 +3691,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
         } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
             $0.fileManagerWindowClient.activate = { id in
                 activatedIDs.withValue { $0.append(id) }
                 activationCalled.fulfill()
@@ -3922,7 +3951,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     /// CTM-001-move_content_tab_to_another_window: last-tab commit은 source를 tombstone으로 전환한다.
     /// - 검증 내용: exact close/activate ID, logical commit, focus callback ownership, late close idempotency
     /// - 사전 조건: focused source에 tab 하나, target에 tab 하나가 존재한다.
-    /// - 기대 결과: source는 live registry에서 제거되고 native callback 전 focus는 source ID를 유지한다.
+    /// - 기대 결과: source는 closing tombstone으로 유지되고 native callback 전 focus는 해제된다.
     func testContentTabMoveLastTabUsesExactCloseAndCallbackOwnedFocus() async throws {
         let sourceID = UUID()
         let targetID = UUID()
@@ -3951,6 +3980,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
         } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
             $0.fileManagerWindowClient.activate = { id in
                 activatedIDs.withValue { $0.append(id) }
                 activationCalled.fulfill()
@@ -3973,9 +4003,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.contentTabMoveRequest(request))
         await fulfillment(of: [activationCalled, closeCalled], timeout: 1)
 
-        XCTAssertNil(store.state.windows[id: sourceID])
+        XCTAssertEqual(store.state.windows[id: sourceID]?.window.contentTabs.tabs.count, 0)
         XCTAssertTrue(store.state.closingWindowIDs.contains(sourceID))
-        XCTAssertEqual(store.state.focusedWindowID, sourceID)
+        XCTAssertNil(store.state.focusedWindowID)
         XCTAssertEqual(
             store.state.windows[id: targetID]?.window.contentTabs.tabs.count(where: { $0.id == movedTabID }),
             1,
