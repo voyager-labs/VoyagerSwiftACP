@@ -1,12 +1,14 @@
 package unixsocket
 
 import (
+	"errors"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -151,7 +153,7 @@ func TestConcurrentShutdownRunsCleanupOnce(t *testing.T) {
 	shutdownServer(t, successor, nil)
 }
 
-func TestShutdownLifecycleLockBlocksSuccessorUntilCleanup(t *testing.T) {
+func TestShutdownLifecycleLockBlocksCooperatingSuccessorUntilCleanup(t *testing.T) {
 	path := filepath.Join(secureTempDir(t), "entry.sock")
 	server := startServer(t, path, testDurations())
 	validated := make(chan struct{})
@@ -177,6 +179,9 @@ func TestShutdownLifecycleLockBlocksSuccessorUntilCleanup(t *testing.T) {
 	shutdownErr := <-shutdownDone
 	if successorErr == nil {
 		t.Fatal("successor NewServer() succeeded while predecessor cleanup held the lifecycle lock")
+	}
+	if !errors.Is(successorErr, syscall.EWOULDBLOCK) {
+		t.Fatalf("successor NewServer() error = %v, want lifecycle lock contention", successorErr)
 	}
 	if shutdownErr != nil {
 		t.Fatalf("Shutdown() error = %v", shutdownErr)

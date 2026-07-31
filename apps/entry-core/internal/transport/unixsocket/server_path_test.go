@@ -248,7 +248,7 @@ func TestSocketCreationFailsClosedUnderRestrictiveCallerUmask(t *testing.T) {
 	}
 }
 
-func TestSocketModeAndReplacementSafeCleanup(t *testing.T) {
+func TestShutdownPreservesReplacementPresentBeforeCleanupIdentityCheck(t *testing.T) {
 	root := secureTempDir(t)
 	path := filepath.Join(root, "entry.sock")
 	server := startServer(t, path, testDurations())
@@ -325,7 +325,7 @@ func TestSocketStartupRollback(t *testing.T) {
 		shutdownServer(t, fresh, nil)
 	})
 
-	t.Run("preserves replacement identity and mode without pathname chmod", func(t *testing.T) {
+	t.Run("preserves replacement present before rollback identity check without pathname chmod", func(t *testing.T) {
 		path := filepath.Join(secureTempDir(t), "entry.sock")
 		content := []byte("replacement")
 		var replacement os.FileInfo
@@ -371,7 +371,7 @@ func TestSocketStartupRollback(t *testing.T) {
 		}
 	})
 
-	t.Run("preserves replacement identity", func(t *testing.T) {
+	t.Run("preserves replacement present before rollback identity check", func(t *testing.T) {
 		path := filepath.Join(secureTempDir(t), "entry.sock")
 		var replacement os.FileInfo
 		server, err := newServerWithHooks(

@@ -49,12 +49,13 @@ func defaultServerDurations() serverDurations {
 }
 
 type Server struct {
-	path          string
-	runtime       *entryruntime.Runtime
-	logger        *log.Logger
-	durations     serverDurations
-	listener      *net.UnixListener
-	owned         os.FileInfo
+	path      string
+	runtime   *entryruntime.Runtime
+	logger    *log.Logger
+	durations serverDurations
+	listener  *net.UnixListener
+	owned     os.FileInfo
+	// lifecycleLock은 같은 advisory lock을 따르는 Entry Core 인스턴스의 startup과 cleanup만 직렬화한다.
 	lifecycleLock *os.File
 
 	mu              sync.Mutex
@@ -406,6 +407,8 @@ func (server *Server) shutdown(force <-chan struct{}) error {
 	return errors.Join(waitErr, cleanupErr, lockErr)
 }
 
+// removeIfSame은 호출자가 lifecycle lock을 보유한 상태에서 사용하는 best-effort identity guard다.
+// macOS/POSIX에는 atomic unlink-if-same-inode가 없으므로 같은 advisory lock을 따르는 참여자만 보존을 보장한다.
 func removeIfSame(path string, owned os.FileInfo, beforeRemove func()) error {
 	current, err := os.Lstat(path)
 	if os.IsNotExist(err) {
