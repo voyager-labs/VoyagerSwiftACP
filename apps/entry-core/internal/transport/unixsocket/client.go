@@ -29,6 +29,13 @@ func (transportError *TransportError) Unwrap() error {
 	return transportError.Err
 }
 
+func newTransportError(ctx context.Context, phase string, err error) *TransportError {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		err = ctxErr
+	}
+	return &TransportError{Phase: phase, Err: err}
+}
+
 type ProtocolError struct {
 	Reason string
 	Err    error
@@ -96,32 +103,35 @@ func (client *Client) Call(ctx context.Context, socketPath string, request schem
 		return schema.Response{}, &ProtocolError{Reason: "invalid request"}
 	}
 
-	deadline := client.now().Add(clientTimeout)
-	dialContext, cancel := context.WithDeadline(ctx, deadline)
+	timeoutDeadline := client.now().Add(clientTimeout)
+	dialContext, cancel := context.WithDeadline(ctx, timeoutDeadline)
 	defer cancel()
+	deadline, _ := dialContext.Deadline()
 	connection, err := client.dial(dialContext, "unix", socketPath)
 	if err != nil {
-		return schema.Response{}, &TransportError{Phase: "dial", Err: err}
+		return schema.Response{}, newTransportError(dialContext, "dial", err)
 	}
 	defer connection.Close()
+	stopCancellation := context.AfterFunc(dialContext, func() { _ = connection.Close() })
+	defer stopCancellation()
 
 	if err := connection.SetDeadline(deadline); err != nil {
-		return schema.Response{}, &TransportError{Phase: "deadline", Err: err}
+		return schema.Response{}, newTransportError(dialContext, "deadline", err)
 	}
 	if _, err := io.Copy(connection, bytes.NewReader(wire)); err != nil {
-		return schema.Response{}, &TransportError{Phase: "write", Err: err}
+		return schema.Response{}, newTransportError(dialContext, "write", err)
 	}
 	unixWriter, ok := connection.(interface{ CloseWrite() error })
 	if !ok {
 		return schema.Response{}, &TransportError{Phase: "close write", Err: errors.New("connection does not support Unix half-close")}
 	}
 	if err := unixWriter.CloseWrite(); err != nil {
-		return schema.Response{}, &TransportError{Phase: "close write", Err: err}
+		return schema.Response{}, newTransportError(dialContext, "close write", err)
 	}
 
 	responseWire, err := io.ReadAll(io.LimitReader(connection, schema.MaxWireBytes+1))
 	if err != nil {
-		return schema.Response{}, &TransportError{Phase: "read", Err: err}
+		return schema.Response{}, newTransportError(dialContext, "read", err)
 	}
 	if len(responseWire) > schema.MaxWireBytes {
 		return schema.Response{}, &ProtocolError{Reason: "response exceeds 65,536 bytes"}
@@ -133,7 +143,7 @@ func (client *Client) Call(ctx context.Context, socketPath string, request schem
 	if response.RequestID == "" || response.RequestID != request.RequestID {
 		return schema.Response{}, &ProtocolError{Reason: "response request ID mismatch"}
 	}
-	if ctxErr := ctx.Err(); ctxErr != nil {
+	if ctxErr := dialContext.Err(); ctxErr != nil {
 		return schema.Response{}, &TransportError{Phase: "validation", Err: ctxErr}
 	}
 	if !client.now().Before(deadline) {

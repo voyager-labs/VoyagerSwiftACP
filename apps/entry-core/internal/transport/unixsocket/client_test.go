@@ -107,6 +107,35 @@ func TestClientAbsoluteDeadline(t *testing.T) {
 	}
 }
 
+func TestClientUsesEarlierContextDeadlineForConnection(t *testing.T) {
+	start := time.Now()
+	contextDeadline := start.Add(time.Second)
+	ctx, cancel := context.WithDeadline(context.Background(), contextDeadline)
+	defer cancel()
+
+	connection := newFakeConn(validResponse("request-1", schema.MethodPing))
+	var dialDeadline time.Time
+	client := newClient(func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var ok bool
+		dialDeadline, ok = ctx.Deadline()
+		if !ok {
+			return nil, errors.New("dial context has no deadline")
+		}
+		return connection, nil
+	}, func() time.Time { return start })
+
+	response, err := client.Call(ctx, "/tmp/entry-core-test.sock", validClientRequest(schema.MethodPing))
+	if err != nil || !response.OK {
+		t.Fatalf("Call() = %#v, %v", response, err)
+	}
+	if !dialDeadline.Equal(contextDeadline) {
+		t.Fatalf("dial deadline = %v, want context deadline %v", dialDeadline, contextDeadline)
+	}
+	if deadlines := connection.deadlines(); len(deadlines) != 1 || !deadlines[0].Equal(contextDeadline) {
+		t.Fatalf("connection deadlines = %v, want context deadline %v", deadlines, contextDeadline)
+	}
+}
+
 func TestClientResponseValidation(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -251,6 +280,70 @@ func TestClientTotalTimeout(t *testing.T) {
 		t.Fatal("peer did not accept connection")
 	}
 	close(peerDone)
+}
+
+func TestClientCancellationAfterDialInterruptsRead(t *testing.T) {
+	socketPath, listener := unixListener(t)
+	requestRead := make(chan struct{})
+	releasePeer := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releasePeer) }) }
+	defer release()
+
+	peerDone := make(chan error, 1)
+	go func() {
+		connection, err := listener.AcceptUnix()
+		if err != nil {
+			peerDone <- err
+			return
+		}
+		defer connection.Close()
+		if _, err := io.ReadAll(connection); err != nil {
+			peerDone <- err
+			return
+		}
+		close(requestRead)
+		<-releasePeer
+		peerDone <- nil
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	type callResult struct {
+		response schema.Response
+		err      error
+	}
+	callDone := make(chan callResult, 1)
+	go func() {
+		response, err := NewClient().Call(ctx, socketPath, validClientRequest(schema.MethodPing))
+		callDone <- callResult{response: response, err: err}
+	}()
+
+	<-requestRead
+	started := time.Now()
+	cancel()
+	select {
+	case result := <-callDone:
+		if result.response != (schema.Response{}) || !errors.Is(result.err, context.Canceled) {
+			t.Fatalf("Call() = %#v, %#v, want context cancellation", result.response, result.err)
+		}
+		var transportError *TransportError
+		if !errors.As(result.err, &transportError) || transportError.Phase != "read" {
+			t.Fatalf("Call() error = %#v, want read TransportError", result.err)
+		}
+		if elapsed := time.Since(started); elapsed > 300*time.Millisecond {
+			t.Fatalf("canceled Call() took %v", elapsed)
+		}
+	case <-time.After(300 * time.Millisecond):
+		release()
+		result := <-callDone
+		t.Fatalf("Call() ignored cancellation: response = %#v, error = %#v", result.response, result.err)
+	}
+
+	release()
+	if err := <-peerDone; err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestClientRequiresAbsoluteSocketPath(t *testing.T) {
