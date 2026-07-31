@@ -14,6 +14,8 @@ public struct FileManagerFeature {
     private var fileOperationUndoManagerClient
     @Dependency(\.contentTabPinnedRecordClient)
     private var contentTabPinnedRecordClient
+    @Dependency(\.fileManagerPinnedRecordOwner)
+    private var pinnedRecordPersistenceOwnership
     @Dependency(\.userDefaultsClient)
     private var userDefaultsClient
 
@@ -69,6 +71,15 @@ public struct FileManagerFeature {
                 return requestTopNavigationClose(tabID: tabID, state: &state)
 
             case let .performSelectedContentTabCloseMutation(
+                operationID, _, .delegate(.persistPinnedRecord(request)),
+            ):
+                return forwardPinnedRecordPersistence(
+                    request,
+                    source: .selectedClose(operationID: operationID),
+                    state: &state,
+                )
+
+            case let .performSelectedContentTabCloseMutation(
                 _, tabID, .pinnedRecordSaveSucceeded(_, context),
             ):
                 return completeTopNavigationLifecycleIfNeeded(
@@ -107,6 +118,13 @@ public struct FileManagerFeature {
                 guard state.pendingSelectedContentTabClose == nil else { return .none }
                 return requestTopNavigationClose(tabID: tabID, state: &state)
 
+            case let .contentTabs(.delegate(.persistPinnedRecord(request))):
+                return forwardPinnedRecordPersistence(
+                    request,
+                    source: .contentTab,
+                    state: &state,
+                )
+
             case let .contentTabs(.pin(tabID)):
                 guard state.pendingSelectedContentTabClose == nil else { return .none }
                 return requestTopNavigationPin(tabID: tabID, state: &state)
@@ -116,45 +134,27 @@ public struct FileManagerFeature {
                 prepareTopNavigationUnpin(tabID: tabID, state: &state)
                 return .none
 
+            case let .contentTabs(.updateActivePageAnchor(tabID, anchor)):
+                prepareTopNavigationUpdate(tabID: tabID, anchor: anchor, state: &state)
+                return .none
+
             case let .contentTabs(.commitClose(tabID)):
                 guard state.pendingSelectedContentTabClose == nil else { return .none }
                 state.dormantContentTabSlots.removeAll { $0.id == tabID }
+                state.pendingTopNavigationIntents.removeAll { pending in
+                    switch pending.intent {
+                    case let .pin(id), let .unpin(id), let .close(id), let .update(id):
+                        id == tabID
+                    case .move:
+                        false
+                    }
+                }
                 state.replayTopNavigationOverlays()
                 return .none
 
-            case let .contentTabs(.pinnedRecordSaveSucceeded(tabID, context)):
-                return completeTopNavigationLifecycleIfNeeded(
-                    tabID: tabID,
-                    context: context,
-                    terminal: nil,
-                    state: &state,
-                )
-
-            case let .contentTabs(.pinnedRecordSaveFailed(tabID, context, _)):
-                return completeTopNavigationLifecycleIfNeeded(
-                    tabID: tabID,
-                    context: context,
-                    terminal: .failed(.save),
-                    state: &state,
-                )
-
-            case let .contentTabs(.pinnedRecordStoreUnavailable(tabID, context, failure, _)):
-                return completeTopNavigationLifecycleIfNeeded(
-                    tabID: tabID,
-                    context: context,
-                    terminal: .failed(.storeUnavailable(failure)),
-                    state: &state,
-                )
-
-            case let .contentTabs(.pinnedRecordSaveNotApplied(tabID, context, reason, _)):
-                let failure: FileManagerTopNavigationIntentFailure = switch reason {
-                case .superseded: .superseded
-                case .cancelled: .cancelled
-                }
-                return completeTopNavigationLifecycleIfNeeded(
-                    tabID: tabID,
-                    context: context,
-                    terminal: .failed(failure),
+            case let .contentTabs(contentTabAction) where contentTabAction.isPinnedRecordPersistenceTerminal:
+                return completeContentTabPinnedRecordPersistence(
+                    action: contentTabAction,
                     state: &state,
                 )
 
@@ -168,6 +168,15 @@ public struct FileManagerFeature {
             case let .internal(.topNavigationIntentCompleted(token, terminal)):
                 return completeTopNavigationIntent(token: token, terminal: terminal, state: &state)
 
+            case let .internal(.pinnedRecordPersistenceCompleted(token, source, request, terminal)):
+                return completePinnedRecordPersistence(
+                    token: token,
+                    source: source,
+                    request: request,
+                    terminal: terminal,
+                    state: &state,
+                )
+
             case let .applyBootstrap(bootstrap):
                 state.applyBootstrap(bootstrap)
                 return .none
@@ -177,6 +186,20 @@ public struct FileManagerFeature {
                    state.lastConfirmedTopNavigationCommitRevision.map({ revision < $0 }) == true
                 {
                     return .none
+                }
+                state.lastConfirmedTopNavigationOrder = order
+                state.lastConfirmedTopNavigationCommitRevision = revision
+                state.topNavigationArrangementAvailability = .available
+                state.topNavigationArrangementPresentation = nil
+                state.replayTopNavigationOverlays()
+                return .none
+
+            case let .applyCommittedTopNavigationSnapshot(order, revision, pinnedContentTabs):
+                guard state.lastConfirmedTopNavigationCommitRevision.map({ revision >= $0 }) != false else {
+                    return .none
+                }
+                if let pinnedContentTabs {
+                    state.applyPinnedContentTabs(pinnedContentTabs, mode: .authoritative)
                 }
                 state.lastConfirmedTopNavigationOrder = order
                 state.lastConfirmedTopNavigationCommitRevision = revision
@@ -292,10 +315,16 @@ public struct FileManagerFeature {
                       !contentTabAction.isStalePinnedRecordPersistenceResult(in: state.contentTabs),
                       contentTabAction.isCorrelatedSelectedContentTabCloseMutation(for: tabID)
                 else { return .none }
-                let childEffect = ContentTabFeature().reduce(
-                    into: &state.contentTabs,
-                    action: contentTabAction,
-                )
+                let childEffect = withDependencies {
+                    $0.contentTabPinnedRecordPersistenceRouting = pinnedRecordPersistenceRouting(
+                        state: state,
+                    )
+                } operation: {
+                    ContentTabFeature().reduce(
+                        into: &state.contentTabs,
+                        action: contentTabAction,
+                    )
+                }
                 return childEffect.map {
                     .performSelectedContentTabCloseMutation(
                         operationID: operationID,
@@ -375,6 +404,18 @@ extension FileManagerFeature {
         return .none
     }
 
+    private func prepareTopNavigationUpdate(
+        tabID: ContentTabID,
+        anchor: ContentTabPageAnchor,
+        state: inout State,
+    ) {
+        guard state.contentTabs.tabs[id: tabID]?.isPinned == true,
+              anchor.supportsPinnedRecordPersistence
+        else { return }
+        let token = contentTabPinnedRecordClient.reserveTopNavigationOperationToken()
+        state.pendingTopNavigationIntents.append(.init(token: token, intent: .update(tabID)))
+    }
+
     private func completeTopNavigationLifecycleIfNeeded(
         tabID: ContentTabID,
         context: ContentTabPinnedRecordTerminalContext,
@@ -387,7 +428,7 @@ extension FileManagerFeature {
         ) else { return .none }
         guard let pending = state.pendingTopNavigationIntents.last(where: { candidate in
             switch candidate.intent {
-            case let .pin(id), let .unpin(id), let .close(id): id == tabID
+            case let .pin(id), let .unpin(id), let .close(id), let .update(id): id == tabID
             case .move: false
             }
         }) else {
@@ -416,6 +457,19 @@ extension FileManagerFeature {
             tabID: tabID,
             context: context,
             state: state,
+        )
+    }
+
+    private func completeContentTabPinnedRecordPersistence(
+        action: ContentTabAction,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let result = action.pinnedRecordPersistenceResult else { return .none }
+        return completeTopNavigationLifecycleIfNeeded(
+            tabID: result.tabID,
+            context: result.context,
+            terminal: result.terminal,
+            state: &state,
         )
     }
 
@@ -470,6 +524,135 @@ extension FileManagerFeature {
         return .send(.contentTabs(.commitClose(tabID)))
     }
 
+    private func forwardPinnedRecordPersistence(
+        _ request: ContentTabPinnedRecordPersistenceRequest,
+        source: FileManagerPinnedRecordPersistenceSource,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let index = state.pendingTopNavigationIntents.lastIndex(where: { pending in
+            guard pending.persistenceContext == nil else { return false }
+            switch pending.intent {
+            case let .pin(tabID), let .unpin(tabID), let .close(tabID), let .update(tabID):
+                return tabID == request.tabID
+            case .move:
+                return false
+            }
+        }) else { return .none }
+
+        state.pendingTopNavigationIntents[index].persistenceContext = request.context
+        return .send(.delegate(.persistPinnedRecordMutation(
+            token: state.pendingTopNavigationIntents[index].token,
+            source: source,
+            request: request,
+            discoveredLocationIDs: state.sidebar.allFixedLocationItems.map(\.id),
+        )))
+    }
+
+    private func completePinnedRecordPersistence(
+        token: FileManagerTopNavigationOperationToken,
+        source: FileManagerPinnedRecordPersistenceSource,
+        request: ContentTabPinnedRecordPersistenceRequest,
+        terminal: FileManagerTopNavigationIntentTerminal,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let pending = state.pendingTopNavigationIntents.first(where: { $0.token == token }) else {
+            return .none
+        }
+        let isCurrentIntent = state.contentTabs.isCurrentPinnedRecordPersistenceIntent(
+            tabID: request.tabID,
+            intentID: request.context.intentID,
+        )
+        _ = completeTopNavigationIntent(
+            token: token,
+            terminal: terminal,
+            state: &state,
+            isCurrentTerminal: isCurrentIntent,
+        )
+
+        guard isCurrentIntent,
+              state.contentTabs.tabs[id: request.tabID] != nil,
+              isLivePersistenceSource(source, request: request, state: state)
+        else { return .none }
+
+        let childAction = pinnedRecordTerminalAction(request: request, terminal: terminal)
+        let childEffect: Effect<Action> = switch source {
+        case .contentTab:
+            reduceContentTabAction(childAction, state: &state)
+        case let .selectedClose(operationID):
+            ContentTabFeature()
+                .reduce(into: &state.contentTabs, action: childAction)
+                .map {
+                    .performSelectedContentTabCloseMutation(
+                        operationID: operationID,
+                        tabID: request.tabID,
+                        action: $0,
+                    )
+                }
+        }
+        state.replayTopNavigationOverlays()
+        let closeEffect = closeTopNavigationLifecycleEffect(
+            intent: pending.intent,
+            terminal: terminal,
+            tabID: request.tabID,
+            context: request.context,
+            state: state,
+        )
+        return .concatenate(childEffect, closeEffect)
+    }
+
+    private func isLivePersistenceSource(
+        _ source: FileManagerPinnedRecordPersistenceSource,
+        request: ContentTabPinnedRecordPersistenceRequest,
+        state: State,
+    ) -> Bool {
+        switch source {
+        case .contentTab:
+            true
+        case let .selectedClose(operationID):
+            state.isCurrentSelectedContentTabClose(
+                operationID: operationID,
+                tabID: request.tabID,
+            )
+        }
+    }
+
+    private func pinnedRecordTerminalAction(
+        request: ContentTabPinnedRecordPersistenceRequest,
+        terminal: FileManagerTopNavigationIntentTerminal,
+    ) -> ContentTabAction {
+        switch terminal {
+        case .committed:
+            .pinnedRecordSaveSucceeded(tabID: request.tabID, context: request.context)
+        case .failed(.save):
+            .pinnedRecordSaveFailed(
+                tabID: request.tabID,
+                context: request.context,
+                rollback: request.rollback,
+            )
+        case let .failed(.storeUnavailable(failure)):
+            .pinnedRecordStoreUnavailable(
+                tabID: request.tabID,
+                context: request.context,
+                failure: failure,
+                rollback: request.rollback,
+            )
+        case .failed(.superseded):
+            .pinnedRecordSaveNotApplied(
+                tabID: request.tabID,
+                context: request.context,
+                reason: .superseded,
+                rollback: request.rollback,
+            )
+        case .failed(.cancelled):
+            .pinnedRecordSaveNotApplied(
+                tabID: request.tabID,
+                context: request.context,
+                reason: .cancelled,
+                rollback: request.rollback,
+            )
+        }
+    }
+
     private func requestTopNavigationMove(
         source: FileManagerTopNavigationItemID,
         destination: FileManagerTopNavigationMoveDestination,
@@ -502,10 +685,11 @@ extension FileManagerFeature {
         token: FileManagerTopNavigationOperationToken,
         terminal: FileManagerTopNavigationIntentTerminal,
         state: inout State,
+        isCurrentTerminal: Bool? = nil,
     ) -> Effect<Action> {
         let hadPendingIntent = state.pendingTopNavigationIntents.contains { $0.token == token }
         let isRelevantCurrentTerminal = hadPendingIntent
-            && contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken(token)
+            && (isCurrentTerminal ?? contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken(token))
         switch terminal {
         case let .committed(commit):
             if state.lastConfirmedTopNavigationCommitRevision.map({ commit.revision >= $0 }) != false {
@@ -616,12 +800,38 @@ extension FileManagerFeature {
         default:
             .none
         }
-        let childEffect = ContentTabFeature().reduce(
-            into: &state.contentTabs,
-            action: reducedAction,
-        )
+        let childEffect = withDependencies {
+            $0.contentTabPinnedRecordPersistenceRouting = pinnedRecordPersistenceRouting(state: state)
+        } operation: {
+            ContentTabFeature().reduce(
+                into: &state.contentTabs,
+                action: reducedAction,
+            )
+        }
         .map { Action.contentTabs($0) }
         return .merge(preReductionEffect, childEffect)
+    }
+
+    private func pinnedRecordPersistenceRouting(
+        state: State,
+    ) -> ContentTabPinnedRecordPersistenceRouting {
+        switch pinnedRecordPersistenceOwnership {
+        case .local:
+            .local(discoveredLocationIDs: state.sidebar.allFixedLocationItems.map(\.id))
+        case .windowManager:
+            .delegate
+        }
+    }
+}
+
+private extension ContentTabPageAnchor {
+    var supportsPinnedRecordPersistence: Bool {
+        switch self {
+        case .homeDefault, .directory, .collectionFile:
+            true
+        case .virtualCollection, .aiChat:
+            false
+        }
     }
 }
 
@@ -645,9 +855,37 @@ private extension FileManagerContentAction {
 }
 
 extension ContentTabAction {
+    var isPinnedRecordPersistenceTerminal: Bool {
+        pinnedRecordPersistenceResult != nil
+    }
+
+    fileprivate var pinnedRecordPersistenceResult: ContentTabPinnedRecordPersistenceResult? {
+        switch self {
+        case let .pinnedRecordSaveSucceeded(tabID, context):
+            .init(tabID: tabID, context: context, terminal: nil)
+        case let .pinnedRecordSaveFailed(tabID, context, _):
+            .init(tabID: tabID, context: context, terminal: .failed(.save))
+        case let .pinnedRecordStoreUnavailable(tabID, context, failure, _):
+            .init(
+                tabID: tabID,
+                context: context,
+                terminal: .failed(.storeUnavailable(failure)),
+            )
+        case let .pinnedRecordSaveNotApplied(tabID, context, reason, _):
+            .init(
+                tabID: tabID,
+                context: context,
+                terminal: .failed(reason == .superseded ? .superseded : .cancelled),
+            )
+        default:
+            nil
+        }
+    }
+
     var isSelectionAllowedDuringBatchClose: Bool {
         switch self {
-        case .toggleSelection,
+        case .delegate,
+             .toggleSelection,
              .selectRange,
              .collapseSelectionToActive,
              .pinnedRecordSaveSucceeded,
@@ -674,6 +912,8 @@ extension ContentTabAction {
 
     func isCorrelatedSelectedContentTabCloseMutation(for tabID: ContentTabID) -> Bool {
         switch self {
+        case let .delegate(.persistPinnedRecord(request)):
+            request.tabID == tabID
         case let .setCurrent(id),
              let .requestClose(id),
              let .close(id),
@@ -696,6 +936,12 @@ extension ContentTabAction {
             false
         }
     }
+}
+
+private struct ContentTabPinnedRecordPersistenceResult {
+    let tabID: ContentTabID
+    let context: ContentTabPinnedRecordTerminalContext
+    let terminal: FileManagerTopNavigationIntentTerminal?
 }
 
 private extension FileManagerWindowState {
