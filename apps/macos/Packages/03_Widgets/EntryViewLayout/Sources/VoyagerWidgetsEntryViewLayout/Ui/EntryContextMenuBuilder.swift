@@ -1,7 +1,6 @@
 @preconcurrency import AppKit
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
-import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 enum EntryContextMenuBuilder {
@@ -219,7 +218,7 @@ enum EntryContextMenuBuilder {
                     tags: configuration.paletteTags,
                     isEnabled: configuration.canPerformEntryCommands,
                     onSelect: { tag in
-                        let mode: TagMutationRequest.Mode = tag.selection == .on ? .remove : .add
+                        let mode: TagMutationMode = tag.selection == .on ? .remove : .add
                         configuration.target.performTagMutation(name: tag.name, mode: mode)
                     },
                 )

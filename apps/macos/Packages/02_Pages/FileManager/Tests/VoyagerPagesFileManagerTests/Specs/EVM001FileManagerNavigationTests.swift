@@ -672,8 +672,6 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.receive(\.entryOperations.loading.cancelAndClearItems)
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
         await store.receive(\.entryViewLayout.internal.applyClearSelection)
-        await store.receive(\.entryOperations.loading.itemsLoaded)
-        // Projection bridge가 itemsLoaded를 감지하고 ContentProjection을 전송
         await store.receive { action in
             guard case .entryViewLayout(.view(.applyContentProjection)) = action else { return false }
             return true
@@ -683,7 +681,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.send(.entryOperations(.loading(.streamEvent(.init(
             generation: 1,
             event: .coreBatch(items: [staleEntry], batchIndex: 0),
-        ))))
+        )))))
 
         XCTAssertEqual(store.state.entryViewLayout.currentPath, "Home")
         XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
@@ -733,8 +731,6 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.receive(\.entryOperations.loading.cancelAndClearItems)
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
         await store.receive(\.entryViewLayout.internal.applyClearSelection)
-        await store.receive(\.entryOperations.loading.itemsLoaded)
-        // Projection bridge가 itemsLoaded를 감지하고 ContentProjection을 전송
         await store.receive { action in
             guard case .entryViewLayout(.view(.applyContentProjection)) = action else { return false }
             return true
@@ -926,7 +922,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.receive { action in
             guard case .forwarded(.entryOperations(.loading(.loadRecentItems(
                 showHidden: false,
-                priority: .none,
+                priority: .active([]),
             )))) =
                 action else { return false }
             return true

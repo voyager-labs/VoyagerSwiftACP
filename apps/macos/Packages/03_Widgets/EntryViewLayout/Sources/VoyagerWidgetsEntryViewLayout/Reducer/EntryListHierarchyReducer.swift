@@ -14,7 +14,9 @@ struct EntryListHierarchyReducer {
 
             switch hierarchyAction {
             case let .rootContextChanged(path):
+                let previousGeneration = state.hierarchy.rootContextGeneration
                 state.hierarchy.replaceRoot(path: path)
+                guard state.hierarchy.rootContextGeneration != previousGeneration else { return .none }
                 return .merge(
                     .send(.internal(.applyClearSelection)),
                     .send(.internal(.reconcileHierarchySelection)),
@@ -50,6 +52,7 @@ struct EntryListHierarchyReducer {
                 return invalidateHierarchy(
                     affectedPaths: [],
                     removedPrefixes: removedPrefixes,
+                    reloadCachedFolders: false,
                     state: &state,
                 )
 
@@ -123,6 +126,7 @@ struct EntryListHierarchyReducer {
                         return invalidateHierarchy(
                             affectedPaths: [],
                             removedPrefixes: Array(staleDescendants),
+                            reloadCachedFolders: false,
                             state: &state,
                         )
                     }
@@ -146,7 +150,11 @@ struct EntryListHierarchyReducer {
         folderState.expectedBatchIndex = 0
         folderState.coreFinished = false
         state.hierarchy.foldersByID[id] = folderState
+        let previousRevision = state.outlineProjectionRevision
         state.reconcileSelectionWithVisibleEntries()
+        if state.outlineProjectionRevision == previousRevision {
+            state.advanceOutlineProjectionRevision()
+        }
 
         return .send(.delegate(.expandRequested(id)))
     }
@@ -184,7 +192,11 @@ struct EntryListHierarchyReducer {
             }
         }
 
-        for id in affectedIDs.subtracting(removedIDs) {
+        let reloadIDs = affectedIDs.subtracting(removedIDs)
+        if !reloadIDs.isEmpty {
+            state.advanceOutlineProjectionRevision()
+        }
+        for id in reloadIDs {
             guard let folder = folder(id: id, in: state) else { continue }
             guard folder.supportsListHierarchyExpansion else { continue }
             if state.hierarchy.expandedFolderIDs.contains(id) {
@@ -216,12 +228,17 @@ struct EntryListHierarchyReducer {
 
         for id in folderIDs {
             var folderState = state.hierarchy.foldersByID[id] ?? .init()
-            folderState.generation &+= 1
+            if !state.hierarchy.expandedFolderIDs.contains(id) {
+                folderState.generation &+= 1
+            }
             folderState.children = []
             folderState.phase = .idle
             folderState.expectedBatchIndex = 0
             folderState.coreFinished = false
             state.hierarchy.foldersByID[id] = folderState
+        }
+        if !folderIDs.isEmpty {
+            state.advanceOutlineProjectionRevision()
         }
 
         let restartEffects: [Effect<Action>] = expandedFolders.map { folder in

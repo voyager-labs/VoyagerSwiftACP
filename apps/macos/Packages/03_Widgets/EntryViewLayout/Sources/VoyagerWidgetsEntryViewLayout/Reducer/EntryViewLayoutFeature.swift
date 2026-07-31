@@ -313,6 +313,8 @@ public struct EntryViewLayoutFeature {
                 state.busyEntryPaths = projection.busyEntryPaths
                 state.restorableTrashPaths = projection.restorableTrashPaths
                 state.trashDirectoryPath = projection.trashDirectoryPath
+                state.collectionWindowID = projection.collectionWindowID
+                state.collectionLoadingCancellationOwnerID = projection.collectionLoadingCancellationOwnerID
                 state.reconcileSelectionWithVisibleEntries()
                 return .none
 
@@ -533,14 +535,14 @@ public struct EntryViewLayoutFeature {
         switch operation {
         case .replace:
             EntryViewLayoutCollectionCancelID.replace(
-                windowID: state.entryOperations.windowID,
-                ownerID: state.entryOperations.loadingCancellationOwnerID,
+                windowID: state.collectionWindowID,
+                ownerID: state.collectionLoadingCancellationOwnerID,
             )
         case let .append(token):
             EntryViewLayoutCollectionCancelID.append(
                 token: token,
-                windowID: state.entryOperations.windowID,
-                ownerID: state.entryOperations.loadingCancellationOwnerID,
+                windowID: state.collectionWindowID,
+                ownerID: state.collectionLoadingCancellationOwnerID,
             )
         }
     }

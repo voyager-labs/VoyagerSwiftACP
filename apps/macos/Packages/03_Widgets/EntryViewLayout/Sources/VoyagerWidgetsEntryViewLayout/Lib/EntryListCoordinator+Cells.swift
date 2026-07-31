@@ -2,36 +2,6 @@
 import VoyagerEntitiesEntry
 
 extension EntryListCoordinator {
-    func makeStatusCell(
-        outlineView: NSOutlineView,
-        tableColumn: NSTableColumn?,
-        title: String,
-        retryFolderID: EntryModel.ID?,
-    ) -> NSView {
-        let resolvedColumn = tableColumn ?? outlineView.outlineTableColumn
-        let columnID = resolvedColumn?.identifier.rawValue ?? EntryListColumn.name.rawValue
-        guard columnID == outlineView.outlineTableColumn?.identifier.rawValue else {
-            let identifier = NSUserInterfaceItemIdentifier("entry-status-empty-cell-\(columnID)")
-            let cell = (outlineView.makeView(withIdentifier: identifier, owner: self) as? EntryListEmptyCellView)
-                ?? EntryListEmptyCellView()
-            cell.identifier = identifier
-            return cell
-        }
-
-        let identifier = NSUserInterfaceItemIdentifier("entry-status-cell")
-        let cell = (outlineView.makeView(withIdentifier: identifier, owner: self) as? EntryListStatusCellView)
-            ?? EntryListStatusCellView()
-        cell.identifier = identifier
-        let onRetry: (() -> Void)? = retryFolderID.map { folderID in
-            { [weak self] in
-                guard let self else { return }
-                sendProjectionIntent(.retry(folderID, revision: state.outlineProjectionRevision))
-            }
-        }
-        cell.configure(title: title, onRetry: onRetry)
-        return cell
-    }
-
     func statusTitle(for failure: EntryListHierarchyFailure) -> String {
         switch failure {
         case .permissionDenied:
@@ -114,14 +84,5 @@ extension EntryListCoordinator {
             sendProjectionIntent(.retry(retryFolderID, revision: state.outlineProjectionRevision))
         }
         return cell
-    }
-
-    func statusTitle(for failure: EntryListHierarchyFailure) -> String {
-        switch failure {
-        case .permissionDenied:
-            "Unable to load folder"
-        case let .unavailable(description):
-            description
-        }
     }
 }

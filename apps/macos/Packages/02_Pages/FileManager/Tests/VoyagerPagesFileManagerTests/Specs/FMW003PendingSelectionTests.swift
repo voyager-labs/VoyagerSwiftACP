@@ -257,16 +257,16 @@ final class FMW003PendingSelectionTests: XCTestCase {
         let entry = Self.makeEntry(fullPath: targetID)
         var state = FileManagerContentState()
         state.pendingSelectEntryID = targetID
-        state.entryViewLayout.entryOperations.loadingContext.generation = 1
-        state.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
+        state.entryOperations.loadingContext.generation = 1
+        state.entryOperations.loadingContext.sourceKind = .directory
 
         let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+        await store.send(.entryOperations(.loading(.streamEvent(.init(
             generation: 1,
             event: .coreBatch(items: [entry], batchIndex: 0),
-        )))))) {
+        ))))) {
             $0.pendingSelectEntryID = nil
             $0.entryViewLayout.selectedIds = Set([targetID])
             $0.entryViewLayout.lastSelectedId = targetID

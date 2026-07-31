@@ -34,20 +34,20 @@ public struct FileManagerContentFeature {
             case let .entryOperations(.lifecycle(.resetForDuplicate(windowID))):
                 state.composer.cancellationOwnerID = windowID
                 return .none
-            case let .entryViewLayout(.entryArrangements(.setSortKey(key))):
-                guard state.entryViewLayout.entryArrangements.sortKey != key else { return .none }
+            case let .entryArrangements(.setSortKey(key)):
+                guard state.entryArrangements.sortKey != key else { return .none }
                 return arrangementMetadataReloadEffect(
                     priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
                         sortKey: key,
-                        groupKey: state.entryViewLayout.entryArrangements.groupKey,
+                        groupKey: state.entryArrangements.groupKey,
                     ),
                     state: state,
                 )
-            case let .entryViewLayout(.entryArrangements(.setGroupKey(key))):
-                guard state.entryViewLayout.entryArrangements.groupKey != key else { return .none }
+            case let .entryArrangements(.setGroupKey(key)):
+                guard state.entryArrangements.groupKey != key else { return .none }
                 return arrangementMetadataReloadEffect(
                     priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
-                        sortKey: state.entryViewLayout.entryArrangements.sortKey,
+                        sortKey: state.entryArrangements.sortKey,
                         groupKey: key,
                     ),
                     state: state,
@@ -127,6 +127,8 @@ public struct FileManagerContentFeature {
                 openWithApplications: state.entryOperations.commonApplicationsForSelectedFiles,
                 restorableTrashPaths: state.entryOperations.restorableTrashPaths,
                 trashDirectoryPath: entryOpenClient.trashDirectoryPath(),
+                collectionWindowID: state.entryOperations.windowID,
+                collectionLoadingCancellationOwnerID: state.entryOperations.loadingCancellationOwnerID,
             )
             return .send(.entryViewLayout(.view(.applyContentProjection(projection))))
         }
@@ -294,7 +296,8 @@ public struct FileManagerContentFeature {
 
     static func shouldProjectContent(_ action: Action) -> Bool {
         switch action {
-        case .entryOperations(.loading(.itemsLoaded)),
+        case .entryOperations(.loading(.cancelAndClearItems)),
+             .entryOperations(.loading(.itemsLoaded)),
              .entryOperations(.loading(.streamEvent)),
              .entryOperations(.loading(.streamFinished)),
              .entryOperations(.lifecycle(.operationFinished)),

@@ -221,7 +221,7 @@ struct FileManagerContentNavigationBridgeReducer {
             sendEntryOperations(.loading(.loadRecentItems(
                 showHidden: state.entryViewLayout.showHiddenFiles,
                 priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
-                    for: state.entryViewLayout.entryArrangements,
+                    for: state.entryArrangements,
                 ),
             ))),
         )
@@ -242,7 +242,7 @@ struct FileManagerContentNavigationBridgeReducer {
                 tagName: tagName,
                 showHidden: state.entryViewLayout.showHiddenFiles,
                 priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
-                    for: state.entryViewLayout.entryArrangements,
+                    for: state.entryArrangements,
                 ),
             ))),
         )

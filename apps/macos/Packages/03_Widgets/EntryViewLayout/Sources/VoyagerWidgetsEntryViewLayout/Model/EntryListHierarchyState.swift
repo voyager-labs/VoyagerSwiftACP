@@ -51,6 +51,11 @@ public struct EntryListHierarchyState: Equatable, Sendable {
     }
 
     public mutating func replaceRoot(path: String) {
+        if !rootPath.isEmpty, !path.isEmpty {
+            let currentPath = URL(fileURLWithPath: rootPath).standardizedFileURL.path
+            let replacementPath = URL(fileURLWithPath: path).standardizedFileURL.path
+            guard currentPath != replacementPath else { return }
+        }
         rootContextGeneration &+= 1
         rootPath = path
         expandedFolderIDs = []

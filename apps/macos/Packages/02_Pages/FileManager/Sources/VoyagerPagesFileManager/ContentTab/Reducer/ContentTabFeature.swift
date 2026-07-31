@@ -4,6 +4,9 @@ import VoyagerEntitiesCollection
 
 @Reducer
 public struct ContentTabFeature {
+    public typealias State = ContentTabState
+    public typealias Action = ContentTabAction
+
     @Dependency(\.entryLoadingClient)
     var entryLoadingClient
     @Dependency(\.fileManagerIconClient)
@@ -14,9 +17,6 @@ public struct ContentTabFeature {
     var userDefaultsClient
     @Dependency(\.date)
     var date
-
-    public typealias State = ContentTabState
-    public typealias Action = ContentTabAction
 
     public init() {}
 
@@ -106,31 +106,7 @@ extension ContentTabFeature {
         }
 
         if state.tabs.count == 1 {
-            if case .aiChat = tab.anchor {
-                let snapshot = ClosedContentTabSnapshot(
-                    page: tab.page,
-                    anchor: tab.anchor,
-                    wasPinned: tab.isPinned,
-                    closedAt: Date(),
-                    title: tab.title,
-                    iconName: tab.iconName,
-                )
-                state.recentlyClosed = snapshot
-            }
-
-            let homeTab = ContentTabItem(
-                id: ContentTabID(),
-                page: .home,
-                anchor: .homeDefault,
-                isPinned: false,
-                title: "Home",
-                iconName: "house",
-            )
-            state.previousActiveTabID = id
-            state.tabs.remove(id: id)
-            state.tabs.append(homeTab)
-            state.activeTabID = homeTab.id
-            return .none
+            return replaceLastTabWithHome(tab: tab, id: id, state: &state)
         }
 
         let snapshot = ClosedContentTabSnapshot(
@@ -144,26 +120,7 @@ extension ContentTabFeature {
         state.recentlyClosed = snapshot
 
         let wasActive = state.activeTabID == id
-        let fallbackTabID: ContentTabID? = {
-            guard let closingIndex = state.tabs.firstIndex(where: { $0.id == id }) else { return nil }
-
-            if let previousID = state.previousActiveTabID,
-               previousID != id,
-               state.tabs[id: previousID] != nil
-            {
-                return previousID
-            }
-
-            if closingIndex + 1 < state.tabs.endIndex {
-                return state.tabs[closingIndex + 1].id
-            }
-
-            if closingIndex > state.tabs.startIndex {
-                return state.tabs[state.tabs.index(before: closingIndex)].id
-            }
-
-            return state.tabs.first?.id
-        }()
+        let fallbackTabID = fallbackTabID(forClosing: id, state: state)
 
         state.tabs.remove(id: id)
 
@@ -175,6 +132,57 @@ extension ContentTabFeature {
         }
 
         return .none
+    }
+
+    private func replaceLastTabWithHome(
+        tab: ContentTabItem,
+        id: ContentTabID,
+        state: inout ContentTabState,
+    ) -> Effect<ContentTabAction> {
+        if case .aiChat = tab.anchor {
+            state.recentlyClosed = ClosedContentTabSnapshot(
+                page: tab.page,
+                anchor: tab.anchor,
+                wasPinned: tab.isPinned,
+                closedAt: Date(),
+                title: tab.title,
+                iconName: tab.iconName,
+            )
+        }
+
+        let homeTab = ContentTabItem(
+            id: ContentTabID(),
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Home",
+            iconName: "house",
+        )
+        state.previousActiveTabID = id
+        state.tabs.remove(id: id)
+        state.tabs.append(homeTab)
+        state.activeTabID = homeTab.id
+        return .none
+    }
+
+    private func fallbackTabID(
+        forClosing id: ContentTabID,
+        state: ContentTabState,
+    ) -> ContentTabID? {
+        guard let closingIndex = state.tabs.firstIndex(where: { $0.id == id }) else { return nil }
+        if let previousID = state.previousActiveTabID,
+           previousID != id,
+           state.tabs[id: previousID] != nil
+        {
+            return previousID
+        }
+        if closingIndex + 1 < state.tabs.endIndex {
+            return state.tabs[closingIndex + 1].id
+        }
+        if closingIndex > state.tabs.startIndex {
+            return state.tabs[state.tabs.index(before: closingIndex)].id
+        }
+        return state.tabs.first?.id
     }
 
     private func restore(state: inout ContentTabState) -> Effect<ContentTabAction> {

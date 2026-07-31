@@ -16,6 +16,8 @@ public struct ContentProjection: Equatable, Sendable {
     public var openWithApplications: [ApplicationInfo]
     public var restorableTrashPaths: Set<String>
     public var trashDirectoryPath: String?
+    public var collectionWindowID: UUID?
+    public var collectionLoadingCancellationOwnerID: UUID
 
     public init(
         entries: [EntryModel],
@@ -31,6 +33,8 @@ public struct ContentProjection: Equatable, Sendable {
         openWithApplications: [ApplicationInfo],
         restorableTrashPaths: Set<String>,
         trashDirectoryPath: String?,
+        collectionWindowID: UUID?,
+        collectionLoadingCancellationOwnerID: UUID,
     ) {
         self.entries = entries
         self.isLoading = isLoading
@@ -45,5 +49,7 @@ public struct ContentProjection: Equatable, Sendable {
         self.openWithApplications = openWithApplications
         self.restorableTrashPaths = restorableTrashPaths
         self.trashDirectoryPath = trashDirectoryPath
+        self.collectionWindowID = collectionWindowID
+        self.collectionLoadingCancellationOwnerID = collectionLoadingCancellationOwnerID
     }
 }

@@ -25,9 +25,9 @@ extension EVM001FileManagerNavigationTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem)))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem"))))
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(_, context)))) = action
+            guard case let .entryOperations(.routing(.executeCommand(_, context))) = action
             else { return false }
             XCTAssertEqual(context.selectedIds, [child.id])
             XCTAssertEqual(context.displayItems.map(\.id), [root.id, child.id])
@@ -85,9 +85,9 @@ extension EVM001FileManagerNavigationTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand(.mutation(.emptyTrash)))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand("mutation.emptyTrash"))))
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(_, context)))) = action
+            guard case let .entryOperations(.routing(.executeCommand(_, context))) = action
             else { return false }
             XCTAssertEqual(context.displayItems.map(\.id), [root.id])
             return true

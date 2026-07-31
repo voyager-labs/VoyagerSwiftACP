@@ -209,9 +209,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         let store = TestStore(initialState: state) { EntryListHierarchyReducer() }
 
         await store.send(.hierarchy(.showHiddenFilesRefreshRequested)) {
-            $0.hierarchy.foldersByID[expanded.id] = .init(phase: .loading, generation: 3)
+            $0.hierarchy.foldersByID[expanded.id] = .init(phase: .loading, generation: 2)
             $0.hierarchy.foldersByID[collapsed.id] = .init(phase: .idle, generation: 5)
-            $0.outlineProjectionRevision = 1
+            $0.outlineProjectionRevision = 2
             $0.lastVisibleSelectableEntryIDs = Set(["/root/collapsed", "/root/expanded"])
         }
         await store.receive(\.delegate.expandRequested)

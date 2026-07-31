@@ -62,6 +62,8 @@ public struct EntryViewLayoutState: Equatable {
 
     /// Items sourced from collection search results.
     public var collectionItems: IdentifiedArrayOf<EntryModel> = []
+    public var collectionWindowID: UUID?
+    public var collectionLoadingCancellationOwnerID = UUID()
 
     /// Indicates a collection file is being opened before snapshot/search results are applied.
     public var isCollectionContentLoading = false

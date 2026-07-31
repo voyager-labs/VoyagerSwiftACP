@@ -1048,13 +1048,13 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     func testCollectionCancellationIDsAreScopedByLoadingOwner() throws {
         let windowID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"))
         var firstState = EntryViewLayoutState()
-        firstState.entryOperations.windowID = windowID
-        firstState.entryOperations.loadingCancellationOwnerID = try XCTUnwrap(
+        firstState.collectionWindowID = windowID
+        firstState.collectionLoadingCancellationOwnerID = try XCTUnwrap(
             UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"),
         )
         var secondState = EntryViewLayoutState()
-        secondState.entryOperations.windowID = windowID
-        secondState.entryOperations.loadingCancellationOwnerID = try XCTUnwrap(
+        secondState.collectionWindowID = windowID
+        secondState.collectionLoadingCancellationOwnerID = try XCTUnwrap(
             UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC"),
         )
 

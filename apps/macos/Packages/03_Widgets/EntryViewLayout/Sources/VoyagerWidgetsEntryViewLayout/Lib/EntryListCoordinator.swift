@@ -173,7 +173,6 @@ public final class EntryListCoordinator: NSObject {
     var hasRestoredScrollPosition = false
     var isUpdatingGroupExpansion = false
     var isApplyingHierarchyExpansion = false
-    let projectionSession = EntryListCoordinatorProjectionSession()
     var lastRenamingItemId: EntryModel.ID?
     var contextMenuAnchor: CGPoint?
     var contextMenuCoordinator: EntryContextMenuCoordinator?
@@ -286,36 +285,6 @@ public final class EntryListCoordinator: NSObject {
         syncListRenamingFromStore()
         CATransaction.commit()
         requestThumbnailsForVisibleRows()
-    }
-
-    func applyStoreProjection(_ projection: EntryListOutlineProjection) {
-        projectionSession.apply(projection) { [weak self] _, items in
-            guard let self else { return }
-            outlineItems = items
-            entryItemById = Dictionary(uniqueKeysWithValues: items.flatMap { $0.flattenEntries() })
-            groupItemByName = [:]
-            tableView.reloadData()
-            applyHierarchyExpansionState()
-            syncListSelectionFromStore()
-            scrollToSelectionIfNeeded()
-            restoreScrollPositionIfNeeded()
-            syncListRenamingFromStore()
-            requestThumbnailsForVisibleRows()
-        }
-    }
-
-    func applyHierarchyExpansionState() {
-        isApplyingHierarchyExpansion = true
-        defer { isApplyingHierarchyExpansion = false }
-
-        for (id, item) in outlineItems.flatMap({ $0.flattenEntries() }) {
-            guard case let .entry(entry) = item.kind, entry.supportsListHierarchyExpansion else { continue }
-            if state.hierarchy.expandedFolderIDs.contains(id) {
-                tableView.expandItem(item)
-            } else {
-                tableView.collapseItem(item)
-            }
-        }
     }
 
     func requestThumbnailsForVisibleRows() {
@@ -550,26 +519,6 @@ public final class EntryListCoordinator: NSObject {
 
     func isCurrentOutlineItem(_ item: OutlineItem) -> Bool {
         outlineItemByID[item.id] === item
-    }
-
-    func sendProjectionIntent(_ intent: EntryListCoordinatorProjectionIntent) {
-        guard !projectionSession.isApplyingStoreProjection else { return }
-        let revision: Int = switch intent {
-        case let .disclosureExpand(_, revision), let .disclosureCollapse(_, revision),
-             let .retry(_, revision), let .selection(_, revision), let .activate(_, revision):
-            revision
-        }
-        guard revision == state.outlineProjectionRevision else { return }
-        switch intent {
-        case let .disclosureExpand(id, _):
-            store.send(.view(.expandFolder(id)))
-        case let .disclosureCollapse(id, _):
-            store.send(.view(.collapseFolder(id)))
-        case let .retry(id, _):
-            store.send(.view(.retryFolder(id)))
-        case .selection, .activate:
-            return
-        }
     }
 
     func applyGroupExpansionState() {

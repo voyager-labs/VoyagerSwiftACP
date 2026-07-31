@@ -11,20 +11,17 @@ extension EVM002ManageEntriesViewPresentationTests {
     func testRootStreamCoreBatchUpdatesRenderedEntriesBeforeTerminal() {
         let entry = makeHierarchyIntegrationEntry(id: "/root/first.txt", name: "first.txt")
         var state = EntryViewLayoutState()
-        state.entryOperations.isLoading = true
-        state.entryOperations.loadingContext.generation = 1
-        state.entryOperations.loadingContext.sourceKind = .directory
 
         _ = EntryViewLayoutFeature().reduce(
             into: &state,
-            action: .entryOperations(.loading(.streamEvent(.init(
-                generation: 1,
-                event: .coreBatch(items: [entry], batchIndex: 0),
-            )))),
+            action: .view(.applyContentProjection(makeHierarchyContentProjection(
+                entries: [entry],
+                isLoading: true,
+            ))),
         )
 
-        XCTAssertEqual(state.entryOperations.items, [entry])
         XCTAssertEqual(state.entries, [entry])
+        XCTAssertTrue(state.isLoading)
     }
 
     /// 첫 root batch 전에 stream이 실패하면 이전 Directory의 표시 행이 남지 않는지 검증한다.
@@ -32,17 +29,17 @@ extension EVM002ManageEntriesViewPresentationTests {
         let staleEntry = makeHierarchyIntegrationEntry(id: "/previous/stale.txt", name: "stale.txt")
         var state = EntryViewLayoutState()
         state.entries = [staleEntry]
-        state.entryOperations.isLoading = true
-        state.entryOperations.loadingContext.generation = 1
-        state.entryOperations.loadingContext.sourceKind = .directory
 
         _ = EntryViewLayoutFeature().reduce(
             into: &state,
-            action: .entryOperations(.loading(.streamFailed(generation: 1))),
+            action: .view(.applyContentProjection(makeHierarchyContentProjection(
+                entries: [],
+                isLoading: false,
+            ))),
         )
 
-        XCTAssertTrue(state.entryOperations.items.isEmpty)
         XCTAssertTrue(state.entries.isEmpty)
+        XCTAssertFalse(state.isLoading)
     }
 
     /// 숨김 파일 설정 변경 시 expanded folder cache를 새 설정으로 다시 로드하는지 검증한다.
@@ -66,19 +63,13 @@ extension EVM002ManageEntriesViewPresentationTests {
         let store = TestStore(initialState: state) {
             EntryListHierarchyReducer()
         }
+        store.exhaustivity = .off
 
         await store.send(.hierarchy(.hiddenFilesSettingChanged)) {
             $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 5)
             $0.outlineProjectionRevision = 2
         }
-        await store.receive { action in
-            guard case let .entryOperations(.loading(.cancelFolderItems(requestID))) = action else { return false }
-            return requestID.folderID == folder.id
-        }
-        await store.receive { action in
-            guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
-            return request.id.folderID == folder.id && request.showHidden
-        }
+        await store.receive(\.delegate.expandRequested, folder.id)
     }
 
     /// EVM-002-set_entries_view_as_list_table: metadata 정렬 변경 시 expanded folder cache reload
@@ -90,7 +81,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
         var state = EntryViewLayoutState()
         state.entries = [folder]
-        state.entryArrangements.sortKey = .kind
+        state.sortKey = .kind
         state.hierarchy = .init(
             rootPath: "/root",
             expandedFolderIDs: [folder.id],
@@ -99,19 +90,13 @@ extension EVM002ManageEntriesViewPresentationTests {
         let store = TestStore(initialState: state) {
             EntryListHierarchyReducer()
         }
+        store.exhaustivity = .off
 
         await store.send(.hierarchy(.arrangementMetadataPriorityChanged)) {
             $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 3)
             $0.outlineProjectionRevision = 2
         }
-        await store.receive { action in
-            guard case let .entryOperations(.loading(.cancelFolderItems(requestID))) = action else { return false }
-            return requestID.folderID == folder.id
-        }
-        await store.receive { action in
-            guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
-            return request.id.folderID == folder.id && request.priority == .active([.spotlight])
-        }
+        await store.receive(\.delegate.expandRequested, folder.id)
     }
 
     /// EVM-002-set_entries_view_as_list_table: metadata 정렬 변경 시 collapsed folder cache 무효화
@@ -124,7 +109,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let staleChild = makeHierarchyIntegrationEntry(id: "/root/a/file", name: "file")
         var state = EntryViewLayoutState()
         state.entries = [folder]
-        state.entryArrangements.sortKey = .kind
+        state.sortKey = .kind
         state.hierarchy = .init(
             rootPath: "/root",
             foldersByID: [
@@ -134,24 +119,19 @@ extension EVM002ManageEntriesViewPresentationTests {
         let store = TestStore(initialState: state) {
             EntryListHierarchyReducer()
         }
+        store.exhaustivity = .off
 
         await store.send(.hierarchy(.arrangementMetadataPriorityChanged)) {
             $0.hierarchy.foldersByID[folder.id] = .init(phase: .idle, generation: 3)
             $0.outlineProjectionRevision = 1
         }
-        await store.receive { action in
-            guard case let .entryOperations(.loading(.cancelFolderItems(requestID))) = action else { return false }
-            return requestID.folderID == folder.id
-        }
+        await store.skipReceivedActions()
         await store.send(.hierarchy(.folderExpansionRequested(id: folder.id))) {
             $0.hierarchy.expandedFolderIDs = [folder.id]
             $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 4)
             $0.outlineProjectionRevision = 2
         }
-        await store.receive { action in
-            guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
-            return request.id.folderID == folder.id && request.priority == .active([.spotlight])
-        }
+        await store.receive(\.delegate.expandRequested, folder.id)
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: 기본 정렬의 folder expansion은 metadata probe를 생략한다.
@@ -168,10 +148,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         store.exhaustivity = .off
 
         await store.send(.hierarchy(.folderExpansionRequested(id: folder.id)))
-        await store.receive { action in
-            guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
-            return request.id.folderID == folder.id && request.priority == .none
-        }
+        await store.receive(\.delegate.expandRequested, folder.id)
     }
 
     /// 계층 projection의 child payload가 command와 selection에서 사용할 실제 EntryModel 목록으로 노출되는지 검증한다.
@@ -277,11 +254,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         ))) {
             $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 3)
             $0.outlineProjectionRevision = 2
+            $0.lastVisibleSelectableEntryIDs = [folder.id]
         }
-        await store.receive { action in
-            guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
-            return request.id.folderID == folder.id && request.path == folder.fullPath
-        }
+        await store.receive(\.delegate.expandRequested, folder.id)
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: loading folder의 watcher invalidation은 stream을 재시작한다.
@@ -316,11 +291,9 @@ extension EVM002ManageEntriesViewPresentationTests {
         ))) {
             $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 3)
             $0.outlineProjectionRevision = 2
+            $0.lastVisibleSelectableEntryIDs = [folder.id]
         }
-        await store.receive { action in
-            guard case let .entryOperations(.loading(.loadFolderItems(request))) = action else { return false }
-            return request.id.folderID == folder.id && request.folderGeneration == 3
-        }
+        await store.receive(\.delegate.expandRequested, folder.id)
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: coarse invalidation은 expanded descendant cache를 모두 재로드한다.
@@ -375,8 +348,8 @@ extension EVM002ManageEntriesViewPresentationTests {
         )
         let store = Store(initialState: state) {
             Reduce<EntryViewLayoutState, EntryViewLayoutAction> { state, action in
-                guard case let .delegate(.startRename(item, _)) = action else { return .none }
-                state.entryOperations.renamingItemId = item.id
+                guard case let .view(.startRename(item, _)) = action else { return .none }
+                state.renamingItemId = item.id
                 return .none
             }
         }
@@ -398,7 +371,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         _ = coordinator.contextMenu(forRow: 1, event: event)
         coordinator.contextMenuCoordinator?.contextMenuStartRename()
 
-        XCTAssertEqual(store.state.entryOperations.renamingItemId, child.id)
+        XCTAssertEqual(store.state.renamingItemId, child.id)
     }
 
     /// EVM-002-set_entries_view_as_icon_grid: collection restore는 제거 tombstone을 해제함
@@ -432,12 +405,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let child = makeHierarchyIntegrationEntry(id: "/root/a/file.txt", name: "file.txt")
         var state = EntryViewLayoutState()
         state.entries = [folder]
-        state.entryOperations.loadingContext.generation = 1
-        state.entryOperations.loadingContext.sourceKind = .directory
-        state.entryOperations.isLoading = true
-        state.entryOperations.renamingItemId = child.id
-        state.entryOperations.renamingText = child.name
-        state.entryOperations.renamingItem = child
+        state.renamingItemId = child.id
         state.hierarchy = .init(
             rootPath: "/root",
             expandedFolderIDs: [folder.id],
@@ -451,27 +419,14 @@ extension EVM002ManageEntriesViewPresentationTests {
         // store.exhaustivity = .off: arrangement reapply와 trash metadata 갱신은 rename visibility 계약의 검증 대상이 아님
         store.exhaustivity = .off
 
-        await store.send(.entryOperations(.loading(.streamEvent(.init(
-            generation: 1,
-            event: .coreBatch(items: [folder], batchIndex: 0),
-        ))))) {
-            $0.entryOperations.items = [folder]
-            $0.entryOperations.loadingContext.expectedCoreBatchIndex = 1
-            $0.entryOperations.isLoading = false
-            $0.entryOperations.isReloading = false
-        }
-        await store.skipReceivedActions()
-        await store.send(.entryOperations(.loading(.streamEvent(.init(
-            generation: 1,
-            event: .coreFinished(batchCount: 1),
-        ))))) {
-            $0.entryOperations.loadingContext.coreFinished = true
-        }
+        await store.send(.view(.applyContentProjection(makeHierarchyContentProjection(
+            entries: [folder],
+            isLoading: false,
+            renamingItemId: child.id,
+        ))))
         await store.finish()
-        await store.skipReceivedActions()
 
-        XCTAssertEqual(store.state.entryOperations.renamingItemId, child.id)
-        XCTAssertEqual(store.state.entryOperations.renamingItem, child)
+        XCTAssertEqual(store.state.renamingItemId, child.id)
     }
 
     /// EVM-002-update_entry_selection: root load에서 사라진 visible item rename 취소
@@ -484,10 +439,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let replacement = makeHierarchyIntegrationEntry(id: "/root/replacement.txt", name: "replacement.txt")
         var state = EntryViewLayoutState()
         state.entries = [renamed]
-        state.entryOperations.items = [renamed]
-        state.entryOperations.renamingItemId = renamed.id
-        state.entryOperations.renamingText = renamed.name
-        state.entryOperations.renamingItem = renamed
+        state.renamingItemId = renamed.id
         let store = TestStore(initialState: state) {
             EntryViewLayoutFeature()
         } withDependencies: {
@@ -496,16 +448,15 @@ extension EVM002ManageEntriesViewPresentationTests {
         // store.exhaustivity = .off: arrangement reapply와 trash metadata 갱신은 rename visibility 계약의 검증 대상이 아님
         store.exhaustivity = .off
 
-        await store.send(.entryOperations(.loading(.itemsLoaded([replacement])))) {
-            $0.entryOperations.items = [replacement]
-            $0.entries = [replacement]
-        }
+        await store.send(.view(.applyContentProjection(makeHierarchyContentProjection(
+            entries: [replacement],
+            isLoading: false,
+            renamingItemId: nil,
+        ))))
         await store.finish()
-        await store.skipReceivedActions()
 
-        XCTAssertNil(store.state.entryOperations.renamingItemId)
-        XCTAssertEqual(store.state.entryOperations.renamingText, "")
-        XCTAssertNil(store.state.entryOperations.renamingItem)
+        XCTAssertNil(store.state.renamingItemId)
+        XCTAssertEqual(store.state.entries, [replacement])
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: 동일 root reload는 hierarchy와 selection을 보존함
@@ -593,6 +544,30 @@ extension EVM002ManageEntriesViewPresentationTests {
                 tags: nil,
                 supplementaryMetadata: nil,
             ),
+        )
+    }
+
+    private func makeHierarchyContentProjection(
+        entries: [EntryModel],
+        isLoading: Bool,
+        renamingItemId: EntryModel.ID? = nil,
+    ) -> ContentProjection {
+        ContentProjection(
+            entries: entries,
+            isLoading: isLoading,
+            sortKey: .name,
+            sortOrder: .ascending,
+            groupKey: .none,
+            collapsedGroups: [],
+            sections: [.ungrouped(items: entries)],
+            renamingItemId: renamingItemId,
+            clipboardCutPaths: [],
+            busyEntryPaths: [],
+            openWithApplications: [],
+            restorableTrashPaths: [],
+            trashDirectoryPath: nil,
+            collectionWindowID: nil,
+            collectionLoadingCancellationOwnerID: UUID(),
         )
     }
 }

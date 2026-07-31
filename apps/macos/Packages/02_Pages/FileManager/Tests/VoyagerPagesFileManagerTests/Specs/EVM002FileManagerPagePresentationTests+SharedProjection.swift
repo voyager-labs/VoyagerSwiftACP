@@ -61,6 +61,8 @@ extension EVM002FileManagerPagePresentationTests {
             openWithApplications: [application],
             restorableTrashPaths: [],
             trashDirectoryPath: nil,
+            collectionWindowID: state.entryOperations.windowID,
+            collectionLoadingCancellationOwnerID: state.entryOperations.loadingCancellationOwnerID,
         )
         await store.send(.entryViewLayout(.view(.applyContentProjection(projection))))
 

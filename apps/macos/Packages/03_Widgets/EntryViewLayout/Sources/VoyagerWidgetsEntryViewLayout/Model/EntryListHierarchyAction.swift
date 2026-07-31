@@ -1,4 +1,4 @@
-import CasePaths
+import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
 

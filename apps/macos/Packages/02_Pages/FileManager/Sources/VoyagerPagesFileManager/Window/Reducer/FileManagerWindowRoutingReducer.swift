@@ -319,9 +319,6 @@ struct FileManagerWindowRoutingReducer {
                     state.saveCurrentContentStateForPreviousActiveTab()
                     state.saveCurrentInspectorStateForPreviousActiveTab()
                     state.restoreContentStateForActiveTab()
-                    if state.content.entryOperations.isReloading == false {
-                        state.content.entryOperations.isReloading = true
-                    }
                     removeBackgroundAiChatOwnersPromotedToActiveContent(state: &state)
                     state.restoreInspectorStateForActiveTab()
                 }
@@ -447,9 +444,6 @@ struct FileManagerWindowRoutingReducer {
                     state.removeInspectorState(for: tabID)
                     if shouldRestorePreviousActiveTab {
                         state.restoreContentStateForActiveTab()
-                        if state.content.entryOperations.isReloading == false {
-                            state.content.entryOperations.isReloading = true
-                        }
                         removeBackgroundAiChatOwnersPromotedToActiveContent(state: &state)
                         state.restoreInspectorStateForActiveTab()
                     }
@@ -511,9 +505,6 @@ struct FileManagerWindowRoutingReducer {
                     state.saveCurrentContentStateForPreviousActiveTab()
                     state.saveCurrentInspectorStateForPreviousActiveTab()
                     state.restoreContentStateForActiveTab()
-                    if state.content.entryOperations.isReloading == false {
-                        state.content.entryOperations.isReloading = true
-                    }
                     removeBackgroundAiChatOwnersPromotedToActiveContent(state: &state)
                     state.restoreInspectorStateForActiveTab()
                     if let restoredRoute = state.recentlyClosedNavigationRoute {
