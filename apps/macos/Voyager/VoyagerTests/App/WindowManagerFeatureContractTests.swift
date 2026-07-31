@@ -113,6 +113,43 @@ private func pinnedTabIDs(_ contentTabs: ContentTabState?) -> [String] {
 
 @MainActor
 final class WindowManagerFeatureContractTests: XCTestCase {
+    private struct ExpectedPinnedRecordSaveFailure: Error {}
+
+    private func lifecycleWindow(
+        tabID: ContentTabID,
+        record: ContentTabPinnedRecord,
+        path: String,
+    ) -> FileManagerWindowFeature.State {
+        let homeID = ContentTabID(rawValue: "home-\(tabID.rawValue)")
+        var window = FileManagerWindowFeature.State.makeInitial(path: path)
+        window.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: record.page,
+                    anchor: record.anchor,
+                    isPinned: true,
+                    title: record.title,
+                    iconName: record.iconName,
+                ),
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: tabID,
+            pinnedRecords: [tabID: record],
+        )
+        window.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(tabID)])
+        window.optimisticTopNavigationOrder = window.lastConfirmedTopNavigationOrder
+        window.syncContentTabSidebarItems()
+        return window
+    }
+
     /// testApplyAppPreferencesFansOutToAllWindows 테스트 동작을 검증한다.
     func testApplyAppPreferencesFansOutToAllWindows() async {
         let firstID = UUID()
@@ -1435,6 +1472,423 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             store.state.windows[id: otherWindowID]?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
             ["global-batch-pin"],
         )
+    }
+
+    /// CTM-003-pin_content_tab_s: 빠른 unpin→repin은 승인 순서대로 저장되고 최신 pin overlay로 수렴한다.
+    /// - 검증 내용: 첫 write 대기 중 repin enqueue, 두 committed revision, 빈 overlay queue
+    /// - 사전 조건: pinned A와 첫 parent-owned mutation gate
+    /// - 기대 결과: durable/runtime 모두 A pinned이며 pending token이 남지 않음
+    func testPinnedRecordPersistence_rapidUnpinRepinConvergesPinnedWithoutStaleOverlay() async {
+        let windowID = UUID(41101)
+        let tabID = ContentTabID(rawValue: "rapid-repin")
+        let record = ContentTabPinnedRecord(
+            id: tabID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/Users/test/Rapid"),
+            title: "Rapid",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 411),
+        )
+        let gate = PinnedRecordMutationGate()
+        let persistedStore = LockIsolated(ContentTabPinnedRecordStore(
+            records: [record],
+            topNavigationOrder: .init(items: [.contentTab(tabID)]),
+        ))
+        let mutationCount = LockIsolated(0)
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [.init(
+            id: windowID,
+            window: lifecycleWindow(tabID: tabID, record: record, path: "/Users/test/Source"),
+        )]
+        let store = Store(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 412))
+            $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, discoveredLocationIDs, mutation in
+                let count = mutationCount.withValue { value in
+                    value += 1
+                    return value
+                }
+                if count == 1 { await gate.wait() }
+                let updated = persistedStore.withValue { store in
+                    store = applying(
+                        mutation,
+                        to: store,
+                        discoveredLocationIDs: discoveredLocationIDs,
+                    )
+                    return store
+                }
+                return .init(
+                    store: updated,
+                    topNavigation: .init(order: updated.topNavigationOrder, revision: UInt64(count)),
+                )
+            }
+        }
+
+        let unpinTask = store.send(.windows(.element(
+            id: windowID,
+            action: .window(.contentTabs(.unpin(tabID))),
+        )))
+        await gate.waitUntilWaiting()
+        let repinTask = store.send(.windows(.element(
+            id: windowID,
+            action: .window(.contentTabs(.pin(tabID))),
+        )))
+        await gate.open()
+        await unpinTask.finish()
+        await repinTask.finish()
+
+        XCTAssertEqual(mutationCount.value, 2)
+        XCTAssertEqual(persistedStore.value.records.map(\.id), [tabID.rawValue])
+        store.withState { state in
+            let window = state.windows[id: windowID]?.window
+            XCTAssertEqual(window?.contentTabs.tabs[id: tabID]?.isPinned, true)
+            XCTAssertEqual(window?.contentTabs.pendingPinnedRecordIDs.isEmpty, true)
+            XCTAssertEqual(window?.pendingTopNavigationIntents.isEmpty, true)
+            XCTAssertEqual(window?.optimisticTopNavigationOrder.items, [.contentTab(tabID)])
+        }
+    }
+
+    /// CTM-003-pin_content_tab_s: committed unpin 뒤 최신 repin 실패는 committed base로 rollback한다.
+    /// - 검증 내용: unpin revision 적용 후 repin save failure와 exact overlay cleanup
+    /// - 사전 조건: 첫 mutation gate와 두 번째 mutation failure
+    /// - 기대 결과: durable/runtime 모두 unpinned이고 save rollback만 표시됨
+    func testPinnedRecordPersistence_latestRepinFailureRollsBackToCommittedUnpin() async {
+        let windowID = UUID(41102)
+        let tabID = ContentTabID(rawValue: "failed-repin")
+        let record = ContentTabPinnedRecord(
+            id: tabID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/Users/test/FailedRepin"),
+            title: "Failed Repin",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 411),
+        )
+        let gate = PinnedRecordMutationGate()
+        let persistedStore = LockIsolated(ContentTabPinnedRecordStore(
+            records: [record],
+            topNavigationOrder: .init(items: [.contentTab(tabID)]),
+        ))
+        let mutationCount = LockIsolated(0)
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [.init(
+            id: windowID,
+            window: lifecycleWindow(tabID: tabID, record: record, path: "/Users/test/Source"),
+        )]
+        let store = Store(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 412))
+            $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, discoveredLocationIDs, mutation in
+                let count = mutationCount.withValue { value in
+                    value += 1
+                    return value
+                }
+                if count == 1 { await gate.wait() }
+                if count == 2 { throw ExpectedPinnedRecordSaveFailure() }
+                let updated = persistedStore.withValue { store in
+                    store = applying(
+                        mutation,
+                        to: store,
+                        discoveredLocationIDs: discoveredLocationIDs,
+                    )
+                    return store
+                }
+                return .init(
+                    store: updated,
+                    topNavigation: .init(order: updated.topNavigationOrder, revision: UInt64(count)),
+                )
+            }
+        }
+
+        let unpinTask = store.send(.windows(.element(
+            id: windowID,
+            action: .window(.contentTabs(.unpin(tabID))),
+        )))
+        await gate.waitUntilWaiting()
+        let repinTask = store.send(.windows(.element(
+            id: windowID,
+            action: .window(.contentTabs(.pin(tabID))),
+        )))
+        await gate.open()
+        await unpinTask.finish()
+        await repinTask.finish()
+
+        XCTAssertTrue(persistedStore.value.records.isEmpty)
+        store.withState { state in
+            let window = state.windows[id: windowID]?.window
+            XCTAssertEqual(window?.contentTabs.tabs[id: tabID]?.isPinned, false)
+            XCTAssertEqual(window?.contentTabs.pendingPinnedRecordIDs.isEmpty, true)
+            XCTAssertEqual(window?.pendingTopNavigationIntents.isEmpty, true)
+            XCTAssertEqual(window?.optimisticTopNavigationOrder.items, [])
+            XCTAssertEqual(window?.topNavigationArrangementPresentation, .saveRollback)
+        }
+    }
+
+    /// CTM-003-unpin_content_tab_s: source tab close는 parent write를 취소하지 않고 dead-tab terminal을 생략한다.
+    /// - 검증 내용: write gate 중 commitClose, durable unpin, tab-local overlay cleanup
+    /// - 사전 조건: pinned A와 fallback Home, in-flight parent mutation
+    /// - 기대 결과: A tab은 닫히고 store에서 제거되며 parent queue와 window overlay가 비어 있음
+    func testPinnedRecordPersistence_sourceTabCloseDoesNotCancelUnpinWrite() async {
+        let windowID = UUID(41103)
+        let tabID = ContentTabID(rawValue: "close-during-unpin")
+        let record = ContentTabPinnedRecord(
+            id: tabID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/Users/test/CloseDuringUnpin"),
+            title: "Close During Unpin",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 411),
+        )
+        let gate = PinnedRecordMutationGate()
+        let persistedStore = LockIsolated(ContentTabPinnedRecordStore(records: [record]))
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [.init(
+            id: windowID,
+            window: lifecycleWindow(tabID: tabID, record: record, path: "/Users/test/Source"),
+        )]
+        let store = Store(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 411))
+            $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, discoveredLocationIDs, mutation in
+                await gate.wait()
+                let updated = persistedStore.withValue { store in
+                    store = applying(
+                        mutation,
+                        to: store,
+                        discoveredLocationIDs: discoveredLocationIDs,
+                    )
+                    return store
+                }
+                return .init(store: updated, topNavigation: .init(order: updated.topNavigationOrder, revision: 1))
+            }
+        }
+
+        let unpinTask = store.send(.windows(.element(
+            id: windowID,
+            action: .window(.contentTabs(.unpin(tabID))),
+        )))
+        await gate.waitUntilWaiting()
+        let closeTask = store.send(.windows(.element(
+            id: windowID,
+            action: .window(.contentTabs(.commitClose(tabID))),
+        )))
+        await closeTask.finish()
+        await gate.open()
+        await unpinTask.finish()
+
+        XCTAssertTrue(persistedStore.value.records.isEmpty)
+        store.withState { state in
+            XCTAssertNil(state.windows[id: windowID]?.window.contentTabs.tabs[id: tabID])
+            XCTAssertEqual(state.windows[id: windowID]?.window.pendingTopNavigationIntents.isEmpty, true)
+            XCTAssertTrue(state.topNavigationPersistenceQueue.isEmpty)
+            XCTAssertFalse(state.isTopNavigationPersistenceInFlight)
+        }
+    }
+
+    /// CTM-003-unpin_content_tab_s: source window close 뒤에도 parent write와 peer fan-out이 완료된다.
+    /// - 검증 내용: write gate 중 source 제거, committed authoritative peer snapshot
+    /// - 사전 조건: 같은 pinned A를 가진 source/peer window
+    /// - 기대 결과: source는 없고 peer에서 global pin이 제거되며 durable store와 parent queue가 비어 있음
+    func testPinnedRecordPersistence_sourceWindowCloseStillFansOutCommittedUnpinToPeer() async {
+        let sourceWindowID = UUID(41104)
+        let peerWindowID = UUID(41105)
+        let tabID = ContentTabID(rawValue: "window-close-unpin")
+        let record = ContentTabPinnedRecord(
+            id: tabID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/Users/test/WindowClose"),
+            title: "Window Close",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 411),
+        )
+        let gate = PinnedRecordMutationGate()
+        let persistedStore = LockIsolated(ContentTabPinnedRecordStore(records: [record]))
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            .init(
+                id: sourceWindowID,
+                window: lifecycleWindow(tabID: tabID, record: record, path: "/Users/test/Source"),
+            ),
+            .init(
+                id: peerWindowID,
+                window: lifecycleWindow(tabID: tabID, record: record, path: "/Users/test/Peer"),
+            ),
+        ]
+        let store = Store(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, discoveredLocationIDs, mutation in
+                await gate.wait()
+                let updated = persistedStore.withValue { store in
+                    store = applying(
+                        mutation,
+                        to: store,
+                        discoveredLocationIDs: discoveredLocationIDs,
+                    )
+                    return store
+                }
+                return .init(store: updated, topNavigation: .init(order: updated.topNavigationOrder, revision: 1))
+            }
+        }
+
+        let unpinTask = store.send(.windows(.element(
+            id: sourceWindowID,
+            action: .window(.contentTabs(.unpin(tabID))),
+        )))
+        await gate.waitUntilWaiting()
+        await store.send(.event(.windowClosed(sourceWindowID))).finish()
+        await gate.open()
+        await unpinTask.finish()
+
+        XCTAssertTrue(persistedStore.value.records.isEmpty)
+        store.withState { state in
+            XCTAssertNil(state.windows[id: sourceWindowID])
+            XCTAssertNil(state.windows[id: peerWindowID]?.window.contentTabs.tabs[id: tabID])
+            XCTAssertEqual(state.windows[id: peerWindowID]?.window.lastConfirmedTopNavigationOrder.items, [])
+            XCTAssertTrue(state.topNavigationPersistenceQueue.isEmpty)
+            XCTAssertFalse(state.isTopNavigationPersistenceInFlight)
+        }
+    }
+
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: source window 종료 뒤에도 anchor update가 peer에 수렴한다.
+    /// - 검증 내용: parent FIFO write, discovered Location 보존, authoritative peer snapshot
+    /// - 사전 조건: 같은 pinned A와 Location을 가진 source/peer window, in-flight update gate
+    /// - 기대 결과: source는 재생성되지 않고 peer의 pinned record와 runtime anchor가 최신 값으로 갱신됨
+    func testPinnedRecordPersistence_anchorUpdateSurvivesSourceWindowCloseAndFansOutToPeer() async {
+        let sourceWindowID = UUID(41106)
+        let peerWindowID = UUID(41107)
+        let tabID = ContentTabID(rawValue: "window-close-anchor-update")
+        let oldAnchor = ContentTabPageAnchor.directory(path: "/Users/test/Old")
+        let newAnchor = ContentTabPageAnchor.directory(path: "/Users/test/New")
+        let record = ContentTabPinnedRecord(
+            id: tabID.rawValue,
+            page: .directory,
+            anchor: oldAnchor,
+            title: "Old",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 411),
+        )
+        let location = FileManagerFixedLocationItem(
+            id: "fixed-location-projects",
+            title: "Projects",
+            path: "/Users/test/Projects",
+            iconName: "folder",
+            accessibilityLabel: "Projects",
+        )
+        let initialOrder = FileManagerTopNavigationOrder(items: [
+            .location(location.id),
+            .contentTab(tabID),
+        ])
+        let gate = PinnedRecordMutationGate()
+        let discoveredLocationIDs = LockIsolated<[String]>([])
+        let persistedStore = LockIsolated(ContentTabPinnedRecordStore(
+            records: [record],
+            topNavigationOrder: initialOrder,
+        ))
+        var sourceWindow = lifecycleWindow(tabID: tabID, record: record, path: "/Users/test/Source")
+        sourceWindow.sidebar.setFixedLocationItems([location])
+        sourceWindow.lastConfirmedTopNavigationOrder = initialOrder
+        sourceWindow.optimisticTopNavigationOrder = initialOrder
+        sourceWindow.syncSidebarTopNavigationItems()
+        var peerWindow = lifecycleWindow(tabID: tabID, record: record, path: "/Users/test/Peer")
+        peerWindow.sidebar.setFixedLocationItems([location])
+        peerWindow.lastConfirmedTopNavigationOrder = initialOrder
+        peerWindow.optimisticTopNavigationOrder = initialOrder
+        peerWindow.syncSidebarTopNavigationItems()
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            .init(id: sourceWindowID, window: sourceWindow),
+            .init(id: peerWindowID, window: peerWindow),
+        ]
+        let store = Store(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 412))
+            $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, locationIDs, mutation in
+                discoveredLocationIDs.setValue(locationIDs)
+                await gate.wait()
+                let updated = persistedStore.withValue { store in
+                    store = applying(
+                        mutation,
+                        to: store,
+                        discoveredLocationIDs: locationIDs,
+                    )
+                    return store
+                }
+                return .init(store: updated, topNavigation: .init(order: updated.topNavigationOrder, revision: 1))
+            }
+        }
+
+        let updateTask = store.send(.windows(.element(
+            id: sourceWindowID,
+            action: .window(.contentTabs(.updateActivePageAnchor(tabID, newAnchor))),
+        )))
+        await gate.waitUntilWaiting()
+        await store.send(.event(.windowClosed(sourceWindowID))).finish()
+        await gate.open()
+        await updateTask.finish()
+
+        XCTAssertEqual(discoveredLocationIDs.value, [location.id])
+        XCTAssertEqual(persistedStore.value.records.first?.anchor, newAnchor)
+        XCTAssertEqual(persistedStore.value.topNavigationOrder, initialOrder)
+        store.withState { state in
+            XCTAssertNil(state.windows[id: sourceWindowID])
+            let peer = state.windows[id: peerWindowID]?.window
+            XCTAssertEqual(peer?.contentTabs.tabs[id: tabID]?.anchor, newAnchor)
+            XCTAssertEqual(peer?.contentTabs.pinnedRecords[tabID]?.anchor, newAnchor)
+            XCTAssertEqual(peer?.lastConfirmedTopNavigationOrder, initialOrder)
+            XCTAssertTrue(state.topNavigationPersistenceQueue.isEmpty)
+            XCTAssertFalse(state.isTopNavigationPersistenceInFlight)
+        }
+    }
+
+    /// CTM-003-pin_content_tab_s: corrupt/future store는 parent lifecycle mutation에서도 원본 bytes를 보존한다.
+    /// - 검증 내용: typed unavailable terminal, write 0회, optimistic pin rollback
+    /// - 사전 조건: malformed payload 또는 future schema payload와 unpinned A
+    /// - 기대 결과: bytes 불변, A unpinned, 정확한 load-unavailable failure
+    func testPinnedRecordPersistence_unavailableStoresRejectLifecycleMutationWithoutWriting() async throws {
+        let scenarios: [(Data, FileManagerTopNavigationArrangementLoadFailure)] = [
+            (Data("not-json".utf8), .corrupt),
+            (Data(#"{"schemaVersion":3,"records":[],"topNavigationOrder":[]}"#.utf8), .unsupportedSchema(3)),
+        ]
+        let storageKey = "fileManager.pinnedContentTabs.v1"
+
+        for (index, scenario) in scenarios.enumerated() {
+            let windowID = UUID(41110 + index)
+            let storedData = LockIsolated(scenario.0)
+            let writeCount = LockIsolated(0)
+            let defaults = UserDefaultsClient(
+                bool: { _ in false },
+                setBool: { _, _ in },
+                string: { _ in nil },
+                setString: { _, _ in },
+                double: { _ in 0 },
+                setDouble: { _, _ in },
+                object: { key in key == storageKey ? storedData.value : nil },
+                setObject: { value, key in
+                    guard key == storageKey, let data = value as? Data else { return }
+                    storedData.setValue(data)
+                    writeCount.withValue { $0 += 1 }
+                },
+            )
+            var window = FileManagerWindowFeature.State.makeInitial(path: "/Users/test/Unavailable")
+            try window.contentTabs.tabs[id: XCTUnwrap(window.contentTabs.activeTabID)]?.isPinned = false
+            let activeID = try XCTUnwrap(window.contentTabs.activeTabID)
+            var initialState = WindowManagerFeature.State()
+            initialState.windows = [.init(id: windowID, window: window)]
+            let store = Store(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+                $0.contentTabPinnedRecordClient = .liveValue
+                $0.userDefaultsClient = defaults
+                $0.date = .constant(Date(timeIntervalSince1970: 411))
+            }
+
+            let pinTask = store.send(.windows(.element(
+                id: windowID,
+                action: .window(.contentTabs(.pin(activeID))),
+            )))
+            await pinTask.finish()
+
+            XCTAssertEqual(storedData.value, scenario.0)
+            XCTAssertEqual(writeCount.value, 0)
+            store.withState { state in
+                let result = state.windows[id: windowID]?.window
+                XCTAssertEqual(result?.contentTabs.tabs[id: activeID]?.isPinned, false)
+                XCTAssertEqual(result?.topNavigationArrangementAvailability, .unavailable(scenario.1))
+                XCTAssertEqual(result?.topNavigationArrangementPresentation, .loadUnavailable)
+            }
+        }
     }
 
     /// 늦은 G1 applied success는 G2 generation 예약 뒤 authoritative fan-out이나 unpinned 완료를 만들지 않는다.
