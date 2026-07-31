@@ -3,7 +3,6 @@ public extension AiChatState {
         var normalized = self
         normalized.cancellationOwnerID = baseline.cancellationOwnerID
         normalized.newChatPreparationMutationTracker = baseline.newChatPreparationMutationTracker
-        normalized.inspectorReopenMutationBaseline = baseline.inspectorReopenMutationBaseline
         return normalized == baseline
     }
 }

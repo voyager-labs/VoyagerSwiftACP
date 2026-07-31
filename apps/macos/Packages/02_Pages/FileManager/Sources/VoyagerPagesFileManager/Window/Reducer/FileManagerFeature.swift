@@ -265,9 +265,23 @@ public struct FileManagerFeature {
         FileManagerWindowNavigationReducer()
         FileManagerWindowLifecycleReducer()
         FileManagerWindowPreferencesReducer()
+        FileManagerWindowContentTabMoveReducer()
         FileManagerWindowRoutingReducer()
         FileManagerWindowUndoRoutingReducer()
         FileManagerWindowCommandRoutingReducer()
+
+        Reduce { state, action in
+            switch action {
+            case let .contentTabs(.updateActivePageAnchor(tabID, _))
+                where state.contentTabs.activeTabID == tabID:
+                state.syncActiveTabInspectorState()
+            case .inspector:
+                state.syncActiveTabInspectorState()
+            default:
+                break
+            }
+            return .none
+        }
     }
 
     private func clearLogicalUndoHistory(tabID: ContentTabID, state: inout State) {

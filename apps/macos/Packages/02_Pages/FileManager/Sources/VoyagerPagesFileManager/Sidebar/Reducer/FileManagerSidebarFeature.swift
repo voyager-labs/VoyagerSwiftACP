@@ -7,6 +7,7 @@ public struct FileManagerSidebarFeature {
 
     public var body: some Reducer<State, Action> {
         FileManagerSidebarPreferenceReducer()
+        FileManagerSidebarContentTabMoveReducer()
         FileManagerSidebarContentTabSyncReducer()
         FileManagerSidebarContentTabSelectionRoutingReducer()
         FileManagerSidebarContentTabPinRoutingReducer()
@@ -111,6 +112,55 @@ struct FileManagerSidebarContentTabReorderRoutingReducer {
                 targetID: targetID,
                 placement: placement,
             )))
+        }
+    }
+}
+
+@Reducer
+struct FileManagerSidebarContentTabMoveReducer {
+    typealias State = FileManagerSidebarState
+    typealias Action = FileManagerSidebarAction
+
+    @Dependency(\.uuid)
+    private var uuid
+
+    var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            switch action {
+            case let .view(.moveContentTab(tabID, targetWindowID)):
+                guard state.pendingContentTabMoveRequest == nil,
+                      let sourceWindowID = state.currentWindowID,
+                      state.contentTabSidebarItems.contains(where: { $0.id == tabID })
+                else { return .none }
+                let availableTargets = ContentTabMoveProjection.availableTargets(
+                    state.contentTabMoveTargets,
+                    currentWindowID: sourceWindowID,
+                    tabID: tabID,
+                )
+                guard availableTargets.contains(where: { $0.windowID == targetWindowID }) else {
+                    return .none
+                }
+
+                let request = ContentTabMoveRequest(
+                    requestID: uuid(),
+                    sourceWindowID: sourceWindowID,
+                    tabID: tabID,
+                    targetWindowID: targetWindowID,
+                )
+                state.pendingContentTabMoveRequest = request
+                return .send(.delegate(.requestContentTabMove(request)))
+
+            case let .view(.receiveContentTabDrag(payload)):
+                guard ContentTabDragPayload.isSupported(schemaVersion: payload.schemaVersion),
+                      let currentWindowID = state.currentWindowID,
+                      currentWindowID != payload.sourceWindowID,
+                      state.pendingContentTabMoveRequest == nil
+                else { return .none }
+                return .send(.delegate(.receiveContentTabDrag(payload)))
+
+            default:
+                return .none
+            }
         }
     }
 }

@@ -217,7 +217,7 @@ final class ContentTabReorderDropDestinationView: NSView {
     private func resolvePayload(from items: [ContentTabReorderPasteboardItem]) -> ContentTabReorderDragPayload? {
         guard items.count == 1, let item = items.first else { return nil }
 
-        let types = item.types
+        let types = item.types.subtracting([.contentTabMove])
         guard types.contains(.contentTabReorder) else {
             return nil
         }
@@ -282,14 +282,16 @@ final class ContentTabReorderDropDestinationView: NSView {
 
     private static func acceptsAdvertisedShape(_ items: [ContentTabReorderPasteboardItem]) -> Bool {
         guard items.count == 1, let item = items.first else { return false }
-        return localPasteboardTypes.contains(item.types) || item.types == [.contentTabReorder]
+        let types = item.types.subtracting([.contentTabMove])
+        return localPasteboardTypes.contains(types) || types == [.contentTabReorder]
     }
 
     private func updateCandidateState(
         pasteboardItems: [ContentTabReorderPasteboardItem],
     ) -> NSDragOperation {
         guard configuration.pinState(configuration.boundary.targetID) == false,
-              Self.acceptsAdvertisedShape(pasteboardItems)
+              Self.acceptsAdvertisedShape(pasteboardItems),
+              acceptsDragScope(pasteboardItems: pasteboardItems)
         else {
             resetAcceptedStateAndClearOwnedBoundary()
             return []
@@ -297,6 +299,15 @@ final class ContentTabReorderDropDestinationView: NSView {
         acceptedAdvertisedShape = true
         publishActiveBoundary()
         return .move
+    }
+
+    private func acceptsDragScope(
+        pasteboardItems: [ContentTabReorderPasteboardItem],
+    ) -> Bool {
+        guard pasteboardItems.count == 1, let item = pasteboardItems.first else { return false }
+        let types = item.types.subtracting([.contentTabMove])
+        guard types.contains(.contentTabReorderLocal) else { return true }
+        return configuration.sessionStore.entry?.payload.dragScopeID == configuration.dragScopeID
     }
 
     private func publishActiveBoundary() {

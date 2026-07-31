@@ -35,11 +35,6 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         XCTAssertNil(postCommit.source.tabContentStates[scenario.movedID])
         XCTAssertNil(postCommit.source.tabInspectorStates[scenario.movedID])
         XCTAssertNil(postCommit.source.contentTabs.pinnedRecords[scenario.movedID])
-        XCTAssertNil(postCommit.source.contentTabs.pinnedRecordPersistenceGenerations[scenario.movedID])
-        XCTAssertEqual(
-            postCommit.source.contentTabs.pinnedRecordPersistenceGenerations[scenario.previousID],
-            scenario.unrelatedPinGeneration,
-        )
         XCTAssertNil(postCommit.source.backgroundAiChatStates[scenario.sessionID])
         XCTAssertNil(postCommit.source.backgroundInspectorAiChatStates[scenario.sessionID])
         XCTAssertEqual(
@@ -75,7 +70,6 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         XCTAssertEqual(postCommit.target.contentTabs.activeTabID, scenario.movedID)
         XCTAssertEqual(postCommit.target.contentTabs.previousActiveTabID, scenario.targetID)
         XCTAssertEqual(postCommit.target.contentTabs.pinnedRecords[scenario.movedID], scenario.pinRecord)
-        XCTAssertNil(postCommit.target.contentTabs.pinnedRecordPersistenceGenerations[scenario.movedID])
         var expectedContent = scenario.movedContent
         expectedContent.applyWindowContext(windowID: Fixture.targetWindowID)
         expectedContent.entryViewLayout.entryOperations.loadingCancellationOwnerID = Fixture.targetWindowID
@@ -711,8 +705,6 @@ private struct CompleteTransferScenario {
         source.inspector = movedInspector
         source.tabInspectorStates[movedID] = movedInspector
         source.contentTabs.pinnedRecords[movedID] = pinRecord
-        source.contentTabs.pinnedRecordPersistenceGenerations[movedID] = 42
-        source.contentTabs.pinnedRecordPersistenceGenerations[previousID] = unrelatedPinGeneration
         source.backgroundAiChatStates[sessionID] = content
         source.backgroundInspectorAiChatStates[sessionID] = inspector
         source.backgroundAiChatStates[unrelatedSessionID] = unrelatedBackground

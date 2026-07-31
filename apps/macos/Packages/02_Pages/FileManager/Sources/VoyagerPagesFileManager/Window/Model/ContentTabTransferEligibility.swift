@@ -109,7 +109,7 @@ extension FileManagerWindowState {
 
     private func durablePendingRejection(tabID: ContentTabID) -> ContentTabTransferEligibilityRejection? {
         if pendingContentTabClose != nil { return .pendingContentTabClose }
-        if contentTabs.pendingPinnedRecordOperations[tabID] != nil {
+        if contentTabs.pendingPinnedRecordIDs.contains(tabID) {
             return .pendingPinnedRecordPersistence
         }
         guard let targetContent = authoritativeContentState(for: tabID) else {

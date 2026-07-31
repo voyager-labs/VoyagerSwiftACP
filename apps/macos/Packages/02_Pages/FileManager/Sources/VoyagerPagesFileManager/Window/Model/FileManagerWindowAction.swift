@@ -96,6 +96,7 @@ public struct FileManagerInspectorNewChatSeedApplication: Equatable, Sendable {
 
 @CasePathable
 public enum FileManagerWindowAction: CasePathable, Sendable {
+    case view(View)
     case delegate(Delegate)
 
     case `internal`(Internal)
@@ -169,6 +170,17 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
 
     case onAppear
     case onDisappear
+
+    case contentTabMoveSucceeded(requestID: UUID)
+    case contentTabMoveRejected(
+        requestID: UUID,
+        category: ContentTabMoveFailurePresentation.Category,
+    )
+
+    @CasePathable
+    public enum View: Sendable {
+        case dismissContentTabMoveFailure(requestID: UUID)
+    }
 
     @CasePathable
     public enum Internal: Sendable {
@@ -277,6 +289,8 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case openAISettings
         case requestAttachmentPicker
         case fixedLocationVisibilityChanged(Set<FileManagerFixedLocationItem.ID>)
+        case requestContentTabMove(ContentTabMoveRequest)
+        case receiveContentTabDrag(ContentTabDragPayload)
         case pinnedContentTabRuntimeNavigationChanged(
             tabID: ContentTabID,
             navigationState: ContentPageNavigationRoute,

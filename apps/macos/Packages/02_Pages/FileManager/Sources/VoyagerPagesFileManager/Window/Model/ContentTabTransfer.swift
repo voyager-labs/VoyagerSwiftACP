@@ -228,7 +228,6 @@ public enum ContentTabTransfer {
             let wasActive = prepared.contentTabs.activeTabID == tabID
             prepared.contentTabs.tabs.remove(at: removalIndex)
             prepared.contentTabs.pinnedRecords[tabID] = nil
-            prepared.contentTabs.pinnedRecordPersistenceGenerations[tabID] = nil
             prepared.tabContentStates[tabID] = nil
             prepared.tabInspectorStates[tabID] = nil
             prepared.normalizeSelectionAfterRemoving(
@@ -318,7 +317,6 @@ public enum ContentTabTransfer {
             source.suppressedPinnedTabIDs.insert(tabID)
         }
         source.contentTabs.pinnedRecords[tabID] = nil
-        source.contentTabs.pinnedRecordPersistenceGenerations[tabID] = nil
         source.tabContentStates[tabID] = nil
         source.tabInspectorStates[tabID] = nil
         for sessionID in token.payload.ownedSessionIDs {
@@ -430,7 +428,7 @@ private extension FileManagerWindowState {
               targetRecord.anchor == item.anchor,
               targetRecord.title == item.title,
               targetRecord.iconName == item.iconName,
-              contentTabs.pendingPinnedRecordOperations[tabID] == nil
+              !contentTabs.pendingPinnedRecordIDs.contains(tabID)
         else { return false }
 
         let targetContent = contentTabs.activeTabID == tabID ? content : tabContentStates[tabID]
