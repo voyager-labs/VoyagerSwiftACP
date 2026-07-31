@@ -110,8 +110,11 @@ public struct FileManagerContentFeature {
             let shouldProject = FileManagerContentFeature.shouldProjectContent(action)
             guard shouldProject else { return .none }
 
+            let projectionEntries = state.isCollectionMode
+                ? Array(state.entryViewLayout.collectionItems)
+                : Array(state.entryOperations.items)
             let projection = ContentProjection(
-                entries: Array(state.entryOperations.items),
+                entries: projectionEntries,
                 isLoading: state.entryOperations.isLoading,
                 sortKey: .fromShared(state.entryArrangements.sortKey),
                 sortOrder: state.entryArrangements.sortOrder,
@@ -122,7 +125,9 @@ public struct FileManagerContentFeature {
                     collapsedGroups: state.entryArrangements.collapsedGroups,
                 ),
                 renamingItemId: state.entryOperations.renamingItemId,
-                clipboardCutPaths: Set(state.entryOperations.clipboardItems),
+                clipboardCutPaths: state.entryOperations.clipboardOperation == .cut
+                    ? Set(state.entryOperations.clipboardItems)
+                    : [],
                 busyEntryPaths: Set(state.entryOperations.itemStates.filter(\.value.isBusy).map(\.key)),
                 openWithApplications: state.entryOperations.commonApplicationsForSelectedFiles,
                 restorableTrashPaths: state.entryOperations.restorableTrashPaths,
@@ -309,6 +314,7 @@ public struct FileManagerContentFeature {
              .entryOperations(.lifecycle(.restorableTrashPathsLoaded)),
              .entryOperations(.lifecycle(.pathsMutated)),
              .entryArrangements(.delegate(.applied)),
+             .entryArrangements(.toggleCollapsedGroup),
              .externalFileSystemChanged,
              .internal(.clearCollectionMode),
              .internal(.exitCollectionMode):
