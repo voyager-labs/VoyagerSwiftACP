@@ -244,6 +244,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
             $0.invalidatingWindowIDs.remove(firstID)
             $0.focusedWindowID = secondID
             $0.lastUsedWindowIDs = [secondID]
+            $0.refreshContentTabMoveTargets()
         }
     }
 
@@ -450,6 +451,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
             $0.windows.remove(id: otherID)
             $0.closingWindowIDs.remove(otherID)
             $0.invalidatingWindowIDs.remove(otherID)
+            $0.refreshContentTabMoveTargets()
         }
     }
 
@@ -520,6 +522,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(closingID)
             $0.focusedWindowID = nil
+            $0.refreshContentTabMoveTargets()
         }
         await store.send(.event(.windowClosed(closingID))) {
             $0.invalidatingWindowIDs.insert(closingID)
