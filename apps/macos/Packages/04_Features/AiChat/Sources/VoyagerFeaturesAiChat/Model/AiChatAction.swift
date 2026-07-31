@@ -96,11 +96,10 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case newChatFailed(String)
     case setup(AiChatSetupState)
     case providerConnectionsUpdated(AIConnectionsFile)
+    case providerConnectionAuthorityUpdated([AiProvider])
     case modelListLoading(requestID: UUID, provider: AiProvider, credential: StoredCredentialPayload?)
     case modelListLoaded(requestID: UUID, provider: AiProvider, models: [AiProviderModel])
     case modelListLoadFailed(requestID: UUID, provider: AiProvider, failure: AiModelListFailure)
-    case modelSelectorTapped
-    case modelSelectorDismissed
     case selectedModelChanged(AiModelHandle?)
     case selectedThinkingChanged(AiThinkingSelection?)
     case currentContextChanged(AiChatCurrentContextSnapshot)
