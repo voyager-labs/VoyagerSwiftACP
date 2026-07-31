@@ -213,7 +213,7 @@ struct FileManagerWindowCommandRoutingReducer {
 
             case let .aiConnectionsFileUpdated(file):
                 return .merge(
-                    forwardProviderConnectionsToOpenAiChat(file: file, state: state),
+                    forwardProviderConnectionsToOpenAiChat(file: file, state: &state),
                     warmUpAIModelCatalogEffect(),
                 )
 
@@ -702,8 +702,17 @@ struct FileManagerWindowCommandRoutingReducer {
 
     private func forwardProviderConnectionsToOpenAiChat(
         file: AIConnectionsFile,
-        state: State,
+        state: inout State,
     ) -> Effect<Action> {
+        let connectedProviders = file.providers.values
+            .filter { $0.snapshot.lastKnownStatus == .connected }
+            .map(\.providerId)
+            .sorted { $0.rawValue < $1.rawValue }
+        refreshPendingAiChatProviderAuthority(
+            connectedProviders: connectedProviders,
+            state: &state,
+        )
+
         var effects: [Effect<Action>] = []
 
         // ContentPane AI Chat forwarding: active tab이 .aiChat일 때 전송
@@ -722,6 +731,70 @@ struct FileManagerWindowCommandRoutingReducer {
         }
 
         return .merge(effects)
+    }
+
+    private func refreshPendingAiChatProviderAuthority(
+        connectedProviders: [AiProvider],
+        state: inout State,
+    ) {
+        if refreshPendingAiChatProviderAuthority(
+            connectedProviders: connectedProviders,
+            aiChat: &state.content.aiChat,
+        ) {
+            state.syncActiveTabContentState()
+        }
+        if refreshPendingAiChatProviderAuthority(
+            connectedProviders: connectedProviders,
+            aiChat: &state.inspector.aiChat,
+        ) {
+            state.syncActiveTabInspectorState()
+        }
+
+        for tabID in state.tabContentStates.keys {
+            guard var content = state.tabContentStates[tabID] else { continue }
+            _ = refreshPendingAiChatProviderAuthority(
+                connectedProviders: connectedProviders,
+                aiChat: &content.aiChat,
+            )
+            state.tabContentStates[tabID] = content
+        }
+        for tabID in state.tabInspectorStates.keys {
+            guard var inspector = state.tabInspectorStates[tabID] else { continue }
+            _ = refreshPendingAiChatProviderAuthority(
+                connectedProviders: connectedProviders,
+                aiChat: &inspector.aiChat,
+            )
+            state.tabInspectorStates[tabID] = inspector
+        }
+        for sessionID in state.backgroundAiChatStates.keys {
+            guard var content = state.backgroundAiChatStates[sessionID] else { continue }
+            _ = refreshPendingAiChatProviderAuthority(
+                connectedProviders: connectedProviders,
+                aiChat: &content.aiChat,
+            )
+            state.backgroundAiChatStates[sessionID] = content
+        }
+        for sessionID in state.backgroundInspectorAiChatStates.keys {
+            guard var inspector = state.backgroundInspectorAiChatStates[sessionID] else { continue }
+            _ = refreshPendingAiChatProviderAuthority(
+                connectedProviders: connectedProviders,
+                aiChat: &inspector.aiChat,
+            )
+            state.backgroundInspectorAiChatStates[sessionID] = inspector
+        }
+    }
+
+    @discardableResult
+    private func refreshPendingAiChatProviderAuthority(
+        connectedProviders: [AiProvider],
+        aiChat: inout AiChatFeature.State,
+    ) -> Bool {
+        guard aiChat.pendingRequestStart != nil || !aiChat.backgroundPendingRequestStarts.isEmpty else { return false }
+        _ = AiChatFeature().reduce(
+            into: &aiChat,
+            action: .providerConnectionAuthorityUpdated(connectedProviders),
+        )
+        return true
     }
 
     private func handleNavigationRequest(_ command: Action.WindowCommand) -> Effect<Action> {

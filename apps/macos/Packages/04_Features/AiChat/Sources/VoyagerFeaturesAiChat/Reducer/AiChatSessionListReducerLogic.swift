@@ -40,16 +40,17 @@ extension AiChatFeature {
         state: inout State,
     ) -> AiChatSessionSnapshot {
         let sessionID = AiChatSessionID(rawValue: uuid())
-        prepareEmptyDraftChatSession(sessionID, selectedSessionID: nil, seed: seed, state: &state)
+        let validatedSeed = AiChatStateSelection.revalidatedNewChatSelectionSeed(seed, state: state)
+        prepareEmptyDraftChatSession(sessionID, selectedSessionID: nil, seed: validatedSeed, state: &state)
 
         return AiChatSessionSnapshot(
             sessionID: sessionID,
             status: .idle,
             customTitle: nil,
-            provider: seed?.modelHandle.provider,
-            model: seed?.modelHandle,
-            selectedModelRow: state.resolvedModelRow(for: seed?.modelHandle),
-            selectedThinking: seed?.selectedThinking,
+            provider: validatedSeed?.modelHandle.provider,
+            model: validatedSeed?.modelHandle,
+            selectedModelRow: state.resolvedModelRow(for: validatedSeed?.modelHandle),
+            selectedThinking: validatedSeed?.selectedThinking,
             transcriptHistory: [],
             lastRequestID: nil,
             lastRunID: nil,
@@ -92,7 +93,8 @@ extension AiChatFeature {
     ) -> Effect<Action> {
         movePendingRequestStartToBackgroundIfNeeded(state: &state, targetSessionID: nil)
         let preservedExecutionPhase = state.executionPhase
-        prepareEmptyDraftChatSession(sessionID, selectedSessionID: nil, seed: seed, state: &state)
+        let validatedSeed = AiChatStateSelection.revalidatedNewChatSelectionSeed(seed, state: state)
+        prepareEmptyDraftChatSession(sessionID, selectedSessionID: nil, seed: validatedSeed, state: &state)
         state.emptyDraftSessionID = nil
         state.preparedTransientSessionID = sessionID
         preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)

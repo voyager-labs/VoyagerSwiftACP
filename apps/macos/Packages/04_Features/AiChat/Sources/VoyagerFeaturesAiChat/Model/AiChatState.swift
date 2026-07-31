@@ -237,7 +237,6 @@ public struct AiChatState: Equatable, Sendable {
     public var transcriptAutoScrollVersion: Int
     public var catalogRows: [AiModelCatalogRow]
     public var modelListState: AiChatModelListState
-    public var isModelSelectorPresented: Bool
     public var selectedModelHandle: AiModelHandle?
     public var selectedThinking: AiThinkingSelection?
     public var unavailableSelectedModelHandle: AiModelHandle?
@@ -383,7 +382,6 @@ public struct AiChatState: Equatable, Sendable {
         transcriptAutoScrollVersion: Int = 0,
         catalogRows: [AiModelCatalogRow] = [],
         modelListState: AiChatModelListState? = nil,
-        isModelSelectorPresented: Bool = false,
         selectedModelHandle: AiModelHandle? = nil,
         selectedThinking: AiThinkingSelection? = nil,
         unavailableSelectedModelHandle: AiModelHandle? = nil,
@@ -427,7 +425,6 @@ public struct AiChatState: Equatable, Sendable {
         let resolvedModelListState = modelListState ?? Self.modelListState(from: catalogRows)
         self.catalogRows = catalogRows.isEmpty ? Self.makeCatalogRows(for: resolvedModelListState) : catalogRows
         self.modelListState = resolvedModelListState
-        self.isModelSelectorPresented = isModelSelectorPresented
         self.selectedModelHandle = selectedModelHandle
         self.selectedThinking = selectedThinking
         self.unavailableSelectedModelHandle = unavailableSelectedModelHandle

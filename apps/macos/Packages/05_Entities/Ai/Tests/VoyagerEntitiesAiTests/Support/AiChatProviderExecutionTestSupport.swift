@@ -192,6 +192,38 @@ func providerExecutionAssertOpenAIThinkingLoweringMatrix() throws {
             ),
         ],
     )
+
+    try providerExecutionAssertMalformedTokenBudgetIsOmitted(
+        provider: .openai,
+        credential: .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
+    )
+}
+
+func providerExecutionAssertMalformedTokenBudgetIsOmitted(
+    provider: AiProvider,
+    credential: StoredCredentialPayload,
+) throws {
+    let selection = AiThinkingSelection.tokenBudget(512)
+    let result = try AiChatProviderPreflight.prepare(
+        providerExecutionMakeRequest(
+            provider: provider,
+            selectedThinking: selection,
+            capability: .tokenBudget(min: 1024, max: 128, defaultValue: 512),
+        ),
+        credential: credential,
+    )
+
+    XCTAssertNil(result.payload.thinking)
+    XCTAssertEqual(
+        result.warnings,
+        [
+            .omittedThinkingSelection(
+                provider: provider,
+                selection: selection,
+                reason: "Selected token budget is outside the supported range.",
+            ),
+        ],
+    )
 }
 
 func providerExecutionPrepareOpenAIThinking(

@@ -248,13 +248,13 @@ extension FileManagerWindowCommandRoutingReducer {
         guard let pending = validatedPendingAiChatNewChat(state: &state),
               pending.didLoadPersistedDefault,
               !pending.requiresCatalogRefresh || pending.didObserveCatalogRefresh,
-              let catalog = resolvedCatalog(for: pending, state: state)
+              isModelCatalogResolutionReady(for: pending, state: state)
         else { return .none }
 
         let seed = AiChatNewChatSelectionSeedResolver.resolve(
             windowLast: pending.windowLast,
             persistedDefault: pending.persistedDefault,
-            catalog: catalog,
+            state: aiChatState(for: pending.target, state: state),
         )
         state.pendingAiChatNewChat = nil
 
@@ -446,17 +446,15 @@ extension FileManagerWindowCommandRoutingReducer {
         }
     }
 
-    private func resolvedCatalog(
+    private func isModelCatalogResolutionReady(
         for pending: FileManagerPendingAiChatNewChat,
         state: State,
-    ) -> [AiProviderModel]? {
+    ) -> Bool {
         switch aiChatState(for: pending.target, state: state).modelListState {
-        case let .loaded(models):
-            models
-        case .empty, .failed:
-            []
+        case .loaded, .empty, .failed:
+            true
         case .idle, .loading:
-            nil
+            false
         }
     }
 
