@@ -81,18 +81,22 @@ public enum FileManagerTopNavigationIntent: Equatable, Sendable {
     case pin(ContentTabID)
     case unpin(ContentTabID)
     case close(ContentTabID)
+    case update(ContentTabID)
 }
 
 public struct FileManagerPendingTopNavigationIntent: Equatable, Sendable {
     public let token: FileManagerTopNavigationOperationToken
     public let intent: FileManagerTopNavigationIntent
+    public var persistenceContext: ContentTabPinnedRecordTerminalContext?
 
     public init(
         token: FileManagerTopNavigationOperationToken,
         intent: FileManagerTopNavigationIntent,
+        persistenceContext: ContentTabPinnedRecordTerminalContext? = nil,
     ) {
         self.token = token
         self.intent = intent
+        self.persistenceContext = persistenceContext
     }
 }
 
@@ -527,15 +531,6 @@ public extension FileManagerWindowState {
 
     mutating func replayTopNavigationOverlays() {
         var order = lastConfirmedTopNavigationOrder
-        for dormantSlot in dormantContentTabSlots
-            where FileManagerTopNavigationItemID.isValidRawID(dormantSlot.id.rawValue)
-        {
-            order = FileManagerTopNavigationOrderPolicy.insertingPinnedItem(
-                dormantSlot.id,
-                into: order,
-                dormantSlot: dormantSlot,
-            )
-        }
         for pending in pendingTopNavigationIntents {
             order = Self.applying(pending.intent, to: order, dormantSlots: dormantContentTabSlots)
         }
@@ -561,6 +556,9 @@ public extension FileManagerWindowState {
 
         case let .unpin(id), let .close(id):
             FileManagerTopNavigationOrder(items: order.items.filter { $0 != .contentTab(id) })
+
+        case .update:
+            order
         }
     }
 

@@ -10,6 +10,29 @@ import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
+public enum FileManagerPinnedRecordPersistenceSource: Equatable, Sendable {
+    case contentTab
+    case selectedClose(operationID: UUID)
+}
+
+public enum FileManagerPinnedRecordPersistenceOwnership: Equatable, Sendable {
+    case local
+    case windowManager
+}
+
+extension FileManagerPinnedRecordPersistenceOwnership: DependencyKey {
+    public static let liveValue: Self = .local
+    public static let testValue: Self = .local
+    public static let previewValue: Self = .local
+}
+
+public extension DependencyValues {
+    var fileManagerPinnedRecordOwner: FileManagerPinnedRecordPersistenceOwnership {
+        get { self[FileManagerPinnedRecordPersistenceOwnership.self] }
+        set { self[FileManagerPinnedRecordPersistenceOwnership.self] = newValue }
+    }
+}
+
 public enum SelectedContentTabCloseOutcome: Equatable, Sendable {
     case removed
     case unpinned
@@ -98,6 +121,11 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         FileManagerTopNavigationOrder,
         revision: UInt64? = nil,
     )
+    case applyCommittedTopNavigationSnapshot(
+        order: FileManagerTopNavigationOrder,
+        revision: UInt64,
+        authoritativePinnedContentTabs: ContentTabState?,
+    )
     case applyFixedLocationItems([FileManagerFixedLocationItem])
     case applyUnavailableTopNavigationArrangement(FileManagerTopNavigationArrangementLoadFailure)
     case applyPinnedContentTabRuntimeNavigation(
@@ -157,6 +185,12 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case homeFavoritesLoaded([FileManagerHomeFavoriteItem])
         case topNavigationIntentCompleted(
             token: FileManagerTopNavigationOperationToken,
+            terminal: FileManagerTopNavigationIntentTerminal,
+        )
+        case pinnedRecordPersistenceCompleted(
+            token: FileManagerTopNavigationOperationToken,
+            source: FileManagerPinnedRecordPersistenceSource,
+            request: ContentTabPinnedRecordPersistenceRequest,
             terminal: FileManagerTopNavigationIntentTerminal,
         )
         case aiChatTabTitleUpdated(sessionID: AiChatSessionID, title: String?)
@@ -252,6 +286,12 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
             token: FileManagerTopNavigationOperationToken,
             source: FileManagerTopNavigationItemID,
             destination: FileManagerTopNavigationMoveDestination,
+            discoveredLocationIDs: [String],
+        )
+        case persistPinnedRecordMutation(
+            token: FileManagerTopNavigationOperationToken,
+            source: FileManagerPinnedRecordPersistenceSource,
+            request: ContentTabPinnedRecordPersistenceRequest,
             discoveredLocationIDs: [String],
         )
         case closeWindow
