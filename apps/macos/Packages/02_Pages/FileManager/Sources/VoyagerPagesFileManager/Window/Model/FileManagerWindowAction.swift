@@ -111,6 +111,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case setSortOrder(VoyagerShared.SortOrder)
         case requestUndo
         case requestRedo
+        case find
         case toggleComposer
         case newChat
         case showChatHistory
