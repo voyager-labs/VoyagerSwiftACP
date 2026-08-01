@@ -122,6 +122,59 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
         await store.finish()
     }
 
+    // MARK: - VOY-637-transcript_search_command
+
+    /// VOY-637-transcript_search_command: production command composition이 focused New Chat의 transcript search를 연다.
+    /// Settings commands root와 FileManager NSHosting root가 분리되어도 reducer command route로 local search를 전달한다.
+    /// - 검증 내용: AppRoot의 menu command부터 focused window의 AiChat transcriptSearch state까지 실제 reducer chain
+    /// - 사전 조건: focused FileManager inspector가 빈 transcript의 `.chat` mode로 표시됨
+    /// - 기대 결과: transcript search가 열리고 Collection Filter Composer는 열리지 않음
+    func testFindCommandFromProductionCompositionOpensFocusedChatTranscriptSearch() async {
+        let focusedUUID = makeUUID("00000000-0000-0000-0000-000000000637")
+        var window = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        window.inspector.inspectorVisible = true
+        window.inspector.inspectorPaneExists = true
+        window.inspector.activeMode = .chat
+        window.inspector.aiChat.mode = .chat
+
+        var initialState = AppRootFeature.State()
+        initialState.windowManager.windows = [
+            WindowSessionState(id: focusedUUID, window: window),
+        ]
+        initialState.windowManager.focusedWindowID = focusedUUID
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        }
+        // store.exhaustivity = .off: production command chain의 중간 delegate action보다 최종 focused child state를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.menuCommands(.view(.edit(.find))))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(
+            store.state.windowManager.windows[id: focusedUUID]?.window.inspector.aiChat.transcriptSearch.isPresented,
+            true,
+        )
+        XCTAssertFalse(MenuCommandsState(state: store.state).isComposerPresented)
+        await store.finish()
+    }
+
+    /// VOY-637-transcript_search_command: focused FileManager window가 없으면 기존 composer fallback을 한 번 요청한다.
+    /// WindowManager의 focused-window 경계가 nil이어도 Cmd+F 의미 action을 유실하거나 반복하지 않는다.
+    /// - 검증 내용: `.edit(.find)`가 `.edit(.toggleComposer)` 하나만 방출하는지 확인
+    /// - 사전 조건: WindowManager에 focused FileManager window가 없음
+    /// - 기대 결과: 기존 composer fallback action이 정확히 한 번 수신됨
+    func testFindCommandWithoutFocusedWindowRoutesComposerFallbackOnce() async {
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        }
+
+        await store.send(.edit(.find))
+        await store.receive(\.edit.toggleComposer)
+        await store.finish()
+    }
+
     private func makeWindowManagerStore(
         fixture: FocusedWindowFixture,
         savedSessionCount: LockIsolated<Int>? = nil,
