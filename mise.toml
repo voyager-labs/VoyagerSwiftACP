@@ -120,6 +120,14 @@ scripts/dev/macos-launch.sh \
 description = "macOS 개발 앱 테스트 (xcbeautify 필터링)"
 run = "scripts/dev/macos-test.sh \"$@\""
 
+[tasks.macos-helper-test]
+description = "macOS Helper 개발 스킴 테스트 (xcbeautify 필터링)"
+run = "scripts/dev/macos-test.sh --scheme VoyagerHelper-Dev \"$@\""
+
+[tasks.macos-filter-search-xpc-build]
+description = "FilterSearchXPC Dev-Debug target 빌드"
+run = "scripts/dev/xcodebuild-branch-product.sh -project apps/macos/Voyager/Voyager.xcodeproj -target FilterSearchXPC -configuration Dev-Debug -skipPackagePluginValidation -skipMacroValidation COMPILER_INDEX_STORE_ENABLE=NO CODE_SIGNING_ALLOWED=NO build"
+
 [tasks.macos-cache-report]
 description = "macOS Xcode hybrid cache usage report (worktree payload + shared packages)"
 run = "python3 scripts/dev/xcodebuild_cache.py report \"$@\""
@@ -179,6 +187,37 @@ test "$(go list -m all)" = "github.com/voyager-labs/voyager-app/apps/entry-core"
 test ! -f go.sum
 test ! -f go.work
 test ! -f ../../go.work
+'''
+
+[tasks.entry-core-swift-test]
+description = "VoyagerEntryCoreClient unit 테스트 (process smoke 제외)"
+run = "xcrun swift test --package-path apps/macos/Packages/06_Shared/VoyagerEntryCoreClient --skip VoyagerEntryCoreProcessSmokeTests"
+
+[tasks.entry-core-swift-smoke]
+description = "실제 Entry Core daemon 기반 VoyagerEntryCoreClient process smoke 테스트"
+run = '''
+set -eu
+temp_root="$(mktemp -d /tmp/ec-swift.XXXXXX)"
+trap 'rm -rf "$temp_root"' EXIT
+daemon_path="$temp_root/entry-core-daemon"
+(
+  cd apps/entry-core
+  go build -o "$daemon_path" ./cmd/entry-core-daemon
+)
+test -x "$daemon_path"
+export VOYAGER_ENTRY_CORE_DAEMON_PATH="$daemon_path"
+xcrun swift test \
+  --package-path apps/macos/Packages/06_Shared/VoyagerEntryCoreClient \
+  --filter VoyagerEntryCoreProcessSmokeTests
+'''
+
+[tasks.entry-core-interop-check]
+description = "Entry Core Go 검사와 Swift unit/process smoke를 순차 검증"
+run = '''
+set -eu
+mise run entry-core-check
+mise run entry-core-swift-test
+mise run entry-core-swift-smoke
 '''
 
 [tasks.storybook]
