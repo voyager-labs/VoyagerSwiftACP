@@ -172,13 +172,14 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         case let .expandRequested(id):
             guard let folderGeneration = state.entryViewLayout.hierarchy.foldersByID[id]?.generation
             else { return .none }
+            let priority = FileManagerContentEntryOpsCoordinator.rootMetadataPriority(for: state.entryArrangements)
             return sendEntryOperations(.loading(.loadFolderItems(.init(
                 rootContextGeneration: state.entryViewLayout.hierarchy.rootContextGeneration,
                 folderID: id,
                 folderGeneration: folderGeneration,
                 path: id,
                 showHidden: state.entryViewLayout.showHiddenFiles,
-                priority: .none,
+                priority: priority,
             ))))
 
         case let .collapseRequested(id):
@@ -193,13 +194,14 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         case let .retryRequested(id):
             guard let folderGeneration = state.entryViewLayout.hierarchy.foldersByID[id]?.generation
             else { return .none }
+            let priority = FileManagerContentEntryOpsCoordinator.rootMetadataPriority(for: state.entryArrangements)
             return sendEntryOperations(.loading(.loadFolderItems(.init(
                 rootContextGeneration: state.entryViewLayout.hierarchy.rootContextGeneration,
                 folderID: id,
                 folderGeneration: folderGeneration,
                 path: id,
                 showHidden: state.entryViewLayout.showHiddenFiles,
-                priority: .none,
+                priority: priority,
             ))))
 
         default:
