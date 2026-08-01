@@ -41,6 +41,7 @@ final class AppRootCompositionTests: XCTestCase {
             }
             $0.helperAppClient = helperAppClient(startCount: helperStartCount)
             $0.helperStateClient = readyHelperStateClient
+            $0.onboardingWindowClient.isRequired = { false }
         }
         store.exhaustivity = .off
         let initialState = store.state
@@ -48,9 +49,21 @@ final class AppRootCompositionTests: XCTestCase {
         await store.send(.accountAccess(.delegate(.unlocked(accessSnapshot)))) {
             $0.accessGatePhase = .granted
             $0.didStartHelper = true
+            $0.didStartEntryCoreHealthProbe = true
         }
         await store.receive(\.delegate.openInitialWindowIfNeeded)
         await fulfillment(of: [probeStarted], timeout: 1)
+
+        await store.send(.accountAccess(.delegate(.recoveryRequired(.sessionRequired)))) {
+            $0.accessGatePhase = .recoveryRequired
+        }
+        await store.receive(\.delegate.openInitialWindowIfNeeded)
+        await store.send(.accountAccess(.delegate(.unlocked(accessSnapshot)))) {
+            $0.accessGatePhase = .granted
+        }
+        await store.receive(\.delegate.openInitialWindowIfNeeded)
+        XCTAssertEqual(healthCalls.value.map(\.path), ["/tmp/voyager-entry-core.sock"])
+
         gate.continuation.yield(())
         gate.continuation.finish()
         await store.receive { action in
@@ -58,7 +71,6 @@ final class AppRootCompositionTests: XCTestCase {
             return result.outcome == .healthy && result.phase == .response && result.duration == .zero
         }
 
-        await store.send(.accountAccess(.delegate(.unlocked(accessSnapshot))))
         XCTAssertEqual(healthCalls.value.map(\.path), ["/tmp/voyager-entry-core.sock"])
         XCTAssertGreaterThanOrEqual(helperStartCount.value, 1)
         XCTAssertEqual(store.state.didFinishLaunching, initialState.didFinishLaunching)
@@ -91,6 +103,7 @@ final class AppRootCompositionTests: XCTestCase {
 
             await store.send(.accountAccess(.delegate(.unlocked(accessSnapshot)))) {
                 $0.accessGatePhase = .granted
+                $0.didStartEntryCoreHealthProbe = true
             }
             await store.receive(\.delegate.openInitialWindowIfNeeded)
             await store.receive { action in
@@ -132,6 +145,7 @@ final class AppRootCompositionTests: XCTestCase {
         await store.send(.accountAccess(.delegate(.unlocked(accessSnapshot)))) {
             $0.accessGatePhase = .granted
             $0.didStartHelper = true
+            $0.didStartEntryCoreHealthProbe = true
         }
         await store.receive(\.delegate.openInitialWindowIfNeeded)
         await fulfillment(of: [probeStarted], timeout: 1)

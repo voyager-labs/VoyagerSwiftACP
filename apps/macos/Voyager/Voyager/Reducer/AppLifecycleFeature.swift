@@ -110,51 +110,54 @@ struct AppLifecycleFeature {
                         stateClient: helperStateClient,
                     ))
                 }
-                let endpointClient = entryCoreEndpointClient
-                let entryCoreClient = entryCoreClient
-                let date = date
-                effects.append(
-                    .run { send in
-                        let startedAt = date.now
-                        let endpoint: EntryCoreEndpoint
-                        do {
-                            endpoint = try endpointClient.resolve()
-                        } catch {
-                            await send(.entryCoreHealthProbeCompleted(.init(
-                                outcome: .unavailable,
-                                phase: .endpointResolution,
-                                duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
-                            )))
-                            return
-                        }
-
-                        do {
-                            _ = try await entryCoreClient.health(endpoint)
-                            await send(.entryCoreHealthProbeCompleted(.init(
-                                outcome: .healthy,
-                                phase: .response,
-                                duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
-                            )))
-                        } catch is CancellationError {
-                            return
-                        } catch let error as EntryCoreClientError {
-                            guard error != .cancelled else { return }
-                            await send(.entryCoreHealthProbeCompleted(
-                                entryCoreHealthProbeResult(
-                                    for: error,
+                if !state.didStartEntryCoreHealthProbe {
+                    state.didStartEntryCoreHealthProbe = true
+                    let endpointClient = entryCoreEndpointClient
+                    let entryCoreClient = entryCoreClient
+                    let date = date
+                    effects.append(
+                        .run { send in
+                            let startedAt = date.now
+                            let endpoint: EntryCoreEndpoint
+                            do {
+                                endpoint = try endpointClient.resolve()
+                            } catch {
+                                await send(.entryCoreHealthProbeCompleted(.init(
+                                    outcome: .unavailable,
+                                    phase: .endpointResolution,
                                     duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
-                                ),
-                            ))
-                        } catch {
-                            await send(.entryCoreHealthProbeCompleted(.init(
-                                outcome: .failed,
-                                phase: .response,
-                                duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
-                            )))
+                                )))
+                                return
+                            }
+
+                            do {
+                                _ = try await entryCoreClient.health(endpoint)
+                                await send(.entryCoreHealthProbeCompleted(.init(
+                                    outcome: .healthy,
+                                    phase: .response,
+                                    duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
+                                )))
+                            } catch is CancellationError {
+                                return
+                            } catch let error as EntryCoreClientError {
+                                guard error != .cancelled else { return }
+                                await send(.entryCoreHealthProbeCompleted(
+                                    entryCoreHealthProbeResult(
+                                        for: error,
+                                        duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
+                                    ),
+                                ))
+                            } catch {
+                                await send(.entryCoreHealthProbeCompleted(.init(
+                                    outcome: .failed,
+                                    phase: .response,
+                                    duration: entryCoreHealthProbeDuration(from: startedAt, to: date.now),
+                                )))
+                            }
                         }
-                    }
-                    .cancellable(id: CancelID.entryCoreHealthProbe, cancelInFlight: true),
-                )
+                        .cancellable(id: CancelID.entryCoreHealthProbe, cancelInFlight: true),
+                    )
+                }
                 return .merge(effects)
 
             case .accountAccess(.delegate(.recoveryRequired)):
