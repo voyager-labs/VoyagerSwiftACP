@@ -115,7 +115,7 @@ public struct FileManagerContentFeature {
                 : Array(state.entryOperations.items)
             EntryArrangementsFeature().reduce(
                 into: &state.entryArrangements,
-                action: .delegate(.requestApply),
+                action: .apply(items: projectionEntries, isCollectionMode: state.isCollectionMode),
             )
             let projectionSections = state.isCollectionMode
                 ? []

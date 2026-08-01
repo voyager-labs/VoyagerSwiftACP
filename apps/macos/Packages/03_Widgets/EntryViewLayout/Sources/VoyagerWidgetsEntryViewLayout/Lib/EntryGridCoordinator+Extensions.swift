@@ -305,16 +305,11 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             },
             onRenameCommit: { [weak self] in
                 guard let self else { return }
-                store.send(.view(.commitRename(itemID: entry.id, newName: entry.name)))
+                store.send(.view(.commitRename(itemID: entry.id, newName: state.renamingText)))
             },
             onRenameCancel: { [weak self] in
                 guard let self else { return }
-                store.send(.view(.updateSelection(
-                    ids: state.selectedIds,
-                    lastSelectedId: state.lastSelectedId,
-                    rangeAnchorId: state.rangeAnchorId,
-                    shouldScrollToSelection: false,
-                )))
+                store.send(.delegate(.renameCanceled))
             },
         ))
         let isSelected = state.selectedIds.contains(entry.id)

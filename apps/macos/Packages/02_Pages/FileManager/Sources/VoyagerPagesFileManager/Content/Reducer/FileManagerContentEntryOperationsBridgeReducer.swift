@@ -107,9 +107,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             )
 
         case .renameCanceled:
-            state.entryOperations.renamingItemId = nil
-            state.entryOperations.renamingText = ""
-            return .none
+            return sendEntryOperations(.edit(.cancelRename))
 
         case let .tagMutation(tagName, mode):
             let paths = selectedItemPaths(in: state)

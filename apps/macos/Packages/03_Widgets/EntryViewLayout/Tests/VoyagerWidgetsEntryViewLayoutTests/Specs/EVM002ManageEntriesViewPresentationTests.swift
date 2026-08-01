@@ -316,7 +316,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             $0.shouldScrollToSelection = false
         }
 
-        await store.receive(\.delegate.renameCommitted)
+        await store.receive(\.delegate.renameCanceled)
         await store.receive(\.delegate.selectionChanged)
     }
 

@@ -53,7 +53,7 @@ public struct EntryViewLayoutFeature {
                 if let renamingId = state.renamingItemId {
                     let isRenamingItemSelected = ids == [renamingId]
                     if !isRenamingItemSelected {
-                        effects.append(.send(.delegate(.renameCommitted(itemID: renamingId, newName: ""))))
+                        effects.append(.send(.delegate(.renameCanceled)))
                     }
                 }
 
