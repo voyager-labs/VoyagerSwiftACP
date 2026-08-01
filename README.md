@@ -47,8 +47,10 @@ macOS 앱은 로컬 Python API 서버를 번들하거나 실행하지 않습니�
 ## Quick Start
 
 - Entry Core
-    - Guide: [`apps/entry-core/README.md`](apps/entry-core/README.md)
-    - Full check: `mise run entry-core-check`
+    - Go runtime guide: [`apps/entry-core/README.md`](apps/entry-core/README.md)
+    - Swift client package: [`apps/macos/Packages/06_Shared/VoyagerEntryCoreClient`](apps/macos/Packages/06_Shared/VoyagerEntryCoreClient)
+    - Go-only check: `mise run entry-core-check`
+    - Go + Swift interoperability check: `mise run entry-core-interop-check`
 
 - macOS App
     - Xcode에서 시작(권장): `xed apps/macos/Voyager/Voyager.xcworkspace` (열기 후 `Cmd+R` 실행)
@@ -94,6 +96,9 @@ macOS 앱은 로컬 Python API 서버를 번들하거나 실행하지 않습니�
     - Build (CLI): `mise run macos-build`
     - Prod build/archive (CLI): `mise run macos-launch -- --scheme Voyager-Prod --configuration Prod-Release --no-launch`
     - Tests (CLI): `mise run macos-test`
+    - Helper focused test: `mise run macos-helper-test -- -only-testing:VoyagerHelperTests/XPCSearchServiceRecentTagDispatchTests`
+    - Helper full test: `mise run macos-helper-test`
+    - FilterSearchXPC build: `mise run macos-filter-search-xpc-build`
 - OnboardingHost Build (CLI): `mise run macos-launch -- --scheme OnboardingHost-Dev --configuration Dev-Debug --no-launch`
 - SettingsHost Build (CLI): `mise run macos-launch -- --scheme SettingsHost-Dev --configuration Dev-Debug --no-launch`
 
