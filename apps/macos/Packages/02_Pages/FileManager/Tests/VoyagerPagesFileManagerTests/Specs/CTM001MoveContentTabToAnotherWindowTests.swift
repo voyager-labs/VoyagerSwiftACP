@@ -636,6 +636,264 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         try assertRejected(.targetTabCollision, source: source, target: inspectorAiTarget, tabID: tabID)
     }
 
+    func testPreflightRejectsMovedSourceComposerTransientWorkWithoutMutation() throws {
+        let movedID = ContentTabID(rawValue: "transient-source-composer")
+        let target = Fixture.window(windowID: Fixture.targetWindowID, tabs: [], active: nil)
+        let mutations: [(inout FileManagerWindowState) -> Void] = [
+            { state in
+                state.content.composer.activeSearchRequestID = UUID()
+                state.content.composer.isLoadingSearch = true
+                state.content.composer.queryRenderPhase = .searching
+            },
+            { state in
+                state.content.composer.activeFiltersRequestID = UUID()
+                state.content.composer.isLoadingFilters = true
+            },
+            { state in
+                state.content.composer.activeFiltersRequestID = UUID()
+                state.content.composer.isFilteringInFlight = true
+            },
+            { state in
+                state.content.composer.queryRenderPhase = .chipsAppliedPendingList
+            },
+        ]
+
+        for mutate in mutations {
+            var source = Fixture.window(
+                windowID: Fixture.sourceWindowID,
+                tabs: [Fixture.tab(movedID, path: "/transient/source/composer")],
+                active: movedID,
+            )
+            mutate(&source)
+            source.tabContentStates[movedID] = source.content
+            try assertRejected(
+                .ineligible(.pendingCollectionOperation),
+                source: source,
+                target: target,
+                tabID: movedID,
+            )
+        }
+    }
+
+    func testPreflightRejectsMovedSourceContentAndInspectorAiTransientWorkWithoutMutation() throws {
+        let movedID = ContentTabID(rawValue: "transient-source-ai")
+        let target = Fixture.window(windowID: Fixture.targetWindowID, tabs: [], active: nil)
+        let mutations: [(inout FileManagerWindowState) -> Void] = [
+            { $0.content.aiChat.modelListRequestID = UUID() },
+            { $0.content.aiChat.modelListPendingProviders = [.openai] },
+            { $0.content.aiChat.modelListState = .loading },
+            { $0.content.aiChat.sessionList.isLoading = true },
+            { $0.inspector.aiChat.modelListState = .loading },
+            { $0.inspector.aiChat.sessionList.isLoading = true },
+        ]
+
+        for mutate in mutations {
+            var source = Fixture.window(
+                windowID: Fixture.sourceWindowID,
+                tabs: [Fixture.tab(movedID, path: "/transient/source/ai")],
+                active: movedID,
+            )
+            mutate(&source)
+            source.tabContentStates[movedID] = source.content
+            source.tabInspectorStates[movedID] = source.inspector.tabSnapshot()
+            try assertRejected(
+                .ineligible(.pendingAiChatOperation),
+                source: source,
+                target: target,
+                tabID: movedID,
+            )
+        }
+    }
+
+    func testPreflightRejectsDestinationOutgoingComposerAndAiTransientWorkWithoutMutation() throws {
+        let movedID = ContentTabID(rawValue: "transient-target-source")
+        let targetID = ContentTabID(rawValue: "transient-target-active")
+        let source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [Fixture.tab(movedID, path: "/transient/target/source")],
+            active: movedID,
+        )
+        let cases: [(
+            ContentTabTransfer.Rejection,
+            (inout FileManagerWindowState) -> Void,
+        )] = [
+            (.ineligible(.pendingCollectionOperation), { state in
+                state.content.composer.activeSearchRequestID = UUID()
+                state.content.composer.isLoadingSearch = true
+            }),
+            (.ineligible(.pendingCollectionOperation), { state in
+                state.content.composer.activeFiltersRequestID = UUID()
+                state.content.composer.isFilteringInFlight = true
+            }),
+            (.ineligible(.pendingAiChatOperation), { $0.content.aiChat.modelListRequestID = UUID() }),
+            (.ineligible(.pendingAiChatOperation), { $0.content.aiChat.sessionList.isLoading = true }),
+            (.ineligible(.pendingAiChatOperation), { $0.inspector.aiChat.modelListPendingProviders = [.anthropic] }),
+            (.ineligible(.pendingAiChatOperation), { $0.inspector.aiChat.sessionList.isLoading = true }),
+        ]
+
+        for (expected, mutate) in cases {
+            var target = Fixture.window(
+                windowID: Fixture.targetWindowID,
+                tabs: [Fixture.tab(targetID, path: "/transient/target/active")],
+                active: targetID,
+            )
+            mutate(&target)
+            target.tabContentStates[targetID] = target.content
+            target.tabInspectorStates[targetID] = target.inspector.tabSnapshot()
+            try assertRejected(expected, source: source, target: target, tabID: movedID)
+        }
+    }
+
+    func testPreflightAllowsSettledStateAndIgnoresUnrelatedActiveOrDestinationInactiveTransientWork() throws {
+        let movedID = ContentTabID(rawValue: "transient-negative-moved")
+        let sourceActiveID = ContentTabID(rawValue: "transient-negative-source-active")
+        let targetActiveID = ContentTabID(rawValue: "transient-negative-target-active")
+        let targetInactiveID = ContentTabID(rawValue: "transient-negative-target-inactive")
+        var source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [
+                Fixture.tab(sourceActiveID, path: "/negative/source/active"),
+                Fixture.tab(movedID, path: "/negative/source/moved"),
+            ],
+            active: sourceActiveID,
+        )
+        source.content.composer.activeSearchRequestID = UUID()
+        source.content.composer.isLoadingSearch = true
+        source.content.aiChat.modelListState = .loading
+        source.inspector.aiChat.sessionList.isLoading = true
+        source.tabContentStates[sourceActiveID] = source.content
+        source.tabInspectorStates[sourceActiveID] = source.inspector.tabSnapshot()
+        source.tabContentStates[movedID]?.composer.text = "settled query"
+        source.tabContentStates[movedID]?.composer.pendingSearchQuery = "settled query"
+        source.tabContentStates[movedID]?.composer.lastAcceptedSearchRequestID = UUID()
+        source.tabContentStates[movedID]?.composer.lastAcceptedFiltersRequestID = UUID()
+        source.tabContentStates[movedID]?.composer.queryRenderPhase = .listApplied
+        source.tabContentStates[movedID]?.aiChat.modelListState = .empty
+        source.tabContentStates[movedID]?.aiChat.sessionList.updateQuery("settled history")
+
+        var target = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [
+                Fixture.tab(targetActiveID, path: "/negative/target/active"),
+                Fixture.tab(targetInactiveID, path: "/negative/target/inactive"),
+            ],
+            active: targetActiveID,
+        )
+        target.content.composer.text = "settled target query"
+        target.content.composer.lastAcceptedSearchRequestID = UUID()
+        target.content.composer.queryRenderPhase = .listApplied
+        target.content.aiChat.modelListState = .empty
+        target.content.aiChat.sessionList.updateQuery("settled target history")
+        target.tabContentStates[targetActiveID] = target.content
+        target.tabContentStates[targetInactiveID]?.composer.activeFiltersRequestID = UUID()
+        target.tabContentStates[targetInactiveID]?.composer.isFilteringInFlight = true
+        target.tabContentStates[targetInactiveID]?.aiChat.modelListState = .loading
+        target.tabContentStates[targetInactiveID]?.aiChat.sessionList.isLoading = true
+        target.tabInspectorStates[targetInactiveID]?.aiChat.modelListRequestID = UUID()
+        target.tabInspectorStates[targetInactiveID]?.aiChat.sessionList.isLoading = true
+
+        let result = ContentTabTransfer.transfer(source: source, target: target, tabID: movedID)
+        XCTAssertNoThrow(try result.movedPostCommit())
+    }
+
+    func testPreflightCapturesExactSourceAndTargetOutgoingOwnerProvenance() throws {
+        let movedID = ContentTabID(rawValue: "owner-source-moved")
+        let fallbackID = ContentTabID(rawValue: "owner-source-fallback")
+        let targetID = ContentTabID(rawValue: "owner-target-outgoing")
+        let sourceLoadingWindowID = UUID(uuid: (70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1))
+        let sourceLoadingOwnerID = UUID(uuid: (70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2))
+        let sourceComposerOwnerID = UUID(uuid: (70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3))
+        let targetLoadingWindowID = UUID(uuid: (70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4))
+        let targetLoadingOwnerID = UUID(uuid: (70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5))
+        let targetComposerOwnerID = UUID(uuid: (70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6))
+        var source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [
+                Fixture.tab(movedID, path: "/owner/source/moved"),
+                Fixture.tab(fallbackID, path: "/owner/source/fallback"),
+            ],
+            active: movedID,
+            previous: fallbackID,
+        )
+        source.content.entryViewLayout.entryOperations.windowID = sourceLoadingWindowID
+        source.content.entryViewLayout.entryOperations.loadingCancellationOwnerID = sourceLoadingOwnerID
+        source.content.composer.cancellationOwnerID = sourceComposerOwnerID
+        source.tabContentStates[movedID] = source.content
+        var target = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [Fixture.tab(targetID, path: "/owner/target/outgoing")],
+            active: targetID,
+        )
+        target.content.entryViewLayout.entryOperations.windowID = targetLoadingWindowID
+        target.content.entryViewLayout.entryOperations.loadingCancellationOwnerID = targetLoadingOwnerID
+        target.content.composer.cancellationOwnerID = targetComposerOwnerID
+        target.tabContentStates[targetID] = target.content
+        let sourceBefore = source
+        let targetBefore = target
+
+        let token = try ContentTabTransfer.preflight(
+            source: source,
+            target: target,
+            tabID: movedID,
+        ).successToken()
+
+        XCTAssertEqual(source, sourceBefore)
+        XCTAssertEqual(target, targetBefore)
+        XCTAssertEqual(token.sourceOutgoingOwner, .init(
+            tabID: movedID,
+            loadingWindowID: sourceLoadingWindowID,
+            loadingOwnerID: sourceLoadingOwnerID,
+            composerOwnerID: sourceComposerOwnerID,
+            canCancelLoadingExclusively: true,
+            canCancelComposerExclusively: true,
+        ))
+        XCTAssertEqual(token.targetOutgoingOwner, .init(
+            tabID: targetID,
+            loadingWindowID: targetLoadingWindowID,
+            loadingOwnerID: targetLoadingOwnerID,
+            composerOwnerID: targetComposerOwnerID,
+            canCancelLoadingExclusively: true,
+            canCancelComposerExclusively: true,
+        ))
+        let postCommit = try ContentTabTransfer.apply(token).movedPostCommit()
+        XCTAssertEqual(postCommit.rebind.sourceOutgoingOwner, token.sourceOutgoingOwner)
+        XCTAssertEqual(postCommit.rebind.targetOutgoingOwner, token.targetOutgoingOwner)
+    }
+
+    func testPreflightDoesNotMarkSharedSiblingOwnersSafeForCancellation() throws {
+        let movedID = ContentTabID(rawValue: "shared-owner-moved")
+        let sourceSiblingID = ContentTabID(rawValue: "shared-owner-source-sibling")
+        let targetID = ContentTabID(rawValue: "shared-owner-target")
+        let targetSiblingID = ContentTabID(rawValue: "shared-owner-target-sibling")
+        let source = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [
+                Fixture.tab(movedID, path: "/shared/source/moved"),
+                Fixture.tab(sourceSiblingID, path: "/shared/source/sibling"),
+            ],
+            active: movedID,
+        )
+        let target = Fixture.window(
+            windowID: Fixture.targetWindowID,
+            tabs: [
+                Fixture.tab(targetID, path: "/shared/target/outgoing"),
+                Fixture.tab(targetSiblingID, path: "/shared/target/sibling"),
+            ],
+            active: targetID,
+        )
+
+        let token = try ContentTabTransfer.preflight(
+            source: source,
+            target: target,
+            tabID: movedID,
+        ).successToken()
+
+        XCTAssertFalse(token.sourceOutgoingOwner.canCancelLoadingExclusively)
+        XCTAssertFalse(token.sourceOutgoingOwner.canCancelComposerExclusively)
+        XCTAssertFalse(try XCTUnwrap(token.targetOutgoingOwner).canCancelLoadingExclusively)
+        XCTAssertFalse(try XCTUnwrap(token.targetOutgoingOwner).canCancelComposerExclusively)
+    }
+
     private func assertRejected(
         _ expected: ContentTabTransfer.Rejection,
         source: FileManagerWindowState,

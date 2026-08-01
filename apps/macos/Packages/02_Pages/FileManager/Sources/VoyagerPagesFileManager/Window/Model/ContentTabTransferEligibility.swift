@@ -1,5 +1,6 @@
 import VoyagerEntitiesAi
 import VoyagerFeaturesAiChat
+import VoyagerFeaturesComposer
 
 enum ContentTabTransferEligibility: Equatable {
     case eligible
@@ -32,7 +33,9 @@ extension FileManagerWindowState {
         if let rejection = ownershipRejection(tabID: tabID) {
             return .rejected(rejection)
         }
-        if let rejection = durablePendingRejection(tabID: tabID) {
+        if let rejection = durablePendingRejection(tabID: tabID)
+            ?? transientPendingRejection(tabID: tabID)
+        {
             return .rejected(rejection)
         }
         return .eligible
@@ -46,6 +49,11 @@ extension FileManagerWindowState {
             if let rejection = durablePendingRejection(tabID: tabID) {
                 return .rejected(rejection)
             }
+        }
+        if let activeTabID = contentTabs.activeTabID,
+           let rejection = transientPendingRejection(tabID: activeTabID)
+        {
+            return .rejected(rejection)
         }
         return .eligible
     }
@@ -137,6 +145,23 @@ extension FileManagerWindowState {
             || backgroundAiChatTargetsTab(tabID)
     }
 
+    private func transientPendingRejection(
+        tabID: ContentTabID,
+    ) -> ContentTabTransferEligibilityRejection? {
+        guard let targetContent = authoritativeContentState(for: tabID) else {
+            return .malformedOwnership(.missingContent(tabID))
+        }
+        if targetContent.composer.hasTransientPendingTransferOperation {
+            return .pendingCollectionOperation
+        }
+        if targetContent.aiChat.hasTransientPendingTransferOperation
+            || authoritativeInspectorState(for: tabID)?.aiChat.hasTransientPendingTransferOperation == true
+        {
+            return .pendingAiChatOperation
+        }
+        return nil
+    }
+
     private func authoritativeContentState(for tabID: ContentTabID) -> FileManagerContentFeature.State? {
         contentTabs.activeTabID == tabID ? content : tabContentStates[tabID]
     }
@@ -195,7 +220,26 @@ private extension FileManagerContentFeature.State {
     }
 }
 
+private extension ComposerFeature.State {
+    var hasTransientPendingTransferOperation: Bool {
+        let hasActiveSearch = activeSearchRequestID != nil
+            && (isLoadingSearch || queryRenderPhase == .searching)
+        let hasActiveFilters = activeFiltersRequestID != nil
+            && (isLoadingFilters || isFilteringInFlight)
+        return hasActiveSearch
+            || hasActiveFilters
+            || queryRenderPhase == .chipsAppliedPendingList
+    }
+}
+
 private extension AiChatFeature.State {
+    var hasTransientPendingTransferOperation: Bool {
+        modelListRequestID != nil
+            || !modelListPendingProviders.isEmpty
+            || modelListState == .loading
+            || sessionList.isLoading
+    }
+
     var hasDurablePendingTransferOperation: Bool {
         if pendingRequestStart != nil
             || !backgroundPendingRequestStarts.isEmpty

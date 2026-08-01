@@ -135,15 +135,28 @@ extension WindowManagerFeature {
                 _ = fileOperationUndoManagerClient.activate(targetScope)
             },
             .concatenate(
-                .cancel(id: EntryOperationsLoadingCancelID.loadItems(
-                    windowID: rebind.sourceWindowID,
-                    ownerID: rebind.sourceLoadingOwnerID,
-                )),
-                .cancel(id: ComposerFeature.CancelID.search(ownerID: rebind.sourceComposerOwnerID)),
-                .cancel(id: ComposerFeature.CancelID.filters(ownerID: rebind.sourceComposerOwnerID)),
+                contentTabMoveOutgoingOwnerTeardown(rebind.sourceOutgoingOwner),
+                rebind.targetOutgoingOwner.map(contentTabMoveOutgoingOwnerTeardown) ?? .none,
                 contentTabMoveObservationRebindEffect(rebind),
             ),
         ]
+    }
+
+    private func contentTabMoveOutgoingOwnerTeardown(
+        _ owner: ContentTabTransfer.OutgoingContentOwner,
+    ) -> Effect<Action> {
+        var effects: [Effect<Action>] = []
+        if owner.canCancelLoadingExclusively {
+            effects.append(.cancel(id: EntryOperationsLoadingCancelID.loadItems(
+                windowID: owner.loadingWindowID,
+                ownerID: owner.loadingOwnerID,
+            )))
+        }
+        if owner.canCancelComposerExclusively {
+            effects.append(.cancel(id: ComposerFeature.CancelID.search(ownerID: owner.composerOwnerID)))
+            effects.append(.cancel(id: ComposerFeature.CancelID.filters(ownerID: owner.composerOwnerID)))
+        }
+        return .concatenate(effects)
     }
 
     private func contentTabMoveObservationRebindEffect(

@@ -34,12 +34,21 @@ public enum ContentTabTransfer {
         public let navigationRoute: ContentPageNavigationRoute
     }
 
+    public struct OutgoingContentOwner: Equatable {
+        public let tabID: ContentTabID
+        public let loadingWindowID: UUID?
+        public let loadingOwnerID: UUID
+        public let composerOwnerID: UUID?
+        public let canCancelLoadingExclusively: Bool
+        public let canCancelComposerExclusively: Bool
+    }
+
     public struct RebindIntent: Equatable {
         public let sourceWindowID: UUID
         public let targetWindowID: UUID
         public let tabID: ContentTabID
-        public let sourceLoadingOwnerID: UUID
-        public let sourceComposerOwnerID: UUID?
+        public let sourceOutgoingOwner: OutgoingContentOwner
+        public let targetOutgoingOwner: OutgoingContentOwner?
         public let sourceActiveNavigationObservation: ActiveNavigationObservationRebind?
         public let targetActiveNavigationObservation: ActiveNavigationObservationRebind
         public let rebindNavigationObservation: Bool
@@ -70,6 +79,8 @@ public enum ContentTabTransfer {
         let sourceWindowID: UUID
         let targetWindowID: UUID
         let sourceRemovalIndex: Int
+        let sourceOutgoingOwner: OutgoingContentOwner
+        let targetOutgoingOwner: OutgoingContentOwner?
     }
 
     struct WorkUnit: Equatable {
@@ -148,6 +159,12 @@ public enum ContentTabTransfer {
             sourceWindowID: windowIDs.source,
             targetWindowID: windowIDs.target,
             sourceRemovalIndex: removalIndex,
+            sourceOutgoingOwner: outgoingContentOwner(
+                tabID: tabID,
+                content: payload.content,
+                in: source,
+            ),
+            targetOutgoingOwner: targetOutgoingContentOwner(in: target),
         ))
     }
 
@@ -364,8 +381,8 @@ public enum ContentTabTransfer {
             sourceWindowID: token.sourceWindowID,
             targetWindowID: token.targetWindowID,
             tabID: token.payload.item.id,
-            sourceLoadingOwnerID: token.payload.content.entryViewLayout.entryOperations.loadingCancellationOwnerID,
-            sourceComposerOwnerID: token.payload.content.composer.cancellationOwnerID,
+            sourceOutgoingOwner: token.sourceOutgoingOwner,
+            targetOutgoingOwner: token.targetOutgoingOwner,
             sourceActiveNavigationObservation: activeNavigationObservation(
                 in: source,
                 windowID: token.sourceWindowID,
@@ -377,6 +394,47 @@ public enum ContentTabTransfer {
             ),
             rebindNavigationObservation: true,
             rebindUndoScope: true,
+        )
+    }
+
+    private static func targetOutgoingContentOwner(
+        in target: FileManagerWindowState,
+    ) -> OutgoingContentOwner? {
+        guard let tabID = target.contentTabs.activeTabID,
+              target.contentTabs.tabs[id: tabID] != nil
+        else { return nil }
+        return outgoingContentOwner(tabID: tabID, content: target.content, in: target)
+    }
+
+    private static func outgoingContentOwner(
+        tabID: ContentTabID,
+        content: FileManagerContentFeature.State,
+        in window: FileManagerWindowState,
+    ) -> OutgoingContentOwner {
+        let entryOperations = content.entryViewLayout.entryOperations
+        let siblingContents: [FileManagerContentFeature.State] = window.contentTabs.tabs.ids
+            .compactMap { siblingTabID in
+                guard siblingTabID != tabID else { return nil }
+                if window.contentTabs.activeTabID == siblingTabID {
+                    return window.content
+                }
+                return window.tabContentStates[siblingTabID]
+            }
+        let hasSharedLoadingOwner = siblingContents.contains { siblingContent in
+            let siblingEntryOperations = siblingContent.entryViewLayout.entryOperations
+            return siblingEntryOperations.windowID == entryOperations.windowID
+                && siblingEntryOperations.loadingCancellationOwnerID == entryOperations.loadingCancellationOwnerID
+        }
+        let hasSharedComposerOwner = siblingContents.contains {
+            $0.composer.cancellationOwnerID == content.composer.cancellationOwnerID
+        }
+        return OutgoingContentOwner(
+            tabID: tabID,
+            loadingWindowID: entryOperations.windowID,
+            loadingOwnerID: entryOperations.loadingCancellationOwnerID,
+            composerOwnerID: content.composer.cancellationOwnerID,
+            canCancelLoadingExclusively: !hasSharedLoadingOwner,
+            canCancelComposerExclusively: !hasSharedComposerOwner,
         )
     }
 
