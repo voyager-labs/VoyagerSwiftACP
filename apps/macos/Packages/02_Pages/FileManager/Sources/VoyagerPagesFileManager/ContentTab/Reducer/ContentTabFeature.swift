@@ -216,6 +216,7 @@ extension ContentTabFeature {
         preservesLastTabIdentity: Bool,
         state: inout ContentTabState,
     ) -> Effect<ContentTabAction> {
+        guard !state.pendingPinnedRecordIDs.contains(id) else { return .none }
         guard let tab = state.tabs[id: id] else {
             state.previousActiveTabID = nil
             return .none
@@ -564,7 +565,7 @@ extension ContentTabFeature {
         state.selectedTabIDs = selectedTabIDs
         state.selectionAnchorID = selectionAnchorID
         state.pinnedRecords.removeValue(forKey: id)
-        state.pendingPinnedRecordIDs.remove(id)
+        state.pendingPinnedRecordIDs.insert(id)
         state.pinnedRecordPersistenceError = nil
 
         let intentID = state.markLatestPinnedRecordPersistenceIntent(for: id)

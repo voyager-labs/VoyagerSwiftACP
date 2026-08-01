@@ -911,7 +911,7 @@ extension FileManagerWindowState {
         let currentUnpinnedTabs = contentTabs.tabs.filter { !$0.isPinned && !mergedPinnedIDs.contains($0.id) }
         let currentPinnedIDs = Set(currentPinnedTabs.map(\.id))
 
-        let retainedPendingPinnedIDs = Set(pendingPinnedTabs.map(\.id))
+        let retainedPendingPinnedIDs = pendingPinnedIDs.intersection(contentTabs.tabs.ids)
         let pendingPinnedRecords = contentTabs.pinnedRecords.filter { retainedPendingPinnedIDs.contains($0.key) }
 
         contentTabs.tabs = IdentifiedArrayOf(uniqueElements: mergedPinnedTabs + currentUnpinnedTabs)

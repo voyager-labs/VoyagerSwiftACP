@@ -140,6 +140,7 @@ public struct FileManagerFeature {
 
             case let .contentTabs(.commitClose(tabID)):
                 guard state.pendingSelectedContentTabClose == nil else { return .none }
+                guard !state.contentTabs.pendingPinnedRecordIDs.contains(tabID) else { return .none }
                 state.dormantContentTabSlots.removeAll { $0.id == tabID }
                 state.pendingTopNavigationIntents.removeAll { pending in
                     switch pending.intent {
@@ -391,6 +392,7 @@ extension FileManagerFeature {
         tabID: ContentTabID,
         state: inout State,
     ) -> Effect<Action> {
+        guard !state.contentTabs.pendingPinnedRecordIDs.contains(tabID) else { return .none }
         state.dormantContentTabSlots.removeAll { $0.id == tabID }
         guard state.contentTabs.tabs[id: tabID]?.isPinned == true else {
             state.replayTopNavigationOverlays()

@@ -4277,8 +4277,11 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         await store.send(.close(pinnedID)) {
             $0.tabs[id: pinnedID]?.isPinned = false
+            $0.pendingPinnedRecordIDs.insert(pinnedID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(pinnedID)
+        }
         await store.finish()
 
         XCTAssertEqual(store.state.selectedTabIDs, [pinnedID])

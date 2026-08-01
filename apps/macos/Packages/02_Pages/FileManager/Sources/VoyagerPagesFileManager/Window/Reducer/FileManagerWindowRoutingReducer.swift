@@ -493,6 +493,7 @@ struct FileManagerWindowRoutingReducer {
                 )
 
             case let .contentTabs(.requestClose(tabID)):
+                guard !state.contentTabs.pendingPinnedRecordIDs.contains(tabID) else { return .none }
                 guard let tab = state.contentTabs.tabs[id: tabID] else { return .none }
                 if tab.isPinned {
                     return .send(.contentTabs(.close(tabID)))
@@ -504,6 +505,7 @@ struct FileManagerWindowRoutingReducer {
                 return finalizeContentTabClose(tabID: tabID, state: &state)
 
             case let .contentTabs(.commitClose(tabID)):
+                guard !state.contentTabs.pendingPinnedRecordIDs.contains(tabID) else { return .none }
                 return finalizeContentTabClose(tabID: tabID, state: &state)
 
             case .contentTabs(.restore):
@@ -2140,6 +2142,7 @@ private extension FileManagerWindowRoutingReducer {
         state: inout State,
         batchOperationID: UUID? = nil,
     ) -> Effect<Action> {
+        guard !state.contentTabs.pendingPinnedRecordIDs.contains(tabID) else { return .none }
         if let pendingClose = state.pendingContentTabClose {
             guard let batchOperationID,
                   pendingClose.tabID == tabID,

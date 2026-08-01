@@ -1164,6 +1164,40 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertTrue(dormantState.dormantContentTabSlots.isEmpty)
     }
 
+    /// CTM-003-unpin_content_tab_s: pending unpin 중 close는 dormant anchor까지 완전한 no-op이다.
+    /// close gate가 durable terminal 전 runtime repin 위치를 먼저 지우지 않는지 검증한다.
+    /// - 검증 내용: pending marker가 있는 unpinned tab의 close 요청 이후 tab·dormant slot 보존
+    /// - 사전 조건: optimistic unpin 상태와 same-session dormant anchor
+    /// - 기대 결과: tab과 anchor가 그대로 남아 성공 terminal 이후 repin 위치를 복원할 수 있음
+    func testLifecycle_pendingUnpinClosePreservesDormantAnchor() {
+        let tabID = ContentTabID(rawValue: "pending-unpin-close")
+        let dormantSlot = FileManagerTopNavigationOrderPolicy.DormantContentTabSlot(
+            id: tabID,
+            before: .location("L1"),
+            after: .location("L2"),
+        )
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Pending",
+                iconName: "house",
+            )],
+            activeTabID: tabID,
+        )
+        state.contentTabs.pendingPinnedRecordIDs = [tabID]
+        state.dormantContentTabSlots = [dormantSlot]
+
+        _ = FileManagerFeature().reduce(into: &state, action: .closeContentTabRequested(tabID))
+
+        XCTAssertNotNil(state.contentTabs.tabs[id: tabID])
+        XCTAssertEqual(state.dormantContentTabSlots, [dormantSlot])
+        XCTAssertEqual(state.contentTabs.pendingPinnedRecordIDs, [tabID])
+    }
+
     /// CTM-003-pin_content_tab_s: corrupt store pin은 bytes를 보존하고 load-unavailable로 남는다.
     /// unavailable store를 writable empty state로 취급하거나 save rollback으로 오분류하지 않는지 검증한다.
     /// - 검증 내용: write 0, source bytes, local rollback, typed availability/presentation
@@ -3915,8 +3949,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.unpin(currentID)) {
             $0.tabs[id: currentID]?.isPinned = false
             $0.pinnedRecords.removeAll()
+            $0.pendingPinnedRecordIDs.insert(currentID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(currentID)
+        }
         await store.finish()
 
         XCTAssertEqual(recorder.stores(), [
@@ -4260,9 +4297,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.receive(\.contentTabs) {
             $0.contentTabs.tabs[id: tabID]?.isPinned = false
             $0.contentTabs.pinnedRecords.removeAll()
+            $0.contentTabs.pendingPinnedRecordIDs.insert(tabID)
             $0.syncContentTabSidebarItems()
         }
-        await store.receive(\.contentTabs.pinnedRecordSaveSucceeded)
+        await store.receive(\.contentTabs.pinnedRecordSaveSucceeded) {
+            $0.contentTabs.pendingPinnedRecordIDs.remove(tabID)
+        }
         await store.finish()
     }
 
@@ -4352,8 +4392,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.unpin(tabID)) {
             $0.tabs[id: tabID]?.isPinned = false
             $0.pinnedRecords.removeAll()
+            $0.pendingPinnedRecordIDs.insert(tabID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(tabID)
+        }
         await store.finish()
     }
 
@@ -4411,8 +4454,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.tabs.remove(id: pinnedID)
             $0.tabs.append(unpinnedTab)
             $0.pinnedRecords.removeAll()
+            $0.pendingPinnedRecordIDs.insert(pinnedID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(pinnedID)
+        }
         await store.finish()
 
         XCTAssertEqual(store.state.tabs.map(\.id), [firstUnpinnedID, secondUnpinnedID, pinnedID])
@@ -4519,10 +4565,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.unpin(tabID)) {
             $0.tabs[id: tabID]?.isPinned = false
             $0.pinnedRecords.removeAll()
+            $0.pendingPinnedRecordIDs.insert(tabID)
         }
         await store.receive(\.pinnedRecordSaveFailed) {
             $0.tabs[id: tabID]?.isPinned = true
             $0.pinnedRecords[tabID] = Self.pinnedRecord(id: tabID, anchor: directoryAnchor)
+            $0.pendingPinnedRecordIDs.remove(tabID)
             $0.pinnedRecordPersistenceError = "pinned_record_save_failed"
         }
         await store.finish()
@@ -4561,8 +4609,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.close(pinnedID)) {
             $0.tabs[id: pinnedID]?.isPinned = false
             $0.pinnedRecords.removeAll()
+            $0.pendingPinnedRecordIDs.insert(pinnedID)
         }
-        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(pinnedID)
+        }
         await store.finish()
     }
 
@@ -4600,10 +4651,13 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         }
         await successStore.send(.unpin(targetID)) {
             Self.expectUnpinnedState(&$0, targetID: targetID)
+            $0.pendingPinnedRecordIDs.insert(targetID)
             $0.selectedTabIDs.insert(targetID)
             $0.selectionAnchorID = targetID
         }
-        await successStore.receive(\.pinnedRecordSaveSucceeded)
+        await successStore.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(targetID)
+        }
         await successStore.finish()
         XCTAssertEqual(successStore.state.selectedTabIDs, [targetID, anchorID])
         XCTAssertEqual(successStore.state.selectionAnchorID, targetID)
@@ -4615,6 +4669,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         }
         await rollbackStore.send(.unpin(targetID)) {
             Self.expectUnpinnedState(&$0, targetID: targetID)
+            $0.pendingPinnedRecordIDs.insert(targetID)
             $0.selectedTabIDs.insert(targetID)
             $0.selectionAnchorID = targetID
         }
@@ -4622,6 +4677,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.tabs.move(fromOffsets: [1], toOffset: 0)
             $0.tabs[id: targetID]?.isPinned = true
             $0.pinnedRecords[targetID] = pinnedRecord
+            $0.pendingPinnedRecordIDs.remove(targetID)
             $0.pinnedRecordPersistenceError = "pinned_record_save_failed"
             $0.selectedTabIDs.insert(targetID)
             $0.selectionAnchorID = targetID
@@ -4675,11 +4731,13 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.tabs[id: rollbackTargetID]?.isPinned = false
             $0.tabs.move(fromOffsets: [1], toOffset: 3)
             $0.pinnedRecords.removeValue(forKey: rollbackTargetID)
+            $0.pendingPinnedRecordIDs.insert(rollbackTargetID)
         }
         await store.receive(\.pinnedRecordSaveFailed) {
             $0.tabs.move(fromOffsets: [2], toOffset: 1)
             $0.tabs[id: rollbackTargetID]?.isPinned = true
             $0.pinnedRecords[rollbackTargetID] = targetRecord
+            $0.pendingPinnedRecordIDs.remove(rollbackTargetID)
             $0.pinnedRecordPersistenceError = "pinned_record_save_failed"
         }
 
@@ -6011,8 +6069,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             state.tabs.remove(id: tabID)
             state.tabs.append(unpinnedTab)
             state.pinnedRecords[tabID] = nil
+            state.pendingPinnedRecordIDs.insert(tabID)
         }
-        await testStore.receive(\.pinnedRecordSaveSucceeded)
+        await testStore.receive(\.pinnedRecordSaveSucceeded) {
+            $0.pendingPinnedRecordIDs.remove(tabID)
+        }
 
         // saveStore 결과에 orig-dir-1 record가 없어야 함 (unpin으로 제거됨)
         let ids = recorder.stores().last?.records.map(\.id) ?? []
