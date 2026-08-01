@@ -72,6 +72,12 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case renameSessionConfirmed
     case renameSessionCancelled
     case backToSessionsTapped
+    case transcriptSearchOpened
+    case transcriptSearchClosed
+    case transcriptSearchQueryChanged(String)
+    case transcriptSearchMatchCountChanged(AiChatTranscriptSearchMatchCountProjection)
+    case transcriptSearchNextTapped
+    case transcriptSearchPreviousTapped
     case sessionSearchQueryChanged(String)
     case sessionListLoaded([AiChatSessionSummary])
     case sessionListFailed(String)
