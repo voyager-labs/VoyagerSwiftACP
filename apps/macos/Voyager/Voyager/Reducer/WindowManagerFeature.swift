@@ -82,13 +82,16 @@ struct WindowManagerFeature {
                 guard !flag else { return .none }
 
                 guard let reopenWindowID = state.focusedWindowID.flatMap({ id in
-                    state.closingWindowIDs.contains(id) ? nil : id
+                    isWindowReady(id, state: state) ? id : nil
                 })
                     ?? state.lastUsedWindowIDs.first(where: {
-                        state.windows[id: $0] != nil && !state.closingWindowIDs.contains($0)
+                        isWindowReady($0, state: state)
                     })
-                    ?? state.windows.ids.first(where: { !state.closingWindowIDs.contains($0) })
+                    ?? state.windows.ids.first(where: { isWindowReady($0, state: state) })
                 else {
+                    guard !state.windows.ids.contains(where: {
+                        state.pendingWindowOpenIDs.contains($0) && !state.closingWindowIDs.contains($0)
+                    }) else { return .none }
                     return .send(.file(.newWindow(path: nil)))
                 }
 

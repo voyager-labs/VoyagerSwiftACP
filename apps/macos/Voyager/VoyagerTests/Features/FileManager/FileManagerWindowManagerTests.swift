@@ -194,12 +194,15 @@ final class FileManagerWindowManagerTests: XCTestCase {
     func testReopenWindowIfNeeded_doesNotDuplicatePendingOpen() async {
         let windowID = UUID()
         let requestID = UUID()
+        let bootstrapRequestID = UUID()
         let openedIDs = LockIsolated<[UUID]>([])
         var initialState = makeState(
             focusedID: windowID,
             windows: [(windowID, Spec.tempPath)],
         )
         initialState.pendingWindowOpenIDs.insert(windowID)
+        initialState.defaultWindowBootstrapRequestID = bootstrapRequestID
+        initialState.defaultWindowBootstrapWindowIDs = [windowID]
         let store = makeStore(initialState: initialState, uuid: requestID) {
             $0.fileManagerWindowClient.open = { id in
                 openedIDs.withValue { $0.append(id) }
@@ -212,6 +215,8 @@ final class FileManagerWindowManagerTests: XCTestCase {
         XCTAssertEqual(openedIDs.value, [])
         XCTAssertEqual(store.state.pendingWindowOpenIDs, [windowID])
         XCTAssertEqual(store.state.focusedWindowID, windowID)
+        XCTAssertEqual(store.state.defaultWindowBootstrapRequestID, bootstrapRequestID)
+        XCTAssertEqual(store.state.defaultWindowBootstrapWindowIDs, [windowID])
     }
 
     // MARK: - FMW-001-close_file_manager_window
