@@ -26,9 +26,86 @@ enum EntryCoreDaemonProcessError: Error {
     case socketRemained(EntryCoreDaemonProcessExit)
 }
 
+enum EntryCoreDaemonSocketCallResult: Equatable {
+    case success(Int32)
+    case failure(Int32)
+}
+
+enum EntryCoreDaemonSocketPollResult: Equatable {
+    case ready(Int16)
+    case timedOut
+    case failure(Int32)
+}
+
+protocol EntryCoreDaemonSocketSystem {
+    func makeNonblockingSocket() -> EntryCoreDaemonSocketCallResult
+    func connect(_ descriptor: Int32, address: sockaddr_un, length: socklen_t) -> EntryCoreDaemonSocketCallResult
+    func poll(_ descriptor: Int32, events: Int16, timeoutMilliseconds: Int32) -> EntryCoreDaemonSocketPollResult
+    func socketError(_ descriptor: Int32) -> EntryCoreDaemonSocketCallResult
+    func shutdownWrite(_ descriptor: Int32)
+    func close(_ descriptor: Int32)
+}
+
+struct DarwinEntryCoreDaemonSocketSystem: EntryCoreDaemonSocketSystem {
+    func makeNonblockingSocket() -> EntryCoreDaemonSocketCallResult {
+        let descriptor = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+        guard descriptor >= 0 else { return .failure(errno) }
+        let flags = fcntl(descriptor, F_GETFL)
+        guard flags >= 0, fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) == 0 else {
+            let errorNumber = errno
+            Darwin.close(descriptor)
+            return .failure(errorNumber)
+        }
+        return .success(descriptor)
+    }
+
+    func connect(
+        _ descriptor: Int32,
+        address: sockaddr_un,
+        length: socklen_t,
+    ) -> EntryCoreDaemonSocketCallResult {
+        var mutableAddress = address
+        let result = withUnsafePointer(to: &mutableAddress) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.connect(descriptor, $0, length)
+            }
+        }
+        return result == 0 ? .success(0) : .failure(errno)
+    }
+
+    func poll(
+        _ descriptor: Int32,
+        events: Int16,
+        timeoutMilliseconds: Int32,
+    ) -> EntryCoreDaemonSocketPollResult {
+        var pollDescriptor = pollfd(fd: descriptor, events: events, revents: 0)
+        let result = Darwin.poll(&pollDescriptor, 1, timeoutMilliseconds)
+        if result > 0 { return .ready(pollDescriptor.revents) }
+        return result == 0 ? .timedOut : .failure(errno)
+    }
+
+    func socketError(_ descriptor: Int32) -> EntryCoreDaemonSocketCallResult {
+        var value: Int32 = 0
+        var length = socklen_t(MemoryLayout<Int32>.size)
+        let result = withUnsafeMutablePointer(to: &value) {
+            getsockopt(descriptor, SOL_SOCKET, SO_ERROR, $0, &length)
+        }
+        return result == 0 ? .success(value) : .failure(errno)
+    }
+
+    func shutdownWrite(_ descriptor: Int32) {
+        _ = Darwin.shutdown(descriptor, SHUT_WR)
+    }
+
+    func close(_ descriptor: Int32) {
+        Darwin.close(descriptor)
+    }
+}
+
 final class EntryCoreDaemonProcess {
     private static let executableEnvironmentKey = "VOYAGER_ENTRY_CORE_DAEMON_PATH"
     private static let readinessTimeout: TimeInterval = 15
+    private static let readinessRetryTick = DispatchTimeInterval.milliseconds(25)
     private static let terminationTimeout: TimeInterval = 5
     private static let forcedTerminationTimeout: TimeInterval = 3
 
@@ -191,28 +268,154 @@ final class EntryCoreDaemonProcess {
 
     private func waitUntilReady(timeout: TimeInterval) throws {
         let deadline = dispatchDeadline(after: timeout)
-        while true {
-            if socketIsReady() {
-                stopDirectoryObservation()
-                return
+        switch Self.waitForSocketReadiness(
+            at: socketURL,
+            deadline: deadline,
+            eventSemaphore: eventSemaphore,
+            processHasExited: { [exitObserved, process] in
+                exitObserved.withLock { $0 } || !process.isRunning
+            },
+        ) {
+        case .ready:
+            stopDirectoryObservation()
+        case .processExited:
+            guard let exit = waitForExit(timeout: 0, usedSIGKILL: false) else {
+                throw EntryCoreDaemonProcessError.terminationTimedOut
             }
-            if exitObserved.withLock({ $0 }) || !process.isRunning {
-                guard let exit = waitForExit(timeout: 0, usedSIGKILL: false) else {
-                    throw EntryCoreDaemonProcessError.terminationTimedOut
-                }
-                throw EntryCoreDaemonProcessError.exitedBeforeReadiness(exit)
-            }
-            if eventSemaphore.wait(timeout: deadline) == .timedOut {
-                let exit = try stopAfterReadinessTimeout()
-                throw EntryCoreDaemonProcessError.readinessTimedOut(exit)
-            }
+            throw EntryCoreDaemonProcessError.exitedBeforeReadiness(exit)
+        case .timedOut:
+            let exit = try stopAfterReadinessTimeout()
+            throw EntryCoreDaemonProcessError.readinessTimedOut(exit)
         }
     }
 
-    private func socketIsReady() -> Bool {
-        var metadata = stat()
-        guard lstat(socketURL.path, &metadata) == 0 else { return false }
-        return metadata.st_mode & S_IFMT == S_IFSOCK
+    enum SocketReadinessWaitResult: Equatable {
+        case ready
+        case processExited
+        case timedOut
+    }
+
+    static func waitForSocketReadiness(
+        at socketURL: URL,
+        deadline: DispatchTime,
+        eventSemaphore: DispatchSemaphore,
+        processHasExited: () -> Bool,
+        system: any EntryCoreDaemonSocketSystem = DarwinEntryCoreDaemonSocketSystem(),
+        now: () -> DispatchTime = { .now() },
+    ) -> SocketReadinessWaitResult {
+        while true {
+            if processHasExited() { return .processExited }
+            let current = now()
+            guard current.uptimeNanoseconds < deadline.uptimeNanoseconds else { return .timedOut }
+            if socketIsReady(at: socketURL, deadline: deadline, system: system, now: now) {
+                return .ready
+            }
+            if processHasExited() { return .processExited }
+
+            let afterProbe = now()
+            guard afterProbe.uptimeNanoseconds < deadline.uptimeNanoseconds else { return .timedOut }
+            let tick = afterProbe + readinessRetryTick
+            let wakeup = DispatchTime(
+                uptimeNanoseconds: min(tick.uptimeNanoseconds, deadline.uptimeNanoseconds),
+            )
+            _ = eventSemaphore.wait(timeout: wakeup)
+        }
+    }
+
+    static func socketIsReady(
+        at socketURL: URL,
+        deadline: DispatchTime = .distantFuture,
+        system: any EntryCoreDaemonSocketSystem = DarwinEntryCoreDaemonSocketSystem(),
+        now: () -> DispatchTime = { .now() },
+    ) -> Bool {
+        guard let (address, addressLength) = socketAddress(at: socketURL) else { return false }
+        let descriptor: Int32
+        switch system.makeNonblockingSocket() {
+        case let .success(socketDescriptor):
+            descriptor = socketDescriptor
+        case .failure:
+            return false
+        }
+        defer { system.close(descriptor) }
+
+        switch system.connect(descriptor, address: address, length: addressLength) {
+        case .success:
+            return finishConnectedSocket(descriptor, deadline: deadline, system: system, now: now)
+        case let .failure(errorNumber) where errorNumber == EINPROGRESS || errorNumber == EINTR:
+            return waitForPendingConnection(descriptor, deadline: deadline, system: system, now: now)
+        case .failure:
+            return false
+        }
+    }
+
+    private static func waitForPendingConnection(
+        _ descriptor: Int32,
+        deadline: DispatchTime,
+        system: any EntryCoreDaemonSocketSystem,
+        now: () -> DispatchTime,
+    ) -> Bool {
+        while true {
+            guard let timeout = pollTimeoutMilliseconds(deadline: deadline, now: now()) else { return false }
+            switch system.poll(descriptor, events: Int16(POLLOUT), timeoutMilliseconds: timeout) {
+            case .failure(EINTR):
+                continue
+            case .timedOut, .failure:
+                return false
+            case let .ready(events):
+                if events & Int16(POLLNVAL) != 0 { return false }
+                guard events & Int16(POLLOUT | POLLERR | POLLHUP) != 0 else { continue }
+            }
+
+            guard case .success(0) = system.socketError(descriptor) else { return false }
+            return finishConnectedSocket(descriptor, deadline: deadline, system: system, now: now)
+        }
+    }
+
+    private static func socketAddress(at socketURL: URL) -> (sockaddr_un, socklen_t)? {
+        let pathBytes = Array(socketURL.path.utf8)
+        guard
+            !pathBytes.contains(0),
+            let pathOffset = MemoryLayout.offset(of: \sockaddr_un.sun_path)
+        else { return nil }
+
+        var address = sockaddr_un()
+        let pathCapacity = MemoryLayout.size(ofValue: address.sun_path)
+        let addressLength = pathOffset + pathBytes.count + 1
+        guard
+            pathBytes.count < pathCapacity,
+            addressLength <= MemoryLayout<sockaddr_un>.size,
+            addressLength <= Int(UInt8.max)
+        else { return nil }
+
+        address.sun_family = sa_family_t(AF_UNIX)
+        address.sun_len = UInt8(addressLength)
+        withUnsafeMutableBytes(of: &address.sun_path) { rawBuffer in
+            rawBuffer.copyBytes(from: pathBytes)
+        }
+        return (address, socklen_t(addressLength))
+    }
+
+    private static func pollTimeoutMilliseconds(
+        deadline: DispatchTime,
+        now: DispatchTime,
+    ) -> Int32? {
+        guard now.uptimeNanoseconds < deadline.uptimeNanoseconds else { return nil }
+        let tick = now + readinessRetryTick
+        let pollDeadline = min(tick.uptimeNanoseconds, deadline.uptimeNanoseconds)
+        let remaining = pollDeadline - now.uptimeNanoseconds
+        let roundedMilliseconds = (remaining + 999_999) / 1_000_000
+        return Int32(min(roundedMilliseconds, UInt64(Int32.max)))
+    }
+
+    private static func finishConnectedSocket(
+        _ descriptor: Int32,
+        deadline: DispatchTime,
+        system: any EntryCoreDaemonSocketSystem,
+        now: () -> DispatchTime,
+    ) -> Bool {
+        guard now().uptimeNanoseconds < deadline.uptimeNanoseconds else { return false }
+        system.shutdownWrite(descriptor)
+        return true
     }
 
     private func stopAfterReadinessTimeout() throws -> EntryCoreDaemonProcessExit {
