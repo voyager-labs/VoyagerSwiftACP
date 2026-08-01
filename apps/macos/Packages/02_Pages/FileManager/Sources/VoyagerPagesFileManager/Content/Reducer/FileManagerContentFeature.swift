@@ -110,12 +110,14 @@ public struct FileManagerContentFeature {
             let shouldProject = FileManagerContentFeature.shouldProjectContent(action)
             guard shouldProject else { return .none }
 
-            let projectionEntries = state.isCollectionMode
+            let isClearingCollection = FileManagerContentFeature.isClearingCollectionMode(action)
+            let useCollectionItems = state.isCollectionMode && !isClearingCollection
+            let projectionEntries = useCollectionItems
                 ? Array(state.entryViewLayout.collectionItems)
                 : Array(state.entryOperations.items)
             EntryArrangementsFeature().reduce(
                 into: &state.entryArrangements,
-                action: .apply(items: projectionEntries, isCollectionMode: state.isCollectionMode),
+                action: .apply(items: projectionEntries, isCollectionMode: useCollectionItems),
             )
             let projectionSections = state.isCollectionMode
                 ? FileManagerContentFeature.makeSections(
@@ -336,6 +338,16 @@ public struct FileManagerContentFeature {
              .entryArrangements(.toggleCollapsedGroup),
              .externalFileSystemChanged,
              .internal(.clearCollectionMode),
+             .internal(.exitCollectionMode):
+            true
+        default:
+            false
+        }
+    }
+
+    static func isClearingCollectionMode(_ action: Action) -> Bool {
+        switch action {
+        case .internal(.clearCollectionMode),
              .internal(.exitCollectionMode):
             true
         default:

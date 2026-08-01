@@ -156,6 +156,35 @@ extension EVM002FileManagerPagePresentationTests {
             "Group By Kind should produce titled group sections in widget presentation",
         )
     }
+
+    /// EVM-002-switch_entries_view: collection 종료 시 root 항목을 presentation에 다시 투영한다.
+    /// - 검증 내용: clearCollectionMode projection이 collectionItems 대신 entryOperations.items를 사용한다.
+    /// - 사전 조건: root 항목과 다른 collection 결과가 표시 중이다.
+    /// - 기대 결과: 첫 ContentProjection entries가 root 항목과 일치한다.
+    func testClearCollectionModeProjectsRootEntries() async {
+        let rootEntry = EntryModel.temporaryFolder(id: "/root", name: "root")
+        let collectionEntry = EntryModel.temporaryFolder(id: "/collection", name: "collection")
+        var state = FileManagerContentState()
+        state.entryOperations.items = [rootEntry]
+        state.entryViewLayout.isCollectionMode = true
+        state.entryViewLayout.collectionItems = [collectionEntry]
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        // store.exhaustivity = .off: collection teardown 부수 action보다 root projection payload를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.internal(.clearCollectionMode))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [rootEntry]
+        }
+    }
 }
 
 private func makeSharedProjectionFile() -> EntryModel {
