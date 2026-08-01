@@ -4,6 +4,8 @@ import VoyagerEntitiesAi
 struct AiChatConversationSurface: View {
     let state: AiChatState
     let skeleton: AiChatSkeletonDisplayModel
+    let searchPresentation: AiChatTranscriptSearchPresentation
+    let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
     let onOpenSettings: () -> Void
     let onErrorRecovery: () -> Void
     let onRegenerate: () -> Void
@@ -41,6 +43,8 @@ struct AiChatConversationSurface: View {
             case .ready:
                 AiChatTranscriptSection(
                     messages: state.transcriptHistory,
+                    searchPresentation: searchPresentation,
+                    currentSearchMatch: currentSearchMatch,
                     isProcessing: false,
                     canRegenerate: state.canRegenerate,
                     statusText: state.streamingAssistantDisplayModel == nil ? state.requestStatusText : nil,
@@ -50,6 +54,8 @@ struct AiChatConversationSurface: View {
             case .processing:
                 AiChatTranscriptSection(
                     messages: state.transcriptHistory,
+                    searchPresentation: searchPresentation,
+                    currentSearchMatch: currentSearchMatch,
                     isProcessing: true,
                     canRegenerate: false,
                     streamingAssistant: state.streamingAssistantDisplayModel,
@@ -65,6 +71,8 @@ struct AiChatConversationSurface: View {
         if !state.transcriptHistory.isEmpty {
             AiChatTranscriptSection(
                 messages: state.transcriptHistory,
+                searchPresentation: searchPresentation,
+                currentSearchMatch: currentSearchMatch,
                 isProcessing: isProcessing,
                 canRegenerate: canRegenerate,
                 statusText: state.streamingAssistantDisplayModel == nil ? state.requestStatusText : nil,
@@ -198,8 +206,33 @@ private struct AiChatStatusBanner: View {
     }
 }
 
+struct AiChatTranscriptRenderPlan: Equatable {
+    let messageIndices: Range<Int>
+    let latestAssistantMessageIndex: Int?
+    let latestAssistantInspectionCount: Int
+
+    static func make(messages: [AiChatMessage]) -> Self {
+        var latestAssistantMessageIndex: Int?
+        var inspectionCount = 0
+        for index in messages.indices.reversed() {
+            inspectionCount += 1
+            if messages[index].role == .assistant {
+                latestAssistantMessageIndex = index
+                break
+            }
+        }
+        return Self(
+            messageIndices: messages.indices,
+            latestAssistantMessageIndex: latestAssistantMessageIndex,
+            latestAssistantInspectionCount: inspectionCount,
+        )
+    }
+}
+
 private struct AiChatTranscriptSection: View {
     let messages: [AiChatMessage]
+    let searchPresentation: AiChatTranscriptSearchPresentation
+    let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
     let isProcessing: Bool
     let canRegenerate: Bool
     var statusText: String?
@@ -207,11 +240,16 @@ private struct AiChatTranscriptSection: View {
     let onRegenerate: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            ForEach(Array(messages.enumerated()), id: \.offset) { index, message in
+        let renderPlan = AiChatTranscriptRenderPlan.make(messages: messages)
+        return VStack(alignment: .leading, spacing: 14) {
+            ForEach(renderPlan.messageIndices, id: \.self) { index in
+                let message = messages[index]
                 AiChatMessageRow(
                     message: message,
-                    showsRegenerateAction: canRegenerate && index == latestAssistantMessageIndex,
+                    transcriptRow: .message(index: index),
+                    searchPresentation: searchPresentation,
+                    currentSearchMatch: currentSearchMatch,
+                    showsRegenerateAction: canRegenerate && index == renderPlan.latestAssistantMessageIndex,
                     onRegenerate: onRegenerate,
                 )
             }
@@ -221,18 +259,21 @@ private struct AiChatTranscriptSection: View {
                     content: streamingAssistant.content,
                     isProcessing: isProcessing,
                     failure: streamingAssistant.failure,
+                    searchPresentation: searchPresentation,
+                    currentSearchMatch: currentSearchMatch,
                 )
             } else if isProcessing {
-                AiChatAssistantCard(content: nil, isProcessing: true)
+                AiChatAssistantCard(
+                    content: nil,
+                    isProcessing: true,
+                    searchPresentation: searchPresentation,
+                    currentSearchMatch: currentSearchMatch,
+                )
             } else if let statusText {
                 requestStatusRow(statusText)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var latestAssistantMessageIndex: Int? {
-        messages.indices.last { messages[$0].role == .assistant }
     }
 
     private func requestStatusRow(_ text: String) -> some View {
@@ -246,6 +287,9 @@ private struct AiChatTranscriptSection: View {
 
 private struct AiChatMessageRow: View {
     let message: AiChatMessage
+    let transcriptRow: AiChatTranscriptRowDiscriminator
+    let searchPresentation: AiChatTranscriptSearchPresentation
+    let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
     let showsRegenerateAction: Bool
     let onRegenerate: () -> Void
 
@@ -258,17 +302,18 @@ private struct AiChatMessageRow: View {
         case .assistant:
             assistantMessage
         case .system, .tool:
-            Text(message.content)
+            Text(highlightedPlainText)
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .padding(.vertical, 4)
+                .overlay { matchAnchors(blockIndex: 0) }
         }
     }
 
     private var userMessage: some View {
         HStack {
             Spacer(minLength: 16)
-            Text(message.content)
+            Text(highlightedPlainText)
                 .font(.system(size: 13))
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 14)
@@ -282,11 +327,17 @@ private struct AiChatMessageRow: View {
                         .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1),
                 )
         }
+        .overlay { matchAnchors(blockIndex: 0) }
     }
 
     private var assistantMessage: some View {
         VStack(alignment: .leading, spacing: 8) {
-            AiChatAssistantMarkdownText(content: message.content)
+            AiChatAssistantMarkdownText(
+                content: message.content,
+                transcriptRow: transcriptRow,
+                searchPresentation: searchPresentation,
+                currentSearchMatch: currentSearchMatch,
+            )
 
             if showsRegenerateAction {
                 HStack(spacing: 6) {
@@ -329,12 +380,66 @@ private struct AiChatMessageRow: View {
         }
         .padding(.vertical, 4)
     }
+
+    private var highlightedPlainText: AttributedString {
+        AiChatRenderedTextHighlighter.highlight(
+            AttributedString(message.content),
+            matchOffsets: searchPresentation.matchOffsets(
+                transcriptRow: transcriptRow,
+                blockIndex: 0,
+            ),
+            currentMatchOffsets: currentSearchMatchOffsets(blockIndex: 0),
+        )
+    }
+
+    private func matchAnchors(blockIndex: Int) -> some View {
+        AiChatTranscriptMatchAnchors(
+            descriptors: searchPresentation.matchDescriptors(
+                transcriptRow: transcriptRow,
+                blockIndex: blockIndex,
+            ),
+        )
+    }
+
+    private func currentSearchMatchOffsets(blockIndex: Int) -> Range<Int>? {
+        guard currentSearchMatch?.transcriptRow == transcriptRow,
+              currentSearchMatch?.blockIndex == blockIndex
+        else { return nil }
+        return currentSearchMatch?.characterOffsets
+    }
+}
+
+struct AiChatTranscriptMatchAnchors: View {
+    let descriptors: [AiChatRenderedTextMatchDescriptor]
+
+    var targetIDs: [AiChatTranscriptBlockAnchor] {
+        guard let descriptor = descriptors.first else { return [] }
+        let targetID = AiChatTranscriptBlockAnchor(
+            transcriptRow: descriptor.transcriptRow,
+            blockIndex: descriptor.blockIndex,
+        )
+        return [targetID]
+    }
+
+    var body: some View {
+        ZStack {
+            ForEach(targetIDs, id: \.self) { targetID in
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .id(targetID)
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
 }
 
 private struct AiChatAssistantCard: View {
     let content: String?
     let isProcessing: Bool
     var failure: AiChatExecutionFailure?
+    let searchPresentation: AiChatTranscriptSearchPresentation
+    let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -373,7 +478,12 @@ private struct AiChatAssistantCard: View {
 
     @ViewBuilder private var bodyContentView: some View {
         if let content = normalizedContent {
-            AiChatAssistantMarkdownText(content: content)
+            AiChatAssistantMarkdownText(
+                content: content,
+                transcriptRow: .streamingAssistant,
+                searchPresentation: searchPresentation,
+                currentSearchMatch: currentSearchMatch,
+            )
         }
     }
 
@@ -405,11 +515,25 @@ private struct AiChatAssistantCard: View {
 
 private struct AiChatAssistantMarkdownText: View {
     let content: String
+    let transcriptRow: AiChatTranscriptRowDiscriminator
+    let searchPresentation: AiChatTranscriptSearchPresentation
+    let currentSearchMatch: AiChatRenderedTextMatchDescriptor?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                blockView(block)
+            ForEach(Array(blocks.enumerated()), id: \.offset) { blockIndex, block in
+                blockView(block, blockIndex: blockIndex)
+                    .overlay {
+                        AiChatTranscriptMatchAnchors(
+                            descriptors: searchPresentation.matchDescriptors(
+                                transcriptRow: transcriptRow,
+                                blockIndex: blockIndex,
+                            ),
+                        )
+                    }
+                    .accessibilityValue(
+                        isCurrentSearchBlock(blockIndex) ? "Current search result" : "",
+                    )
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -421,15 +545,15 @@ private struct AiChatAssistantMarkdownText: View {
     }
 
     @ViewBuilder
-    private func blockView(_ block: AssistantMarkdownBlock) -> some View {
+    private func blockView(_ block: AssistantMarkdownBlock, blockIndex: Int) -> some View {
         switch block {
         case let .heading(level, text):
-            Text(inlineMarkdown(text))
+            Text(highlightedInlineMarkdown(text, blockIndex: blockIndex))
                 .font(.system(size: headingSize(for: level), weight: .semibold))
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case let .paragraph(text):
-            Text(inlineMarkdown(text))
+            Text(highlightedInlineMarkdown(text, blockIndex: blockIndex))
                 .font(.system(size: 13))
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -437,7 +561,7 @@ private struct AiChatAssistantMarkdownText: View {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 Text("•")
                     .font(.system(size: 13, weight: .semibold))
-                Text(inlineMarkdown(text))
+                Text(highlightedInlineMarkdown(text, blockIndex: blockIndex))
                     .font(.system(size: 13))
                     .foregroundStyle(.primary)
             }
@@ -447,13 +571,13 @@ private struct AiChatAssistantMarkdownText: View {
                 Text("\(number).")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
-                Text(inlineMarkdown(text))
+                Text(highlightedInlineMarkdown(text, blockIndex: blockIndex))
                     .font(.system(size: 13))
                     .foregroundStyle(.primary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         case let .code(text):
-            Text(text)
+            Text(highlightedCode(text, blockIndex: blockIndex))
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(.primary)
                 .padding(8)
@@ -468,6 +592,40 @@ private struct AiChatAssistantMarkdownText: View {
         case 2: 15
         default: 14
         }
+    }
+
+    private func highlightedInlineMarkdown(_ text: String, blockIndex: Int) -> AttributedString {
+        AiChatRenderedTextHighlighter.highlight(
+            inlineMarkdown(text),
+            matchOffsets: searchPresentation.matchOffsets(
+                transcriptRow: transcriptRow,
+                blockIndex: blockIndex,
+            ),
+            currentMatchOffsets: currentSearchMatchOffsets(blockIndex: blockIndex),
+        )
+    }
+
+    private func highlightedCode(_ text: String, blockIndex: Int) -> AttributedString {
+        AiChatRenderedTextHighlighter.highlight(
+            AttributedString(text),
+            matchOffsets: searchPresentation.matchOffsets(
+                transcriptRow: transcriptRow,
+                blockIndex: blockIndex,
+            ),
+            currentMatchOffsets: currentSearchMatchOffsets(blockIndex: blockIndex),
+        )
+    }
+
+    private func currentSearchMatchOffsets(blockIndex: Int) -> Range<Int>? {
+        guard currentSearchMatch?.transcriptRow == transcriptRow,
+              currentSearchMatch?.blockIndex == blockIndex
+        else { return nil }
+        return currentSearchMatch?.characterOffsets
+    }
+
+    private func isCurrentSearchBlock(_ blockIndex: Int) -> Bool {
+        currentSearchMatch?.transcriptRow == transcriptRow
+            && currentSearchMatch?.blockIndex == blockIndex
     }
 
     private func inlineMarkdown(_ text: String) -> AttributedString {

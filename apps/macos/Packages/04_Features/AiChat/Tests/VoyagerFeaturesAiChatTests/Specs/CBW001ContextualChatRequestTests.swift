@@ -1,7 +1,10 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
+import SwiftUI
 import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -29,7 +32,504 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         assertOpenContextualChatSurface(store.state)
     }
 
+    /// CBW-001-open_contextual_chat: transcript 검색 icon control은 활성 hover에서만 compact 배경을 표시한다.
+    /// 이전·다음·닫기 control이 동일한 크기와 symbol 의도를 유지하면서 disabled 탐색 control에는 hover 배경을 노출하지 않는지 검증합니다.
+    /// - 검증 내용: 26pt hit area, 11pt semibold symbol, compact control radius, light/dark control hover fill과 enabled
+    /// gating을 확인합니다.
+    /// - 사전 조건: package-internal transcript search button style에 hover·enabled·color scheme 조합을 전달합니다.
+    /// - 기대 결과: 활성 hover는 정확한 Voyager control hover token을 반환하고 rest 또는 disabled hover는 배경을 반환하지 않습니다.
+    func testOpenContextualChatTranscriptSearchControlsUseEnabledCompactHoverPolicy() {
+        let style = AiChatTranscriptSearchButtonStyle()
+
+        XCTAssertEqual(style.size, 26)
+        XCTAssertEqual(style.symbolSize, 11)
+        XCTAssertEqual(style.symbolWeight, Font.Weight.semibold)
+        XCTAssertEqual(style.cornerRadius, VoyagerDS.Radius.control)
+        XCTAssertEqual(
+            style.hoverFill(isHovered: true, isEnabled: true, colorScheme: .light),
+            VoyagerDS.Interaction.controlHoverFill(for: .light),
+        )
+        XCTAssertEqual(
+            style.hoverFill(isHovered: true, isEnabled: true, colorScheme: .dark),
+            VoyagerDS.Interaction.controlHoverFill(for: .dark),
+        )
+        XCTAssertNil(style.hoverFill(isHovered: false, isEnabled: true, colorScheme: .light))
+        XCTAssertNil(style.hoverFill(isHovered: true, isEnabled: false, colorScheme: .light))
+        XCTAssertNil(style.hoverFill(isHovered: true, isEnabled: false, colorScheme: .dark))
+    }
+
+    /// CBW-001-open_contextual_chat: plain message match는 안정적인 Character offset descriptor를 반환한다.
+    /// 현재 transcript의 일반 텍스트 검색 기반이 UI 객체 수명과 무관한 값으로 표현되는지 검증합니다.
+    /// - 검증 내용: message row discriminator, block index, Character offset range를 확인합니다.
+    /// - 사전 조건: 세 번째 transcript message의 단일 rendered block에 plain text가 있습니다.
+    /// - 기대 결과: match는 message index 2, block index 0, Character offset 6..<11을 반환합니다.
+    func testOpenContextualChatMatchesPlainRenderedTextWithStableDescriptorValues() {
+        let matches = AiChatRenderedTextMatcher.matches(
+            query: "world",
+            transcriptRow: .message(index: 2),
+            renderedBlocks: ["Hello world"],
+        )
+
+        XCTAssertEqual(matches, [
+            AiChatRenderedTextMatchDescriptor(
+                transcriptRow: .message(index: 2),
+                blockIndex: 0,
+                characterOffsets: 6 ..< 11,
+            ),
+        ])
+    }
+
+    /// CBW-001-open_contextual_chat: assistant Markdown은 marker가 제거된 표시 block 텍스트에서 match한다.
+    /// 사용자가 보는 heading, inline style, list, code 문자열만 검색 대상이 되는지 검증합니다.
+    /// - 검증 내용: Markdown projection별 block index와 marker query의 match 부재를 확인합니다.
+    /// - 사전 조건: heading, bold paragraph, bullet, numbered item, fenced code를 포함한 assistant 응답이 있습니다.
+    /// - 기대 결과: 표시 문자열은 각 block에서 match하고 raw Markdown marker는 match하지 않습니다.
+    func testOpenContextualChatMatchesRenderedMarkdownBlocksWithoutRawMarkers() {
+        let markdown = """
+        # Heading
+
+        Use **bold** text
+
+        - First bullet
+        1. Numbered item
+
+        ```swift
+        let value = 1
+        ```
+        """
+        let renderedBlocks = AssistantMarkdownBlock.parse(markdown).map(\.renderedText)
+        let row = AiChatTranscriptRowDiscriminator.streamingAssistant
+
+        XCTAssertEqual(renderedBlocks, [
+            "Heading",
+            "Use bold text",
+            "First bullet",
+            "Numbered item",
+            "let value = 1",
+        ])
+        XCTAssertEqual(
+            AiChatRenderedTextMatcher.matches(query: "Heading", transcriptRow: row, renderedBlocks: renderedBlocks),
+            [.init(transcriptRow: row, blockIndex: 0, characterOffsets: 0 ..< 7)],
+        )
+        XCTAssertEqual(
+            AiChatRenderedTextMatcher.matches(query: "bold", transcriptRow: row, renderedBlocks: renderedBlocks),
+            [.init(transcriptRow: row, blockIndex: 1, characterOffsets: 4 ..< 8)],
+        )
+        XCTAssertEqual(
+            AiChatRenderedTextMatcher.matches(query: "First", transcriptRow: row, renderedBlocks: renderedBlocks),
+            [.init(transcriptRow: row, blockIndex: 2, characterOffsets: 0 ..< 5)],
+        )
+        XCTAssertEqual(
+            AiChatRenderedTextMatcher.matches(query: "Numbered", transcriptRow: row, renderedBlocks: renderedBlocks),
+            [.init(transcriptRow: row, blockIndex: 3, characterOffsets: 0 ..< 8)],
+        )
+        XCTAssertEqual(
+            AiChatRenderedTextMatcher.matches(query: "value", transcriptRow: row, renderedBlocks: renderedBlocks),
+            [.init(transcriptRow: row, blockIndex: 4, characterOffsets: 4 ..< 9)],
+        )
+
+        for marker in ["#", "**", "- ", "1.", "```"] {
+            XCTAssertTrue(
+                AiChatRenderedTextMatcher.matches(query: marker, transcriptRow: row, renderedBlocks: renderedBlocks)
+                    .isEmpty,
+                "Raw Markdown marker \(marker) must not be searchable",
+            )
+        }
+    }
+
+    /// CBW-001-open_contextual_chat: Unicode canonical equivalent와 대소문자 차이를 동일한 rendered match로 취급한다.
+    /// 한글, 일본어, emoji, 결합문자와 반복 문자열에서 Character offset mapping이 유지되는지 검증합니다.
+    /// - 검증 내용: case-insensitive 반복 match 순서와 NFC query 대 NFD text의 offset을 확인합니다.
+    /// - 사전 조건: 같은 block에 대소문자가 다른 Echo 세 개가 있고 다음 block에 한글·일본어·emoji·NFD café가 있습니다.
+    /// - 기대 결과: 모든 match는 표시 순서와 원본 rendered text의 Character offset을 보존합니다.
+    func testOpenContextualChatMatchesUnicodeCanonicallyAndCaseInsensitivelyInOrder() {
+        let row = AiChatTranscriptRowDiscriminator.message(index: 4)
+        let renderedBlocks = ["Echo echo ECHO", "한글 日本語 👩‍💻 cafe\u{301}"]
+
+        XCTAssertEqual(
+            AiChatRenderedTextMatcher.matches(query: "echo", transcriptRow: row, renderedBlocks: renderedBlocks),
+            [
+                .init(transcriptRow: row, blockIndex: 0, characterOffsets: 0 ..< 4),
+                .init(transcriptRow: row, blockIndex: 0, characterOffsets: 5 ..< 9),
+                .init(transcriptRow: row, blockIndex: 0, characterOffsets: 10 ..< 14),
+            ],
+        )
+        XCTAssertEqual(
+            AiChatRenderedTextMatcher.matches(query: "CAFÉ", transcriptRow: row, renderedBlocks: renderedBlocks),
+            [.init(transcriptRow: row, blockIndex: 1, characterOffsets: 9 ..< 13)],
+        )
+        XCTAssertEqual(
+            AiChatRenderedTextMatcher.matches(query: "한글", transcriptRow: row, renderedBlocks: renderedBlocks),
+            [.init(transcriptRow: row, blockIndex: 1, characterOffsets: 0 ..< 2)],
+        )
+        XCTAssertEqual(
+            AiChatRenderedTextMatcher.matches(query: "日本語", transcriptRow: row, renderedBlocks: renderedBlocks),
+            [.init(transcriptRow: row, blockIndex: 1, characterOffsets: 3 ..< 6)],
+        )
+        XCTAssertEqual(
+            AiChatRenderedTextMatcher.matches(query: "👩‍💻", transcriptRow: row, renderedBlocks: renderedBlocks),
+            [.init(transcriptRow: row, blockIndex: 1, characterOffsets: 7 ..< 8)],
+        )
+    }
+
+    /// CBW-001-open_contextual_chat: query는 rendered Markdown block 경계를 넘어 match하지 않는다.
+    /// block 단위 renderer를 유지하면서 인접 block의 끝과 시작을 하나의 결과로 합치지 않는지 검증합니다.
+    /// - 검증 내용: cross-block query와 빈 query가 descriptor를 만들지 않는지 확인합니다.
+    /// - 사전 조건: 첫 block은 boundary로 끝나고 다음 block은 crossing으로 시작합니다.
+    /// - 기대 결과: 두 block을 잇는 query와 빈 query 모두 match가 없습니다.
+    func testOpenContextualChatDoesNotMatchAcrossRenderedBlockBoundariesOrEmptyQuery() {
+        let row = AiChatTranscriptRowDiscriminator.message(index: 0)
+        let renderedBlocks = ["boundary", "crossing"]
+
+        XCTAssertTrue(
+            AiChatRenderedTextMatcher.matches(
+                query: "arycro",
+                transcriptRow: row,
+                renderedBlocks: renderedBlocks,
+            ).isEmpty,
+        )
+        XCTAssertTrue(
+            AiChatRenderedTextMatcher.matches(
+                query: "",
+                transcriptRow: row,
+                renderedBlocks: renderedBlocks,
+            ).isEmpty,
+        )
+    }
+
+    /// CBW-001-open_contextual_chat: transcript 검색 상태는 session-list 검색과 분리해 빈 query와 zero-result를 구분한다.
+    /// 검색 열기·query·결과 projection·닫기 액션이 현재 session이나 scroll을 바꾸지 않는지 검증합니다.
+    /// - 검증 내용: visibility, query, stale projection 무시, 0/0 no-result, 빈 query reset, close reset을 확인합니다.
+    /// - 사전 조건: session-list query와 transcript scroll offset이 이미 존재하는 active chat입니다.
+    /// - 기대 결과: transcript 검색만 전이되고 session-list query, session ID, scroll offset은 그대로 유지됩니다.
+    func testOpenContextualChatKeepsTranscriptSearchSeparateAndDistinguishesEmptyFromNoResults() async {
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let scrollOffsets: [AiChatSessionID: CGFloat] = [sessionID: 42]
+        let store = makeTranscriptSearchStore(.init(
+            mode: .chat,
+            sessionList: .init(query: "history query"),
+            sessionID: sessionID,
+            transcriptScrollOffsets: scrollOffsets,
+        ))
+        let expectedContext = transcriptContext(of: store.state)
+
+        await store.send(.transcriptSearchOpened) { state in
+            state.transcriptSearch.isPresented = true
+        }
+        await store.send(.transcriptSearchQueryChanged("needle")) { state in
+            state.transcriptSearch.query = "needle"
+        }
+        await store.send(.transcriptSearchMatchCountChanged(.init(
+            query: "stale query",
+            matchCount: 7,
+        )))
+        await store.send(.transcriptSearchMatchCountChanged(.init(
+            query: "needle",
+            matchCount: 0,
+        ))) { state in
+            state.transcriptSearch.matchCount = 0
+            state.transcriptSearch.currentMatchOrdinal = 0
+            state.transcriptSearch.status = .noResults
+        }
+
+        XCTAssertEqual(transcriptContext(of: store.state), expectedContext)
+
+        await store.send(.transcriptSearchQueryChanged("")) { state in
+            state.transcriptSearch.query = ""
+            state.transcriptSearch.matchCount = nil
+            state.transcriptSearch.currentMatchOrdinal = nil
+            state.transcriptSearch.status = nil
+        }
+        await store.send(.transcriptSearchQueryChanged("again")) { state in
+            state.transcriptSearch.query = "again"
+        }
+        await store.send(.transcriptSearchMatchCountChanged(.init(
+            query: "again",
+            matchCount: 2,
+        ))) { state in
+            state.transcriptSearch.matchCount = 2
+            state.transcriptSearch.currentMatchOrdinal = 1
+            state.transcriptSearch.status = .matches
+        }
+        await store.send(.transcriptSearchClosed) { state in
+            state.transcriptSearch = .init()
+        }
+
+        XCTAssertEqual(transcriptContext(of: store.state), expectedContext)
+    }
+
+    /// CBW-001-open_contextual_chat: transcript 검색 이전·다음은 결과가 있을 때만 wrap하고 count 변화에 ordinal을 정규화한다.
+    /// streaming projection으로 match가 늘거나 줄어도 현재 ordinal이 유효 범위를 벗어나지 않는지 검증합니다.
+    /// - 검증 내용: previous/next 양방향 wrap, count growth 보존, shrink clamp, zero-result no-op을 확인합니다.
+    /// - 사전 조건: non-empty query에 세 개의 rendered match가 projection된 상태입니다.
+    /// - 기대 결과: 1-based ordinal은 wrap하며 결과가 0개가 되면 0/0 상태에서 탐색 액션이 no-op입니다.
+    func testOpenContextualChatWrapsTranscriptMatchesAndNormalizesStreamingCountChanges() async {
+        let store = makeTranscriptSearchStore(.init(
+            mode: .chat,
+            sessionID: AiChatSessionID(rawValue: UUID()),
+        ))
+
+        await store.send(.transcriptSearchOpened) { state in
+            state.transcriptSearch.isPresented = true
+        }
+        await store.send(.transcriptSearchQueryChanged("match")) { state in
+            state.transcriptSearch.query = "match"
+        }
+        await store.send(.transcriptSearchMatchCountChanged(.init(
+            query: "match",
+            matchCount: 3,
+        ))) { state in
+            state.transcriptSearch.matchCount = 3
+            state.transcriptSearch.currentMatchOrdinal = 1
+            state.transcriptSearch.status = .matches
+        }
+        await store.send(.transcriptSearchPreviousTapped) { state in
+            state.transcriptSearch.currentMatchOrdinal = 3
+        }
+        await store.send(.transcriptSearchNextTapped) { state in
+            state.transcriptSearch.currentMatchOrdinal = 1
+        }
+        await store.send(.transcriptSearchNextTapped) { state in
+            state.transcriptSearch.currentMatchOrdinal = 2
+        }
+        await store.send(.transcriptSearchMatchCountChanged(.init(
+            query: "match",
+            matchCount: 5,
+        ))) { state in
+            state.transcriptSearch.matchCount = 5
+        }
+        await store.send(.transcriptSearchMatchCountChanged(.init(
+            query: "match",
+            matchCount: 1,
+        ))) { state in
+            state.transcriptSearch.matchCount = 1
+            state.transcriptSearch.currentMatchOrdinal = 1
+        }
+        await store.send(.transcriptSearchMatchCountChanged(.init(
+            query: "match",
+            matchCount: 0,
+        ))) { state in
+            state.transcriptSearch.matchCount = 0
+            state.transcriptSearch.currentMatchOrdinal = 0
+            state.transcriptSearch.status = .noResults
+        }
+        await store.send(.transcriptSearchNextTapped)
+        await store.send(.transcriptSearchPreviousTapped)
+    }
+
     // MARK: - CBW-001-submit_chat_request
+
+    /// CBW-001-submit_chat_request: composer는 placeholder와 tooltip 기반 Enter/Shift+Enter 안내를 제공한다.
+    /// 사용자가 hover 및 VoiceOver로 입력 방법과 현재 send/stop action을 구분할 수 있는지 검증합니다.
+    /// - 검증 내용: placeholder, input hint, send tooltip, stop tooltip 문자열을 확인합니다.
+    /// - 사전 조건: idle composer display model과 stop mode로 전환한 동일 display model을 구성합니다.
+    /// - 기대 결과: Ask anything… 정책과 send/stop별 안내가 정확한 canonical copy를 반환합니다.
+    func testSubmitChatRequestComposerGuidanceUsesCanonicalCopyForSendAndStop() {
+        let input = AiChatFeature.State().chatInputDisplayModel
+
+        XCTAssertEqual(input.placeholder, "Ask anything…")
+        XCTAssertEqual(input.inputAccessibilityHint, "Enter to send, Shift+Enter for new line")
+        XCTAssertEqual(input.actionHelp, "Enter to send, Shift+Enter for new line")
+
+        var stopInput = input
+        stopInput.isStopVisible = true
+        XCTAssertEqual(stopInput.actionHelp, "Stop generating response")
+    }
+
+    /// CBW-001-submit_chat_request: Chat Field는 46pt에서 160pt까지 성장하고 이후 내부 스크롤을 사용한다.
+    /// 사용자가 짧은 메시지부터 긴 다중 행 메시지까지 입력할 때 composer 외부 높이와 내부 탐색 계약을 검증합니다.
+    /// - 검증 내용: 최소/최대 높이 상수, TextKit 측정 높이, clamp 결과, vertical scroller 활성화를 확인합니다.
+    /// - 사전 조건: 180pt 너비의 AppKit text view와 짧은 입력, 중간 다중 행 입력, 160pt를 넘는 긴 입력을 구성합니다.
+    /// - 기대 결과: 외부 높이는 46...160pt로 제한되고 160pt 초과 콘텐츠는 내부 세로 스크롤을 활성화합니다.
+    func testSubmitChatRequestInputGrowsToMaximumThenEnablesInternalScrolling() async {
+        let harness = InputTextViewHarness()
+
+        XCTAssertEqual(AiChatView.chatInputMinTextHeight, 46)
+        XCTAssertEqual(AiChatView.chatInputMaxTextHeight, 160)
+
+        let shortHeight = await harness.measure("Short")
+        XCTAssertEqual(harness.boundedHeight(for: shortHeight), 46)
+        XCTAssertFalse(harness.scrollView.hasVerticalScroller)
+
+        let growingHeight = await harness.measure(Array(repeating: "Growing line", count: 5).joined(separator: "\n"))
+        XCTAssertGreaterThan(growingHeight, AiChatView.chatInputMinTextHeight)
+        XCTAssertLessThan(growingHeight, AiChatView.chatInputMaxTextHeight)
+        XCTAssertEqual(harness.boundedHeight(for: growingHeight), growingHeight)
+        XCTAssertFalse(harness.scrollView.hasVerticalScroller)
+
+        let overflowingHeight = await harness.measure(String(repeating: "A long wrapped request ", count: 100))
+        XCTAssertGreaterThan(overflowingHeight, AiChatView.chatInputMaxTextHeight)
+        XCTAssertEqual(harness.boundedHeight(for: overflowingHeight), 160)
+        XCTAssertTrue(harness.scrollView.hasVerticalScroller)
+    }
+
+    /// CBW-001-submit_chat_request: marked text 조합 중 Enter는 조합 문자열만 확정한다.
+    /// 한글·일본어 입력기가 조합 문자열을 확정할 때 Enter가 요청 제출이나 줄바꿈으로 처리되지 않는지 검증합니다.
+    /// - 검증 내용: AppKit fallback을 포함한 command 처리 결과, 조합 문자열, marked text, submit 횟수를 확인합니다.
+    /// - 사전 조건: AppKit text view에 marked text `ㅎ`를 설정하고 insertNewline command를 전달합니다.
+    /// - 기대 결과: command는 처리되고 `ㅎ`는 보존·확정되며 submit과 줄바꿈은 발생하지 않습니다.
+    func testSubmitChatRequestCommitsMarkedTextWithoutSubmittingOrInsertingNewline() {
+        let harness = InputTextViewHarness()
+        harness.textView.setMarkedText(
+            "ㅎ",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0),
+        )
+        XCTAssertTrue(harness.textView.hasMarkedText())
+
+        let handled = harness.pressEnterThroughAppKitFallback()
+
+        XCTAssertTrue(handled)
+        XCTAssertEqual(harness.textView.string, "ㅎ")
+        XCTAssertFalse(harness.textView.hasMarkedText())
+        XCTAssertEqual(harness.state.submitCount, 0)
+        XCTAssertFalse(harness.textView.string.contains("\n"))
+    }
+
+    /// CBW-001-submit_chat_request: bare Enter는 기존 submit callback을 한 번 호출한다.
+    /// 조합 중이 아니고 modifier가 없는 사용자의 Enter 제출 경로가 유지되는지 검증합니다.
+    /// - 검증 내용: insertNewline command 처리 결과와 submit callback 호출 횟수를 확인합니다.
+    /// - 사전 조건: marked text가 없고 modifier가 없는 text view command를 구성합니다.
+    /// - 기대 결과: command는 처리되며 submit callback이 정확히 한 번 호출됩니다.
+    func testSubmitChatRequestBareEnterSubmits() {
+        let harness = InputTextViewHarness()
+
+        let handled = harness.coordinator.handleNewlineCommand(
+            in: harness.textView,
+            modifierFlags: [],
+        )
+
+        XCTAssertTrue(handled)
+        XCTAssertEqual(AiChatInputTextView.Coordinator.newlineCommand(for: []), .submit)
+        XCTAssertEqual(harness.state.submitCount, 1)
+        XCTAssertEqual(harness.textView.string, "")
+    }
+
+    /// CBW-001-submit_chat_request: Shift+Enter는 submit하지 않고 줄바꿈을 삽입한다.
+    /// 사용자가 요청 내용을 여러 줄로 작성할 때 Shift modifier가 기존 newline 계약을 유지하는지 검증합니다.
+    /// - 검증 내용: Shift command 분류, text view 문자열, submit callback 호출 횟수를 확인합니다.
+    /// - 사전 조건: AppKit text view와 Shift modifier가 포함된 newline command를 구성합니다.
+    /// - 기대 결과: 문자열에 줄바꿈이 삽입되고 submit callback은 호출되지 않습니다.
+    func testSubmitChatRequestShiftEnterInsertsNewlineWithoutSubmitting() {
+        let harness = InputTextViewHarness()
+
+        let handled = harness.coordinator.handleNewlineCommand(
+            in: harness.textView,
+            modifierFlags: .shift,
+        )
+
+        XCTAssertTrue(handled)
+        XCTAssertEqual(AiChatInputTextView.Coordinator.newlineCommand(for: .shift), .insertNewline)
+        XCTAssertEqual(harness.state.submitCount, 0)
+        XCTAssertEqual(harness.textView.string, "\n")
+    }
+
+    /// CBW-001-submit_chat_request: Option+Enter는 기존 줄바꿈 동작을 유지한다.
+    /// 기존 macOS modifier 계약이 Task 1 변경으로 submit 동작에 흡수되지 않는지 회귀 검증합니다.
+    /// - 검증 내용: Option command 분류, text view 문자열, submit callback 호출 횟수를 확인합니다.
+    /// - 사전 조건: AppKit text view와 Option modifier가 포함된 newline command를 구성합니다.
+    /// - 기대 결과: 문자열에 줄바꿈이 삽입되고 submit callback은 호출되지 않습니다.
+    func testSubmitChatRequestOptionEnterPreservesNewlineWithoutSubmitting() {
+        let harness = InputTextViewHarness()
+
+        let handled = harness.coordinator.handleNewlineCommand(
+            in: harness.textView,
+            modifierFlags: .option,
+        )
+
+        XCTAssertTrue(handled)
+        XCTAssertEqual(AiChatInputTextView.Coordinator.newlineCommand(for: .option), .insertNewline)
+        XCTAssertEqual(harness.state.submitCount, 0)
+        XCTAssertEqual(harness.textView.string, "\n")
+    }
+
+    private final class InputTextViewHarnessState {
+        var text = ""
+        var isFocused = false
+        var measuredHeight: CGFloat = 0
+        var submitCount = 0
+    }
+
+    @MainActor
+    private final class InputTextViewHarness {
+        let state = InputTextViewHarnessState()
+        let parent: AiChatInputTextView
+        let coordinator: AiChatInputTextView.Coordinator
+        let scrollView: NSScrollView
+        let textView: AiChatInputTextView.AttachmentDroppingTextView
+
+        init() {
+            _ = NSApplication.shared
+            let state = state
+            parent = AiChatInputTextView(
+                text: Binding(
+                    get: { state.text },
+                    set: { state.text = $0 },
+                ),
+                isFocused: Binding(
+                    get: { state.isFocused },
+                    set: { state.isFocused = $0 },
+                ),
+                measuredHeight: Binding(
+                    get: { state.measuredHeight },
+                    set: { state.measuredHeight = $0 },
+                ),
+                isDisabled: false,
+                maxVisibleHeight: AiChatView.chatInputMaxTextHeight,
+                onSubmit: { state.submitCount += 1 },
+                onAttachmentsDropped: { _ in },
+            )
+            coordinator = parent.makeCoordinator()
+            scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 180, height: 160))
+            textView = AiChatInputTextView.AttachmentDroppingTextView()
+            scrollView.documentView = textView
+            scrollView.hasVerticalScroller = false
+            scrollView.hasHorizontalScroller = false
+            scrollView.autohidesScrollers = true
+            coordinator.textView = textView
+            coordinator.scrollView = scrollView
+            textView.delegate = coordinator
+            textView.frame.size.width = scrollView.contentSize.width
+            textView.isHorizontallyResizable = false
+            textView.isVerticallyResizable = true
+            textView.textContainerInset = NSSize(
+                width: AiChatInputTextView.textHorizontalInset,
+                height: AiChatInputTextView.textVerticalInset,
+            )
+            textView.font = NSFont.systemFont(ofSize: 13)
+            textView.textContainer?.lineFragmentPadding = 0
+            textView.textContainer?.widthTracksTextView = false
+        }
+
+        func pressEnterThroughAppKitFallback() -> Bool {
+            let handled = coordinator.textView(
+                textView,
+                doCommandBy: #selector(NSResponder.insertNewline(_:)),
+            )
+            if !handled {
+                textView.insertNewline(nil)
+            }
+            return handled
+        }
+
+        func measure(_ text: String) async -> CGFloat {
+            textView.string = text
+            coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+            await withCheckedContinuation { continuation in
+                DispatchQueue.main.async {
+                    continuation.resume()
+                }
+            }
+            return state.measuredHeight
+        }
+
+        func boundedHeight(for measuredHeight: CGFloat) -> CGFloat {
+            min(
+                max(measuredHeight, AiChatView.chatInputMinTextHeight),
+                AiChatView.chatInputMaxTextHeight,
+            )
+        }
+    }
 
     /// CBW-001-submit_chat_request: 선택한 provider executor로 요청을 위임하고 완료 응답을 transcript에 반영한다.
     /// submit 동작이 선택 모델, credential, session persistence까지 포함한 실제 실행 체인을 deterministic하게 통과하는지 검증합니다.
@@ -105,6 +605,86 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
     }
 
     // MARK: - CBW-001-cancel_active_chat_request
+
+    /// CBW-001-cancel_active_chat_request: 취소로 streaming draft가 제거되면 검색 projection identity를 갱신한다.
+    /// 사용자가 partial response를 검색하던 중 요청을 취소해도 사라진 응답의 검색 결과가 남지 않는지 검증합니다.
+    /// - 검증 내용: 전용 draft revision, auto-scroll 독립성, request identity, stale result 거부와 zero-result 상태를 확인합니다.
+    /// - 사전 조건: active transcript search query `Hel`이 partial streaming assistant draft 한 건과 일치합니다.
+    /// - 기대 결과: 취소 후 draft revision만 증가하고 projection은 no-results이며 기존 navigation intent는 유지됩니다.
+    func testCancelActiveChatRequestInvalidatesStreamingSearchProjectionWhenDraftClears() async throws {
+        let fixture = makeStreamFixture(draftText: "Cancel me", fixedMs: 1_700_000_000_200)
+        applyObservationFocusedExhaustivity(to: fixture.store)
+
+        await fixture.store.send(.submitTapped)
+        await resolvePendingRequestContext(fixture.store) { state in
+            self.applyCancelStartedState(&state, selectedHandle: fixture.selectedHandle)
+        }
+        let request = try XCTUnwrap(fixture.stream.requests.first)
+        let lock = makeSubmitLock(
+            request: request,
+            catalogRows: fixture.catalogRows,
+            selectedHandle: fixture.selectedHandle,
+        )
+        let streamingLock = await receiveCancelStreamingDelta(
+            on: fixture.store,
+            stream: fixture.stream,
+            request: request,
+            lock: lock,
+            fixedMs: fixture.fixedMs,
+        )
+        await fixture.store.send(.transcriptSearchOpened) { state in
+            state.transcriptSearch.isPresented = true
+        }
+        await fixture.store.send(.transcriptSearchQueryChanged("Hel")) { state in
+            state.transcriptSearch.query = "Hel"
+        }
+
+        var requestCache = AiChatTranscriptSearchRequestCache()
+        let beforeRequest = makeTranscriptSearchProjectionRequest(
+            for: fixture.store.state,
+            cache: &requestCache,
+        )
+        let projector = AiChatTranscriptSearchProjector(streamingDebounce: .zero)
+        let beforeResult = try await projector.project(beforeRequest, generation: 1)
+        let draftRevisionBeforeCancel = fixture.store.state.streamingAssistantDraftMutationTracker.value
+        let autoScrollVersionBeforeCancel = fixture.store.state.transcriptAutoScrollVersion
+        let navigationRevisionBeforeCancel = fixture.store.state.transcriptSearch.navigationRevision
+
+        await sendCancelAndLateTerminalEvents(
+            on: fixture.store,
+            request: request,
+            streamingLock: streamingLock,
+            fixedMs: fixture.fixedMs,
+        )
+        let afterRequest = makeTranscriptSearchProjectionRequest(
+            for: fixture.store.state,
+            cache: &requestCache,
+        )
+        let afterResult = try await projector.project(afterRequest, generation: 2)
+
+        XCTAssertNil(fixture.store.state.streamingAssistantDraft)
+        XCTAssertNotEqual(
+            fixture.store.state.streamingAssistantDraftMutationTracker.value,
+            draftRevisionBeforeCancel,
+        )
+        XCTAssertEqual(fixture.store.state.transcriptAutoScrollVersion, autoScrollVersionBeforeCancel)
+        XCTAssertNotEqual(beforeRequest, afterRequest)
+        XCTAssertFalse(beforeResult.isCurrent(request: afterRequest, generation: 2))
+        XCTAssertTrue(afterResult.presentation.matches.isEmpty)
+
+        let countProjection: AiChatTranscriptSearchMatchCountProjection = afterResult.presentation.matchCountProjection
+        await fixture.store.send(.transcriptSearchMatchCountChanged(countProjection)) { state in
+            state.transcriptSearch.matchCount = 0
+            state.transcriptSearch.currentMatchOrdinal = 0
+            state.transcriptSearch.status = .noResults
+        }
+        XCTAssertEqual(fixture.store.state.transcriptSearch.status, .noResults)
+        XCTAssertNil(afterResult.presentation
+            .descriptor(atOrdinal: fixture.store.state.transcriptSearch.currentMatchOrdinal))
+        XCTAssertEqual(fixture.store.state.transcriptSearch.navigationRevision, navigationRevisionBeforeCancel)
+        assertCancelResult(fixture.store.state, streamingLock: streamingLock, fixedMs: fixture.fixedMs)
+        await fixture.store.finish()
+    }
 
     /// CBW-001-cancel_active_chat_request: 취소 이후 늦게 도착한 terminal event는 transcript를 변경하지 않는다.
     /// 사용자가 active request를 취소한 뒤 stale delta/final/failure가 durable state를 오염시키지 않는지 검증합니다.
@@ -2071,6 +2651,392 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertEqual(persistence.snapshots.count, 1)
         await store.finish()
     }
+
+    // MARK: - CBW-001-open_contextual_chat
+
+    /// CBW-001-open_contextual_chat: transcript projection은 plain/Markdown/streaming match와 stable block anchor를 구성한다.
+    /// 기존 inline bold/link 속성을 보존하면서 현재 결과에는 underline 의미를 추가하는지 검증합니다.
+    /// - 검증 내용: row/block 순서, query-tagged count, stable anchor, highlight kind, Markdown attributes를 확인합니다.
+    /// - 사전 조건: user plain, assistant heading/paragraph, streaming assistant에 같은 query가 있습니다.
+    /// - 기대 결과: 네 결과가 rendered block 순서로 투영되고 현재 결과만 non-color current decoration을 가집니다.
+    func testOpenContextualChatProjectsStableRenderedMatchesAndPreservesInlineStylesWhenHighlighting() throws {
+        let presentation = makeTranscriptSearchPresentation()
+
+        XCTAssertEqual(presentation.matchCountProjection, .init(query: "needle", matchCount: 4))
+        XCTAssertEqual(
+            AiChatView.transcriptSearchCountText(.init(
+                isPresented: true,
+                query: "needle",
+                matchCount: 5,
+                currentMatchOrdinal: 2,
+                status: .matches,
+            )),
+            "2/5",
+        )
+        XCTAssertEqual(presentation.matches.map(\.transcriptRow), [
+            .message(index: 0),
+            .message(index: 1),
+            .message(index: 1),
+            .streamingAssistant,
+        ])
+        XCTAssertEqual(presentation.matches.map(\.blockIndex), [0, 0, 1, 0])
+        XCTAssertEqual(
+            presentation.anchor(for: presentation.matches[2]),
+            AiChatTranscriptBlockAnchor(transcriptRow: .message(index: 1), blockIndex: 1),
+        )
+
+        let attributed = try AttributedString(
+            markdown: "Use **needle** and [link](https://example.com)",
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace),
+        )
+        let highlighted = AiChatRenderedTextHighlighter.highlight(
+            attributed,
+            matchOffsets: [4 ..< 10],
+            currentMatchOffsets: 4 ..< 10,
+        )
+
+        XCTAssertEqual(String(highlighted.characters), "Use needle and link")
+        XCTAssertTrue(highlighted.runs.contains { run in
+            run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true
+        })
+        XCTAssertTrue(highlighted.runs.contains { $0.link == URL(string: "https://example.com") })
+        XCTAssertTrue(highlighted.runs.contains { $0.underlineStyle != nil })
+        XCTAssertEqual(
+            AiChatRenderedTextHighlighter.decorations(
+                matchOffsets: [4 ..< 10, 15 ..< 19],
+                currentMatchOffsets: 4 ..< 10,
+            )
+            .map(\.kind),
+            [.current, .match],
+        )
+    }
+
+    /// CBW-001-open_contextual_chat: explicit previous/next만 transcript navigation revision을 증가시킨다.
+    /// 검색 open/close/query/count와 streaming count reconciliation은 scroll intent를 만들지 않는지 검증합니다.
+    /// - 검증 내용: navigation revision, wrap, auto-scroll version/session/offset 보존을 확인합니다.
+    /// - 사전 조건: active chat에 기존 scroll offset과 streaming auto-scroll version이 있습니다.
+    /// - 기대 결과: next/previous만 revision을 증가시키고 count 변화는 ordinal만 clamp합니다.
+    func testOpenContextualChatOnlyExplicitMatchNavigationRequestsScrollIntent() async {
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            transcriptAutoScrollVersion: 9,
+            transcriptScrollOffsets: [sessionID: 42],
+        )) {
+            AiChatFeature()
+        }
+        applyObservationFocusedExhaustivity(to: store)
+
+        await store.send(.transcriptSearchOpened) { $0.transcriptSearch.isPresented = true }
+        await store.send(.transcriptSearchQueryChanged("match")) { $0.transcriptSearch.query = "match" }
+        await store.send(.transcriptSearchMatchCountChanged(.init(query: "match", matchCount: 2))) { state in
+            state.transcriptSearch.matchCount = 2
+            state.transcriptSearch.currentMatchOrdinal = 1
+            state.transcriptSearch.status = .matches
+        }
+        XCTAssertEqual(store.state.transcriptSearch.navigationRevision, 0)
+        XCTAssertTrue(AiChatView.shouldAutoScrollToBottom(transcriptSearch: store.state.transcriptSearch))
+
+        await store.send(.transcriptSearchNextTapped) { state in
+            state.transcriptSearch.currentMatchOrdinal = 2
+            state.transcriptSearch.navigationRevision = 1
+        }
+        await store.send(.transcriptSearchMatchCountChanged(.init(query: "match", matchCount: 1))) { state in
+            state.transcriptSearch.matchCount = 1
+            state.transcriptSearch.currentMatchOrdinal = 1
+        }
+        XCTAssertEqual(store.state.transcriptSearch.navigationRevision, 1)
+        XCTAssertFalse(AiChatView.shouldAutoScrollToBottom(transcriptSearch: store.state.transcriptSearch))
+
+        await store.send(.transcriptSearchPreviousTapped) { state in
+            state.transcriptSearch.navigationRevision = 2
+        }
+        XCTAssertEqual(store.state.transcriptAutoScrollVersion, 9)
+        XCTAssertEqual(store.state.transcriptScrollOffsets, [sessionID: 42])
+        XCTAssertEqual(store.state.sessionID, sessionID)
+
+        await store.send(.transcriptSearchClosed) { state in
+            state.transcriptSearch = .init()
+        }
+        XCTAssertEqual(store.state.transcriptSearch.navigationRevision, 0)
+        XCTAssertTrue(AiChatView.shouldAutoScrollToBottom(transcriptSearch: store.state.transcriptSearch))
+    }
+
+    /// CBW-001-open_contextual_chat: streaming render plan은 transcript row와 latest assistant를 한 번의 bounded pass로 준비한다.
+    /// token-driven body evaluation이 row마다 latest assistant를 다시 검색해 O(history²)가 되지 않는지 검증합니다.
+    /// - 검증 내용: row range, latest assistant index, inspected message upper bound를 확인합니다.
+    /// - 사전 조건: 첫 row만 assistant이고 뒤에 999개 user row가 이어지는 긴 stable transcript가 있습니다.
+    /// - 기대 결과: 1,000개 row를 allocation-free range로 노출하고 latest scan은 전체 message 수를 넘지 않습니다.
+    func testOpenContextualChatBuildsLinearTranscriptRenderPlan() {
+        let messages = [AiChatMessage(role: .assistant, content: "answer")]
+            + (0 ..< 999).map { AiChatMessage(role: .user, content: "question \($0)") }
+
+        let plan = AiChatTranscriptRenderPlan.make(messages: messages)
+
+        XCTAssertEqual(plan.messageIndices, messages.indices)
+        XCTAssertEqual(plan.latestAssistantMessageIndex, 0)
+        XCTAssertLessThanOrEqual(plan.latestAssistantInspectionCount, messages.count)
+    }
+
+    /// CBW-001-open_contextual_chat: request cache는 streaming token마다 stable history rows를 다시 매핑하지 않는다.
+    /// body-side request construction도 actor cache에 도달하기 전에 O(history) 작업을 반복하지 않는지 검증합니다.
+    /// - 검증 내용: hidden no-build, active stable-row build/reuse count, O(1) revision identity를 확인합니다.
+    /// - 사전 조건: 두 token은 stable history revision을 공유하고, 이후 같은 session/count에서 history content만 변경됩니다.
+    /// - 기대 결과: token 사이는 stable rows를 재사용하고 content 변경은 새 stable revision/build로 invalidation합니다.
+    func testOpenContextualChatRequestCacheReusesStableRowsAcrossStreamingTokens() {
+        let sessionToken = UUID()
+        let messages = [AiChatMessage(role: .assistant, content: "# stable needle")]
+        var cache = AiChatTranscriptSearchRequestCache()
+
+        _ = cache.request(
+            isPresented: false,
+            query: "needle",
+            source: AiChatTranscriptSearchRequestSource(
+                sessionToken: sessionToken,
+                messages: messages,
+                streamingAssistantContent: "n",
+                transcriptRevision: 10,
+                streamingRevision: 1,
+            ),
+        )
+        let first = cache.request(
+            isPresented: true,
+            query: "needle",
+            source: AiChatTranscriptSearchRequestSource(
+                sessionToken: sessionToken,
+                messages: messages,
+                streamingAssistantContent: "ne",
+                transcriptRevision: 10,
+                streamingRevision: 2,
+            ),
+        )
+        let second = cache.request(
+            isPresented: true,
+            query: "needle",
+            source: AiChatTranscriptSearchRequestSource(
+                sessionToken: sessionToken,
+                messages: messages,
+                streamingAssistantContent: "nee",
+                transcriptRevision: 10,
+                streamingRevision: 3,
+            ),
+        )
+        let changedMessages = [AiChatMessage(role: .assistant, content: "# changed needle")]
+        let changed = cache.request(
+            isPresented: true,
+            query: "needle",
+            source: AiChatTranscriptSearchRequestSource(
+                sessionToken: sessionToken,
+                messages: changedMessages,
+                streamingAssistantContent: "need",
+                transcriptRevision: 11,
+                streamingRevision: 4,
+            ),
+        )
+
+        XCTAssertEqual(cache.diagnostics.stableRowsBuildCount, 2)
+        XCTAssertEqual(cache.diagnostics.stableRowsReuseCount, 1)
+        XCTAssertEqual(first.stableRowsRevision, second.stableRowsRevision)
+        XCTAssertNotEqual(second.stableRowsRevision, changed.stableRowsRevision)
+        XCTAssertEqual(changed.stableRows.first?.content, "# changed needle")
+        XCTAssertNotEqual(first.streamingRevision, second.streamingRevision)
+        XCTAssertNotEqual(first, second)
+    }
+
+    /// CBW-001-open_contextual_chat: hidden 또는 empty transcript search는 projection parsing을 시작하지 않는다.
+    /// inactive search가 SwiftUI body 평가만으로 history나 streaming Markdown을 투영하지 않는지 검증합니다.
+    /// - 검증 내용: request short-circuit와 projector no-work/stable/streaming diagnostics를 확인합니다.
+    /// - 사전 조건: assistant Markdown history와 streaming content가 있지만 search가 hidden이거나 query가 비어 있습니다.
+    /// - 기대 결과: 두 request 모두 stable rows와 streaming payload가 비고 parse/build count는 0입니다.
+    func testOpenContextualChatProjectionDoesNoWorkWhenHiddenOrQueryIsEmpty() async throws {
+        let messages = [AiChatMessage(role: .assistant, content: "# Needle")]
+        let hidden = AiChatTranscriptSearchProjectionRequest.make(
+            isPresented: false,
+            query: "needle",
+            sessionToken: UUID(),
+            messages: messages,
+            streamingAssistantContent: "needle stream",
+        )
+        let empty = AiChatTranscriptSearchProjectionRequest.make(
+            isPresented: true,
+            query: "",
+            sessionToken: UUID(),
+            messages: messages,
+            streamingAssistantContent: "needle stream",
+        )
+        let projector = AiChatTranscriptSearchProjector(streamingDebounce: .zero)
+
+        _ = try await projector.project(hidden, generation: 1)
+        _ = try await projector.project(empty, generation: 2)
+        let diagnostics = await projector.diagnostics()
+
+        XCTAssertFalse(hidden.requiresWork)
+        XCTAssertTrue(hidden.stableRows.isEmpty)
+        XCTAssertNil(hidden.streamingAssistantContent)
+        XCTAssertFalse(empty.requiresWork)
+        XCTAssertTrue(empty.stableRows.isEmpty)
+        XCTAssertNil(empty.streamingAssistantContent)
+        XCTAssertEqual(diagnostics.noWorkCount, 2)
+        XCTAssertEqual(diagnostics.stableProjectionBuildCount, 0)
+        XCTAssertEqual(diagnostics.streamingProjectionBuildCount, 0)
+    }
+
+    /// CBW-001-open_contextual_chat: streaming token update는 unchanged history projection을 재사용한다.
+    /// active streaming search가 매 token마다 stable transcript를 다시 parse/match하지 않는지 검증합니다.
+    /// - 검증 내용: stable projection build/reuse와 streaming projection build diagnostics를 확인합니다.
+    /// - 사전 조건: session/query/history는 같고 streaming assistant content만 두 request 사이에 변경됩니다.
+    /// - 기대 결과: stable projection은 한 번 build·한 번 reuse되고 streaming projection만 두 번 build됩니다.
+    func testOpenContextualChatProjectionReusesStableRowsAcrossStreamingUpdates() async throws {
+        let sessionToken = UUID()
+        let messages = [AiChatMessage(role: .assistant, content: "# stable needle")]
+        let firstRequest = AiChatTranscriptSearchProjectionRequest.make(
+            isPresented: true,
+            query: "needle",
+            sessionToken: sessionToken,
+            messages: messages,
+            streamingAssistantContent: "needle one",
+        )
+        let secondRequest = AiChatTranscriptSearchProjectionRequest.make(
+            isPresented: true,
+            query: "needle",
+            sessionToken: sessionToken,
+            messages: messages,
+            streamingAssistantContent: "needle two",
+        )
+        let projector = AiChatTranscriptSearchProjector(streamingDebounce: .zero)
+
+        _ = try await projector.project(firstRequest, generation: 1)
+        let second = try await projector.project(secondRequest, generation: 2)
+        let diagnostics = await projector.diagnostics()
+
+        XCTAssertEqual(second.presentation.matches.count, 2)
+        XCTAssertEqual(diagnostics.stableProjectionBuildCount, 1)
+        XCTAssertEqual(diagnostics.stableProjectionReuseCount, 1)
+        XCTAssertEqual(diagnostics.streamingProjectionBuildCount, 2)
+    }
+
+    /// CBW-001-open_contextual_chat: superseded projection generation은 stale query/session/transcript 결과를 publish하지
+    /// 않는다.
+    /// cancelled work와 MainActor publication gate가 최신 request identity만 수락하는지 검증합니다.
+    /// - 검증 내용: generation invalidation, CancellationError, result request/generation identity를 확인합니다.
+    /// - 사전 조건: 첫 request 완료 후 다른 session/query/history request가 더 높은 generation으로 등록됩니다.
+    /// - 기대 결과: 이전 generation 재실행은 취소되고 최신 result만 최신 request/generation과 일치합니다.
+    func testOpenContextualChatProjectionRejectsSupersededGenerationResults() async throws {
+        let firstRequest = AiChatTranscriptSearchProjectionRequest.make(
+            isPresented: true,
+            query: "old",
+            sessionToken: UUID(),
+            messages: [AiChatMessage(role: .user, content: "old")],
+            streamingAssistantContent: "old",
+        )
+        let latestRequest = AiChatTranscriptSearchProjectionRequest.make(
+            isPresented: true,
+            query: "new",
+            sessionToken: UUID(),
+            messages: [AiChatMessage(role: .user, content: "new")],
+            streamingAssistantContent: "new",
+        )
+        let projector = AiChatTranscriptSearchProjector(streamingDebounce: .zero)
+        let first = try await projector.project(firstRequest, generation: 1)
+
+        await projector.invalidate(generation: 2)
+        do {
+            _ = try await projector.project(firstRequest, generation: 1)
+            XCTFail("Superseded generation must be cancelled")
+        } catch is CancellationError {}
+        let latest = try await projector.project(latestRequest, generation: 2)
+
+        XCTAssertFalse(first.isCurrent(request: latestRequest, generation: 2))
+        XCTAssertTrue(latest.isCurrent(request: latestRequest, generation: 2))
+    }
+
+    /// CBW-001-open_contextual_chat: dense transcript match lookup은 block index를 한 번 구성해 descriptor를 한 번만 검사한다.
+    /// 많은 block과 occurrence에서도 presentation 조회가 전체 descriptor를 반복 스캔하지 않는지 검증합니다.
+    /// - 검증 내용: block lookup 수와 inspected descriptor 합이 B와 M에 선형으로 제한되는지 확인합니다.
+    /// - 사전 조건: 12개 user block마다 동일 query가 100회 반복되고 결과가 없는 block도 조회합니다.
+    /// - 기대 결과: 1,200개 match를 유지하면서 lookup은 block당 1회, descriptor 검사는 전체 match 수를 넘지 않습니다.
+    func testOpenContextualChatIndexesDenseMatchesByBlockWithBoundedLookupWork() {
+        let messages = (0 ..< 12).map { _ in
+            AiChatMessage(role: .user, content: String(repeating: "needle ", count: 100))
+        }
+        let presentation = AiChatTranscriptSearchPresentation(
+            query: "needle",
+            messages: messages,
+            streamingAssistantContent: nil,
+        )
+        let lookups = messages.indices.map { index in
+            presentation.matchLookup(transcriptRow: .message(index: index), blockIndex: 0)
+        }
+        let missingLookup = presentation.matchLookup(transcriptRow: .message(index: 99), blockIndex: 0)
+
+        XCTAssertEqual(presentation.matches.count, 1200)
+        XCTAssertTrue(lookups.allSatisfy { $0.offsets.count == 100 })
+        XCTAssertEqual(lookups.reduce(0) { $0 + $1.bucketLookupCount }, messages.count)
+        XCTAssertEqual(lookups.reduce(0) { $0 + $1.inspectedDescriptorCount }, presentation.matches.count)
+        XCTAssertEqual(missingLookup.bucketLookupCount, 1)
+        XCTAssertEqual(missingLookup.inspectedDescriptorCount, 0)
+    }
+
+    /// CBW-001-open_contextual_chat: dense highlight range 변환은 정렬된 offset을 한 cursor로 처리한다.
+    /// 긴 rendered block의 조밀한 match가 매 occurrence마다 문자열 시작부터 다시 순회하지 않는지 검증합니다.
+    /// - 검증 내용: malformed range 무시, resolved count, Character cursor advance upper bound를 확인합니다.
+    /// - 사전 조건: 2,000 Character block에 200개 valid offset과 음수·범위 밖 offset을 역순으로 전달합니다.
+    /// - 기대 결과: valid 200개만 highlight되고 cursor advance는 마지막 valid upper bound 이하이며 current underline이 유지됩니다.
+    func testOpenContextualChatHighlightsDenseMatchesWithOneBoundedCharacterCursor() {
+        let text = AttributedString(String(repeating: "x", count: 2000))
+        let validOffsets = stride(from: 0, to: 2000, by: 10).map { $0 ..< ($0 + 1) }
+        let result = AiChatRenderedTextHighlighter.highlighting(
+            text,
+            matchOffsets: [2500 ..< 2501, -1 ..< 1] + validOffsets.reversed(),
+            currentMatchOffsets: 1990 ..< 1991,
+        )
+
+        XCTAssertEqual(String(result.attributedText.characters), String(repeating: "x", count: 2000))
+        XCTAssertEqual(result.resolvedDecorationCount, validOffsets.count)
+        XCTAssertEqual(result.characterAdvanceCount, 1991)
+        XCTAssertLessThanOrEqual(result.characterAdvanceCount, text.characters.count)
+        XCTAssertTrue(result.attributedText.runs.contains { $0.underlineStyle != nil })
+    }
+
+    /// CBW-001-open_contextual_chat: 같은 long block의 먼 occurrence는 서로 다른 scroll target과 위치 intent를 만든다.
+    /// block-only dedupe가 명시적 next/previous occurrence 이동을 제거하지 않는지 검증합니다.
+    /// - 검증 내용: occurrence range 기반 ID, 상대 anchor, rendered marker ID, 동일 target만 dedupe하는 navigation seam을 확인합니다.
+    /// - 사전 조건: 하나의 긴 user paragraph 시작과 끝에 동일 query occurrence가 각각 존재합니다.
+    /// - 기대 결과: 두 occurrence는 서로 다른 target ID와 상대 위치를 만들고 두 번째 이동 intent도 유지됩니다.
+    func testOpenContextualChatCreatesDistinctScrollIntentsForDistantMatchesInSameBlock() throws {
+        let content = "needle" + String(repeating: "x", count: 900) + "needle"
+        let presentation = AiChatTranscriptSearchPresentation(
+            query: "needle",
+            messages: [AiChatMessage(role: .user, content: content)],
+            streamingAssistantContent: nil,
+        )
+        let first = try XCTUnwrap(presentation.scrollTarget(for: presentation.matches[0]))
+        let second = try XCTUnwrap(presentation.scrollTarget(for: presentation.matches[1]))
+
+        XCTAssertNotEqual(first.id, second.id)
+        XCTAssertEqual(first.scrollID, second.scrollID)
+        XCTAssertGreaterThan(second.relativeAnchor.y, first.relativeAnchor.y)
+        let renderedAnchors = AiChatTranscriptMatchAnchors(
+            descriptors: presentation.matchDescriptors(transcriptRow: .message(index: 0), blockIndex: 0),
+        )
+        XCTAssertEqual(renderedAnchors.targetIDs, [first.scrollID])
+        XCTAssertNotNil(AiChatView.searchNavigationTarget(
+            presentation: presentation,
+            currentMatch: presentation.matches[0],
+            lastTargetID: nil,
+        ))
+        XCTAssertNotNil(AiChatView.searchNavigationTarget(
+            presentation: presentation,
+            currentMatch: presentation.matches[1],
+            lastTargetID: first.id,
+        ))
+        XCTAssertNil(AiChatView.searchNavigationTarget(
+            presentation: presentation,
+            currentMatch: presentation.matches[1],
+            lastTargetID: second.id,
+        ))
+    }
 }
 
 private actor CBW001ProviderDriver {
@@ -2083,6 +3049,12 @@ private actor CBW001ProviderDriver {
     func snapshot() -> [(AiChatRequest, StoredCredentialPayload?)] {
         requests
     }
+}
+
+private struct CBW001TranscriptContext: Equatable {
+    let sessionID: AiChatSessionID?
+    let sessionListQuery: String
+    let scrollOffsets: [AiChatSessionID: CGFloat]
 }
 
 private struct CBW001SubmitFixture {
@@ -2117,6 +3089,55 @@ private extension CBW001ContextualChatRequestTests {
     func applyObservationFocusedExhaustivity(to store: TestStore<AiChatFeature.State, AiChatFeature.Action>) {
         // 사용자 관찰 상태와 terminal 상태를 검증하기 위해 store.exhaustivity = .off를 사용합니다.
         store.exhaustivity = .off(showSkippedAssertions: false)
+    }
+
+    func makeTranscriptSearchProjectionRequest(
+        for state: AiChatFeature.State,
+        cache: inout AiChatTranscriptSearchRequestCache,
+    ) -> AiChatTranscriptSearchProjectionRequest {
+        cache.request(
+            isPresented: state.transcriptSearch.isPresented,
+            query: state.transcriptSearch.query,
+            source: AiChatTranscriptSearchRequestSource(
+                sessionToken: state.sessionID?.rawValue,
+                messages: state.transcriptHistory,
+                streamingAssistantContent: state.streamingAssistantDisplayModel?.content,
+                transcriptRevision: state.transcriptHistoryMutationTracker.value,
+                streamingRevision: state.streamingAssistantDraftMutationTracker.value,
+            ),
+        )
+    }
+
+    func makeTranscriptSearchStore(
+        _ state: AiChatFeature.State,
+    ) -> TestStore<AiChatFeature.State, AiChatFeature.Action> {
+        let store = TestStore(initialState: state) {
+            AiChatFeature()
+        }
+        applyObservationFocusedExhaustivity(to: store)
+        return store
+    }
+
+    func transcriptContext(of state: AiChatFeature.State) -> CBW001TranscriptContext {
+        CBW001TranscriptContext(
+            sessionID: state.sessionID,
+            sessionListQuery: state.sessionList.query,
+            scrollOffsets: state.transcriptScrollOffsets,
+        )
+    }
+
+    func makeTranscriptSearchPresentation() -> AiChatTranscriptSearchPresentation {
+        AiChatTranscriptSearchPresentation(
+            query: "needle",
+            messages: [
+                AiChatMessage(role: .user, content: "Needle plain"),
+                AiChatMessage(
+                    role: .assistant,
+                    content: "# Needle\n\nUse **needle** and [link](https://example.com)",
+                ),
+            ],
+            streamingAssistantContent: "needle stream",
+        )
     }
 
     func makeOpenSetupState(
