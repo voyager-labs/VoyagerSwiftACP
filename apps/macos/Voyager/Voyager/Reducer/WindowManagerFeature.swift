@@ -784,10 +784,9 @@ extension WindowManagerFeature {
         state.isTopNavigationPersistenceInFlight = false
 
         let bootstrapLifecycle: (cancel: Effect<Action>, restart: Effect<Action>) = if case .committed = result
-            .terminal,
-            case .pinnedRecord = result.request.operation
+            .terminal
         {
-            invalidateAndRestartDefaultWindowBootstrapForPinnedChange(state: &state)
+            invalidateAndRestartDefaultWindowBootstrapForTopNavigationChange(state: &state)
         } else {
             (.none, .none)
         }

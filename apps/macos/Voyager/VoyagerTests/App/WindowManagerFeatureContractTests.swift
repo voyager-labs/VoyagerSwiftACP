@@ -2819,6 +2819,133 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
     }
 
+    /// VOY-470: parent-owned move commit은 stale bootstrap을 폐기하고 pending window를 최신 순서로 다시 hydrate한다.
+    /// - 검증 내용: move commit 이후 old request 무효화, fresh bootstrap 완료 전 native open 차단
+    /// - 사전 조건: pending default window, in-flight old bootstrap, committed move persistence result
+    /// - 기대 결과: old completion은 무시되고 latest moved order로 native open 1회
+    func testCommittedMovePersistenceRestartsPendingBootstrapBeforeNativeOpen() async {
+        let pendingWindowID = UUID(47091)
+        let closedSourceWindowID = UUID(47092)
+        let staleRequestID = UUID(47093)
+        let freshRequestID = UUID(47094)
+        let firstTabID = ContentTabID(rawValue: "move-bootstrap-first")
+        let secondTabID = ContentTabID(rawValue: "move-bootstrap-second")
+        let firstRecord = ContentTabPinnedRecord(
+            id: firstTabID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/Users/test/MoveBootstrapFirst"),
+            title: "Move Bootstrap First",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 471),
+        )
+        let secondRecord = ContentTabPinnedRecord(
+            id: secondTabID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/Users/test/MoveBootstrapSecond"),
+            title: "Move Bootstrap Second",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 472),
+        )
+        let movedOrder = FileManagerTopNavigationOrder(items: [
+            .contentTab(secondTabID),
+            .contentTab(firstTabID),
+        ])
+        let latestStore = ContentTabPinnedRecordStore(
+            records: [firstRecord, secondRecord],
+            topNavigationOrder: movedOrder,
+        )
+        let persistenceRequest = WindowManagerTopNavigationPersistenceRequest(
+            sourceWindowID: closedSourceWindowID,
+            token: .init(value: UUID(47095)),
+            operation: .move(
+                source: .contentTab(firstTabID),
+                destination: .after(.contentTab(secondTabID)),
+                discoveredLocationIDs: [],
+            ),
+        )
+        let commit = FileManagerTopNavigationCommit(order: movedOrder, revision: 3)
+        let gate = WindowBootstrapSuspensionGate()
+        let openedIDs = LockIsolated<[UUID]>([])
+        let bootstrapCallCount = LockIsolated(0)
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [.init(id: pendingWindowID, window: .makeInitial(path: nil))]
+        initialState.pendingWindowOpenIDs = [pendingWindowID]
+        initialState.defaultWindowBootstrapRequestID = staleRequestID
+        initialState.defaultWindowBootstrapWindowIDs = [pendingWindowID]
+        initialState.topNavigationPersistenceQueue = [persistenceRequest]
+        initialState.isTopNavigationPersistenceInFlight = true
+
+        let store = Store(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+            $0.uuid = .constant(freshRequestID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in latestStore }
+            $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
+                guard path == "/Users/test/MoveBootstrapFirst"
+                    || path == "/Users/test/MoveBootstrapSecond"
+                else { return false }
+                isDirectory?.pointee = ObjCBool(true)
+                return true
+            }
+            $0.fileManagerBuiltInCollectionClient.ensureAll = {
+                bootstrapCallCount.withValue { $0 += 1 }
+                await gate.wait()
+                return .init(recents: .failed, allTags: .failed)
+            }
+            $0.userDefaultsClient.bool = { _ in true }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [pendingWindowID] }
+            $0.fileManagerWindowClient.open = { id in openedIDs.withValue { $0.append(id) } }
+        }
+
+        let completionTask = store.send(.topNavigationPersistenceCompleted(.init(
+            request: persistenceRequest,
+            terminal: .committed(commit),
+            authoritativePinnedContentTabs: nil,
+        )))
+        await gate.waitUntilWaiting()
+
+        store.withState { state in
+            XCTAssertEqual(state.defaultWindowBootstrapRequestID, freshRequestID)
+            XCTAssertEqual(state.defaultWindowBootstrapWindowIDs, [pendingWindowID])
+            XCTAssertEqual(
+                state.windows[id: pendingWindowID]?.window.lastConfirmedTopNavigationOrder,
+                movedOrder,
+            )
+            XCTAssertEqual(
+                state.windows[id: pendingWindowID]?.window.lastConfirmedTopNavigationCommitRevision,
+                3,
+            )
+        }
+        XCTAssertEqual(bootstrapCallCount.value, 1)
+        XCTAssertTrue(openedIDs.value.isEmpty)
+
+        await store
+            .send(.defaultWindowBootstrapCompleted(
+                requestID: staleRequestID,
+                result: .init(
+                    contentTabs: .withHomeTab(),
+                    fixedLocationItems: [],
+                    topNavigationOrder: .init(),
+                    arrangementAvailability: .available,
+                ),
+            ))
+            .finish()
+        XCTAssertTrue(openedIDs.value.isEmpty)
+
+        await gate.open()
+        await completionTask.finish()
+
+        XCTAssertEqual(openedIDs.value, [pendingWindowID])
+        store.withState { state in
+            XCTAssertNil(state.defaultWindowBootstrapRequestID)
+            XCTAssertTrue(state.defaultWindowBootstrapWindowIDs.isEmpty)
+            XCTAssertTrue(state.pendingWindowOpenIDs.isEmpty)
+            XCTAssertEqual(
+                state.windows[id: pendingWindowID]?.window.lastConfirmedTopNavigationOrder,
+                movedOrder,
+            )
+        }
+    }
+
     /// 취소된 default window bootstrap은 ensure 완료 후 built-in seed를 영구 저장하지 않는다.
     /// - 검증 내용: cancellation을 무시하는 ensure 반환 이후 seed store와 completion flag 미기록
     /// - 사전 조건: ensure 대기 중 pinned store 변경으로 bootstrap 취소

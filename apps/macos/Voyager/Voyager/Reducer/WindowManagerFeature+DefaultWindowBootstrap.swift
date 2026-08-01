@@ -428,7 +428,7 @@ extension WindowManagerFeature {
 
     func handlePinnedContentTabsStoreChanged(state: inout State) -> Effect<Action> {
         let syncEffect = syncPinnedContentTabsAcrossWindows(state: &state)
-        let bootstrapLifecycle = invalidateAndRestartDefaultWindowBootstrapForPinnedChange(state: &state)
+        let bootstrapLifecycle = invalidateAndRestartDefaultWindowBootstrapForTopNavigationChange(state: &state)
         return .concatenate(
             bootstrapLifecycle.cancel,
             syncEffect,
@@ -436,7 +436,7 @@ extension WindowManagerFeature {
         )
     }
 
-    func invalidateAndRestartDefaultWindowBootstrapForPinnedChange(
+    func invalidateAndRestartDefaultWindowBootstrapForTopNavigationChange(
         state: inout State,
     ) -> (cancel: Effect<Action>, restart: Effect<Action>) {
         let pendingBootstrapWindowIDs = livePendingDefaultBootstrapWindowIDs(state)
