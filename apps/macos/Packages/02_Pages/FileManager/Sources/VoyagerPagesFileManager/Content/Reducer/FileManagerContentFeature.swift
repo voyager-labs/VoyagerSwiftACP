@@ -113,6 +113,10 @@ public struct FileManagerContentFeature {
             let projectionEntries = state.isCollectionMode
                 ? Array(state.entryViewLayout.collectionItems)
                 : Array(state.entryOperations.items)
+            EntryArrangementsFeature().reduce(
+                into: &state.entryArrangements,
+                action: .delegate(.requestApply),
+            )
             let projectionSections = state.isCollectionMode
                 ? []
                 : FileManagerContentFeature.makeSections(
@@ -310,6 +314,9 @@ public struct FileManagerContentFeature {
              .entryOperations(.loading(.itemsLoaded)),
              .entryOperations(.loading(.streamEvent)),
              .entryOperations(.loading(.streamFinished)),
+             .entryOperations(.loading(.streamFailed)),
+             .entryOperations(.loading(.itemsLoadFailed)),
+             .entryOperations(.lifecycle(.operationStarted)),
              .entryOperations(.lifecycle(.operationFinished)),
              .entryOperations(.lifecycle(.entryActionCompleted)),
              .entryOperations(.lifecycle(.emptyTrashCompleted)),
@@ -320,6 +327,8 @@ public struct FileManagerContentFeature {
              .entryOperations(.lifecycle(.syncClipboardState)),
              .entryOperations(.lifecycle(.restorableTrashPathsLoaded)),
              .entryOperations(.lifecycle(.pathsMutated)),
+             .entryOperations(.clipboard(.copySelectedItems)),
+             .entryOperations(.clipboard(.setClipboardOperation)),
              .entryArrangements(.delegate(.applied)),
              .entryArrangements(.toggleCollapsedGroup),
              .externalFileSystemChanged,
