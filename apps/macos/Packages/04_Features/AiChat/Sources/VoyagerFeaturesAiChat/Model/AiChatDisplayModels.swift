@@ -56,11 +56,15 @@ public struct AiChatEmptyStateDisplayModel: Equatable, Sendable {
 
 public struct AiChatInputDisplayModel: Equatable, Sendable {
     public var placeholder: String
+    public var inputAccessibilityLabel: String
+    public var inputAccessibilityHint: String
     public var contextAffordanceLabel: String
     public var modelLabel: String?
     public var effortLabel: String
     public var submitAccessibilityLabel: String
     public var stopAccessibilityLabel: String
+    public var submitHelp: String
+    public var stopHelp: String
     public var isSubmitVisible: Bool
     public var isStopVisible: Bool
     public var canSubmit: Bool
@@ -68,26 +72,38 @@ public struct AiChatInputDisplayModel: Equatable, Sendable {
 
     public init(
         placeholder: String,
+        inputAccessibilityLabel: String,
+        inputAccessibilityHint: String,
         contextAffordanceLabel: String,
         modelLabel: String?,
         effortLabel: String,
         submitAccessibilityLabel: String,
         stopAccessibilityLabel: String,
+        submitHelp: String,
+        stopHelp: String,
         isSubmitVisible: Bool,
         isStopVisible: Bool,
         canSubmit: Bool,
         canStop: Bool,
     ) {
         self.placeholder = placeholder
+        self.inputAccessibilityLabel = inputAccessibilityLabel
+        self.inputAccessibilityHint = inputAccessibilityHint
         self.contextAffordanceLabel = contextAffordanceLabel
         self.modelLabel = modelLabel
         self.effortLabel = effortLabel
         self.submitAccessibilityLabel = submitAccessibilityLabel
         self.stopAccessibilityLabel = stopAccessibilityLabel
+        self.submitHelp = submitHelp
+        self.stopHelp = stopHelp
         self.isSubmitVisible = isSubmitVisible
         self.isStopVisible = isStopVisible
         self.canSubmit = canSubmit
         self.canStop = canStop
+    }
+
+    public var actionHelp: String {
+        isStopVisible ? stopHelp : submitHelp
     }
 }
 

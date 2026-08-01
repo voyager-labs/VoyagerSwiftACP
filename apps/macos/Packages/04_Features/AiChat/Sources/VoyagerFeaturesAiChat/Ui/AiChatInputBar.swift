@@ -90,6 +90,8 @@ struct AiChatInputBar: View {
                 },
             )
             .frame(height: boundedChatInputTextHeight)
+            .accessibilityLabel(input.inputAccessibilityLabel)
+            .accessibilityHint(input.inputAccessibilityHint)
 
             if state.draftText.isEmpty {
                 Text(input.placeholder)
@@ -136,7 +138,9 @@ struct AiChatInputBar: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!input.canStop)
+                .help(input.actionHelp)
                 .accessibilityLabel(input.stopAccessibilityLabel)
+                .accessibilityHint(input.actionHelp)
             } else {
                 Button {
                     submitAndRestoreInputFocus()
@@ -145,7 +149,9 @@ struct AiChatInputBar: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!input.canSubmit)
+                .help(input.actionHelp)
                 .accessibilityLabel(input.submitAccessibilityLabel)
+                .accessibilityHint(input.actionHelp)
             }
         }
     }
