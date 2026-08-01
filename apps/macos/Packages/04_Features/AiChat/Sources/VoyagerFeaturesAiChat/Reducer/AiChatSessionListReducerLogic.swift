@@ -140,6 +140,7 @@ extension AiChatFeature {
             return .cancel(id: CancelID.restore)
         }
 
+        state.resetTranscriptSearchIfSessionChanges(to: sessionID)
         state.sessionList.cancelRenaming()
         state.sessionList.errorMessage = nil
 
@@ -177,6 +178,7 @@ extension AiChatFeature {
         state: inout State,
     ) {
         state.invalidatePreparedTransientSession()
+        state.resetTranscriptSearchIfSessionChanges(to: sessionID)
         state.sessionID = sessionID
         state.emptyDraftSessionID = sessionID
         state.sessionStatus = .idle
@@ -407,6 +409,7 @@ extension AiChatFeature {
     }
 
     func handleSessionRowTapped(sessionID: AiChatSessionID, state: inout State) -> Effect<Action> {
+        state.resetTranscriptSearchIfSessionChanges(to: sessionID)
         state.emptyDraftSessionID = nil
         state.sessionList.cancelRenaming()
         state.sessionList.selectedSessionID = sessionID
@@ -440,6 +443,7 @@ extension AiChatFeature {
         }
         state.pendingEmptyDraftDeletionSessionIDs.insert(emptyDraftSessionID)
         state.emptyDraftSessionID = nil
+        state.resetTranscriptSearchIfSessionChanges(to: nil)
         state.sessionID = nil
         state.restoreSessionID = nil
         state.restoreOutcome = nil

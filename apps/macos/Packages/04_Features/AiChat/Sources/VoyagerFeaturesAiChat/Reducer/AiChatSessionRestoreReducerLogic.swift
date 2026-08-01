@@ -144,6 +144,7 @@ extension AiChatFeature {
         state.restoreSessionID = setup.restoreSessionID
         state.restoreOutcome = nil
         state.restoreFailure = nil
+        state.resetTranscriptSearchIfSessionChanges(to: setup.sessionID)
         state.sessionID = setup.sessionID
         if let mode = setup.mode {
             state.mode = mode
@@ -214,6 +215,7 @@ extension AiChatFeature {
     func applyRestoredSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
         state.invalidatePreparedTransientSession()
         let preservedExecutionPhase = promotedNavigationExecutionPhase(for: snapshot.sessionID, state: &state)
+        state.resetTranscriptSearchIfSessionChanges(to: snapshot.sessionID)
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .active
         state.currentSessionCustomTitle = snapshot.customTitle
@@ -241,6 +243,7 @@ extension AiChatFeature {
     func applyNewSessionSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
         state.invalidatePreparedTransientSession()
         let preservedExecutionPhase = promotedNavigationExecutionPhase(for: snapshot.sessionID, state: &state)
+        state.resetTranscriptSearchIfSessionChanges(to: snapshot.sessionID)
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .idle
         state.currentSessionCustomTitle = snapshot.customTitle
@@ -275,6 +278,7 @@ extension AiChatFeature {
     }
 
     func applyPromotedFinalSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
+        state.resetTranscriptSearchIfSessionChanges(to: snapshot.sessionID)
         state.sessionID = snapshot.sessionID
         state.sessionStatus = snapshot.status
         state.currentSessionCustomTitle = snapshot.customTitle
