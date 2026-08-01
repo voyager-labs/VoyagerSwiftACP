@@ -1,5 +1,7 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
+import SwiftUI
 import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
@@ -48,7 +50,213 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(store.state.sessionStatusText, "Restored session")
     }
 
+    /// CBW-005-restore_chat_conversation_session: 사용자가 다른 session을 선택하면 stale transcript 검색 상태를 초기화한다.
+    /// session row 전환의 기존 restore 흐름을 유지하면서 이전 transcript query와 ordinal이 새 session으로 누출되지 않는지 검증합니다.
+    /// - 검증 내용: 다른 session row 선택과 restore 완료 이후 transcript search state reset을 확인합니다.
+    /// - 사전 조건: 현재 session에는 열린 검색과 2/2 match가 있고 history에는 다른 persisted session이 있습니다.
+    /// - 기대 결과: 기존 session restore/navigation은 완료되고 transcript 검색 상태는 기본값으로 초기화됩니다.
+    func testRestoreChatConversationSessionResetsStaleTranscriptSearchAfterUserTransition() async {
+        let sourceSessionID = makeCBW005SessionID("55555555-5555-5555-5555-555555555551")
+        let targetSessionID = makeCBW005SessionID("55555555-5555-5555-5555-555555555552")
+        let targetRow = makeCBW005SessionSummary(sessionID: targetSessionID)
+        let targetSnapshot = makeCBW005Snapshot(
+            sessionID: targetSessionID,
+            transcriptHistory: restoredTranscript,
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionList: .init(allRows: [targetRow], rows: [targetRow]),
+            sessionID: sourceSessionID,
+            transcriptSearch: .init(
+                isPresented: true,
+                query: "stale",
+                matchCount: 2,
+                currentMatchOrdinal: 2,
+                status: .matches,
+            ),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in targetSnapshot }
+        }
+        // store.exhaustivity = .off: session 전환 seam의 transcript search reset만 단일 소유합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.sessionRowTapped(targetSessionID))
+        await store.receive(\.restoreOutcome)
+
+        XCTAssertEqual(store.state.transcriptSearch, .init())
+        await store.finish()
+    }
+
+    /// CBW-005-restore_chat_conversation_session: current session route는 identity가 같으므로 transcript search를 보존한다.
+    /// 동일 active session으로의 no-op route가 사용자의 local transcript search lifecycle을 지우지 않는지 검증합니다.
+    /// - 검증 내용: current session route 이후 query, count, ordinal, presentation 상태 보존을 확인합니다.
+    /// - 사전 조건: active chat identity와 route target이 같고 2/2 transcript search가 열려 있습니다.
+    /// - 기대 결과: route presentation은 완료되지만 transcript search state는 변경되지 않습니다.
+    func testCurrentSessionRoutePreservesTranscriptSearch() async {
+        let sessionID = makeCBW005SessionID("55555555-5555-5555-5555-555555555553")
+        let search = makeCBW005ActiveTranscriptSearch()
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            transcriptSearch: search,
+        )) { AiChatFeature() }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.routeToChatSession(sessionID))
+
+        XCTAssertEqual(store.state.transcriptSearch, search)
+    }
+
+    /// CBW-005-restore_chat_conversation_session: direct persisted route는 다른 session identity로 전환하기 전에 search를 초기화한다.
+    /// 직접 route와 restore completion 사이에 이전 session 검색 상태가 target transcript로 누출되지 않는지 검증합니다.
+    /// - 검증 내용: route 요청 직후와 restore outcome 이후 transcript search reset을 확인합니다.
+    /// - 사전 조건: source chat에 2/2 검색이 열려 있고 다른 persisted target row와 snapshot이 존재합니다.
+    /// - 기대 결과: target restore lifecycle은 유지되고 두 시점 모두 transcript search는 기본값입니다.
+    func testDirectSessionRouteResetsTranscriptSearch() async {
+        let sourceID = makeCBW005SessionID("55555555-5555-5555-5555-555555555554")
+        let targetID = makeCBW005SessionID("55555555-5555-5555-5555-555555555555")
+        let targetSnapshot = makeCBW005Snapshot(sessionID: targetID, transcriptHistory: restoredTranscript)
+        let targetRow = makeCBW005SessionSummary(sessionID: targetID)
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionList: .init(allRows: [targetRow], rows: [targetRow]),
+            sessionID: sourceID,
+            transcriptSearch: makeCBW005ActiveTranscriptSearch(),
+        )) { AiChatFeature() } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in targetSnapshot }
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.routeToChatSession(targetID))
+        XCTAssertEqual(store.state.transcriptSearch, .init())
+        await store.receive(\.restoreOutcome)
+        XCTAssertEqual(store.state.transcriptSearch, .init())
+        await store.finish()
+    }
+
+    /// CBW-005-restore_chat_conversation_session: content-tab sessions route가 active identity를 바꾸면 search를 초기화한다.
+    /// content-tab presentation이 sessionID를 직접 교체할 때도 row route와 동일한 검색 lifecycle 정책을 적용하는지 검증합니다.
+    /// - 검증 내용: showSessionsForChat 이후 active session identity와 transcript search reset을 확인합니다.
+    /// - 사전 조건: source chat에 열린 검색이 있고 content-tab target은 다른 session ID입니다.
+    /// - 기대 결과: active identity는 target으로 바뀌고 이전 transcript search는 기본값으로 초기화됩니다.
+    func testContentTabSessionsRouteResetsTranscriptSearchOnIdentityChange() async {
+        let sourceID = makeCBW005SessionID("55555555-5555-5555-5555-555555555556")
+        let targetID = makeCBW005SessionID("55555555-5555-5555-5555-555555555557")
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sourceID,
+            transcriptSearch: makeCBW005ActiveTranscriptSearch(),
+        )) { AiChatFeature() }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.showSessionsForChat(targetID))
+
+        XCTAssertEqual(store.state.sessionID, targetID)
+        XCTAssertEqual(store.state.transcriptSearch, .init())
+    }
+
+    /// CBW-005-restore_chat_conversation_session: accepted setup과 new-session restore만 실제 identity 변경 시 search를 초기화한다.
+    /// setup no-op, setup identity 교체, accepted missing-record fallback의 reset 경계를 한 계약으로 검증합니다.
+    /// - 검증 내용: 동일 setup 보존, 다른 setup reset, accepted new-session restore reset을 확인합니다.
+    /// - 사전 조건: source 검색 상태와 서로 다른 setup target, restore target, fallback session ID가 준비되어 있습니다.
+    /// - 기대 결과: 동일 identity에서는 검색이 보존되고 실제 setup/restore identity 교체에서만 기본값으로 초기화됩니다.
+    func testSetupAndNewSessionRestoreResetTranscriptSearchOnlyForAcceptedIdentityChanges() async {
+        let sourceID = makeCBW005SessionID("55555555-5555-5555-5555-555555555561")
+        let setupTargetID = makeCBW005SessionID("55555555-5555-5555-5555-555555555562")
+        let restoreTargetID = makeCBW005SessionID("55555555-5555-5555-5555-555555555563")
+        let fallbackID = makeCBW005SessionID("55555555-5555-5555-5555-555555555564")
+        let search = makeCBW005ActiveTranscriptSearch()
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sourceID,
+            transcriptSearch: search,
+        )) { AiChatFeature() }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.setup(.init(sessionID: sourceID, mode: .chat, sessionStatus: .active)))
+        XCTAssertEqual(store.state.transcriptSearch, search)
+        await store.send(.setup(.init(sessionID: setupTargetID, mode: .chat, sessionStatus: .active)))
+        XCTAssertEqual(store.state.transcriptSearch, .init())
+
+        let fallback = makeCBW005Snapshot(sessionID: fallbackID, transcriptHistory: [])
+        let restoreStore = TestStore(initialState: AiChatFeature.State(
+            restoreSessionID: restoreTargetID,
+            mode: .chat,
+            sessionID: setupTargetID,
+            transcriptSearch: makeCBW005ActiveTranscriptSearch(),
+        )) { AiChatFeature() }
+        restoreStore.exhaustivity = .off(showSkippedAssertions: false)
+
+        await restoreStore.send(.restoreOutcome(
+            requestedSessionID: restoreTargetID,
+            .newSession(snapshot: fallback),
+            restoreFailure: .missingRecord,
+        ))
+        XCTAssertEqual(restoreStore.state.sessionID, fallbackID)
+        XCTAssertEqual(restoreStore.state.transcriptSearch, .init())
+    }
+
+    private func makeCBW005ActiveTranscriptSearch() -> AiChatTranscriptSearchState {
+        .init(
+            isPresented: true,
+            query: "stale",
+            matchCount: 2,
+            currentMatchOrdinal: 2,
+            status: .matches,
+        )
+    }
+
     // MARK: - CBW-005-start_chat_conversation_session
+
+    /// CBW-005-start_chat_conversation_session: durable New Chat identity는 이전 transcript search를 초기화한다.
+    /// 새 durable draft 생성과 persistence acknowledgment가 이전 session 검색 상태를 계승하지 않는지 검증합니다.
+    /// - 검증 내용: New Chat 시작 직후와 newChatCreated 이후 transcript search reset을 확인합니다.
+    /// - 사전 조건: 기존 active session에 열린 2/2 검색이 있고 새 draft 저장 client가 성공합니다.
+    /// - 기대 결과: 새 session identity와 저장 완료 상태 모두 transcript search 기본값을 유지합니다.
+    func testDurableNewChatResetsTranscriptSearch() async {
+        let sourceID = makeCBW005SessionID("55555555-5555-5555-5555-555555555558")
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sourceID,
+            transcriptSearch: makeCBW005ActiveTranscriptSearch(),
+        )) { AiChatFeature() } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+            $0.aiChatSessionPersistenceClient.saveSession = { $0 }
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.newChatTapped)
+        XCTAssertEqual(store.state.transcriptSearch, .init())
+        await store.receive(\.newChatCreated)
+        XCTAssertEqual(store.state.transcriptSearch, .init())
+        await store.finish()
+    }
+
+    /// CBW-005-start_chat_conversation_session: transient New Chat identity도 이전 transcript search를 초기화한다.
+    /// persistence 이전의 explicit transient identity 교체도 durable New Chat과 같은 검색 reset 정책을 따르는지 검증합니다.
+    /// - 검증 내용: prepareTransientNewChat 이후 sessionID 교체와 transcript search reset을 확인합니다.
+    /// - 사전 조건: source active session에 열린 검색이 있고 다른 explicit transient session ID가 주어집니다.
+    /// - 기대 결과: active identity는 transient target으로 바뀌고 이전 검색 상태는 남지 않습니다.
+    func testTransientNewChatResetsTranscriptSearch() async {
+        let sourceID = makeCBW005SessionID("55555555-5555-5555-5555-555555555559")
+        let targetID = makeCBW005SessionID("55555555-5555-5555-5555-555555555560")
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sourceID,
+            transcriptSearch: makeCBW005ActiveTranscriptSearch(),
+        )) { AiChatFeature() }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.prepareTransientNewChat(sessionID: targetID, seed: nil))
+
+        XCTAssertEqual(store.state.sessionID, targetID)
+        XCTAssertEqual(store.state.transcriptSearch, .init())
+    }
 
     /// CBW-005-start_chat_conversation_session: 유효한 window-last 선택은 persisted default보다 우선한다.
     /// 새 대화 seed가 가장 최근 window 선택을 먼저 복원하는 precedence를 검증합니다.
@@ -1475,6 +1683,81 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
     }
 
     // MARK: - CBW-005-show_chat_session_list
+
+    /// CBW-005-show_chat_session_list: Inspector session row는 rest에서 clear이고 Home과 같은 hover feedback을 사용한다.
+    /// session 목록을 탐색할 때 지속 배경 없이 pointer가 있는 row만 기존 Home interaction token으로 강조하는지 검증합니다.
+    /// - 검증 내용: row modifier의 local hover state, shared fill, control radius, continuous style, 0.14초 ease-out
+    /// - 사전 조건: 일반 row와 rename row가 같은 sessionRow 경계를 사용하고 기존 navigation/activity/actions sibling 구조가 존재한다.
+    /// - 기대 결과: rest fill은 clear이고 hover 시 shared token으로 전환되며 기존 sibling target 구조는 별도 회귀 테스트로 보존된다.
+    func testSessionRowsUseHomeHoverBackgroundContract() throws {
+        let source = try String(contentsOf: aiChatSessionsViewSourceURL, encoding: .utf8)
+        XCTAssertTrue(source
+            .contains(
+                "sessionRow(row)\n                                        .modifier(AiChatSessionRowHoverEffect())",
+            ))
+
+        let hoverEffect = try sourceSection(
+            in: source,
+            from: "private struct AiChatSessionRowHoverEffect",
+            to: "private struct AiChatProcessingRowTextEffect",
+        )
+
+        XCTAssertTrue(hoverEffect.contains("@Environment(\\.colorScheme)"))
+        XCTAssertTrue(hoverEffect.contains("@State private var isHovered = false"))
+        XCTAssertTrue(hoverEffect.contains("VoyagerDS.Radius.control, style: .continuous"))
+        XCTAssertTrue(hoverEffect.contains("isHovered ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear"))
+        XCTAssertTrue(hoverEffect.contains(".animation(.easeOut(duration: 0.14), value: isHovered)"))
+        XCTAssertTrue(hoverEffect.contains(".onHover { isHovered = $0 }"))
+    }
+
+    /// CBW-005-show_chat_session_list: session row의 navigation 영역은 카드 padding을 포함하고 보조 target과 분리된다.
+    /// 실제 source 구조가 Button semantics를 유지하면서 빈 행 영역까지 hit target으로 확장되는지 검증합니다.
+    /// - 검증 내용: max-width label, row text와 Spacer, 내부 padding, Rectangle content shape, sibling activity/menu
+    /// - 사전 조건: display row는 rename row가 아닌 일반 session row이다.
+    /// - 기대 결과: navigation Button이 남은 행 폭을 소유하고 activity와 actions menu는 Button 뒤의 독립 sibling이다.
+    func testSessionRowNavigationOwnsVisiblePaddingAndKeepsSiblingTargets() throws {
+        let source = try String(contentsOf: aiChatSessionsViewSourceURL, encoding: .utf8)
+        let displayRow = try sourceSection(
+            in: source,
+            from: "    private func displayRow",
+            to: "    @ViewBuilder\n    private func rowActivityIndicator",
+        )
+
+        XCTAssertTrue(displayRow.contains("Button {"))
+        XCTAssertTrue(displayRow.contains("rowText(row)\n                    Spacer(minLength: 0)"))
+        XCTAssertTrue(displayRow.contains(".padding(.leading, 10)"))
+        XCTAssertTrue(displayRow.contains(".padding(.vertical, 8)"))
+        XCTAssertTrue(displayRow.contains(".frame(maxWidth: .infinity, alignment: .leading)"))
+        XCTAssertTrue(displayRow.contains(".contentShape(Rectangle())"))
+        XCTAssertFalse(displayRow.contains(".onTapGesture"))
+
+        let buttonIndex = try XCTUnwrap(displayRow.range(of: "Button {")?.lowerBound)
+        let activityIndex = try XCTUnwrap(displayRow.range(of: "rowActivityIndicator(row)")?.lowerBound)
+        let actionsIndex = try XCTUnwrap(displayRow.range(of: "AiChatSessionActionsMenuButton(")?.lowerBound)
+        XCTAssertLessThan(buttonIndex, activityIndex)
+        XCTAssertLessThan(activityIndex, actionsIndex)
+        XCTAssertTrue(displayRow.contains(".padding(.trailing, 10)"))
+    }
+
+    /// CBW-005-show_chat_session_list: actions menu는 명시적인 button 접근성 metadata와 focus ring을 제공한다.
+    /// NSHostingView가 representable의 실제 makeNSView를 실행해 만든 AppKit button 계약을 검증합니다.
+    /// - 검증 내용: accessibility label, button role, focus ring, actions button 단일 AppKit target
+    /// - 사전 조건: 일반 session row의 actions representable을 24pt frame으로 host한다.
+    /// - 기대 결과: VoiceOver가 목적과 role을 읽고 keyboard focus indication이 억제되지 않는다.
+    func testSessionActionsMenuButtonExposesAccessibilityAndFocusRing() throws {
+        _ = NSApplication.shared
+        let hostedView = NSHostingView(rootView: AiChatSessionActionsMenuButton(
+            onRename: {},
+            onDelete: {},
+        ).frame(width: 24, height: 24))
+        hostedView.frame = NSRect(x: 0, y: 0, width: 24, height: 24)
+        hostedView.layoutSubtreeIfNeeded()
+
+        let button = try XCTUnwrap(firstSubview(of: NSButton.self, in: hostedView))
+        XCTAssertEqual(button.accessibilityLabel(), "Session actions")
+        XCTAssertEqual(button.accessibilityRole(), .button)
+        XCTAssertNotEqual(button.focusRingType, .none)
+    }
 
     /// CBW-005-show_chat_session_list: Sessions view는 durable session summary를 불러와 표시한다.
     /// sessionsAppeared가 persistence list를 호출하고 rows/loading/error state를 갱신하는지 검증합니다.
@@ -6089,6 +6372,36 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(store.state.mode, AiChatMode.chat)
         XCTAssertEqual(store.state.sessionID, targetSessionID)
         XCTAssertEqual(store.state.sessionList.selectedSessionID, targetSessionID)
+    }
+
+    private var aiChatSessionsViewSourceURL: URL {
+        var packageRoot = URL(fileURLWithPath: #filePath)
+        for _ in 0 ..< 4 {
+            packageRoot.deleteLastPathComponent()
+        }
+        return packageRoot
+            .appendingPathComponent("Sources")
+            .appendingPathComponent("VoyagerFeaturesAiChat")
+            .appendingPathComponent("Ui")
+            .appendingPathComponent("AiChatSessionsView.swift")
+    }
+
+    private func sourceSection(in source: String, from start: String, to end: String) throws -> String {
+        let startIndex = try XCTUnwrap(source.range(of: start)?.lowerBound)
+        let endIndex = try XCTUnwrap(source.range(of: end, range: startIndex ..< source.endIndex)?.lowerBound)
+        return String(source[startIndex ..< endIndex])
+    }
+
+    private func firstSubview<View: NSView>(of _: View.Type, in root: NSView) -> View? {
+        if let root = root as? View {
+            return root
+        }
+        for subview in root.subviews {
+            if let match = firstSubview(of: View.self, in: subview) {
+                return match
+            }
+        }
+        return nil
     }
 }
 
