@@ -1,7 +1,9 @@
+import Clocks
 import ComposableArchitecture
 import Dependencies
 @testable import Voyager
 import VoyagerEntitiesCollection
+import VoyagerEntryCoreClient
 import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
@@ -14,6 +16,169 @@ import XCTest
 
 @MainActor
 final class AppRootCompositionTests: XCTestCase {
+    // MARK: - Entry Core direct health probe
+
+    func testEntryCoreHealthProbeRunsExactlyOnceAndPreservesHelperMonitoring() async {
+        let probeStarted = expectation(description: "Entry Core health probe started")
+        let helperStartCount = LockIsolated(0)
+        let healthCalls = LockIsolated<[EntryCoreEndpoint]>([])
+        let gate = AsyncStream<Void>.makeStream()
+        let store = TestStore(initialState: AppLifecycleFeature.State()) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.continuousClock = ImmediateClock()
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.entryCoreEndpointClient = .live(environment: {
+                [EntryCoreEndpointClient.environmentKey: "/tmp/voyager-entry-core.sock"]
+            })
+            $0.entryCoreClient = makeEntryCoreClient { endpoint in
+                healthCalls.withValue { $0.append(endpoint) }
+                probeStarted.fulfill()
+                for await _ in gate.stream {
+                    break
+                }
+                return EntryCoreHealthResult()
+            }
+            $0.helperAppClient = helperAppClient(startCount: helperStartCount)
+            $0.helperStateClient = readyHelperStateClient
+        }
+        store.exhaustivity = .off
+        let initialState = store.state
+
+        await store.send(.accountAccess(.delegate(.unlocked(accessSnapshot)))) {
+            $0.accessGatePhase = .granted
+            $0.didStartHelper = true
+        }
+        await store.receive(\.delegate.openInitialWindowIfNeeded)
+        await fulfillment(of: [probeStarted], timeout: 1)
+        gate.continuation.yield(())
+        gate.continuation.finish()
+        await store.receive { action in
+            guard case let .entryCoreHealthProbeCompleted(result) = action else { return false }
+            return result.outcome == .healthy && result.phase == .response && result.duration == .zero
+        }
+
+        await store.send(.accountAccess(.delegate(.unlocked(accessSnapshot))))
+        XCTAssertEqual(healthCalls.value.map(\.path), ["/tmp/voyager-entry-core.sock"])
+        XCTAssertGreaterThanOrEqual(helperStartCount.value, 1)
+        XCTAssertEqual(store.state.didFinishLaunching, initialState.didFinishLaunching)
+        XCTAssertEqual(store.state.accessGatePhase, .granted)
+        await store.finish()
+    }
+
+    func testEntryCoreHealthProbeUnavailableEnvironmentDoesNotCallHealth() async {
+        let environments = [
+            [String: String](),
+            [EntryCoreEndpointClient.environmentKey: "relative.sock"],
+        ]
+        let healthCallCount = LockIsolated(0)
+
+        for environment in environments {
+            var initialState = AppLifecycleFeature.State()
+            initialState.didStartHelper = true
+            let store = TestStore(initialState: initialState) {
+                AppLifecycleFeature()
+            } withDependencies: {
+                $0.continuousClock = ImmediateClock()
+                $0.date = .constant(Date(timeIntervalSince1970: 0))
+                $0.entryCoreEndpointClient = .live(environment: { environment })
+                $0.entryCoreClient = makeEntryCoreClient { _ in
+                    healthCallCount.withValue { $0 += 1 }
+                    return EntryCoreHealthResult()
+                }
+            }
+            store.exhaustivity = .off
+
+            await store.send(.accountAccess(.delegate(.unlocked(accessSnapshot)))) {
+                $0.accessGatePhase = .granted
+            }
+            await store.receive(\.delegate.openInitialWindowIfNeeded)
+            await store.receive { action in
+                guard case let .entryCoreHealthProbeCompleted(result) = action else { return false }
+                return result.outcome == .unavailable
+                    && result.phase == .endpointResolution
+                    && result.duration == .zero
+            }
+            await store.finish()
+        }
+
+        XCTAssertEqual(healthCallCount.value, 0)
+    }
+
+    func testEntryCoreHealthProbeCancellationPreservesTerminationRouting() async {
+        let probeStarted = expectation(description: "Entry Core health probe started")
+        let probeCancelled = expectation(description: "Entry Core health probe cancelled")
+        let store = TestStore(initialState: AppLifecycleFeature.State()) {
+            AppLifecycleFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.entryCoreEndpointClient = .live(environment: {
+                [EntryCoreEndpointClient.environmentKey: "/tmp/voyager-entry-core.sock"]
+            })
+            $0.entryCoreClient = makeEntryCoreClient { _ in
+                probeStarted.fulfill()
+                return try await withTaskCancellationHandler {
+                    try await Task.sleep(for: .seconds(60))
+                    return EntryCoreHealthResult()
+                } onCancel: {
+                    probeCancelled.fulfill()
+                }
+            }
+            $0.helperAppClient = helperAppClient()
+            $0.helperStateClient = readyHelperStateClient
+        }
+        store.exhaustivity = .off
+
+        await store.send(.accountAccess(.delegate(.unlocked(accessSnapshot)))) {
+            $0.accessGatePhase = .granted
+            $0.didStartHelper = true
+        }
+        await store.receive(\.delegate.openInitialWindowIfNeeded)
+        await fulfillment(of: [probeStarted], timeout: 1)
+
+        await store.send(.termination(.willTerminate)) {
+            $0.accessGatePhase = .terminating
+        }
+        await store.receive(\.accountAccess.appWillTerminate)
+        await fulfillment(of: [probeCancelled], timeout: 1)
+        await store.finish()
+    }
+
+    private var accessSnapshot: AccessStatusSnapshot {
+        AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            sessionExpiresAt: Date(timeIntervalSince1970: 4_102_444_800),
+            deviceBindingVerifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        )
+    }
+
+    private var readyHelperStateClient: HelperStateClient {
+        HelperStateClient(
+            resolve: { HelperState(helperReady: true, helperBundleVersion: nil) },
+            observe: { AsyncStream { $0.finish() } },
+        )
+    }
+
+    private func helperAppClient(startCount: LockIsolated<Int>? = nil) -> HelperAppClient {
+        HelperAppClient(
+            start: { startCount?.withValue { $0 += 1 } },
+            stop: {},
+            isRunning: { true },
+            terminationEvents: { AsyncStream { $0.finish() } },
+            ensureRunning: {},
+        )
+    }
+
+    private func makeEntryCoreClient(
+        health: @escaping @Sendable (EntryCoreEndpoint) async throws -> EntryCoreHealthResult,
+    ) -> EntryCoreClient {
+        EntryCoreClient(
+            ping: { _ in EntryCorePingResult() },
+            health: health,
+            version: { _ in try EntryCoreVersionResult(appVersion: "test") },
+        )
+    }
+
     /// Task 3: terminating 상태에서는 unlocked delegate를 거부한다.
     func testLifecycleUnlockedRejectedWhenTerminating() async {
         let snapshot = AccessStatusSnapshot(
