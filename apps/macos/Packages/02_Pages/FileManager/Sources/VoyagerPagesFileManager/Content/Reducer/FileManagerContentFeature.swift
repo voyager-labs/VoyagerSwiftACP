@@ -113,6 +113,12 @@ public struct FileManagerContentFeature {
             let projectionEntries = state.isCollectionMode
                 ? Array(state.entryViewLayout.collectionItems)
                 : Array(state.entryOperations.items)
+            let projectionSections = state.isCollectionMode
+                ? []
+                : FileManagerContentFeature.makeSections(
+                    groupedItems: state.entryArrangements.groupedItems,
+                    collapsedGroups: state.entryArrangements.collapsedGroups,
+                )
             let projection = ContentProjection(
                 entries: projectionEntries,
                 isLoading: state.entryOperations.isLoading,
@@ -120,14 +126,13 @@ public struct FileManagerContentFeature {
                 sortOrder: state.entryArrangements.sortOrder,
                 groupKey: .fromShared(state.entryArrangements.groupKey.rawValue),
                 collapsedGroups: state.entryArrangements.collapsedGroups,
-                sections: FileManagerContentFeature.makeSections(
-                    groupedItems: state.entryArrangements.groupedItems,
-                    collapsedGroups: state.entryArrangements.collapsedGroups,
-                ),
+                sections: projectionSections,
                 renamingItemId: state.entryOperations.renamingItemId,
+                renamingText: state.entryOperations.renamingText,
                 clipboardCutPaths: state.entryOperations.clipboardOperation == .cut
                     ? Set(state.entryOperations.clipboardItems)
                     : [],
+                hasClipboardItems: !state.entryOperations.clipboardItems.isEmpty,
                 busyEntryPaths: Set(state.entryOperations.itemStates.filter(\.value.isBusy).map(\.key)),
                 openWithApplications: state.entryOperations.commonApplicationsForSelectedFiles,
                 restorableTrashPaths: state.entryOperations.restorableTrashPaths,
@@ -309,6 +314,8 @@ public struct FileManagerContentFeature {
              .entryOperations(.lifecycle(.entryActionCompleted)),
              .entryOperations(.lifecycle(.emptyTrashCompleted)),
              .entryOperations(.edit(.commitRename)),
+             .entryOperations(.edit(.startRename)),
+             .entryOperations(.edit(.cancelRename)),
              .entryOperations(.openWith(.commonApplicationsLoaded)),
              .entryOperations(.lifecycle(.syncClipboardState)),
              .entryOperations(.lifecycle(.restorableTrashPathsLoaded)),

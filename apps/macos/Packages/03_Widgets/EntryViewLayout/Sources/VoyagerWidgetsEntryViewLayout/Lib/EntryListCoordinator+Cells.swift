@@ -42,17 +42,12 @@ extension EntryListCoordinator {
                 onRenameCommit: { [weak self] in
                     guard let self else { return }
                     guard state.renamingItemId != nil else { return }
-                    store.send(.view(.commitRename(itemID: entry.id, newName: entry.name)))
+                    store.send(.view(.commitRename(itemID: entry.id, newName: state.renamingText)))
                 },
                 onRenameCancel: { [weak self] in
                     guard let self else { return }
                     guard state.renamingItemId != nil else { return }
-                    store.send(.view(.updateSelection(
-                        ids: state.selectedIds,
-                        lastSelectedId: state.lastSelectedId,
-                        rangeAnchorId: state.rangeAnchorId,
-                        shouldScrollToSelection: false,
-                    )))
+                    store.send(.delegate(.renameCanceled))
                 },
             ),
         )

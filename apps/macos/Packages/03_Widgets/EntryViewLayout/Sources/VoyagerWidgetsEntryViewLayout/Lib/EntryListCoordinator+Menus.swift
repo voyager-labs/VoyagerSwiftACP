@@ -96,7 +96,7 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
             rowEntry: rowEntry,
             isTrashFolder: isTrashFolder,
             restorableTrashPaths: state.restorableTrashPaths,
-            canPaste: !state.clipboardCutPaths.isEmpty,
+            canPaste: state.hasClipboardItems,
             favoriteTags: finderFavoritesTagClient.favoriteTags(),
             openWithApplications: openWithApplications(selectedEntries: target.entries),
         )

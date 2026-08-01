@@ -309,7 +309,9 @@ public struct EntryViewLayoutFeature {
                     : projection.sections
                 state.openWithApplications = projection.openWithApplications
                 state.renamingItemId = projection.renamingItemId
+                state.renamingText = projection.renamingText
                 state.clipboardCutPaths = projection.clipboardCutPaths
+                state.hasClipboardItems = projection.hasClipboardItems
                 state.busyEntryPaths = projection.busyEntryPaths
                 state.restorableTrashPaths = projection.restorableTrashPaths
                 state.trashDirectoryPath = projection.trashDirectoryPath

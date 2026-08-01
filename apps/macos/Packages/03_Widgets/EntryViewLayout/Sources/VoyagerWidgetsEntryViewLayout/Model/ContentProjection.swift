@@ -11,7 +11,9 @@ public struct ContentProjection: Equatable, Sendable {
     public var collapsedGroups: Set<String>
     public var sections: [EntryViewLayoutSection]
     public var renamingItemId: EntryModel.ID?
+    public var renamingText: String
     public var clipboardCutPaths: Set<String>
+    public var hasClipboardItems: Bool
     public var busyEntryPaths: Set<String>
     public var openWithApplications: [ApplicationInfo]
     public var restorableTrashPaths: Set<String>
@@ -28,7 +30,9 @@ public struct ContentProjection: Equatable, Sendable {
         collapsedGroups: Set<String>,
         sections: [EntryViewLayoutSection],
         renamingItemId: EntryModel.ID?,
+        renamingText: String,
         clipboardCutPaths: Set<String>,
+        hasClipboardItems: Bool,
         busyEntryPaths: Set<String>,
         openWithApplications: [ApplicationInfo],
         restorableTrashPaths: Set<String>,
@@ -44,7 +48,9 @@ public struct ContentProjection: Equatable, Sendable {
         self.collapsedGroups = collapsedGroups
         self.sections = sections
         self.renamingItemId = renamingItemId
+        self.renamingText = renamingText
         self.clipboardCutPaths = clipboardCutPaths
+        self.hasClipboardItems = hasClipboardItems
         self.busyEntryPaths = busyEntryPaths
         self.openWithApplications = openWithApplications
         self.restorableTrashPaths = restorableTrashPaths

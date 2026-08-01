@@ -32,6 +32,8 @@ public struct EntryViewLayoutState: Equatable {
     public var presentationSections: [EntryViewLayoutSection] = []
     public var openWithApplications: [ApplicationInfo] = []
     public var clipboardCutPaths: Set<String> = []
+    public var hasClipboardItems: Bool = false
+    public var renamingText: String = ""
     /// FileManagerContentState.entryOperations에서 동기화되는 투영값
     public var restorableTrashPaths: Set<String> = []
     public var trashDirectoryPath: String?

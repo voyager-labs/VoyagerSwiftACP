@@ -88,6 +88,7 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case retryRequested(EntryModel.ID)
         case openEntry(EntryModel)
         case renameCommitted(itemID: EntryModel.ID, newName: String)
+        case renameCanceled
         case sortChanged(EntryViewLayoutSortKey, VoyagerShared.SortOrder)
         case groupChanged(EntryViewLayoutGroupKey)
         case toggleGroup(String)

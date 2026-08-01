@@ -106,6 +106,11 @@ struct FileManagerContentEntryOperationsBridgeReducer {
                 sendEntryOperations(.edit(.commitRename)),
             )
 
+        case .renameCanceled:
+            state.entryOperations.renamingItemId = nil
+            state.entryOperations.renamingText = ""
+            return .none
+
         case let .tagMutation(tagName, mode):
             let paths = selectedItemPaths(in: state)
             let featureMode: TagMutationRequest.Mode = mode == .add ? .add : .remove

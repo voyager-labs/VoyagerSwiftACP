@@ -51,7 +51,7 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
 
     private var canPaste: Bool {
         (!store.state.isLoading || store.state.isCollectionMode)
-            && !store.state.clipboardCutPaths.isEmpty
+            && store.state.hasClipboardItems
     }
 
     private var canSelectAll: Bool {
