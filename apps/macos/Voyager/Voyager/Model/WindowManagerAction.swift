@@ -335,6 +335,7 @@ enum WindowManagerAction: CasePathable {
         token: FileManagerTopNavigationOperationToken,
         terminal: FileManagerTopNavigationIntentTerminal,
     )
+    case topNavigationPersistenceRequested(WindowManagerTopNavigationPersistenceRequest)
     case topNavigationPersistenceCompleted(WindowManagerTopNavigationPersistenceResult)
     case defaultWindowBootstrapCompleted(requestID: UUID, result: DefaultWindowBootstrapResult)
     case defaultWindowBootstrapFailed(requestID: UUID)

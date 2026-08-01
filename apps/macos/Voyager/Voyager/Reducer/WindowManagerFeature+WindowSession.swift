@@ -21,7 +21,7 @@ extension WindowManagerFeature {
             guard state.authorizedTrackedSingletonRequestID == requestID else {
                 return trackedSingletonCompletionEffect(requestID)
             }
-            guard state.windows.isEmpty else {
+            guard state.windows.ids.allSatisfy(state.closingWindowIDs.contains) else {
                 state.authorizedTrackedSingletonRequestID = nil
                 return trackedSingletonCompletionEffect(requestID)
             }
@@ -250,6 +250,50 @@ extension WindowManagerFeature {
         )
     }
 
+    func deferWindowRemovalUntilTopNavigationPersistenceCompletes(
+        _ id: State.WindowID,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.windows[id: id] != nil else { return .none }
+        let wasPendingOpen = state.pendingWindowOpenIDs.remove(id) != nil
+        state.closingWindowIDs.insert(id)
+        state.deferredClosedWindowIDs.insert(id)
+        state.lastUsedWindowIDs.removeAll { $0 == id }
+        state.defaultWindowBootstrapWindowIDs.remove(id)
+        state.externalWindowBatchIDs[id] = nil
+        if var ownership = state.retainedExternalOpenPlacementOwnership {
+            ownership.newWindowIDs.removeAll { $0 == id }
+            state.retainedExternalOpenPlacementOwnership = ownership.newWindowIDs.isEmpty ? nil : ownership
+        }
+        if state.focusedWindowID == id {
+            state.focusedWindowID = state.lastUsedWindowIDs.first(where: { isWindowReady($0, state: state) })
+                ?? state.windows.ids.first(where: { isWindowReady($0, state: state) })
+        }
+
+        var effects: [Effect<Action>] = []
+        if wasPendingOpen {
+            effects.append(.cancel(id: CancelID.windowOpen(id)))
+        }
+        if state.defaultWindowBootstrapWindowIDs.isEmpty, state.defaultWindowBootstrapRequestID != nil {
+            state.defaultWindowBootstrapRequestID = nil
+            effects.append(.cancel(id: CancelID.defaultWindowBootstrap))
+        }
+        return effects.isEmpty ? .none : .merge(effects)
+    }
+
+    func finalizeDeferredWindowClosuresWithoutPendingPersistence(
+        state: inout State,
+    ) -> Effect<Action> {
+        let pendingSourceWindowIDs = Set(state.topNavigationPersistenceQueue.map(\.sourceWindowID))
+        let readyWindowIDs = state.deferredClosedWindowIDs
+            .filter { !pendingSourceWindowIDs.contains($0) }
+        var effects: [Effect<Action>] = []
+        for id in readyWindowIDs {
+            effects.append(finalizeWindowRemoval(id, state: &state))
+        }
+        return effects.isEmpty ? .none : .merge(effects)
+    }
+
     func finalizeWindowRemoval(
         _ id: State.WindowID,
         state: inout State,
@@ -261,6 +305,7 @@ extension WindowManagerFeature {
         state.windows.remove(id: id)
         state.pendingWindowOpenIDs.remove(id)
         state.closingWindowIDs.remove(id)
+        state.deferredClosedWindowIDs.remove(id)
         state.invalidatingWindowIDs.remove(id)
         state.lastUsedWindowIDs.removeAll { $0 == id }
         state.defaultWindowBootstrapWindowIDs.remove(id)

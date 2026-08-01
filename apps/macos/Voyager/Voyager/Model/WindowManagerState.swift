@@ -47,6 +47,7 @@ struct WindowManagerState: Equatable {
     var focusedWindowID: WindowID?
     var pendingWindowOpenIDs: Set<WindowID> = []
     var closingWindowIDs: Set<WindowID> = []
+    var deferredClosedWindowIDs: Set<WindowID> = []
     var invalidatingWindowIDs: Set<WindowID> = []
     var lastUsedWindowIDs: [WindowID] = []
     var defaultWindowBootstrapRequestID: UUID?

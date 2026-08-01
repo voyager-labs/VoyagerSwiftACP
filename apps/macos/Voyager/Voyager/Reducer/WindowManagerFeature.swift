@@ -75,21 +75,21 @@ struct WindowManagerFeature {
         Reduce { state, action in
             switch action {
             case .lifecycle(.openInitialWindowIfNeeded):
-                guard state.windows.isEmpty else { return .none }
+                guard state.windows.ids.allSatisfy(state.closingWindowIDs.contains) else { return .none }
                 return .send(.file(.newWindow(path: nil)))
 
             case let .lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: flag)):
                 guard !flag else { return .none }
 
-                if state.windows.isEmpty {
-                    return .send(.file(.newWindow(path: nil)))
-                }
-
-                guard let reopenWindowID = state.focusedWindowID
-                    ?? state.lastUsedWindowIDs.first(where: { state.windows[id: $0] != nil })
-                    ?? state.windows.first?.id
+                guard let reopenWindowID = state.focusedWindowID.flatMap({ id in
+                    state.closingWindowIDs.contains(id) ? nil : id
+                })
+                    ?? state.lastUsedWindowIDs.first(where: {
+                        state.windows[id: $0] != nil && !state.closingWindowIDs.contains($0)
+                    })
+                    ?? state.windows.ids.first(where: { !state.closingWindowIDs.contains($0) })
                 else {
-                    return .none
+                    return .send(.file(.newWindow(path: nil)))
                 }
 
                 state.focusedWindowID = reopenWindowID
@@ -271,6 +271,9 @@ struct WindowManagerFeature {
                 return finalizeWindowRemoval(id, state: &state)
 
             case let .event(.windowClosed(id)):
+                if state.topNavigationPersistenceQueue.contains(where: { $0.sourceWindowID == id }) {
+                    return deferWindowRemovalUntilTopNavigationPersistenceCompletes(id, state: &state)
+                }
                 let wasFocused = state.focusedWindowID == id
                 state.windows.remove(id: id)
                 state.lastUsedWindowIDs.removeAll { $0 == id }
@@ -373,18 +376,15 @@ struct WindowManagerFeature {
                     discoveredLocationIDs: discoveredLocationIDs,
                 ))),
             )):
-                return enqueueTopNavigationPersistence(
-                    .init(
-                        sourceWindowID: sourceWindowID,
-                        token: token,
-                        operation: .move(
-                            source: source,
-                            destination: destination,
-                            discoveredLocationIDs: discoveredLocationIDs,
-                        ),
+                return .send(.topNavigationPersistenceRequested(.init(
+                    sourceWindowID: sourceWindowID,
+                    token: token,
+                    operation: .move(
+                        source: source,
+                        destination: destination,
+                        discoveredLocationIDs: discoveredLocationIDs,
                     ),
-                    state: &state,
-                )
+                )))
 
             case let .windows(.element(
                 id: sourceWindowID,
@@ -395,18 +395,18 @@ struct WindowManagerFeature {
                     discoveredLocationIDs: discoveredLocationIDs,
                 ))),
             )):
-                return enqueueTopNavigationPersistence(
-                    .init(
-                        sourceWindowID: sourceWindowID,
-                        token: token,
-                        operation: .pinnedRecord(
-                            source: source,
-                            request: request,
-                            discoveredLocationIDs: discoveredLocationIDs,
-                        ),
+                return .send(.topNavigationPersistenceRequested(.init(
+                    sourceWindowID: sourceWindowID,
+                    token: token,
+                    operation: .pinnedRecord(
+                        source: source,
+                        request: request,
+                        discoveredLocationIDs: discoveredLocationIDs,
                     ),
-                    state: &state,
-                )
+                )))
+
+            case let .topNavigationPersistenceRequested(request):
+                return enqueueTopNavigationPersistence(request, state: &state)
 
             case let .topNavigationMovePersistenceCompleted(sourceWindowID, token, terminal):
                 return completeTopNavigationMovePersistence(
@@ -783,7 +783,17 @@ extension WindowManagerFeature {
         state.topNavigationPersistenceQueue.removeFirst()
         state.isTopNavigationPersistenceInFlight = false
 
+        let bootstrapLifecycle: (cancel: Effect<Action>, restart: Effect<Action>) = if case .committed = result
+            .terminal,
+            case .pinnedRecord = result.request.operation
+        {
+            invalidateAndRestartDefaultWindowBootstrapForPinnedChange(state: &state)
+        } else {
+            (.none, .none)
+        }
+
         var effects: [Effect<Action>] = []
+        effects.append(bootstrapLifecycle.cancel)
         if case let .committed(commit) = result.terminal {
             effects.append(fanOutCommittedTopNavigationSnapshot(
                 commit,
@@ -794,7 +804,11 @@ extension WindowManagerFeature {
         if let sourceTerminal = topNavigationSourceTerminalEffect(result, state: state) {
             effects.append(sourceTerminal)
         }
-        effects.append(startNextTopNavigationPersistenceIfNeeded(state: &state))
+        effects.append(.merge(
+            finalizeDeferredWindowClosuresWithoutPendingPersistence(state: &state),
+            startNextTopNavigationPersistenceIfNeeded(state: &state),
+            bootstrapLifecycle.restart,
+        ))
         return .concatenate(effects)
     }
 
