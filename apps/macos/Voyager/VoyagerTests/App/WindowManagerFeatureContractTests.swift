@@ -114,6 +114,27 @@ private func pinnedTabIDs(_ contentTabs: ContentTabState?) -> [String] {
     contentTabs?.tabs.filter(\.isPinned).map(\.id.rawValue) ?? []
 }
 
+private enum ContentTabObservationRebindEvent: Equatable {
+    case stop
+    case start
+    case apply
+}
+
+private func contentTabObservationRebindEvent(
+    _ action: FileManagerContentAction,
+) -> ContentTabObservationRebindEvent? {
+    switch action {
+    case .internal(.stopObservingSystemNotifications):
+        .stop
+    case .internal(.startObservingSystemNotifications):
+        .start
+    case .internal(.applyNavigationState):
+        .apply
+    default:
+        nil
+    }
+}
+
 @MainActor
 final class WindowManagerFeatureContractTests: XCTestCase {
     /// testApplyAppPreferencesFansOutToAllWindows 테스트 동작을 검증한다.
@@ -3478,6 +3499,107 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
     }
 
+    /// CTM-001-move_content_tab_to_another_window: pending final snapshot은 busy로 종료하고 semantic state를 보존한다.
+    /// persistence terminal이 이전 source path로 돌아오기 전에 tab 소유권이 이동하지 않도록 app mapping을 검증한다.
+    /// - 검증 내용: pending AI eligibility의 busy presentation/ledger와 source/target 전체 semantic snapshot equality
+    /// - 사전 조건: source active content의 completed request lock에 final snapshot이 남아 있다.
+    /// - 기대 결과: move는 busy로 reject되고 pending/presentation/ledger 외 source와 target state는 변하지 않는다.
+    func testContentTabMoveMapsCompletedFinalSnapshotToBusyWithoutSemanticMutation() async throws {
+        let sourceID = UUID(4505)
+        let targetID = UUID(4506)
+        let movedTabID = ContentTabID(rawValue: "final-snapshot-source")
+        let targetTabID = ContentTabID(rawValue: "final-snapshot-target")
+        let sessionID = AiChatSessionID(rawValue: UUID(4507))
+        let modelHandle = AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini")
+        let modelRow = AiModelCatalogRow(
+            handle: modelHandle,
+            displayName: "GPT-4.1 Mini",
+            authMethod: .apiKey,
+            sortOrder: 10,
+        )
+        let requestID = AiChatRequestID(rawValue: UUID(4508))
+        let runID = AiChatRunID(rawValue: UUID(4509))
+        let context = AiChatRequestContextSnapshot(
+            sessionID: sessionID,
+            requestID: requestID,
+            runID: runID,
+            provider: .openai,
+            model: modelHandle,
+            selectedModel: AiProviderModel(
+                id: modelHandle,
+                provider: .openai,
+                rawModelID: "gpt-4.1-mini",
+                displayName: "GPT-4.1 Mini",
+                providerDisplayName: "OpenAI",
+                thinkingCapability: .unknown(reason: .init(message: "Not loaded")),
+            ),
+            selectedModelRow: modelRow,
+            sessionStatus: .active,
+            promptSummary: "persist before move",
+            submittedAtMs: 0,
+        )
+        let lock = AiChatRequestLock(
+            kind: .submit,
+            requestID: requestID,
+            runID: runID,
+            context: context,
+            request: AiChatRequest(
+                context: context,
+                messages: [AiChatMessage(role: .user, content: "persist before move")],
+            ),
+            selectedModelHandle: modelHandle,
+            selectedModelRow: modelRow,
+            assistantReplacementIndex: nil,
+        )
+        let completedLock = lock.recordingFinalSnapshot(AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: .openai,
+            model: modelHandle,
+            transcriptHistory: lock.request.messages + [AiChatMessage(role: .assistant, content: "done")],
+            lastRequestID: requestID,
+            lastRunID: runID,
+            updatedAtMs: 1_234_567_891_000,
+        ))
+        let request = ContentTabMoveRequest(
+            requestID: UUID(4510),
+            sourceWindowID: sourceID,
+            tabID: movedTabID,
+            targetWindowID: targetID,
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(movedTabID, "/snapshot/source")],
+        )
+        source.window.content.aiChat.sessionID = sessionID
+        source.window.content.aiChat.executionPhase = .completed(completedLock)
+        source.window.tabContentStates[movedTabID] = source.window.content
+        source.window.sidebar.pendingContentTabMoveRequest = request
+        let target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(targetTabID, "/snapshot/target")],
+        )
+        let sourceBefore = source.window
+        let targetBefore = target.window
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() }
+        // store.exhaustivity = .off: app terminal mapping과 양 window semantic atomicity만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveRequest(request))
+
+        var expectedSource = sourceBefore
+        expectedSource.sidebar.pendingContentTabMoveRequest = nil
+        expectedSource.contentTabMoveFailurePresentation = .init(requestID: request.requestID, category: .busy)
+        XCTAssertEqual(store.state.windows[id: sourceID]?.window, expectedSource)
+        XCTAssertEqual(store.state.windows[id: targetID]?.window, targetBefore)
+        XCTAssertEqual(
+            store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome,
+            .rejected(.busy),
+        )
+    }
+
     /// CTM-001-move_content_tab_to_another_window: cross-window move는 양 active destination observation을 rebind한다.
     /// old source/target watcher를 window-scoped cancellation으로 supersede하고 post-commit route를 다시 적용한다.
     /// - 검증 내용: source fallback/target moved stop-start-apply, old interest 제거, new interest event 전달
@@ -3502,7 +3624,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             id: sourceID,
             tabs: [(movedTabID, movedPath), (fallbackTabID, fallbackPath)],
         )
+        source.window.contentTabs.activeTabID = movedTabID
         source.window.contentTabs.previousActiveTabID = fallbackTabID
+        source.window.content = try XCTUnwrap(source.window.tabContentStates[movedTabID])
+        source.window.inspector = try XCTUnwrap(source.window.tabInspectorStates[movedTabID])
         source.window.sidebar.pendingContentTabMoveRequest = request
         let target = try Self.makeContentTabMoveWindow(
             id: targetID,
@@ -3710,8 +3835,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             id: sourceID,
             tabs: [(movedTabID, "/teardown/moved"), (fallbackTabID, "/teardown/fallback")],
         )
+        source.window.contentTabs.activeTabID = movedTabID
         source.window.contentTabs.previousActiveTabID = fallbackTabID
-        var movedContent = try XCTUnwrap(source.window.tabContentStates[movedTabID])
+        source.window.content = try XCTUnwrap(source.window.tabContentStates[movedTabID])
+        source.window.inspector = try XCTUnwrap(source.window.tabInspectorStates[movedTabID])
+        var movedContent = source.window.content
         movedContent.entryViewLayout.entryOperations.windowID = sourceLoadingWindowID
         movedContent.entryViewLayout.entryOperations.loadingCancellationOwnerID = sourceLoadingOwnerID
         movedContent.composer.cancellationOwnerID = sourceComposerOwnerID
@@ -3855,6 +3983,167 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             "rebind-start",
             "rebind-complete",
         ])
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: inactive move는 source active lifecycle을 rebind하지 않는다.
+    /// source active tab이 유지되면 loading과 navigation observation을 그대로 두고 target outgoing owner만 teardown해야 한다.
+    /// - 검증 내용: source active loading cancellation과 stop/start/apply action 0회, target outgoing cancellation과 moved
+    /// rebind
+    /// - 사전 조건: source moved tab은 inactive이고 별도 active tab과 target outgoing tab이 각 loading owner를 가진다.
+    /// - 기대 결과: source active lifecycle은 유지되고 target outgoing probe는 취소되며 target moved apply가 전달된다.
+    func testContentTabMoveInactiveTabSkipsSourceActiveLifecycleAndRebindsTarget() async throws {
+        let sourceID = UUID(4532)
+        let targetID = UUID(4533)
+        let movedTabID = ContentTabID(rawValue: "inactive-lifecycle-moved")
+        let sourceActiveTabID = ContentTabID(rawValue: "inactive-lifecycle-active")
+        let targetOutgoingTabID = ContentTabID(rawValue: "inactive-lifecycle-target")
+        let sourceActiveLoadingOwnerID = UUID(4534)
+        let targetLoadingOwnerID = UUID(4535)
+        let sourceProbeRequestID = UUID(4536)
+        let targetProbeRequestID = UUID(4537)
+        let cleanupRequestID = UUID(4538)
+        let request = ContentTabMoveRequest(
+            requestID: UUID(4539),
+            sourceWindowID: sourceID,
+            tabID: movedTabID,
+            targetWindowID: targetID,
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [
+                (movedTabID, "/inactive/moved"),
+                (sourceActiveTabID, "/inactive/active"),
+            ],
+        )
+        source.window.contentTabs.activeTabID = sourceActiveTabID
+        source.window.content = try XCTUnwrap(source.window.tabContentStates[sourceActiveTabID])
+        source.window.inspector = try XCTUnwrap(source.window.tabInspectorStates[sourceActiveTabID])
+        source.window.content.entryViewLayout.entryOperations.windowID = sourceID
+        source.window.content.entryViewLayout.entryOperations.loadingCancellationOwnerID = sourceActiveLoadingOwnerID
+        source.window.tabContentStates[sourceActiveTabID] = source.window.content
+        source.window.sidebar.pendingContentTabMoveRequest = request
+
+        var target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(targetOutgoingTabID, "/inactive/target")],
+        )
+        target.window.content.entryViewLayout.entryOperations.windowID = targetID
+        target.window.content.entryViewLayout.entryOperations.loadingCancellationOwnerID = targetLoadingOwnerID
+        target.window.tabContentStates[targetOutgoingTabID] = target.window.content
+
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        let sourceActiveCancellationCount = LockIsolated(0)
+        let sourceActiveNavigationActionCount = LockIsolated(0)
+        let targetCancellationCount = LockIsolated(0)
+        let targetRebindActions = LockIsolated<[ContentTabObservationRebindEvent]>([])
+        let probesStarted = expectation(description: "source active and target outgoing probes started")
+        probesStarted.expectedFulfillmentCount = 2
+        let targetCancelled = expectation(description: "target outgoing loading cancelled")
+        let sourceCleanup = expectation(description: "source active loading cleanup")
+        let targetRebindCompleted = expectation(description: "target moved observation rebound")
+
+        func probe(
+            id: EntryOperationsLoadingCancelID,
+            onCancel: @escaping @Sendable () -> Void,
+        ) -> Effect<WindowManagerAction> {
+            .run { _ in
+                probesStarted.fulfill()
+                try await withTaskCancellationHandler {
+                    try await Task.sleep(for: .seconds(60))
+                } onCancel: {
+                    onCancel()
+                }
+            }
+            .cancellable(id: id)
+        }
+
+        let sourceCancelID = EntryOperationsLoadingCancelID.loadItems(
+            windowID: sourceID,
+            ownerID: sourceActiveLoadingOwnerID,
+        )
+        let targetCancelID = EntryOperationsLoadingCancelID.loadItems(
+            windowID: targetID,
+            ownerID: targetLoadingOwnerID,
+        )
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case let .windows(.element(
+                        id: windowID,
+                        action: .window(.view(.dismissContentTabMoveFailure(requestID: probeRequestID))),
+                    )) = action {
+                        if windowID == sourceID, probeRequestID == sourceProbeRequestID {
+                            return probe(id: sourceCancelID) {
+                                sourceActiveCancellationCount.withValue { $0 += 1 }
+                                sourceCleanup.fulfill()
+                            }
+                        }
+                        if windowID == targetID, probeRequestID == targetProbeRequestID {
+                            return probe(id: targetCancelID) {
+                                targetCancellationCount.withValue { $0 += 1 }
+                                targetCancelled.fulfill()
+                            }
+                        }
+                        if windowID == sourceID, probeRequestID == cleanupRequestID {
+                            return .cancel(id: sourceCancelID)
+                        }
+                    }
+                    guard case let .windows(.element(
+                        id: windowID,
+                        action: .window(.tabContent(tabID: tabID, action: contentAction)),
+                    )) = action else { return .none }
+                    guard let rebindEvent = contentTabObservationRebindEvent(contentAction) else {
+                        return .none
+                    }
+                    if windowID == sourceID, tabID == sourceActiveTabID {
+                        sourceActiveNavigationActionCount.withValue { $0 += 1 }
+                    }
+                    if windowID == targetID, tabID == movedTabID {
+                        targetRebindActions.withValue { $0.append(rebindEvent) }
+                        if rebindEvent == .apply { targetRebindCompleted.fulfill() }
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
+            $0.entryLoadingClient.loadItems = { _, _ in [] }
+            $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
+            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+            $0.fileManagerWindowClient.activate = { _ in .discarded }
+            $0.fileOperationUndoManagerClient.activate = { _ in nil }
+            $0.fileOperationUndoManagerClient.deactivate = { _ in }
+        }
+        // store.exhaustivity = .off: long-lived probe 내부 action보다 source lifecycle 무효과와 target teardown/rebind를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: sourceID,
+            action: .window(.view(.dismissContentTabMoveFailure(requestID: sourceProbeRequestID))),
+        )))
+        await store.send(.windows(.element(
+            id: targetID,
+            action: .window(.view(.dismissContentTabMoveFailure(requestID: targetProbeRequestID))),
+        )))
+        await fulfillment(of: [probesStarted], timeout: 1)
+
+        await store.send(.contentTabMoveRequest(request))
+        await fulfillment(of: [targetCancelled, targetRebindCompleted], timeout: 1)
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
+        XCTAssertEqual(sourceActiveCancellationCount.value, 0)
+        XCTAssertEqual(sourceActiveNavigationActionCount.value, 0)
+        XCTAssertEqual(targetCancellationCount.value, 1)
+        XCTAssertEqual(targetRebindActions.value, [.stop, .start, .apply])
+
+        await store.send(.windows(.element(
+            id: sourceID,
+            action: .window(.view(.dismissContentTabMoveFailure(requestID: cleanupRequestID))),
+        )))
+        await fulfillment(of: [sourceCleanup], timeout: 1)
+        await store.skipReceivedActions()
+        await store.finish()
     }
 
     func testContentTabMovePreservesSharedSiblingComposerEffects() async throws {
