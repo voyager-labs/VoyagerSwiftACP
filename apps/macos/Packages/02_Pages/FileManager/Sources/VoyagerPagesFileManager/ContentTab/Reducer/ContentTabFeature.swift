@@ -38,8 +38,8 @@ public struct ContentTabFeature {
             case let .toggleSelection(id):
                 return toggleSelection(id: id, state: &state)
 
-            case let .selectRange(targetID):
-                return selectRange(to: targetID, state: &state)
+            case let .selectRange(targetID, orderedIDs):
+                return selectRange(to: targetID, orderedIDs: orderedIDs, state: &state)
 
             case .collapseSelectionToActive:
                 return collapseSelectionToActive(state: &state)
@@ -153,11 +153,11 @@ extension ContentTabFeature {
     /// pinned-first ordering의 anchor-target inclusive interval로 기존 선택을 교체한다.
     private func selectRange(
         to targetID: ContentTabID,
+        orderedIDs: [ContentTabID],
         state: inout ContentTabState,
     ) -> Effect<ContentTabAction> {
         guard state.tabs[id: targetID] != nil else { return .none }
 
-        let orderedIDs = state.selectionOrderedTabIDs
         guard let anchorID = state.selectionAnchorID,
               let anchorIndex = orderedIDs.firstIndex(of: anchorID),
               let targetIndex = orderedIDs.firstIndex(of: targetID)

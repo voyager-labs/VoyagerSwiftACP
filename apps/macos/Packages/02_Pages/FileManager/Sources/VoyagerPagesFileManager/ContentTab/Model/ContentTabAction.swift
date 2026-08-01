@@ -106,7 +106,7 @@ public enum ContentTabAction: Sendable {
     /// 유효한 Content Tab identity의 선택 membership을 반전한다.
     case toggleSelection(ContentTabID)
     /// 현재 anchor부터 target까지 pinned-first 표시 구간으로 선택을 교체한다.
-    case selectRange(to: ContentTabID)
+    case selectRange(to: ContentTabID, orderedIDs: [ContentTabID])
     /// 선택 membership과 range anchor를 현재 active tab 하나로 축소한다.
     case collapseSelectionToActive
 

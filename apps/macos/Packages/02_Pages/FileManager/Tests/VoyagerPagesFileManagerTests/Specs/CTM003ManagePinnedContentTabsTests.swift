@@ -4743,7 +4743,10 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         XCTAssertEqual(store.state.selectionOrderedTabIDs, [firstPinnedID, rollbackTargetID, trailingPinnedID])
 
-        await store.send(.selectRange(to: rollbackTargetID)) {
+        await store.send(.selectRange(
+            to: rollbackTargetID,
+            orderedIDs: store.state.selectionOrderedTabIDs,
+        )) {
             $0.selectedTabIDs = [firstPinnedID, rollbackTargetID]
         }
         await store.finish()

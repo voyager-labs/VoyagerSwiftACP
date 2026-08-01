@@ -749,6 +749,21 @@ extension FileManagerWindowState {
         optimisticTopNavigationOrder = synchronizedOrder
     }
 
+    var contentTabSelectionOrderedIDs: [ContentTabID] {
+        let displayedPinnedIDs = sidebar.topNavigationItems.compactMap { item -> ContentTabID? in
+            guard case let .contentTab(contentTab) = item else { return nil }
+            return contentTab.id
+        }
+        let displayedPinnedIDSet = Set(displayedPinnedIDs)
+        let remainingPinnedIDs = contentTabs.tabs.compactMap { tab in
+            tab.isPinned && !displayedPinnedIDSet.contains(tab.id) ? tab.id : nil
+        }
+        let unpinnedIDs = contentTabs.tabs.compactMap { tab in
+            tab.isPinned ? nil : tab.id
+        }
+        return displayedPinnedIDs + remainingPinnedIDs + unpinnedIDs
+    }
+
     mutating func updateActiveAiChatTabTitle(_ title: String?) {
         guard let activeTabID = contentTabs.activeTabID,
               case .aiChat = contentTabs.tabs[id: activeTabID]?.anchor

@@ -358,7 +358,10 @@ struct FileManagerWindowRoutingReducer {
                 return .send(.contentTabs(.toggleSelection(id)))
 
             case let .sidebar(.delegate(.selectContentTabRange(to: id))):
-                return .send(.contentTabs(.selectRange(to: id)))
+                return .send(.contentTabs(.selectRange(
+                    to: id,
+                    orderedIDs: state.contentTabSelectionOrderedIDs,
+                )))
 
             case .sidebar(.delegate(.collapseContentTabSelectionToActive)):
                 return .send(.contentTabs(.collapseSelectionToActive))
@@ -1620,7 +1623,8 @@ private extension FileManagerWindowRoutingReducer {
     func handleRequestCloseSelectedContentTabs(state: inout State) -> Effect<Action> {
         guard state.canStartSelectedContentTabClose else { return .none }
 
-        let validSelectedIDs = state.contentTabs.orderedValidSelectedTabIDs
+        let selectionOrderedIDs = state.contentTabSelectionOrderedIDs
+        let validSelectedIDs = selectionOrderedIDs.filter(state.contentTabs.selectedTabIDs.contains)
         guard validSelectedIDs.count >= 2 else { return .none }
 
         let activeTabID = state.contentTabs.activeTabID
@@ -1630,7 +1634,7 @@ private extension FileManagerWindowRoutingReducer {
         }
         let targetIDSet = Set(orderedTargetIDs)
         let preferredFallbackIDs = preferredSelectedContentTabCloseFallbackIDs(
-            originalTabIDs: state.contentTabs.selectionOrderedTabIDs,
+            originalTabIDs: selectionOrderedIDs,
             originalActiveTabID: activeTabID,
             targetIDSet: targetIDSet,
             orderedTargetIDs: orderedTargetIDs,

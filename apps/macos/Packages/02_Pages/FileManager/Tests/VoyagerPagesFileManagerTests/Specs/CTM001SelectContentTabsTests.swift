@@ -384,6 +384,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         let tabA = ContentTabID(rawValue: "router-A")
         let tabB = ContentTabID(rawValue: "router-B")
         let state = FileManagerFeature.State()
+        let selectionOrder = state.contentTabSelectionOrderedIDs
         let store = TestStore(initialState: state) {
             FileManagerWindowRoutingReducer()
         }
@@ -395,12 +396,54 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         }
         await store.send(.sidebar(.delegate(.selectContentTabRange(to: tabB))))
         await store.receive { action in
-            guard case let .contentTabs(.selectRange(to: id)) = action else { return false }
-            return id == tabB
+            guard case let .contentTabs(.selectRange(to: id, orderedIDs: orderedIDs)) = action else {
+                return false
+            }
+            return id == tabB && orderedIDs == selectionOrder
         }
 
         XCTAssertEqual(store.state, state)
         // store.finish() 불필요: 모든 effect가 receive로 소비됨
+    }
+
+    /// CTM-001-select_content_tabs: pinned range는 raw tab 저장 순서가 아니라 Sidebar 표시 순서를 사용한다.
+    /// - 검증 내용: C/A/B 표시에서 C→A range가 중간 raw tab B를 포함하지 않음
+    /// - 사전 조건: raw tabs A/B/C, pinned top-navigation C/A/B, anchor C
+    /// - 기대 결과: selection은 C/A만 포함하고 B는 제외됨
+    func testWindowRangeSelectionUsesPinnedTopNavigationDisplayOrder() async {
+        let tabA = ContentTabID(rawValue: "display-range-A")
+        let tabB = ContentTabID(rawValue: "display-range-B")
+        let tabC = ContentTabID(rawValue: "display-range-C")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                tab(id: tabA, isPinned: true),
+                tab(id: tabB, isPinned: true),
+                tab(id: tabC, isPinned: true),
+            ],
+            activeTabID: tabC,
+        )
+        state.contentTabs.selectedTabIDs = [tabC]
+        state.contentTabs.selectionAnchorID = tabC
+        state.optimisticTopNavigationOrder = .init(items: [
+            .contentTab(tabC),
+            .contentTab(tabA),
+            .contentTab(tabB),
+        ])
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) { FileManagerFeature() }
+
+        await store.send(.sidebar(.delegate(.selectContentTabRange(to: tabA))))
+        await store.receive { action in
+            guard case let .contentTabs(.selectRange(to: id, orderedIDs: orderedIDs)) = action else {
+                return false
+            }
+            return id == tabA && orderedIDs == [tabC, tabA, tabB]
+        } assert: {
+            $0.contentTabs.selectedTabIDs = [tabC, tabA]
+        }
+
+        XCTAssertFalse(store.state.contentTabs.selectedTabIDs.contains(tabB))
     }
 
     /// CTM-001-select_content_tabs: 다른 Content Tab plain click의 selection 독립성 검증
@@ -578,6 +621,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         let sidebarProjectionSentinel = state.sidebar.contentTabSidebarItems
         let homeLocationSentinel = state.content.homeLocationItems
         let homeFavoriteSentinel = state.content.homeFavoriteItems
+        let selectionOrder = state.contentTabSelectionOrderedIDs
         let store = TestStore(initialState: state) { FileManagerFeature() }
 
         await store.send(.sidebar(.view(.toggleContentTabSelection(tabB))))
@@ -598,8 +642,10 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             return id == tabA
         }
         await store.receive { action in
-            guard case let .contentTabs(.selectRange(to: id)) = action else { return false }
-            return id == tabA
+            guard case let .contentTabs(.selectRange(to: id, orderedIDs: orderedIDs)) = action else {
+                return false
+            }
+            return id == tabA && orderedIDs == selectionOrder
         } assert: {
             $0.contentTabs.selectedTabIDs = [tabA, tabB]
         }
@@ -821,14 +867,14 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         state.selectionAnchorID = pinned1
         let store = TestStore(initialState: state) { ContentTabFeature() }
 
-        await store.send(.selectRange(to: unpinned2)) {
+        await store.send(.selectRange(to: unpinned2, orderedIDs: store.state.selectionOrderedTabIDs)) {
             $0.selectedTabIDs = [pinned1, pinned2, unpinned1, unpinned2]
         }
         await store.send(.toggleSelection(unpinned3)) {
             $0.selectedTabIDs.insert(unpinned3)
             $0.selectionAnchorID = unpinned3
         }
-        await store.send(.selectRange(to: pinned2)) {
+        await store.send(.selectRange(to: pinned2, orderedIDs: store.state.selectionOrderedTabIDs)) {
             $0.selectedTabIDs = [pinned2, unpinned1, unpinned2, unpinned3]
         }
 
@@ -852,7 +898,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         nilAnchorState.selectedTabIDs = [tabA]
         let nilAnchorStore = TestStore(initialState: nilAnchorState) { ContentTabFeature() }
 
-        await nilAnchorStore.send(.selectRange(to: tabB)) {
+        await nilAnchorStore.send(.selectRange(to: tabB, orderedIDs: nilAnchorStore.state.selectionOrderedTabIDs)) {
             $0.selectedTabIDs = [tabB]
             $0.selectionAnchorID = tabB
         }
@@ -862,7 +908,10 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         staleAnchorState.selectionAnchorID = staleTab
         let staleAnchorStore = TestStore(initialState: staleAnchorState) { ContentTabFeature() }
 
-        await staleAnchorStore.send(.selectRange(to: tabB)) {
+        await staleAnchorStore.send(.selectRange(
+            to: tabB,
+            orderedIDs: staleAnchorStore.state.selectionOrderedTabIDs,
+        )) {
             $0.selectedTabIDs = [tabB]
             $0.selectionAnchorID = tabB
         }
@@ -891,7 +940,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
             $0.selectedTabIDs = []
             $0.selectionAnchorID = tab1
         }
-        await store.send(.selectRange(to: tab3)) {
+        await store.send(.selectRange(to: tab3, orderedIDs: store.state.selectionOrderedTabIDs)) {
             $0.selectedTabIDs = [tab1, tab2, tab3]
         }
 
@@ -936,7 +985,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         XCTAssertEqual(store.state.selectedTabIDs, Set([unpinned2, unpinned3]))
         XCTAssertEqual(store.state.selectionAnchorID, unpinned3)
 
-        await store.send(.selectRange(to: unpinned2)) {
+        await store.send(.selectRange(to: unpinned2, orderedIDs: store.state.selectionOrderedTabIDs)) {
             $0.selectedTabIDs = [unpinned3, unpinned1, unpinned2]
         }
 
@@ -965,7 +1014,7 @@ final class CTM001SelectContentTabsTests: XCTestCase {
 
         await store.send(.toggleSelection(invalidTab))
         XCTAssertEqual(store.state, state)
-        await store.send(.selectRange(to: invalidTab))
+        await store.send(.selectRange(to: invalidTab, orderedIDs: store.state.selectionOrderedTabIDs))
         XCTAssertEqual(store.state, state)
     }
 
@@ -1002,7 +1051,10 @@ final class CTM001SelectContentTabsTests: XCTestCase {
         let validSelectionState = store.state
         await store.send(.contentTabs(.toggleSelection(invalidTab)))
         XCTAssertEqual(store.state, validSelectionState)
-        await store.send(.contentTabs(.selectRange(to: invalidTab)))
+        await store.send(.contentTabs(.selectRange(
+            to: invalidTab,
+            orderedIDs: store.state.contentTabSelectionOrderedIDs,
+        )))
         XCTAssertEqual(store.state, validSelectionState)
     }
 
