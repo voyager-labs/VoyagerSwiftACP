@@ -20,6 +20,7 @@ struct EntryListHierarchyReducer {
                 return .merge(
                     .send(.internal(.applyClearSelection)),
                     .send(.internal(.reconcileHierarchySelection)),
+                    .send(.delegate(.rootContextChanged(path))),
                 )
 
             case .hiddenFilesSettingChanged:

@@ -118,7 +118,10 @@ public struct FileManagerContentFeature {
                 action: .apply(items: projectionEntries, isCollectionMode: state.isCollectionMode),
             )
             let projectionSections = state.isCollectionMode
-                ? []
+                ? FileManagerContentFeature.makeSections(
+                    groupedItems: state.entryArrangements.groupedItems,
+                    collapsedGroups: state.entryArrangements.collapsedGroups,
+                )
                 : FileManagerContentFeature.makeSections(
                     groupedItems: state.entryArrangements.groupedItems,
                     collapsedGroups: state.entryArrangements.collapsedGroups,

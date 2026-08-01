@@ -187,6 +187,9 @@ struct FileManagerContentEntryOperationsBridgeReducer {
                 folderID: id,
             ))))
 
+        case .rootContextChanged:
+            return sendEntryOperations(.loading(.cancelAllFolderItems))
+
         case let .retryRequested(id):
             guard let folderGeneration = state.entryViewLayout.hierarchy.foldersByID[id]?.generation
             else { return .none }

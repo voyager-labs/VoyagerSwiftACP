@@ -85,6 +85,7 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         // Feature로 라우팅할 intent
         case expandRequested(EntryModel.ID)
         case collapseRequested(EntryModel.ID)
+        case rootContextChanged(String)
         case retryRequested(EntryModel.ID)
         case openEntry(EntryModel)
         case renameCommitted(itemID: EntryModel.ID, newName: String)
