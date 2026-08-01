@@ -269,7 +269,9 @@ private extension AiChatExecutionPhase {
         switch self {
         case .processing, .persistenceRecovery:
             true
-        case .idle, .completed, .failed, .cancelled:
+        case let .completed(lock):
+            lock.finalSnapshot != nil
+        case .idle, .failed, .cancelled:
             false
         }
     }

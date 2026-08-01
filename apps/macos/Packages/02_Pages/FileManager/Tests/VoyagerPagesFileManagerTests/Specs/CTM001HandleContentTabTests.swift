@@ -6590,6 +6590,217 @@ final class CTM001HandleContentTabTests: XCTestCase {
         )
     }
 
+    /// CTM-001-move_content_tab_to_another_file_manager_window: final snapshot persistence owner는 저장 완료 전 이동을 차단함
+    /// completed phase의 pending snapshot이 source 또는 destination에 남아 있을 때 terminal callback의 소유 경로를 보존하는지 검증한다.
+    /// - 검증 내용: source/destination pending AI rejection, 양 window 전체 snapshot 불변, snapshot clear 후 transfer 성공
+    /// - 사전 조건: owner parity가 유효한 window의 active content에 final snapshot을 가진 completed request가 있다.
+    /// - 기대 결과: snapshot이 있으면 `.pendingAiChatOperation`, clear 후에는 source와 destination 모두 이동 가능하다.
+    func testTransferEligibility_blocksCompletedFinalSnapshotUntilPersistenceClearsIt() throws {
+        try verifySourceFinalSnapshotTransferEligibility()
+        try verifyDestinationFinalSnapshotTransferEligibility()
+    }
+
+    private func verifySourceFinalSnapshotTransferEligibility() throws {
+        let movedTabID = ContentTabID(rawValue: "snapshot-source")
+        let sourceSessionID = AiChatSessionID(
+            rawValue: UUID(uuid: (93, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3)),
+        )
+        var source = try makeFinalSnapshotTransferWindow(
+            windowID: UUID(uuid: (93, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)),
+            tabID: movedTabID,
+            path: "/snapshot/source",
+        )
+        let sourceLock = makeCompletedFinalSnapshotLock(sessionID: sourceSessionID)
+        source.content.aiChat.sessionID = sourceSessionID
+        source.content.aiChat.executionPhase = .completed(sourceLock)
+        source.tabContentStates[movedTabID] = source.content
+        let target = try makeFinalSnapshotTransferWindow(
+            windowID: UUID(uuid: (93, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2)),
+            tabID: ContentTabID(rawValue: "snapshot-target"),
+            path: "/snapshot/target",
+        )
+        let sourceBefore = source
+        let targetBefore = target
+
+        XCTAssertEqual(
+            ContentTabTransfer.transfer(source: source, target: target, tabID: movedTabID),
+            .rejected(reason: .ineligible(.pendingAiChatOperation)),
+        )
+        XCTAssertEqual(source, sourceBefore)
+        XCTAssertEqual(target, targetBefore)
+
+        source.content.aiChat.executionPhase = .completed(sourceLock.clearingFinalSnapshot())
+        source.tabContentStates[movedTabID] = source.content
+        guard case let .closeSourceWindow(postCommit) = ContentTabTransfer.transfer(
+            source: source,
+            target: target,
+            tabID: movedTabID,
+        ) else {
+            return XCTFail("cleared source snapshot should be transferable")
+        }
+        XCTAssertEqual(postCommit.target.contentTabs.activeTabID, movedTabID)
+    }
+
+    private func verifyDestinationFinalSnapshotTransferEligibility() throws {
+        let movedTabID = ContentTabID(rawValue: "snapshot-source")
+        let targetTabID = ContentTabID(rawValue: "snapshot-target")
+        let source = try makeFinalSnapshotTransferWindow(
+            windowID: UUID(uuid: (93, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)),
+            tabID: movedTabID,
+            path: "/snapshot/source",
+        )
+        var target = try makeFinalSnapshotTransferWindow(
+            windowID: UUID(uuid: (93, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2)),
+            tabID: targetTabID,
+            path: "/snapshot/target",
+        )
+        let targetSessionID = AiChatSessionID(
+            rawValue: UUID(uuid: (93, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4)),
+        )
+        let targetLock = makeCompletedFinalSnapshotLock(sessionID: targetSessionID)
+        target.content.aiChat.sessionID = targetSessionID
+        target.content.aiChat.executionPhase = .completed(targetLock)
+        target.tabContentStates[targetTabID] = target.content
+        let sourceBefore = source
+        let targetBefore = target
+
+        XCTAssertEqual(
+            ContentTabTransfer.transfer(source: source, target: target, tabID: movedTabID),
+            .rejected(reason: .ineligible(.pendingAiChatOperation)),
+        )
+        XCTAssertEqual(source, sourceBefore)
+        XCTAssertEqual(target, targetBefore)
+
+        target.content.aiChat.executionPhase = .completed(targetLock.clearingFinalSnapshot())
+        target.tabContentStates[targetTabID] = target.content
+        guard case let .closeSourceWindow(postCommit) = ContentTabTransfer.transfer(
+            source: source,
+            target: target,
+            tabID: movedTabID,
+        ) else {
+            return XCTFail("cleared destination snapshot should be transferable")
+        }
+        XCTAssertEqual(postCommit.target.contentTabs.activeTabID, movedTabID)
+    }
+
+    private func makeCompletedFinalSnapshotLock(sessionID: AiChatSessionID) -> AiChatRequestLock {
+        let lock = makeBatchAiRequestLock(sessionID: sessionID)
+        return lock.recordingFinalSnapshot(AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: lock.context.provider,
+            model: lock.selectedModelHandle,
+            transcriptHistory: lock.request.messages + [AiChatMessage(role: .assistant, content: "done")],
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            updatedAtMs: 1_234_567_891_000,
+        ))
+    }
+
+    private func makeFinalSnapshotTransferWindow(
+        windowID: UUID,
+        tabID: ContentTabID,
+        path: String,
+    ) throws -> FileManagerWindowState {
+        try XCTUnwrap(FileManagerWindowState.makeExternalInitial(
+            reservations: [.init(id: tabID, anchor: .directory(path: path))],
+            windowID: windowID,
+        ))
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: source observation은 active moved tab의 fallback에만
+    /// rebind함
+    /// inactive tab 이동은 유지되는 source active navigation lifecycle을 재시작하지 않고 target moved tab만 rebind해야 한다.
+    /// - 검증 내용: inactive/active/last-tab source rebind intent와 모든 성공 경로의 target moved-tab rebind
+    /// - 사전 조건: inactive moved tab, active moved tab+fallback, 단일 active tab source를 각각 구성한다.
+    /// - 기대 결과: inactive와 last-tab source intent는 nil, active fallback만 non-nil이며 target intent는 항상 moved tab이다.
+    func testContentTabTransferRebindsSourceOnlyWhenMovedTabWasActiveWithFallback() throws {
+        try verifyInactiveContentTabTransferRebind()
+        try verifyActiveContentTabTransferRebind()
+        try verifyLastContentTabTransferRebind()
+    }
+
+    private func verifyInactiveContentTabTransferRebind() throws {
+        let movedTabID = ContentTabID(rawValue: "rebind-moved")
+        let activeTabID = ContentTabID(rawValue: "rebind-active")
+        var source = try makeRebindTransferWindow(
+            id: UUID(uuid: (94, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)),
+            tabs: [(activeTabID, "/rebind/active"), (movedTabID, "/rebind/moved")],
+        )
+        source.contentTabs.activeTabID = activeTabID
+        source.content = try XCTUnwrap(source.tabContentStates[activeTabID])
+        source.inspector = try XCTUnwrap(source.tabInspectorStates[activeTabID])
+        let target = try makeRebindTransferTarget()
+
+        guard case let .moved(postCommit) = ContentTabTransfer.transfer(
+            source: source,
+            target: target,
+            tabID: movedTabID,
+        ) else {
+            return XCTFail("inactive tab should move")
+        }
+        XCTAssertNil(postCommit.rebind.sourceActiveNavigationObservation)
+        XCTAssertEqual(postCommit.source.contentTabs.activeTabID, activeTabID)
+        XCTAssertEqual(postCommit.rebind.targetActiveNavigationObservation.tabID, movedTabID)
+    }
+
+    private func verifyActiveContentTabTransferRebind() throws {
+        let movedTabID = ContentTabID(rawValue: "rebind-moved")
+        let fallbackTabID = ContentTabID(rawValue: "rebind-active")
+        var source = try makeRebindTransferWindow(
+            id: UUID(uuid: (94, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)),
+            tabs: [(fallbackTabID, "/rebind/active"), (movedTabID, "/rebind/moved")],
+        )
+        source.contentTabs.activeTabID = movedTabID
+        source.contentTabs.previousActiveTabID = fallbackTabID
+        source.content = try XCTUnwrap(source.tabContentStates[movedTabID])
+        source.inspector = try XCTUnwrap(source.tabInspectorStates[movedTabID])
+
+        guard case let .moved(postCommit) = try ContentTabTransfer.transfer(
+            source: source,
+            target: makeRebindTransferTarget(),
+            tabID: movedTabID,
+        ) else {
+            return XCTFail("active tab should move with fallback")
+        }
+        XCTAssertEqual(postCommit.rebind.sourceActiveNavigationObservation?.tabID, fallbackTabID)
+        XCTAssertEqual(postCommit.rebind.targetActiveNavigationObservation.tabID, movedTabID)
+    }
+
+    private func verifyLastContentTabTransferRebind() throws {
+        let movedTabID = ContentTabID(rawValue: "rebind-moved")
+        let source = try makeRebindTransferWindow(
+            id: UUID(uuid: (94, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3)),
+            tabs: [(movedTabID, "/rebind/last")],
+        )
+        guard case let .closeSourceWindow(postCommit) = try ContentTabTransfer.transfer(
+            source: source,
+            target: makeRebindTransferTarget(),
+            tabID: movedTabID,
+        ) else {
+            return XCTFail("last tab should close source")
+        }
+        XCTAssertNil(postCommit.rebind.sourceActiveNavigationObservation)
+        XCTAssertEqual(postCommit.rebind.targetActiveNavigationObservation.tabID, movedTabID)
+    }
+
+    private func makeRebindTransferTarget() throws -> FileManagerWindowState {
+        try makeRebindTransferWindow(
+            id: UUID(uuid: (94, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2)),
+            tabs: [(ContentTabID(rawValue: "rebind-target"), "/rebind/target")],
+        )
+    }
+
+    private func makeRebindTransferWindow(
+        id: UUID,
+        tabs: [(ContentTabID, String)],
+    ) throws -> FileManagerWindowState {
+        try XCTUnwrap(FileManagerWindowState.makeExternalInitial(
+            reservations: tabs.map { .init(id: $0.0, anchor: .directory(path: $0.1)) },
+            windowID: id,
+        ))
+    }
+
     /// CTM-001-move_content_tab_to_another_file_manager_window: Collection open/load/restore pending owner는 이동을 차단함
     /// save 외에도 active collection open request와 reopening session phase를 durable pending으로 분류하는지 검증한다.
     /// - 검증 내용: pendingCollectionOpenRequest 및 CollectionSessionPhase.reopening의 typed rejection

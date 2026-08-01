@@ -383,10 +383,12 @@ public enum ContentTabTransfer {
             tabID: token.payload.item.id,
             sourceOutgoingOwner: token.sourceOutgoingOwner,
             targetOutgoingOwner: token.targetOutgoingOwner,
-            sourceActiveNavigationObservation: activeNavigationObservation(
-                in: source,
-                windowID: token.sourceWindowID,
-            ),
+            sourceActiveNavigationObservation: token.source.contentTabs.activeTabID == token.payload.item.id
+                ? activeNavigationObservation(
+                    in: source,
+                    windowID: token.sourceWindowID,
+                )
+                : nil,
             targetActiveNavigationObservation: ActiveNavigationObservationRebind(
                 windowID: token.targetWindowID,
                 tabID: token.payload.item.id,
