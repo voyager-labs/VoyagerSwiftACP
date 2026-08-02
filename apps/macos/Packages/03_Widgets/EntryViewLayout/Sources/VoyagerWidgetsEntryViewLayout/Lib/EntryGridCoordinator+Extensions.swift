@@ -296,7 +296,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             isCut: isCut,
             isHidden: entry.isHidden,
             isRenaming: isRenaming,
-            renamingText: entry.name,
+            renamingText: state.renamingText,
             isDropTargeted: isDropTargeted,
             workspaceClient: workspaceClient,
             onRenameUpdate: { [weak self] text in

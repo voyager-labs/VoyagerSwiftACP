@@ -377,7 +377,7 @@ public final class EntryListCoordinator: NSObject {
 
     func makeOutlineItems(state: EntryViewLayoutState) -> [OutlineItem] {
         state.presentation.sections.flatMap { section -> [OutlineItem] in
-            let entries = section.items.map { OutlineItem(kind: .entry($0)) }
+            let entries = section.items.map { OutlineItem(kind: .entry($0), identityScope: section.id) }
             guard let title = section.title else { return entries }
             return [
                 OutlineItem(
@@ -481,7 +481,9 @@ public final class EntryListCoordinator: NSObject {
     }
 
     func rebuildItemIndexes() {
-        entryItemById = Dictionary(uniqueKeysWithValues: outlineItems.flatMap { $0.flattenEntries() })
+        entryItemById = outlineItems.flatMap { $0.flattenEntries() }.reduce(into: [:]) { itemsByID, element in
+            itemsByID[element.0] = element.1
+        }
         outlineItemByID = Dictionary(uniqueKeysWithValues: outlineItems.flatMap { $0.flattenItems() })
         groupItemByName = Dictionary(uniqueKeysWithValues: outlineItems.compactMap { item in
             if case let .group(name, _, _) = item.kind {

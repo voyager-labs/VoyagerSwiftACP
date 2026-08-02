@@ -75,6 +75,7 @@ final class EntryListOutlineItem: Hashable {
         kind: EntryListOutlineItemKind,
         children: [EntryListOutlineItem] = [],
         isLoadingChildren: Bool = false,
+        identityScope: String? = nil,
     ) {
         self.kind = kind
         self.children = children
@@ -83,7 +84,7 @@ final class EntryListOutlineItem: Hashable {
         case let .group(name, _, _):
             id = "group:\(name)"
         case let .entry(entry):
-            id = "entry:\(entry.id)"
+            id = ["entry", identityScope, entry.id].compactMap(\.self).joined(separator: ":")
         case let .empty(parent):
             id = "empty:\(parent)"
         case let .error(parent, _):

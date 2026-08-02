@@ -552,6 +552,53 @@ extension EVM002ManageEntriesViewPresentationTests {
         await store.finish()
     }
 
+    /// EVM-002-rename_entry: list 셀 재구성은 현재 rename draft를 유지한다.
+    /// - 검증 내용: coordinator가 생성하는 cell configuration의 renamingText를 확인한다.
+    /// - 사전 조건: 원래 이름과 다른 rename draft가 projection state에 있다.
+    /// - 기대 결과: cell configuration은 원래 이름이 아니라 draft를 사용한다.
+    func testListCellReconfigurationPreservesRenameDraft() {
+        let entry = makeHierarchyIntegrationEntry(id: "/draft.txt", name: "original.txt")
+        var state = EntryViewLayoutState()
+        state.renamingItemId = entry.id
+        state.renamingText = "draft.txt"
+        let coordinator = EntryListCoordinator(store: Store(initialState: state) {
+            EntryViewLayoutFeature()
+        })
+
+        let configuration = coordinator.makeEntryCellConfiguration(
+            entry: entry,
+            columnId: EntryListColumn.name.rawValue,
+            columnWidth: 200,
+            thumbnail: nil,
+            isLoadingChildren: false,
+        )
+
+        XCTAssertEqual(configuration.context.renamingText, "draft.txt")
+    }
+
+    /// EVM-002-switch_entries_view: 태그 section의 중복 항목은 section-scoped list row identity를 사용한다.
+    /// - 검증 내용: 같은 entry가 두 section에 있을 때 생성되는 outline item ID를 확인한다.
+    /// - 사전 조건: Blue와 Red section이 동일 entry를 포함한다.
+    /// - 기대 결과: 두 row ID가 서로 다르고 section ID를 포함한다.
+    func testGroupedListRowsUseSectionScopedIdentity() {
+        let entry = makeHierarchyIntegrationEntry(id: "/tagged.txt", name: "tagged.txt")
+        var state = EntryViewLayoutState()
+        state.presentationSections = [
+            .init(id: "Blue", title: "Blue", colorCode: 6, items: [entry], isCollapsed: false),
+            .init(id: "Red", title: "Red", colorCode: 1, items: [entry], isCollapsed: false),
+        ]
+        let coordinator = EntryListCoordinator(store: Store(initialState: state) {
+            EntryViewLayoutFeature()
+        })
+
+        let rowIDs = coordinator.makeOutlineItems(state: state)
+            .flatMap { $0.flattenItems().map(\.0) }
+            .filter { $0.hasPrefix("entry:") }
+
+        XCTAssertEqual(rowIDs, ["entry:Blue:/tagged.txt", "entry:Red:/tagged.txt"])
+        XCTAssertEqual(Set(rowIDs).count, 2)
+    }
+
     private func makeHierarchyIntegrationEntry(id: String, name: String) -> EntryModel {
         EntryModel(
             name: name,

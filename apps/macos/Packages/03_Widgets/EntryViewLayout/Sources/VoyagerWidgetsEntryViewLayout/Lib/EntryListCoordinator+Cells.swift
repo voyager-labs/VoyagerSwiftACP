@@ -32,7 +32,7 @@ extension EntryListCoordinator {
                 isCut: isCut,
                 isLoadingChildren: isLoadingChildren,
                 isRenaming: state.renamingItemId == entry.id,
-                renamingText: entry.name,
+                renamingText: state.renamingText,
                 workspaceClient: workspaceClient,
                 onRenameUpdate: { [weak self] text in
                     guard let self else { return }
