@@ -151,6 +151,32 @@ extension EVM002ManageEntriesViewPresentationTests {
         await store.receive(\.delegate.expandRequested, folder.id)
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: loading folder collapse가 in-flight load 취소를 요청한다.
+    /// - 검증 내용: collapse 시 generation 무효화와 collapseRequested delegate를 함께 확인한다.
+    /// - 사전 조건: expanded folder가 loading phase에 있다.
+    /// - 기대 결과: folder는 idle로 돌아가고 parent bridge 취소 action이 발행된다.
+    func testLoadingFolderCollapseRequestsCancellation() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        var state = EntryViewLayoutState()
+        state.entries = [folder]
+        state.hierarchy = .init(
+            rootPath: "/root",
+            expandedFolderIDs: [folder.id],
+            foldersByID: [folder.id: .init(phase: .loading, generation: 4)],
+        )
+        let store = TestStore(initialState: state) {
+            EntryListHierarchyReducer()
+        }
+        // store.exhaustivity = .off: selection reconcile보다 load cancellation delegate를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.hierarchy(.folderCollapseRequested(id: folder.id))) {
+            $0.hierarchy.expandedFolderIDs = []
+            $0.hierarchy.foldersByID[folder.id] = .init(phase: .idle, generation: 5)
+        }
+        await store.receive(\.delegate.collapseRequested, folder.id)
+    }
+
     /// 계층 projection의 child payload가 command와 selection에서 사용할 실제 EntryModel 목록으로 노출되는지 검증한다.
     func testVisibleSelectableEntriesIncludeNestedPayloads() {
         let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")

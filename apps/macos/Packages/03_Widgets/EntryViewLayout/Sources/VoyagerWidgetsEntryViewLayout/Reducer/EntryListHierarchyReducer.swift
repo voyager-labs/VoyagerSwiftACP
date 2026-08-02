@@ -90,6 +90,7 @@ struct EntryListHierarchyReducer {
             case let .folderCollapseRequested(id):
                 state.hierarchy.expandedFolderIDs.remove(id)
                 var folderState = state.hierarchy.foldersByID[id] ?? .init()
+                let shouldCancelLoad = folderState.phase == .loading
                 if folderState.phase != .loaded {
                     folderState.generation &+= 1
                     folderState.children = []
@@ -98,7 +99,12 @@ struct EntryListHierarchyReducer {
                     folderState.coreFinished = false
                 }
                 state.hierarchy.foldersByID[id] = folderState
-                return .send(.internal(.reconcileHierarchySelection))
+                let reconcileEffect = Effect<Action>.send(.internal(.reconcileHierarchySelection))
+                guard shouldCancelLoad else { return reconcileEffect }
+                return .concatenate(
+                    .send(.delegate(.collapseRequested(id))),
+                    reconcileEffect,
+                )
 
             case let .folderChildrenResponse(rootContextGeneration, folderID, folderGeneration, response):
                 guard rootContextGeneration == state.hierarchy.rootContextGeneration,
