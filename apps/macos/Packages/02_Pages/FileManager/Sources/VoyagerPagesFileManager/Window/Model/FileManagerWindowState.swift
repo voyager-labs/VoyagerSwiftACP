@@ -770,6 +770,8 @@ extension FileManagerContentFeature.State {
 
     mutating func applyWindowContext(windowID: UUID) {
         entryOperations.windowID = windowID
+        entryViewLayout.collectionWindowID = windowID
+        entryViewLayout.collectionLoadingCancellationOwnerID = entryOperations.loadingCancellationOwnerID
         composer.cancellationOwnerID = windowID
     }
 
@@ -786,6 +788,8 @@ extension FileManagerContentFeature.State {
         entryViewLayout.collapsedGroups = source.entryViewLayout.collapsedGroups
         // Feature fields
         entryOperations.windowID = source.entryOperations.windowID
+        entryViewLayout.collectionWindowID = entryOperations.windowID
+        entryViewLayout.collectionLoadingCancellationOwnerID = entryOperations.loadingCancellationOwnerID
         entryArrangements.sortKey = source.entryArrangements.sortKey
         entryArrangements.sortOrder = source.entryArrangements.sortOrder
         entryArrangements.hasUserSetSortOrder = source.entryArrangements.hasUserSetSortOrder
