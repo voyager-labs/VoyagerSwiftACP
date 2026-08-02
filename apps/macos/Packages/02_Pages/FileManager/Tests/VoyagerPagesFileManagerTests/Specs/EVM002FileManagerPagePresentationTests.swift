@@ -214,9 +214,12 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
             $0.entryArrangements.sortKey = .kind
         }
         await store.receive { action in
-            guard case let .entryViewLayout(.internal(.applyCollectionSearchPaths(paths, showHidden))) = action
+            guard case let .entryViewLayout(.internal(.applyCollectionSearchPaths(paths, showHidden, priority))) =
+                action
             else { return false }
-            return paths == ["/collection/first", "/collection/second"] && !showHidden
+            return paths == ["/collection/first", "/collection/second"]
+                && !showHidden
+                && priority == .active([.spotlight])
         }
     }
 
@@ -232,7 +235,11 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         layoutState.isCollectionMode = true
         _ = EntryViewLayoutFeature().reduce(
             into: &layoutState,
-            action: .internal(.applyCollectionSearchPaths(paths: sourcePaths, showHidden: false)),
+            action: .internal(.applyCollectionSearchPaths(
+                paths: sourcePaths,
+                showHidden: false,
+                priority: .none,
+            )),
         )
         layoutState.collectionItems = [first]
         var state = FileManagerContentState()
@@ -245,9 +252,9 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
             $0.entryArrangements.sortKey = .kind
         }
         await store.receive { action in
-            guard case let .entryViewLayout(.internal(.applyCollectionSearchPaths(paths, _))) = action
+            guard case let .entryViewLayout(.internal(.applyCollectionSearchPaths(paths, _, priority))) = action
             else { return false }
-            return paths == sourcePaths
+            return paths == sourcePaths && priority == .active([.spotlight])
         }
     }
 
@@ -283,9 +290,9 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
             $0.entryArrangements.sortKey = .kind
         }
         await store.receive { action in
-            guard case let .entryViewLayout(.internal(.applyCollectionSearchPaths(paths, _))) = action
+            guard case let .entryViewLayout(.internal(.applyCollectionSearchPaths(paths, _, priority))) = action
             else { return false }
-            return paths == [base.id, arrived.id, pendingPath]
+            return paths == [base.id, arrived.id, pendingPath] && priority == .active([.spotlight])
         }
     }
 

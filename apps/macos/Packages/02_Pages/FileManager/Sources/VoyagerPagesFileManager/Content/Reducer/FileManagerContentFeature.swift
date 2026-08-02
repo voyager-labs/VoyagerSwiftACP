@@ -250,6 +250,7 @@ public struct FileManagerContentFeature {
             rootReloadEffect = .send(.entryViewLayout(.internal(.applyCollectionSearchPaths(
                 paths: sourcePaths,
                 showHidden: state.entryViewLayout.showHiddenFiles,
+                priority: priority,
             ))))
         } else {
             rootReloadEffect = FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(

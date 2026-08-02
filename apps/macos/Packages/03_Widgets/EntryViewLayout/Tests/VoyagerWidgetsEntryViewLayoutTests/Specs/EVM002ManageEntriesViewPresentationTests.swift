@@ -1123,6 +1123,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         _ = EntryViewLayoutFeature().reduce(into: &state, action: .internal(.applyCollectionSearchPaths(
             paths: ["/tmp/collection-entry.txt"],
             showHidden: false,
+            priority: .none,
         )))
 
         XCTAssertTrue(state.isCollectionContentLoading)

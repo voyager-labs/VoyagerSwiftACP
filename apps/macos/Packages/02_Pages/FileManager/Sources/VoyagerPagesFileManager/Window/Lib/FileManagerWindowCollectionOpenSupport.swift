@@ -48,6 +48,7 @@ func hydrateOpenedCollectionSnapshot(
     )
 
     let showHidden = state.content.entryViewLayout.showHiddenFiles
+    let priority = FileManagerContentEntryOpsCoordinator.rootMetadataPriority(for: state.content.entryArrangements)
     let collectionURL: URL? = if case let .file(url, _) = navigation.kind { url } else { nil }
 
     return [
@@ -64,6 +65,7 @@ func hydrateOpenedCollectionSnapshot(
             await send(.content(.entryViewLayout(.internal(.applyCollectionSearchPaths(
                 paths: payload.snapshotPaths,
                 showHidden: showHidden,
+                priority: priority,
             )))))
             await send(.content(.composer(.searchListApplied)))
         },

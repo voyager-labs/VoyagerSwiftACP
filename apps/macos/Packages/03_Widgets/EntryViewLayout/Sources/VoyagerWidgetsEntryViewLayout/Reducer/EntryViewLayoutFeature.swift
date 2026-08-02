@@ -336,7 +336,7 @@ public struct EntryViewLayoutFeature {
                 state.isCollectionContentLoading = false
                 return Self.updateEntriesAndReapply(&state)
 
-            case let .internal(.applyCollectionSearchPaths(paths, showHidden)):
+            case let .internal(.applyCollectionSearchPaths(paths, showHidden, priority)):
                 let cancellationEffects = state.activeCollectionAppendExpectedBatchIndices.keys.map {
                     Effect<Action>.cancel(id: Self.collectionCancelID(for: .append($0), state: state))
                 }
@@ -354,8 +354,6 @@ public struct EntryViewLayoutFeature {
                 state.collectionIncompleteFailure = nil
                 state.removedCollectionPaths = []
                 state.isCollectionContentLoading = true
-                let priority = Self.collectionMetadataPriority(for: state)
-
                 return .merge(
                     cancellationEffects + [
                         .cancel(id: replaceCancelID),

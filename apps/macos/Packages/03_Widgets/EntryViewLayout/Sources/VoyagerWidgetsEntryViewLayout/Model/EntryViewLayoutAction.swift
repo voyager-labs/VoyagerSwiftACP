@@ -123,7 +123,11 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case setCollectionMode(Bool)
         case setCollectionContentLoading(Bool)
         case setCollectionItems([EntryModel])
-        case applyCollectionSearchPaths(paths: [String], showHidden: Bool)
+        case applyCollectionSearchPaths(
+            paths: [String],
+            showHidden: Bool,
+            priority: EntryMetadataPriority,
+        )
         case addCollectionPaths([String])
         case collectionReplaceEvent(epoch: Int, event: EntryLoadEvent)
         case collectionReplaceStreamCompleted(epoch: Int)
