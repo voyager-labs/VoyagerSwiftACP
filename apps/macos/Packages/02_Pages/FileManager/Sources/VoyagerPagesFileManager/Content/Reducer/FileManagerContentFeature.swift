@@ -328,6 +328,7 @@ public struct FileManagerContentFeature {
              .entryOperations(.edit(.commitRename)),
              .entryOperations(.edit(.startRename)),
              .entryOperations(.edit(.cancelRename)),
+             .entryOperations(.openWith(.loadCommonApplicationsForFiles)),
              .entryOperations(.openWith(.commonApplicationsLoaded)),
              .entryOperations(.lifecycle(.syncClipboardState)),
              .entryOperations(.lifecycle(.restorableTrashPathsLoaded)),

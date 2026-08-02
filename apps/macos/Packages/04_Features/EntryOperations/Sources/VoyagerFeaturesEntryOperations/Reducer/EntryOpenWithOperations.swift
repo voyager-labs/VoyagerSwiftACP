@@ -141,6 +141,7 @@ struct EntryOpenWithOperationsReducer {
                 return .none
 
             case let .openWith(.loadCommonApplicationsForFiles(files)):
+                state.commonApplicationsForSelectedFiles = []
                 return EntryOpenWithOperationsSupport.loadCommonApplications(
                     for: files,
                     entryOpenClient: entryOpenClient,

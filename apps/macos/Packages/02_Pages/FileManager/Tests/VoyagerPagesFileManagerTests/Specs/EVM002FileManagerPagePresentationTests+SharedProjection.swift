@@ -80,9 +80,24 @@ extension EVM002FileManagerPagePresentationTests {
     /// - 기대 결과: 같은 파일을 가진 loadCommonApplicationsForFiles action이 발행된다.
     func testOpenWithPreloadRoutesToEntryOperations() async {
         let file = makeSharedProjectionFile()
-        let store = TestStore(initialState: FileManagerContentState()) {
-            FileManagerContentEntryOperationsBridgeReducer()
+        let staleApplication = ApplicationInfo(
+            id: "com.example.stale",
+            name: "Stale",
+            bundleID: "com.example.stale",
+            isDefault: false,
+        )
+        var state = FileManagerContentState()
+        state.entryOperations.commonApplicationsForSelectedFiles = [staleApplication]
+        state.entryViewLayout.openWithApplications = [staleApplication]
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.entryOpenClient.applicationsForFile = { _ in [] }
+            $0.entryOpenClient.defaultApplication = { _ in nil }
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
+        store.exhaustivity = .off
 
         await store.send(.entryViewLayout(.delegate(.preloadOpenWithApplications([file]))))
         await store.receive {
@@ -90,6 +105,14 @@ extension EVM002FileManagerPagePresentationTests {
                 return false
             }
             return files == [file]
+        } assert: {
+            $0.entryOperations.commonApplicationsForSelectedFiles = []
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.openWithApplications.isEmpty
         }
     }
 
