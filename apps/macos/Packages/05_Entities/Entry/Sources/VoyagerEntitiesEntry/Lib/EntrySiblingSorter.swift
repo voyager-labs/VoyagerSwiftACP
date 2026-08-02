@@ -1,5 +1,4 @@
 import Foundation
-import VoyagerEntitiesEntry
 import VoyagerShared
 
 public struct EntrySiblingSorter: Sendable {
