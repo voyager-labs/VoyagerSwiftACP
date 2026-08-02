@@ -1,7 +1,19 @@
 import ComposableArchitecture
 @testable import VoyagerPagesFileManager
+import XCTest
 
 extension EVM002FileManagerPagePresentationTests {
+    /// EVM-002-set_entries_view_as_list_table: 기본 arrangement는 metadata probe를 요청하지 않는다.
+    /// - 검증 내용: Name 정렬과 No Group의 root metadata priority를 확인한다.
+    /// - 사전 조건: metadata 기반 sort/group이 선택되지 않았다.
+    /// - 기대 결과: priority가 `.none`이다.
+    func testDefaultArrangementUsesNoMetadataPriority() {
+        XCTAssertEqual(
+            FileManagerContentEntryOpsCoordinator.rootMetadataPriority(sortKey: .name, groupKey: .none),
+            .none,
+        )
+    }
+
     /// EVM-002-set_entries_view_as_list_table: hierarchy expand가 metadata 정렬 priority를 보존한다.
     /// - 검증 내용: expandRequested가 active Spotlight priority의 folder load를 발행한다.
     /// - 사전 조건: Kind 정렬과 generation이 있는 folder row가 준비돼 있다.
