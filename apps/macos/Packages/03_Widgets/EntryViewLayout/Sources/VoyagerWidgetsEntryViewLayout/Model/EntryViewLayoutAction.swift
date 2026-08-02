@@ -2,9 +2,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
-import VoyagerFeaturesEntryArrangements
-import VoyagerFeaturesEntryOperations
-import VoyagerFeaturesEntryThumbnail
+import VoyagerShared
 
 @CasePathable
 public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
@@ -12,10 +10,6 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
     case delegate(Delegate)
     case `internal`(Internal)
     case hierarchy(EntryListHierarchyAction)
-
-    case entryOperations(EntryOperationsFeature.Action)
-    case entryThumbnail(EntryThumbnailFeature.Action)
-    case entryArrangements(EntryArrangementsFeature.Action)
 
     public struct EntryViewLayoutPreferences: Sendable {
         public let listIconSize: CGFloat
@@ -41,24 +35,69 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
 
     @CasePathable
     public enum View: @unchecked Sendable {
+        case updateSelection(
+            ids: Set<EntryModel.ID>,
+            lastSelectedId: EntryModel.ID?,
+            rangeAnchorId: EntryModel.ID?,
+            shouldScrollToSelection: Bool,
+        )
+        case selectAll(orderedItemIds: [EntryModel.ID])
         case selectNextItem(isShiftPressed: Bool)
         case selectPreviousItem(isShiftPressed: Bool)
         case selectByOffset(offset: Int, isShiftPressed: Bool)
+        case updateGridColumnCount(Int)
+        case updateListVisibleColumns([EntryListColumn])
+        case updateListColumnVisibility(column: EntryListColumn, isVisible: Bool)
+        case moveListColumn(from: Int, to: Int)
+        case resetListVisibleColumns
+        case resetScrollFlag
         case setDropTargeted(Bool)
         case startDrag(paths: [String])
         case handleDrop(providers: [NSItemProvider], destinationPath: String)
         case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
         case openSelectedItem
+        case executeCommand(String)
+        case openPathInNewWindow(String)
+        case startRename(item: EntryModel, text: String)
+        case commitRename(itemID: EntryModel.ID, newName: String)
+        case openEntry(EntryModel)
+        case saveScrollOffset(CGPoint, forPath: String)
+        case changeSort(EntryViewLayoutSortKey, VoyagerShared.SortOrder)
+        case toggleGroup(String)
+        case preloadOpenWithApplications([EntryModel])
+        case openWithApp(bundleID: String?)
+        case toggleTag(String)
+        case mutateTag(name: String, mode: TagMutationMode)
+        case expandFolder(EntryModel.ID)
+        case collapseFolder(EntryModel.ID)
+        case retryFolder(EntryModel.ID)
         case toggleShowHiddenFiles
+        case applyContentProjection(ContentProjection)
     }
 
     @CasePathable
     public enum Delegate: Sendable {
-        case executeCommand(EntryOperationsCommand)
+        case executeCommand(String)
         case openPathInNewWindow(String)
         case startRename(item: EntryModel, text: String)
         case saveScrollOffset(CGPoint, forPath: String)
         case selectionChanged
+        // Feature로 라우팅할 intent
+        case expandRequested(EntryModel.ID)
+        case collapseRequested(EntryModel.ID)
+        case rootContextChanged(String)
+        case retryRequested(EntryModel.ID)
+        case openEntry(EntryModel)
+        case renameCommitted(itemID: EntryModel.ID, newName: String)
+        case renameCanceled
+        case sortChanged(EntryViewLayoutSortKey, VoyagerShared.SortOrder)
+        case groupChanged(EntryViewLayoutGroupKey)
+        case toggleGroup(String)
+        case preloadOpenWithApplications([EntryModel])
+        case tagMutation(tagName: String, mode: TagMutationMode)
+        case toggleTag(tagName: String)
+        case openWithApp(bundleID: String?)
+        case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
     }
 
     @CasePathable
@@ -84,7 +123,11 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case setCollectionMode(Bool)
         case setCollectionContentLoading(Bool)
         case setCollectionItems([EntryModel])
-        case applyCollectionSearchPaths(paths: [String], showHidden: Bool)
+        case applyCollectionSearchPaths(
+            paths: [String],
+            showHidden: Bool,
+            priority: EntryMetadataPriority,
+        )
         case addCollectionPaths([String])
         case collectionReplaceEvent(epoch: Int, event: EntryLoadEvent)
         case collectionReplaceStreamCompleted(epoch: Int)

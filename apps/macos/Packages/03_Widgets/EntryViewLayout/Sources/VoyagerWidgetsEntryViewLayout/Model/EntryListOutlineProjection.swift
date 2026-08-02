@@ -1,6 +1,5 @@
 import Foundation
 import VoyagerEntitiesEntry
-import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 
 public struct EntryListOutlineProjection: Equatable, Sendable {
@@ -71,6 +70,26 @@ public struct EntryListOutlineProjection: Equatable, Sendable {
         }
     }
 
+    /// Compares two projections ignoring the `revision` field.
+    /// This is used to detect structural changes without treating a revision bump
+    /// (e.g., from selection-only reconciliation) as a structural change.
+    func hasSameStructure(as other: EntryListOutlineProjection) -> Bool {
+        rootItemIDs == other.rootItemIDs
+            && childrenByParent == other.childrenByParent
+            && itemPayloads == other.itemPayloads
+            && visibleRows == other.visibleRows
+            && visibleSelectableEntryIDs == other.visibleSelectableEntryIDs
+    }
+
+    /// Compares outline topology only (rows, hierarchy, expand/collapse shape).
+    /// Excludes `itemPayloads` so spinner/metadata changes don't trigger full reload.
+    func hasSameOutlineShape(as other: EntryListOutlineProjection) -> Bool {
+        rootItemIDs == other.rootItemIDs
+            && childrenByParent == other.childrenByParent
+            && visibleRows == other.visibleRows
+            && visibleSelectableEntryIDs == other.visibleSelectableEntryIDs
+    }
+
     public init(
         revision: Int,
         rootEntries: [EntryModel],
@@ -98,11 +117,10 @@ public struct EntryListOutlineProjection: Equatable, Sendable {
 
         var builder = Builder(
             hierarchyState: hierarchyState,
-            siblingSorter: .init(),
             sortKey: sortKey,
             sortOrder: sortOrder,
         )
-        let sortedRoots = builder.siblingSorter.sort(rootEntries, by: sortKey, order: sortOrder)
+        let sortedRoots = EntrySiblingSorter().sort(rootEntries, by: sortKey, order: sortOrder)
         let rootItemIDs = builder.append(entries: sortedRoots)
 
         self.rootItemIDs = rootItemIDs
@@ -116,13 +134,13 @@ public struct EntryListOutlineProjection: Equatable, Sendable {
 private extension EntryListOutlineProjection {
     struct Builder {
         let hierarchyState: EntryListHierarchyState
-        let siblingSorter: EntrySiblingSorter
         let sortKey: SortKey
         let sortOrder: VoyagerShared.SortOrder
         var childrenByParent: [ItemID: [ItemID]] = [:]
         var itemPayloads: [ItemID: ItemPayload] = [:]
         var visibleRows: [ItemID] = []
         var visibleSelectableEntryIDs: [EntryModel.ID] = []
+        var visitedFolders: Set<EntryModel.ID> = []
 
         mutating func append(entries: [EntryModel]) -> [ItemID] {
             entries.map { entry in
@@ -141,10 +159,14 @@ private extension EntryListOutlineProjection {
             visibleRows.append(entryID)
             visibleSelectableEntryIDs.append(entry.id)
 
-            guard entry.supportsListHierarchyExpansion, hierarchyState.expandedFolderIDs.contains(entry.id) else {
+            guard entry.supportsListHierarchyExpansion,
+                  hierarchyState.expandedFolderIDs.contains(entry.id),
+                  !visitedFolders.contains(entry.id)
+            else {
                 return entryID
             }
 
+            visitedFolders.insert(entry.id)
             let childItemIDs = childItems(for: entry.id)
             childrenByParent[entryID] = childItemIDs
             return entryID
@@ -163,7 +185,7 @@ private extension EntryListOutlineProjection {
                     visibleRows.append(itemID)
                     return [itemID]
                 }
-                let sortedChildren = siblingSorter.sort(folderState.children, by: sortKey, order: sortOrder)
+                let sortedChildren = EntrySiblingSorter().sort(folderState.children, by: sortKey, order: sortOrder)
                 return append(entries: sortedChildren)
 
             case .loaded:
@@ -173,11 +195,15 @@ private extension EntryListOutlineProjection {
                     visibleRows.append(itemID)
                     return [itemID]
                 }
-                let sortedChildren = siblingSorter.sort(folderState.children, by: sortKey, order: sortOrder)
+                let sortedChildren = EntrySiblingSorter().sort(folderState.children, by: sortKey, order: sortOrder)
                 return append(entries: sortedChildren)
 
             case let .failed(failure):
-                var itemIDs = append(entries: siblingSorter.sort(folderState.children, by: sortKey, order: sortOrder))
+                var itemIDs = append(entries: EntrySiblingSorter().sort(
+                    folderState.children,
+                    by: sortKey,
+                    order: sortOrder,
+                ))
                 let itemID = ItemID.error(parent: folderID)
                 itemPayloads[itemID] = .error(parent: folderID, failure: failure)
                 visibleRows.append(itemID)

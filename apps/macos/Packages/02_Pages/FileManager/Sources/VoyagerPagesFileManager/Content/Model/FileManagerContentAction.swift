@@ -7,6 +7,9 @@ import VoyagerEntitiesCollection
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesEntryOperations
+import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
@@ -17,6 +20,9 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
     case delegate(Delegate)
 
     case entryViewLayout(EntryViewLayoutFeature.Action)
+    case entryOperations(EntryOperationsFeature.Action)
+    case entryArrangements(EntryArrangementsFeature.Action)
+    case entryThumbnail(EntryThumbnailFeature.Action)
     case composer(ComposerFeature.Action)
     case collection(CollectionFeature.Action)
     case aiChat(AiChatFeature.Action)

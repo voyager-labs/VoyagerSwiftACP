@@ -20,12 +20,12 @@ final class ContentPaneContextMenuCoordinator: NSObject {
         .init(
             isTrashFolder: isTrashFolder,
             viewLayout: store.state.entryViewLayout.mode,
-            sortKey: store.state.entryViewLayout.entryArrangements.sortKey,
-            sortOrder: store.state.entryViewLayout.entryArrangements.sortOrder,
-            groupKey: store.state.entryViewLayout.entryArrangements.groupKey,
-            canPaste: !store.state.entryViewLayout.entryOperations.clipboardItems.isEmpty,
+            sortKey: store.state.entryArrangements.sortKey,
+            sortOrder: store.state.entryArrangements.sortOrder,
+            groupKey: store.state.entryArrangements.groupKey,
+            canPaste: !store.state.entryOperations.clipboardItems.isEmpty,
             itemCount: store.state.entryViewLayout.entries.count,
-            canPerformEntryCommands: !store.state.entryViewLayout.entryOperations.isLoading
+            canPerformEntryCommands: !store.state.entryOperations.isLoading
                 || store.state.entryViewLayout.isCollectionMode,
         )
     }
@@ -43,13 +43,11 @@ final class ContentPaneContextMenuCoordinator: NSObject {
     func contextMenuCreateNewFolder() {
         guard configuration.canPerformEntryCommands else { return }
         store.send(
-            .entryViewLayout(
-                .entryOperations(
-                    .edit(.createNewFolder(
-                        parentPath: store.state.navigation.currentPath,
-                        siblingNames: store.state.entryViewLayout.entries.map(\.name),
-                    )),
-                ),
+            .entryOperations(
+                .edit(.createNewFolder(
+                    parentPath: store.state.navigation.currentPath,
+                    siblingNames: store.state.entryViewLayout.entries.map(\.name),
+                )),
             ),
         )
     }
@@ -68,7 +66,7 @@ final class ContentPaneContextMenuCoordinator: NSObject {
               let rawValue = sender.representedObject as? String,
               let key = SortKey(rawValue: rawValue)
         else { return }
-        store.send(.entryViewLayout(.entryArrangements(.setSortKey(key))))
+        store.send(.entryArrangements(.setSortKey(key)))
     }
 
     @objc
@@ -77,7 +75,7 @@ final class ContentPaneContextMenuCoordinator: NSObject {
               let rawValue = sender.representedObject as? String,
               let order = VoyagerShared.SortOrder(rawValue: rawValue)
         else { return }
-        store.send(.entryViewLayout(.entryArrangements(.setSortOrder(order))))
+        store.send(.entryArrangements(.setSortOrder(order)))
     }
 
     @objc
@@ -86,17 +84,15 @@ final class ContentPaneContextMenuCoordinator: NSObject {
               let rawValue = sender.representedObject as? String,
               let key = GroupKey(rawValue: rawValue)
         else { return }
-        store.send(.entryViewLayout(.entryArrangements(.setGroupKey(key))))
+        store.send(.entryArrangements(.setGroupKey(key)))
     }
 
     @objc
     func contextMenuEmptyTrash() {
         guard configuration.canPerformEntryCommands else { return }
         store.send(
-            .entryViewLayout(
-                .entryOperations(
-                    .trash(.emptyTrash(paths: store.state.entryViewLayout.entries.map(\.fullPath))),
-                ),
+            .entryOperations(
+                .trash(.emptyTrash(paths: store.state.entryViewLayout.entries.map(\.fullPath))),
             ),
         )
     }
@@ -104,9 +100,7 @@ final class ContentPaneContextMenuCoordinator: NSObject {
     @objc
     func contextMenuPaste() {
         guard configuration.canPasteItems else { return }
-        store.send(.entryViewLayout(.delegate(.executeCommand(.clipboard(
-            .pasteItems(destinationPath: store.state.navigation.currentPath),
-        )))))
+        store.send(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems"))))
     }
 
     @objc

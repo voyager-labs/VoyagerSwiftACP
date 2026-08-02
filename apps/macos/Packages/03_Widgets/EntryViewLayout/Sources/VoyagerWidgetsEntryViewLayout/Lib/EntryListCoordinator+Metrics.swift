@@ -15,7 +15,7 @@ extension EntryListCoordinator {
     }
 
     func syncThumbnailProjectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        guard previous.thumbnailRenderVersion != snapshot.thumbnailRenderVersion else { return }
+        guard previous.outlineProjectionRevision != snapshot.outlineProjectionRevision else { return }
         refreshThumbnailProjectionForVisibleRows()
     }
 }

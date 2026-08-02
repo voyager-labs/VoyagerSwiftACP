@@ -25,7 +25,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     ) -> FileManagerWindowState {
         var state = FileManagerWindowState()
         state.content.entryViewLayout.selectedIds = ["selected-entry"]
-        state.content.entryViewLayout.entryOperations.isLoading = isLoading
+        state.content.entryOperations.isLoading = isLoading
         state.content.entryViewLayout.isCollectionMode = isCollectionMode
         state.content.navigation.navigationState = .folder("/tmp")
         return state
@@ -147,8 +147,8 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     /// - 기대 결과: 명령 범주별 기존 routing 유지
     func testOrdinaryDirectoryLoadingPreservesNonEntryCommands() async throws {
         var state = makeSelectedState(isLoading: true, isCollectionMode: false)
-        state.content.entryViewLayout.entryOperations.undoRecords = [makeUndoRedoRecord("loading-undo")]
-        state.content.entryViewLayout.entryOperations.redoRecords = [makeUndoRedoRecord("loading-redo")]
+        state.content.entryOperations.undoRecords = [makeUndoRedoRecord("loading-undo")]
+        state.content.entryOperations.redoRecords = [makeUndoRedoRecord("loading-redo")]
         let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
         let store = makeStore(initialState: state)
 
@@ -325,7 +325,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.openSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))) = $0
             else { return false }
             return true
         }
@@ -344,7 +344,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.openSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))) = $0
             else { return false }
             return true
         }
@@ -391,7 +391,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.quickLookSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))) = $0
             else { return false }
             return true
         }
@@ -410,7 +410,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.quickLookSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))) = $0
             else { return false }
             return true
         }
@@ -421,7 +421,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
     /// FMW-001-request_undo: undo 명령 라우팅
     /// requestUndo 요청이 entryOperations undoRedo 리듀서로 전달되는지 검증.
-    /// - 검증 내용: request(.requestUndo) 전송 시 content.entryViewLayout.entryOperations.undoRedo.requestUndo 수신
+    /// - 검증 내용: request(.requestUndo) 전송 시 content.entryOperations.undoRedo.requestUndo 수신
     /// - 사전 조건: 기본 상태의 FileManagerWindow
     /// - 기대 결과: undoRedo.requestUndo 액션 수신
     func test_undoRedoRequest_undo_forwardsToEntryOperations() async throws {
@@ -441,8 +441,8 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     /// - 기대 결과: isComposerPresented는 true이며 file Undo와 Redo menu capability는 모두 false다.
     func testComposerPresentedSuppressesFileUndoRedoMenuProjection() {
         var state = FileManagerWindowState()
-        state.content.entryViewLayout.entryOperations.undoRecords = [makeUndoRedoRecord("composer-undo")]
-        state.content.entryViewLayout.entryOperations.redoRecords = [makeUndoRedoRecord("composer-redo")]
+        state.content.entryOperations.undoRecords = [makeUndoRedoRecord("composer-undo")]
+        state.content.entryOperations.redoRecords = [makeUndoRedoRecord("composer-redo")]
         state.content.composer.isPresented = true
 
         let projection = state.menuCommandProjection
@@ -522,7 +522,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
     /// FMW-001-request_redo: redo 명령 라우팅
     /// requestRedo 요청이 entryOperations undoRedo 리듀서로 전달되는지 검증.
-    /// - 검증 내용: request(.requestRedo) 전송 시 content.entryViewLayout.entryOperations.undoRedo.requestRedo 수신
+    /// - 검증 내용: request(.requestRedo) 전송 시 content.entryOperations.undoRedo.requestRedo 수신
     /// - 사전 조건: 기본 상태의 FileManagerWindow
     /// - 기대 결과: undoRedo.requestRedo 액션 수신
     func test_undoRedoRequest_redo_forwardsToEntryOperations() async throws {
@@ -560,7 +560,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     func testMakeInitialCreatesStateWithoutWindowID() {
         let state = FileManagerWindowState.makeInitial(path: nil)
 
-        XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
+        XCTAssertNil(state.content.entryOperations.windowID)
     }
 
     /// FMW-001-open_new_file_manager_window: makeInitial path seed와 entry operation state 분리
@@ -572,7 +572,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         let path = "/Users/test/Documents"
         let state = FileManagerWindowState.makeInitial(path: path)
 
-        XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
+        XCTAssertNil(state.content.entryOperations.windowID)
     }
 
     /// FMW-001-open_new_file_manager_window: FileManagerWindowState 기본 collection mode 비활성
@@ -584,7 +584,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         let state = FileManagerWindowState()
 
         XCTAssertFalse(state.content.entryViewLayout.isCollectionMode)
-        XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
+        XCTAssertNil(state.content.entryOperations.windowID)
     }
 
     /// FMW-001-open_new_file_manager_window: entry operations reset 시 windowID 제거
@@ -595,14 +595,14 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     func testContentEntryOperationsResetClearsWindowID() {
         let windowID = UUID()
         var state = FileManagerWindowState.makeInitial(path: nil)
-        state.content.entryViewLayout.entryOperations.windowID = windowID
-        XCTAssertEqual(state.content.entryViewLayout.entryOperations.windowID, windowID)
+        state.content.entryOperations.windowID = windowID
+        XCTAssertEqual(state.content.entryOperations.windowID, windowID)
 
-        state.content.entryViewLayout.entryOperations = EntryOperationsState()
-        XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
+        state.content.entryOperations = EntryOperationsState()
+        XCTAssertNil(state.content.entryOperations.windowID)
 
-        state.content.entryViewLayout.entryOperations.windowID = windowID
-        XCTAssertEqual(state.content.entryViewLayout.entryOperations.windowID, windowID)
+        state.content.entryOperations.windowID = windowID
+        XCTAssertEqual(state.content.entryOperations.windowID, windowID)
     }
 
     /// FMW-001-open_new_file_manager_window: FileManager feature 기본 navigation slice 구성
@@ -706,18 +706,18 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         _ action: FileManagerWindowAction,
     ) -> Bool {
         switch (command, action) {
-        case (.newFolder, .content(.entryViewLayout(.entryOperations(.edit(.createNewFolder))))),
+        case (.newFolder, .content(.entryOperations(.edit(.createNewFolder)))),
              (
                  .openSelectedItem,
-                 .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))),
+                 .content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))),
              ),
              (
                  .quickLookSelectedItem,
-                 .content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))),
+                 .content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))),
              ),
-             (.cut, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.cutSelectedItems)))))),
-             (.copy, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedItems)))))),
-             (.paste, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.pasteItems)))))):
+             (.cut, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.cutSelectedItems"))))),
+             (.copy, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedItems"))))),
+             (.paste, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems"))))):
             true
 
         default:
@@ -730,17 +730,17 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         _ action: FileManagerWindowAction,
     ) -> Bool {
         switch (command, action) {
-        case (.duplicate, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.duplicateSelectedItems)))))),
+        case (.duplicate, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.duplicateSelectedItems"))))),
              (
                  .makeAlias,
-                 .content(.entryViewLayout(.delegate(.executeCommand(.mutation(.createAliasForSelectedItems))))),
+                 .content(.entryViewLayout(.delegate(.executeCommand("mutation.createAliasForSelectedItems")))),
              ),
              (.selectAll, .content(.view(.selectAllEntries))),
              (
                  .copyAbsolutePaths,
-                 .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedAbsolutePaths))))),
+                 .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedAbsolutePaths")))),
              ),
-             (.copyURLs, .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedURLs)))))):
+             (.copyURLs, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedURLs"))))):
             true
 
         default:
@@ -878,8 +878,8 @@ private func matchesTargetedUndoRedoRequest(
     request: UndoRedoRequestKind,
 ) -> Bool {
     switch (request, action) {
-    case let (.undo, .tabContent(tabID: targetID, action: .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))))),
-         let (.redo, .tabContent(tabID: targetID, action: .entryViewLayout(.entryOperations(.undoRedo(.requestRedo))))):
+    case let (.undo, .tabContent(tabID: targetID, action: .entryOperations(.undoRedo(.requestUndo)))),
+         let (.redo, .tabContent(tabID: targetID, action: .entryOperations(.undoRedo(.requestRedo)))):
         targetID == tabID
     default:
         false
@@ -906,9 +906,9 @@ private func makeWindowCommandStore(
     let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
     let record = makeUndoRedoRecord(request == .undo ? "undo" : "redo")
     if request == .undo {
-        state.content.entryViewLayout.entryOperations.undoRecords = [record]
+        state.content.entryOperations.undoRecords = [record]
     } else {
-        state.content.entryViewLayout.entryOperations.redoRecords = [record]
+        state.content.entryOperations.redoRecords = [record]
     }
     let store = TestStore(initialState: state) {
         FileManagerWindowCommandRoutingReducer()

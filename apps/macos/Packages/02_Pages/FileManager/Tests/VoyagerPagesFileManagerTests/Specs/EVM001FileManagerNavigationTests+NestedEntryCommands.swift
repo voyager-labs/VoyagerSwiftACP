@@ -7,6 +7,39 @@ import XCTest
 
 @MainActor
 extension EVM001FileManagerNavigationTests {
+    /// EVM-001-route_entry_selection_commands: 중첩 child 선택은 AI Chat current context에 포함된다.
+    /// - 검증 내용: selectionChanged bridge가 visible hierarchy child를 context item으로 전달한다.
+    /// - 사전 조건: root folder가 펼쳐져 있고 root snapshot에 없는 child가 선택돼 있다.
+    /// - 기대 결과: currentContextChanged의 item identifier가 선택한 child 경로다.
+    func testNestedSelectionUpdatesAiChatCurrentContext() async {
+        let root = EntryModel.temporaryFolder(id: "/root/folder", name: "folder")
+        let child = EntryModel.temporaryFolder(id: "/root/folder/child", name: "child")
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/root")
+        state.entryViewLayout.entries = [root]
+        state.entryViewLayout.hierarchy = .init(
+            rootPath: "/root",
+            expandedFolderIDs: [root.id],
+            foldersByID: [root.id: .init(children: [child], phase: .loaded)],
+        )
+        state.entryViewLayout.selectedIds = [child.id]
+        let store = TestStore(initialState: state) {
+            FileManagerContentEntryOperationsBridgeReducer()
+        }
+
+        await store.send(.entryViewLayout(.delegate(.selectionChanged)))
+        await store.receive { action in
+            guard case let .entryOperations(.lifecycle(.syncSelectedEntryIDs(selectedIDs))) = action else {
+                return false
+            }
+            return selectedIDs == [child.id]
+        }
+        await store.receive { action in
+            guard case let .delegate(.currentContextChanged(context)) = action else { return false }
+            return context.items.map(\.identifier) == [child.id]
+        }
+    }
+
     /// 중첩 행의 command context가 root snapshot 대신 가시 projection payload를 사용하는지 검증한다.
     func testNestedSelectionCommandUsesVisibleProjectionEntries() async {
         let root = EntryModel.temporaryFolder(id: "/root/folder", name: "folder")
@@ -25,9 +58,9 @@ extension EVM001FileManagerNavigationTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem)))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem"))))
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(_, context)))) = action
+            guard case let .entryOperations(.routing(.executeCommand(_, context))) = action
             else { return false }
             XCTAssertEqual(context.selectedIds, [child.id])
             XCTAssertEqual(context.displayItems.map(\.id), [root.id, child.id])
@@ -85,9 +118,9 @@ extension EVM001FileManagerNavigationTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand(.mutation(.emptyTrash)))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand("mutation.emptyTrash"))))
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(_, context)))) = action
+            guard case let .entryOperations(.routing(.executeCommand(_, context))) = action
             else { return false }
             XCTAssertEqual(context.displayItems.map(\.id), [root.id])
             return true

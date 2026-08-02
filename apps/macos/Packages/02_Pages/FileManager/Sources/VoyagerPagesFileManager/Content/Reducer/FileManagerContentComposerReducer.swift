@@ -100,14 +100,14 @@ struct FileManagerContentComposerReducer {
     private func handleChangeLayout(layout: EntryViewLayoutState.Mode, state: inout State) -> Effect<Action> {
         let currentMode = state.entryViewLayout.mode
         let isModeChanging = currentMode != layout
-        let hasActiveRename = state.entryViewLayout.entryOperations.renamingItemId != nil
+        let hasActiveRename = state.entryOperations.renamingItemId != nil
 
         userDefaultsClient.setString(layout.rawValue, SettingsKeys.viewLayout)
         return .concatenate(
             .send(.entryViewLayout(.internal(.setMode(layout)))),
             syncComposerCollectionStateEffect(state),
             isModeChanging && hasActiveRename
-                ? .send(.entryViewLayout(.entryOperations(.edit(.cancelRename))))
+                ? .send(.entryOperations(.edit(.cancelRename)))
                 : .none,
         )
     }

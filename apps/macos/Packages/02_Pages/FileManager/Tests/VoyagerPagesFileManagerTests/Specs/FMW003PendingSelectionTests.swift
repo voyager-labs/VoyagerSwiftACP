@@ -174,12 +174,12 @@ final class FMW003PendingSelectionTests: XCTestCase {
 
     // MARK: - FMW-003-handle_external_file_open_requests
 
-    /// FMW-003-handle_external_file_open_requests: itemsLoaded가 대상 엔트리를 전달하면 pending selection을 적용한다.
-    /// itemsLoaded action에 첫 번째(비매칭) 배치를 보내고 pending 유지, 두 번째(매칭) 배치에서 선택 복원을 검증한다.
-    /// - 검증 내용: 첫 itemsLoaded는 pendingSelectEntryID를 유지하고, 후속 매칭 itemsLoaded는 선택 state를 반영한 뒤 selectionChanged를 발행한다.
+    /// FMW-003-handle_external_file_open_requests: progressive coreBatch가 대상 엔트리를 전달하면 pending selection을 적용한다.
+    /// 외부 파일 열기 요청 뒤 대상이 없는 첫 배치를 받은 다음, 대상이 포함된 후속 배치에서 선택을 복원하는 경로를 검증한다.
+    /// - 검증 내용: 첫 coreBatch는 pendingSelectEntryID를 유지하고, 후속 매칭 coreBatch는 선택 state를 반영한 뒤 selectionChanged를 발행한다.
     /// - 사전 조건: pendingSelectEntryID는 "/test/other.txt"이며 첫 배치는 "/test/doc.txt", 두 번째 배치는 대상 엔트리를 포함한다.
     /// - 기대 결과: 첫 배치 뒤 pending이 유지되고, 두 번째 배치 뒤 pending이 nil이며 대상 ID가 선택되고 selectionChanged가 발행된다.
-    func test_contentFeature_itemsLoaded_nonMatchingThenMatchingEntry_selectsOnLaterBatch() async {
+    func test_contentFeature_coreBatch_nonMatchingThenMatchingEntry_selectsOnLaterBatch() async {
         let targetID = "/test/other.txt"
         let firstEntries = [Self.makeEntry(fullPath: "/test/doc.txt")]
         let secondEntries = [Self.makeEntry(fullPath: targetID)]
@@ -191,10 +191,13 @@ final class FMW003PendingSelectionTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(
-            .entryViewLayout(
-                .entryOperations(
-                    .loading(
-                        .itemsLoaded(firstEntries),
+            .entryOperations(
+                .loading(
+                    .streamEvent(
+                        .init(
+                            generation: 0,
+                            event: .coreBatch(items: firstEntries, batchIndex: 0),
+                        ),
                     ),
                 ),
             ),
@@ -202,10 +205,13 @@ final class FMW003PendingSelectionTests: XCTestCase {
         XCTAssertEqual(store.state.pendingSelectEntryID, targetID)
 
         await store.send(
-            .entryViewLayout(
-                .entryOperations(
-                    .loading(
-                        .itemsLoaded(secondEntries),
+            .entryOperations(
+                .loading(
+                    .streamEvent(
+                        .init(
+                            generation: 0,
+                            event: .coreBatch(items: secondEntries, batchIndex: 1),
+                        ),
                     ),
                 ),
             ),
@@ -234,7 +240,7 @@ final class FMW003PendingSelectionTests: XCTestCase {
         let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(entries))))) {
+        await store.send(.entryOperations(.loading(.itemsLoaded(entries)))) {
             $0.pendingSelectEntryID = nil
             $0.entryViewLayout.selectedIds = Set([targetID])
             $0.entryViewLayout.lastSelectedId = targetID
@@ -251,16 +257,16 @@ final class FMW003PendingSelectionTests: XCTestCase {
         let entry = Self.makeEntry(fullPath: targetID)
         var state = FileManagerContentState()
         state.pendingSelectEntryID = targetID
-        state.entryViewLayout.entryOperations.loadingContext.generation = 1
-        state.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
+        state.entryOperations.loadingContext.generation = 1
+        state.entryOperations.loadingContext.sourceKind = .directory
 
         let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+        await store.send(.entryOperations(.loading(.streamEvent(.init(
             generation: 1,
             event: .coreBatch(items: [entry], batchIndex: 0),
-        )))))) {
+        ))))) {
             $0.pendingSelectEntryID = nil
             $0.entryViewLayout.selectedIds = Set([targetID])
             $0.entryViewLayout.lastSelectedId = targetID
@@ -335,16 +341,8 @@ final class FMW003PendingSelectionTests: XCTestCase {
         await store.receive(\.contentTabs.setCurrent, tabID)
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(directoryPath))
         await store.receiveTabContent(\.entryViewLayout.internal.clearCollectionPresentation)
-        await store.receive { action in
-            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.loadItems)))) = action
-            else { return false }
-            return true
-        }
-        await store.receive { action in
-            guard case .tabContent(_, .entryViewLayout(.entryOperations(.loading(.itemsLoaded)))) = action
-            else { return false }
-            return true
-        }
+        await store.receiveTabContent(\.entryOperations.loading.loadItems)
+        await store.receiveTabContent(\.entryOperations.loading.itemsLoaded)
         await store.finish()
 
         XCTAssertEqual(loadPaths.value, [directoryPath])

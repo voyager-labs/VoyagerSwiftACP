@@ -7,7 +7,9 @@ import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
@@ -18,32 +20,34 @@ public struct FileManagerContentFeature {
 
     @Dependency(\.fileManagerClient)
     private var fileManagerClient
+    @Dependency(\.entryOpenClient)
+    private var entryOpenClient
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
             case let .collection(.saveCompleted(result)):
                 return handleCollectionSaveCompleted(result: result, state: &state)
-            case let .entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID)))):
+            case let .entryOperations(.lifecycle(.windowIDChanged(windowID))):
                 state.composer.cancellationOwnerID = windowID
                 return .none
-            case let .entryViewLayout(.entryOperations(.lifecycle(.resetForDuplicate(windowID)))):
+            case let .entryOperations(.lifecycle(.resetForDuplicate(windowID))):
                 state.composer.cancellationOwnerID = windowID
                 return .none
-            case let .entryViewLayout(.entryArrangements(.setSortKey(key))):
-                guard state.entryViewLayout.entryArrangements.sortKey != key else { return .none }
+            case let .entryArrangements(.setSortKey(key)):
+                guard state.entryArrangements.sortKey != key else { return .none }
                 return arrangementMetadataReloadEffect(
                     priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
                         sortKey: key,
-                        groupKey: state.entryViewLayout.entryArrangements.groupKey,
+                        groupKey: state.entryArrangements.groupKey,
                     ),
                     state: state,
                 )
-            case let .entryViewLayout(.entryArrangements(.setGroupKey(key))):
-                guard state.entryViewLayout.entryArrangements.groupKey != key else { return .none }
+            case let .entryArrangements(.setGroupKey(key)):
+                guard state.entryArrangements.groupKey != key else { return .none }
                 return arrangementMetadataReloadEffect(
                     priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
-                        sortKey: state.entryViewLayout.entryArrangements.sortKey,
+                        sortKey: state.entryArrangements.sortKey,
                         groupKey: key,
                     ),
                     state: state,
@@ -61,8 +65,24 @@ public struct FileManagerContentFeature {
             CollectionFeature()
         }
 
+        Reduce { state, action in
+            handlePendingSelectionBeforeEntryLayoutLoaded(action, state: &state)
+        }
+
         Scope(state: \.entryViewLayout, action: \.entryViewLayout) {
             EntryViewLayoutFeature()
+        }
+
+        Scope(state: \.entryOperations, action: \.entryOperations) {
+            EntryOperationsFeature()
+        }
+
+        Scope(state: \.entryArrangements, action: \.entryArrangements) {
+            EntryArrangementsFeature()
+        }
+
+        Scope(state: \.entryThumbnail, action: \.entryThumbnail) {
+            EntryThumbnailFeature()
         }
 
         Scope(state: \.aiChat, action: \.aiChat) {
@@ -84,6 +104,52 @@ public struct FileManagerContentFeature {
         FileManagerContentSyncReducer()
 
         FileManagerHomeSelectionReducer()
+
+        // Feature → Widget projection (replaces catch-all sync)
+        Reduce { state, action in
+            let shouldProject = FileManagerContentFeature.shouldProjectContent(action)
+            guard shouldProject else { return .none }
+
+            let isClearingCollection = FileManagerContentFeature.isClearingCollectionMode(action)
+            let useCollectionItems = state.isCollectionMode && !isClearingCollection
+            let projectionEntries = useCollectionItems
+                ? Array(state.entryViewLayout.collectionItems)
+                : Array(state.entryOperations.items)
+            _ = EntryArrangementsFeature().reduce(
+                into: &state.entryArrangements,
+                action: .apply(items: projectionEntries, isCollectionMode: useCollectionItems),
+            )
+            var seenEntryIDs = Set<EntryModel.ID>()
+            let arrangedEntries = state.entryArrangements.groupedItems
+                .flatMap(\.items)
+                .filter { seenEntryIDs.insert($0.id).inserted }
+            let projectionSections = FileManagerContentFeature.makeSections(
+                groupedItems: state.entryArrangements.groupedItems,
+                collapsedGroups: state.entryArrangements.collapsedGroups,
+            )
+            let projection = ContentProjection(
+                entries: arrangedEntries,
+                isLoading: state.entryOperations.isLoading,
+                sortKey: .fromShared(state.entryArrangements.sortKey),
+                sortOrder: state.entryArrangements.sortOrder,
+                groupKey: .fromShared(state.entryArrangements.groupKey.rawValue),
+                collapsedGroups: state.entryArrangements.collapsedGroups,
+                sections: projectionSections,
+                renamingItemId: state.entryOperations.renamingItemId,
+                renamingText: state.entryOperations.renamingText,
+                clipboardCutPaths: state.entryOperations.clipboardOperation == .cut
+                    ? Set(state.entryOperations.clipboardItems)
+                    : [],
+                hasClipboardItems: !state.entryOperations.clipboardItems.isEmpty,
+                busyEntryPaths: Set(state.entryOperations.itemStates.filter(\.value.isBusy).map(\.key)),
+                openWithApplications: state.entryOperations.commonApplicationsForSelectedFiles,
+                restorableTrashPaths: state.entryOperations.restorableTrashPaths,
+                trashDirectoryPath: entryOpenClient.trashDirectoryPath(),
+                collectionWindowID: state.entryOperations.windowID,
+                collectionLoadingCancellationOwnerID: state.entryOperations.loadingCancellationOwnerID,
+            )
+            return .send(.entryViewLayout(.view(.applyContentProjection(projection))))
+        }
 
         Reduce { state, action in
             if let effect = handleCollectionOwnerAction(action, state: &state) {
@@ -158,6 +224,11 @@ public struct FileManagerContentFeature {
                     computerName: fileManagerClient.displayName("/"),
                 )
 
+            case .entryArrangements(.delegate(.requestApply)):
+                let items = Array(state.entryOperations.items)
+                let isCollectionMode = state.entryViewLayout.isCollectionMode
+                return .send(.entryArrangements(.apply(items: items, isCollectionMode: isCollectionMode)))
+
             default:
                 return .none
             }
@@ -182,6 +253,7 @@ public struct FileManagerContentFeature {
             rootReloadEffect = .send(.entryViewLayout(.internal(.applyCollectionSearchPaths(
                 paths: sourcePaths,
                 showHidden: state.entryViewLayout.showHiddenFiles,
+                priority: priority,
             ))))
         } else {
             rootReloadEffect = FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(
@@ -196,17 +268,37 @@ public struct FileManagerContentFeature {
         )
     }
 
+    private func handlePendingSelectionBeforeEntryLayoutLoaded(
+        _ action: Action,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard case let .entryOperations(.loading(.streamEvent(streamEvent))) = action,
+              case let .coreBatch(items: entries, batchIndex: batchIndex) = streamEvent.event,
+              streamEvent.generation == state.entryOperations.loadingContext.generation,
+              batchIndex == state.entryOperations.loadingContext.expectedCoreBatchIndex
+        else {
+            return .none
+        }
+        guard FileManagerContentEntryOpsCoordinator.applyPendingSelectionForLoadedEntries(
+            entries: entries,
+            state: &state,
+        ) else {
+            return .none
+        }
+        return .send(.entryViewLayout(.delegate(.selectionChanged)))
+    }
+
     private func handlePendingSelectionAfterEntryLayoutLoaded(
         _ action: Action,
         state: inout State,
     ) -> Effect<Action> {
         let entries: [EntryModel]
         switch action {
-        case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(loadedEntries)))):
+        case let .entryOperations(.loading(.itemsLoaded(loadedEntries))):
             entries = loadedEntries
-        case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
+        case let .entryOperations(.loading(.streamEvent(streamEvent))):
             guard case .coreBatch = streamEvent.event else { return .none }
-            entries = Array(state.entryViewLayout.entryOperations.loadingContext.items)
+            entries = Array(state.entryOperations.loadingContext.items)
         default:
             return .none
         }
@@ -217,6 +309,76 @@ public struct FileManagerContentFeature {
             return .none
         }
         return .send(.entryViewLayout(.delegate(.selectionChanged)))
+    }
+
+    // MARK: - Projection Bridge
+
+    static func shouldProjectContent(_ action: Action) -> Bool {
+        switch action {
+        case .entryOperations(.loading(.loadItems)),
+             .entryOperations(.loading(.loadRecentItems)),
+             .entryOperations(.loading(.loadTagItems)),
+             .entryOperations(.loading(.loadComputerItems)),
+             .entryOperations(.loading(.cancelAndClearItems)),
+             .entryOperations(.loading(.itemsLoaded)),
+             .entryOperations(.loading(.streamEvent)),
+             .entryOperations(.loading(.streamFinished)),
+             .entryOperations(.loading(.streamFailed)),
+             .entryOperations(.loading(.itemsLoadFailed)),
+             .entryOperations(.lifecycle(.operationStarted)),
+             .entryOperations(.lifecycle(.operationFinished)),
+             .entryOperations(.lifecycle(.entryActionCompleted)),
+             .entryOperations(.lifecycle(.emptyTrashCompleted)),
+             .entryOperations(.edit(.commitRename)),
+             .entryOperations(.edit(.startRename)),
+             .entryOperations(.edit(.cancelRename)),
+             .entryOperations(.openWith(.loadCommonApplicationsForFiles)),
+             .entryOperations(.openWith(.commonApplicationsLoaded)),
+             .entryOperations(.lifecycle(.syncClipboardState)),
+             .entryOperations(.lifecycle(.restorableTrashPathsLoaded)),
+             .entryOperations(.lifecycle(.pathsMutated)),
+             .entryOperations(.clipboard(.copySelectedItems)),
+             .entryOperations(.clipboard(.setClipboardOperation)),
+             .entryArrangements(.delegate(.applied)),
+             .entryArrangements(.toggleCollapsedGroup),
+             .entryViewLayout(.internal(.setCollectionMode)),
+             .entryViewLayout(.internal(.setCollectionItems)),
+             .entryViewLayout(.internal(.applyCollectionSearchPaths)),
+             .entryViewLayout(.internal(.collectionReplaceEvent)),
+             .entryViewLayout(.internal(.collectionAppendEvent)),
+             .entryViewLayout(.internal(.removeCollectionPaths)),
+             .externalFileSystemChanged,
+             .internal(.clearCollectionMode),
+             .internal(.exitCollectionMode):
+            true
+        default:
+            false
+        }
+    }
+
+    static func isClearingCollectionMode(_ action: Action) -> Bool {
+        switch action {
+        case .internal(.clearCollectionMode),
+             .internal(.exitCollectionMode):
+            true
+        default:
+            false
+        }
+    }
+
+    static func makeSections(
+        groupedItems: [GroupedItems],
+        collapsedGroups: Set<String>,
+    ) -> [EntryViewLayoutSection] {
+        groupedItems.map { group in
+            EntryViewLayoutSection(
+                id: group.groupName,
+                title: group.groupName.isEmpty ? nil : group.groupName,
+                colorCode: group.colorCode,
+                items: group.items,
+                isCollapsed: collapsedGroups.contains(group.groupName),
+            )
+        }
     }
 }
 

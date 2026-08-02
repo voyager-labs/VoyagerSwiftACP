@@ -83,8 +83,8 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 
         let newTabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
         XCTAssertNotEqual(newTabID, tabA)
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.redoRecords.isEmpty)
+        XCTAssertTrue(store.state.content.entryOperations.undoRecords.isEmpty)
+        XCTAssertTrue(store.state.content.entryOperations.redoRecords.isEmpty)
         XCTAssertNotNil(registry.undoManager(for: UndoManagerScope(
             windowID: windowID,
             contentTabID: newTabID.rawValue,
@@ -156,11 +156,11 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         )))
         await store.send(.tabContent(
             tabID: tabA,
-            action: .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))),
+            action: .entryOperations(.undoRedo(.requestUndo)),
         ))
         await store.skipReceivedActions()
 
-        let operations = store.state.content.entryViewLayout.entryOperations
+        let operations = store.state.content.entryOperations
         XCTAssertEqual(operations.undoRecords, [recordA])
         XCTAssertEqual(operations.redoRecords, [recordB])
         let manager = try XCTUnwrap(registry.undoManager(for: scope))
@@ -197,14 +197,14 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         )))
         await store.send(.tabContent(
             tabID: tabA,
-            action: .entryViewLayout(.entryOperations(.lifecycle(.operationStarted(busyPath, .rename)))),
+            action: .entryOperations(.lifecycle(.operationStarted(busyPath, .rename))),
         ))
         await store.send(.tabContent(
             tabID: tabA,
-            action: .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))),
+            action: .entryOperations(.undoRedo(.requestUndo)),
         ))
 
-        let operations = store.state.content.entryViewLayout.entryOperations
+        let operations = store.state.content.entryOperations
         XCTAssertEqual(operations.undoRecords, [record])
         XCTAssertTrue(operations.redoRecords.isEmpty)
         let manager = try XCTUnwrap(registry.undoManager(for: scope))
@@ -244,10 +244,10 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 
         await store.send(.tabContent(
             tabID: tabA,
-            action: .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))),
+            action: .entryOperations(.undoRedo(.requestUndo)),
         ))
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.redoRecords.isEmpty)
+        XCTAssertTrue(store.state.content.entryOperations.undoRecords.isEmpty)
+        XCTAssertTrue(store.state.content.entryOperations.redoRecords.isEmpty)
 
         let freshGeneration = try XCTUnwrap(client.generation(scope))
         XCTAssertNotEqual(freshGeneration, initialGeneration)
@@ -256,17 +256,17 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
             record: recordB,
             undoManagerGeneration: freshGeneration,
         )))
-        XCTAssertEqual(store.state.content.entryViewLayout.entryOperations.undoRecords, [recordB])
+        XCTAssertEqual(store.state.content.entryOperations.undoRecords, [recordB])
         XCTAssertTrue(manager.canUndo)
 
         await store.send(.tabContent(
             tabID: tabA,
-            action: .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))),
+            action: .entryOperations(.undoRedo(.requestUndo)),
         ))
         await store.skipReceivedActions()
 
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
-        XCTAssertEqual(store.state.content.entryViewLayout.entryOperations.redoRecords, [recordB])
+        XCTAssertTrue(store.state.content.entryOperations.undoRecords.isEmpty)
+        XCTAssertEqual(store.state.content.entryOperations.redoRecords, [recordB])
         XCTAssertTrue(manager.canRedo)
     }
 
@@ -287,13 +287,13 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await store.send(.contentTabs(.setCurrent(tabB)))
         await store.send(.tabContent(
             tabID: tabA,
-            action: .entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(record)))),
+            action: .entryOperations(.lifecycle(.entryActionCompleted(record))),
         ))
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, tabB)
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
-        XCTAssertEqual(store.state.tabContentStates[tabA]?.entryViewLayout.entryOperations.undoRecords, [record])
-        XCTAssertEqual(store.state.tabContentStates[tabB]?.entryViewLayout.entryOperations.undoRecords.isEmpty, true)
+        XCTAssertTrue(store.state.content.entryOperations.undoRecords.isEmpty)
+        XCTAssertEqual(store.state.tabContentStates[tabA]?.entryOperations.undoRecords, [record])
+        XCTAssertEqual(store.state.tabContentStates[tabB]?.entryOperations.undoRecords.isEmpty, true)
     }
 
     /// EOP-003-undo_entry_action: A→B→A rapid switch 후 captured origin-A completion은 정확히 한 번 A에 반영된다.
@@ -314,13 +314,13 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await store.send(.contentTabs(.setCurrent(tabA)))
         await store.send(.tabContent(
             tabID: tabA,
-            action: .entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(record)))),
+            action: .entryOperations(.lifecycle(.entryActionCompleted(record))),
         ))
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, tabA)
-        XCTAssertEqual(store.state.content.entryViewLayout.entryOperations.undoRecords, [record])
-        XCTAssertEqual(store.state.tabContentStates[tabA]?.entryViewLayout.entryOperations.undoRecords, [record])
-        XCTAssertEqual(store.state.tabContentStates[tabB]?.entryViewLayout.entryOperations.undoRecords.isEmpty, true)
+        XCTAssertEqual(store.state.content.entryOperations.undoRecords, [record])
+        XCTAssertEqual(store.state.tabContentStates[tabA]?.entryOperations.undoRecords, [record])
+        XCTAssertEqual(store.state.tabContentStates[tabB]?.entryOperations.undoRecords.isEmpty, true)
     }
 
     /// EOP-003-undo_entry_action: 존재하지 않는 targeted tab action은 active tab으로 fallback하지 않는다.
@@ -337,7 +337,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 
         await store.send(.tabContent(
             tabID: missing,
-            action: .entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(makeRecord("missing"))))),
+            action: .entryOperations(.lifecycle(.entryActionCompleted(makeRecord("missing")))),
         ))
 
         XCTAssertEqual(store.state, initialState)
@@ -360,13 +360,13 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await store.send(.contentTabs(.close(tabA)))
         await store.send(.tabContent(
             tabID: tabA,
-            action: .entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(makeRecord("late"))))),
+            action: .entryOperations(.lifecycle(.entryActionCompleted(makeRecord("late")))),
         ))
 
         XCTAssertNil(store.state.contentTabs.tabs[id: tabA])
         XCTAssertNil(store.state.tabContentStates[tabA])
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
-        XCTAssertEqual(store.state.tabContentStates[tabB]?.entryViewLayout.entryOperations.undoRecords.isEmpty, true)
+        XCTAssertTrue(store.state.content.entryOperations.undoRecords.isEmpty)
+        XCTAssertEqual(store.state.tabContentStates[tabB]?.entryOperations.undoRecords.isEmpty, true)
     }
 
     /// EOP-003-undo_entry_action: pinned tab close는 unpin으로 끝나며 같은 scope history를 유지한다.
@@ -379,7 +379,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let tabA = ContentTabID(rawValue: "A")
         let record = makeRecord("pinned")
         var state = makeSingleTabState(windowID: windowID, tabID: tabA, isPinned: true)
-        state.content.entryViewLayout.entryOperations.undoRecords = [record]
+        state.content.entryOperations.undoRecords = [record]
         state.tabContentStates[tabA] = state.content
         let client = makeClient()
         let scope = UndoManagerScope(windowID: windowID, contentTabID: tabA.rawValue)
@@ -396,7 +396,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, tabA)
         XCTAssertEqual(store.state.contentTabs.tabs[id: tabA]?.isPinned, false)
-        XCTAssertEqual(store.state.content.entryViewLayout.entryOperations.undoRecords, [record])
+        XCTAssertEqual(store.state.content.entryOperations.undoRecords, [record])
         XCTAssertIdentical(managerBefore, managerAfter)
     }
 
@@ -412,7 +412,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let tabA = ContentTabID(rawValue: "A")
         let oldScope = UndoManagerScope(windowID: windowID, contentTabID: tabA.rawValue)
         var state = makeSingleTabState(windowID: windowID, tabID: tabA)
-        state.content.entryViewLayout.entryOperations.undoRecords = [makeRecord("last")]
+        state.content.entryOperations.undoRecords = [makeRecord("last")]
         state.tabContentStates[tabA] = state.content
         _ = client.activate(oldScope)
         let closeWindowActionCount = LockIsolated(0)
@@ -431,8 +431,8 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let homeScope = UndoManagerScope(windowID: windowID, contentTabID: homeID.rawValue)
         XCTAssertNotEqual(homeID, tabA)
         XCTAssertEqual(store.state.contentTabs.tabs[id: homeID]?.anchor, .homeDefault)
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.redoRecords.isEmpty)
+        XCTAssertTrue(store.state.content.entryOperations.undoRecords.isEmpty)
+        XCTAssertTrue(store.state.content.entryOperations.redoRecords.isEmpty)
         let oldManager = await client.undoManager(oldScope)
         let homeManager = await client.undoManager(homeScope)
         XCTAssertNil(oldManager)
@@ -449,7 +449,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let windowID = UUID()
         let tabA = ContentTabID(rawValue: "A")
         var state = makeSingleTabState(windowID: windowID, tabID: tabA)
-        state.content.entryViewLayout.entryOperations.undoRecords = [makeRecord("existing")]
+        state.content.entryOperations.undoRecords = [makeRecord("existing")]
         state.tabContentStates[tabA] = state.content
         state.contentTabs.recentlyClosed = ClosedContentTabSnapshot(
             page: .directory,
@@ -467,8 +467,8 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 
         let restoredID = try XCTUnwrap(store.state.contentTabs.activeTabID)
         XCTAssertNotEqual(restoredID, tabA)
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.redoRecords.isEmpty)
+        XCTAssertTrue(store.state.content.entryOperations.undoRecords.isEmpty)
+        XCTAssertTrue(store.state.content.entryOperations.redoRecords.isEmpty)
         let restoredManager = await client.undoManager(UndoManagerScope(
             windowID: windowID,
             contentTabID: restoredID.rawValue,
@@ -488,18 +488,18 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         var source = makeTwoTabState(windowID: sourceWindowID, activeTabID: tabA)
         for tabID in source.contentTabs.tabs.ids {
             var content = source.tabContentStates[tabID] ?? source.content
-            content.entryViewLayout.entryOperations.undoRecords = [makeRecord("undo-\(tabID.rawValue)")]
-            content.entryViewLayout.entryOperations.redoRecords = [makeRecord("redo-\(tabID.rawValue)")]
-            content.entryViewLayout.entryOperations.itemStates["/busy"] = ItemOperationState(isBusy: true)
-            content.entryViewLayout.entryOperations.isLoading = true
-            content.entryViewLayout.entryOperations.pendingEmptyTrashItemCount = 2
+            content.entryOperations.undoRecords = [makeRecord("undo-\(tabID.rawValue)")]
+            content.entryOperations.redoRecords = [makeRecord("redo-\(tabID.rawValue)")]
+            content.entryOperations.itemStates["/busy"] = ItemOperationState(isBusy: true)
+            content.entryOperations.isLoading = true
+            content.entryOperations.pendingEmptyTrashItemCount = 2
             let selectedID = "/selected-\(tabID.rawValue)"
             content.entryViewLayout.selectedIds = [selectedID]
             content.entryViewLayout.lastSelectedId = selectedID
             content.entryViewLayout.rangeAnchorId = selectedID
             content.entryViewLayout.shouldScrollToSelection = true
-            content.entryViewLayout.entryOperations.selectedEntryIDs = [selectedID]
-            content.entryViewLayout.entryOperations.clipboardItems = ["/clipboard"]
+            content.entryOperations.selectedEntryIDs = [selectedID]
+            content.entryOperations.clipboardItems = ["/clipboard"]
             source.tabContentStates[tabID] = content
             if tabID == source.contentTabs.activeTabID { source.content = content }
         }
@@ -516,7 +516,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         for tabID in duplicate.contentTabs.tabs.ids {
             let content = duplicate.tabContentStates[tabID]
             assertDuplicateSelectionReset(content)
-            let operations = content?.entryViewLayout.entryOperations
+            let operations = content?.entryOperations
             XCTAssertEqual(operations?.undoRecords.isEmpty, true)
             XCTAssertEqual(operations?.redoRecords.isEmpty, true)
             XCTAssertEqual(operations?.itemStates.isEmpty, true)
@@ -525,6 +525,11 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
             XCTAssertEqual(operations?.selectedEntryIDs.isEmpty, true)
             XCTAssertEqual(operations?.clipboardItems.isEmpty, true)
             XCTAssertEqual(operations?.windowID, duplicateWindowID)
+            XCTAssertEqual(content?.entryViewLayout.collectionWindowID, duplicateWindowID)
+            XCTAssertEqual(
+                content?.entryViewLayout.collectionLoadingCancellationOwnerID,
+                operations?.loadingCancellationOwnerID,
+            )
         }
         let activeTabID = try XCTUnwrap(duplicate.contentTabs.activeTabID)
         XCTAssertEqual(duplicate.content, duplicate.tabContentStates[activeTabID])
@@ -621,15 +626,15 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await store.send(.contentTabs(.setCurrent(tabB)))
         await store.send(.tabContent(
             tabID: tabA,
-            action: .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))),
+            action: .entryOperations(.undoRedo(.requestUndo)),
         ))
         await fulfillment(of: [replayCompleted], timeout: 1)
         await store.skipReceivedActions()
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, tabB)
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
-        XCTAssertEqual(store.state.tabContentStates[tabA]?.entryViewLayout.entryOperations.redoRecords, [record])
-        XCTAssertEqual(store.state.tabContentStates[tabB]?.entryViewLayout.entryOperations.undoRecords.isEmpty, true)
+        XCTAssertTrue(store.state.content.entryOperations.undoRecords.isEmpty)
+        XCTAssertEqual(store.state.tabContentStates[tabA]?.entryOperations.redoRecords, [record])
+        XCTAssertEqual(store.state.tabContentStates[tabB]?.entryOperations.undoRecords.isEmpty, true)
         XCTAssertFalse(managerA.canUndo)
         XCTAssertTrue(managerA.canRedo)
         await store.skipInFlightEffects()
@@ -651,7 +656,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let windowID = UUID()
         let tabB = ContentTabID(rawValue: "B")
         var state = makeTwoTabState(windowID: windowID, activeTabID: tabB)
-        state.content.entryViewLayout.entryOperations.undoRecords = [makeRecord("B")]
+        state.content.entryOperations.undoRecords = [makeRecord("B")]
         state.tabContentStates[tabB] = state.content
         _ = client.activate(UndoManagerScope(windowID: windowID, contentTabID: tabB.rawValue))
         let store = makeStore(state: state, client: client)
@@ -887,10 +892,10 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let store = makeStore(state: state, client: client, entryFileOpsClient: fileOpsClient)
         // store.exhaustivity = .off: 실제 rename flow의 부수 lifecycle action보다 generation envelope와 history 격리를 검증한다.
         store.exhaustivity = .off
-        let renameAction: FileManagerContentAction = .entryViewLayout(.entryOperations(.edit(.renameItem(
+        let renameAction: FileManagerContentAction = .entryOperations(.edit(.renameItem(
             oldPath: oldPath,
             newPath: newPath,
-        ))))
+        )))
 
         await store.send(.content(renameAction))
         await store.receive { action in
@@ -904,7 +909,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await store.receive { action in
             guard case let .tabContent(
                 receivedTabID,
-                .entryViewLayout(.entryOperations(.lifecycle(.operationStarted(path, kind)))),
+                .entryOperations(.lifecycle(.operationStarted(path, kind))),
             ) = action else { return false }
             return receivedTabID == tabA && path == oldPath && kind == .rename
         }
@@ -939,8 +944,8 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 
         let newManagerValue = await client.undoManager(scope)
         let newManager = try XCTUnwrap(newManagerValue)
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
-        XCTAssertTrue(store.state.tabContentStates[tabA]?.entryViewLayout.entryOperations.undoRecords.isEmpty ?? true)
+        XCTAssertTrue(store.state.content.entryOperations.undoRecords.isEmpty)
+        XCTAssertTrue(store.state.tabContentStates[tabA]?.entryOperations.undoRecords.isEmpty ?? true)
         XCTAssertFalse(newManager.canUndo)
     }
 
@@ -996,22 +1001,22 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let tabB = ContentTabID(rawValue: "B")
         let record = makeRecord("redo-A")
         var state = makeTwoTabState(windowID: windowID, activeTabID: tabB)
-        state.tabContentStates[tabA]?.entryViewLayout.entryOperations.redoRecords = [record]
+        state.tabContentStates[tabA]?.entryOperations.redoRecords = [record]
         let store = makeStore(state: state)
         // store.exhaustivity = .off: replay filesystem effect보다 targeted stack transition을 검증한다.
         store.exhaustivity = .off
 
         await store.send(.tabContent(
             tabID: tabA,
-            action: .entryViewLayout(.entryOperations(.undoRedo(.redoEntryAction(record)))),
+            action: .entryOperations(.undoRedo(.redoEntryAction(record))),
         ))
         await store.skipReceivedActions()
 
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.redoRecords.isEmpty)
-        XCTAssertEqual(store.state.tabContentStates[tabA]?.entryViewLayout.entryOperations.undoRecords, [record])
-        XCTAssertEqual(store.state.tabContentStates[tabA]?.entryViewLayout.entryOperations.redoRecords.isEmpty, true)
-        XCTAssertEqual(store.state.tabContentStates[tabB]?.entryViewLayout.entryOperations.undoRecords.isEmpty, true)
+        XCTAssertTrue(store.state.content.entryOperations.undoRecords.isEmpty)
+        XCTAssertTrue(store.state.content.entryOperations.redoRecords.isEmpty)
+        XCTAssertEqual(store.state.tabContentStates[tabA]?.entryOperations.undoRecords, [record])
+        XCTAssertEqual(store.state.tabContentStates[tabA]?.entryOperations.redoRecords.isEmpty, true)
+        XCTAssertEqual(store.state.tabContentStates[tabB]?.entryOperations.undoRecords.isEmpty, true)
     }
 
     /// EOP-003-undo_entry_action: inactive A navigation apply는 active B가 아니라 origin A anchor만 대상으로 한다.
@@ -1138,7 +1143,7 @@ private extension EOP003ManageEntryLifecycleTests {
         oldPath: String,
         newPath: String,
     ) -> Bool {
-        guard case let .entryViewLayout(.entryOperations(.edit(.renameItem(receivedOldPath, receivedNewPath)))) = action
+        guard case let .entryOperations(.edit(.renameItem(receivedOldPath, receivedNewPath))) = action
         else { return false }
         return receivedOldPath == oldPath && receivedNewPath == newPath
     }
@@ -1236,7 +1241,7 @@ private extension EOP003ManageEntryLifecycleTests {
     func makeContent(windowID: UUID, path: String) -> FileManagerContentFeature.State {
         var content = FileManagerContentFeature.State()
         content.navigation.seedInitialFolderPath(path)
-        content.entryViewLayout.entryOperations.windowID = windowID
+        content.entryOperations.windowID = windowID
         return content
     }
 

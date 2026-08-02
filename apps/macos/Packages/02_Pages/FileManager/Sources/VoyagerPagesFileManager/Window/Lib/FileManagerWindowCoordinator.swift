@@ -23,6 +23,12 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         }
     }
 
+    private struct WindowConstructionContext {
+        let workspaceClient: WorkspaceClient
+        let sessionLapseGuard: SessionLapseGuardContext?
+        let materialOverride: FileManagerWindowMaterialOverride?
+    }
+
     public let windowID: UUID
     public let store: StoreOf<FileManagerFeature>
     private let fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry
@@ -63,13 +69,15 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         let window = Self.makeWindow(
             store: store,
             path: path,
-            workspaceClient: workspaceClient,
-            sessionLapseGuard: sessionLapseGuardStore.map {
-                SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
-            },
+            context: WindowConstructionContext(
+                workspaceClient: workspaceClient,
+                sessionLapseGuard: sessionLapseGuardStore.map {
+                    SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
+                },
+                materialOverride: nil,
+            ),
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
-            materialOverride: nil,
         )
 
         super.init(window: window)
@@ -90,7 +98,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         onResignedKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
         initialWindowSizeProvider: (() -> NSSize?)? = nil,
-        materialOverride: FileManagerWindowMaterialOverride?,
+        materialOverride: FileManagerWindowMaterialOverride? = nil,
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)? = nil,
     ) {
         self.windowID = windowID
@@ -109,13 +117,15 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         let window = Self.makeWindow(
             store: store,
             path: path,
-            workspaceClient: workspaceClient,
-            sessionLapseGuard: sessionLapseGuardStore.map {
-                SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
-            },
+            context: WindowConstructionContext(
+                workspaceClient: workspaceClient,
+                sessionLapseGuard: sessionLapseGuardStore.map {
+                    SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
+                },
+                materialOverride: materialOverride,
+            ),
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
-            materialOverride: materialOverride,
         )
 
         super.init(window: window)
@@ -151,7 +161,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         )
 
         if duplicateState == nil {
-            store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID))))))
+            store.send(.content(.entryOperations(.lifecycle(.windowIDChanged(windowID)))))
         }
 
         self.windowID = windowID
@@ -170,13 +180,15 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         let window = Self.makeWindow(
             store: store,
             path: path,
-            workspaceClient: workspaceClient,
-            sessionLapseGuard: sessionLapseGuardStore.map {
-                SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
-            },
+            context: WindowConstructionContext(
+                workspaceClient: workspaceClient,
+                sessionLapseGuard: sessionLapseGuardStore.map {
+                    SessionLapseGuardContext(store: $0, resolveState: sessionLapseGuardState)
+                },
+                materialOverride: nil,
+            ),
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
-            materialOverride: nil,
         )
 
         super.init(window: window)
@@ -206,7 +218,8 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
                 guard var tabContent = state.tabContentStates[tabID]
                     ?? (tabID == state.contentTabs.activeTabID ? state.content : nil)
                 else { continue }
-                tabContent.entryViewLayout.entryOperations.resetForDuplicate(windowID: windowID)
+                tabContent.entryOperations.resetForDuplicate(windowID: windowID)
+                tabContent.applyWindowContext(windowID: windowID)
                 tabContent.entryViewLayout.selectedIds = []
                 tabContent.entryViewLayout.lastSelectedId = nil
                 tabContent.entryViewLayout.rangeAnchorId = nil
@@ -255,11 +268,9 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
     private static func makeWindow(
         store: StoreOf<FileManagerFeature>,
         path: String?,
-        workspaceClient: WorkspaceClient,
-        sessionLapseGuard: SessionLapseGuardContext?,
+        context: WindowConstructionContext,
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)?,
         initialWindowSizeProvider: (() -> NSSize?)?,
-        materialOverride: FileManagerWindowMaterialOverride?,
     ) -> NSWindow {
         let contentViewController: NSViewController = if let makeContentViewController {
             makeContentViewController(store, path)
@@ -267,10 +278,10 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
             FileManagerWindowSplitCoordinator(
                 store: store,
                 isDark: FileManagerWindowChrome.currentIsDark,
-                workspaceClient: workspaceClient,
-                sessionLapseGuardStore: sessionLapseGuard?.store,
-                sessionLapseGuardState: sessionLapseGuard?.resolveState,
-                materialOverride: materialOverride,
+                workspaceClient: context.workspaceClient,
+                sessionLapseGuardStore: context.sessionLapseGuard?.store,
+                sessionLapseGuardState: context.sessionLapseGuard?.resolveState,
+                materialOverride: context.materialOverride,
             )
         }
 

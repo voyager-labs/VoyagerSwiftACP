@@ -13,6 +13,163 @@ import XCTest
 
 @MainActor
 final class EVM001FileManagerNavigationTests: XCTestCase {
+    // MARK: - EVM-001-route_entry_selection_commands
+
+    /// EVM-001-route_entry_selection_commands: Select All은 hierarchy visible preorder를 layout reducer로 전달한다.
+    /// normal directory list에서 collapsed descendant와 synthetic row를 제외한 visible entries만 선택 명령으로 전달되는지 검증한다.
+    /// - 검증 내용: selectAllEntries routing이 visible selectable ID 순서를 유지한다.
+    /// - 사전 조건: /root/a가 expanded이고 /root/a/child가 loaded이며 /root/b는 root sibling이다.
+    /// - 기대 결과: applySelectAll의 ordered IDs는 [/root/a, /root/a/child, /root/b]다.
+    func testSelectAllRoutesVisibleOutlineOrder() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let child = EntryModel.temporaryFolder(id: "/root/a/child", name: "child")
+        let sibling = EntryModel.temporaryFolder(id: "/root/b", name: "b")
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/root")
+        state.entryViewLayout.entries = [folder, sibling]
+        state.entryViewLayout.hierarchy = .init(
+            rootPath: "/root",
+            expandedFolderIDs: [folder.id],
+            foldersByID: [folder.id: .init(children: [child], phase: .loaded, generation: 0)],
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentNavigationBridgeReducer()
+        }
+
+        await store.send(.view(.selectAllEntries))
+        await store.receive { action in
+            guard case let .entryViewLayout(.internal(.applySelectAll(orderedItemIds))) = action else {
+                return false
+            }
+            return orderedItemIds == [folder.id, child.id, sibling.id]
+        }
+    }
+
+    /// EVM-001-route_entry_selection_commands: arrow navigation은 hierarchy visible preorder를 layout reducer로 전달한다.
+    /// normal directory list에서 현재 selection 다음 항목이 expanded child여야 하는지 검증한다.
+    /// - 검증 내용: down-arrow routing이 applySelectionOffset에 visible selectable IDs를 보낸다.
+    /// - 사전 조건: /root/a가 expanded이고 /root/a/child가 loaded이며 current focus는 /root/a다.
+    /// - 기대 결과: ordered IDs는 [/root/a, /root/a/child, /root/b]이고 offset은 1이다.
+    func testArrowNavigationRoutesVisibleOutlineOrder() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let child = EntryModel.temporaryFolder(id: "/root/a/child", name: "child")
+        let sibling = EntryModel.temporaryFolder(id: "/root/b", name: "b")
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/root")
+        state.entryViewLayout.entries = [folder, sibling]
+        state.entryViewLayout.hierarchy = .init(
+            rootPath: "/root",
+            expandedFolderIDs: [folder.id],
+            foldersByID: [folder.id: .init(children: [child], phase: .loaded, generation: 0)],
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentKeyCommandReducer()
+        }
+
+        await store.send(.view(.handleKeyCommand(.init(
+            keyCode: 125,
+            modifiers: [],
+            characters: nil,
+            charactersIgnoringModifiers: nil,
+        ))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.internal(.applySelectionOffset(offset, isShiftPressed, orderedItemIds))) =
+                action
+            else {
+                return false
+            }
+            return offset == 1
+                && !isShiftPressed
+                && orderedItemIds == [folder.id, child.id, sibling.id]
+        }
+    }
+
+    /// EVM-001-route_entry_selection_commands: nested selection의 Delete와 Return은 visible entry를 해석한다.
+    /// 키보드 이동으로 선택된 expanded child가 root entries에 없어도 mutation과 rename 명령이 동작하는지 검증한다.
+    /// - 검증 내용: Cmd+Delete의 child path와 Return의 child rename item routing
+    /// - 사전 조건: /root/a가 expanded이고 /root/a/child가 선택돼 있다.
+    /// - 기대 결과: child moveToTrash command와 startRename action이 각각 전달된다.
+    func testNestedSelectionDeleteAndRenameResolveVisibleEntry() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let child = EntryModel.temporaryFolder(id: "/root/a/child", name: "child")
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/root")
+        state.entryViewLayout.entries = [folder]
+        state.entryViewLayout.selectedIds = [child.id]
+        state.entryViewLayout.hierarchy = .init(
+            rootPath: "/root",
+            expandedFolderIDs: [folder.id],
+            foldersByID: [folder.id: .init(children: [child], phase: .loaded, generation: 0)],
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentKeyCommandReducer()
+        }
+
+        await store.send(.view(.handleKeyCommand(.init(
+            keyCode: 51,
+            modifiers: [.command],
+            characters: nil,
+            charactersIgnoringModifiers: nil,
+        ))))
+        await store.receive { action in
+            guard case .entryViewLayout(.delegate(.executeCommand("mutation.moveSelectedItemsToTrash"))) = action
+            else {
+                return false
+            }
+            return true
+        }
+
+        await store.send(.view(.handleKeyCommand(.init(
+            keyCode: 36,
+            modifiers: [],
+            characters: nil,
+            charactersIgnoringModifiers: nil,
+        ))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.delegate(.startRename(item, text))) = action else {
+                return false
+            }
+            return item == child && text == child.name
+        }
+    }
+
+    // MARK: - EVM-001-route_empty_trash_command
+
+    /// EVM-001-route_empty_trash_command: Empty Trash는 hierarchy descendant 없이 root entry만 command context로 전달한다.
+    /// expanded hierarchy의 child가 Trash root 항목처럼 처리되지 않도록 Empty Trash command context를 검증한다.
+    /// - 검증 내용: emptyTrash executeCommand의 displayItems가 root entries 순서만 유지한다.
+    /// - 사전 조건: /root/a가 expanded이고 /root/a/child가 loaded이며 /root/b는 root sibling이다.
+    /// - 기대 결과: command context displayItems는 [/root/a, /root/b]다.
+    func testEmptyTrashRoutesOnlyRootEntriesAsCommandContext() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let child = EntryModel.temporaryFolder(id: "/root/a/child", name: "child")
+        let sibling = EntryModel.temporaryFolder(id: "/root/b", name: "b")
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/root")
+        state.entryViewLayout.entries = [folder, sibling]
+        state.entryViewLayout.hierarchy = .init(
+            rootPath: "/root",
+            expandedFolderIDs: [folder.id],
+            foldersByID: [folder.id: .init(children: [child], phase: .loaded, generation: 0)],
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentEntryOperationsBridgeReducer()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.delegate(.executeCommand("mutation.emptyTrash"))))
+        await store.receive { action in
+            guard case let .entryOperations(.routing(.executeCommand(command, context))) = action
+            else {
+                return false
+            }
+            guard case .mutation(.emptyTrash) = command else {
+                return false
+            }
+            return context.displayItems == [folder, sibling]
+        }
+    }
+
     // MARK: - EVM-001-reload_directory_page_on_external_change
 
     /// EVM-001-reload_directory_page_on_external_change: folder 내부 child path 변경 시 reload
@@ -36,10 +193,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             else { return false }
             return affectedPaths == [canonicalChangedPath, canonicalFolderPath] && removedPrefixes.isEmpty
         }
-        await store.receive { action in
-            guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
-            return true
-        }
+        await store.receive(\.entryOperations.loading.loadItems)
     }
 
     /// EVM-001-reload_directory_page_on_external_change: expanded folder 자체 변경 시 child cache reload
@@ -64,7 +218,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             return affectedPaths == [canonicalChangedFolderPath, canonicalFolderPath] && removedPrefixes.isEmpty
         }
         await store.receive { action in
-            guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
+            guard case .entryOperations(.loading(.loadItems)) = action else { return false }
             return true
         }
     }
@@ -92,7 +246,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             return removedPrefixes.isEmpty
         }
         await store.receive { action in
-            guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
+            guard case .entryOperations(.loading(.loadItems)) = action else { return false }
             return true
         }
     }
@@ -127,7 +281,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
                     && removedPrefixes == [canonicalRemovedPath]
             }
             await store.receive { action in
-                guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
+                guard case .entryOperations(.loading(.loadItems)) = action else { return false }
                 return true
             }
         }
@@ -158,12 +312,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         var state = FileManagerContentState()
         state.navigation.navigationState = .recents
         state.entryViewLayout.showHiddenFiles = true
-        state.entryViewLayout.entryArrangements.sortKey = .kind
+        state.entryArrangements.sortKey = .kind
         let store = makeStore(initialState: state)
 
         await store.send(.externalFileSystemChanged(Self.externalChangeEvents([changedPath])))
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.loading(.loadRecentItems(showHidden, priority)))) =
+            guard case let .entryOperations(.loading(.loadRecentItems(showHidden, priority))) =
                 action else { return false }
             return showHidden && priority == .active([.spotlight])
         }
@@ -178,16 +332,16 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         let changedPath = Self.fixturePath("texts/plain/11.txt")
         var state = FileManagerContentState()
         state.navigation.navigationState = .tags("Work")
-        state.entryViewLayout.entryArrangements.groupKey = .tags
+        state.entryArrangements.groupKey = .tags
         let store = makeStore(initialState: state)
 
         await store.send(.externalFileSystemChanged(Self.externalChangeEvents([changedPath])))
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.loading(.loadTagItems(
+            guard case let .entryOperations(.loading(.loadTagItems(
                 tagName,
                 showHidden,
                 priority,
-            )))) = action else { return false }
+            ))) = action else { return false }
             return tagName == "Work" && !showHidden && priority == .active([.tags])
         }
     }
@@ -250,7 +404,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.send(.internal(.applyNavigationState(.folder(currentPath))))
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
         await store.receive { action in
-            guard case .entryViewLayout(.entryOperations(.loading(.loadItems))) = action else { return false }
+            guard case .entryOperations(.loading(.loadItems)) = action else { return false }
             return true
         }
         await store.receive(\.externalFileSystemChanged, changedEvents)
@@ -502,10 +656,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         state.entryViewLayout.selectedIds = [previousEntry.id]
         state.entryViewLayout.lastSelectedId = previousEntry.id
         state.entryViewLayout.rangeAnchorId = previousEntry.id
-        state.entryViewLayout.entryOperations.loadingContext.items = [previousEntry]
-        state.entryViewLayout.entryOperations.loadingContext.generation = 1
-        state.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
-        state.entryViewLayout.entryOperations.isLoading = true
+        state.entryOperations.loadingContext.items = [previousEntry]
+        state.entryOperations.loadingContext.generation = 1
+        state.entryOperations.loadingContext.sourceKind = .directory
+        state.entryOperations.isLoading = true
 
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
@@ -515,22 +669,26 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.internal(.applyNavigationState(.home)))
-        await store.receive(\.entryViewLayout.entryOperations.loading.cancelAndClearItems)
+        await store.receive(\.entryOperations.loading.cancelAndClearItems)
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
         await store.receive(\.entryViewLayout.internal.applyClearSelection)
+        await store.receive { action in
+            guard case .entryViewLayout(.view(.applyContentProjection)) = action else { return false }
+            return true
+        }
         await store.finish()
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+        await store.send(.entryOperations(.loading(.streamEvent(.init(
             generation: 1,
             event: .coreBatch(items: [staleEntry], batchIndex: 0),
-        ))))))
+        )))))
 
         XCTAssertEqual(store.state.entryViewLayout.currentPath, "Home")
         XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
         XCTAssertTrue(store.state.entryViewLayout.entries.isEmpty)
-        XCTAssertTrue(store.state.entryViewLayout.entryOperations.loadingContext.items.isEmpty)
-        XCTAssertEqual(store.state.entryViewLayout.entryOperations.loadingContext.generation, 2)
-        XCTAssertNil(store.state.entryViewLayout.entryOperations.loadingContext.sourceKind)
+        XCTAssertTrue(store.state.entryOperations.loadingContext.items.isEmpty)
+        XCTAssertEqual(store.state.entryOperations.loadingContext.generation, 2)
+        XCTAssertNil(store.state.entryOperations.loadingContext.sourceKind)
     }
 
     /// EVM-001-ai_chat_navigation_clears_hidden_entries: AI Chat route 적용 시 숨은 folder selection 정리
@@ -560,7 +718,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         state.entryViewLayout.selectedIds = [previousEntry.id]
         state.entryViewLayout.lastSelectedId = previousEntry.id
         state.entryViewLayout.rangeAnchorId = previousEntry.id
-        state.entryViewLayout.entryOperations.loadingContext.items = [previousEntry]
+        state.entryOperations.loadingContext.items = [previousEntry]
 
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
@@ -570,14 +728,18 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.internal(.applyNavigationState(navigationState)))
-        await store.receive(\.entryViewLayout.entryOperations.loading.cancelAndClearItems)
+        await store.receive(\.entryOperations.loading.cancelAndClearItems)
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
         await store.receive(\.entryViewLayout.internal.applyClearSelection)
+        await store.receive { action in
+            guard case .entryViewLayout(.view(.applyContentProjection)) = action else { return false }
+            return true
+        }
         await store.finish()
 
         XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
         XCTAssertTrue(store.state.entryViewLayout.entries.isEmpty)
-        XCTAssertTrue(store.state.entryViewLayout.entryOperations.loadingContext.items.isEmpty)
+        XCTAssertTrue(store.state.entryOperations.loadingContext.items.isEmpty)
     }
 
     private func makeStore(initialState: FileManagerContentState)
@@ -699,13 +861,13 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         ))))
 
         await store.receive { action in
-            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(
+            guard case let .forwarded(.entryOperations(.loading(.loadItems(
                 path,
                 showHidden,
-                priority: _,
-            ))))) =
+                priority,
+            )))) =
                 action else { return false }
-            return path == folderPath && showHidden == false
+            return path == folderPath && showHidden == false && priority == .active([])
         }
         await store.finish()
     }
@@ -758,10 +920,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         ))))
 
         await store.receive { action in
-            guard case .forwarded(.entryViewLayout(.entryOperations(.loading(.loadRecentItems(
+            guard case .forwarded(.entryOperations(.loading(.loadRecentItems(
                 showHidden: false,
-                priority: _,
-            ))))) =
+                priority: .active([]),
+            )))) =
                 action else { return false }
             return true
         }
@@ -801,13 +963,13 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
         await store.receive { action in
-            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(
+            guard case let .forwarded(.entryOperations(.loading(.loadItems(
                 path,
                 showHidden,
-                priority: _,
-            ))))) =
+                priority,
+            )))) =
                 action else { return false }
-            return path == folderPath && !showHidden
+            return path == folderPath && showHidden == false && priority == .active([])
         }
         await store.finish()
     }
@@ -950,6 +1112,109 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.finish()
     }
 
+    /// EVM-001-reload_directory_page_on_external_change: source-preserving 완료 레코드는 parent만 무효화한다.
+    /// 복사, 복제, 별칭, 태그, 생성은 원본을 현재 위치에서 제거하지 않으므로 expanded subtree를 제거하면 안 된다.
+    /// - 검증 내용: before/after parent가 affectedPaths에 포함되고 removedPrefixes는 비어 있다.
+    /// - 사전 조건: navigationState == .folder(/tmp/voyager), source-preserving EntryActionRecord 완료.
+    /// - 기대 결과: hierarchyInvalidated가 parent refresh만 요청한다.
+    func testSourcePreservingEntryActionCompletedInvalidatesParentsWithoutRemovedPrefixes() async {
+        let folderPath = "/tmp/voyager"
+        let records = [
+            EntryActionRecord(
+                operationKind: .createFolder,
+                targets: [.init(beforePath: nil, afterPath: "\(folderPath)/new-folder")],
+            ),
+            EntryActionRecord(
+                operationKind: .createAlias,
+                targets: [.init(beforePath: "\(folderPath)/source.txt", afterPath: "\(folderPath)/source alias")],
+            ),
+            EntryActionRecord(
+                operationKind: .pasteFileCopy,
+                targets: [.init(beforePath: "\(folderPath)/source.txt", afterPath: "\(folderPath)/copy.txt")],
+            ),
+            EntryActionRecord(
+                operationKind: .pasteFileDuplicate,
+                targets: [.init(beforePath: "\(folderPath)/source.txt", afterPath: "\(folderPath)/duplicate.txt")],
+            ),
+            EntryActionRecord(
+                operationKind: .setTags,
+                targets: [.init(beforePath: "\(folderPath)/source.txt", afterPath: "\(folderPath)/source.txt")],
+            ),
+        ]
+
+        for record in records {
+            let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
+                LifecycleBridgeHarness()
+            }
+
+            await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+            await store.receive { action in
+                guard case let .forwarded(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                    affectedPaths,
+                    removedPrefixes,
+                )))) = action else { return false }
+                return affectedPaths.allSatisfy { $0 == folderPath } && removedPrefixes.isEmpty
+            }
+            if record.operationKind == .setTags {
+                await store.receive { action in
+                    guard case let .forwarded(.entryOperations(.loading(.loadItems(
+                        path,
+                        showHidden,
+                        priority,
+                    )))) = action else { return false }
+                    return path == folderPath && showHidden == false && priority == .active([])
+                }
+            }
+            await store.finish()
+        }
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: source-relocating 완료 레코드는 원래 subtree를 제거한다.
+    /// 이동, 이름변경, 휴지통 이동, 복원은 원본 경로를 더 이상 유지하지 않으므로 stale expanded subtree를 제거해야 한다.
+    /// - 검증 내용: before/after parent가 affectedPaths에 포함되고 beforePath가 removedPrefixes에 포함된다.
+    /// - 사전 조건: navigationState == .folder(/tmp/voyager), source-relocating EntryActionRecord 완료.
+    /// - 기대 결과: hierarchyInvalidated가 parent refresh와 원본 subtree 제거를 함께 요청한다.
+    func testSourceRelocatingEntryActionCompletedInvalidatesParentsAndRemovedPrefixes() async {
+        let folderPath = "/tmp/voyager"
+        let sourcePath = "\(folderPath)/source.txt"
+        let destinationPath = "/tmp/destination/source.txt"
+        let records = [
+            EntryActionRecord(
+                operationKind: .pasteFileMove,
+                targets: [.init(beforePath: sourcePath, afterPath: destinationPath)],
+            ),
+            EntryActionRecord(
+                operationKind: .rename,
+                targets: [.init(beforePath: sourcePath, afterPath: destinationPath)],
+            ),
+            EntryActionRecord(
+                operationKind: .moveToTrash,
+                targets: [.init(beforePath: sourcePath, afterPath: destinationPath)],
+            ),
+            EntryActionRecord(
+                operationKind: .putBack,
+                targets: [.init(beforePath: sourcePath, afterPath: destinationPath)],
+            ),
+        ]
+
+        for record in records {
+            let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
+                LifecycleBridgeHarness()
+            }
+
+            await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+            await store.receive { action in
+                guard case let .forwarded(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                    affectedPaths,
+                    removedPrefixes,
+                )))) = action else { return false }
+                return affectedPaths == [folderPath, "/tmp/destination"]
+                    && removedPrefixes == [sourcePath]
+            }
+            await store.finish()
+        }
+    }
+
     /// EVM-001-reload_directory_page_on_external_change: collection route put back 완료 시 collection presentation restore
     /// FileManager content entry operation lifecycle bridge가 navigation route별 reload/restore boundary를 지키는지 검증.
     /// - 검증 내용: collection route에서 putBack 완료 후 collection presentation 복구 액션이 생성되는지 검증
@@ -1053,19 +1318,34 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.finish()
     }
 
-    /// EVM-001-reload_directory_page_on_external_change: folder route pathsMutated lifecycle bridge no-op
-    /// FileManager content entry operation lifecycle bridge가 navigation route별 reload/restore boundary를 지키는지 검증.
-    /// - 검증 내용: folder route pathsMutated lifecycle이 reload나 closeWindow side effect를 만들지 않는지 검증
-    /// - 사전 조건: FileManagerContentState와 EntryOperations lifecycle bridge harness 구성
-    /// - 기대 결과: route에 맞는 forwarding 또는 no-op/restore 동작 발생
-    func testPathsMutatedDoesNotTriggerReloadOrCloseWindow() async {
+    /// EVM-001-reload_directory_page_on_external_change: raw pathsMutated는 원본과 대상 부모를 refresh하고 hierarchy를 제거하지 않는다.
+    /// Copy, duplicate, drop-copy가 typed completion 전에 내보내는 원시 경로도 폴더 트리의 확장 상태를 유지하는지 검증한다.
+    /// - 검증 내용: source와 destination의 parent가 affectedPaths에 순서대로 포함되고 removedPrefixes가 비어 있다.
+    /// - 사전 조건: folder route와 source/destination raw mutation path를 가진 lifecycle bridge harness 구성.
+    /// - 기대 결과: hierarchyInvalidated가 두 parent refresh만 요청하며 subtree prune을 요청하지 않는다.
+    func testPathsMutatedInvalidatesParentsWithoutRemovedPrefixes() async {
+        await assertPathsMutatedInvalidatesParentsWithoutRemovedPrefixes()
+    }
+}
+
+private extension EVM001FileManagerNavigationTests {
+    func assertPathsMutatedInvalidatesParentsWithoutRemovedPrefixes() async {
         let folderPath = "/tmp/voyager"
+        let sourcePath = "\(folderPath)/source-folder/child.txt"
+        let destinationPath = "/tmp/voyager-destination/copied-folder/child.txt"
         let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
             LifecycleBridgeHarness()
         }
-        store.exhaustivity = .off
 
-        await store.send(.bridge(.lifecycle(.pathsMutated(["/tmp/a.txt", "/tmp/b.txt"]))))
+        await store.send(.bridge(.lifecycle(.pathsMutated([sourcePath, destinationPath]))))
+        await store.receive { action in
+            guard case let .forwarded(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == ["\(folderPath)/source-folder", "/tmp/voyager-destination/copied-folder"]
+                && removedPrefixes.isEmpty
+        }
         await store.finish()
     }
 }

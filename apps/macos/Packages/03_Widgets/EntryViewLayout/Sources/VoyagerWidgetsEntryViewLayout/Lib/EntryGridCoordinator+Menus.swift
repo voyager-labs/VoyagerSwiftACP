@@ -1,6 +1,5 @@
 @preconcurrency import AppKit
 import VoyagerEntitiesTag
-import VoyagerFeaturesEntryOperations
 
 extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProviding {
     func contextMenu(for indexPath: IndexPath?, event: NSEvent) -> NSMenu {
@@ -18,8 +17,8 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             selectedEntries: target.entries,
             rowEntry: rowEntry,
             isTrashFolder: isTrashFolder,
-            restorableTrashPaths: state.entryOperations.restorableTrashPaths,
-            canPaste: !state.entryOperations.clipboardItems.isEmpty,
+            restorableTrashPaths: state.restorableTrashPaths,
+            canPaste: state.hasClipboardItems,
             favoriteTags: finderFavoritesTagClient.favoriteTags(),
             openWithApplications: openWithApplications(selectedEntries: target.entries),
         )
@@ -43,15 +42,15 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             showOpenWith: menuSpec.showOpenWith,
             paletteTags: menuSpec.paletteTags,
             knownTags: menuSpec.knownTags,
-            canPerformEntryCommands: (!state.entryOperations.isLoading || state.isCollectionMode)
-                && !target.containsBusyEntry(itemStates: state.entryOperations.itemStates),
+            canPerformEntryCommands: (!state.isLoading || state.isCollectionMode)
+                && !target.containsBusyEntry(busyEntryPaths: state.busyEntryPaths),
         ))
     }
 
     private func synchronizeContextMenuSelection(_ target: EntryContextMenuTarget) {
         guard state.selectedIds != target.selectedIds else { return }
         _ = MainActor.assumeIsolated {
-            store.send(.internal(.setSelectionState(
+            store.send(.view(.updateSelection(
                 ids: target.selectedIds,
                 lastSelectedId: target.entries.last?.id,
                 rangeAnchorId: target.entries.last?.id,

@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 @testable import VoyagerFeaturesEntryArrangements
 import XCTest

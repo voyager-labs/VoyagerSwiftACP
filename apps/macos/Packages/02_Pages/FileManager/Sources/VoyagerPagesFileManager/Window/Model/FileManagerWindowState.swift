@@ -253,7 +253,7 @@ public extension FileManagerWindowState {
 
 extension FileManagerWindowState {
     var windowID: UUID? {
-        content.entryViewLayout.entryOperations.windowID
+        content.entryOperations.windowID
     }
 
     var activeTabInspectorStateMissing: Bool {
@@ -675,7 +675,7 @@ private extension AiChatFeature.State {
     }
 }
 
-private extension AiChatExecutionPhase {
+extension AiChatExecutionPhase {
     var shouldPreserveLifecycleOwner: Bool {
         switch self {
         case let .completed(lock):
@@ -769,7 +769,9 @@ extension FileManagerContentFeature.State {
     }
 
     mutating func applyWindowContext(windowID: UUID) {
-        entryViewLayout.entryOperations.windowID = windowID
+        entryOperations.windowID = windowID
+        entryViewLayout.collectionWindowID = windowID
+        entryViewLayout.collectionLoadingCancellationOwnerID = entryOperations.loadingCancellationOwnerID
         composer.cancellationOwnerID = windowID
     }
 
@@ -780,12 +782,18 @@ extension FileManagerContentFeature.State {
         entryViewLayout.listTextSize = source.entryViewLayout.listTextSize
         entryViewLayout.gridTextSize = source.entryViewLayout.gridTextSize
         entryViewLayout.showHiddenFiles = source.entryViewLayout.showHiddenFiles
-        entryViewLayout.entryArrangements.sortKey = source.entryViewLayout.entryArrangements.sortKey
-        entryViewLayout.entryArrangements.sortOrder = source.entryViewLayout.entryArrangements.sortOrder
-        entryViewLayout.entryArrangements.hasUserSetSortOrder = source.entryViewLayout.entryArrangements
-            .hasUserSetSortOrder
-        entryViewLayout.entryArrangements.groupKey = source.entryViewLayout.entryArrangements.groupKey
-        entryViewLayout.entryOperations.windowID = source.entryViewLayout.entryOperations.windowID
+        entryViewLayout.sortKey = source.entryViewLayout.sortKey
+        entryViewLayout.sortOrder = source.entryViewLayout.sortOrder
+        entryViewLayout.groupKey = source.entryViewLayout.groupKey
+        entryViewLayout.collapsedGroups = source.entryViewLayout.collapsedGroups
+        // Feature fields
+        entryOperations.windowID = source.entryOperations.windowID
+        entryViewLayout.collectionWindowID = entryOperations.windowID
+        entryViewLayout.collectionLoadingCancellationOwnerID = entryOperations.loadingCancellationOwnerID
+        entryArrangements.sortKey = source.entryArrangements.sortKey
+        entryArrangements.sortOrder = source.entryArrangements.sortOrder
+        entryArrangements.hasUserSetSortOrder = source.entryArrangements.hasUserSetSortOrder
+        entryArrangements.groupKey = source.entryArrangements.groupKey
         composer.cancellationOwnerID = source.composer.cancellationOwnerID
     }
 }

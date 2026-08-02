@@ -1265,8 +1265,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         var state = FileManagerFeature.State()
         state.contentTabs.tabs = tabs
         state.contentTabs.activeTabID = firstID
-        state.content.entryViewLayout.entryOperations.isLoading = true
-        state.content.entryViewLayout.entryOperations.isReloading = true
+        state.content.entryOperations.isLoading = true
+        state.content.entryOperations.isReloading = true
         state.content.composer.isLoadingSearch = true
 
         let store = TestStore(initialState: state) {
@@ -1281,8 +1281,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, ContentTabConstants.maxTabs)
         XCTAssertEqual(store.state.contentTabs.activeTabID, firstID)
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.isLoading)
-        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.isReloading)
+        XCTAssertTrue(store.state.content.entryOperations.isLoading)
+        XCTAssertTrue(store.state.content.entryOperations.isReloading)
         XCTAssertTrue(store.state.content.composer.isLoadingSearch)
     }
 
@@ -2050,9 +2050,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // store.exhaustivity = .off: cancellation과 경로별 load 호출 외 navigation child action은 별도 owner가 검증한다.
         store.exhaustivity = .off
 
-        await store.sendTabContent(.entryViewLayout(.entryOperations(.loading(
+        await store.sendTabContent(.entryOperations(.loading(
             .loadItems(path: "/seed", showHidden: false),
-        ))))
+        )))
         await fulfillment(of: [oldLoadStarted], timeout: 1)
         await store.send(.reserveExternalContentTabs([
             .init(id: tabID, anchor: .directory(path: "/external")),
@@ -2338,11 +2338,11 @@ private enum ExternalTabReservationTestFixture {
     static func inactiveReloadAction(tabID: ContentTabID) -> FileManagerWindowAction {
         .tabContent(
             tabID: tabID,
-            action: .entryViewLayout(.entryOperations(.lifecycle(.operationFinished(
+            action: .entryOperations(.lifecycle(.operationFinished(
                 "/a/file.txt",
                 .rename,
                 .success(()),
-            )))),
+            ))),
         )
     }
 

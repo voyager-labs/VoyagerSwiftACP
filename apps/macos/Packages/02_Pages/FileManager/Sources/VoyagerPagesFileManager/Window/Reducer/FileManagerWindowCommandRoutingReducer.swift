@@ -587,17 +587,15 @@ struct FileManagerWindowCommandRoutingReducer {
 
         switch command {
         case .newFolder:
-            return .send(.content(.entryViewLayout(.entryOperations(
+            return .send(.content(.entryOperations(
                 .edit(.createNewFolder(
                     parentPath: currentPath,
                     siblingNames: state.content.entryViewLayout.entries.map(\.name),
                 )),
-            ))))
+            )))
 
         case .paste:
-            return .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(
-                .pasteItems(destinationPath: currentPath),
-            ))))))
+            return .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems")))))
 
         default:
             return nil
@@ -610,13 +608,13 @@ struct FileManagerWindowCommandRoutingReducer {
             guard !state.content.isOrdinaryDirectoryLoading,
                   !state.content.entryViewLayout.selectedIds.isEmpty
             else { return .none }
-            return .send(.content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))))
+            return .send(.content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))))
 
         case .quickLookSelectedItem:
             guard !state.content.isOrdinaryDirectoryLoading,
                   !state.content.entryViewLayout.selectedIds.isEmpty
             else { return .none }
-            return .send(.content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))))
+            return .send(.content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))))
 
         case .selectAll:
             return .send(.content(.view(.selectAllEntries)))
@@ -629,18 +627,16 @@ struct FileManagerWindowCommandRoutingReducer {
     private func handleEntryRequestEditing(_ command: Action.WindowCommand) -> Effect<Action>? {
         switch command {
         case .cut:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.cutSelectedItems))))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.cutSelectedItems")))))
 
         case .copy:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedItems))))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedItems")))))
 
         case .duplicate:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.duplicateSelectedItems))))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.duplicateSelectedItems")))))
 
         case .makeAlias:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand(.mutation(
-                .createAliasForSelectedItems,
-            ))))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand("mutation.createAliasForSelectedItems")))))
 
         default:
             nil
@@ -650,12 +646,10 @@ struct FileManagerWindowCommandRoutingReducer {
     private func handleEntryRequestCopying(_ command: Action.WindowCommand) -> Effect<Action>? {
         switch command {
         case .copyAbsolutePaths:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(
-                .copySelectedAbsolutePaths,
-            ))))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedAbsolutePaths")))))
 
         case .copyURLs:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedURLs))))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedURLs")))))
 
         default:
             nil
@@ -749,13 +743,13 @@ struct FileManagerWindowCommandRoutingReducer {
             .send(.content(.view(.changeLayout(layout))))
 
         case let .setGroupKey(key):
-            .send(.content(.entryViewLayout(.entryArrangements(.setGroupKey(key)))))
+            .send(.content(.entryArrangements(.setGroupKey(key))))
 
         case let .setSortKey(key):
-            .send(.content(.entryViewLayout(.entryArrangements(.setSortKey(key)))))
+            .send(.content(.entryArrangements(.setSortKey(key))))
 
         case let .setSortOrder(order):
-            .send(.content(.entryViewLayout(.entryArrangements(.setSortOrder(order)))))
+            .send(.content(.entryArrangements(.setSortOrder(order))))
 
         default:
             .none
@@ -772,17 +766,17 @@ struct FileManagerWindowCommandRoutingReducer {
 
         switch command {
         case .requestUndo:
-            guard state.content.entryViewLayout.entryOperations.canUndoEntryAction else { return .none }
+            guard state.content.entryOperations.canUndoEntryAction else { return .none }
             return .send(.tabContent(
                 tabID: activeTabID,
-                action: .entryViewLayout(.entryOperations(.undoRedo(.requestUndo))),
+                action: .entryOperations(.undoRedo(.requestUndo)),
             ))
 
         case .requestRedo:
-            guard state.content.entryViewLayout.entryOperations.canRedoEntryAction else { return .none }
+            guard state.content.entryOperations.canRedoEntryAction else { return .none }
             return .send(.tabContent(
                 tabID: activeTabID,
-                action: .entryViewLayout(.entryOperations(.undoRedo(.requestRedo))),
+                action: .entryOperations(.undoRedo(.requestRedo)),
             ))
 
         default:

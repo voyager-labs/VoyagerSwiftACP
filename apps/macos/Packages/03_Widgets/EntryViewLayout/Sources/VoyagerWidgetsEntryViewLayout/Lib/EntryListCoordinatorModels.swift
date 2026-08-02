@@ -1,24 +1,20 @@
 import CoreGraphics
 import VoyagerEntitiesEntry
-import VoyagerFeaturesEntryArrangements
-import VoyagerFeaturesEntryOperations
-import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
 struct EntryListCoordinatorRenderSnapshot: Equatable {
+    let presentation: EntryViewLayoutPresentation
     let listVisibleColumns: [EntryListColumn]
     let listIconSize: CGFloat
     let listTextSize: CGFloat
     let entries: [EntryModel]
-    let groupKey: GroupKey
-    let groupedItems: [GroupedItems]
+    let groupKey: EntryViewLayoutGroupKey
     let currentPath: String
-    let thumbnailRenderVersion: Int
+    let outlineProjectionRevision: Int
     let selectedIds: Set<EntryModel.ID>
-    let clipboardItems: Set<String>
-    let clipboardOperation: ClipboardOperation
+    let clipboardCutPaths: Set<String>
     let renamingItemId: EntryModel.ID?
-    let sortKey: SortKey
+    let sortKey: EntryViewLayoutSortKey
     let sortOrder: VoyagerShared.SortOrder
     let showHiddenFiles: Bool
     let shouldScrollToSelection: Bool
@@ -27,26 +23,25 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
     let isHierarchyOutlineEnabled: Bool
 
     init(state: EntryViewLayoutState) {
+        presentation = state.presentation
         listVisibleColumns = state.listVisibleColumns
         listIconSize = state.listIconSize
         listTextSize = state.listTextSize
         entries = state.entries
-        groupKey = state.entryArrangements.groupKey
-        groupedItems = state.entryArrangements.groupedItems
+        groupKey = state.groupKey
         currentPath = state.currentPath
-        thumbnailRenderVersion = state.entryThumbnail.renderVersion
+        outlineProjectionRevision = state.outlineProjectionRevision
         selectedIds = state.selectedIds
-        clipboardItems = Set(state.entryOperations.clipboardItems)
-        clipboardOperation = state.entryOperations.clipboardOperation
-        renamingItemId = state.entryOperations.renamingItemId
-        sortKey = state.entryArrangements.sortKey
-        sortOrder = state.entryArrangements.sortOrder
+        clipboardCutPaths = state.clipboardCutPaths
+        renamingItemId = state.renamingItemId
+        sortKey = state.sortKey
+        sortOrder = state.sortOrder
         showHiddenFiles = state.showHiddenFiles
         shouldScrollToSelection = state.shouldScrollToSelection
         isDropTargeted = state.isDropTargeted
         isHierarchyOutlineEnabled = state.mode == .list
             && !state.isCollectionMode
-            && state.entryArrangements.groupKey == .none
+            && state.groupKey == .none
             && !state.hierarchy.rootPath.isEmpty
         outlineProjection = EntryListOutlineProjection(
             revision: state.outlineProjectionRevision,
@@ -55,10 +50,10 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
             context: .init(
                 mode: state.mode,
                 isNormalDirectoryPage: isHierarchyOutlineEnabled,
-                hasActiveGrouping: state.entryArrangements.groupKey != .none,
+                hasActiveGrouping: state.groupKey != .none,
             ),
-            sortKey: state.entryArrangements.sortKey,
-            sortOrder: state.entryArrangements.sortOrder,
+            sortKey: state.sortKey.sharedSortKey,
+            sortOrder: state.sortOrder,
         )
     }
 }
@@ -71,15 +66,16 @@ enum EntryListOutlineItemKind {
 }
 
 final class EntryListOutlineItem: Hashable {
-    let kind: EntryListOutlineItemKind
+    var kind: EntryListOutlineItemKind
     let children: [EntryListOutlineItem]
     let id: String
-    let isLoadingChildren: Bool
+    var isLoadingChildren: Bool
 
     init(
         kind: EntryListOutlineItemKind,
         children: [EntryListOutlineItem] = [],
         isLoadingChildren: Bool = false,
+        identityScope: String? = nil,
     ) {
         self.kind = kind
         self.children = children
@@ -88,7 +84,7 @@ final class EntryListOutlineItem: Hashable {
         case let .group(name, _, _):
             id = "group:\(name)"
         case let .entry(entry):
-            id = "entry:\(entry.id)"
+            id = ["entry", identityScope, entry.id].compactMap(\.self).joined(separator: ":")
         case let .empty(parent):
             id = "empty:\(parent)"
         case let .error(parent, _):
@@ -102,6 +98,20 @@ final class EntryListOutlineItem: Hashable {
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(ObjectIdentifier(self))
+    }
+
+    func apply(_ payload: EntryListOutlineProjection.ItemPayload) {
+        switch payload {
+        case let .entry(entry, isLoadingChildren):
+            kind = .entry(entry)
+            self.isLoadingChildren = isLoadingChildren
+        case let .empty(parent):
+            kind = .empty(parent: parent)
+            isLoadingChildren = false
+        case let .error(parent, failure):
+            kind = .error(parent: parent, failure: failure)
+            isLoadingChildren = false
+        }
     }
 }
 

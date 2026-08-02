@@ -287,7 +287,7 @@ private func handleOpenCollectionFile(
     let loadEffect = collectionFileLoadEffect(
         request: request,
         collectionFileClient: collectionFileClient,
-        windowID: state.content.entryViewLayout.entryOperations.windowID,
+        windowID: state.content.entryOperations.windowID,
     )
 
     return .concatenate(
@@ -303,7 +303,7 @@ private func cancelExistingCollectionEffects(
 ) -> Effect<FileManagerWindowAction> {
     var effects: [Effect<FileManagerWindowAction>] = [
         .cancel(id: OpenCollectionFileCancelID(
-            windowID: state.content.entryViewLayout.entryOperations.windowID,
+            windowID: state.content.entryOperations.windowID,
         )),
     ]
     let composer = state.content.composer
@@ -450,7 +450,7 @@ private func handleNavigateToCollection(
             compatibility: payload.document?.compatibility,
             isCollectionMode: true,
         )))),
-        .send(.content(.entryViewLayout(.entryArrangements(.reapply)))),
+        .send(.content(.entryArrangements(.reapply))),
         queryEffect,
     )
 }

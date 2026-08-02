@@ -1,9 +1,7 @@
 @preconcurrency import AppKit
-import Combine
 import ComposableArchitecture
+import SwiftNavigation
 import VoyagerEntitiesEntry
-import VoyagerFeaturesEntryArrangements
-import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 public extension EntryListCoordinator {
@@ -41,6 +39,10 @@ extension EntryListOutlineItem {
             children.flatMap { $0.flattenEntries() }
         }
     }
+
+    func flattenItems() -> [(String, EntryListOutlineItem)] {
+        [(id, self)] + children.flatMap { $0.flattenItems() }
+    }
 }
 
 extension EntryListCoordinator: NSOutlineViewDelegate {
@@ -53,7 +55,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         guard tableColumn.identifier.rawValue == EntryListColumn.name.rawValue else { return false }
         guard let outlineItem = item as? OutlineItem else { return false }
         guard case let .entry(entry) = outlineItem.kind else { return false }
-        guard state.entryOperations.renamingItemId == entry.id else { return false }
+        guard state.renamingItemId == entry.id else { return false }
         return true
     }
 
@@ -69,7 +71,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
-        sendEntryOperations(.routing(.saveDragPaths(paths)))
+        store.send(.view(.startDrag(paths: paths)))
     }
 
     public func outlineView(
@@ -79,7 +81,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
-        sendEntryOperations(.routing(.saveDragPaths([])))
+        store.send(.view(.startDrag(paths: [])))
         store.send(.view(.setDropTargeted(false)))
     }
 
@@ -89,13 +91,15 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
 
         guard let change = EntryListCoordinatorSortDescriptorMapper.change(from: outlineView.sortDescriptors)
         else { return }
-        let needed = EntryListCoordinatorSortDescriptorMapper.actionsNeeded(
-            currentSortKey: state.entryArrangements.sortKey,
-            currentSortOrder: state.entryArrangements.sortOrder,
+        guard let needed = EntryListCoordinatorSortDescriptorMapper.actionNeeded(
+            currentSortKey: state.sortKey.sharedSortKey,
+            currentSortOrder: state.sortOrder,
             change: change,
-        )
-        if let sortKey = needed.sortKey { sendEntryArrangements(.setSortKey(sortKey)) }
-        if let sortOrder = needed.sortOrder { sendEntryArrangements(.setSortOrder(sortOrder)) }
+        ) else { return }
+        store.send(.view(.changeSort(
+            EntryViewLayoutSortKey.fromShared(needed.sortKey),
+            needed.sortOrder,
+        )))
     }
 
     public func outlineViewColumnDidMove(_ notification: Notification) {
@@ -106,7 +110,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         let newIndex = userInfo["NSNewColumn"] as? Int
 
         if let oldIndex, let newIndex {
-            store.send(.internal(.moveListColumn(from: oldIndex, to: newIndex)))
+            store.send(.view(.moveListColumn(from: oldIndex, to: newIndex)))
             return
         }
 
@@ -165,7 +169,12 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         case let .entry(entry):
             let resolvedTableColumn = tableColumn ?? outlineView.outlineTableColumn
             let columnId = resolvedTableColumn?.identifier.rawValue ?? EntryListColumn.name.rawValue
-            return makeEntryCell(outlineView: outlineView, columnId: columnId, entry: entry)
+            return makeEntryCell(
+                outlineView: outlineView,
+                columnId: columnId,
+                entry: entry,
+                isLoadingChildren: outlineItem.isLoadingChildren,
+            )
         case .empty:
             return makeStatusCell(
                 outlineView: outlineView,
@@ -187,6 +196,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         outlineView: NSOutlineView,
         columnId: String,
         entry: EntryModel,
+        isLoadingChildren: Bool,
     ) -> EntryListEntryCellView {
         let entryIdentifier = NSUserInterfaceItemIdentifier("entry-cell-\(columnId)")
         let view = (outlineView.makeView(withIdentifier: entryIdentifier, owner: self) as? EntryListEntryCellView)
@@ -202,6 +212,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             columnId: columnId,
             columnWidth: columnWidth,
             thumbnail: thumbnail,
+            isLoadingChildren: isLoadingChildren,
         )
         view.configure(configuration)
         return view
@@ -216,8 +227,6 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             guard case let .entry(entry) = outlineItem.kind else { return nil }
             return entry
         }
-        let selectedIds: Set<EntryModel.ID> = Set(selectedEntries.map(\.id))
-
         let clickedRow = tableView.clickedRow
         let lastSelectedId: EntryModel.ID? = if selectedIndexes.contains(clickedRow),
                                                 let item = tableView.item(atRow: clickedRow) as? OutlineItem,
@@ -233,9 +242,10 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             nil
         }
 
+        let acceptedIDs = Set(selectedEntries.map(\.id))
         preloadOpenWithApplications(selectedEntries: selectedEntries)
-        store.send(.internal(.setSelectionState(
-            ids: selectedIds,
+        store.send(.view(.updateSelection(
+            ids: acceptedIDs,
             lastSelectedId: lastSelectedId,
             rangeAnchorId: lastSelectedId,
             shouldScrollToSelection: false,
@@ -243,32 +253,34 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
     }
 
     public func outlineViewItemDidExpand(_ notification: Notification) {
-        guard !isUpdatingGroupExpansion, !isApplyingHierarchyExpansion else { return }
+        guard !isUpdatingGroupExpansion, !projectionSession.isApplyingStoreProjection else { return }
         guard let item = notification.userInfo?["NSObject"] as? OutlineItem else { return }
+        guard isCurrentOutlineItem(item) else { return }
         switch item.kind {
         case let .group(name, _, _):
-            if state.entryArrangements.collapsedGroups.contains(name) {
-                sendEntryArrangements(.toggleCollapsedGroup(name))
+            if state.collapsedGroups.contains(name) {
+                store.send(.view(.toggleGroup(name)))
             }
-        case let .entry(entry):
+        case let .entry(entry) where isHierarchyOutlineEnabled:
             sendProjectionIntent(.disclosureExpand(entry.id, revision: state.outlineProjectionRevision))
-        case .empty, .error:
-            break
+        case .entry, .empty, .error:
+            return
         }
     }
 
     public func outlineViewItemDidCollapse(_ notification: Notification) {
-        guard !isUpdatingGroupExpansion, !isApplyingHierarchyExpansion else { return }
+        guard !isUpdatingGroupExpansion, !projectionSession.isApplyingStoreProjection else { return }
         guard let item = notification.userInfo?["NSObject"] as? OutlineItem else { return }
+        guard isCurrentOutlineItem(item) else { return }
         switch item.kind {
         case let .group(name, _, _):
-            if !state.entryArrangements.collapsedGroups.contains(name) {
-                sendEntryArrangements(.toggleCollapsedGroup(name))
+            if !state.collapsedGroups.contains(name) {
+                store.send(.view(.toggleGroup(name)))
             }
-        case let .entry(entry):
+        case let .entry(entry) where isHierarchyOutlineEnabled:
             sendProjectionIntent(.disclosureCollapse(entry.id, revision: state.outlineProjectionRevision))
-        case .empty, .error:
-            break
+        case .entry, .empty, .error:
+            return
         }
     }
 
@@ -293,22 +305,25 @@ extension EntryListCoordinator {
     }
 
     public func observeRenderLoop() {
-        renderObservationCancellable?.cancel()
-        renderObservationCancellable = store.publisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self else { return }
-                let snapshot = RenderSnapshot(state: state)
-
-                guard let previous = lastRenderSnapshot else {
-                    lastRenderSnapshot = snapshot
-                    return
-                }
-
-                handleSnapshotChanges(previous: previous, snapshot: snapshot)
-
-                lastRenderSnapshot = snapshot
+        observe { [weak self] in
+            guard let self else { return }
+            let snapshot = RenderSnapshot(state: state)
+            guard isRenderObservationEnabled else { return }
+            renderThrottler.schedule { [weak self] in
+                self?.processRender(snapshot)
             }
+        }
+    }
+
+    private func processRender(_ snapshot: RenderSnapshot) {
+        guard let previous = lastRenderSnapshot else {
+            lastRenderSnapshot = snapshot
+            return
+        }
+
+        handleSnapshotChanges(previous: previous, snapshot: snapshot)
+
+        lastRenderSnapshot = snapshot
     }
 
     func handleSnapshotChanges(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -331,7 +346,7 @@ extension EntryListCoordinator {
         isApplyingColumnsFromStore = true
         view?.applyColumns(snapshot.listVisibleColumns)
         isApplyingColumnsFromStore = false
-        syncListSortIndicators(sortKey: snapshot.sortKey, sortOrder: snapshot.sortOrder)
+        syncListSortIndicators(sortKey: snapshot.sortKey.sharedSortKey, sortOrder: snapshot.sortOrder)
         syncListRenamingFromStore()
         tableView.reloadData()
         requestThumbnailsForVisibleRows()
@@ -344,17 +359,76 @@ extension EntryListCoordinator {
         }
 
         if snapshot.isHierarchyOutlineEnabled {
-            if previous.outlineProjection != snapshot.outlineProjection {
+            if !previous.outlineProjection.hasSameOutlineShape(as: snapshot.outlineProjection) {
                 rebuildRowsAndReload()
+            } else if !previous.outlineProjection.hasSameStructure(as: snapshot.outlineProjection) {
+                reloadVisibleRowsForContentChange(
+                    previous: previous.outlineProjection,
+                    snapshot: snapshot.outlineProjection,
+                )
             }
             return
         }
 
-        if previous.entries != snapshot.entries
-            || previous.groupKey != snapshot.groupKey
-            || previous.groupedItems != snapshot.groupedItems
-        {
+        let changes = snapshot.presentation.changes(from: previous.presentation)
+        if changes.sectionStructureChanged || changes.groupExpansionChanged {
             rebuildRowsAndReload()
+        } else if !changes.updatedEntryIDs.isEmpty {
+            reloadVisibleRowsForPresentationChange(
+                changedEntryIDs: changes.updatedEntryIDs,
+                presentation: snapshot.presentation,
+            )
+        }
+    }
+
+    func reloadVisibleRowsForPresentationChange(
+        changedEntryIDs: Set<EntryModel.ID>,
+        presentation: EntryViewLayoutPresentation,
+    ) {
+        let entriesByID = presentation.entries.reduce(into: [EntryModel.ID: EntryModel]()) { result, entry in
+            result[entry.id] = entry
+        }
+        let rowIndexes = IndexSet(changedEntryIDs.flatMap { entryID in
+            guard let entry = entriesByID[entryID] else { return [Int]() }
+            return entryItemsByID[entryID, default: []].compactMap { item in
+                item.kind = .entry(entry)
+                let row = tableView.row(forItem: item)
+                return row >= 0 ? row : nil
+            }
+        })
+        guard !rowIndexes.isEmpty else { return }
+        let columnIndexes = IndexSet(integersIn: 0 ..< tableView.numberOfColumns)
+        tableView.reloadData(forRowIndexes: rowIndexes, columnIndexes: columnIndexes)
+        requestThumbnailsForVisibleRows()
+    }
+
+    func reloadVisibleRowsForContentChange(
+        previous: EntryListOutlineProjection,
+        snapshot: EntryListOutlineProjection,
+    ) {
+        let changedItemIDs = snapshot.itemPayloads.compactMap { itemID, payload in
+            previous.itemPayloads[itemID] == payload ? nil : itemID
+        }
+        let rowIndexes = IndexSet(changedItemIDs.compactMap { itemID in
+            guard let item = outlineItem(for: itemID), let payload = snapshot.itemPayloads[itemID] else { return nil }
+            item.apply(payload)
+            let row = tableView.row(forItem: item)
+            return row >= 0 ? row : nil
+        })
+        guard !rowIndexes.isEmpty else { return }
+        let columnIndexes = IndexSet(integersIn: 0 ..< tableView.numberOfColumns)
+        tableView.reloadData(forRowIndexes: rowIndexes, columnIndexes: columnIndexes)
+        requestThumbnailsForVisibleRows()
+    }
+
+    func outlineItem(for itemID: EntryListOutlineProjection.ItemID) -> OutlineItem? {
+        switch itemID {
+        case let .entry(entryID):
+            entryItemsByID[entryID]?.first
+        case let .empty(parent):
+            outlineItemByID["empty:\(parent)"]
+        case let .error(parent):
+            outlineItemByID["error:\(parent)"]
         }
     }
 
@@ -365,12 +439,13 @@ extension EntryListCoordinator {
     }
 
     func syncSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if previous.selectedIds != snapshot.selectedIds { syncListSelectionFromStore() }
+        if snapshot.presentation.changes(from: previous.presentation).selectionChanged {
+            syncListSelectionFromStore()
+        }
     }
 
     func reloadVisibleRowsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        guard previous.clipboardItems != snapshot.clipboardItems
-            || previous.clipboardOperation != snapshot.clipboardOperation
+        guard previous.clipboardCutPaths != snapshot.clipboardCutPaths
         else {
             return
         }
@@ -387,7 +462,7 @@ extension EntryListCoordinator {
 
     func syncSortIndicatorsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if previous.sortKey != snapshot.sortKey || previous.sortOrder != snapshot.sortOrder {
-            syncListSortIndicators(sortKey: snapshot.sortKey, sortOrder: snapshot.sortOrder)
+            syncListSortIndicators(sortKey: snapshot.sortKey.sharedSortKey, sortOrder: snapshot.sortOrder)
         }
     }
 
@@ -425,10 +500,11 @@ extension EntryListCoordinator {
 
     public func syncListSelectionFromStore() {
         let selectedIds = state.selectedIds
-        let indexes = IndexSet(selectedIds.compactMap { id in
-            guard let item = entryItemById[id] else { return nil }
-            let row = tableView.row(forItem: item)
-            return row >= 0 ? row : nil
+        let indexes = IndexSet(selectedIds.flatMap { id in
+            entryItemsByID[id, default: []].compactMap { item in
+                let row = tableView.row(forItem: item)
+                return row >= 0 ? row : nil
+            }
         })
 
         isUpdatingSelectionFromStore = true
@@ -437,35 +513,36 @@ extension EntryListCoordinator {
     }
 
     public func syncListRenamingFromStore() {
-        let currentRenamingItemId = state.entryOperations.renamingItemId
+        let currentRenamingItemId = state.renamingItemId
         let previousRenamingItemId = lastRenamingItemId
         lastRenamingItemId = currentRenamingItemId
 
         guard let nameColumnIndex else { return }
         let nameColumnIndexes = IndexSet(integer: nameColumnIndex)
 
-        if let previousRenamingItemId,
-           let item = entryItemById[previousRenamingItemId]
-        {
-            let row = tableView.row(forItem: item)
-            if row >= 0 {
-                tableView.reloadData(forRowIndexes: IndexSet(integer: row), columnIndexes: nameColumnIndexes)
+        if let previousRenamingItemId {
+            let rows = entryItemsByID[previousRenamingItemId, default: []].compactMap { item in
+                let row = tableView.row(forItem: item)
+                return row >= 0 ? row : nil
             }
+            tableView.reloadData(forRowIndexes: IndexSet(rows), columnIndexes: nameColumnIndexes)
         }
 
         guard let renamingItemId = currentRenamingItemId,
-              let item = entryItemById[renamingItemId]
+              let row = entryItemsByID[renamingItemId]?
+              .lazy
+              .map({ self.tableView.row(forItem: $0) })
+              .first(where: { $0 >= 0 })
         else {
             view?.window?.makeFirstResponder(tableView)
             return
         }
 
-        let row = tableView.row(forItem: item)
-        guard row >= 0 else {
-            view?.window?.makeFirstResponder(tableView)
-            return
+        let rows = entryItemsByID[renamingItemId, default: []].compactMap { item in
+            let itemRow = tableView.row(forItem: item)
+            return itemRow >= 0 ? itemRow : nil
         }
-        tableView.reloadData(forRowIndexes: IndexSet(integer: row), columnIndexes: nameColumnIndexes)
+        tableView.reloadData(forRowIndexes: IndexSet(rows), columnIndexes: nameColumnIndexes)
         beginRenaming(row: row)
     }
 }
@@ -498,6 +575,7 @@ public extension EntryListCoordinator {
                 columnId: EntryListColumn.name.rawValue,
                 columnWidth: dateModifiedWidth,
                 thumbnail: thumbnail,
+                isLoadingChildren: outlineItem.isLoadingChildren,
             )
             cell.configure(configuration)
         }

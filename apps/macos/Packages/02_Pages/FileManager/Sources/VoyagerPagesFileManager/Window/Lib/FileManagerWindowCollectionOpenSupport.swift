@@ -30,8 +30,8 @@ func makeWindowCollectionNavigation(
     return ContentPageCollectionNavigation(
         kind: kind,
         context: payload.context,
-        sortKey: state.content.entryViewLayout.entryArrangements.sortKey,
-        sortOrder: state.content.entryViewLayout.entryArrangements.sortOrder,
+        sortKey: state.content.entryArrangements.sortKey,
+        sortOrder: state.content.entryArrangements.sortOrder,
         viewLayout: contentPageNavigationViewLayout(from: state.content.entryViewLayout.mode),
         compatibility: payload.compatibility,
     )
@@ -48,6 +48,7 @@ func hydrateOpenedCollectionSnapshot(
     )
 
     let showHidden = state.content.entryViewLayout.showHiddenFiles
+    let priority = FileManagerContentEntryOpsCoordinator.rootMetadataPriority(for: state.content.entryArrangements)
     let collectionURL: URL? = if case let .file(url, _) = navigation.kind { url } else { nil }
 
     return [
@@ -64,6 +65,7 @@ func hydrateOpenedCollectionSnapshot(
             await send(.content(.entryViewLayout(.internal(.applyCollectionSearchPaths(
                 paths: payload.snapshotPaths,
                 showHidden: showHidden,
+                priority: priority,
             )))))
             await send(.content(.composer(.searchListApplied)))
         },

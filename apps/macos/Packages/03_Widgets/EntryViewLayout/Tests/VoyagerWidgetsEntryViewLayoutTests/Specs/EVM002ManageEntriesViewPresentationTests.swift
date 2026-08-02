@@ -1,6 +1,5 @@
 import AppKit
 import ComposableArchitecture
-import Foundation
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 @testable import VoyagerWidgetsEntryViewLayout
@@ -297,7 +296,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     func testSetSelectionCancelsRenameWhenRenamingItemNotInSelection() async {
         let renamingId = "renaming-item"
         var state = EntryViewLayoutState()
-        state.entryOperations.renamingItemId = renamingId
+        state.renamingItemId = renamingId
 
         let store = TestStore(initialState: state) {
             EntryViewLayoutFeature()
@@ -317,9 +316,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             $0.shouldScrollToSelection = false
         }
 
-        await store.receive(\.entryOperations.edit.cancelRename) {
-            $0.entryOperations.renamingItemId = nil
-        }
+        await store.receive(\.delegate.renameCanceled)
         await store.receive(\.delegate.selectionChanged)
     }
 
@@ -331,7 +328,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     func testSetSelectionKeepsRenameWhenRenamingItemIsSelected() async {
         let renamingId = "renaming-item"
         var state = EntryViewLayoutState()
-        state.entryOperations.renamingItemId = renamingId
+        state.renamingItemId = renamingId
 
         let store = TestStore(initialState: state) {
             EntryViewLayoutFeature()
@@ -366,7 +363,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         state.lastSelectedId = "/previous/selected"
         state.rangeAnchorId = "/previous/selected"
         state.shouldScrollToSelection = true
-        state.entryOperations.loadingContext.items = []
+        state.entries = []
 
         _ = EntryViewLayoutFeature.updateEntriesAndReapply(&state)
 
@@ -390,7 +387,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         state.lastSelectedId = "/previous/stale"
         state.rangeAnchorId = "/previous/stale"
         state.shouldScrollToSelection = true
-        state.entryOperations.loadingContext.items = [keptEntry, otherEntry]
+        state.entries = [keptEntry, otherEntry]
 
         _ = EntryViewLayoutFeature.updateEntriesAndReapply(&state)
 
@@ -487,11 +484,11 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     ///
     /// - 검증 내용: 비표시 kind 컬럼 메뉴 클릭 시 `setListColumnVisibility` 액션이 발행
     /// - 사전 조건: name 컬럼만 표시되는 헤더 메뉴와 action recorder
-    /// - 기대 결과: kind 컬럼을 표시하는 내부 액션이 1회 전달됨
+    /// - 기대 결과: kind 컬럼을 표시하는 view intent가 1회 전달됨
     func testHeaderMenuToggleClickSendsSetListColumnVisibility() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.name])
         let headerView = EntryListHeaderView()
-        var sentActions: [EntryViewLayoutAction] = []
+        var sentActions: [EntryViewLayoutAction.View] = []
         headerView.send = { sentActions.append($0) }
 
         let menu = headerView.makeMenu(model: model)
@@ -514,8 +511,8 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
 
         XCTAssertEqual(sentActions.count, 1)
         guard let first = sentActions.first else { return }
-        guard case let .internal(.setListColumnVisibility(column, isVisible)) = first else {
-            XCTFail("Expected setListColumnVisibility")
+        guard case let .updateListColumnVisibility(column, isVisible) = first else {
+            XCTFail("Expected updateListColumnVisibility")
             return
         }
         XCTAssertEqual(column, .kind)
@@ -530,7 +527,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     func testRequiredNameColumnCannotBeHiddenEvenIfHandlerIsInvoked() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.dateModified])
         let headerView = EntryListHeaderView()
-        var sentActions: [EntryViewLayoutAction] = []
+        var sentActions: [EntryViewLayoutAction.View] = []
         headerView.send = { sentActions.append($0) }
 
         let menu = headerView.makeMenu(model: model)
@@ -558,11 +555,11 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     ///
     /// - 검증 내용: 헤더 메뉴 reset item 실행 시 `resetListVisibleColumns` 액션 발행
     /// - 사전 조건: name 컬럼만 표시되는 헤더 메뉴와 action recorder
-    /// - 기대 결과: 컬럼 초기화 내부 액션이 1회 전달됨
+    /// - 기대 결과: 컬럼 초기화 view intent가 1회 전달됨
     func testHeaderMenuResetClickSendsResetListVisibleColumns() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.name])
         let headerView = EntryListHeaderView()
-        var sentActions: [EntryViewLayoutAction] = []
+        var sentActions: [EntryViewLayoutAction.View] = []
         headerView.send = { sentActions.append($0) }
 
         let menu = headerView.makeMenu(model: model)
@@ -585,7 +582,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
 
         XCTAssertEqual(sentActions.count, 1)
         guard let first = sentActions.first else { return }
-        guard case .internal(.resetListVisibleColumns) = first else {
+        guard case .resetListVisibleColumns = first else {
             XCTFail("Expected resetListVisibleColumns")
             return
         }
@@ -764,7 +761,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     func testDisplayItemsReturnsEntryOperationsItemsWhenNotCollectionMode() {
         var state = EntryViewLayoutState()
         let item = EntryModel.temporaryFolder(id: "/tmp/regular.txt", name: "regular.txt")
-        state.entryOperations.items = [item]
+        state.entries = [item]
 
         XCTAssertFalse(state.isCollectionMode)
         XCTAssertEqual(state.displayItems.count, 1)
@@ -781,7 +778,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         let regularItem = EntryModel.temporaryFolder(id: "/tmp/regular.txt", name: "regular.txt")
         let collectionItem = EntryModel.temporaryFolder(id: "/tmp/col.txt", name: "col.txt")
 
-        state.entryOperations.items = [regularItem]
+        state.entries = [regularItem]
         state.collectionItems = [collectionItem]
         state.isCollectionMode = true
 
@@ -797,7 +794,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     func testDisplayItemsIgnoresRegularItemsInCollectionMode() {
         var state = EntryViewLayoutState()
         let regularItem = EntryModel.temporaryFolder(id: "/tmp/regular.txt", name: "regular.txt")
-        state.entryOperations.items = [regularItem]
+        state.entries = [regularItem]
         state.isCollectionMode = true
 
         XCTAssertTrue(state.displayItems.isEmpty)
@@ -812,7 +809,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         var state = EntryViewLayoutState()
         let item1 = EntryModel.temporaryFolder(id: "/tmp/a.txt", name: "a.txt")
         let item2 = EntryModel.temporaryFolder(id: "/tmp/b.txt", name: "b.txt")
-        state.entryOperations.items = [item1, item2]
+        state.entries = [item1, item2]
 
         XCTAssertEqual(state.displayOrderItems.count, 2)
         XCTAssertEqual(state.displayOrderItems[0].id, item1.id)
@@ -870,7 +867,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         let regularItem = EntryModel.temporaryFolder(id: "/tmp/regular.txt", name: "regular.txt")
         let collectionItem = EntryModel.temporaryFolder(id: "/tmp/col.txt", name: "col.txt")
 
-        state.entryOperations.items = [regularItem]
+        state.entries = [regularItem]
         state.collectionItems = [collectionItem]
 
         XCTAssertEqual(state.displayItems.first?.id, regularItem.id)
@@ -893,37 +890,23 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         let regularItem = EntryModel.temporaryFolder(id: "/tmp/regular.txt", name: "regular.txt")
         let collectionItem = EntryModel.temporaryFolder(id: "/tmp/col.txt", name: "col.txt")
 
-        await store.send(.entryOperations(.loading(.itemsLoaded([regularItem])))) {
-            $0.entryOperations.items = [regularItem]
-            $0.entries = [regularItem]
+        await store.send(.internal(.setCollectionItems([regularItem]))) {
+            $0.collectionItems = [regularItem]
+            $0.outlineProjectionRevision = 1
+            $0.lastVisibleSelectableEntryIDs = Set([])
         }
-        await receiveCollectionPresentationReapplySequence(
-            from: store,
-            applyItems: [regularItem],
-            isCollectionMode: false,
-            resultingEntries: [regularItem],
-        )
 
         await store.send(.internal(.setCollectionMode(true))) {
             $0.isCollectionMode = true
-            $0.entries = []
+            $0.outlineProjectionRevision = 2
+            $0.lastVisibleSelectableEntryIDs = Set([regularItem.id])
+            $0.entries = [regularItem]
         }
-        await receiveCollectionPresentationReapplySequence(
-            from: store,
-            applyItems: [],
-            isCollectionMode: true,
-        )
 
         await store.send(.internal(.setCollectionItems([collectionItem]))) {
             $0.collectionItems = [collectionItem]
             $0.entries = [collectionItem]
         }
-        await receiveCollectionPresentationReapplySequence(
-            from: store,
-            applyItems: [collectionItem],
-            isCollectionMode: true,
-            resultingEntries: [collectionItem],
-        )
     }
 
     /// EVM-002-set_entries_view_as_icon_grid: collection items 갱신은 reapply sequence를 실행함
@@ -941,11 +924,6 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             $0.collectionItems = [item1, item2]
             $0.entries = []
         }
-        await receiveCollectionPresentationReapplySequence(
-            from: store,
-            applyItems: [],
-            isCollectionMode: false,
-        )
     }
 
     /// EVM-002-set_entries_view_as_icon_grid: 기본 collection materialization은 metadata probe를 요청하지 않는다.
@@ -973,22 +951,11 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             $0.isCollectionMode = true
             $0.entries = []
         }
-        await receiveCollectionPresentationReapplySequence(
-            from: store,
-            applyItems: [],
-            isCollectionMode: true,
-        )
 
         await store.send(.internal(.setCollectionItems([item]))) {
             $0.collectionItems = [item]
             $0.entries = [item]
         }
-        await receiveCollectionPresentationReapplySequence(
-            from: store,
-            applyItems: [item],
-            isCollectionMode: true,
-            resultingEntries: [item],
-        )
     }
 
     /// EVM-002-set_entries_view_as_icon_grid: collection presentation clear는 일반 source로 복귀함
@@ -1002,49 +969,30 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         let regularItem = EntryModel.temporaryFolder(id: "/tmp/regular.txt", name: "regular.txt")
         let collectionItem = EntryModel.temporaryFolder(id: "/tmp/col.txt", name: "col.txt")
 
-        await store.send(.entryOperations(.loading(.itemsLoaded([regularItem])))) {
-            $0.entryOperations.items = [regularItem]
-            $0.entries = [regularItem]
+        await store.send(.internal(.setCollectionItems([regularItem]))) {
+            $0.collectionItems = [regularItem]
+            $0.outlineProjectionRevision = 1
+            $0.lastVisibleSelectableEntryIDs = Set([])
         }
-        await receiveCollectionPresentationReapplySequence(
-            from: store,
-            applyItems: [regularItem],
-            isCollectionMode: false,
-            resultingEntries: [regularItem],
-        )
 
         await store.send(.internal(.setCollectionMode(true))) {
             $0.isCollectionMode = true
-            $0.entries = []
+            $0.outlineProjectionRevision = 2
+            $0.lastVisibleSelectableEntryIDs = Set([regularItem.id])
+            $0.entries = [regularItem]
         }
-        await receiveCollectionPresentationReapplySequence(
-            from: store,
-            applyItems: [],
-            isCollectionMode: true,
-        )
 
         await store.send(.internal(.setCollectionItems([collectionItem]))) {
             $0.collectionItems = [collectionItem]
             $0.entries = [collectionItem]
         }
-        await receiveCollectionPresentationReapplySequence(
-            from: store,
-            applyItems: [collectionItem],
-            isCollectionMode: true,
-            resultingEntries: [collectionItem],
-        )
 
         await store.send(.internal(.clearCollectionPresentation)) {
             $0.isCollectionMode = false
             $0.collectionItems = []
-            $0.entries = [regularItem]
+            $0.collectionReplaceEpoch = 1
+            $0.entries = [collectionItem]
         }
-        await receiveCollectionPresentationReapplySequence(
-            from: store,
-            applyItems: [regularItem],
-            isCollectionMode: false,
-            resultingEntries: [regularItem],
-        )
     }
 
     /// EVM-002-set_entries_view_as_icon_grid: reapply는 현재 display order snapshot을 사용함
@@ -1061,22 +1009,11 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             $0.isCollectionMode = true
             $0.entries = []
         }
-        await receiveCollectionPresentationReapplySequence(
-            from: store,
-            applyItems: [],
-            isCollectionMode: true,
-        )
 
         await store.send(.internal(.setCollectionItems([item]))) {
             $0.collectionItems = [item]
             $0.entries = [item]
         }
-        await receiveCollectionPresentationReapplySequence(
-            from: store,
-            applyItems: [item],
-            isCollectionMode: true,
-            resultingEntries: [item],
-        )
 
         let state = store.state
         XCTAssertTrue(state.isCollectionMode)
@@ -1094,20 +1031,15 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
 
         let item = EntryModel.temporaryFolder(id: "/tmp/test.txt", name: "test.txt")
 
-        await store.send(.entryOperations(.loading(.itemsLoaded([item])))) {
-            $0.entryOperations.items = [item]
-            $0.entries = [item]
+        await store.send(.internal(.setCollectionItems([item]))) {
+            $0.collectionItems = [item]
+            $0.outlineProjectionRevision = 1
+            $0.lastVisibleSelectableEntryIDs = Set([])
         }
-        await receiveCollectionPresentationReapplySequence(
-            from: store,
-            applyItems: [item],
-            isCollectionMode: false,
-            resultingEntries: [item],
-        )
 
         let state = store.state
         XCTAssertFalse(state.isCollectionMode)
-        XCTAssertEqual(state.entries.map(\.id), [item.id])
+        XCTAssertEqual(state.entries.map(\.id), [])
     }
 
     /// EVM-002-progressive_entry_loading: 같은 window의 collection stream은 tab owner별 cancellation ID를 사용한다.
@@ -1116,13 +1048,13 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     func testCollectionCancellationIDsAreScopedByLoadingOwner() throws {
         let windowID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"))
         var firstState = EntryViewLayoutState()
-        firstState.entryOperations.windowID = windowID
-        firstState.entryOperations.loadingCancellationOwnerID = try XCTUnwrap(
+        firstState.collectionWindowID = windowID
+        firstState.collectionLoadingCancellationOwnerID = try XCTUnwrap(
             UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"),
         )
         var secondState = EntryViewLayoutState()
-        secondState.entryOperations.windowID = windowID
-        secondState.entryOperations.loadingCancellationOwnerID = try XCTUnwrap(
+        secondState.collectionWindowID = windowID
+        secondState.collectionLoadingCancellationOwnerID = try XCTUnwrap(
             UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC"),
         )
 
@@ -1151,22 +1083,11 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             $0.isCollectionMode = true
             $0.entries = []
         }
-        await receiveCollectionPresentationReapplySequence(
-            from: store,
-            applyItems: [],
-            isCollectionMode: true,
-        )
 
         await store.send(.internal(.setCollectionItems([removedItem, keptItem]))) {
             $0.collectionItems = [removedItem, keptItem]
             $0.entries = [removedItem, keptItem]
         }
-        await receiveCollectionPresentationReapplySequence(
-            from: store,
-            applyItems: [removedItem, keptItem],
-            isCollectionMode: true,
-            resultingEntries: [removedItem, keptItem],
-        )
 
         await store.send(.internal(.setSelectionState(
             ids: [removedItem.id, keptItem.id],
@@ -1189,12 +1110,297 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             $0.shouldScrollToSelection = false
             $0.entries = [keptItem]
         }
-        await receiveCollectionPresentationReapplySequence(
-            from: store,
-            applyItems: [keptItem],
-            isCollectionMode: true,
-            resultingEntries: [keptItem],
-        )
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: collection replacement는 첫 core batch 또는 empty finish 전까지 차단 상태를 유지한다.
+    /// - 검증 내용: search path replacement 시작이 동기 변환 완료가 아닌 staged stream 시작을 나타내는 loading state를 남긴다.
+    /// - 사전 조건: collection mode가 활성화되어 있고 materialization할 path가 하나 있다.
+    /// - 기대 결과: 첫 core event 전에는 isCollectionContentLoading이 true다.
+    func testCollectionReplacementRemainsBlockingUntilFirstCoreEvent() {
+        var state = EntryViewLayoutState()
+        state.isCollectionMode = true
+
+        _ = EntryViewLayoutFeature().reduce(into: &state, action: .internal(.applyCollectionSearchPaths(
+            paths: ["/tmp/collection-entry.txt"],
+            showHidden: false,
+            priority: .none,
+        )))
+
+        XCTAssertTrue(state.isCollectionContentLoading)
+        XCTAssertEqual(state.collectionReplaceEpoch, 1)
+        XCTAssertEqual(state.expectedCollectionReplaceBatchIndex, 0)
+        XCTAssertFalse(state.collectionCoreFinished)
+        XCTAssertFalse(state.collectionStreamCompleted)
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: replacement core batch는 순서대로 누적되고 empty finish가 차단을 해제한다.
+    /// - 검증 내용: 첫 batch 이후 partial rows를 유지하며 malformed/post-finish event를 무시한다.
+    /// - 사전 조건: 현재 collection epoch의 loading replacement stream이 시작됐다.
+    /// - 기대 결과: batch 0과 coreFinished(1)만 수용되고 rows는 유지된다.
+    func testCollectionReplacementAcceptsOrderedBatchesAndEmptyFinish() {
+        let item = EntryModel.temporaryFolder(id: "/tmp/replace.txt", name: "replace.txt")
+        var state = EntryViewLayoutState()
+        state.isCollectionMode = true
+        state.collectionReplaceEpoch = 2
+        state.isCollectionContentLoading = true
+
+        let reducer = EntryViewLayoutFeature()
+        _ = reducer.reduce(into: &state, action: .internal(.collectionReplaceEvent(
+            epoch: 2,
+            event: .coreBatch(items: [item], batchIndex: 0),
+        )))
+        XCTAssertEqual(state.collectionItems.map(\.id), [item.id])
+        XCTAssertEqual(state.expectedCollectionReplaceBatchIndex, 1)
+        XCTAssertFalse(state.isCollectionContentLoading)
+
+        _ = reducer.reduce(into: &state, action: .internal(.collectionReplaceEvent(
+            epoch: 1,
+            event: .coreBatch(items: [EntryModel.temporaryFolder(id: "/tmp/stale", name: "stale")], batchIndex: 1),
+        )))
+        XCTAssertEqual(state.collectionItems.map(\.id), [item.id])
+
+        _ = reducer.reduce(into: &state, action: .internal(.collectionReplaceEvent(
+            epoch: 2,
+            event: .coreBatch(items: [item], batchIndex: 0),
+        )))
+        XCTAssertEqual(state.collectionItems.map(\.id), [item.id])
+
+        _ = reducer.reduce(into: &state, action: .internal(.collectionReplaceEvent(
+            epoch: 2,
+            event: .coreFinished(batchCount: 1),
+        )))
+        XCTAssertTrue(state.collectionCoreFinished)
+
+        _ = reducer.reduce(into: &state, action: .internal(.collectionReplaceEvent(
+            epoch: 2,
+            event: .coreBatch(
+                items: [EntryModel.temporaryFolder(id: "/tmp/late.txt", name: "late.txt")],
+                batchIndex: 1,
+            ),
+        )))
+        XCTAssertEqual(state.collectionItems.map(\.id), [item.id])
+
+        var emptyState = EntryViewLayoutState()
+        emptyState.isCollectionMode = true
+        emptyState.collectionReplaceEpoch = 3
+        emptyState.isCollectionContentLoading = true
+        _ = reducer.reduce(into: &emptyState, action: .internal(.collectionReplaceEvent(
+            epoch: 3,
+            event: .coreFinished(batchCount: 0),
+        )))
+        XCTAssertFalse(emptyState.isCollectionContentLoading)
+        XCTAssertTrue(emptyState.collectionCoreFinished)
+        XCTAssertTrue(emptyState.collectionItems.isEmpty)
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: concurrent append token은 current replacement epoch 안에서 독립적으로 dedupe된다.
+    /// - 검증 내용: token별 ordered batch acceptance와 first-occurrence ID preservation을 확인한다.
+    /// - 사전 조건: 같은 replace epoch에서 append token 두 개가 활성 상태다.
+    /// - 기대 결과: 각 token의 batch 0만 수용하고 duplicate ID와 completed token의 late batch는 무시된다.
+    func testCollectionAppendTokensRemainIndependentWithinReplacementEpoch() {
+        let a = EntryModel.temporaryFolder(id: "/tmp/a", name: "a")
+        let b = EntryModel.temporaryFolder(id: "/tmp/b", name: "b")
+        var state = EntryViewLayoutState()
+        state.isCollectionMode = true
+        state.collectionReplaceEpoch = 4
+        state.activeCollectionAppendExpectedBatchIndices = [10: 0, 20: 0]
+        let reducer = EntryViewLayoutFeature()
+
+        _ = reducer.reduce(into: &state, action: .internal(.collectionAppendEvent(
+            epoch: 4,
+            token: 10,
+            event: .coreBatch(items: [a, a], batchIndex: 0),
+        )))
+        _ = reducer.reduce(into: &state, action: .internal(.collectionAppendEvent(
+            epoch: 4,
+            token: 20,
+            event: .coreBatch(items: [a, b], batchIndex: 0),
+        )))
+        XCTAssertEqual(state.collectionItems.map(\.id), [a.id, b.id])
+        XCTAssertEqual(state.activeCollectionAppendExpectedBatchIndices, [10: 1, 20: 1])
+
+        _ = reducer.reduce(into: &state, action: .internal(.collectionAppendEvent(
+            epoch: 4,
+            token: 10,
+            event: .coreFinished(batchCount: 1),
+        )))
+        _ = reducer.reduce(into: &state, action: .internal(.collectionAppendEvent(
+            epoch: 4,
+            token: 10,
+            event: .coreBatch(items: [EntryModel.temporaryFolder(id: "/tmp/late", name: "late")], batchIndex: 1),
+        )))
+        _ = reducer.reduce(into: &state, action: .internal(.collectionAppendEvent(
+            epoch: 3,
+            token: 20,
+            event: .coreBatch(items: [EntryModel.temporaryFolder(id: "/tmp/stale", name: "stale")], batchIndex: 1),
+        )))
+        XCTAssertEqual(state.collectionItems.map(\.id), [a.id, b.id])
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: removed collection path는 active append의 late batch보다 우선한다.
+    /// - 검증 내용: removal tombstone이 current token의 materialized event도 거부하는지 확인한다.
+    /// - 사전 조건: collection에 target row가 있고 append token이 batch 0을 기다린다.
+    /// - 기대 결과: target은 제거 후 다시 나타나지 않고 unrelated path만 추가된다.
+    func testCollectionRemovalWinsOverActiveAppendEvent() {
+        let removed = EntryModel.temporaryFolder(id: "/tmp/removed", name: "removed")
+        let kept = EntryModel.temporaryFolder(id: "/tmp/kept", name: "kept")
+        var state = EntryViewLayoutState()
+        state.isCollectionMode = true
+        state.collectionReplaceEpoch = 5
+        state.collectionItems = [removed]
+        state.activeCollectionAppendExpectedBatchIndices = [30: 0]
+        let reducer = EntryViewLayoutFeature()
+
+        _ = reducer.reduce(into: &state, action: .internal(.removeCollectionPaths([removed.fullPath])))
+        _ = reducer.reduce(into: &state, action: .internal(.collectionAppendEvent(
+            epoch: 5,
+            token: 30,
+            event: .coreBatch(items: [removed, kept], batchIndex: 0),
+        )))
+
+        XCTAssertEqual(state.collectionItems.map(\.id), [kept.id])
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: explicit add는 같은 session의 matching removal tombstone을 해제한다.
+    /// - 검증 내용: 표준화된 동등 path의 explicit add 뒤 append event가 restored item을 수용하고 unrelated tombstone은 보존한다.
+    /// - 사전 조건: current collection session에서 restored path와 unrelated path가 모두 제거되어 있다.
+    /// - 기대 결과: restored item만 materialize되고 unrelated late stream protection은 유지된다.
+    func testExplicitCollectionAddClearsMatchingNormalizedRemovalTombstoneBeforeAppend() {
+        let restored = EntryModel.temporaryFolder(id: "/tmp/collection/restored", name: "restored")
+        let unrelatedPath = "/tmp/collection/unrelated"
+        var state = EntryViewLayoutState()
+        state.isCollectionMode = true
+        let reducer = EntryViewLayoutFeature()
+
+        _ = reducer.reduce(into: &state, action: .internal(.removeCollectionPaths([
+            restored.fullPath,
+            unrelatedPath,
+        ])))
+        _ = reducer.reduce(into: &state, action: .internal(.addCollectionPaths([
+            "/tmp/collection/./restored",
+        ])))
+        _ = reducer.reduce(into: &state, action: .internal(.collectionAppendEvent(
+            epoch: 0,
+            token: 1,
+            event: .coreBatch(items: [restored], batchIndex: 0),
+        )))
+
+        XCTAssertEqual(state.collectionItems.map(\.id), [restored.id])
+        XCTAssertEqual(state.removedCollectionPaths, [unrelatedPath])
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: collection clear는 epoch를 전진시켜 모든 active stream을 retire한다.
+    /// - 검증 내용: clear 뒤 old epoch/token bookkeeping이 남지 않는지 확인한다.
+    /// - 사전 조건: replace와 append request가 모두 in-flight다.
+    /// - 기대 결과: collection mode/items/loading이 초기화되고 active token은 제거된다.
+    func testClearCollectionPresentationRetiresCurrentStreamEpoch() {
+        var state = EntryViewLayoutState()
+        state.isCollectionMode = true
+        state.collectionReplaceEpoch = 7
+        state.collectionItems = [EntryModel.temporaryFolder(id: "/tmp/clear", name: "clear")]
+        state.activeCollectionAppendExpectedBatchIndices = [40: 0]
+        state.isCollectionContentLoading = true
+
+        _ = EntryViewLayoutFeature().reduce(into: &state, action: .internal(.clearCollectionPresentation))
+
+        XCTAssertEqual(state.collectionReplaceEpoch, 8)
+        XCTAssertFalse(state.isCollectionMode)
+        XCTAssertTrue(state.collectionItems.isEmpty)
+        XCTAssertTrue(state.activeCollectionAppendExpectedBatchIndices.isEmpty)
+        XCTAssertFalse(state.isCollectionContentLoading)
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: replacement partial failure는 emitted rows를 보존하고 incomplete state를 남긴다.
+    /// - 검증 내용: failure가 first core batch 이후 collection source를 비우지 않는지 확인한다.
+    /// - 사전 조건: replacement stream이 row 하나를 materialize한 뒤 terminal failure를 보낸다.
+    /// - 기대 결과: row는 남고 loading은 해제되며 incomplete failure가 기록된다.
+    func testCollectionReplacementPartialFailureRetainsRows() {
+        let item = EntryModel.temporaryFolder(id: "/tmp/partial", name: "partial")
+        var state = EntryViewLayoutState()
+        state.isCollectionMode = true
+        state.collectionReplaceEpoch = 6
+        state.collectionItems = [item]
+        state.expectedCollectionReplaceBatchIndex = 1
+        state.isCollectionContentLoading = false
+        let reducer = EntryViewLayoutFeature()
+
+        _ = reducer.reduce(into: &state, action: .internal(.collectionReplaceFailed(
+            epoch: 6,
+            message: "materialization failed",
+        )))
+
+        XCTAssertEqual(state.collectionItems.map(\.id), [item.id])
+        XCTAssertFalse(state.isCollectionContentLoading)
+        XCTAssertEqual(state.collectionIncompleteFailure, "materialization failed")
+        XCTAssertTrue(state.collectionStreamCompleted)
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: active deferred sort patch는 collection arrangement를 다시 적용한다.
+    /// - 검증 내용: active kind sort의 spotlight patch가 updated model과 reapply action chain을 만든다.
+    /// - 사전 조건: collection core가 완료됐고 kind sort가 활성화되어 있다.
+    /// - 기대 결과: patched kind가 collection/entries에 반영되고 arrangement reapply가 요청된다.
+    func testActiveCollectionMetadataPatchReappliesArrangement() async {
+        let item = EntryModel.temporaryFolder(id: "/tmp/patch", name: "patch")
+        let patched = item.applying(.spotlight(
+            id: item.id,
+            kind: "Patched Folder",
+            creatorApplication: nil,
+            lastOpenedDate: nil,
+        ))
+        var initialState = EntryViewLayoutState()
+        initialState.isCollectionMode = true
+        initialState.collectionCoreFinished = true
+        initialState.collectionItems = [item]
+        initialState.entries = [item]
+        initialState.sortKey = .kind
+        let store = TestStore(initialState: initialState) {
+            EntryViewLayoutFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: arrangement child의 내부 grouping 파생 상태는 이 spec owner의 검증 범위가 아니다.
+        store.exhaustivity = .off
+
+        await store.send(.internal(.collectionReplaceEvent(
+            epoch: 0,
+            event: .metadataPatches([.spotlight(
+                id: item.id,
+                kind: "Patched Folder",
+                creatorApplication: nil,
+                lastOpenedDate: nil,
+            )]),
+        ))) {
+            $0.collectionItems = [patched]
+            $0.entries = [patched]
+        }
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: inactive deferred patch는 collection ID order를 바꾸지 않는다.
+    /// - 검증 내용: name sort에서 spotlight kind patch가 cell data만 갱신하는지 확인한다.
+    /// - 사전 조건: collection core가 완료됐고 name sort가 활성화되어 있다.
+    /// - 기대 결과: entries의 ID 순서는 유지되며 patched kind만 반영된다.
+    func testInactiveCollectionMetadataPatchPreservesEntryOrder() {
+        let first = EntryModel.temporaryFolder(id: "/tmp/first", name: "first")
+        let second = EntryModel.temporaryFolder(id: "/tmp/second", name: "second")
+        var state = EntryViewLayoutState()
+        state.isCollectionMode = true
+        state.collectionCoreFinished = true
+        state.collectionItems = [first, second]
+        state.entries = [first, second]
+        state.sortKey = .name
+
+        _ = EntryViewLayoutFeature().reduce(into: &state, action: .internal(.collectionReplaceEvent(
+            epoch: 0,
+            event: .metadataPatches([.spotlight(
+                id: second.id,
+                kind: "Patched Folder",
+                creatorApplication: nil,
+                lastOpenedDate: nil,
+            )]),
+        )))
+
+        XCTAssertEqual(state.entries.map(\.id), [first.id, second.id])
+        XCTAssertEqual(state.entries.last?.facets.kind, "Patched Folder")
     }
 
     private func makeCollectionPresentationTestStore() -> TestStore<EntryViewLayoutState, EntryViewLayoutAction> {
@@ -1208,7 +1414,9 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         store.exhaustivity = .off
         return store
     }
+}
 
+extension EVM002ManageEntriesViewPresentationTests {
     // MARK: - EVM-002-toggle_directory_expansion_in_list
 
     /// EVM-002-toggle_directory_expansion_in_list: expanded folder는 immediate child를 parent 바로 아래에 projection한다.
@@ -1339,7 +1547,9 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             ),
         )
     }
+}
 
+extension EVM002ManageEntriesViewPresentationTests {
     /// EVM-002-toggle_directory_expansion_in_list: 동일 folder의 loading expansion은 중복 요청을 만들지 않는다.
     /// - 검증 내용: loading phase에서 다시 expand해도 generation이 유지된다.
     /// - 사전 조건: /root/a가 root entry이고 첫 expansion이 loading 상태다.
@@ -1446,42 +1656,5 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         state.entries = roots
         state.hierarchy = .init(rootPath: "/root")
         return state
-    }
-
-    private func receiveCollectionPresentationReapplySequence(
-        from store: TestStore<EntryViewLayoutState, EntryViewLayoutAction>,
-        applyItems: [EntryModel],
-        isCollectionMode: Bool,
-        resultingEntries: [EntryModel]? = nil,
-    ) async {
-        await store.receive { action in
-            guard case .entryArrangements(.reapply) = action else { return false }
-            return true
-        }
-        await store.receive { action in
-            guard case .entryArrangements(.delegate(.requestApply)) = action else { return false }
-            return true
-        }
-        await store.receive { action in
-            guard case let .entryArrangements(.apply(items, mode)) = action else { return false }
-            return items == applyItems && mode == isCollectionMode
-        }
-        if let resultingEntries {
-            await store.receive(
-                { action in
-                    guard case let .entryArrangements(.delegate(.applied(sortedItems, mode))) = action
-                    else { return false }
-                    return sortedItems == applyItems && mode == isCollectionMode
-                },
-                assert: { state in
-                    state.entries = resultingEntries
-                },
-            )
-        } else {
-            await store.receive { action in
-                guard case let .entryArrangements(.delegate(.applied(sortedItems, mode))) = action else { return false }
-                return sortedItems == applyItems && mode == isCollectionMode
-            }
-        }
     }
 }

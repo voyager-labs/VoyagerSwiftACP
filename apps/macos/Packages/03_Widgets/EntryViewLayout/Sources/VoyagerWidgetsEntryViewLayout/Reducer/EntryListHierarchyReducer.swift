@@ -1,8 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
-import VoyagerFeaturesEntryArrangements
-import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 @Reducer
 struct EntryListHierarchyReducer {
@@ -15,17 +14,13 @@ struct EntryListHierarchyReducer {
 
             switch hierarchyAction {
             case let .rootContextChanged(path):
-                guard normalizedPath(path) != normalizedPath(state.hierarchy.rootPath) else { return .none }
-                let cancellationRequests = state.hierarchy.foldersByID.keys.map {
-                    EntryFolderLoadRequest.RequestID(
-                        rootContextGeneration: state.hierarchy.rootContextGeneration,
-                        folderID: $0,
-                    )
-                }
+                let previousGeneration = state.hierarchy.rootContextGeneration
                 state.hierarchy.replaceRoot(path: path)
+                guard state.hierarchy.rootContextGeneration != previousGeneration else { return .none }
                 return .merge(
-                    cancellationRequests.map { .send(.entryOperations(.loading(.cancelFolderItems($0)))) }
-                        + [.send(.internal(.applyClearSelection)), .send(.internal(.reconcileHierarchySelection))],
+                    .send(.internal(.applyClearSelection)),
+                    .send(.internal(.reconcileHierarchySelection)),
+                    .send(.delegate(.rootContextChanged(path))),
                 )
 
             case .hiddenFilesSettingChanged:
@@ -50,6 +45,24 @@ struct EntryListHierarchyReducer {
                     state: &state,
                 )
 
+            case let .rootSnapshotCompleted(rootFolderIDs):
+                let removedPrefixes = state.hierarchy.foldersByID.keys.filter {
+                    isImmediateRootFolder($0, rootPath: state.hierarchy.rootPath)
+                        && !rootFolderIDs.contains($0)
+                }
+                return invalidateHierarchy(
+                    affectedPaths: [],
+                    removedPrefixes: removedPrefixes,
+                    reloadCachedFolders: false,
+                    state: &state,
+                )
+
+            case .showHiddenFilesRefreshRequested:
+                return refreshHierarchyForShowHiddenFiles(state: &state)
+
+            case .coarseHierarchyRefreshRequested:
+                return refreshHierarchyForShowHiddenFiles(state: &state)
+
             case let .folderExpansionRequested(id):
                 guard hierarchyInteractionsAreEnabled(in: state) else { return .none }
                 guard let folder = folder(id: id, in: state),
@@ -60,7 +73,7 @@ struct EntryListHierarchyReducer {
                 let folderState = state.hierarchy.foldersByID[id] ?? .init()
                 switch folderState.phase {
                 case .loaded, .loading:
-                    EntryViewLayoutFeature.reconcileSelectionWithVisibleEntries(&state)
+                    state.reconcileSelectionWithVisibleEntries()
                     return .none
                 case .idle, .failed:
                     return startLoad(folder: folder, id: id, state: &state)
@@ -77,8 +90,8 @@ struct EntryListHierarchyReducer {
             case let .folderCollapseRequested(id):
                 state.hierarchy.expandedFolderIDs.remove(id)
                 var folderState = state.hierarchy.foldersByID[id] ?? .init()
-                let shouldCancelLoad = folderState.phase != .loaded
-                if shouldCancelLoad {
+                let shouldCancelLoad = folderState.phase == .loading
+                if folderState.phase != .loaded {
                     folderState.generation &+= 1
                     folderState.children = []
                     folderState.phase = .idle
@@ -86,13 +99,11 @@ struct EntryListHierarchyReducer {
                     folderState.coreFinished = false
                 }
                 state.hierarchy.foldersByID[id] = folderState
-                let requestID = EntryFolderLoadRequest.RequestID(
-                    rootContextGeneration: state.hierarchy.rootContextGeneration,
-                    folderID: id,
-                )
-                return .merge(
-                    shouldCancelLoad ? .send(.entryOperations(.loading(.cancelFolderItems(requestID)))) : .none,
-                    .send(.internal(.reconcileHierarchySelection)),
+                let reconcileEffect = Effect<Action>.send(.internal(.reconcileHierarchySelection))
+                guard shouldCancelLoad else { return reconcileEffect }
+                return .concatenate(
+                    .send(.delegate(.collapseRequested(id))),
+                    reconcileEffect,
                 )
 
             case let .folderChildrenResponse(rootContextGeneration, folderID, folderGeneration, response):
@@ -102,16 +113,48 @@ struct EntryListHierarchyReducer {
                       folderState.phase == .loading
                 else { return .none }
 
+                let previousRevision = state.outlineProjectionRevision
+                let wasCoreFinished = folderState.coreFinished
                 guard apply(response: response, to: &folderState) else { return .none }
                 state.hierarchy.foldersByID[folderID] = folderState
-                EntryViewLayoutFeature.reconcileSelectionWithVisibleEntries(&state)
+
+                if !wasCoreFinished,
+                   folderState.coreFinished,
+                   case .event(.coreFinished) = response
+                {
+                    let childIDs = Set(
+                        folderState.children
+                            .filter(\.supportsListHierarchyExpansion)
+                            .map(\.id),
+                    )
+                    let staleDescendants = state.hierarchy.foldersByID.keys.filter {
+                        isImmediateChildFolder($0, parentID: folderID) && !childIDs.contains($0)
+                    }
+                    if !staleDescendants.isEmpty {
+                        let effect = invalidateHierarchy(
+                            affectedPaths: [],
+                            removedPrefixes: Array(staleDescendants),
+                            reloadCachedFolders: false,
+                            state: &state,
+                        )
+                        if state.outlineProjectionRevision == previousRevision {
+                            state.advanceOutlineProjectionRevision()
+                        }
+                        return effect
+                    }
+                }
+
+                state.reconcileSelectionWithVisibleEntries()
+                if state.outlineProjectionRevision == previousRevision {
+                    state.advanceOutlineProjectionRevision()
+                }
                 return .none
             }
         }
     }
 
     private func startLoad(
-        folder: EntryModel,
+        folder _: EntryModel,
         id: EntryModel.ID,
         state: inout State,
     ) -> Effect<Action> {
@@ -122,16 +165,13 @@ struct EntryListHierarchyReducer {
         folderState.expectedBatchIndex = 0
         folderState.coreFinished = false
         state.hierarchy.foldersByID[id] = folderState
-        EntryViewLayoutFeature.reconcileSelectionWithVisibleEntries(&state)
+        let previousRevision = state.outlineProjectionRevision
+        state.reconcileSelectionWithVisibleEntries()
+        if state.outlineProjectionRevision == previousRevision {
+            state.advanceOutlineProjectionRevision()
+        }
 
-        return .send(.entryOperations(.loading(.loadFolderItems(.init(
-            rootContextGeneration: state.hierarchy.rootContextGeneration,
-            folderID: id,
-            folderGeneration: folderState.generation,
-            path: folder.fullPath,
-            showHidden: state.showHiddenFiles,
-            priority: Self.metadataPriority(for: state.entryArrangements),
-        )))))
+        return .send(.delegate(.expandRequested(id)))
     }
 
     private func invalidateHierarchy(
@@ -143,13 +183,7 @@ struct EntryListHierarchyReducer {
         let removedIDs = Set(state.hierarchy.foldersByID.keys.filter { id in
             removedPrefixes.contains { isSameOrDescendant(path: id, of: $0) }
         })
-        let oldRootGeneration = state.hierarchy.rootContextGeneration
-        var effects: [Effect<Action>] = removedIDs.map {
-            .send(.entryOperations(.loading(.cancelFolderItems(.init(
-                rootContextGeneration: oldRootGeneration,
-                folderID: $0,
-            )))))
-        }
+        var effects: [Effect<Action>] = []
 
         for id in removedIDs {
             state.hierarchy.expandedFolderIDs.remove(id)
@@ -168,12 +202,16 @@ struct EntryListHierarchyReducer {
             }) {
                 affectedIDs.insert(folderID)
             }
-            if let parentID = nearestRefreshableParentID(for: canonicalPath, state: state) {
+            if let parentID = nearestLoadedParentID(for: canonicalPath, state: state) {
                 affectedIDs.insert(parentID)
             }
         }
 
-        for id in affectedIDs.subtracting(removedIDs) {
+        let reloadIDs = affectedIDs.subtracting(removedIDs)
+        if !reloadIDs.isEmpty {
+            state.advanceOutlineProjectionRevision()
+        }
+        for id in reloadIDs {
             guard let folder = folder(id: id, in: state) else { continue }
             guard folder.supportsListHierarchyExpansion else { continue }
             if state.hierarchy.expandedFolderIDs.contains(id) {
@@ -186,49 +224,49 @@ struct EntryListHierarchyReducer {
                 folderState.expectedBatchIndex = 0
                 folderState.coreFinished = false
                 state.hierarchy.foldersByID[id] = folderState
-                effects.append(.send(.entryOperations(.loading(.cancelFolderItems(.init(
-                    rootContextGeneration: oldRootGeneration,
-                    folderID: id,
-                ))))))
             }
         }
 
-        EntryViewLayoutFeature.reconcileSelectionWithVisibleEntries(&state)
+        state.reconcileSelectionWithVisibleEntries()
         return .merge(effects)
     }
 
     private func reloadFoldersForPresentationChange(state: inout State) -> Effect<Action> {
         let folderIDs = Array(state.hierarchy.foldersByID.keys)
-        let expandedFolders = folderIDs.compactMap { id -> (EntryModel.ID, EntryModel)? in
-            guard state.hierarchy.expandedFolderIDs.contains(id),
-                  let folder = folder(id: id, in: state)
-            else { return nil }
-            return (id, folder)
-        }
-        let expandedFolderIDs = Set(expandedFolders.map(\.0))
-        let rootContextGeneration = state.hierarchy.rootContextGeneration
-        var effects: [Effect<Action>] = folderIDs.map { id in
-            .send(.entryOperations(.loading(.cancelFolderItems(.init(
-                rootContextGeneration: rootContextGeneration,
-                folderID: id,
-            )))))
-        }
+        let expandedFolders = state.hierarchy.expandedFolderIDs
+            .compactMap { id in
+                folder(id: id, in: state)
+            }
+            .filter { folder in
+                folder.supportsListHierarchyExpansion && folderIsWithinCurrentRoot(folder.id, state: state)
+            }
 
-        for id in folderIDs where !expandedFolderIDs.contains(id) {
+        for id in folderIDs {
             var folderState = state.hierarchy.foldersByID[id] ?? .init()
+            if !state.hierarchy.expandedFolderIDs.contains(id) {
+                folderState.generation &+= 1
+            }
             folderState.children = []
             folderState.phase = .idle
-            folderState.generation &+= 1
             folderState.expectedBatchIndex = 0
             folderState.coreFinished = false
             state.hierarchy.foldersByID[id] = folderState
         }
-        for (id, folder) in expandedFolders {
-            effects.append(startLoad(folder: folder, id: id, state: &state))
+        if !folderIDs.isEmpty {
+            state.advanceOutlineProjectionRevision()
         }
 
-        EntryViewLayoutFeature.reconcileSelectionWithVisibleEntries(&state)
-        return .concatenate(effects)
+        let restartEffects: [Effect<Action>] = expandedFolders.map { folder in
+            startLoad(folder: folder, id: folder.id, state: &state)
+        }
+        return .concatenate(
+            .merge(restartEffects),
+            .send(.internal(.reconcileHierarchySelection)),
+        )
+    }
+
+    private func refreshHierarchyForShowHiddenFiles(state: inout State) -> Effect<Action> {
+        reloadFoldersForPresentationChange(state: &state)
     }
 
     private func folder(id: EntryModel.ID, in state: State) -> EntryModel? {
@@ -241,7 +279,7 @@ struct EntryListHierarchyReducer {
     private func hierarchyInteractionsAreEnabled(in state: State) -> Bool {
         state.mode == .list
             && !state.isCollectionMode
-            && state.entryArrangements.groupKey == .none
+            && state.groupKey == .none
             && !state.hierarchy.rootPath.isEmpty
     }
 
@@ -249,14 +287,26 @@ struct EntryListHierarchyReducer {
         isSameOrDescendant(path: id, of: state.hierarchy.rootPath)
     }
 
+    private func isImmediateRootFolder(_ id: EntryModel.ID, rootPath: String) -> Bool {
+        let rootComponents = pathComponents(for: rootPath)
+        let folderComponents = pathComponents(for: id)
+        return folderComponents.count == rootComponents.count + 1
+            && folderComponents.starts(with: rootComponents)
+    }
+
+    private func isImmediateChildFolder(_ id: EntryModel.ID, parentID: EntryModel.ID) -> Bool {
+        let parentComponents = pathComponents(for: parentID)
+        let childComponents = pathComponents(for: id)
+        return childComponents.count == parentComponents.count + 1
+            && childComponents.starts(with: parentComponents)
+    }
+
     private static func metadataPriority(
-        for arrangements: EntryArrangementsFeature.State,
+        for sortKey: VoyagerShared.SortKey,
     ) -> EntryMetadataPriority {
-        let probes = [
-            EntryViewLayoutFeature.metadataProbe(for: arrangements.sortKey),
-            EntryViewLayoutFeature.metadataProbe(for: arrangements.groupKey),
-        ].compactMap(\.self)
-        return probes.isEmpty ? .none : .active(probes)
+        .active([
+            EntryViewLayoutFeature.metadataProbe(for: sortKey),
+        ].compactMap(\.self))
     }
 
     private func apply(
@@ -315,13 +365,24 @@ struct EntryListHierarchyReducer {
         to folderState: inout EntryListHierarchyState.FolderChildrenState,
     ) -> Bool {
         guard folderState.coreFinished else { return false }
+        let patchesByEntryID = Dictionary(grouping: patches, by: metadataPatchEntryID)
         folderState.children = folderState.children.map { child in
-            patches.reduce(child) { $0.applying($1) }
+            guard let childPatches = patchesByEntryID[child.id] else { return child }
+            return childPatches.reduce(child) { $0.applying($1) }
         }
         return true
     }
 
-    private func nearestRefreshableParentID(for path: String, state: State) -> EntryModel.ID? {
+    private func metadataPatchEntryID(_ patch: EntryMetadataPatch) -> EntryModel.ID {
+        switch patch {
+        case let .spotlight(id, _, _, _),
+             let .tags(id, _),
+             let .supplementaryMetadata(id, _):
+            id
+        }
+    }
+
+    private func nearestLoadedParentID(for path: String, state: State) -> EntryModel.ID? {
         state.hierarchy.foldersByID
             .filter {
                 ($0.value.phase == .loaded || $0.value.phase == .loading)

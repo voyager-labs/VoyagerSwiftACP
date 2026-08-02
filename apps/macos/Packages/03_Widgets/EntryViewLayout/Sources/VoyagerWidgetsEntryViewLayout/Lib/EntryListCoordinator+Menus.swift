@@ -2,7 +2,6 @@
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
-import VoyagerFeaturesEntryOperations
 
 extension EntryListCoordinator {
     func configureHeaderMenu() {
@@ -19,7 +18,7 @@ extension EntryListCoordinator {
             return EntryViewLayoutColumnsMenuModel(visibleColumns: visibleColumns)
         }
         headerView.send = { [weak self] action in
-            self?.store.send(action)
+            self?.store.send(.view(action))
         }
     }
 
@@ -29,7 +28,7 @@ extension EntryListCoordinator {
         }
         let normalized = EntryListColumn.normalizeVisibleColumns(columns)
         if normalized != state.listVisibleColumns {
-            store.send(.internal(.setListVisibleColumns(normalized)))
+            store.send(.view(.updateListVisibleColumns(normalized)))
         }
     }
 
@@ -50,29 +49,11 @@ extension EntryListCoordinator {
     }
 
     func preloadOpenWithApplications(selectedEntries: [EntryModel]) {
-        let selectedFiles = selectedEntries.filter { !$0.isFolder }
-        if selectedFiles.isEmpty {
-            return
-        }
-
-        if selectedFiles.count > 1 {
-            sendEntryOperations(.openWith(.loadCommonApplicationsForFiles(files: selectedFiles)))
-        } else if let file = selectedFiles.first,
-                  state.entryOperations.applicationsForItems[file.fullPath] == nil
-        {
-            sendEntryOperations(.openWith(.loadApplicationsForFile(file: file)))
-        }
+        store.send(.view(.preloadOpenWithApplications(selectedEntries)))
     }
 
-    func openWithApplications(selectedEntries: [EntryModel]) -> [ApplicationInfo] {
-        let selectedFiles = selectedEntries.filter { !$0.isFolder }
-        return if selectedFiles.count > 1 {
-            state.entryOperations.commonApplicationsForSelectedFiles
-        } else if let file = selectedFiles.first {
-            state.entryOperations.applicationsForItems[file.fullPath] ?? []
-        } else {
-            [] as [ApplicationInfo]
-        }
+    func openWithApplications(selectedEntries _: [EntryModel]) -> [ApplicationInfo] {
+        state.presentation.openWithApplications
     }
 
     func entryForRow(_ row: Int?) -> EntryModel? {
@@ -83,33 +64,15 @@ extension EntryListCoordinator {
     }
 
     func selectedEntries(rowEntry: EntryModel?) -> [EntryModel] {
-        let selectedIds = state.selectedIds
-        if selectedIds.isEmpty {
-            return rowEntry.map { [$0] } ?? []
-        }
-        let displayEntries = state.visibleSelectableEntries(
-            isNormalDirectoryPage: state.hierarchyProjectionIsActive,
-        )
-        return displayEntries.filter { selectedIds.contains($0.id) }
+        state.contextMenuSelectedEntries(rowEntry: rowEntry)
     }
 
     var isTrashFolder: Bool {
-        guard let trashPath = entryOpenClient.trashDirectoryPath() else {
+        guard let trashPath = state.trashDirectoryPath else {
             return false
         }
         let path = state.currentPath
         return path == trashPath || path.hasPrefix(trashPath + "/")
-    }
-
-    func dragOperation(from resolved: EntryDropResolvedOperation) -> NSDragOperation {
-        switch resolved {
-        case .none:
-            []
-        case .copy:
-            .copy
-        case .move:
-            .move
-        }
     }
 }
 
@@ -117,10 +80,11 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
     func contextMenu(forRow row: Int?, event _: NSEvent) -> NSMenu {
         updateContextMenuAnchor(forRow: row)
         let rowEntry = entryForRow(row)
+        let displayEntries = state.hierarchyProjectionIsActive
+            ? state.visibleSelectableEntries(isNormalDirectoryPage: true)
+            : state.entries
         let target = EntryContextMenuTarget.resolve(
-            displayEntries: state.visibleSelectableEntries(
-                isNormalDirectoryPage: state.hierarchyProjectionIsActive,
-            ),
+            displayEntries: displayEntries,
             selectedIds: state.selectedIds,
             rowEntry: rowEntry,
         )
@@ -131,8 +95,8 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
             selectedEntries: target.entries,
             rowEntry: rowEntry,
             isTrashFolder: isTrashFolder,
-            restorableTrashPaths: state.entryOperations.restorableTrashPaths,
-            canPaste: !state.entryOperations.clipboardItems.isEmpty,
+            restorableTrashPaths: state.restorableTrashPaths,
+            canPaste: state.hasClipboardItems,
             favoriteTags: finderFavoritesTagClient.favoriteTags(),
             openWithApplications: openWithApplications(selectedEntries: target.entries),
         )
@@ -156,15 +120,15 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
             showOpenWith: menuSpec.showOpenWith,
             paletteTags: menuSpec.paletteTags,
             knownTags: menuSpec.knownTags,
-            canPerformEntryCommands: (!state.entryOperations.isLoading || state.isCollectionMode)
-                && !target.containsBusyEntry(itemStates: state.entryOperations.itemStates),
+            canPerformEntryCommands: (!state.isLoading || state.isCollectionMode)
+                && !target.containsBusyEntry(busyEntryPaths: state.busyEntryPaths),
         ))
     }
 
     private func synchronizeContextMenuSelection(_ target: EntryContextMenuTarget) {
         guard state.selectedIds != target.selectedIds else { return }
         _ = MainActor.assumeIsolated {
-            store.send(.internal(.setSelectionState(
+            store.send(.view(.updateSelection(
                 ids: target.selectedIds,
                 lastSelectedId: target.entries.last?.id,
                 rangeAnchorId: target.entries.last?.id,
