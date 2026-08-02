@@ -19,7 +19,6 @@ public struct AiChatView: View {
     @State private var isThinkingSelectorPresented = false
     @State private var transcriptScrollRestoreRequest: AiChatTranscriptScrollRestoreRequest?
     @State private var transcriptScrollRestoreSequence = 0
-    @State private var transcriptSearchFocusRevision: UInt64 = 0
     @State private var shouldRestoreChatInputFocusAfterSearch = false
     @State private var lastNavigatedSearchTargetID: AiChatTranscriptMatchAnchor?
     @StateObject private var transcriptSearchProjection = AiChatTranscriptSearchProjectionModel()
@@ -89,7 +88,6 @@ public struct AiChatView: View {
         .onChange(of: state.transcriptSearch.isPresented) { isPresented in
             guard isPresented else { return }
             shouldRestoreChatInputFocusAfterSearch = isChatInputFocused
-            transcriptSearchFocusRevision &+= 1
         }
     }
 
@@ -307,7 +305,7 @@ public struct AiChatView: View {
     private func transcriptSearchBar(state: AiChatState) -> some View {
         AiChatTranscriptSearchBar(
             search: state.transcriptSearch,
-            focusRevision: transcriptSearchFocusRevision,
+            focusRevision: state.transcriptSearch.focusRevision,
             onQueryChanged: { store.send(.transcriptSearchQueryChanged($0)) },
             onPrevious: { store.send(.transcriptSearchPreviousTapped) },
             onNext: { store.send(.transcriptSearchNextTapped) },
