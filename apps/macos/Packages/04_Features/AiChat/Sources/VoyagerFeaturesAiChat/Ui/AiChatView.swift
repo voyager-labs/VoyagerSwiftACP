@@ -18,7 +18,6 @@ public struct AiChatView: View {
     @State private var transcriptScrollRestoreRequest: AiChatTranscriptScrollRestoreRequest?
     @State private var transcriptScrollRestoreSequence = 0
     @State private var shouldRestoreChatInputFocusAfterSearch = false
-    @State private var lastNavigatedSearchTargetID: AiChatTranscriptMatchAnchor?
     @StateObject private var transcriptSearchProjection = AiChatTranscriptSearchProjectionModel()
 
     public init(
@@ -128,10 +127,6 @@ public struct AiChatView: View {
                         proxy: scrollProxy,
                     )
                 }
-                .onChange(of: state.transcriptSearch.query) { _ in
-                    lastNavigatedSearchTargetID = nil
-                }
-
                 inputBar(
                     state: state,
                     input: skeleton.chatInput,
@@ -314,7 +309,6 @@ public struct AiChatView: View {
     private func closeTranscriptSearch() {
         let shouldRestoreChatInputFocus = shouldRestoreChatInputFocusAfterSearch
         shouldRestoreChatInputFocusAfterSearch = false
-        lastNavigatedSearchTargetID = nil
         store.send(.transcriptSearchClosed)
         guard shouldRestoreChatInputFocus else { return }
         DispatchQueue.main.async {
@@ -330,9 +324,7 @@ public struct AiChatView: View {
         guard let target = Self.searchNavigationTarget(
             presentation: presentation,
             currentMatch: currentMatch,
-            lastTargetID: lastNavigatedSearchTargetID,
         ) else { return }
-        lastNavigatedSearchTargetID = target.id
         DispatchQueue.main.async {
             withAnimation(.easeOut(duration: 0.18)) {
                 proxy.scrollTo(target.scrollID, anchor: target.relativeAnchor)
@@ -343,13 +335,9 @@ public struct AiChatView: View {
     static func searchNavigationTarget(
         presentation: AiChatTranscriptSearchPresentation,
         currentMatch: AiChatRenderedTextMatchDescriptor?,
-        lastTargetID: AiChatTranscriptMatchAnchor?,
     ) -> AiChatTranscriptMatchScrollTarget? {
-        guard let currentMatch,
-              let target = presentation.scrollTarget(for: currentMatch),
-              target.id != lastTargetID
-        else { return nil }
-        return target
+        guard let currentMatch else { return nil }
+        return presentation.scrollTarget(for: currentMatch)
     }
 
     private static func sessionsDisplayModel(for state: AiChatState) -> AiChatSessionsDisplayModel {

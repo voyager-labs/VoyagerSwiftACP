@@ -3045,7 +3045,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
     /// CBW-001-open_contextual_chat: 같은 long block의 먼 occurrence는 서로 다른 scroll target과 위치 intent를 만든다.
     /// block-only dedupe가 명시적 next/previous occurrence 이동을 제거하지 않는지 검증합니다.
-    /// - 검증 내용: occurrence range 기반 ID, 상대 anchor, rendered marker ID, 동일 target만 dedupe하는 navigation seam을 확인합니다.
+    /// - 검증 내용: occurrence range 기반 ID, 상대 anchor, rendered marker ID, 명시적 navigation seam을 확인합니다.
     /// - 사전 조건: 하나의 긴 user paragraph 시작과 끝에 동일 query occurrence가 각각 존재합니다.
     /// - 기대 결과: 두 occurrence는 서로 다른 target ID와 상대 위치를 만들고 두 번째 이동 intent도 유지됩니다.
     func testOpenContextualChatCreatesDistinctScrollIntentsForDistantMatchesInSameBlock() throws {
@@ -3068,17 +3068,14 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertNotNil(AiChatView.searchNavigationTarget(
             presentation: presentation,
             currentMatch: presentation.matches[0],
-            lastTargetID: nil,
         ))
         XCTAssertNotNil(AiChatView.searchNavigationTarget(
             presentation: presentation,
             currentMatch: presentation.matches[1],
-            lastTargetID: first.id,
         ))
-        XCTAssertNil(AiChatView.searchNavigationTarget(
+        XCTAssertNotNil(AiChatView.searchNavigationTarget(
             presentation: presentation,
             currentMatch: presentation.matches[1],
-            lastTargetID: second.id,
         ))
     }
 }
