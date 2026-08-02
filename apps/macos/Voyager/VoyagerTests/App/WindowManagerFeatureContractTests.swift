@@ -3521,6 +3521,111 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await assertRejection(source: genericSource, target: genericTarget, category: .generic)
     }
 
+    /// CTM-001-move_content_tab_to_another_window: 다른 창의 전역 pin 저장 중에는 이동을 busy로 거부한다.
+    /// mutation source가 이동 source와 달라도 같은 tab의 authoritative store sync race를 차단하는지 검증한다.
+    /// - 검증 내용: upsert/remove별 source/target/owner/global mutation 보존과 move/activate/close 미호출
+    /// - 사전 조건: 별도 owner window가 이동 tab과 같은 ID의 전역 pinned record mutation을 소유한다.
+    /// - 기대 결과: move는 busy로 reject되고 pending/presentation/terminal 외 semantic state와 effect는 변하지 않는다.
+    func testContentTabMoveRejectsWhenSameTabPinnedRecordMutationIsInFlightInAnyWindow() async throws {
+        let movedTabID = ContentTabID(rawValue: "global-pin-mutation-moved")
+        let pinnedRecord = ContentTabPinnedRecord(
+            id: movedTabID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/global-pin-mutation/moved"),
+            title: "Moved",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 450),
+        )
+        let mutations: [ContentTabPinnedRecordMutation] = [
+            .upsert(pinnedRecord),
+            .remove(recordID: movedTabID.rawValue),
+        ]
+
+        for mutation in mutations {
+            let sourceID = UUID()
+            let targetID = UUID()
+            let mutationOwnerID = UUID()
+            let mutationID = UUID()
+            let request = ContentTabMoveRequest(
+                requestID: UUID(),
+                sourceWindowID: sourceID,
+                tabID: movedTabID,
+                targetWindowID: targetID,
+            )
+            var source = try Self.makeContentTabMoveWindow(
+                id: sourceID,
+                tabs: [(movedTabID, "/global-pin-mutation/moved")],
+            )
+            source.window.contentTabs.tabs[id: movedTabID]?.isPinned = true
+            source.window.sidebar.pendingContentTabMoveRequest = request
+            let target = try Self.makeContentTabMoveWindow(
+                id: targetID,
+                tabs: [(ContentTabID(rawValue: "global-pin-mutation-target"), "/global-pin-mutation/target")],
+            )
+            var mutationOwner = try Self.makeContentTabMoveWindow(
+                id: mutationOwnerID,
+                tabs: [(movedTabID, "/global-pin-mutation/moved")],
+            )
+            mutationOwner.window.contentTabs.tabs[id: movedTabID]?.isPinned = true
+            let intentID = mutationOwner.window.contentTabs.markLatestPinnedRecordPersistenceIntent(for: movedTabID)
+            let persistenceRequest = ContentTabPinnedRecordPersistenceRequest(
+                mutationID: mutationID,
+                tabID: movedTabID,
+                intentID: intentID,
+                mutation: mutation,
+                rollback: ContentTabPinnedRecordRollbackSnapshot(
+                    previousIsPinned: true,
+                    previousPinnedRecord: pinnedRecord,
+                    previousTabIndex: 0,
+                ),
+            )
+            let inFlightMutation = WindowManagerInFlightPinnedRecordMutation(
+                sourceWindowID: mutationOwnerID,
+                request: FileManagerPinnedRecordPersistenceRequest(request: persistenceRequest, route: .single),
+                generation: ContentTabPinnedRecordMutationGeneration(tabID: movedTabID),
+            )
+            let sourceBefore = source.window
+            let targetBefore = target.window
+            let mutationOwnerBefore = mutationOwner.window
+            var initialState = WindowManagerFeature.State()
+            initialState.windows = [source, target, mutationOwner]
+            initialState.inFlightPinnedRecordMutations[mutationID] = inFlightMutation
+            let moveCalls = LockIsolated(0)
+            let activatedIDs = LockIsolated<[UUID]>([])
+            let closedIDs = LockIsolated<[UUID]>([])
+            let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+                $0.fileOperationUndoManagerClient.moveScope = { _, _, _ in
+                    moveCalls.withValue { $0 += 1 }
+                    return .moved
+                }
+                $0.fileManagerWindowClient.activate = { id in
+                    activatedIDs.withValue { $0.append(id) }
+                    return .discarded
+                }
+                $0.fileManagerWindowClient.close = { id in closedIDs.withValue { $0.append(id) } }
+            }
+            // store.exhaustivity = .off: global mutation gate의 semantic atomicity와 effect 미호출만 검증한다.
+            store.exhaustivity = .off
+
+            await store.send(.contentTabMoveRequest(request))
+
+            var expectedSource = sourceBefore
+            expectedSource.sidebar.pendingContentTabMoveRequest = nil
+            expectedSource.contentTabMoveFailurePresentation = .init(
+                requestID: request.requestID,
+                category: .busy,
+            )
+            XCTAssertEqual(store.state.windows[id: sourceID]?.window, expectedSource)
+            XCTAssertEqual(store.state.windows[id: targetID]?.window, targetBefore)
+            XCTAssertEqual(store.state.windows[id: mutationOwnerID]?.window, mutationOwnerBefore)
+            XCTAssertEqual(store.state.inFlightPinnedRecordMutations, [mutationID: inFlightMutation])
+            XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .rejected(.busy))
+            XCTAssertEqual(moveCalls.value, 0)
+            XCTAssertTrue(activatedIDs.value.isEmpty)
+            XCTAssertTrue(closedIDs.value.isEmpty)
+        }
+    }
+
     /// CTM-001-move_content_tab_to_another_window: destination ambiguous AI provenance는 generic으로 종료한다.
     /// destination mutation 전에 window-wide provenance를 검증하고 app terminal 계약으로 매핑하는지 검증한다.
     /// - 검증 내용: generic presentation/ledger와 source/target semantic snapshot equality

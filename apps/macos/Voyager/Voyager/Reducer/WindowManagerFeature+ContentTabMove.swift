@@ -20,6 +20,12 @@ extension WindowManagerFeature {
             return rejectContentTabMove(request, category: .unavailable, state: &state)
         }
 
+        guard !state.inFlightPinnedRecordMutations.values.contains(where: {
+            $0.request.request.tabID == request.tabID
+        }) else {
+            return rejectContentTabMove(request, category: .busy, state: &state)
+        }
+
         let targetUndoScopePolicy: FileOperationUndoScopeTargetPolicy =
             targetWindow.contentTabs.tabs[id: request.tabID] == nil ? .requireVacant : .replaceEmpty
         switch ContentTabTransfer.transfer(
