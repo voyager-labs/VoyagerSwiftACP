@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
@@ -214,6 +215,37 @@ extension EVM002FileManagerPagePresentationTests {
         }
     }
 
+    /// EVM-002-switch_entries_view: 다중 태그 grouping은 canonical projection entries를 중복하지 않는다.
+    /// - 검증 내용: 같은 항목이 여러 tag section에 포함돼도 ContentProjection entries는 ID당 한 번만 포함된다.
+    /// - 사전 조건: Blue와 Red 태그를 모두 가진 파일에 Tags grouping이 활성화돼 있다.
+    /// - 기대 결과: sections에는 두 그룹이 유지되고 entries에는 파일이 한 번만 포함된다.
+    func testTagsGroupingProjectsUniqueCanonicalEntries() async {
+        let file = makeSharedProjectionFile(tags: [
+            Tag(name: "Blue", colorCode: 6),
+            Tag(name: "Red", colorCode: 1),
+        ])
+        var state = FileManagerContentState()
+        state.entryOperations.items = [file]
+        state.entryArrangements.groupKey = .tags
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.entryArrangements(.delegate(.applied(sortedItems: [file], isCollectionMode: false))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [file]
+                && projection.sections.map(\.id) == ["Blue", "Red"]
+                && projection.sections.flatMap(\.items) == [file, file]
+        }
+    }
+
     /// EVM-002-switch_entries_view: collection materialization도 page arrangement를 다시 적용한다.
     /// - 검증 내용: collection core batch가 FileManager projection trigger를 거쳐 정렬된다.
     /// - 사전 조건: collection mode에서 역순 core batch와 ascending Name 정렬이 준비돼 있다.
@@ -245,7 +277,7 @@ extension EVM002FileManagerPagePresentationTests {
     }
 }
 
-private func makeSharedProjectionFile() -> EntryModel {
+private func makeSharedProjectionFile(tags: [Tag]? = nil) -> EntryModel {
     EntryModel(
         name: "file.txt",
         fullPath: "/root/file.txt",
@@ -260,7 +292,7 @@ private func makeSharedProjectionFile() -> EntryModel {
             lastOpenedDate: nil,
             kind: "Text",
             creatorApplication: nil,
-            tags: nil,
+            tags: tags,
             supplementaryMetadata: nil,
         ),
     )

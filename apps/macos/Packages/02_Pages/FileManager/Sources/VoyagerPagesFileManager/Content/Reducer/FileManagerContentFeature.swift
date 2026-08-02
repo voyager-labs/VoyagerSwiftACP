@@ -119,7 +119,10 @@ public struct FileManagerContentFeature {
                 into: &state.entryArrangements,
                 action: .apply(items: projectionEntries, isCollectionMode: useCollectionItems),
             )
-            let arrangedEntries = state.entryArrangements.groupedItems.flatMap(\.items)
+            var seenEntryIDs = Set<EntryModel.ID>()
+            let arrangedEntries = state.entryArrangements.groupedItems
+                .flatMap(\.items)
+                .filter { seenEntryIDs.insert($0.id).inserted }
             let projectionSections = FileManagerContentFeature.makeSections(
                 groupedItems: state.entryArrangements.groupedItems,
                 collapsedGroups: state.entryArrangements.collapsedGroups,
