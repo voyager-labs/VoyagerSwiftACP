@@ -35,7 +35,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
 
     public func outlineView(
         _ outlineView: NSOutlineView,
-        validateDrop _: any NSDraggingInfo,
+        validateDrop info: any NSDraggingInfo,
         proposedItem item: Any?,
         proposedChildIndex _: Int,
     ) -> NSDragOperation {
@@ -50,8 +50,11 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
             outlineView.setDropItem(nil, dropChildIndex: -1)
         }
 
-        let wantsCopy = NSEvent.modifierFlags.contains(.option)
-        let operation: NSDragOperation = wantsCopy ? .copy : .move
+        let validation = EntryViewLayoutDropValidationAdapter.resolve(
+            draggingInfo: info,
+            destinationPath: destinationPath,
+        )
+        let operation = EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation)
         store.send(.view(.setDropTargeted(!operation.isEmpty)))
         return operation
     }
@@ -70,7 +73,6 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
             destinationPath = entry.fullPath
         }
 
-        let wantsCopy = NSEvent.modifierFlags.contains(.option)
         let pasteboard = info.draggingPasteboard
         let options: [NSPasteboard.ReadingOptionKey: Any] = [
             .urlReadingFileURLsOnly: true,
@@ -81,10 +83,21 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
             store.send(.view(.setDropTargeted(false)))
             return false
         }
-        store.send(.view(.dropItems(
-            sourcePaths: urls.map(\.path),
+        let sourcePaths = urls.map(\.path)
+        let validation = EntryViewLayoutDropValidationAdapter.resolve(
+            sourcePaths: sourcePaths,
             destinationPath: destinationPath,
-            isOptionDrag: wantsCopy,
+            allowedOperations: info.draggingSourceOperationMask,
+            prefersCopy: NSEvent.modifierFlags.contains(.option),
+        )
+        guard !EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation).isEmpty else {
+            store.send(.view(.setDropTargeted(false)))
+            return false
+        }
+        store.send(.view(.dropItems(
+            sourcePaths: sourcePaths,
+            destinationPath: destinationPath,
+            isOptionDrag: validation.isOptionDrag,
         )))
         store.send(.view(.setDropTargeted(false)))
         return true

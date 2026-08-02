@@ -447,8 +447,11 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         } else {
             proposedDropOperation.pointee = .before
         }
-        let wantsCopy = NSEvent.modifierFlags.contains(.option)
-        let operation: NSDragOperation = wantsCopy ? .copy : .move
+        let validation = EntryViewLayoutDropValidationAdapter.resolve(
+            draggingInfo: draggingInfo,
+            destinationPath: destinationPath,
+        )
+        let operation = EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation)
         setDropTargetEntryId(operation.isEmpty ? nil : targetEntryId)
         validatedDropDestinationPath = operation.isEmpty ? nil : destinationPath
         store.send(.view(.setDropTargeted(!operation.isEmpty)))
@@ -463,7 +466,6 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         dropOperation _: NSCollectionView.DropOperation,
     ) -> Bool {
         let destinationPath = validatedDropDestinationPath ?? state.currentPath
-        let wantsCopy = NSEvent.modifierFlags.contains(.option)
         let pasteboard = draggingInfo.draggingPasteboard
         let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
         guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL],
@@ -473,10 +475,22 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             store.send(.view(.setDropTargeted(false)))
             return false
         }
-        store.send(.view(.dropItems(
-            sourcePaths: urls.map(\.path),
+        let sourcePaths = urls.map(\.path)
+        let validation = EntryViewLayoutDropValidationAdapter.resolve(
+            sourcePaths: sourcePaths,
             destinationPath: destinationPath,
-            isOptionDrag: wantsCopy,
+            allowedOperations: draggingInfo.draggingSourceOperationMask,
+            prefersCopy: NSEvent.modifierFlags.contains(.option),
+        )
+        guard !EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation).isEmpty else {
+            clearDropTargetState()
+            store.send(.view(.setDropTargeted(false)))
+            return false
+        }
+        store.send(.view(.dropItems(
+            sourcePaths: sourcePaths,
+            destinationPath: destinationPath,
+            isOptionDrag: validation.isOptionDrag,
         )))
         return true
     }
