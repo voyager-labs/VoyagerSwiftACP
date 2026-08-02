@@ -526,6 +526,8 @@ extension EVM002ManageEntriesViewPresentationTests {
         var state = hierarchyState(roots: [folder])
         state.hierarchy.expandedFolderIDs = [folder.id]
         state.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 1)
+        state.outlineProjectionRevision = 1
+        state.lastVisibleSelectableEntryIDs = [folder.id]
         let store = TestStore(initialState: state) { EntryViewLayoutFeature() }
 
         await store.send(.hierarchy(.folderChildrenResponse(
@@ -535,8 +537,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             .failed(.permissionDenied),
         ))) {
             $0.hierarchy.foldersByID[folder.id]?.phase = .failed(.permissionDenied)
-            $0.outlineProjectionRevision = 1
-            $0.lastVisibleSelectableEntryIDs = Set(["/root/a"])
+            $0.outlineProjectionRevision = 2
         }
     }
 

@@ -113,6 +113,7 @@ struct EntryListHierarchyReducer {
                       folderState.phase == .loading
                 else { return .none }
 
+                let previousRevision = state.outlineProjectionRevision
                 let wasCoreFinished = folderState.coreFinished
                 guard apply(response: response, to: &folderState) else { return .none }
                 state.hierarchy.foldersByID[folderID] = folderState
@@ -130,16 +131,23 @@ struct EntryListHierarchyReducer {
                         isImmediateChildFolder($0, parentID: folderID) && !childIDs.contains($0)
                     }
                     if !staleDescendants.isEmpty {
-                        return invalidateHierarchy(
+                        let effect = invalidateHierarchy(
                             affectedPaths: [],
                             removedPrefixes: Array(staleDescendants),
                             reloadCachedFolders: false,
                             state: &state,
                         )
+                        if state.outlineProjectionRevision == previousRevision {
+                            state.advanceOutlineProjectionRevision()
+                        }
+                        return effect
                     }
                 }
 
                 state.reconcileSelectionWithVisibleEntries()
+                if state.outlineProjectionRevision == previousRevision {
+                    state.advanceOutlineProjectionRevision()
+                }
                 return .none
             }
         }
