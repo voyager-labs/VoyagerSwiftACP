@@ -63,7 +63,7 @@ public struct AiChatFeature {
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
-            if action.invalidatesPendingNewChatPreparation {
+            if action.invalidatesPendingNewChatPreparation(in: state) {
                 state.newChatPreparationMutationTracker.value &+= 1
             }
             switch action {
@@ -121,10 +121,10 @@ public struct AiChatFeature {
 
             case let .applyNewChatSelectionSeedIfCurrent(provenance, seed):
                 guard state.newChatPreparationProvenance == provenance else { return .none }
-                state.selectedModelHandle = seed?.modelHandle
-                state.selectedThinking = seed?.selectedThinking
+                let validatedSeed = AiChatStateSelection.revalidatedNewChatSelectionSeed(seed, state: state)
+                state.selectedModelHandle = validatedSeed?.modelHandle
+                state.selectedThinking = validatedSeed?.selectedThinking
                 state.unavailableSelectedModelHandle = nil
-                normalizeSelectionIfNeeded(&state)
                 return .none
 
             case .showSessionsTapped:
@@ -345,6 +345,10 @@ public struct AiChatFeature {
             case let .providerConnectionsUpdated(file):
                 return handleProviderConnectionsUpdated(file: file, state: &state)
 
+            case let .providerConnectionAuthorityUpdated(connectedProviders):
+                state.providerConnectionSnapshot = .known(connectedProviders)
+                return .none
+
             case let .modelListLoading(requestID, provider, credential):
                 guard state.modelListRequestID == requestID,
                       state.modelListPendingProviders.contains(provider)
@@ -374,14 +378,6 @@ public struct AiChatFeature {
                 state.modelListLoadedModelsByProvider[provider] = nil
                 state.modelListFailedProviders[provider] = failure
                 finalizeModelListBatchIfNeeded(&state)
-                return .none
-
-            case .modelSelectorTapped:
-                state.isModelSelectorPresented = true
-                return .none
-
-            case .modelSelectorDismissed:
-                state.isModelSelectorPresented = false
                 return .none
 
             case let .selectedModelChanged(handle):
@@ -530,10 +526,12 @@ public struct AiChatFeature {
 }
 
 private extension AiChatAction {
-    var invalidatesPendingNewChatPreparation: Bool {
+    func invalidatesPendingNewChatPreparation(in state: AiChatFeature.State) -> Bool {
         switch self {
-        case .selectedModelChanged,
-             .selectedThinkingChanged,
+        case let .selectedModelChanged(handle):
+            guard let handle else { return true }
+            return state.normalizedSelectionHandle(handle) != nil
+        case .selectedThinkingChanged,
              .currentContextChanged,
              .draftTextChanged,
              .attachmentPickerSelection,
@@ -541,9 +539,9 @@ private extension AiChatAction {
              .attachmentDropSelection,
              .removeAddedAttachment,
              .folderStructureModeChanged:
-            true
+            return true
         default:
-            false
+            return false
         }
     }
 }

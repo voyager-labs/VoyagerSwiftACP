@@ -15,8 +15,6 @@ public struct AiChatView: View {
 
     @State private var isChatInputFocused = false
     @State private var chatInputTextHeight = Self.chatInputMinTextHeight
-    @State private var isModelSelectorPopoverPresented = false
-    @State private var isThinkingSelectorPresented = false
     @State private var transcriptScrollRestoreRequest: AiChatTranscriptScrollRestoreRequest?
     @State private var transcriptScrollRestoreSequence = 0
     @State private var shouldRestoreChatInputFocusAfterSearch = false
@@ -387,8 +385,6 @@ public struct AiChatView: View {
             colorScheme: colorScheme,
             isChatInputFocused: $isChatInputFocused,
             chatInputTextHeight: $chatInputTextHeight,
-            isModelSelectorPopoverPresented: $isModelSelectorPopoverPresented,
-            isThinkingSelectorPresented: $isThinkingSelectorPresented,
         )
     }
 

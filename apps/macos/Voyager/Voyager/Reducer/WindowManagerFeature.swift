@@ -219,8 +219,8 @@ struct WindowManagerFeature {
             case .edit(.toggleComposer):
                 return sendCommandToFocusedWindow(state, .toggleComposer)
 
-            case .edit(.newChat):
-                return sendCommandToFocusedWindow(state, .newChat)
+            case .edit(.openChat):
+                return sendCommandToFocusedWindow(state, .reopenChat)
 
             case .edit(.showChatHistory):
                 return sendCommandToFocusedWindow(state, .showChatHistory)

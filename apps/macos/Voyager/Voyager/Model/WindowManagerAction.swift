@@ -387,7 +387,7 @@ enum WindowManagerAction: CasePathable {
         case requestRedo
         case find
         case toggleComposer
-        case newChat
+        case openChat
         case showChatHistory
         case cut
         case copy

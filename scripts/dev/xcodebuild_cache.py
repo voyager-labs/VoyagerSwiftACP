@@ -776,12 +776,15 @@ def resolve_from_arguments(
 
 
 def lock_for_build(paths: CachePaths) -> list[IO[str]]:
-    """Acquire shared leases that survive exec and permit concurrent builds."""
+    """Serialize worktree builds while sharing package caches across worktrees."""
     handles: list[IO[str]] = []
-    for path in (paths.lock_path, paths.package_lock_path):
+    for path, operation in (
+        (paths.lock_path, fcntl.LOCK_EX),
+        (paths.package_lock_path, fcntl.LOCK_SH),
+    ):
         _ = path.parent.mkdir(parents=True, exist_ok=True)
         handle = path.open("a+")
-        fcntl.flock(handle, fcntl.LOCK_SH)
+        fcntl.flock(handle, operation)
         os.set_inheritable(handle.fileno(), True)
         handles.append(handle)
     return handles

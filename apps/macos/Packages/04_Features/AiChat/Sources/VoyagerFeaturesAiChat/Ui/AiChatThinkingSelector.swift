@@ -7,84 +7,51 @@ struct AiChatThinkingSelectorButton: View {
     let state: AiChatState
     let input: AiChatInputDisplayModel
 
-    @Binding var isPresented: Bool
-
     var body: some View {
-        Button {
-            isPresented.toggle()
+        let displayModel = AiChatStateDisplayModelBuilder(state: state)
+
+        Menu {
+            ForEach(displayModel.thinkingMenuItems, id: \.selection) { item in
+                thinkingMenuItem(item)
+            }
         } label: {
             AiChatHoverTextAffordance(
                 title: AiChatSelectorLabels.thinkingSelectorLabel(for: state, input: input),
-                systemName: "chevron.down",
             )
         }
-        .buttonStyle(.plain)
-        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            AiChatSelectorPopoverContainer {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(AiChatThinkingSelectorOptions.options(for: state.resolvedSelectedModel),
-                            id: \.id)
-                    { option in
-                        AiChatThinkingSelectorRow(
-                            store: store,
-                            option: option,
-                            isSelected: state.selectedThinking == option.selection,
-                            isPresented: $isPresented,
-                        )
-                    }
-                }
-            }
-        }
-        .disabled(AiChatSelectorLabels.thinkingSelectorIsDisabled(for: state))
+        .menuIndicator(.visible)
+        .menuStyle(.borderlessButton)
+        .disabled(displayModel.thinkingMenuIsDisabled)
         .accessibilityLabel("Thinking")
         .accessibilityValue(AiChatSelectorLabels.thinkingSelectorAccessibilityValue(for: state))
     }
-}
 
-private struct AiChatThinkingSelectorRow: View {
-    let store: StoreOf<AiChatFeature>
-    let option: AiThinkingOption
-    let isSelected: Bool
-
-    @Binding var isPresented: Bool
-
-    var body: some View {
-        Button {
-            store.send(.selectedThinkingChanged(option.selection))
-            isPresented = false
-        } label: {
-            HStack(spacing: 8) {
-                Text(option.title)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(.primary)
-
-                Spacer(minLength: 8)
-
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.primary)
-                }
+    @ViewBuilder
+    private func thinkingMenuItem(_ item: AiChatThinkingMenuItemDisplayModel) -> some View {
+        if item.isEnabled {
+            Button {
+                store.send(.selectedThinkingChanged(item.selection))
+            } label: {
+                menuItemLabel(title: item.title, isSelected: item.isSelected)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isSelected ? Color.primary.opacity(0.08) : Color.clear),
-            )
+            .accessibilityLabel(item.accessibilityLabel)
+            .accessibilityValue(item.accessibilityValue)
+            .accessibilityAddTraits(item.isSelected ? .isSelected : [])
+        } else {
+            Text(item.title)
+                .disabled(true)
+                .accessibilityLabel(item.accessibilityLabel)
+                .accessibilityValue(item.accessibilityValue)
+                .accessibilityHint(item.disabledReason ?? "")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(option.title)
     }
-}
 
-private enum AiChatThinkingSelectorOptions {
-    static func options(for model: AiProviderModel?) -> [AiThinkingOption] {
-        guard let model else { return [] }
-        return AiThinkingSelectionPolicy.options(
-            capability: model.thinkingCapability,
-            supportsNone: model.supportsThinkingNone,
-        )
+    @ViewBuilder
+    private func menuItemLabel(title: String, isSelected: Bool) -> some View {
+        if isSelected {
+            Label(title, systemImage: "checkmark")
+        } else {
+            Text(title)
+        }
     }
 }

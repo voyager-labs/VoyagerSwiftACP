@@ -65,6 +65,8 @@ extension FileManagerWindowCommandRoutingReducer {
         case .chatHistory:
             state.pendingAiChatNewChat = nil
             destinationEffect = .send(.inspector(.showChatHistoryRequested))
+        case .reopenChat:
+            destinationEffect = .none
         }
         return .concatenate(
             .cancel(id: FileManagerAiChatInspectorOpenCancelID()),
@@ -84,11 +86,19 @@ extension FileManagerWindowCommandRoutingReducer {
     ) -> Effect<Action> {
         guard let pendingOpen = state.pendingAiChatInspectorOpen,
               pendingOpen.requestID == requestID,
-              pendingOpen.destination == destination
+              pendingOpen.destination == destination,
+              pendingOpen.resumeSessionID == (setup.sessionID ?? setup.restoreSessionID)
         else { return .none }
 
+        let resumeProvenanceMatches = pendingOpen.resumeProvenance.map { provenance in
+            if pendingOpen.preservesLiveRuntime {
+                return state.inspector.aiChat.matchesInspectorLiveRuntimeReopenProvenance(provenance)
+            }
+            return state.inspector.aiChat.matchesInspectorNewChatPreparationProvenance(provenance)
+        } ?? true
         guard state.contentTabs.activeTabID == pendingOpen.tabID,
-              state.supportsInspector(tabID: pendingOpen.tabID)
+              state.supportsInspector(tabID: pendingOpen.tabID),
+              resumeProvenanceMatches
         else {
             state.pendingAiChatInspectorOpen = nil
             return .none
@@ -101,6 +111,9 @@ extension FileManagerWindowCommandRoutingReducer {
         case .chatHistory:
             state.pendingAiChatInspectorOpen = nil
             destinationEffect = .send(.inspector(.openChatHistory(setup, connectionsFile)))
+        case .reopenChat:
+            state.pendingAiChatInspectorOpen = nil
+            destinationEffect = .send(.inspector(.openChat(setup, connectionsFile)))
         }
         return destinationEffect
     }
@@ -235,13 +248,13 @@ extension FileManagerWindowCommandRoutingReducer {
         guard let pending = validatedPendingAiChatNewChat(state: &state),
               pending.didLoadPersistedDefault,
               !pending.requiresCatalogRefresh || pending.didObserveCatalogRefresh,
-              let catalog = resolvedCatalog(for: pending, state: state)
+              isModelCatalogResolutionReady(for: pending, state: state)
         else { return .none }
 
         let seed = AiChatNewChatSelectionSeedResolver.resolve(
             windowLast: pending.windowLast,
             persistedDefault: pending.persistedDefault,
-            catalog: catalog,
+            state: aiChatState(for: pending.target, state: state),
         )
         state.pendingAiChatNewChat = nil
 
@@ -433,17 +446,15 @@ extension FileManagerWindowCommandRoutingReducer {
         }
     }
 
-    private func resolvedCatalog(
+    private func isModelCatalogResolutionReady(
         for pending: FileManagerPendingAiChatNewChat,
         state: State,
-    ) -> [AiProviderModel]? {
+    ) -> Bool {
         switch aiChatState(for: pending.target, state: state).modelListState {
-        case let .loaded(models):
-            models
-        case .empty, .failed:
-            []
+        case .loaded, .empty, .failed:
+            true
         case .idle, .loading:
-            nil
+            false
         }
     }
 
@@ -461,12 +472,33 @@ extension FileManagerWindowCommandRoutingReducer {
             return state.inspector.aiChat.mode == .chat
         case .chatHistory:
             return state.inspector.aiChat.mode == .sessions
+        case .reopenChat:
+            return state.inspector.aiChat.mode == .chat
         }
+    }
+
+    func handleAiChatReopenRequest(state: inout State) -> Effect<Action> {
+        if isInspectorChatPresented(state, destination: .reopenChat)
+            || state.pendingAiChatInspectorOpen.map({
+                $0.destination == .reopenChat && $0.tabID == state.contentTabs.activeTabID
+            }) == true
+        {
+            return handleAiChatInspectorRequest(destination: .reopenChat, state: &state)
+        }
+        guard let sessionID = reopenCandidate(in: state.inspector.aiChat) else {
+            return handleAiChatInspectorRequest(destination: .newChat, state: &state)
+        }
+        return openAiChatInspectorEffect(
+            state: &state,
+            destination: .reopenChat,
+            resumeSessionID: sessionID,
+        )
     }
 
     private func openAiChatInspectorEffect(
         state: inout State,
         destination: FileManagerAiChatInspectorDestination,
+        resumeSessionID: AiChatSessionID? = nil,
     ) -> Effect<Action> {
         guard let activeTabID = state.contentTabs.activeTabID,
               state.supportsInspector(tabID: activeTabID)
@@ -476,10 +508,19 @@ extension FileManagerWindowCommandRoutingReducer {
         }
 
         let requestID = uuid()
+        let resumeProvenance = resumeSessionID.map { _ in state.inspector.aiChat.newChatPreparationProvenance }
+        let preservesLiveRuntime = resumeSessionID.map { sessionID in
+            let aiChat = state.inspector.aiChat
+            return aiChat.lifecycleSessionIDsToPreserve.contains(sessionID)
+                || aiChat.hasInspectorReopenUserMutation(for: sessionID)
+        } ?? false
         state.pendingAiChatInspectorOpen = FileManagerPendingAiChatInspectorOpen(
             requestID: requestID,
             tabID: activeTabID,
             destination: destination,
+            resumeSessionID: resumeSessionID,
+            resumeProvenance: resumeProvenance,
+            preservesLiveRuntime: preservesLiveRuntime,
         )
         var setup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: state.content)
         switch destination {
@@ -487,8 +528,29 @@ extension FileManagerWindowCommandRoutingReducer {
             setup.mode = .chat
         case .chatHistory:
             setup.mode = .sessions
+        case .reopenChat:
+            setup.mode = .chat
+            if preservesLiveRuntime {
+                setup.sessionID = resumeSessionID
+                setup.restoreSessionID = nil
+            } else {
+                setup.sessionID = nil
+                setup.restoreSessionID = resumeSessionID
+            }
         }
-        return .run { [aiConnectionsFileClient, setup] send in
+        return loadAiChatInspectorEffect(
+            requestID: requestID,
+            destination: destination,
+            setup: setup,
+        )
+    }
+
+    private func loadAiChatInspectorEffect(
+        requestID: UUID,
+        destination: FileManagerAiChatInspectorDestination,
+        setup: AiChatSetupState,
+    ) -> Effect<Action> {
+        .run { [aiConnectionsFileClient, setup] send in
             let connectionsFile: AIConnectionsFile
             do {
                 connectionsFile = try await aiConnectionsFileClient.load()
@@ -509,9 +571,30 @@ extension FileManagerWindowCommandRoutingReducer {
                     setup: setup,
                     connectionsFile: connectionsFile,
                 )))
+            case .reopenChat:
+                await send(.internal(.aiChatReopenInspectorOpenLoaded(
+                    requestID: requestID,
+                    setup: setup,
+                    connectionsFile: connectionsFile,
+                )))
             }
         }
         .cancellable(id: FileManagerAiChatInspectorOpenCancelID(), cancelInFlight: true)
+    }
+
+    private func reopenCandidate(in aiChat: AiChatFeature.State) -> AiChatSessionID? {
+        guard aiChat.mode == .chat,
+              let sessionID = aiChat.sessionID,
+              aiChat.sessionStatus == .active,
+              aiChat.restoreSessionID == nil || aiChat.restoreSessionID == sessionID,
+              aiChat.deferredChatSessionRestoreID == nil,
+              aiChat.preparedTransientSessionID != sessionID,
+              aiChat.emptyDraftSessionID != sessionID,
+              !aiChat.isUntouchedPreparedTransientNewChat,
+              !aiChat.hiddenEmptyDraftSessionIDs.contains(sessionID),
+              !aiChat.sessionList.deletedSessionIDs.contains(sessionID)
+        else { return nil }
+        return sessionID
     }
 }
 

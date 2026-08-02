@@ -1,10 +1,10 @@
 import Foundation
 
 /// OAuth configuration for the Codex (OpenAI) browser-based authentication flow.
-///
-/// Defaults are tuned for the production OpenAI auth endpoint. Override any
-/// value via environment variables for testing or staging environments.
 public struct CodexOAuthConfig: Sendable, Equatable {
+    private static let defaultClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
+    private static let defaultRedirectPort = 1455
+
     public let clientId: String
     public let issuer: URL
     public let authorizePath: String
@@ -14,11 +14,8 @@ public struct CodexOAuthConfig: Sendable, Equatable {
     public let scopes: [String]
     public let originator: String
 
-    /// Production defaults. Reads overrides from environment variables when set.
     public static let `default` = CodexOAuthConfig(
-        // TODO(VOY-432): ProcessInfo 대신 Dotenv 사용 검토 — https://linear.app/voyager-fm/issue/VOY-432
-        clientId: ProcessInfo.processInfo.environment["OPENAI_CODEX_OAUTH_CLIENT_ID"]
-            ?? "app_EMoamEEZ73f0CkXaXp7hrann",
+        clientId: defaultClientID,
         issuer: {
             guard let url = URL(string: "https://auth.openai.com") else {
                 fatalError("Invalid hardcoded issuer URL")
@@ -27,8 +24,7 @@ public struct CodexOAuthConfig: Sendable, Equatable {
         }(),
         authorizePath: "/oauth/authorize",
         tokenPath: "/oauth/token",
-        redirectPort: ProcessInfo.processInfo.environment["OPENAI_CODEX_OAUTH_REDIRECT_PORT"]
-            .flatMap { Int($0) } ?? 1455,
+        redirectPort: defaultRedirectPort,
         redirectPath: "/auth/callback",
         scopes: [
             "openid",

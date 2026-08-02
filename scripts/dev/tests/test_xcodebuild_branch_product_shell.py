@@ -1,10 +1,11 @@
 import json
 import os
+import select
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from typing import final, override
+from typing import Optional, final, override
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -50,23 +51,35 @@ class XcodebuildBranchProductShellTests(unittest.TestCase):
         path.write_text(content)
         path.chmod(0o755)
 
-    def run_script(
-        self, *args: str, **overrides: str
-    ) -> subprocess.CompletedProcess[str]:
+    def environment(self, **overrides: str) -> dict[str, str]:
         environment = os.environ.copy()
         environment["PATH"] = f"{self.bin_dir}{os.pathsep}{environment['PATH']}"
         environment["XCODEBUILD_REAL"] = str(self.bin_dir / "xcodebuild")
         environment["VOYAGER_XCODE_CACHE_ROOT"] = str(self.tmpdir / "cache")
         environment.update(overrides)
+        return environment
+
+    def run_script(
+        self, *args: str, **overrides: str
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [str(SCRIPT), *args],
             cwd=ROOT,
-            env=environment,
+            env=self.environment(**overrides),
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
         )
+
+    def await_entry(self, process: subprocess.Popen[str]) -> str:
+        assert process.stdout is not None
+        readable, _, _ = select.select([process.stdout], [], [], 5)
+        if not readable:
+            process.terminate()
+            _, stderr = process.communicate(timeout=5)
+            self.fail(f"fake xcodebuild did not enter: {stderr}")
+        return process.stdout.readline()
 
     def args(self) -> list[str]:
         return self.captured.read_text().splitlines()
@@ -165,6 +178,100 @@ class XcodebuildBranchProductShellTests(unittest.TestCase):
             json.loads(metadata_paths[0].read_text())["entrypoint"],
             "FileManagerHost-Dev",
         )
+
+    def test_same_worktree_schemes_enter_xcodebuild_serially(self) -> None:
+        release_fifo = self.tmpdir / "release"
+        helper_probe_fifo = self.tmpdir / "helper-probe"
+        os.mkfifo(release_fifo)
+        os.mkfifo(helper_probe_fifo)
+        self.write_executable(
+            "xcrun",
+            "\n".join(
+                [
+                    "#!/usr/bin/env bash",
+                    'if [[ -n "${FAKE_PROBE_FIFO:-}" ]]; then printf "ready\n" > "$FAKE_PROBE_FIFO"; fi',
+                    "printf 'Swift version 6.2.1\n'",
+                    "",
+                ]
+            ),
+        )
+        self.write_executable(
+            "xcodebuild",
+            "\n".join(
+                [
+                    "#!/usr/bin/env bash",
+                    'if [[ "$1" == "-version" ]]; then printf "Xcode 26.1\nBuild version 17B55\n"; exit 0; fi',
+                    'scheme=""',
+                    'previous=""',
+                    'for argument in "$@"; do',
+                    '  if [[ "$previous" == "-scheme" ]]; then scheme="$argument"; fi',
+                    '  previous="$argument"',
+                    'done',
+                    'printf "entered:%s\n" "$scheme"',
+                    f'if [[ "$scheme" == "Voyager-Dev" ]]; then read -r _ < "{release_fifo}"; fi',
+                    "",
+                ]
+            ),
+        )
+        arguments = [
+            "-project",
+            "apps/macos/Voyager/Voyager.xcodeproj",
+            "-configuration",
+            "Dev-Debug",
+            "test",
+        ]
+        first = subprocess.Popen(
+            [str(SCRIPT), *arguments[:2], "-scheme", "Voyager-Dev", *arguments[2:]],
+            cwd=ROOT,
+            env=self.environment(),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        second: Optional[subprocess.Popen[str]] = None
+        probe_descriptor = os.open(helper_probe_fifo, os.O_RDONLY | os.O_NONBLOCK)
+        try:
+            self.assertEqual(self.await_entry(first), "entered:Voyager-Dev\n")
+            second = subprocess.Popen(
+                [
+                    str(SCRIPT),
+                    *arguments[:2],
+                    "-scheme",
+                    "VoyagerHelper-Dev",
+                    *arguments[2:],
+                ],
+                cwd=ROOT,
+                env=self.environment(FAKE_PROBE_FIFO=str(helper_probe_fifo)),
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            probe_signals = b""
+            while probe_signals.count(b"\n") < 2:
+                probe_ready, _, _ = select.select([probe_descriptor], [], [], 5)
+                self.assertTrue(
+                    probe_ready, "helper resolver did not complete its toolchain probes"
+                )
+                probe_signals += os.read(probe_descriptor, 64)
+            self.assertEqual(probe_signals, b"ready\nready\n")
+            assert second.stdout is not None
+            entered_early, _, _ = select.select([second.stdout], [], [], 0.5)
+            self.assertEqual(entered_early, [])
+            self.assertIsNone(second.poll())
+
+            with release_fifo.open("w") as release:
+                _ = release.write("release\n")
+            _, first_stderr = first.communicate(timeout=5)
+            self.assertEqual(first.returncode, 0, first_stderr)
+            self.assertEqual(self.await_entry(second), "entered:VoyagerHelper-Dev\n")
+            _, second_stderr = second.communicate(timeout=5)
+            self.assertEqual(second.returncode, 0, second_stderr)
+        finally:
+            os.close(probe_descriptor)
+            for process in (first, second):
+                if process is not None and process.poll() is None:
+                    process.terminate()
+                    _ = process.communicate(timeout=5)
 
     def test_resolver_failure_prevents_real_xcodebuild_execution(self) -> None:
         self.write_executable(

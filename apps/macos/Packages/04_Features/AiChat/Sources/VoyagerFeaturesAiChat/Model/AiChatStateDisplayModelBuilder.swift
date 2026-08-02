@@ -125,6 +125,51 @@ struct AiChatStateDisplayModelBuilder {
         modelCatalogBuilder.selectedModelDisplayModel
     }
 
+    var thinkingMenuItems: [AiChatThinkingMenuItemDisplayModel] {
+        guard let model = resolvedSelectedModel else { return [] }
+
+        switch model.thinkingCapability {
+        case let .unsupported(reason), let .unknown(reason):
+            return [thinkingUnavailableMenuItem(reason: reason.message)]
+        case .effort, .adaptive, .tokenBudget:
+            let options = AiThinkingSelectionPolicy.options(
+                capability: model.thinkingCapability,
+                supportsNone: model.supportsThinkingNone,
+            )
+            guard !options.isEmpty else {
+                return [thinkingUnavailableMenuItem(reason: "Thinking token budget metadata is invalid.")]
+            }
+            return options.map { option in
+                let isSelected = option.selection == state.selectedThinking
+                return AiChatThinkingMenuItemDisplayModel(
+                    selection: option.selection,
+                    title: option.title,
+                    isSelected: isSelected,
+                    isEnabled: true,
+                    disabledReason: nil,
+                    accessibilityLabel: option.title,
+                    accessibilityValue: isSelected ? "Selected" : "Not selected",
+                )
+            }
+        }
+    }
+
+    var thinkingMenuIsDisabled: Bool {
+        resolvedSelectedModel == nil
+    }
+
+    private func thinkingUnavailableMenuItem(reason: String) -> AiChatThinkingMenuItemDisplayModel {
+        AiChatThinkingMenuItemDisplayModel(
+            selection: nil,
+            title: "Thinking unavailable",
+            isSelected: false,
+            isEnabled: false,
+            disabledReason: reason,
+            accessibilityLabel: "Thinking unavailable",
+            accessibilityValue: "Unavailable: \(reason)",
+        )
+    }
+
     var lockedModelDisplayModel: AiChatLockedModelDisplayModel? {
         modelCatalogBuilder.lockedModelDisplayModel
     }
@@ -156,7 +201,9 @@ struct AiChatStateDisplayModelBuilder {
     }
 
     var canRegenerate: Bool {
-        !hasInFlightRequest && state.transcriptHistory.contains(where: { $0.role == .assistant })
+        !hasInFlightRequest
+            && resolvedSelectedModel != nil
+            && state.transcriptHistory.contains(where: { $0.role == .assistant })
     }
 
     var requestStatusText: String? {

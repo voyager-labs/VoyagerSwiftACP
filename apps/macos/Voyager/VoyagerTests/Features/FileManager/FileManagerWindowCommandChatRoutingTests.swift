@@ -18,9 +18,9 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
         // store.exhaustivity = .off: 메뉴 command에서 WindowManager delegate로의 의미 라우팅만 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.view(.edit(.newChat)))
+        await store.send(.view(.edit(.openChat)))
         await store.receive {
-            guard case .delegate(.windowManager(.edit(.newChat))) = $0 else { return false }
+            guard case .delegate(.windowManager(.edit(.openChat))) = $0 else { return false }
             return true
         }
 
@@ -32,6 +32,48 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
         await store.finish()
     }
 
+    /// Open Chat 단축키 경로는 닫힌 Inspector의 마지막 active session을 복원한다.
+    /// - 검증 내용: app menu command부터 exact session restore까지의 session ID와 transcript
+    /// - 사전 조건: focused Directory tab에 durable active session이 남아 있고 Inspector는 닫혀 있다.
+    /// - 기대 결과: Open Chat이 New Chat을 만들지 않고 기존 session을 다시 표시한다.
+    func testOpenChatCommandReopensRetainedActiveSession() async throws {
+        let sessionID = try AiChatSessionID(rawValue: XCTUnwrap(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000647"),
+        ))
+        let transcript = [AiChatMessage(role: .user, content: "Retained command session")]
+        let snapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: nil,
+            model: nil,
+            transcriptHistory: transcript,
+            lastRequestContext: nil,
+            updatedAtMs: 1,
+        )
+        let fixture = makeFocusedWindowFixture(
+            focusedUUID: makeUUID("00000000-0000-0000-0000-000000000020"),
+        ) { window in
+            window.inspector.activeMode = .chat
+            window.inspector.aiChat = AiChatFeature.State(
+                mode: .chat,
+                sessionID: sessionID,
+                sessionStatus: .active,
+            )
+            window.syncActiveTabInspectorState()
+        }
+        let store = makeWindowManagerStore(fixture: fixture, persistedSnapshot: snapshot)
+
+        await store.send(.edit(.openChat))
+        await assertWindowManagerRequest(.reopenChat, on: store, fixture: fixture)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let aiChat = try XCTUnwrap(store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat)
+        XCTAssertTrue(try XCTUnwrap(store.state.windows[id: fixture.focusedUUID]?.window.inspector.inspectorVisible))
+        XCTAssertEqual(aiChat.sessionID, sessionID)
+        XCTAssertEqual(aiChat.transcriptHistory, transcript)
+    }
+
     func testChatCommandsOpenAndSwitchDestinationsWithoutClosingInspector() async {
         let fixture = makeFocusedWindowFixture(
             focusedUUID: makeUUID("00000000-0000-0000-0000-000000000021"),
@@ -39,8 +81,8 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
         let savedSessionCount = LockIsolated(0)
         let store = makeWindowManagerStore(fixture: fixture, savedSessionCount: savedSessionCount)
 
-        await store.send(.edit(.newChat))
-        await assertWindowManagerRequest(.newChat, on: store, fixture: fixture)
+        await store.send(.edit(.openChat))
+        await assertWindowManagerRequest(.reopenChat, on: store, fixture: fixture)
         await store.receive {
             guard case let .windows(.element(
                 id: id,
@@ -95,8 +137,8 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
             firstSessionID,
         )
 
-        await store.send(.edit(.newChat))
-        await assertWindowManagerRequest(.newChat, on: store, fixture: fixture)
+        await store.send(.edit(.openChat))
+        await assertWindowManagerRequest(.reopenChat, on: store, fixture: fixture)
         await store.receive { action in
             guard case let .windows(.element(
                 id: id,
@@ -113,8 +155,8 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
             firstSessionID,
         )
 
-        await store.send(.edit(.newChat))
-        await assertWindowManagerRequest(.newChat, on: store, fixture: fixture)
+        await store.send(.edit(.openChat))
+        await assertWindowManagerRequest(.reopenChat, on: store, fixture: fixture)
         await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.closeChat)
 
         XCTAssertEqual(store.state.windows[id: fixture.focusedUUID]?.window.inspector.inspectorVisible, false)
@@ -178,6 +220,7 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
     private func makeWindowManagerStore(
         fixture: FocusedWindowFixture,
         savedSessionCount: LockIsolated<Int>? = nil,
+        persistedSnapshot: AiChatSessionSnapshot? = nil,
     ) -> TestStore<WindowManagerFeature.State, WindowManagerFeature.Action> {
         let store = TestStore(initialState: fixture.initialState) {
             WindowManagerFeature()
@@ -185,6 +228,10 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
             $0.aiConnectionsFileClient.load = { fixture.connectionsFile }
+            $0.aiChatSessionPersistenceClient.loadSession = { sessionID in
+                guard persistedSnapshot?.sessionID == sessionID else { return nil }
+                return persistedSnapshot
+            }
             $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
                 savedSessionCount?.withValue { $0 += 1 }
                 return snapshot
@@ -206,7 +253,7 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
             }
             guard id == fixture.focusedUUID else { return false }
             switch (receivedCommand, command) {
-            case (.newChat, .newChat), (.showChatHistory, .showChatHistory):
+            case (.reopenChat, .reopenChat), (.showChatHistory, .showChatHistory):
                 return true
             default:
                 return false
@@ -253,6 +300,7 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
 
     private func makeFocusedWindowFixture(
         focusedUUID: UUID,
+        configure: (inout FileManagerFeature.State) -> Void = { _ in },
     ) -> FocusedWindowFixture {
         let selectedEntry = makeEntry(name: "Draft.md", fullPath: "/Users/test/Documents/Draft.md")
 
@@ -275,6 +323,7 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
         }
         focusedWindow.content.entryViewLayout.entryOperations.items = [selectedEntry]
         focusedWindow.content.entryViewLayout.selectedIds = [selectedEntry.id]
+        configure(&focusedWindow)
         initialState.windows[id: focusedUUID]?.window = focusedWindow
 
         return FocusedWindowFixture(

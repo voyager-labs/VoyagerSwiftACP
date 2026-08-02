@@ -119,7 +119,7 @@ struct MenuCommandsFeature {
 
     private func routeAiChatEditCommand(_ command: MenuCommandItem.EditCommand) -> Effect<Action>? {
         switch command {
-        case .newChat: .send(.delegate(.windowManager(.edit(.newChat))))
+        case .openChat: .send(.delegate(.windowManager(.edit(.openChat))))
         case .showChatHistory: .send(.delegate(.windowManager(.edit(.showChatHistory))))
         default: nil
         }

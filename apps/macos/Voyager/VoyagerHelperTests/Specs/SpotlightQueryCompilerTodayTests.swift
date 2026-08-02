@@ -61,9 +61,9 @@ final class SpotlightQueryCompilerTodayTests: XCTestCase {
 
         let plan = try compiler.compilePlan(conditions: [condition])
 
-        XCTAssertTrue(plan.predicate.contains("kMDItemContentCreationDate >= $time.today(0)"))
-        XCTAssertTrue(plan.predicate.contains("kMDItemContentCreationDate < $time.today(1)"))
-        XCTAssertFalse(plan.predicate.contains("kMDItemContentCreationDate == $time.today(0)"))
+        XCTAssertTrue(plan.predicate.contains("kMDItemFSCreationDate >= $time.today(0)"))
+        XCTAssertTrue(plan.predicate.contains("kMDItemFSCreationDate < $time.today(1)"))
+        XCTAssertFalse(plan.predicate.contains("kMDItemFSCreationDate == $time.today(0)"))
     }
 
     func testTodayOffsetLiteralUsesNextDayBoundForGreaterThan() throws {
@@ -76,8 +76,8 @@ final class SpotlightQueryCompilerTodayTests: XCTestCase {
 
         let plan = try compiler.compilePlan(conditions: [condition])
 
-        XCTAssertTrue(plan.predicate.contains("kMDItemContentCreationDate >= $time.today(1)"))
-        XCTAssertFalse(plan.predicate.contains("kMDItemContentCreationDate > $time.today(0)"))
+        XCTAssertTrue(plan.predicate.contains("kMDItemFSCreationDate >= $time.today(1)"))
+        XCTAssertFalse(plan.predicate.contains("kMDItemFSCreationDate > $time.today(0)"))
     }
 
     func testTodayOffsetLiteralParsesIntoSignedOffset() {
@@ -99,14 +99,6 @@ private extension SpotlightQueryCompilerTodayTests {
     }
 
     func loadRegistry<T: Decodable>(fileName: String) throws -> T {
-        let rootURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let fileURL = rootURL.appendingPathComponent("shared").appendingPathComponent(fileName)
-        let data = try Data(contentsOf: fileURL)
-        return try JSONDecoder().decode(T.self, from: data)
+        try RepositorySharedFixture.decode(fileName: fileName, sourceFilePath: #filePath)
     }
 }

@@ -111,6 +111,9 @@ struct FileManagerWindowCommandRoutingReducer {
                 )
                 return .none
 
+            case .request(.reopenChat):
+                return handleAiChatReopenRequest(state: &state)
+
             case let .request(command):
                 return handleRequestedCommand(command, state: &state)
 
@@ -210,7 +213,7 @@ struct FileManagerWindowCommandRoutingReducer {
 
             case let .aiConnectionsFileUpdated(file):
                 return .merge(
-                    forwardProviderConnectionsToOpenAiChat(file: file, state: state),
+                    forwardProviderConnectionsToOpenAiChat(file: file, state: &state),
                     warmUpAIModelCatalogEffect(),
                 )
 
@@ -233,6 +236,15 @@ struct FileManagerWindowCommandRoutingReducer {
                 return handleAiChatInspectorOpenCompletion(
                     requestID: requestID,
                     destination: .chatHistory,
+                    setup: setup,
+                    connectionsFile: connectionsFile,
+                    state: &state,
+                )
+
+            case let .internal(.aiChatReopenInspectorOpenLoaded(requestID, setup, connectionsFile)):
+                return handleAiChatInspectorOpenCompletion(
+                    requestID: requestID,
+                    destination: .reopenChat,
                     setup: setup,
                     connectionsFile: connectionsFile,
                     state: &state,
@@ -434,19 +446,11 @@ struct FileManagerWindowCommandRoutingReducer {
 
     private func handleRequestedCommand(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
         switch command {
-        case .openNewContentTab:
-            .send(.contentTabs(.open(.homeDefault)))
-
-        case .closeActiveContentTab:
-            state.contentTabs.activeTabID
-                .map { .send(.closeContentTabRequested($0)) }
-                ?? .none
-
-        case .toggleActiveContentTabPin:
-            toggleActiveContentTabPin(state: state)
-
-        case .restoreLastClosedContentTab:
-            handleRestoreLastClosedContentTab(state: &state)
+        case .openNewContentTab,
+             .closeActiveContentTab,
+             .toggleActiveContentTabPin,
+             .restoreLastClosedContentTab:
+            handleContentTabRequest(command, state: &state)
 
         case .newFolder,
              .openSelectedItem,
@@ -487,6 +491,29 @@ struct FileManagerWindowCommandRoutingReducer {
         case .requestUndo,
              .requestRedo:
             handleUndoRedoRequest(command, state: state)
+
+        case .reopenChat:
+            .none
+        }
+    }
+
+    private func handleContentTabRequest(
+        _ command: Action.WindowCommand,
+        state: inout State,
+    ) -> Effect<Action> {
+        switch command {
+        case .openNewContentTab:
+            .send(.contentTabs(.open(.homeDefault)))
+        case .closeActiveContentTab:
+            state.contentTabs.activeTabID
+                .map { .send(.closeContentTabRequested($0)) }
+                ?? .none
+        case .toggleActiveContentTabPin:
+            toggleActiveContentTabPin(state: state)
+        case .restoreLastClosedContentTab:
+            handleRestoreLastClosedContentTab(state: &state)
+        default:
+            .none
         }
     }
 
@@ -693,8 +720,17 @@ struct FileManagerWindowCommandRoutingReducer {
 
     private func forwardProviderConnectionsToOpenAiChat(
         file: AIConnectionsFile,
-        state: State,
+        state: inout State,
     ) -> Effect<Action> {
+        let connectedProviders = file.providers.values
+            .filter { $0.snapshot.lastKnownStatus == .connected }
+            .map(\.providerId)
+            .sorted { $0.rawValue < $1.rawValue }
+        refreshPendingAiChatProviderAuthority(
+            connectedProviders: connectedProviders,
+            state: &state,
+        )
+
         var effects: [Effect<Action>] = []
 
         // ContentPane AI Chat forwarding: active tab이 .aiChat일 때 전송
@@ -721,6 +757,70 @@ struct FileManagerWindowCommandRoutingReducer {
     ) -> Effect<Action> {
         guard state.pendingContentTabClose == nil else { return .none }
         return handleNavigationRequest(command)
+    }
+
+    private func refreshPendingAiChatProviderAuthority(
+        connectedProviders: [AiProvider],
+        state: inout State,
+    ) {
+        if refreshPendingAiChatProviderAuthority(
+            connectedProviders: connectedProviders,
+            aiChat: &state.content.aiChat,
+        ) {
+            state.syncActiveTabContentState()
+        }
+        if refreshPendingAiChatProviderAuthority(
+            connectedProviders: connectedProviders,
+            aiChat: &state.inspector.aiChat,
+        ) {
+            state.syncActiveTabInspectorState()
+        }
+
+        for tabID in state.tabContentStates.keys {
+            guard var content = state.tabContentStates[tabID] else { continue }
+            _ = refreshPendingAiChatProviderAuthority(
+                connectedProviders: connectedProviders,
+                aiChat: &content.aiChat,
+            )
+            state.tabContentStates[tabID] = content
+        }
+        for tabID in state.tabInspectorStates.keys {
+            guard var inspector = state.tabInspectorStates[tabID] else { continue }
+            _ = refreshPendingAiChatProviderAuthority(
+                connectedProviders: connectedProviders,
+                aiChat: &inspector.aiChat,
+            )
+            state.tabInspectorStates[tabID] = inspector
+        }
+        for sessionID in state.backgroundAiChatStates.keys {
+            guard var content = state.backgroundAiChatStates[sessionID] else { continue }
+            _ = refreshPendingAiChatProviderAuthority(
+                connectedProviders: connectedProviders,
+                aiChat: &content.aiChat,
+            )
+            state.backgroundAiChatStates[sessionID] = content
+        }
+        for sessionID in state.backgroundInspectorAiChatStates.keys {
+            guard var inspector = state.backgroundInspectorAiChatStates[sessionID] else { continue }
+            _ = refreshPendingAiChatProviderAuthority(
+                connectedProviders: connectedProviders,
+                aiChat: &inspector.aiChat,
+            )
+            state.backgroundInspectorAiChatStates[sessionID] = inspector
+        }
+    }
+
+    @discardableResult
+    private func refreshPendingAiChatProviderAuthority(
+        connectedProviders: [AiProvider],
+        aiChat: inout AiChatFeature.State,
+    ) -> Bool {
+        guard aiChat.pendingRequestStart != nil || !aiChat.backgroundPendingRequestStarts.isEmpty else { return false }
+        _ = AiChatFeature().reduce(
+            into: &aiChat,
+            action: .providerConnectionAuthorityUpdated(connectedProviders),
+        )
+        return true
     }
 
     private func handleNavigationRequest(_ command: Action.WindowCommand) -> Effect<Action> {

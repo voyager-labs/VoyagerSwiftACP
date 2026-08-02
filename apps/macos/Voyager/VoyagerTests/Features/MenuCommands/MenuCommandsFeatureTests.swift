@@ -45,7 +45,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
             (.cut, .edit(.cut)),
             (.copy, .edit(.copy)),
             (.find, .edit(.find)),
-            (.newChat, .edit(.newChat)),
+            (.openChat, .edit(.openChat)),
             (.showChatHistory, .edit(.showChatHistory)),
             (.paste, .edit(.paste)),
             (.duplicate, .edit(.duplicate)),
@@ -268,25 +268,25 @@ final class MenuCommandsFeatureTests: XCTestCase {
 
         var menuState = MenuCommandsState(state: appState)
         XCTAssertTrue(menuState.isContextualAiChatPresented)
-        XCTAssertFalse(menuState.isNewChatPresented)
+        XCTAssertFalse(menuState.isChatPresented)
         XCTAssertTrue(menuState.isChatHistoryPresented)
         XCTAssertTrue(menuState.canUseAiChatInspector)
-        XCTAssertEqual(menuState.newChatTitle, "New Chat")
+        XCTAssertEqual(menuState.openChatTitle, "Open Chat")
         XCTAssertEqual(menuState.chatHistoryTitle, "Hide Chat History")
 
         appState.windowManager.windows[id: focusedID]?.window.inspector.aiChat.mode = .chat
         menuState = MenuCommandsState(state: appState)
-        XCTAssertTrue(menuState.isNewChatPresented)
+        XCTAssertTrue(menuState.isChatPresented)
         XCTAssertFalse(menuState.isChatHistoryPresented)
-        XCTAssertEqual(menuState.newChatTitle, "Close Chat")
+        XCTAssertEqual(menuState.openChatTitle, "Close Chat")
         XCTAssertEqual(menuState.chatHistoryTitle, "Show Chat History")
 
         appState.windowManager.windows[id: focusedID]?.window.inspector.inspectorPaneExists = false
         menuState = MenuCommandsState(state: appState)
         XCTAssertFalse(menuState.isContextualAiChatPresented)
-        XCTAssertFalse(menuState.isNewChatPresented)
+        XCTAssertFalse(menuState.isChatPresented)
         XCTAssertFalse(menuState.isChatHistoryPresented)
-        XCTAssertEqual(menuState.newChatTitle, "New Chat")
+        XCTAssertEqual(menuState.openChatTitle, "Open Chat")
         XCTAssertEqual(menuState.chatHistoryTitle, "Show Chat History")
 
         appState.windowManager.windows[id: focusedID]?.window.contentTabs.tabs[id: activeTabID]?.anchor = .homeDefault
@@ -305,7 +305,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         appState.windowManager.focusedWindowID = nil
         menuState = MenuCommandsState(state: appState)
         XCTAssertFalse(menuState.canUseAiChatInspector)
-        XCTAssertEqual(menuState.newChatTitle, "New Chat")
+        XCTAssertEqual(menuState.openChatTitle, "Open Chat")
         XCTAssertEqual(menuState.chatHistoryTitle, "Show Chat History")
     }
 
@@ -423,7 +423,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
             case (.edit(.cut), .edit(.cut)),
                  (.edit(.copy), .edit(.copy)),
                  (.edit(.find), .edit(.find)),
-                 (.edit(.newChat), .edit(.newChat)),
+                 (.edit(.openChat), .edit(.openChat)),
                  (.edit(.showChatHistory), .edit(.showChatHistory)),
                  (.edit(.paste), .edit(.paste)),
                  (.edit(.duplicate), .edit(.duplicate)),

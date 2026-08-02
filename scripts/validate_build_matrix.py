@@ -127,6 +127,85 @@ WORKSPACE_SCHEMES_DIR = Path(
 CI_SCRIPT = Path("scripts/ci/release-macos-prod.sh")
 CI_WORKFLOW = Path(".github/workflows/release-macos-prod.yml")
 
+# Tracked environment files
+ENV_EXAMPLE_PATH = Path(".env.example")
+ENV_PROD_PATH = Path(".env.prod")
+EXPECTED_TRACKED_ENV_KEYS: set[str] = {
+    "PUBLIC_APP_NAME",
+    "PUBLIC_GATEWAY_URL",
+    "PUBLIC_HELPER_NAME",
+    "PUBLIC_LOG_LEVEL",
+    "PUBLIC_SENTRY_DSN",
+    "PUBLIC_SENTRY_TRACES_SAMPLE_RATE",
+    "PUBLIC_WEB_BASE_URL",
+}
+SWIFT_SOURCE_ROOTS = [Path("apps/macos")]
+EXCLUDED_SWIFT_SOURCE_DIRS = {
+    ".build",
+    ".git",
+    "Build",
+    "DerivedData",
+    "SourcePackages",
+    "Tests",
+    "build",
+}
+
+# Direct ProcessInfo environment access is closed by default.
+ALLOWED_PROCESS_INFO_LITERAL_KEYS: dict[str, set[str]] = {
+    "apps/macos/Voyager/Voyager/Reducer/AppRootFeature.swift": {
+        "XCTestConfigurationFilePath",
+    },
+    "apps/macos/Voyager/Voyager/Reducer/AppLifecycleFeature.swift": {
+        "XCTestConfigurationFilePath",
+    },
+    "apps/macos/Packages/02_Pages/FileManager/Package.swift": {
+        "RUNNING_VIA_INJECTION_NEXT",
+    },
+    "apps/macos/Packages/02_Pages/FileManager/Sources/VoyagerPagesFileManager/Window/Api/FileManagerHostScenario.swift": {
+        "FILE_MANAGER_HOST_SCENARIO",
+    },
+    "apps/macos/Packages/02_Pages/Onboarding/Sources/VoyagerPagesOnboarding/Api/OnboardingWindowClient.swift": {
+        "VOYAGER_SCHEME_FORCE_FDA_GRANTED",
+        "VOYAGER_SCHEME_FORCE_ONBOARDING",
+    },
+    "apps/macos/Packages/03_Widgets/EntryViewLayout/Package.swift": {
+        "RUNNING_VIA_INJECTION_NEXT",
+    },
+    "apps/macos/Hosts/SettingsHost/SettingsHostApp.swift": {
+        "SETTINGS_HOST_RESET_PROGRESS",
+        "SETTINGS_HOST_SCENARIO",
+        "SETTINGS_HOST_SMOKE",
+    },
+    "apps/macos/Hosts/FileManagerHost/FileManagerHostApp.swift": {
+        "FILE_MANAGER_HOST_SMOKE",
+    },
+    "apps/macos/Hosts/OnboardingHost/OnboardingHostApp.swift": {
+        "ONBOARDING_HOST_EXPECT_REQUIRED_AFTER_COMPLETED",
+        "ONBOARDING_HOST_RESET_PROGRESS",
+        "ONBOARDING_HOST_SMOKE",
+    },
+}
+ALLOWED_PROCESS_INFO_SNAPSHOT_FILES: set[str] = {
+    "apps/macos/Voyager/Voyager/Api/EntryCoreEndpointClient.swift",
+    "apps/macos/Voyager/Voyager/Api/HelperAppClient.swift",
+    "apps/macos/Packages/06_Shared/VoyagerShared/Sources/VoyagerShared/Lib/EnvironmentLoader.swift",
+    "apps/macos/Packages/05_Entities/Ai/Sources/VoyagerEntitiesAi/Lib/AiConnectionRootResolver.swift",
+    "apps/macos/Packages/05_Entities/Ai/Sources/VoyagerEntitiesAi/Api/AiChatProviderExecutionRequests.swift",
+}
+
+# Deprecated keys that must be absent from all surfaces
+DEPRECATED_KEYS: set[str] = {
+    "VOYAGER_ONBOARDING_MOCK_BETA",
+    "ONBOARDING_HOST_AUTH_MODE",
+    "OPENAI_CODEX_OAUTH_CLIENT_ID",
+    "OPENAI_CODEX_OAUTH_REDIRECT_PORT",
+    "VOYAGER_CODEX_WORKING_DIRECTORY",
+}
+
+# VSCode and Zed tasks paths
+VSCodeTasksPath = Path(".vscode/tasks.json")
+ZedTasksPath = Path(".zed/tasks.json")
+
 # Valid scheme buildConfiguration values
 VALID_SCHEME_CONFIGS = {DEV_DEBUG, DEV_RELEASE, PROD_DEBUG, PROD_RELEASE}
 
@@ -829,6 +908,430 @@ def check_ci_references(errors: list[str]) -> None:
                 )
 
 
+# ── VOY-432: tracked env key parsing, parity, launch-surface, and deprecated checks ──
+
+
+class DuplicateEnvKeyError(ValueError):
+    def __init__(self, path: Path, key: str) -> None:
+        self.path = path
+        self.key = key
+        super().__init__(f"Duplicate key '{key}' in {path}")
+
+
+def _parse_env_keys(path: Path) -> list[str]:
+    """Parse KEY=value lines from a .env file, return list of key names.
+
+    Raises ValueError on duplicate keys.
+    Ignores comment lines (#), blank lines, and lines without '='.
+    """
+    seen: dict[str, int] = {}
+    result: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "=" not in stripped:
+            continue
+        key = stripped.split("=", 1)[0].strip()
+        if key.startswith("export "):
+            key = key[7:].strip()
+        if not key:
+            continue
+        if key in seen:
+            raise DuplicateEnvKeyError(path, key)
+        seen[key] = 1
+        result.append(key)
+    return result
+
+
+def _get_tracked_env_keys() -> set[str]:
+    """Return the set of tracked runtime env keys from .env.example."""
+    return set(_parse_env_keys(ENV_EXAMPLE_PATH))
+
+
+def _production_swift_sources(source_roots: list[Path]) -> list[Path]:
+    sources: list[Path] = []
+    for source_root in source_roots:
+        if not source_root.is_dir():
+            continue
+        for directory, directory_names, file_names in os.walk(source_root):
+            directory_names[:] = sorted(
+                name
+                for name in directory_names
+                if name not in EXCLUDED_SWIFT_SOURCE_DIRS
+            )
+            sources.extend(
+                Path(directory) / name
+                for name in sorted(file_names)
+                if name.endswith(".swift")
+            )
+    return sources
+
+
+def check_env_key_parity(errors: list[str]) -> None:
+    """Check that .env.example and .env.prod have the same set of keys."""
+    if not ENV_EXAMPLE_PATH.is_file() or not ENV_PROD_PATH.is_file():
+        return
+    example_keys = _parse_env_keys(ENV_EXAMPLE_PATH)
+    prod_keys = _parse_env_keys(ENV_PROD_PATH)
+
+    example_set = set(example_keys)
+    prod_set = set(prod_keys)
+
+    only_in_example = example_set - prod_set
+    only_in_prod = prod_set - example_set
+
+    for key in sorted(only_in_prod):
+        errors.append(
+            f"{ENV_EXAMPLE_PATH}: key '{key}' is present in .env.prod "
+            f"but missing from .env.example"
+        )
+    for key in sorted(only_in_example):
+        errors.append(
+            f"{ENV_PROD_PATH}: key '{key}' is present in .env.example "
+            f"but missing from .env.prod"
+        )
+
+
+def check_expected_tracked_env_keys(
+    errors: list[str],
+    paths: list[Path] | None = None,
+) -> None:
+    env_paths = paths if paths is not None else [ENV_EXAMPLE_PATH, ENV_PROD_PATH]
+    for path in env_paths:
+        if not path.is_file():
+            errors.append(f"{path}: required tracked environment file is missing")
+            continue
+        actual_keys = set(_parse_env_keys(path))
+        for key in sorted(actual_keys - EXPECTED_TRACKED_ENV_KEYS):
+            errors.append(f"{path}: unapproved tracked environment key '{key}'")
+        for key in sorted(EXPECTED_TRACKED_ENV_KEYS - actual_keys):
+            errors.append(
+                f"{path}: required tracked environment key '{key}' is missing"
+            )
+
+
+def check_no_duplicate_env_keys(errors: list[str]) -> None:
+    """Check for duplicate keys in .env.example and .env.prod."""
+    for path in (ENV_EXAMPLE_PATH, ENV_PROD_PATH):
+        if not path.is_file():
+            continue
+        try:
+            _parse_env_keys(path)
+        except ValueError as e:
+            errors.append(str(e))
+
+
+def check_no_tracked_keys_in_xcschemes(
+    tracked_keys: set[str],
+    errors: list[str],
+    scheme_dirs: list[Path] | None = None,
+) -> None:
+    """Check that no tracked runtime key appears in xcscheme EnvironmentVariables.
+
+    Scans all repository xcscheme files under apps/macos/**/xcshareddata/xcschemes/.
+    """
+    if scheme_dirs is None:
+        scheme_dirs = [
+            SCHEMES_DIR,
+            WORKSPACE_SCHEMES_DIR,
+            Path(
+                "apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj/xcshareddata/xcschemes"
+            ),
+            Path(
+                "apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj/xcshareddata/xcschemes"
+            ),
+            Path(
+                "apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj/xcshareddata/xcschemes"
+            ),
+        ]
+
+    for schemes_dir in scheme_dirs:
+        if not schemes_dir.is_dir():
+            continue
+        for scheme_path in sorted(schemes_dir.glob("*.xcscheme")):
+            try:
+                tree = ET.parse(str(scheme_path))
+                root = tree.getroot()
+            except ET.ParseError:
+                continue
+            for env_elem in root.iter("EnvironmentVariable"):
+                key = env_elem.get("key", "")
+                if key in tracked_keys:
+                    errors.append(
+                        f"{scheme_path}: tracked runtime key '{key}' "
+                        f"found in <EnvironmentVariable>"
+                    )
+
+
+def check_no_tracked_keys_in_vscode(
+    tracked_keys: set[str],
+    errors: list[str],
+    path_override: Path | None = None,
+) -> None:
+    """Check that no tracked runtime key appears in VSCode tasks.json launchEnv."""
+    vscode_path = path_override or VSCodeTasksPath
+    if not vscode_path.is_file():
+        return
+    import json
+
+    try:
+        data = json.loads(vscode_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+
+    tasks = data.get("tasks", []) if isinstance(data, dict) else []
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        launch_env = task.get("launchEnv")
+        options = task.get("options")
+        options_env = options.get("env") if isinstance(options, dict) else None
+        for surface, environment in (
+            ("launchEnv", launch_env),
+            ("options.env", options_env),
+        ):
+            if not isinstance(environment, dict):
+                continue
+            for key in environment:
+                if key in tracked_keys:
+                    errors.append(
+                        f"{vscode_path}: tracked runtime key '{key}' "
+                        f"found in task '{task.get('label', '?')}' {surface}"
+                    )
+
+
+def check_no_tracked_keys_in_zed(
+    tracked_keys: set[str],
+    errors: list[str],
+    path_override: Path | None = None,
+) -> None:
+    """Check that no tracked runtime key appears in Zed tasks.json --env args."""
+    zed_path = path_override or ZedTasksPath
+    if not zed_path.is_file():
+        return
+    import json
+
+    try:
+        tasks = json.loads(zed_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+
+    if not isinstance(tasks, list):
+        return
+
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        environment = task.get("env")
+        if isinstance(environment, dict):
+            for key in environment:
+                if key in tracked_keys:
+                    errors.append(
+                        f"{zed_path}: tracked runtime key '{key}' "
+                        f"found in env of task '{task.get('label', '?')}'"
+                    )
+        args = task.get("args")
+        if not isinstance(args, list):
+            continue
+        for i, arg in enumerate(args):
+            if not isinstance(arg, str):
+                continue
+            if arg == "--env" and i + 1 < len(args):
+                env_arg = args[i + 1]
+                if "=" in env_arg:
+                    key = env_arg.split("=", 1)[0].strip()
+                    if key in tracked_keys:
+                        errors.append(
+                            f"{zed_path}: tracked runtime key '{key}' "
+                            f"found in --env arg of task '{task.get('label', '?')}'"
+                        )
+
+
+def check_no_deprecated_keys(
+    errors: list[str],
+    scheme_dirs: list[Path] | None = None,
+    env_paths: list[Path] | None = None,
+    source_roots: list[Path] | None = None,
+) -> None:
+    """Check that deprecated keys are absent from all launch surfaces.
+
+    Scans xcscheme EnvironmentVariables, VSCode launchEnv, and Zed --env args.
+    """
+    if scheme_dirs is None:
+        scheme_dirs = [
+            SCHEMES_DIR,
+            WORKSPACE_SCHEMES_DIR,
+            Path(
+                "apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj/xcshareddata/xcschemes"
+            ),
+            Path(
+                "apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj/xcshareddata/xcschemes"
+            ),
+            Path(
+                "apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj/xcshareddata/xcschemes"
+            ),
+        ]
+    checked_env_paths = (
+        env_paths if env_paths is not None else [ENV_EXAMPLE_PATH, ENV_PROD_PATH]
+    )
+    checked_source_roots = (
+        source_roots if source_roots is not None else SWIFT_SOURCE_ROOTS
+    )
+    source_texts = [
+        (source_path, source_path.read_text(encoding="utf-8"))
+        for source_path in _production_swift_sources(checked_source_roots)
+    ]
+
+    for key in DEPRECATED_KEYS:
+        for env_path in checked_env_paths:
+            if env_path.is_file() and key in _parse_env_keys(env_path):
+                errors.append(
+                    f"{env_path}: deprecated key '{key}' found in env template"
+                )
+
+        for source_path, source in source_texts:
+            if key in source:
+                errors.append(
+                    f"{source_path}: deprecated key '{key}' found in Swift source"
+                )
+
+        # Check xcscheme files
+        for schemes_dir in scheme_dirs:
+            if not schemes_dir.is_dir():
+                continue
+            for scheme_path in sorted(schemes_dir.glob("*.xcscheme")):
+                try:
+                    tree = ET.parse(str(scheme_path))
+                    root = tree.getroot()
+                except ET.ParseError:
+                    continue
+                for env_elem in root.iter("EnvironmentVariable"):
+                    env_key = env_elem.get("key", "")
+                    if env_key == key:
+                        errors.append(
+                            f"{scheme_path}: deprecated key '{key}' "
+                            f"found in <EnvironmentVariable>"
+                        )
+
+        # Check VSCode tasks.json
+        if VSCodeTasksPath.is_file():
+            import json
+
+            try:
+                vscode_data = json.loads(VSCodeTasksPath.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                vscode_data = {}
+            tasks = (
+                vscode_data.get("tasks", []) if isinstance(vscode_data, dict) else []
+            )
+            for task in tasks:
+                if not isinstance(task, dict):
+                    continue
+                launch_env = task.get("launchEnv")
+                options = task.get("options")
+                options_env = options.get("env") if isinstance(options, dict) else None
+                for surface, environment in (
+                    ("launchEnv", launch_env),
+                    ("options.env", options_env),
+                ):
+                    if isinstance(environment, dict) and key in environment:
+                        errors.append(
+                            f"{VSCodeTasksPath}: deprecated key '{key}' "
+                            f"found in task '{task.get('label', '?')}' {surface}"
+                        )
+
+        # Check Zed tasks.json
+        if ZedTasksPath.is_file():
+            import json
+
+            try:
+                zed_data = json.loads(ZedTasksPath.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                zed_data = []
+            zed_tasks = zed_data if isinstance(zed_data, list) else []
+            for task in zed_tasks:
+                if not isinstance(task, dict):
+                    continue
+                environment = task.get("env")
+                if isinstance(environment, dict) and key in environment:
+                    errors.append(
+                        f"{ZedTasksPath}: deprecated key '{key}' "
+                        f"found in env of task '{task.get('label', '?')}'"
+                    )
+                args = task.get("args")
+                if not isinstance(args, list):
+                    continue
+                for i, arg in enumerate(args):
+                    if not isinstance(arg, str):
+                        continue
+                    if arg == "--env" and i + 1 < len(args):
+                        env_arg = args[i + 1]
+                        if "=" in env_arg:
+                            env_key = env_arg.split("=", 1)[0].strip()
+                            if env_key == key:
+                                errors.append(
+                                    f"{ZedTasksPath}: deprecated key '{key}' "
+                                    f"found in --env arg of task "
+                                    f"'{task.get('label', '?')}'"
+                                )
+
+
+def check_process_info_environment_ownership(
+    errors: list[str],
+    source_roots: list[Path] | None = None,
+) -> None:
+    checked_source_roots = (
+        source_roots if source_roots is not None else SWIFT_SOURCE_ROOTS
+    )
+    access_pattern = re.compile(r"ProcessInfo\.processInfo\.environment")
+    literal_pattern = re.compile(r'\s*\[\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*\]')
+    subscript_pattern = re.compile(r"\s*\[")
+    for source_path in _production_swift_sources(checked_source_roots):
+        source = source_path.read_text(encoding="utf-8")
+        source_name = source_path.as_posix()
+        for access in access_pattern.finditer(source):
+            suffix = source[access.end() :]
+            literal = literal_pattern.match(suffix)
+            if literal is not None:
+                key = literal.group(1)
+                allowed_keys = ALLOWED_PROCESS_INFO_LITERAL_KEYS.get(source_name, set())
+                if key not in allowed_keys:
+                    errors.append(
+                        f"{source_path}: ProcessInfo environment key '{key}' "
+                        "is not declared in the ownership manifest"
+                    )
+                continue
+            if subscript_pattern.match(suffix) is not None:
+                errors.append(
+                    f"{source_path}: dynamic ProcessInfo environment access is forbidden"
+                )
+                continue
+            if source_name not in ALLOWED_PROCESS_INFO_SNAPSHOT_FILES:
+                errors.append(
+                    f"{source_path}: full ProcessInfo environment snapshot "
+                    "is not declared in the ownership manifest"
+                )
+
+
+def validate_env_ownership(errors: list[str]) -> None:
+    """Validate tracked env key parity, launch-surface hygiene, and deprecated keys."""
+    # Check env key parity and duplicates
+    check_env_key_parity(errors)
+    check_no_duplicate_env_keys(errors)
+    check_expected_tracked_env_keys(errors)
+
+    # Get tracked keys and check launch surfaces
+    tracked = _get_tracked_env_keys()
+    check_no_tracked_keys_in_xcschemes(tracked, errors)
+    check_no_tracked_keys_in_vscode(tracked, errors)
+    check_no_tracked_keys_in_zed(tracked, errors)
+    check_process_info_environment_ownership(errors)
+
+    # Check deprecated keys
+    check_no_deprecated_keys(errors)
+
+
 def validate_voyager_pbxproj(pbxproj_path: Path, errors: list[str]) -> None:
     """Validate the main Voyager.xcodeproj build matrix."""
     try:
@@ -888,6 +1391,9 @@ def main() -> int:
     validate_host_projects(errors)
     validate_schemes(errors)
     validate_ci(errors)
+
+    # VOY-432: validate tracked env ownership and launch-surface hygiene
+    validate_env_ownership(errors)
 
     if errors:
         for error in errors:

@@ -259,6 +259,99 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertEqual(savedSnapshots.value.count, 1)
     }
 
+    /// 실제 toolbar New Chat은 저장된 대화가 있어도 새 transient session을 연다.
+    /// - 검증 내용: `.content` wrapper, submit/final 저장, close 이후 새 session identity와 빈 transcript
+    /// - 사전 조건: Directory Content Tab에서 연결된 model로 Inspector 대화를 완료한다.
+    /// - 기대 결과: 명시적 New Chat 버튼은 저장된 session을 복원하지 않는다.
+    func testActualToolbarFlowStartsNewChatAfterCompletedPersistedInspectorSession() async throws {
+        let model = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            thinkingCapability: .effort(values: [.high], defaultValue: nil),
+        )
+        let connectionsFile: AIConnectionsFile = .testFixture(
+            lastUsedProviderId: .openai,
+            providers: [.testFixture(provider: .openai, authMethod: .apiKey)],
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let loadedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.lastExplicitAiChatSelection = FileManagerAiChatSelection(
+            modelHandle: model.id,
+            thinking: .effort(.high),
+        )
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+            $0.aiConnectionsFileClient.load = { connectionsFile }
+            $0.aiChatDefaultSettingsClient.load = { .default }
+            $0.aiProviderModelListClient = AiProviderModelListClient(loadModels: { _, _ in [model] })
+            $0.aiChatContextPartResolverClient = .live()
+            $0.aiChatExecutionClient = AiChatExecutionClient { request in
+                AsyncStream { continuation in
+                    continuation.yield(.started(context: request.context))
+                    continuation.yield(.final(response: AiChatResponse(
+                        context: request.context,
+                        assistantMessage: AiChatMessage(role: .assistant, content: "Persisted answer"),
+                        completedAtMs: 1_700_000_000_000,
+                    )))
+                    continuation.finish()
+                }
+            }
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { sessionID in
+                    loadedSessionIDs.withValue { $0.append(sessionID) }
+                    return savedSnapshots.value.last(where: { $0.sessionID == sessionID })
+                },
+                saveSession: { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
+                },
+                deleteSession: { _ in },
+            )
+        }
+        // 실제 parent→child→persistence action 중 사용자 결과와 session identity만 선별 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.content(.view(.newChatTapped)))
+        await store.receive(\.internal.applyInspectorNewChatSeed)
+
+        let sessionID = try XCTUnwrap(store.state.inspector.aiChat.sessionID)
+        XCTAssertTrue(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.aiChat.selectedModelHandle, model.id)
+
+        await store.send(.inspector(.aiChat(.draftTextChanged("Persisted question"))))
+        await store.send(.inspector(.aiChat(.submitTapped)))
+        await store.receive { action in
+            guard case let .inspector(.aiChat(.executionEvent(.final(response)))) = action else {
+                return false
+            }
+            return response.context.sessionID == sessionID
+        }
+        await store.receive(\.inspector.aiChat.sessionSnapshotSaved)
+
+        let completedTranscript = store.state.inspector.aiChat.transcriptHistory
+        XCTAssertEqual(completedTranscript.map(\.content), ["Persisted question", "Persisted answer"])
+        XCTAssertEqual(store.state.inspector.aiChat.sessionStatus, .active)
+
+        await store.send(.inspector(.closeChat))
+        XCTAssertFalse(store.state.inspector.inspectorVisible)
+
+        await store.send(.content(.view(.newChatTapped)))
+        await store.receive(\.request.newChat)
+        await store.receive(\.internal.applyInspectorNewChatSeed)
+        await store.finish()
+
+        let newSessionID = try XCTUnwrap(store.state.inspector.aiChat.sessionID)
+        XCTAssertTrue(store.state.inspector.inspectorVisible)
+        XCTAssertNotEqual(newSessionID, sessionID)
+        XCTAssertTrue(store.state.inspector.aiChat.transcriptHistory.isEmpty)
+        XCTAssertTrue(store.state.inspector.aiChat.isUntouchedPreparedTransientNewChat)
+        XCTAssertTrue(loadedSessionIDs.value.isEmpty)
+    }
+
     func testVisibleInspectorNewChatUsesWindowLastBeforePersistedDefaultWithoutSaving() async {
         let windowModel = makeAiModel(
             provider: .openai,
@@ -308,6 +401,61 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertEqual(saveCount.value, 0)
     }
 
+    /// OpenAI failure evidence가 Anthropic-only aggregate에 가려져도 window-last seed를 보존한다.
+    func testVisibleInspectorNewChatPreservesWindowLastWhenProviderFailureIsExcludedFromAggregateCatalog() async {
+        let windowModel = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            thinkingCapability: .effort(values: [.high], defaultValue: nil),
+        )
+        let aggregateModel = makeAiModel(
+            provider: .anthropic,
+            rawValue: "claude-haiku",
+            thinkingCapability: .unsupported(reason: .init(message: "Unsupported")),
+        )
+        let failure = AiModelListFailure(message: "OpenAI model list request failed.")
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.inspector.inspectorVisible = true
+        initialState.inspector.activeMode = .chat
+        initialState.inspector.aiChat = AiChatFeature.State(
+            mode: .sessions,
+            modelListState: .loaded([aggregateModel]),
+            modelListProviderOrder: [.openai, .anthropic],
+            modelListLoadedModelsByProvider: [.anthropic: [aggregateModel]],
+            modelListFailedProviders: [.openai: failure],
+            providerConnectionSnapshot: .known([.openai, .anthropic]),
+        )
+        initialState.lastExplicitAiChatSelection = FileManagerAiChatSelection(
+            modelHandle: windowModel.id,
+            thinking: .effort(.high),
+        )
+        let saveCount = LockIsolated(0)
+        let store = makeStore(
+            initialState: initialState,
+            uuid: makeUUID("00000000-0000-0000-0000-0000000000A1"),
+            connectionsFile: .empty(),
+            defaultSettings: makeDefaultSettings(model: aggregateModel, thinking: .none),
+            savedSessionCount: saveCount,
+        )
+
+        await store.send(.request(.newChat))
+        await store.receive { action in
+            guard case let .internal(.applyInspectorNewChatSeed(application)) = action else {
+                return false
+            }
+            return application.seed == AiChatNewChatSelectionSeed(
+                modelHandle: windowModel.id,
+                selectedThinking: .effort(.high),
+            )
+        }
+
+        XCTAssertEqual(store.state.inspector.aiChat.selectedModelHandle, windowModel.id)
+        XCTAssertEqual(store.state.inspector.aiChat.selectedThinking, .effort(.high))
+        XCTAssertNil(store.state.pendingAiChatNewChat)
+        XCTAssertNil(store.state.pendingAiChatInspectorOpen)
+        XCTAssertEqual(saveCount.value, 0)
+    }
+
     func testInspectorHeaderFallsBackToPersistedModelAndDropsIncompatibleThinking() async {
         let invalidWindowModel = makeAiModel(
             provider: .openai,
@@ -325,6 +473,10 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         initialState.inspector.aiChat = AiChatFeature.State(
             mode: .sessions,
             modelListState: .loaded([persistedModel]),
+            modelListLoadedModelsByProvider: [
+                .openai: [],
+                .anthropic: [persistedModel],
+            ],
         )
         initialState.lastExplicitAiChatSelection = FileManagerAiChatSelection(
             modelHandle: invalidWindowModel.id,
@@ -1101,6 +1253,493 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertFalse(store.state.inspector.inspectorVisible)
     }
 
+    func testReopenClosesAlreadyPresentedDurableChat() async {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000668")
+        var initialState = makeClosedDurableInspectorState(sessionID: sessionID)
+        initialState.inspector.inspectorVisible = true
+        initialState.inspector.inspectorPaneExists = true
+
+        let store = makeStore(
+            initialState: initialState,
+            uuid: makeUUID("00000000-0000-0000-0000-000000000669"),
+            connectionsFile: .empty(),
+        )
+
+        await store.send(.request(.reopenChat))
+        await store.receive(\.inspector.closeChat) {
+            $0.inspector.inspectorVisible = false
+        }
+
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, sessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionStatus, .active)
+    }
+
+    func testRepeatedPendingReopenCancelsInspectorOpen() async {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000670")
+        let gate = AIConnectionsLoadGate()
+        let store = makeDelayedConnectionsStore(
+            initialState: makeClosedDurableInspectorState(sessionID: sessionID),
+            gate: gate,
+        )
+
+        await store.send(.request(.reopenChat))
+        XCTAssertEqual(store.state.pendingAiChatInspectorOpen?.destination, .reopenChat)
+        await gate.waitForPendingLoadCount(1)
+
+        await store.send(.request(.reopenChat))
+        XCTAssertNil(store.state.pendingAiChatInspectorOpen)
+        XCTAssertFalse(store.state.inspector.inspectorVisible)
+
+        await gate.resumeNext(with: .empty())
+        await store.finish()
+        XCTAssertFalse(store.state.inspector.inspectorVisible)
+    }
+
+    func testReopenIgnoresCompletionWithStaleRequestID() async throws {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000647")
+        let gate = AIConnectionsLoadGate()
+        let store = makeDelayedConnectionsStore(
+            initialState: makeClosedDurableInspectorState(sessionID: sessionID),
+            gate: gate,
+        )
+
+        await store.send(.request(.reopenChat))
+        let pending = try XCTUnwrap(store.state.pendingAiChatInspectorOpen)
+        await gate.waitForPendingLoadCount(1)
+        let setup = AiChatSetupState(restoreSessionID: sessionID, mode: .chat)
+
+        await store.send(.internal(.aiChatReopenInspectorOpenLoaded(
+            requestID: UUID(),
+            setup: setup,
+            connectionsFile: .empty(),
+        )))
+
+        XCTAssertEqual(store.state.pendingAiChatInspectorOpen, pending)
+        XCTAssertFalse(store.state.inspector.inspectorVisible)
+        await gate.resumeNext(with: .empty())
+        await store.finish()
+    }
+
+    func testReopenIgnoresCompletionAfterSessionIdentityChanges() async throws {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000649")
+        let replacementID = makeSessionID("00000000-0000-0000-0000-000000000650")
+        let gate = AIConnectionsLoadGate()
+        let store = makeDelayedConnectionsStore(
+            initialState: makeClosedDurableInspectorState(sessionID: sessionID),
+            gate: gate,
+        )
+
+        await store.send(.request(.reopenChat))
+        let pending = try XCTUnwrap(store.state.pendingAiChatInspectorOpen)
+        await gate.waitForPendingLoadCount(1)
+        await store.send(.inspector(.aiChat(.showSessionsForChat(replacementID))))
+        await store.send(.internal(.aiChatReopenInspectorOpenLoaded(
+            requestID: pending.requestID,
+            setup: .init(restoreSessionID: sessionID, mode: .chat),
+            connectionsFile: .empty(),
+        )))
+
+        XCTAssertNil(store.state.pendingAiChatInspectorOpen)
+        XCTAssertFalse(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, replacementID)
+        await gate.resumeNext(with: .empty())
+        await store.finish()
+    }
+
+    func testReopenIgnoresCompletionAfterResumeProvenanceChanges() async throws {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000651")
+        let gate = AIConnectionsLoadGate()
+        let store = makeDelayedConnectionsStore(
+            initialState: makeClosedDurableInspectorState(sessionID: sessionID),
+            gate: gate,
+        )
+
+        await store.send(.request(.reopenChat))
+        let pending = try XCTUnwrap(store.state.pendingAiChatInspectorOpen)
+        await gate.waitForPendingLoadCount(1)
+        await store.send(.inspector(.aiChat(.draftTextChanged("Changed while reopening"))))
+        await store.send(.internal(.aiChatReopenInspectorOpenLoaded(
+            requestID: pending.requestID,
+            setup: .init(restoreSessionID: sessionID, mode: .chat),
+            connectionsFile: .empty(),
+        )))
+
+        XCTAssertNil(store.state.pendingAiChatInspectorOpen)
+        XCTAssertFalse(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.aiChat.draftText, "Changed while reopening")
+        await gate.resumeNext(with: .empty())
+        await store.finish()
+    }
+
+    func testReopenIgnoresCompletionAfterActiveTabChanges() async throws {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000667")
+        let secondTabID = ContentTabID()
+        let secondAnchor = ContentTabPageAnchor.directory(path: "/Users/test/Downloads")
+        var initialState = makeClosedDurableInspectorState(sessionID: sessionID)
+        initialState.contentTabs.tabs.append(ContentTabItem(
+            id: secondTabID,
+            page: .directory,
+            anchor: secondAnchor,
+            isPinned: false,
+            title: "Downloads",
+            iconName: "folder",
+        ))
+        initialState.tabContentStates[secondTabID] = FileManagerContentFeature.State.initialContent(
+            for: secondAnchor,
+            inheritingWindowContextFrom: initialState.content,
+        )
+        initialState.tabInspectorStates[secondTabID] = .init()
+
+        let gate = AIConnectionsLoadGate()
+        let store = makeDelayedConnectionsStore(initialState: initialState, gate: gate)
+
+        await store.send(.request(.reopenChat))
+        let pending = try XCTUnwrap(store.state.pendingAiChatInspectorOpen)
+        await gate.waitForPendingLoadCount(1)
+        await store.send(.contentTabs(.setCurrent(secondTabID)))
+        XCTAssertEqual(store.state.contentTabs.activeTabID, secondTabID)
+
+        await store.send(.internal(.aiChatReopenInspectorOpenLoaded(
+            requestID: pending.requestID,
+            setup: .init(restoreSessionID: sessionID, mode: .chat),
+            connectionsFile: .empty(),
+        )))
+
+        XCTAssertNil(store.state.pendingAiChatInspectorOpen)
+        XCTAssertFalse(store.state.inspector.inspectorVisible)
+        XCTAssertNil(store.state.inspector.aiChat.sessionID)
+        await gate.resumeNext(with: .empty())
+        await store.finish()
+    }
+
+    /// 유휴 durable session의 미전송 draft는 Open Chat 재진입 뒤에도 유지된다.
+    /// - 검증 내용: same-session fast path, persistence load 미호출, draft 보존
+    /// - 사전 조건: lifecycle은 idle이고 active session에 미전송 draft가 남아 있다.
+    /// - 기대 결과: 동일 session을 다시 표시하며 draft를 초기화하지 않는다.
+    func testReopenPreservesIdleDraftWithoutPersistedRestore() async {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000671")
+        let initialState = makeClosedDurableInspectorState(sessionID: sessionID)
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiConnectionsFileClient.load = { .empty() }
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in
+                XCTFail("Idle draft reopen must not load persisted state")
+                return nil
+            }
+        }
+        // 동일 session의 미전송 draft 보존 결과만 선별 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.inspector(.aiChat(.draftTextChanged("Unsent draft"))))
+        await store.send(.request(.reopenChat))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertTrue(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, sessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.draftText, "Unsent draft")
+    }
+
+    /// 유휴 durable session의 미전송 attachment는 Open Chat 재진입 뒤에도 유지된다.
+    /// - 검증 내용: same-session fast path, persistence load 미호출, attachment 보존
+    /// - 사전 조건: lifecycle은 idle이고 active session에 미전송 attachment가 남아 있다.
+    /// - 기대 결과: 동일 session을 다시 표시하며 attachment를 제거하지 않는다.
+    func testReopenPreservesIdleAttachmentsWithoutPersistedRestore() async {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000672")
+        let initialState = makeClosedDurableInspectorState(sessionID: sessionID)
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiConnectionsFileClient.load = { .empty() }
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in
+                XCTFail("Idle attachment reopen must not load persisted state")
+                return nil
+            }
+        }
+        // 동일 session의 미전송 attachment 보존 결과만 선별 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.inspector(.aiChat(.attachmentPickerSelection([
+            URL(fileURLWithPath: "/tmp/idle-reopen.txt"),
+        ]))))
+        XCTAssertEqual(store.state.inspector.aiChat.addedAttachments.count, 1)
+        await store.send(.request(.reopenChat))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertTrue(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, sessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.addedAttachments.count, 1)
+    }
+
+    /// 유휴 durable session의 모델·Thinking·컨텍스트 변경은 Open Chat 재진입 뒤에도 유지된다.
+    /// - 검증 내용: AiChat 사용자 mutation 기반 same-session fast path와 persistence load 미호출
+    /// - 사전 조건: active session의 입력은 비어 있고 모델·Thinking·컨텍스트·폴더 모드를 변경했다.
+    /// - 기대 결과: 동일 session을 다시 표시하며 변경된 composer 설정을 persisted snapshot으로 덮지 않는다.
+    func testReopenPreservesIdleComposerSettingsWithoutPersistedRestore() async throws {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000674")
+        let originalModel = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            thinkingCapability: .effort(values: [.low, .high], defaultValue: nil),
+        )
+        let changedModel = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5-mini",
+            thinkingCapability: .effort(values: [.low, .high], defaultValue: nil),
+        )
+        let originalContext = AiChatCurrentContextSnapshot(
+            summary: "Original context",
+            references: [
+                AiChatContextReference(
+                    kind: .folder,
+                    identifier: "/tmp/projects",
+                    title: "Projects",
+                    subtitle: "/tmp/projects",
+                    metadata: ["path": "/tmp/projects"],
+                ),
+            ],
+        )
+        let changedContext = AiChatCurrentContextSnapshot(
+            summary: "Changed context",
+            references: originalContext.references,
+        )
+        var initialState = makeClosedDurableInspectorState(sessionID: sessionID)
+        initialState.inspector.aiChat = AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: originalContext,
+            modelListState: .loaded([originalModel, changedModel]),
+            selectedModelHandle: originalModel.id,
+            selectedThinking: .effort(.high),
+        )
+        initialState.syncActiveTabInspectorState()
+        let loadedSessionCount = LockIsolated(0)
+        let gate = AIConnectionsLoadGate()
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiConnectionsFileClient.load = { await gate.load() }
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in
+                loadedSessionCount.withValue { $0 += 1 }
+                return nil
+            }
+        }
+        // 동일 session의 사용자 변경 보존 결과만 선별 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.inspector(.aiChat(.selectedModelChanged(changedModel.id))))
+        await store.send(.inspector(.aiChat(.selectedThinkingChanged(.effort(.low)))))
+        await store.send(.inspector(.aiChat(.currentContextChanged(changedContext))))
+        await store.send(.inspector(.aiChat(.folderStructureModeChanged(
+            .currentContext,
+            .includeSubfolders,
+        ))))
+        XCTAssertTrue(store.state.inspector.aiChat.draftText.isEmpty)
+        XCTAssertTrue(store.state.inspector.aiChat.addedAttachments.isEmpty)
+
+        await store.send(.request(.reopenChat))
+        await gate.waitForPendingLoadCount(1)
+        let pending = try XCTUnwrap(store.state.pendingAiChatInspectorOpen)
+
+        XCTAssertTrue(pending.preservesLiveRuntime)
+        XCTAssertEqual(pending.resumeSessionID, sessionID)
+        XCTAssertEqual(loadedSessionCount.value, 0)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, sessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.selectedModelHandle, changedModel.id)
+        XCTAssertEqual(store.state.inspector.aiChat.selectedThinking, .effort(.low))
+        XCTAssertEqual(store.state.inspector.aiChat.currentContext.summary, "Changed context")
+        XCTAssertTrue(store.state.inspector.aiChat.currentContextFolderStructureModes.values.allSatisfy {
+            $0 == .includeSubfolders
+        })
+
+        await store.send(.request(.reopenChat))
+        XCTAssertNil(store.state.pendingAiChatInspectorOpen)
+        await gate.resumeNext(with: .empty())
+        await store.finish()
+        XCTAssertEqual(loadedSessionCount.value, 0)
+    }
+
+    /// authoritative setup은 과거 mutation revision을 persisted 기준으로 재설정한다.
+    /// - 검증 내용: nonzero historical revision 이후 persistence restore와 missing fallback 실행
+    /// - 사전 조건: 사용자 변경 뒤 동일 session의 authoritative setup을 적용했다.
+    /// - 기대 결과: Open Chat은 live runtime을 보존하지 않고 persisted session을 조회한다.
+    func testReopenLoadsPersistenceAfterAuthoritativeSetupRebasesHistoricalMutation() async throws {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000675")
+        let gate = AIConnectionsLoadGate()
+        let loadedSessionCount = LockIsolated(0)
+        let store = TestStore(initialState: makeClosedDurableInspectorState(sessionID: sessionID)) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiConnectionsFileClient.load = { await gate.load() }
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in
+                loadedSessionCount.withValue { $0 += 1 }
+                return nil
+            }
+        }
+        // persisted 기준 재설정 뒤 restore/fallback 결과만 선별 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.inspector(.aiChat(.draftTextChanged("Historical mutation"))))
+        await store.send(.inspector(.aiChat(.setup(.init(
+            sessionID: sessionID,
+            mode: .chat,
+            sessionStatus: .active,
+        )))))
+        await store.send(.request(.reopenChat))
+        await gate.waitForPendingLoadCount(1)
+        let pending = try XCTUnwrap(store.state.pendingAiChatInspectorOpen)
+        XCTAssertFalse(pending.preservesLiveRuntime)
+        XCTAssertEqual(pending.resumeSessionID, sessionID)
+
+        await gate.resumeNext(with: .empty())
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(loadedSessionCount.value, 1)
+        XCTAssertNotEqual(store.state.inspector.aiChat.sessionID, sessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.restoreFailure, .missingRecord)
+    }
+
+    /// 유휴 composer session 재진입 중 draft mutation은 stale completion을 무효화한다.
+    /// - 검증 내용: live provenance mutation guard, 최신 draft 보존, Inspector 미표시
+    /// - 사전 조건: 미전송 draft를 가진 active session의 connections load가 pending이다.
+    /// - 기대 결과: 늦은 completion은 무시되고 변경된 draft가 유지된다.
+    func testIdleComposerReopenIgnoresCompletionAfterDraftMutation() async throws {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000673")
+        let initialState = makeClosedDurableInspectorState(sessionID: sessionID)
+        let gate = AIConnectionsLoadGate()
+        let store = makeDelayedConnectionsStore(initialState: initialState, gate: gate)
+
+        await store.send(.inspector(.aiChat(.draftTextChanged("Original draft"))))
+        await store.send(.request(.reopenChat))
+        let pending = try XCTUnwrap(store.state.pendingAiChatInspectorOpen)
+        XCTAssertTrue(pending.preservesLiveRuntime)
+        await gate.waitForPendingLoadCount(1)
+        await store.send(.inspector(.aiChat(.draftTextChanged("Changed while reopening"))))
+        await store.send(.internal(.aiChatReopenInspectorOpenLoaded(
+            requestID: pending.requestID,
+            setup: .init(sessionID: sessionID, mode: .chat),
+            connectionsFile: .empty(),
+        )))
+
+        XCTAssertNil(store.state.pendingAiChatInspectorOpen)
+        XCTAssertFalse(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.aiChat.draftText, "Changed while reopening")
+        await gate.resumeNext(with: .empty())
+        await store.finish()
+    }
+
+    func testReopenPreservesLivePendingRequestWithoutPersistedRestore() async {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000656")
+        let model = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            thinkingCapability: .effort(values: [.high], defaultValue: nil),
+        )
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: makeUUID("00000000-0000-0000-0000-000000000657"),
+            kind: .submit,
+            sessionID: sessionID,
+            selectedModel: model,
+            selectedRow: nil,
+            preparedRequest: AiChatPreparedRequest(
+                prompt: "Live prompt",
+                messages: [],
+                assistantReplacementIndex: nil,
+                historyTruncation: .init(
+                    includedMessageCount: 0,
+                    excludedMessageCount: 0,
+                    budget: 1,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        var initialState = makeClosedDurableInspectorState(sessionID: sessionID)
+        initialState.inspector.aiChat.pendingRequestStart = pendingRequest
+        initialState.inspector.aiChat.draftText = "Preserved draft"
+        initialState.syncActiveTabInspectorState()
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiConnectionsFileClient.load = { .empty() }
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in
+                XCTFail("Live runtime reopen must not load persisted state")
+                return nil
+            }
+        }
+        // 동일 session fast path의 lifecycle 보존과 restore 미호출만 선별 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.request(.reopenChat))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertTrue(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, sessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.pendingRequestStart, pendingRequest)
+        XCTAssertEqual(store.state.inspector.aiChat.draftText, "Preserved draft")
+    }
+
+    func testReopenAllowsLiveStreamingProgressBeforeInspectorOpenCompletes() async {
+        let sessionID = makeSessionID("00000000-0000-0000-0000-000000000668")
+        let requestID = AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000669"))
+        let runID = AiChatRunID(rawValue: makeUUID("00000000-0000-0000-0000-000000000670"))
+        let model = makeAiModel(
+            provider: .openai,
+            rawValue: "gpt-5",
+            thinkingCapability: .effort(values: [.high], defaultValue: nil),
+        )
+        let requestContext = AiChatRequestContextSnapshot(
+            sessionID: sessionID,
+            requestID: requestID,
+            runID: runID,
+            provider: model.provider,
+            model: model.id,
+            selectedModel: model,
+            sessionStatus: .active,
+        )
+        let request = AiChatRequest(context: requestContext, messages: [])
+        let lock = AiChatRequestLock(
+            kind: .submit,
+            requestID: requestID,
+            runID: runID,
+            context: requestContext,
+            request: request,
+            selectedModelHandle: model.id,
+            selectedModelRow: nil,
+            assistantReplacementIndex: nil,
+        )
+        var initialState = makeClosedDurableInspectorState(sessionID: sessionID)
+        initialState.inspector.aiChat.executionPhase = .processing(lock)
+        initialState.syncActiveTabInspectorState()
+        let gate = AIConnectionsLoadGate()
+        let store = makeDelayedConnectionsStore(initialState: initialState, gate: gate)
+
+        await store.send(.request(.reopenChat))
+        await gate.waitForPendingLoadCount(1)
+        await store.send(.inspector(.aiChat(.executionEvent(
+            .delta(context: requestContext, text: "partial"),
+        ))))
+        XCTAssertEqual(store.state.inspector.aiChat.streamingAssistantDraft, "partial")
+
+        await gate.resumeNext(with: .empty())
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertTrue(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, sessionID)
+        XCTAssertEqual(store.state.inspector.aiChat.streamingAssistantDraft, "partial")
+        XCTAssertTrue(store.state.inspector.aiChat.executionPhase.isProcessing)
+    }
+
     func testDifferentPendingChatCommandReplacesInspectorDestination() async throws {
         let gate = AIConnectionsLoadGate()
         let store = makeDelayedConnectionsStore(
@@ -1287,14 +1926,13 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertEqual(store.state.inspector.aiChat.currentContext.summary, "Documents")
     }
 
-    func testAiConnectionUpdateKeepsSelectorOpenAndFallsBackWhenSelectedProviderDisappears() async {
+    func testAiConnectionUpdateForwardsProviderFileToOpenInspectorChat() async {
         let fixedUUID = makeUUID("00000000-0000-0000-0000-000000000032")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         initialState.content.navigation.seedInitialFolderPath("/Users/test/Documents")
 
         let initialFile: AIConnectionsFile = .testFixture(lastUsedProviderId: .openai, providers: [
             .testFixture(provider: .openai, authMethod: .apiKey),
-            .testFixture(provider: .anthropic, authMethod: .apiKey),
         ])
         let store = makeStore(initialState: initialState, uuid: fixedUUID, connectionsFile: initialFile)
 
@@ -1312,19 +1950,16 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await store.send(.inspector(.setInspectorPaneExists(true))) {
             $0.inspector.inspectorPaneExists = true
         }
-        await store.send(.inspector(.aiChat(.modelSelectorTapped))) {
-            $0.inspector.aiChat.isModelSelectorPresented = true
-        }
 
-        let fallbackFile: AIConnectionsFile = .testFixture(lastUsedProviderId: .openai, providers: [
-            .testFixture(provider: .anthropic, authMethod: .apiKey, state: .connected),
-            .testFixture(provider: .openai, authMethod: .apiKey, state: .connectionFailed),
+        let updatedFile: AIConnectionsFile = .testFixture(lastUsedProviderId: .anthropic, providers: [
+            .testFixture(provider: .anthropic, authMethod: .apiKey),
         ])
 
-        await store.send(.aiConnectionsFileUpdated(fallbackFile))
-        await store.receive(\.inspector.aiChat.providerConnectionsUpdated)
-
-        XCTAssertTrue(store.state.inspector.aiChat.isModelSelectorPresented)
+        await store.send(.aiConnectionsFileUpdated(updatedFile))
+        await store.receive { action in
+            guard case let .inspector(.aiChat(.providerConnectionsUpdated(file))) = action else { return false }
+            return file == updatedFile
+        }
     }
 
     func testAiConnectionUpdateToEmptyCatalogShowsSettingsGateWithoutReopening() async {
@@ -1754,6 +2389,20 @@ private extension FileManagerWindowInspectorChatRoutingTests {
         // store.exhaustivity = .off: FileManager부터 AiChat까지의 통합 action 중 목적지 계약만 선별 검증한다.
         store.exhaustivity = .off
         return store
+    }
+
+    private func makeClosedDurableInspectorState(
+        sessionID: AiChatSessionID,
+    ) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        state.inspector.activeMode = .chat
+        state.inspector.aiChat = AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            sessionStatus: .active,
+        )
+        state.syncActiveTabInspectorState()
+        return state
     }
 
     private func makeDelayedConnectionsStore(
