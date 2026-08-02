@@ -91,18 +91,15 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
 
         guard let change = EntryListCoordinatorSortDescriptorMapper.change(from: outlineView.sortDescriptors)
         else { return }
-        let needed = EntryListCoordinatorSortDescriptorMapper.actionsNeeded(
+        guard let needed = EntryListCoordinatorSortDescriptorMapper.actionNeeded(
             currentSortKey: state.sortKey.sharedSortKey,
             currentSortOrder: state.sortOrder,
             change: change,
-        )
-        if let sortKey = needed.sortKey {
-            let widgetSortKey = EntryViewLayoutSortKey.fromShared(sortKey)
-            store.send(.view(.changeSort(widgetSortKey, needed.sortOrder ?? state.sortOrder)))
-        }
-        if let sortOrder = needed.sortOrder {
-            store.send(.view(.changeSort(state.sortKey, sortOrder)))
-        }
+        ) else { return }
+        store.send(.view(.changeSort(
+            EntryViewLayoutSortKey.fromShared(needed.sortKey),
+            needed.sortOrder,
+        )))
     }
 
     public func outlineViewColumnDidMove(_ notification: Notification) {

@@ -52,15 +52,15 @@ enum EntryListCoordinatorSortDescriptorMapper {
         return EntryListCoordinatorSortDescriptorChange(sortKey: sortKey, sortOrder: sortOrder)
     }
 
-    static func actionsNeeded(
+    static func actionNeeded(
         currentSortKey: SortKey,
         currentSortOrder: VoyagerShared.SortOrder,
         change: EntryListCoordinatorSortDescriptorChange,
-    ) -> (sortKey: SortKey?, sortOrder: VoyagerShared.SortOrder?) {
-        let setKey: SortKey? = currentSortKey == change.sortKey ? nil : change.sortKey
-        let setOrder: VoyagerShared.SortOrder? = currentSortOrder == change.sortOrder ? nil : change
-            .sortOrder
-        return (setKey, setOrder)
+    ) -> EntryListCoordinatorSortDescriptorChange? {
+        guard currentSortKey != change.sortKey || currentSortOrder != change.sortOrder else {
+            return nil
+        }
+        return change
     }
 }
 
