@@ -10,6 +10,10 @@ struct EntryOpenWithOperationsReducer {
     typealias State = EntryOperationsState
     typealias Action = EntryOperationsAction
 
+    private enum CancelID {
+        case commonApplications
+    }
+
     @Dependency(\.entryOpenClient)
     var entryOpenClient
     @Dependency(\.workspaceClient)
@@ -146,6 +150,7 @@ struct EntryOpenWithOperationsReducer {
                     for: files,
                     entryOpenClient: entryOpenClient,
                 )
+                .cancellable(id: CancelID.commonApplications, cancelInFlight: true)
 
             case let .openWith(.commonApplicationsLoaded(apps)):
                 state.commonApplicationsForSelectedFiles = apps
