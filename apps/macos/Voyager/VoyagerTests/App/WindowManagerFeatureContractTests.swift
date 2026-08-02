@@ -2582,8 +2582,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 450))
             $0.fileManagerWindowClient.activate = { _ in .discarded }
             $0.fileManagerWindowClient.close = { _ in }
-            $0.fileOperationUndoManagerClient.activate = { _ in nil }
-            $0.fileOperationUndoManagerClient.deactivate = { _ in }
+            $0.fileOperationUndoManagerClient.moveScope = { _, _, _ in .moved }
             $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
         }
         // store.exhaustivity = .off: post-commit lifecycle effect보다 registry의 원자적 결과를 검증한다.
@@ -2605,6 +2604,71 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             1,
         )
         XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: native undo scope 이전 실패는 logical transfer를 commit하지 않는다.
+    /// synchronous precondition 실패 뒤 source/target state와 native window effect가 그대로인지 검증한다.
+    /// - 검증 내용: source tab/pending failure, target 부재, terminal rejection, activate/close 호출 횟수
+    /// - 사전 조건: source에는 이동 tab과 잔여 tab이 있고 undo registry가 source missing을 반환한다.
+    /// - 기대 결과: 탭은 source에 남고 target에 추가되지 않으며 window activate/close effect가 실행되지 않는다.
+    func testContentTabMoveUndoScopeFailureRejectsBeforeStateCommitAndEffects() async throws {
+        let sourceID = UUID()
+        let targetID = UUID()
+        let movedTabID = ContentTabID(rawValue: "undo-failure-moved")
+        let request = ContentTabMoveRequest(
+            requestID: UUID(),
+            sourceWindowID: sourceID,
+            tabID: movedTabID,
+            targetWindowID: targetID,
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [
+                (movedTabID, "/undo-failure/moved"),
+                (ContentTabID(rawValue: "undo-failure-remainder"), "/undo-failure/remainder"),
+            ],
+        )
+        source.window.sidebar.pendingContentTabMoveRequest = request
+        let target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(ContentTabID(rawValue: "undo-failure-target"), "/undo-failure/target")],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        let moveCalls = LockIsolated<[(UndoManagerScope, UndoManagerScope)]>([])
+        let activatedIDs = LockIsolated<[UUID]>([])
+        let closedIDs = LockIsolated<[UUID]>([])
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
+            $0.fileOperationUndoManagerClient.moveScope = { source, target, _ in
+                moveCalls.withValue { $0.append((source, target)) }
+                return .sourceMissing
+            }
+            $0.fileManagerWindowClient.activate = { id in
+                activatedIDs.withValue { $0.append(id) }
+                return .discarded
+            }
+            $0.fileManagerWindowClient.close = { id in closedIDs.withValue { $0.append(id) } }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveRequest(request))
+
+        XCTAssertEqual(moveCalls.value.count, 1)
+        XCTAssertNotNil(store.state.windows[id: sourceID]?.window.contentTabs.tabs[id: movedTabID])
+        XCTAssertNil(store.state.windows[id: targetID]?.window.contentTabs.tabs[id: movedTabID])
+        XCTAssertEqual(
+            store.state.windows[id: sourceID]?.window.contentTabMoveFailurePresentation?.category,
+            .unavailable,
+        )
+        XCTAssertEqual(
+            store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome,
+            .rejected(.unavailable),
+        )
+        XCTAssertTrue(activatedIDs.value.isEmpty)
+        XCTAssertTrue(closedIDs.value.isEmpty)
     }
 
     /// CTM-001-move_content_tab_to_another_window: normal window bootstrap과 Sidebar intent가 manager transfer까지 연결된다.
@@ -2669,8 +2733,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.fileManagerWindowClient.registeredWindowIDs = { [sourceWindowID, targetWindowID] }
             $0.fileManagerWindowClient.activate = { _ in .discarded }
             $0.fileManagerWindowClient.close = { _ in }
-            $0.fileOperationUndoManagerClient.activate = { _ in nil }
-            $0.fileOperationUndoManagerClient.deactivate = { _ in }
+            $0.fileOperationUndoManagerClient.moveScope = { _, _, _ in .moved }
             $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
         }
         // store.exhaustivity = .off: production composition의 lifecycle/app-preference action보다 move terminal과 registry
@@ -2772,6 +2835,15 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             pinnedAt: Date(timeIntervalSince1970: 450),
         )
         let pinnedStore = ContentTabPinnedRecordStore(records: [record])
+        let undoRegistry = FileOperationUndoManagerRegistry()
+        let undoClient = FileOperationUndoManagerClient.live(registry: undoRegistry)
+        let sourceUndoScope = UndoManagerScope(windowID: sourceWindowID, contentTabID: pinnedTabID.rawValue)
+        let targetUndoScope = UndoManagerScope(windowID: targetWindowID, contentTabID: pinnedTabID.rawValue)
+        let sourceUndoManager = try XCTUnwrap(undoClient.activate(sourceUndoScope))
+        let replacedTargetUndoManager = try XCTUnwrap(undoClient.activate(targetUndoScope))
+        let sourceUndoGeneration = try XCTUnwrap(undoClient.generation(sourceUndoScope))
+        let sourceUndoRecord = EntryActionRecord(operationKind: .rename, targets: [])
+        XCTAssertTrue(undoClient.registerUndo(sourceUndoScope, sourceUndoGeneration, sourceUndoRecord))
         let restoredPinnedState = ContentTabState.restoringPinnedRecords(
             from: pinnedStore,
             isRestorableAnchor: { _ in true },
@@ -2808,8 +2880,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 450))
             $0.contentTabPinnedRecordClient.loadStore = { _ in pinnedStore }
             $0.fileManagerWindowClient.activate = { _ in .discarded }
-            $0.fileOperationUndoManagerClient.activate = { _ in nil }
-            $0.fileOperationUndoManagerClient.deactivate = { _ in }
+            $0.fileOperationUndoManagerClient = undoClient
             $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
         }
         // store.exhaustivity = .off: post-commit runtime effect보다 registry commit과 pinned-store 재동기화 결과를 검증한다.
@@ -2871,6 +2942,17 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             store.state.windows[id: targetWindowID]?.window.suppressedPinnedTabIDs,
             [],
         )
+        let removedSourceUndoManager = await undoClient.undoManager(sourceUndoScope)
+        let movedTargetUndoManagerValue = await undoClient.undoManager(targetUndoScope)
+        let movedTargetUndoManager = try XCTUnwrap(movedTargetUndoManagerValue)
+        XCTAssertNil(removedSourceUndoManager)
+        XCTAssertIdentical(sourceUndoManager, movedTargetUndoManager)
+        XCTAssertNotIdentical(replacedTargetUndoManager, movedTargetUndoManager)
+        XCTAssertEqual(undoClient.generation(targetUndoScope), sourceUndoGeneration)
+        XCTAssertEqual(
+            undoClient.performUndoRedo(targetUndoScope, sourceUndoGeneration, .undo, sourceUndoRecord.id),
+            .applied,
+        )
     }
 
     /// CTM-001-move_content_tab_to_another_window: target drop delegate가 source-owned request와 atomic transfer를 구동한다.
@@ -2916,8 +2998,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.fileManagerFavoritesClient.loadFavorites = { _, _ in [] }
             $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
             $0.fileManagerWindowClient.activate = { _ in .discarded }
-            $0.fileOperationUndoManagerClient.activate = { _ in nil }
-            $0.fileOperationUndoManagerClient.deactivate = { _ in }
+            $0.fileOperationUndoManagerClient.moveScope = { _, _, _ in .moved }
             $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
         }
         // store.exhaustivity = .off: post-commit lifecycle보다 drop routing 경계와 atomic registry 결과를 검증한다.
@@ -3721,8 +3802,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 activationCalled.fulfill()
                 return .discarded
             }
-            $0.fileOperationUndoManagerClient.activate = { _ in nil }
-            $0.fileOperationUndoManagerClient.deactivate = { _ in }
+            $0.fileOperationUndoManagerClient.moveScope = { _, _, _ in .moved }
         }
         // store.exhaustivity = .off: long-lived watcher 내부 action보다 lifecycle supersession과 event route를 검증한다.
         store.exhaustivity = .off
@@ -3952,8 +4032,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
             $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
             $0.fileManagerWindowClient.activate = { _ in .discarded }
-            $0.fileOperationUndoManagerClient.activate = { _ in nil }
-            $0.fileOperationUndoManagerClient.deactivate = { _ in }
+            $0.fileOperationUndoManagerClient.moveScope = { _, _, _ in .moved }
         }
         store.exhaustivity = .off
 
@@ -4113,8 +4192,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
             $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
             $0.fileManagerWindowClient.activate = { _ in .discarded }
-            $0.fileOperationUndoManagerClient.activate = { _ in nil }
-            $0.fileOperationUndoManagerClient.deactivate = { _ in }
+            $0.fileOperationUndoManagerClient.moveScope = { _, _, _ in .moved }
         }
         // store.exhaustivity = .off: long-lived probe 내부 action보다 source lifecycle 무효과와 target teardown/rebind를 검증한다.
         store.exhaustivity = .off
@@ -4251,8 +4329,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
             $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
             $0.fileManagerWindowClient.activate = { _ in .discarded }
-            $0.fileOperationUndoManagerClient.activate = { _ in nil }
-            $0.fileOperationUndoManagerClient.deactivate = { _ in }
+            $0.fileOperationUndoManagerClient.moveScope = { _, _, _ in .moved }
         }
         store.exhaustivity = .off
 
@@ -4307,8 +4384,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         initialState.windows = [source, target]
         let activatedIDs = LockIsolated<[UUID]>([])
         let closedIDs = LockIsolated<[UUID]>([])
-        let activatedUndoScopes = LockIsolated<[UndoManagerScope]>([])
-        let deactivatedUndoScopes = LockIsolated<[UndoManagerScope]>([])
+        let movedUndoScopes = LockIsolated<[(UndoManagerScope, UndoManagerScope)]>([])
         let notificationStarts = LockIsolated(0)
         let pinnedStoreCalls = LockIsolated(0)
         let activationCalled = expectation(description: "target activation")
@@ -4322,12 +4398,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 return .discarded
             }
             $0.fileManagerWindowClient.close = { id in closedIDs.withValue { $0.append(id) } }
-            $0.fileOperationUndoManagerClient.activate = { scope in
-                activatedUndoScopes.withValue { $0.append(scope) }
-                return nil
-            }
-            $0.fileOperationUndoManagerClient.deactivate = { scope in
-                deactivatedUndoScopes.withValue { $0.append(scope) }
+            $0.fileOperationUndoManagerClient.moveScope = { source, target, _ in
+                movedUndoScopes.withValue { $0.append((source, target)) }
+                return .moved
             }
             $0.notificationCenterClient.notifications = { _, _ in
                 notificationStarts.withValue { $0 += 1 }
@@ -4348,6 +4421,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await fulfillment(of: [activationCalled], timeout: 1)
         await store.skipReceivedActions()
         let stateAfterFirstCommit = store.state
+        let notificationStartsAfterFirstCommit = notificationStarts.value
 
         await store.send(.contentTabMoveRequest(request))
 
@@ -4358,13 +4432,13 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
         XCTAssertEqual(activatedIDs.value, [targetID])
         XCTAssertTrue(closedIDs.value.isEmpty)
-        XCTAssertEqual(deactivatedUndoScopes.value, [
+        XCTAssertEqual(movedUndoScopes.value.map(\.0), [
             UndoManagerScope(windowID: sourceID, contentTabID: movedTabID.rawValue),
         ])
-        XCTAssertEqual(activatedUndoScopes.value, [
+        XCTAssertEqual(movedUndoScopes.value.map(\.1), [
             UndoManagerScope(windowID: targetID, contentTabID: movedTabID.rawValue),
         ])
-        XCTAssertEqual(notificationStarts.value, 2)
+        XCTAssertEqual(notificationStarts.value, notificationStartsAfterFirstCommit)
         XCTAssertEqual(pinnedStoreCalls.value, 0)
     }
 
@@ -4599,6 +4673,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let activatedIDs = LockIsolated<[UUID]>([])
         let closedIDs = LockIsolated<[UUID]>([])
         let notificationStarts = LockIsolated(0)
+        let registry = FileOperationUndoManagerRegistry()
+        let undoClient = FileOperationUndoManagerClient.live(registry: registry)
+        let sourceScope = UndoManagerScope(windowID: sourceID, contentTabID: movedTabID.rawValue)
+        let targetScope = UndoManagerScope(windowID: targetID, contentTabID: movedTabID.rawValue)
+        let sourceUndoManager = try XCTUnwrap(undoClient.activate(sourceScope))
         let activationCalled = expectation(description: "last-tab target activation")
         let closeCalled = expectation(description: "last-tab source close")
         let store = TestStore(initialState: initialState) {
@@ -4614,8 +4693,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 closedIDs.withValue { $0.append(id) }
                 closeCalled.fulfill()
             }
-            $0.fileOperationUndoManagerClient.activate = { _ in nil }
-            $0.fileOperationUndoManagerClient.deactivate = { _ in }
+            $0.fileOperationUndoManagerClient = undoClient
             $0.notificationCenterClient.notifications = { _, _ in
                 notificationStarts.withValue { $0 += 1 }
                 return AsyncStream { $0.finish() }
@@ -4637,6 +4715,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(activatedIDs.value, [targetID])
         XCTAssertEqual(closedIDs.value, [sourceID])
         XCTAssertEqual(notificationStarts.value, 1)
+        let removedSourceUndoManager = await undoClient.undoManager(sourceScope)
+        let movedTargetUndoManagerValue = await undoClient.undoManager(targetScope)
+        let movedTargetUndoManager = try XCTUnwrap(movedTargetUndoManagerValue)
+        XCTAssertNil(removedSourceUndoManager)
+        XCTAssertIdentical(sourceUndoManager, movedTargetUndoManager)
 
         await store.send(.event(.windowClosed(sourceID)))
         await store.send(.event(.windowClosed(sourceID)))
