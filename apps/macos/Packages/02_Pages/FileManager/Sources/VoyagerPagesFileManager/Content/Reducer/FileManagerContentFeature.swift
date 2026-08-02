@@ -315,7 +315,11 @@ public struct FileManagerContentFeature {
 
     static func shouldProjectContent(_ action: Action) -> Bool {
         switch action {
-        case .entryOperations(.loading(.cancelAndClearItems)),
+        case .entryOperations(.loading(.loadItems)),
+             .entryOperations(.loading(.loadRecentItems)),
+             .entryOperations(.loading(.loadTagItems)),
+             .entryOperations(.loading(.loadComputerItems)),
+             .entryOperations(.loading(.cancelAndClearItems)),
              .entryOperations(.loading(.itemsLoaded)),
              .entryOperations(.loading(.streamEvent)),
              .entryOperations(.loading(.streamFinished)),

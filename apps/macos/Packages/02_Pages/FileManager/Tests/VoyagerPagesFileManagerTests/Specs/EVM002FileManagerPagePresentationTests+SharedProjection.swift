@@ -8,6 +8,21 @@ import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 extension EVM002FileManagerPagePresentationTests {
+    /// EVM-002-switch_entries_view: root load 시작은 즉시 Widget projection을 갱신한다.
+    /// - 검증 내용: folder, recents, tags, computer load action이 모두 projection trigger인지 확인한다.
+    /// - 사전 조건: 새 route가 root load를 시작한다.
+    /// - 기대 결과: 첫 batch 전에도 ContentProjection이 빈/로딩 상태를 투영할 수 있다.
+    func testRootLoadStartsTriggerContentProjection() {
+        let actions: [FileManagerContentAction] = [
+            .entryOperations(.loading(.loadItems(path: "/next", showHidden: false))),
+            .entryOperations(.loading(.loadRecentItems(showHidden: false))),
+            .entryOperations(.loading(.loadTagItems(tagName: "Blue", showHidden: false))),
+            .entryOperations(.loading(.loadComputerItems)),
+        ]
+
+        XCTAssertTrue(actions.allSatisfy(FileManagerContentFeature.shouldProjectContent))
+    }
+
     /// EVM-002-switch_entries_view: FileManager는 arrangement 결과를 Widget presentation으로 투영한다.
     /// - 검증 내용: section 순서, collapse 상태, Open With application cache가 함께 동기화된다.
     /// - 사전 조건: Folders와 Text group, collapsed Text, TextEdit cache가 준비돼 있다.
