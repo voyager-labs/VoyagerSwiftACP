@@ -53,9 +53,13 @@ You are a super-capable agent. Act like it.
 mise run setup              # Install pinned tools, Xcode, hooks, submodules, and docs dependencies
 mise run xcode              # Reinstall/reselect the repository Xcode version
 mise run docs-setup         # Sync docs/canonical npm dependencies when its lock changes
-mise run entry-core-check   # Run the complete Entry Core verification suite
+mise run entry-core-check   # Run the Go-only Entry Core verification suite
+mise run entry-core-interop-check  # Run sequential Go + Swift Entry Core verification
 mise run macos-build        # Build macOS app (Voyager-Dev scheme)
-mise run macos-test         # Run macOS tests
+mise run macos-test         # Run macOS app tests
+mise run macos-helper-test -- -only-testing:VoyagerHelperTests/XPCSearchServiceRecentTagDispatchTests
+mise run macos-helper-test  # Run the full Helper test suite
+mise run macos-filter-search-xpc-build  # Build the FilterSearchXPC product
 python3 -m scripts.validate_harness  # Validates agent harness structure
 python3 -m scripts.verify_plan       # Validates plan structure
 mise exec -- swiftlint --config apps/macos/.swiftlint.yml apps/macos
@@ -75,6 +79,7 @@ git diff --check            # Check for whitespace errors before commit
 | `.pr-review/`                    | PR review policy, severity, and macOS Swift rules           |
 | `scripts/`                       | Validators, shadow corpus, build helpers                    |
 | `apps/entry-core/`               | Go CLI and foreground daemon runtime foundation             |
+| `apps/macos/Packages/06_Shared/VoyagerEntryCoreClient/` | Swift Entry Core client package              |
 | `apps/macos/Voyager/`            | macOS SwiftUI + TCA app                                     |
 
 ## Protected local files
