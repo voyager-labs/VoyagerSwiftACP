@@ -45,6 +45,7 @@ public struct EntryViewLayoutState: Equatable {
     /// Used to detect whether visible entries actually changed, avoiding
     /// unnecessary `outlineProjectionRevision` bumps on selection-only changes.
     var lastVisibleSelectableEntryIDs: Set<EntryModel.ID>?
+    var lastReconciledOutlineProjection: EntryListOutlineProjection?
 
     public var currentPath: String = ""
     public var selectedIds: Set<EntryModel.ID> = []
@@ -175,15 +176,18 @@ public struct EntryViewLayoutState: Equatable {
 
     mutating func reconcileSelectionWithVisibleEntries() {
         let previousSelectedIds = selectedIds
-        let remainingIds = Set(visibleSelectableEntryIDs(
-            isNormalDirectoryPage: selectionProjectionIsHierarchyEnabled,
-        ))
+        let currentProjection = outlineProjection(isNormalDirectoryPage: selectionProjectionIsHierarchyEnabled)
+        let remainingIds = Set(currentProjection.visibleSelectableEntryIDs)
         selectedIds = selectedIds.intersection(remainingIds)
 
-        if remainingIds != lastVisibleSelectableEntryIDs {
+        let projectionChanged = lastReconciledOutlineProjection.map {
+            !$0.hasSameStructure(as: currentProjection)
+        } ?? (remainingIds != lastVisibleSelectableEntryIDs)
+        if projectionChanged {
             advanceOutlineProjectionRevision()
-            lastVisibleSelectableEntryIDs = remainingIds
         }
+        lastVisibleSelectableEntryIDs = remainingIds
+        lastReconciledOutlineProjection = currentProjection
 
         guard !selectedIds.isEmpty else {
             lastSelectedId = nil
