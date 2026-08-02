@@ -185,6 +185,64 @@ extension EVM002FileManagerPagePresentationTests {
             return projection.entries == [rootEntry]
         }
     }
+
+    /// EVM-002-switch_entries_view: projection entries가 화면의 arrangement 순서를 따른다.
+    /// - 검증 내용: raw load order와 다른 Name 정렬 결과가 ContentProjection entries에 반영된다.
+    /// - 사전 조건: entryOperations items가 역순이고 ascending Name 정렬이 활성화돼 있다.
+    /// - 기대 결과: projection entries와 section items가 모두 ascending 순서다.
+    func testProjectionEntriesUseArrangedDisplayOrder() async {
+        let first = EntryModel.temporaryFolder(id: "/first", name: "A")
+        let second = EntryModel.temporaryFolder(id: "/second", name: "Z")
+        var state = FileManagerContentState()
+        state.entryOperations.items = [second, first]
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        // store.exhaustivity = .off: arrangement delegate chain보다 projection payload 순서를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.entryArrangements(.delegate(.applied(sortedItems: [], isCollectionMode: false))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [first, second]
+                && projection.sections.flatMap(\.items) == [first, second]
+        }
+    }
+
+    /// EVM-002-switch_entries_view: collection materialization도 page arrangement를 다시 적용한다.
+    /// - 검증 내용: collection core batch가 FileManager projection trigger를 거쳐 정렬된다.
+    /// - 사전 조건: collection mode에서 역순 core batch와 ascending Name 정렬이 준비돼 있다.
+    /// - 기대 결과: emitted projection entries가 ascending 순서다.
+    func testCollectionMaterializationReappliesPageArrangement() async {
+        let first = EntryModel.temporaryFolder(id: "/collection/first", name: "A")
+        let second = EntryModel.temporaryFolder(id: "/collection/second", name: "Z")
+        var state = FileManagerContentState()
+        state.entryViewLayout.isCollectionMode = true
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        // store.exhaustivity = .off: collection child state보다 page projection 결과를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.internal(.collectionReplaceEvent(
+            epoch: 0,
+            event: .coreBatch(items: [second, first], batchIndex: 0),
+        ))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [first, second]
+        }
+    }
 }
 
 private func makeSharedProjectionFile() -> EntryModel {

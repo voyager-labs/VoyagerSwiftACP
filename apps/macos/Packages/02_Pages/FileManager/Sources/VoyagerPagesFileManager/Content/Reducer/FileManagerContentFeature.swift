@@ -115,21 +115,17 @@ public struct FileManagerContentFeature {
             let projectionEntries = useCollectionItems
                 ? Array(state.entryViewLayout.collectionItems)
                 : Array(state.entryOperations.items)
-            EntryArrangementsFeature().reduce(
+            _ = EntryArrangementsFeature().reduce(
                 into: &state.entryArrangements,
                 action: .apply(items: projectionEntries, isCollectionMode: useCollectionItems),
             )
-            let projectionSections = state.isCollectionMode
-                ? FileManagerContentFeature.makeSections(
-                    groupedItems: state.entryArrangements.groupedItems,
-                    collapsedGroups: state.entryArrangements.collapsedGroups,
-                )
-                : FileManagerContentFeature.makeSections(
-                    groupedItems: state.entryArrangements.groupedItems,
-                    collapsedGroups: state.entryArrangements.collapsedGroups,
-                )
+            let arrangedEntries = state.entryArrangements.groupedItems.flatMap(\.items)
+            let projectionSections = FileManagerContentFeature.makeSections(
+                groupedItems: state.entryArrangements.groupedItems,
+                collapsedGroups: state.entryArrangements.collapsedGroups,
+            )
             let projection = ContentProjection(
-                entries: projectionEntries,
+                entries: arrangedEntries,
                 isLoading: state.entryOperations.isLoading,
                 sortKey: .fromShared(state.entryArrangements.sortKey),
                 sortOrder: state.entryArrangements.sortOrder,
@@ -336,6 +332,12 @@ public struct FileManagerContentFeature {
              .entryOperations(.clipboard(.setClipboardOperation)),
              .entryArrangements(.delegate(.applied)),
              .entryArrangements(.toggleCollapsedGroup),
+             .entryViewLayout(.internal(.setCollectionMode)),
+             .entryViewLayout(.internal(.setCollectionItems)),
+             .entryViewLayout(.internal(.applyCollectionSearchPaths)),
+             .entryViewLayout(.internal(.collectionReplaceEvent)),
+             .entryViewLayout(.internal(.collectionAppendEvent)),
+             .entryViewLayout(.internal(.removeCollectionPaths)),
              .externalFileSystemChanged,
              .internal(.clearCollectionMode),
              .internal(.exitCollectionMode):
