@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
+import VoyagerEntitiesEntry
 
 @Reducer
 struct EntryOperationsCommandRoutingReducer {
@@ -23,7 +24,7 @@ struct EntryOperationsCommandRoutingReducer {
                 return .merge(outputs.map(effect(for:)))
 
             case let .routing(.validateDrop(context)):
-                state.dropValidationResult = resolveDropValidation(context)
+                state.dropValidationResult = EntryDropValidationResolver.resolve(context)
                 return .none
 
             case let .routing(.saveDragPaths(paths)):
@@ -44,18 +45,15 @@ struct EntryOperationsCommandRoutingReducer {
                 )))
 
             case let .routing(.dropItems(sourcePaths, destinationPath, isOptionDrag)):
-                let operation: ClipboardOperation = isOptionDrag ? .copy : .cut
                 let topmostSourcePaths = topmostPaths(sourcePaths)
-                if operation == .cut,
-                   moveRejection(destinationPath: destinationPath, sourcePaths: topmostSourcePaths) != nil
-                {
-                    return .none
-                }
-                if operation == .copy,
-                   rejectsCopyDescendantSelf(destinationPath: destinationPath, sourcePaths: topmostSourcePaths)
-                {
-                    return .none
-                }
+                let validation = EntryDropValidationResolver.resolve(.init(
+                    sourcePaths: topmostSourcePaths,
+                    destinationPath: destinationPath,
+                    allowedOperationsRawValue: NSDragOperation.copy.rawValue | NSDragOperation.move.rawValue,
+                    prefersCopy: isOptionDrag,
+                ))
+                guard validation.resolvedOperation != .none else { return .none }
+                let operation: ClipboardOperation = validation.isOptionDrag ? .copy : .cut
                 let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
                 return .send(.clipboard(.pasteItems(
                     sourcePaths: topmostSourcePaths,
@@ -87,88 +85,6 @@ struct EntryOperationsCommandRoutingReducer {
             .send(action)
         case let .delegate(delegate):
             .send(.delegate(delegate))
-        }
-    }
-
-    private func resolveDropValidation(_ context: EntryDropValidationContext) -> EntryDropValidationResult {
-        let destinationPath = context.destinationPath
-        let sourcePaths = context.sourcePaths
-        let isInternalDrag = !sourcePaths.isEmpty
-
-        if isInternalDrag, !context.prefersCopy,
-           let rejection = moveRejection(destinationPath: destinationPath, sourcePaths: sourcePaths)
-        {
-            return rejection
-        }
-
-        if isInternalDrag, context.prefersCopy,
-           rejectsCopyDescendantSelf(destinationPath: destinationPath, sourcePaths: sourcePaths)
-        {
-            return .init(
-                destinationPath: destinationPath,
-                resolvedOperation: .none,
-                isOptionDrag: true,
-            )
-        }
-
-        let allowedOperations = NSDragOperation(rawValue: context.allowedOperationsRawValue)
-        let preferredOperation: EntryDropResolvedOperation = context.prefersCopy ? .copy : .move
-        if contains(allowedOperations, preferredOperation) {
-            return .init(
-                destinationPath: destinationPath,
-                resolvedOperation: preferredOperation,
-                isOptionDrag: preferredOperation == .copy,
-            )
-        }
-
-        if contains(allowedOperations, .copy) {
-            return .init(
-                destinationPath: destinationPath,
-                resolvedOperation: .copy,
-                isOptionDrag: true,
-            )
-        }
-
-        return .init(
-            destinationPath: destinationPath,
-            resolvedOperation: .none,
-            isOptionDrag: false,
-        )
-    }
-
-    private func moveRejection(
-        destinationPath: String,
-        sourcePaths: [String],
-    ) -> EntryDropValidationResult? {
-        guard let sourcePath = sourcePaths.first else {
-            return .init(destinationPath: destinationPath, resolvedOperation: .none, isOptionDrag: false)
-        }
-        let sourceParent = URL(fileURLWithPath: sourcePath).deletingLastPathComponent().path
-        if sourceParent == destinationPath {
-            return .init(destinationPath: destinationPath, resolvedOperation: .none, isOptionDrag: false)
-        }
-        for sourcePath in sourcePaths {
-            if destinationPath == sourcePath || isDescendantPath(destinationPath, of: sourcePath) {
-                return .init(destinationPath: destinationPath, resolvedOperation: .none, isOptionDrag: false)
-            }
-        }
-        return nil
-    }
-
-    private func contains(_ allowed: NSDragOperation, _ operation: EntryDropResolvedOperation) -> Bool {
-        switch operation {
-        case .none:
-            false
-        case .copy:
-            allowed.contains(.copy)
-        case .move:
-            allowed.contains(.move)
-        }
-    }
-
-    private func rejectsCopyDescendantSelf(destinationPath: String, sourcePaths: [String]) -> Bool {
-        sourcePaths.contains { sourcePath in
-            destinationPath == sourcePath || isDescendantPath(destinationPath, of: sourcePath)
         }
     }
 
