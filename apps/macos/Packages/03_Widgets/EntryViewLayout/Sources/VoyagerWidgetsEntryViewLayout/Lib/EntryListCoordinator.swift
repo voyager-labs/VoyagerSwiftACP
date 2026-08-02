@@ -150,7 +150,7 @@ public final class EntryListCoordinator: NSObject {
     }
 
     var outlineItems: [OutlineItem] = []
-    var entryItemById: [EntryModel.ID: OutlineItem] = [:]
+    var entryItemsByID: [EntryModel.ID: [OutlineItem]] = [:]
     var outlineItemByID: [String: OutlineItem] = [:]
     var groupItemByName: [String: OutlineItem] = [:]
     let projectionSession = EntryListCoordinatorProjectionSession()
@@ -357,12 +357,12 @@ public final class EntryListCoordinator: NSObject {
         guard state.shouldScrollToSelection else { return }
         let targetId = state.lastSelectedId
             ?? state.selectedIds.first
-        guard let targetId, let item = entryItemById[targetId] else {
-            store.send(.view(.resetScrollFlag))
-            return
-        }
-        let row = tableView.row(forItem: item)
-        guard row >= 0 else {
+        guard let targetId,
+              let row = entryItemsByID[targetId]?
+              .lazy
+              .map({ self.tableView.row(forItem: $0) })
+              .first(where: { $0 >= 0 })
+        else {
             store.send(.view(.resetScrollFlag))
             return
         }
@@ -481,8 +481,8 @@ public final class EntryListCoordinator: NSObject {
     }
 
     func rebuildItemIndexes() {
-        entryItemById = outlineItems.flatMap { $0.flattenEntries() }.reduce(into: [:]) { itemsByID, element in
-            itemsByID[element.0] = element.1
+        entryItemsByID = outlineItems.flatMap { $0.flattenEntries() }.reduce(into: [:]) { itemsByID, element in
+            itemsByID[element.0, default: []].append(element.1)
         }
         outlineItemByID = Dictionary(uniqueKeysWithValues: outlineItems.flatMap { $0.flattenItems() })
         groupItemByName = Dictionary(uniqueKeysWithValues: outlineItems.compactMap { item in

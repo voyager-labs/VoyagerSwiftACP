@@ -388,11 +388,13 @@ extension EntryListCoordinator {
         let entriesByID = presentation.entries.reduce(into: [EntryModel.ID: EntryModel]()) { result, entry in
             result[entry.id] = entry
         }
-        let rowIndexes = IndexSet(changedEntryIDs.compactMap { entryID in
-            guard let item = entryItemById[entryID], let entry = entriesByID[entryID] else { return nil }
-            item.kind = .entry(entry)
-            let row = tableView.row(forItem: item)
-            return row >= 0 ? row : nil
+        let rowIndexes = IndexSet(changedEntryIDs.flatMap { entryID in
+            guard let entry = entriesByID[entryID] else { return [Int]() }
+            return entryItemsByID[entryID, default: []].compactMap { item in
+                item.kind = .entry(entry)
+                let row = tableView.row(forItem: item)
+                return row >= 0 ? row : nil
+            }
         })
         guard !rowIndexes.isEmpty else { return }
         let columnIndexes = IndexSet(integersIn: 0 ..< tableView.numberOfColumns)
@@ -422,7 +424,7 @@ extension EntryListCoordinator {
     func outlineItem(for itemID: EntryListOutlineProjection.ItemID) -> OutlineItem? {
         switch itemID {
         case let .entry(entryID):
-            entryItemById[entryID]
+            entryItemsByID[entryID]?.first
         case let .empty(parent):
             outlineItemByID["empty:\(parent)"]
         case let .error(parent):
@@ -498,10 +500,11 @@ extension EntryListCoordinator {
 
     public func syncListSelectionFromStore() {
         let selectedIds = state.selectedIds
-        let indexes = IndexSet(selectedIds.compactMap { id in
-            guard let item = entryItemById[id] else { return nil }
-            let row = tableView.row(forItem: item)
-            return row >= 0 ? row : nil
+        let indexes = IndexSet(selectedIds.flatMap { id in
+            entryItemsByID[id, default: []].compactMap { item in
+                let row = tableView.row(forItem: item)
+                return row >= 0 ? row : nil
+            }
         })
 
         isUpdatingSelectionFromStore = true
@@ -517,28 +520,29 @@ extension EntryListCoordinator {
         guard let nameColumnIndex else { return }
         let nameColumnIndexes = IndexSet(integer: nameColumnIndex)
 
-        if let previousRenamingItemId,
-           let item = entryItemById[previousRenamingItemId]
-        {
-            let row = tableView.row(forItem: item)
-            if row >= 0 {
-                tableView.reloadData(forRowIndexes: IndexSet(integer: row), columnIndexes: nameColumnIndexes)
+        if let previousRenamingItemId {
+            let rows = entryItemsByID[previousRenamingItemId, default: []].compactMap { item in
+                let row = tableView.row(forItem: item)
+                return row >= 0 ? row : nil
             }
+            tableView.reloadData(forRowIndexes: IndexSet(rows), columnIndexes: nameColumnIndexes)
         }
 
         guard let renamingItemId = currentRenamingItemId,
-              let item = entryItemById[renamingItemId]
+              let row = entryItemsByID[renamingItemId]?
+              .lazy
+              .map({ self.tableView.row(forItem: $0) })
+              .first(where: { $0 >= 0 })
         else {
             view?.window?.makeFirstResponder(tableView)
             return
         }
 
-        let row = tableView.row(forItem: item)
-        guard row >= 0 else {
-            view?.window?.makeFirstResponder(tableView)
-            return
+        let rows = entryItemsByID[renamingItemId, default: []].compactMap { item in
+            let itemRow = tableView.row(forItem: item)
+            return itemRow >= 0 ? itemRow : nil
         }
-        tableView.reloadData(forRowIndexes: IndexSet(integer: row), columnIndexes: nameColumnIndexes)
+        tableView.reloadData(forRowIndexes: IndexSet(rows), columnIndexes: nameColumnIndexes)
         beginRenaming(row: row)
     }
 }

@@ -577,9 +577,9 @@ extension EVM002ManageEntriesViewPresentationTests {
     }
 
     /// EVM-002-switch_entries_view: 태그 section의 중복 항목은 section-scoped list row identity를 사용한다.
-    /// - 검증 내용: 같은 entry가 두 section에 있을 때 생성되는 outline item ID를 확인한다.
+    /// - 검증 내용: 같은 entry가 두 section에 있을 때 생성되는 outline item ID와 선택 동기화를 확인한다.
     /// - 사전 조건: Blue와 Red section이 동일 entry를 포함한다.
-    /// - 기대 결과: 두 row ID가 서로 다르고 section ID를 포함한다.
+    /// - 기대 결과: 두 row ID가 서로 다르고 section ID를 포함하며 두 visible row가 모두 선택된다.
     func testGroupedListRowsUseSectionScopedIdentity() {
         let entry = makeHierarchyIntegrationEntry(id: "/tagged.txt", name: "tagged.txt")
         var state = EntryViewLayoutState()
@@ -587,16 +587,28 @@ extension EVM002ManageEntriesViewPresentationTests {
             .init(id: "Blue", title: "Blue", colorCode: 6, items: [entry], isCollapsed: false),
             .init(id: "Red", title: "Red", colorCode: 1, items: [entry], isCollapsed: false),
         ]
+        state.selectedIds = [entry.id]
         let coordinator = EntryListCoordinator(store: Store(initialState: state) {
             EntryViewLayoutFeature()
         })
+        let view = EntryListView(frame: .zero)
 
-        let rowIDs = coordinator.makeOutlineItems(state: state)
+        coordinator.bind(to: view)
+        coordinator.syncListSelectionFromStore()
+        let rowIDs = coordinator.outlineItems
             .flatMap { $0.flattenItems().map(\.0) }
             .filter { $0.hasPrefix("entry:") }
+        let selectedEntryIDs: [EntryModel.ID] = view.tableView.selectedRowIndexes.compactMap { row in
+            guard let item = view.tableView.item(atRow: row) as? EntryListOutlineItem,
+                  case let .entry(selectedEntry) = item.kind
+            else { return nil }
+            return selectedEntry.id
+        }
 
         XCTAssertEqual(rowIDs, ["entry:Blue:/tagged.txt", "entry:Red:/tagged.txt"])
         XCTAssertEqual(Set(rowIDs).count, 2)
+        XCTAssertEqual(coordinator.entryItemsByID[entry.id]?.count, 2)
+        XCTAssertEqual(selectedEntryIDs, [entry.id, entry.id])
     }
 
     private func makeHierarchyIntegrationEntry(id: String, name: String) -> EntryModel {
