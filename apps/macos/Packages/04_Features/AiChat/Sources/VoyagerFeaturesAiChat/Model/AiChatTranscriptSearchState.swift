@@ -22,6 +22,7 @@ public struct AiChatTranscriptSearchState: Equatable, Sendable {
     public var currentMatchOrdinal: Int?
     public var status: AiChatTranscriptSearchStatus?
     public var navigationRevision: UInt64
+    public var focusRevision: UInt64
 
     public init(
         isPresented: Bool = false,
@@ -30,6 +31,7 @@ public struct AiChatTranscriptSearchState: Equatable, Sendable {
         currentMatchOrdinal: Int? = nil,
         status: AiChatTranscriptSearchStatus? = nil,
         navigationRevision: UInt64 = 0,
+        focusRevision: UInt64 = 0,
     ) {
         self.isPresented = isPresented
         self.query = query
@@ -37,6 +39,7 @@ public struct AiChatTranscriptSearchState: Equatable, Sendable {
         self.currentMatchOrdinal = currentMatchOrdinal
         self.status = status
         self.navigationRevision = navigationRevision
+        self.focusRevision = focusRevision
     }
 
     mutating func updateQuery(_ query: String) {

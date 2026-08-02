@@ -258,6 +258,7 @@ public struct AiChatFeature {
 
             case .transcriptSearchOpened:
                 state.transcriptSearch.isPresented = true
+                state.transcriptSearch.focusRevision &+= 1
                 return .none
 
             case .transcriptSearchClosed:

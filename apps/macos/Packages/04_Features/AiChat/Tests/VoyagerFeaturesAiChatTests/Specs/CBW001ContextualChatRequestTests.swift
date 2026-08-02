@@ -32,6 +32,44 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         assertOpenContextualChatSurface(store.state)
     }
 
+    /// CBW-001-open_contextual_chat: 이미 열린 transcript 검색을 다시 열면 새로운 focus 요청만 만든다.
+    /// 반복 Cmd+F가 기존 검색·session·scroll 문맥과 최초 close 시 입력 focus 복원 의도를 보존하는지 검증합니다.
+    /// - 검증 내용: focus revision의 wrapping 증가와 나머지 전체 state의 불변을 확인합니다.
+    /// - 사전 조건: 검색창이 표시되고 query, match, navigation, session, scroll 상태가 채워져 있습니다.
+    /// - 기대 결과: presentation edge는 유지되고 focus revision만 UInt64.max에서 0, 다시 1로 증가합니다.
+    func testOpenContextualChatRepeatedTranscriptSearchOpenRequestsFreshFocusOnly() async {
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        var initialState = AiChatFeature.State(
+            mode: .chat,
+            sessionList: .init(query: "session query"),
+            sessionID: sessionID,
+            transcriptScrollOffsets: [sessionID: 42],
+        )
+        initialState.transcriptSearch = .init(
+            isPresented: true,
+            query: "needle",
+            matchCount: 3,
+            currentMatchOrdinal: 2,
+            status: .matches,
+            navigationRevision: 7,
+            focusRevision: .max,
+        )
+        let store = makeTranscriptSearchStore(initialState)
+
+        XCTAssertEqual(AiChatTranscriptSearchState().focusRevision, 0)
+        var expectedState = initialState
+        expectedState.transcriptSearch.focusRevision = 0
+
+        await store.send(.transcriptSearchOpened) { state in
+            state = expectedState
+        }
+
+        expectedState.transcriptSearch.focusRevision = 1
+        await store.send(.transcriptSearchOpened) { state in
+            state = expectedState
+        }
+    }
+
     /// CBW-001-open_contextual_chat: transcript 검색 icon control은 활성 hover에서만 compact 배경을 표시한다.
     /// 이전·다음·닫기 control이 동일한 크기와 symbol 의도를 유지하면서 disabled 탐색 control에는 hover 배경을 노출하지 않는지 검증합니다.
     /// - 검증 내용: 26pt hit area, 11pt semibold symbol, compact control radius, light/dark control hover fill과 enabled
@@ -215,6 +253,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         await store.send(.transcriptSearchOpened) { state in
             state.transcriptSearch.isPresented = true
+            state.transcriptSearch.focusRevision = 1
         }
         await store.send(.transcriptSearchQueryChanged("needle")) { state in
             state.transcriptSearch.query = "needle"
@@ -271,6 +310,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         await store.send(.transcriptSearchOpened) { state in
             state.transcriptSearch.isPresented = true
+            state.transcriptSearch.focusRevision = 1
         }
         await store.send(.transcriptSearchQueryChanged("match")) { state in
             state.transcriptSearch.query = "match"
@@ -634,6 +674,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         )
         await fixture.store.send(.transcriptSearchOpened) { state in
             state.transcriptSearch.isPresented = true
+            state.transcriptSearch.focusRevision = 1
         }
         await fixture.store.send(.transcriptSearchQueryChanged("Hel")) { state in
             state.transcriptSearch.query = "Hel"
@@ -2728,7 +2769,10 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         }
         applyObservationFocusedExhaustivity(to: store)
 
-        await store.send(.transcriptSearchOpened) { $0.transcriptSearch.isPresented = true }
+        await store.send(.transcriptSearchOpened) { state in
+            state.transcriptSearch.isPresented = true
+            state.transcriptSearch.focusRevision = 1
+        }
         await store.send(.transcriptSearchQueryChanged("match")) { $0.transcriptSearch.query = "match" }
         await store.send(.transcriptSearchMatchCountChanged(.init(query: "match", matchCount: 2))) { state in
             state.transcriptSearch.matchCount = 2
