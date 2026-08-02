@@ -202,7 +202,8 @@ extension ContentTabFeature {
     }
 
     private func setCurrent(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {
-        guard state.tabs[id: id] != nil, state.activeTabID != id else {
+        guard state.tabs[id: id] != nil else { return .none }
+        guard state.activeTabID != id else {
             state.previousActiveTabID = nil
             return .none
         }
@@ -513,7 +514,9 @@ extension ContentTabFeature {
         state: inout ContentTabState,
     ) -> Effect<ContentTabAction> {
         state.previousActiveTabID = nil
-        guard let tab = state.tabs[id: id], !tab.isPinned else { return .none }
+        guard let tab = state.tabs[id: id], !tab.isPinned,
+              let previousTabIndex = state.tabs.index(id: id)
+        else { return .none }
 
         let pinnedRecord = ContentTabPinnedRecord(
             id: id.rawValue,
@@ -528,7 +531,15 @@ extension ContentTabFeature {
             return .none
         }
 
-        state.tabs[id: id]?.isPinned = true
+        let previousPinnedRecord = state.pinnedRecords[id]
+        let selectedTabIDs = state.selectedTabIDs
+        let selectionAnchorID = state.selectionAnchorID
+        var pinnedTab = tab
+        pinnedTab.isPinned = true
+        state.tabs.remove(id: id)
+        state.tabs.insert(pinnedTab, at: ordinaryPinInsertionIndex(in: state))
+        state.selectedTabIDs = selectedTabIDs
+        state.selectionAnchorID = selectionAnchorID
         state.pinnedRecords[id] = pinnedRecord
         state.pendingPinnedRecordIDs.insert(id)
         state.pinnedRecordPersistenceError = nil
@@ -540,8 +551,8 @@ extension ContentTabFeature {
             context: .init(intentID: intentID, generation: generation),
             rollback: .init(
                 previousIsPinned: false,
-                previousPinnedRecord: nil,
-                previousTabIndex: nil,
+                previousPinnedRecord: previousPinnedRecord,
+                previousTabIndex: previousTabIndex,
             ),
             mutation: .upsert(record: pinnedRecord, dormantSlot: dormantSlot),
         )
@@ -672,6 +683,10 @@ extension ContentTabFeature {
             cancelInFlight: true,
         )
     }
+}
+
+private func ordinaryPinInsertionIndex(in state: ContentTabState) -> Int {
+    state.tabs.firstIndex(where: { !$0.isPinned }) ?? state.tabs.endIndex
 }
 
 private func pinnedRecordPersistenceAction(

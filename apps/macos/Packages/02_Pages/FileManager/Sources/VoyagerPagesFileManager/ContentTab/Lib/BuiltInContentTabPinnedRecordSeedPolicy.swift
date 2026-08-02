@@ -106,10 +106,9 @@ public enum BuiltInContentTabPinnedRecordSeedPolicy {
         discoveredLocationIDs: [String],
     ) -> Result {
         let metadata = metadata(for: descriptor.identity)
-        let stableIDMatch = store.records.first { $0.id == metadata.stableID }
-        let selectedRecord = stableIDMatch ?? store.records.first {
-            $0.collectionFileURL == descriptor.canonicalPackageURL
-        }
+        let selectedRecordIndex = store.records.firstIndex { $0.id == metadata.stableID }
+            ?? store.records.firstIndex { $0.collectionFileURL == descriptor.canonicalPackageURL }
+        let selectedRecord = selectedRecordIndex.map { store.records[$0] }
 
         guard selectedRecord != nil || store.records.count < maxRecordCount else {
             return .deferred

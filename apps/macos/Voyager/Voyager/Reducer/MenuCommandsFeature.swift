@@ -19,7 +19,7 @@ struct MenuCommandsFeature {
                 return routeAppCommand(.closeTab)
 
             case .view(.app(.togglePinTab)):
-                guard state.canToggleActiveContentTabPin else { return .none }
+                guard state.canPinTab else { return .none }
                 return routeAppCommand(.togglePinTab)
 
             case .view(.app(.restoreLastClosedTab)):
@@ -91,6 +91,8 @@ struct MenuCommandsFeature {
         case .togglePinTab: .send(.delegate(.windowManager(.file(.togglePinTab))))
         case .restoreLastClosedTab: .send(.delegate(.windowManager(.file(.restoreLastClosedTab))))
         case .duplicateTab: .send(.delegate(.windowManager(.file(.duplicateTab))))
+        case let .selectContentTab(position):
+            .send(.delegate(.windowManager(.file(.selectContentTab(position: position)))))
         default: nil
         }
     }

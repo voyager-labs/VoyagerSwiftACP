@@ -3468,7 +3468,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     /// 기본 부트스트랩은 Finder → ensure → Recents → All Tags → reload → restore 순서를 보장한다.
     /// - 검증 내용: dependency 호출 순서와 최종 persisted/restored record 순서
     /// - 사전 조건: 빈 store, Finder favorite 1개, 두 built-in descriptor ready
-    /// - 기대 결과: Recents → Finder → All Tags 순서로 저장·복원되고 세 완료 플래그가 true
+    /// - 기대 결과: Finder → Recents → All Tags append 순서로 저장·복원되고 세 완료 플래그가 true
     func testDefaultBootstrapRunsFinderEnsureBuiltInSeedsReloadAndRestoreInOrder() async {
         let windowID = UUID()
         let applicationSupportURL = URL(fileURLWithPath: "/tmp/Application Support")
@@ -3580,7 +3580,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         XCTAssertEqual(
             persistedStore.value.records.map(\.id),
-            ["built-in-collection-recents", "favorite-file----Users-test-Projects", "built-in-collection-all-tags"],
+            ["favorite-file----Users-test-Projects", "built-in-collection-recents", "built-in-collection-all-tags"],
         )
         XCTAssertEqual(
             store.state.windows.first?.window.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue),
@@ -3604,8 +3604,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
     /// Finder 저장 실패 뒤 built-in residue만 남아도 다음 부트스트랩이 Finder를 재시도한다.
     /// - 검증 내용: 첫 Finder transaction 실패, built-in 성공, 두 번째 Finder retry와 residue ordering
-    /// - 사전 조건: 첫 update만 throw, ensure는 두 항목 ready, duplicate Finder favorite 입력
-    /// - 기대 결과: Finder flag는 첫 실행 후 false, 두 번째 실행 후 true이며 Finder ID는 하나만 존재
+    /// - 사전 조건: 첫 update만 throw, 두 번째 실행은 All Tags → Recents residue, duplicate Finder favorite 입력
+    /// - 기대 결과: 두 번째 실행은 기존 All Tags → Recents 순서를 보존하고 Finder ID 하나를 끝에 추가
     func testFinderSeedRetriesAfterWriteFailureWhenOnlyBuiltInResidueExists() async {
         struct FinderWriteFailure: Error {}
 
@@ -3678,8 +3678,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             ["built-in-collection-recents", "built-in-collection-all-tags"],
         )
         flags.withValue {
-            $0["fileManager.builtInCollection.recentsPinnedSeed.v1"] = false
-            $0["fileManager.builtInCollection.allTagsPinnedSeed.v1"] = false
+            $0["fileManager.builtInCollection.recentsPinnedSeed.v1"] = true
+            $0["fileManager.builtInCollection.allTagsPinnedSeed.v1"] = true
+        }
+        persistedStore.withValue { store in
+            store = ContentTabPinnedRecordStore(records: Array(store.records.reversed()))
         }
 
         await store.send(.event(.windowClosed(windowID)))
@@ -3694,7 +3697,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(finderLoadCount.value, 2)
         XCTAssertEqual(
             persistedStore.value.records.map(\.id),
-            ["built-in-collection-recents", "favorite-file----Users-test-Projects", "built-in-collection-all-tags"],
+            ["built-in-collection-all-tags", "built-in-collection-recents", "favorite-file----Users-test-Projects"],
         )
     }
 

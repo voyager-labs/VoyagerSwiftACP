@@ -5761,7 +5761,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             closeTitle: presentation.title,
             closeAccessibilityIdentifier: presentation.accessibilityIdentifier,
             isCloseEnabled: presentation.isEnabled,
-            usesUnpinCommand: presentation.usesUnpinCommand,
+            usesUnpinCommand: isPinned,
+            showsCloseCommand: !presentation.usesUnpinCommand,
         )
 
         let closeItem = try XCTUnwrap(button.menu?.items.last, file: file, line: line)
@@ -5875,6 +5876,84 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             clickedID: clickedID,
             selectedIDs: selectedIDs,
         )
+    }
+
+    /// CTM-004-sidebar_close_selected_content_tabs: native menu는 Pin selector와 Close visibility를 독립 조합한다.
+    /// production row와 같은 Pin/Close presentation 조합이 bulk pinned에서도 두 command를 함께 노출하는지 검증한다.
+    /// - 검증 내용: selected pinned/unpinned와 single pinned의 native NSMenu title matrix
+    /// - 사전 조건: clicked row가 2-selection에 포함되거나 단일 pinned fallback인 presentation
+    /// - 기대 결과: bulk pinned는 Unpin+Close, bulk unpinned는 Pin+Close, single pinned는 Unpin만 제공한다.
+    func testSidebarNativeMenuComposesPinSelectorAndCloseVisibilityIndependently() {
+        _ = NSApplication.shared
+        let clickedID = ContentTabID(rawValue: "native-menu-clicked")
+        let selectedIDs: Set<ContentTabID> = [clickedID, ContentTabID(rawValue: "native-menu-peer")]
+
+        assertNativeMenuTitles(
+            ["Duplicate", "Unpin 2 Tabs", "Close 2 Tabs"],
+            clickedID: clickedID,
+            isPinned: true,
+            validSelectedTabIDs: selectedIDs,
+        )
+        assertNativeMenuTitles(
+            ["Duplicate", "Pin 2 Tabs", "Close 2 Tabs"],
+            clickedID: clickedID,
+            isPinned: false,
+            validSelectedTabIDs: selectedIDs,
+        )
+        assertNativeMenuTitles(
+            ["Duplicate", "Unpin"],
+            clickedID: clickedID,
+            isPinned: true,
+            validSelectedTabIDs: [clickedID],
+        )
+    }
+
+    private func assertNativeMenuTitles(
+        _ expectedTitles: [String],
+        clickedID: ContentTabID,
+        isPinned: Bool,
+        validSelectedTabIDs: Set<ContentTabID>,
+    ) {
+        let pin = ContentTabPinPresentation(
+            clickedTabID: clickedID,
+            isPinned: isPinned,
+            validSelectedTabIDs: validSelectedTabIDs,
+            isPinMutationEnabled: true,
+            isSingleUnpinEnabled: true,
+        )
+        let close = ContentTabClosePresentation(
+            clickedTabID: clickedID,
+            isPinned: isPinned,
+            validSelectedTabIDs: validSelectedTabIDs,
+            isEnabled: true,
+        )
+        let button = ContentTabSidebarButton(frame: .zero)
+        button.update(
+            rootView: AnyView(EmptyView()),
+            accessibilityLabel: "Content Tab",
+            accessibilityValue: "Selected",
+            duplicateAccessibilityIdentifier: "duplicate-content-tab",
+            isPinned: isPinned,
+            isEnabled: true,
+            reorderDragSource: nil,
+            onActivate: {},
+            onToggleSelection: {},
+            onSelectRange: {},
+            onDuplicate: {},
+            onPin: {},
+            onUnpin: {},
+            onClose: {},
+            pinTitle: pin.title,
+            pinAccessibilityIdentifier: pin.accessibilityIdentifier,
+            isPinEnabled: pin.isEnabled,
+            closeTitle: close.title,
+            closeAccessibilityIdentifier: close.accessibilityIdentifier,
+            isCloseEnabled: close.isEnabled,
+            usesUnpinCommand: pin.usesUnpinCommand,
+            showsCloseCommand: !close.usesUnpinCommand,
+        )
+
+        XCTAssertEqual(button.menu?.items.map(\.title), expectedTitles)
     }
 
     /// CTM-004-sidebar_close_selected_content_tabs: unavailable close command는 native menu callback을 차단함

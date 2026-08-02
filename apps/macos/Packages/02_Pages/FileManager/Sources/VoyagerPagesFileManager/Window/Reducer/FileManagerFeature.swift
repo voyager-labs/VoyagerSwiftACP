@@ -70,6 +70,27 @@ public struct FileManagerFeature {
                 guard state.pendingSelectedContentTabClose?.operationID == operationID else { return .none }
                 return requestTopNavigationClose(tabID: tabID, state: &state)
 
+            case let .performSelectedContentTabPinMutation(
+                operationID, tabID, .delegate(.persistPinnedRecord(request)),
+            ):
+                guard !state.isClosing,
+                      let pending = state.pendingSelectedContentTabPinMutation,
+                      pending.operationID == operationID,
+                      pending.currentTabID == tabID,
+                      let rollback = pending.currentItemRollbackSnapshot
+                else { return .none }
+                let rebasedRequest = ContentTabPinnedRecordPersistenceRequest(
+                    tabID: request.tabID,
+                    context: request.context,
+                    rollback: rollback,
+                    mutation: request.mutation,
+                )
+                return forwardPinnedRecordPersistence(
+                    rebasedRequest,
+                    source: .selectedPin(operationID: operationID),
+                    state: &state,
+                )
+
             case let .performSelectedContentTabCloseMutation(
                 operationID, _, .delegate(.persistPinnedRecord(request)),
             ):
@@ -126,11 +147,15 @@ public struct FileManagerFeature {
                 )
 
             case let .contentTabs(.pin(tabID)):
-                guard state.pendingSelectedContentTabClose == nil else { return .none }
+                guard state.pendingSelectedContentTabClose == nil,
+                      state.pendingSelectedContentTabPinMutation == nil
+                else { return .none }
                 return requestTopNavigationPin(tabID: tabID, state: &state)
 
             case let .contentTabs(.unpin(tabID)):
-                guard state.pendingSelectedContentTabClose == nil else { return .none }
+                guard state.pendingSelectedContentTabClose == nil,
+                      state.pendingSelectedContentTabPinMutation == nil
+                else { return .none }
                 prepareTopNavigationUnpin(tabID: tabID, state: &state)
                 return .none
 
@@ -303,10 +328,57 @@ public struct FileManagerFeature {
                     .cancellable(id: SelectedContentTabCloseOperationCancelID(operationID: operationID))
 
             case let .contentTabs(contentTabAction):
+                if let pending = state.pendingSelectedContentTabPinMutation,
+                   let currentTabID = pending.currentTabID,
+                   contentTabAction.isSelectedContentTabPinMutationPersistenceReplacement(for: currentTabID)
+                {
+                    return .send(.performSelectedContentTabPinMutation(
+                        operationID: pending.operationID,
+                        tabID: currentTabID,
+                        action: contentTabAction,
+                    ))
+                }
                 guard state.pendingSelectedContentTabClose == nil
                     || contentTabAction.isSelectionAllowedDuringBatchClose
                 else { return .none }
+                guard state.pendingSelectedContentTabPinMutation == nil
+                    || (!contentTabAction.isDirectPinMutation && !contentTabAction.isDirectCloseMutation)
+                else { return .none }
                 return reduceContentTabAction(contentTabAction, state: &state)
+
+            case let .performSelectedContentTabPinMutation(operationID, tabID, contentTabAction):
+                guard !state.isClosing,
+                      let pending = state.pendingSelectedContentTabPinMutation,
+                      pending.operationID == operationID,
+                      pending.currentTabID == tabID,
+                      !contentTabAction.isStalePinnedRecordPersistenceResult(in: state.contentTabs),
+                      contentTabAction.isCorrelatedSelectedContentTabPinMutation(
+                          for: tabID,
+                          target: pending.target,
+                      )
+                else { return .none }
+                let previousActiveTabID = state.contentTabs.previousActiveTabID
+                let childEffect = withDependencies {
+                    $0.contentTabPinnedRecordPersistenceRouting = pinnedRecordPersistenceRouting(
+                        state: state,
+                    )
+                } operation: {
+                    ContentTabFeature().reduce(
+                        into: &state.contentTabs,
+                        action: contentTabAction,
+                    )
+                }
+                state.contentTabs.previousActiveTabID = previousActiveTabID
+                state.syncContentTabSidebarItems()
+                let rollback = pending.currentItemRollbackSnapshot
+                return childEffect.map {
+                    .performSelectedContentTabPinMutation(
+                        operationID: operationID,
+                        tabID: tabID,
+                        action: $0.rebasingPinnedRecordRollback(to: rollback),
+                    )
+                }
+                .cancellable(id: SelectedContentTabPinMutationOperationCancelID(operationID: operationID))
 
             case let .performSelectedContentTabCloseMutation(operationID, tabID, contentTabAction):
                 guard !state.isClosing,
@@ -580,6 +652,12 @@ extension FileManagerFeature {
         let childEffect: Effect<Action> = switch source {
         case .contentTab:
             reduceContentTabAction(childAction, state: &state)
+        case let .selectedPin(operationID):
+            .send(.performSelectedContentTabPinMutation(
+                operationID: operationID,
+                tabID: request.tabID,
+                action: childAction,
+            ))
         case let .selectedClose(operationID):
             ContentTabFeature()
                 .reduce(into: &state.contentTabs, action: childAction)
@@ -610,6 +688,9 @@ extension FileManagerFeature {
         switch source {
         case .contentTab:
             true
+        case let .selectedPin(operationID):
+            state.pendingSelectedContentTabPinMutation?.operationID == operationID
+                && state.pendingSelectedContentTabPinMutation?.currentTabID == request.tabID
         case let .selectedClose(operationID):
             state.isCurrentSelectedContentTabClose(
                 operationID: operationID,
@@ -900,6 +981,32 @@ extension ContentTabAction {
         }
     }
 
+    func rebasingPinnedRecordRollback(
+        to rollback: ContentTabPinnedRecordRollbackSnapshot?,
+    ) -> Self {
+        guard let rollback else { return self }
+        return switch self {
+        case let .pinnedRecordSaveFailed(tabID, context, _):
+            .pinnedRecordSaveFailed(tabID: tabID, context: context, rollback: rollback)
+        case let .pinnedRecordStoreUnavailable(tabID, context, failure, _):
+            .pinnedRecordStoreUnavailable(
+                tabID: tabID,
+                context: context,
+                failure: failure,
+                rollback: rollback,
+            )
+        case let .pinnedRecordSaveNotApplied(tabID, context, reason, _):
+            .pinnedRecordSaveNotApplied(
+                tabID: tabID,
+                context: context,
+                reason: reason,
+                rollback: rollback,
+            )
+        default:
+            self
+        }
+    }
+
     func isStalePinnedRecordPersistenceResult(in state: ContentTabState) -> Bool {
         switch self {
         case let .pinnedRecordSaveSucceeded(tabID, context),
@@ -907,6 +1014,52 @@ extension ContentTabAction {
              let .pinnedRecordStoreUnavailable(tabID, context, _, _),
              let .pinnedRecordSaveNotApplied(tabID, context, _, _):
             !state.isCurrentPinnedRecordPersistenceIntent(tabID: tabID, intentID: context.intentID)
+        default:
+            false
+        }
+    }
+
+    var isDirectPinMutation: Bool {
+        switch self {
+        case .pin, .unpin:
+            true
+        default:
+            false
+        }
+    }
+
+    var isDirectCloseMutation: Bool {
+        switch self {
+        case .requestClose, .close, .commitClose:
+            true
+        default:
+            false
+        }
+    }
+
+    func isSelectedContentTabPinMutationPersistenceReplacement(for tabID: ContentTabID) -> Bool {
+        guard case let .updateActivePageAnchor(id, _) = self else { return false }
+        return id == tabID
+    }
+
+    func isCorrelatedSelectedContentTabPinMutation(
+        for tabID: ContentTabID,
+        target: SelectedContentTabPinMutationTargetState,
+    ) -> Bool {
+        switch self {
+        case let .delegate(.persistPinnedRecord(request)):
+            request.tabID == tabID
+        case let .pin(id):
+            id == tabID && target == .pinned
+        case let .unpin(id):
+            id == tabID && target == .unpinned
+        case let .updateActivePageAnchor(id, _):
+            id == tabID
+        case let .pinnedRecordSaveSucceeded(id, _),
+             let .pinnedRecordSaveFailed(id, _, _),
+             let .pinnedRecordStoreUnavailable(id, _, _, _),
+             let .pinnedRecordSaveNotApplied(id, _, _, _):
+            id == tabID
         default:
             false
         }

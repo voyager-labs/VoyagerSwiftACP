@@ -88,7 +88,7 @@ struct AppMenuCommands: Commands {
                 send(.app(.togglePinTab))
             }
             .keyboardShortcut("p", modifiers: .command)
-            .disabled(!viewStore.canToggleActiveContentTabPin)
+            .disabled(!viewStore.canPinTab)
 
             if viewStore.selectedContentTabCount > 1 {
                 Button(viewStore.duplicateContentTabTitle) {

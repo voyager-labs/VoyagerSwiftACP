@@ -133,11 +133,7 @@ struct WindowManagerFeature {
                 return sendCloseTabCommandToFocusedWindow(state)
 
             case .file(.togglePinTab):
-                return sendContentTabCommandToFocusedWindow(
-                    state,
-                    .toggleActiveContentTabPin,
-                    capability: \.canToggleActiveContentTabPin,
-                )
+                return sendPinTabCommandToFocusedWindow(state)
 
             case .file(.restoreLastClosedTab):
                 return sendContentTabCommandToFocusedWindow(
@@ -148,6 +144,9 @@ struct WindowManagerFeature {
 
             case .file(.duplicateTab):
                 return sendDuplicateTabCommandToFocusedWindow(state)
+
+            case let .file(.selectContentTab(position: position)):
+                return sendCommandToFocusedWindow(state, .selectContentTab(position: position))
 
             case .file(.newFolder):
                 return sendCommandToFocusedWindow(state, .newFolder)
@@ -231,7 +230,9 @@ struct WindowManagerFeature {
                 return sendCommandToFocusedWindow(state, .copyURLs)
 
             case let .event(.windowBecameKey(id)):
-                guard state.windows[id: id] != nil else { return .none }
+                guard state.windows[id: id] != nil,
+                      !state.closingWindowIDs.contains(id)
+                else { return .none }
                 state.focusedWindowID = id
                 state.moveWindowToMRUFront(id)
                 return .none
@@ -526,7 +527,8 @@ extension WindowManagerFeature {
         _ command: FileManagerWindowAction.WindowCommand,
     ) -> Effect<Action> {
         guard let id = state.focusedWindowID,
-              !state.closingWindowIDs.contains(id)
+              !state.closingWindowIDs.contains(id),
+              state.windows[id: id] != nil
         else { return .none }
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }
@@ -542,6 +544,31 @@ extension WindowManagerFeature {
               window.window.menuCommandProjection[keyPath: capability]
         else { return .none }
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
+    }
+
+    private func sendPinTabCommandToFocusedWindow(_ state: State) -> Effect<Action> {
+        guard let id = state.focusedWindowID,
+              !state.closingWindowIDs.contains(id),
+              let window = state.windows[id: id]
+        else { return .none }
+
+        let projection = window.window.menuCommandProjection
+        if projection.selectedContentTabCount > 1 {
+            guard projection.canSetSelectedContentTabsPinned else { return .none }
+            let target: SelectedContentTabPinMutationTargetState = projection.isSelectedContentTabPinTargetPinned
+                ? .unpinned
+                : .pinned
+            return .send(.windows(.element(
+                id: id,
+                action: .window(.requestSelectedContentTabPinMutation(target: target)),
+            )))
+        }
+
+        guard projection.canToggleActiveContentTabPin else { return .none }
+        return .send(.windows(.element(
+            id: id,
+            action: .window(.request(.toggleActiveContentTabPin)),
+        )))
     }
 
     private func sendCloseTabCommandToFocusedWindow(_ state: State) -> Effect<Action> {
@@ -595,8 +622,12 @@ extension WindowManagerFeature {
                 from: store,
                 isRestorableAnchor: { _ in true },
             )
+            let survivingWindowIDs = state.windows.ids.filter { id in
+                guard let window = state.windows[id: id]?.window else { return false }
+                return !window.isClosing && !state.closingWindowIDs.contains(id)
+            }
             return .merge(
-                state.windows.ids.map { id in
+                survivingWindowIDs.map { id in
                     .send(.windows(.element(
                         id: id,
                         action: .window(.applyAuthoritativePinnedContentTabs(restoreResult.state)),

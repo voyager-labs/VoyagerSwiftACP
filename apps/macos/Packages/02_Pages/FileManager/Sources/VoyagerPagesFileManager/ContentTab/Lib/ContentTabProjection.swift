@@ -15,6 +15,16 @@ public extension ContentTabProjection {
     }
 }
 
+extension ContentTabProjection {
+    static func tabID(atDisplayPosition position: Int, in state: ContentTabState) -> ContentTabID? {
+        guard (1 ... 9).contains(position) else { return nil }
+        let displayedTabIDs = state.selectionOrderedTabIDs
+        let index = position - 1
+        guard displayedTabIDs.indices.contains(index) else { return nil }
+        return displayedTabIDs[index]
+    }
+}
+
 public extension ContentTabProjection {
     static func sidebarItems(from state: ContentTabState) -> [ContentTabSidebarItem] {
         state.tabs.map { tab in

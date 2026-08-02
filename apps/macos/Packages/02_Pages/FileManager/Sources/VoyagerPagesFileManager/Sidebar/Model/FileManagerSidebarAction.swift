@@ -18,6 +18,9 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case selectContentTabRange(to: ContentTabID)
         case collapseContentTabSelectionToActive
         case dismissTopNavigationPresentation
+        case pinContentTab(ContentTabID)
+        case unpinContentTab(ContentTabID)
+        case setSelectedContentTabsPinned(target: SelectedContentTabPinMutationTargetState)
         case entryDropRequested(FileManagerSidebarEntryDropRequest)
         case fileManagerTopNavigationReorderRequested(
             sourceID: FileManagerTopNavigationItemID,
@@ -38,6 +41,7 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case closeSelectedContentTabs
         case pinContentTab(ContentTabID)
         case unpinContentTab(ContentTabID)
+        case setSelectedContentTabsPinned(target: SelectedContentTabPinMutationTargetState)
         case openContentTab
         case duplicateContentTab(ContentTabID)
         case duplicateSelectedContentTabs

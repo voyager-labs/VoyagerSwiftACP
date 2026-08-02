@@ -524,18 +524,58 @@ final class FileManagerWindowManagerTests: XCTestCase {
 
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(closingID)
-            $0.focusedWindowID = otherID
+            $0.focusedWindowID = nil
         }
         await store.send(.event(.windowClosed(closingID))) {
             $0.invalidatingWindowIDs.insert(closingID)
         }
         await store.receive(\.windowInvalidationFinished)
+        let focusBeforeLateBecameKey = store.state.focusedWindowID
+        let mruBeforeLateBecameKey = store.state.lastUsedWindowIDs
         await store.send(.event(.windowBecameKey(closingID)))
+
+        XCTAssertEqual(store.state.focusedWindowID, focusBeforeLateBecameKey)
+        XCTAssertEqual(store.state.lastUsedWindowIDs, mruBeforeLateBecameKey)
+        XCTAssertNotNil(store.state.windows[id: closingID])
+        XCTAssertNotNil(store.state.windows[id: otherID])
+        XCTAssertNil(store.state.focusedWindowID)
+        XCTAssertEqual(finalizeCalls.value, [])
+        await store.finish()
+    }
+
+    /// FMW-001-close_file_manager_window: focused window close 전환은 실제 became-key까지 focus를 비운다.
+    /// - 검증 내용: close 시작 시 focus nil, MRU 보존, successor became-key 후 focus 확정
+    /// - 사전 조건: MRU 순서가 closing, background인 두 window
+    /// - 기대 결과: background는 close 시작에 추측 선택되지 않고 became-key 뒤에만 focused가 됨
+    func testCloseFocusedWindow_waitsForBecameKeyBeforeAssigningSuccessor() async {
+        let closingID = UUID()
+        let otherID = UUID()
+        let closedIDs = LockIsolated<[UUID]>([])
+        var initialState = makeState(
+            focusedID: closingID,
+            windows: [(closingID, Spec.focusedPath), (otherID, Spec.backgroundPath)],
+        )
+        initialState.lastUsedWindowIDs = [closingID, otherID]
+        let store = makeStore(initialState: initialState) {
+            $0.fileManagerWindowClient.close = { id in
+                closedIDs.withValue { $0.append(id) }
+            }
+        }
+
+        await store.send(.window(.closeFocusedWindow)) {
+            $0.closingWindowIDs.insert(closingID)
+            $0.focusedWindowID = nil
+        }
+        XCTAssertEqual(store.state.lastUsedWindowIDs, [closingID, otherID])
+        XCTAssertEqual(closedIDs.value, [closingID])
+
+        await store.send(.event(.windowBecameKey(otherID))) {
+            $0.focusedWindowID = otherID
+            $0.lastUsedWindowIDs = [otherID, closingID]
+        }
 
         XCTAssertNotNil(store.state.windows[id: closingID])
         XCTAssertNotNil(store.state.windows[id: otherID])
-        XCTAssertEqual(store.state.focusedWindowID, otherID)
-        XCTAssertEqual(finalizeCalls.value, [])
         await store.finish()
     }
 
