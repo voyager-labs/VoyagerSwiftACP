@@ -202,19 +202,41 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
         await store.finish()
     }
 
-    /// VOY-637-transcript_search_command: focused FileManager window가 없으면 기존 composer fallback을 한 번 요청한다.
-    /// WindowManager의 focused-window 경계가 nil이어도 Cmd+F 의미 action을 유실하거나 반복하지 않는다.
-    /// - 검증 내용: `.edit(.find)`가 `.edit(.toggleComposer)` 하나만 방출하는지 확인
+    /// VOY-637-transcript_search_command: focused FileManager window가 없으면 Find command는 no-op이다.
+    /// App command가 background window를 임의로 변경하지 않는 focused-window 경계를 검증한다.
+    /// - 검증 내용: `.edit(.find)`가 후속 window command를 방출하지 않는지 확인
     /// - 사전 조건: WindowManager에 focused FileManager window가 없음
-    /// - 기대 결과: 기존 composer fallback action이 정확히 한 번 수신됨
-    func testFindCommandWithoutFocusedWindowRoutesComposerFallbackOnce() async {
+    /// - 기대 결과: 상태 변경과 후속 action 없이 command가 종료됨
+    func testFindCommandWithoutFocusedWindowDoesNothing() async {
         let store = TestStore(initialState: WindowManagerFeature.State()) {
             WindowManagerFeature()
         }
 
         await store.send(.edit(.find))
-        await store.receive(\.edit.toggleComposer)
-        await store.finish()
+    }
+
+    /// VOY-637-transcript_search_command: stale focus가 남아 있어도 Find command는 live background window를 변경하지 않는다.
+    /// Focus invariant 위반을 MRU fallback으로 숨기지 않는 command routing 정책을 검증한다.
+    /// - 검증 내용: 존재하지 않는 focused ID에서 `.edit(.find)`가 후속 window command를 방출하지 않는지 확인
+    /// - 사전 조건: live background window 하나와 registry에 없는 focusedWindowID가 있음
+    /// - 기대 결과: live window 상태가 유지되고 후속 action 없이 command가 종료됨
+    func testFindCommandWithStaleFocusedWindowDoesNothing() async {
+        let liveWindowID = makeUUID("00000000-0000-0000-0000-000000000638")
+        let staleWindowID = makeUUID("00000000-0000-0000-0000-000000000639")
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            WindowSessionState(
+                id: liveWindowID,
+                window: FileManagerFeature.State.makeInitial(path: "/Users/test/Documents"),
+            ),
+        ]
+        initialState.focusedWindowID = staleWindowID
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        }
+
+        await store.send(.edit(.find))
+        XCTAssertEqual(Array(store.state.windows.ids), [liveWindowID])
     }
 
     private func makeWindowManagerStore(

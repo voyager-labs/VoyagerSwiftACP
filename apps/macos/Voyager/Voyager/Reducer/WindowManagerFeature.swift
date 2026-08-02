@@ -528,7 +528,7 @@ extension WindowManagerFeature {
 
     private func routeFindCommand(_ state: State) -> Effect<Action> {
         guard let id = state.focusedWindowID, state.windows[id: id] != nil else {
-            return .send(.edit(.toggleComposer))
+            return .none
         }
         return .send(.windows(.element(id: id, action: .window(.request(.find)))))
     }
