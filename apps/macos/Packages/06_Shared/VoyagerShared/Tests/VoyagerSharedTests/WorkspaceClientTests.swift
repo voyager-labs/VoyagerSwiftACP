@@ -20,6 +20,43 @@ final class WorkspaceClientTests: XCTestCase {
         XCTAssertIdentical(image, expectedImage)
     }
 
+    func testPrepareFileIconsRunsResolverOffMainThreadAndDeduplicatesNormalizedPaths() async throws {
+        let resolverWasMainThread = LockIsolated<[Bool]>([])
+        let resolvedPaths = LockIsolated<[String]>([])
+        let store = WorkspaceFileIconStore()
+        let firstPath = "/tmp/folder/../example"
+        let normalizedPath = "/tmp/example"
+
+        let firstPreparationSucceeded = await store.prepare(
+            paths: [firstPath, normalizedPath, firstPath],
+            resolve: { path in
+                resolverWasMainThread.withValue { $0.append(Thread.isMainThread) }
+                resolvedPaths.withValue { $0.append(path) }
+                return NSImage(size: NSSize(width: 16, height: 16))
+            },
+        )
+
+        XCTAssertTrue(firstPreparationSucceeded)
+        XCTAssertEqual(resolverWasMainThread.value, [false])
+        XCTAssertEqual(resolvedPaths.value, [normalizedPath])
+        let firstIcon = try XCTUnwrap(store.icon(for: firstPath))
+        XCTAssertIdentical(store.icon(for: normalizedPath), firstIcon)
+
+        let secondPreparationSucceeded = await store.prepare(
+            paths: [normalizedPath],
+            resolve: { path in
+                resolverWasMainThread.withValue { $0.append(Thread.isMainThread) }
+                resolvedPaths.withValue { $0.append(path) }
+                return NSImage(size: NSSize(width: 16, height: 16))
+            },
+        )
+
+        XCTAssertTrue(secondPreparationSucceeded)
+        XCTAssertEqual(resolverWasMainThread.value, [false])
+        XCTAssertEqual(resolvedPaths.value, [normalizedPath])
+        XCTAssertIdentical(store.icon(for: normalizedPath), firstIcon)
+    }
+
     func testPrepareFileIconsPublishesStrongSynchronousFinalIcon() async throws {
         let directory = FileManager.default.temporaryDirectory.standardizedFileURL.path
         let client = WorkspaceClient.liveValue

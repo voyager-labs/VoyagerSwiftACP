@@ -72,29 +72,68 @@ private struct SendableWorkspaceImage: @unchecked Sendable {
     let value: NSImage
 }
 
+private struct PreparedWorkspaceFileIcon: @unchecked Sendable {
+    let path: String
+    let image: NSImage
+}
+
+private struct WorkspaceFileIconPreparation {
+    let icons: [PreparedWorkspaceFileIcon]
+    let succeeded: Bool
+}
+
 @MainActor
-private final class WorkspaceFileIconStore {
+final class WorkspaceFileIconStore {
     private var iconsByPath: [String: NSImage] = [:]
 
     func icon(for path: String) -> NSImage? {
-        iconsByPath[normalizedPath(path)]
+        iconsByPath[Self.normalizedPath(path)]
     }
 
-    func prepare(paths: [String], resolve: (String) -> NSImage) -> Bool {
-        for path in paths {
-            let path = normalizedPath(path)
-            guard iconsByPath[path] == nil else { continue }
-            guard let image = Self.eagerlyDecodedImage(resolve(path)) else { return false }
-            iconsByPath[path] = image
+    func prepare(
+        paths: [String],
+        resolve: @escaping @Sendable (String) -> NSImage,
+    ) async -> Bool {
+        let missingPaths = missingNormalizedPaths(paths)
+        guard !missingPaths.isEmpty else { return true }
+
+        let preparation = await Task.detached(priority: .userInitiated) {
+            var icons: [PreparedWorkspaceFileIcon] = []
+            var succeeded = true
+            for path in missingPaths {
+                guard let image = Self.eagerlyDecodedImage(resolve(path)) else {
+                    succeeded = false
+                    continue
+                }
+                icons.append(PreparedWorkspaceFileIcon(path: path, image: image))
+            }
+            return WorkspaceFileIconPreparation(icons: icons, succeeded: succeeded)
+        }.value
+
+        for icon in preparation.icons where iconsByPath[icon.path] == nil {
+            iconsByPath[icon.path] = icon.image
         }
-        return true
+        return preparation.succeeded
     }
 
-    private func normalizedPath(_ path: String) -> String {
+    private func missingNormalizedPaths(_ paths: [String]) -> [String] {
+        var seenPaths: Set<String> = []
+        var missingPaths: [String] = []
+        for path in paths {
+            let normalizedPath = Self.normalizedPath(path)
+            guard iconsByPath[normalizedPath] == nil,
+                  seenPaths.insert(normalizedPath).inserted
+            else { continue }
+            missingPaths.append(normalizedPath)
+        }
+        return missingPaths
+    }
+
+    nonisolated private static func normalizedPath(_ path: String) -> String {
         URL(fileURLWithPath: path).standardizedFileURL.path
     }
 
-    private static func eagerlyDecodedImage(_ image: NSImage) -> NSImage? {
+    nonisolated private static func eagerlyDecodedImage(_ image: NSImage) -> NSImage? {
         let pointSize = NSSize(
             width: max(image.size.width, 32),
             height: max(image.size.height, 32),

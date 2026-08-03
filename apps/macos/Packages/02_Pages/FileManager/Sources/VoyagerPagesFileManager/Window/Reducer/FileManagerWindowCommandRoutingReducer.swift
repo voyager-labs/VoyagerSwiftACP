@@ -48,6 +48,8 @@ struct FileManagerWindowCommandRoutingReducer {
     var uuid
     @Dependency(\.undoManagerClient)
     private var undoManagerClient
+    @Dependency(\.workspaceClient)
+    private var workspaceClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -69,10 +71,13 @@ struct FileManagerWindowCommandRoutingReducer {
                 let loadingClient = entryLoadingClient
                 let favoritesClient = fileManagerFavoritesClient
                 let defaultsClient = userDefaultsClient
+                let workspaceClient = workspaceClient
                 let fixedLocationsEffect: Effect<Action> = .run { send in
                     let items = FileManagerHomeDashboardProjection.makeFixedLocations(
                         from: locationsClient.loadLocations(loadingClient),
                     )
+                    _ = await workspaceClient.prepareFileIcons(items.map(\.path))
+                    guard !Task.isCancelled else { return }
                     await send(.internal(.fixedLocationsLoaded(
                         requestID: requestID,
                         items: items,
