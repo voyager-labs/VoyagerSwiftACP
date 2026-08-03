@@ -13,7 +13,8 @@ final class FileManagerWindowAiChatAttachmentPickerRoutingTests: XCTestCase {
     func testAiChatDroppedAttachmentClearSelectionDelegateClearsContentSelection() async throws {
         let selectedEntry = makeEntry(name: "Dropped.md", fullPath: "/Users/test/Documents/Dropped.md")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
-        initialState.content.entryViewLayout.entryOperations.items = [selectedEntry]
+        initialState.content.entryOperations.items = [selectedEntry]
+        initialState.content.entryViewLayout.entries = [selectedEntry]
         initialState.content.entryViewLayout.selectedIds = [selectedEntry.id]
         let activeTabID = try XCTUnwrap(initialState.contentTabs.activeTabID)
         initialState.tabContentStates[activeTabID] = initialState.content
@@ -61,7 +62,7 @@ final class FileManagerWindowAiChatAttachmentPickerRoutingTests: XCTestCase {
         await store.receive { action in
             guard case let .tabContent(
                 tabID,
-                .entryViewLayout(.entryOperations(.lifecycle(.syncSelectedEntryIDs))),
+                .entryOperations(.lifecycle(.syncSelectedEntryIDs)),
             ) = action else { return false }
             return tabID == activeTabID
         }

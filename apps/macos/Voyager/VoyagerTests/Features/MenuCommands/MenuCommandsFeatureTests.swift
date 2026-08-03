@@ -92,7 +92,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         appState.windowManager.focusedWindowID = focusedID
         XCTAssertTrue(MenuCommandsState(state: appState).canPerformEntryCommands)
 
-        appState.windowManager.windows[id: focusedID]?.window.content.entryViewLayout.entryOperations.isLoading = true
+        appState.windowManager.windows[id: focusedID]?.window.content.entryOperations.isLoading = true
         let loadingDirectoryMenuState = MenuCommandsState(state: appState)
         XCTAssertFalse(loadingDirectoryMenuState.canPerformEntryCommands)
         XCTAssertFalse(loadingDirectoryMenuState.canOpen)
