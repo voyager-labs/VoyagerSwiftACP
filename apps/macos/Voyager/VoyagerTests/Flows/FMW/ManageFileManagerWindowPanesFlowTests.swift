@@ -90,11 +90,9 @@ final class ManageFileManagerWindowPanesFlowTests: XCTestCase {
 
         await store.send(.window(.toggleSidebar))
 
-        // focused window로만 명령이 라우팅되었는지 확인
-        // @CasePathable ~= 연산자가 Equatable을 요구하므로 nested 패턴(action: .window(.request(...)))은
-        // 직접 사용하지 않고 id 검증 후 action 종류를 별도 확인한다.
+        // focused window로만 toggleSidebar 명령이 라우팅되었는지 확인
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: _)) = action else { return false }
+            guard case let .windows(.element(id: id, action: .request(.toggleSidebar))) = action else { return false }
             return id == focusedID
         }
 
@@ -172,9 +170,8 @@ final class ManageFileManagerWindowPanesFlowTests: XCTestCase {
         )
 
         await store.send(.window(.toggleSidebar))
-        // @CasePathable ~= 연산자가 Equatable을 요구하므로 nested 패턴은 사용하지 않는다.
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: _)) = action else { return false }
+            guard case let .windows(.element(id: id, action: .request(.toggleSidebar))) = action else { return false }
             return id == focusedID
         }
 
