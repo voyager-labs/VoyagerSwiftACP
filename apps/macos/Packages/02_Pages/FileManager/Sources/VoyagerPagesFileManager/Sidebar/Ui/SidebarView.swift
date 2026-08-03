@@ -983,6 +983,9 @@ private struct ContentTabSidebarRow: View {
             isCloseEnabled: closePresentation.isEnabled,
             usesUnpinCommand: pinPresentation.usesUnpinCommand,
             showsCloseCommand: !closePresentation.usesUnpinCommand,
+            showsTrailingAction: isHovered,
+            trailingActionSystemName: item.isPinned ? "minus" : "xmark",
+            isTrailingActionEnabled: closePresentation.isEnabled,
             onActivate: handlePrimaryAction,
             onToggleSelection: handleToggleSelection,
             onSelectRange: handleSelectRange,
@@ -990,16 +993,11 @@ private struct ContentTabSidebarRow: View {
             onPin: onPin,
             onUnpin: onUnpin,
             onClose: onContextMenuClose,
+            onTrailingAction: onClose,
             onMove: onMove,
         )
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 8)
-        .overlay(alignment: .trailing) {
-            if isHovered {
-                SidebarCloseButton(systemName: item.isPinned ? "minus" : "xmark", action: onClose)
-                    .padding(.trailing, 14)
-            }
-        }
         .onHover(perform: onHover)
         .enableInjection()
     }
@@ -1072,6 +1070,9 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
     let isCloseEnabled: Bool
     let usesUnpinCommand: Bool
     let showsCloseCommand: Bool
+    let showsTrailingAction: Bool
+    let trailingActionSystemName: String
+    let isTrailingActionEnabled: Bool
     let onActivate: () -> Void
     let onToggleSelection: () -> Void
     let onSelectRange: () -> Void
@@ -1079,6 +1080,7 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
     let onPin: (() -> Void)?
     let onUnpin: (() -> Void)?
     let onClose: () -> Void
+    let onTrailingAction: () -> Void
     let onMove: (UUID) -> Void
 
     func makeNSView(context _: Context) -> ContentTabSidebarButton {
@@ -1128,6 +1130,10 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
             isCloseEnabled: isCloseEnabled,
             usesUnpinCommand: usesUnpinCommand,
             showsCloseCommand: showsCloseCommand,
+            showsTrailingAction: showsTrailingAction,
+            trailingActionSystemName: trailingActionSystemName,
+            isTrailingActionEnabled: isTrailingActionEnabled,
+            onTrailingAction: onTrailingAction,
         )
     }
 
@@ -1141,6 +1147,18 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
 }
 
 @MainActor
+final class ContentTabSidebarTrailingActionButton: NSButton {
+    var onContextMenuRequested: (NSEvent) -> Void = { _ in }
+
+    override func mouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 0, event.modifierFlags.contains(.control) else {
+            super.mouseDown(with: event)
+            return
+        }
+        onContextMenuRequested(event)
+    }
+}
+
 final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     private enum PointerRoute {
         case activate
@@ -1164,6 +1182,7 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     private static let reorderDragThreshold: CGFloat = 4
 
     private let presentationView = ContentTabSidebarPresentationHostingView(rootView: AnyView(EmptyView()))
+    private let trailingActionButton = ContentTabSidebarTrailingActionButton()
     private var pointerState = PointerState.idle
     private var pointerRoute: PointerRoute?
     private var reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration?
@@ -1179,6 +1198,7 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
     private var onPin: (() -> Void)?
     private var onUnpin: (() -> Void)?
     private var onClose: () -> Void = {}
+    private var onTrailingAction: () -> Void = {}
     private var duplicateTitle = "Duplicate"
     private var duplicateAccessibilityIdentifier = ""
     private var isDuplicateEnabled = true
@@ -1238,6 +1258,10 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         isCloseEnabled: Bool? = nil,
         usesUnpinCommand: Bool? = nil,
         showsCloseCommand: Bool? = nil,
+        showsTrailingAction: Bool = false,
+        trailingActionSystemName: String = "xmark",
+        isTrailingActionEnabled: Bool = true,
+        onTrailingAction: @escaping () -> Void = {},
     ) {
         self.reorderDragSource = reorderDragSource
         self.moveTargets = moveTargets
@@ -1251,6 +1275,7 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         self.onPin = onPin
         self.onUnpin = onUnpin
         self.onClose = onClose
+        self.onTrailingAction = onTrailingAction
         self.duplicateTitle = duplicateTitle
         self.duplicateAccessibilityIdentifier = duplicateAccessibilityIdentifier
         self.isDuplicateEnabled = isDuplicateEnabled
@@ -1262,6 +1287,9 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         self.isCloseEnabled = isCloseEnabled ?? isEnabled
         self.usesUnpinCommand = usesUnpinCommand ?? isPinned
         self.showsCloseCommand = showsCloseCommand ?? !isPinned
+        trailingActionButton.image = NSImage(systemSymbolName: trailingActionSystemName, accessibilityDescription: nil)
+        trailingActionButton.isHidden = !showsTrailingAction
+        trailingActionButton.isEnabled = isTrailingActionEnabled
         self.isPinned = isPinned
         self.isEnabled = isEnabled
         presentationView.rootView = rootView
@@ -1270,10 +1298,13 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         if let tabID {
             setAccessibilityIdentifier(ContentTabMoveProjection.rowIdentifier(tabID: tabID))
         }
-        menu = makeContextMenu()
+        let contextMenu = makeContextMenu()
+        menu = contextMenu
+        trailingActionButton.menu = contextMenu
         presentationView.invalidateIntrinsicContentSize()
         invalidateIntrinsicContentSize()
         presentationView.needsLayout = true
+        trailingActionButton.needsLayout = true
         needsLayout = true
     }
 
@@ -1357,11 +1388,30 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         presentationView.setContentHuggingPriority(.defaultLow, for: .horizontal)
         presentationView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         addSubview(presentationView)
+
+        trailingActionButton.translatesAutoresizingMaskIntoConstraints = false
+        trailingActionButton.isBordered = false
+        trailingActionButton.imagePosition = .imageOnly
+        trailingActionButton.contentTintColor = .secondaryLabelColor
+        trailingActionButton.focusRingType = .none
+        trailingActionButton.target = self
+        trailingActionButton.action = #selector(performTrailingAction)
+        trailingActionButton.onContextMenuRequested = { [weak self] event in
+            guard let self, let menu = trailingActionButton.menu else { return }
+            NSMenu.popUpContextMenu(menu, with: event, for: trailingActionButton)
+        }
+        trailingActionButton.setAccessibilityElement(true)
+        addSubview(trailingActionButton)
+
         NSLayoutConstraint.activate([
             presentationView.leadingAnchor.constraint(equalTo: leadingAnchor),
             presentationView.trailingAnchor.constraint(equalTo: trailingAnchor),
             presentationView.topAnchor.constraint(equalTo: topAnchor),
             presentationView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            trailingActionButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            trailingActionButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            trailingActionButton.widthAnchor.constraint(equalToConstant: 18),
+            trailingActionButton.heightAnchor.constraint(equalToConstant: 18),
         ])
     }
 
@@ -1579,6 +1629,12 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         onClose()
     }
 
+    @objc
+    private func performTrailingAction() {
+        guard trailingActionButton.isEnabled else { return }
+        onTrailingAction()
+    }
+
     @objc private func moveToWindow(_ sender: NSMenuItem) {
         guard !isMovePending,
               let rawWindowID = sender.representedObject as? String,
@@ -1734,48 +1790,29 @@ private struct FixedLocationButton: View {
             )
     }
 
-    private var icon: some View {
-        let finalIcon = workspaceClient.cachedIconForFile(item.path)
-            ?? workspaceClient.iconForFile(item.path)
-        return Image(nsImage: finalIcon)
-            .renderingMode(.original)
-            .resizable()
-            .interpolation(.high)
-            .antialiased(true)
-            .scaledToFit()
-            .frame(width: 20, height: 20)
-            .accessibilityHidden(true)
+    @ViewBuilder private var icon: some View {
+        if let finalIcon = workspaceClient.cachedIconForFile(item.path) {
+            Image(nsImage: finalIcon)
+                .renderingMode(.original)
+                .resizable()
+                .interpolation(.high)
+                .antialiased(true)
+                .scaledToFit()
+                .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
+        } else {
+            Image(systemName: item.iconName)
+                .font(.system(size: 14, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundColor(VoyagerDS.SystemColor.tertiaryLabel)
+                .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
+        }
     }
 
     private var backgroundColor: Color {
         isHovered || isDropTarget
             ? VoyagerDS.Interaction.hoverFill(for: colorScheme)
             : Color.primary.opacity(0.06)
-    }
-}
-
-private struct SidebarCloseButton: View {
-    let systemName: String
-    let action: () -> Void
-
-    @Environment(\.colorScheme)
-    private var colorScheme
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 10, weight: .medium))
-                .accessibilityHidden(true)
-                .foregroundColor(.secondary)
-                .frame(width: 18, height: 18)
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(isHovered ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : Color.clear),
-                )
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
     }
 }

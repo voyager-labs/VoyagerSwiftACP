@@ -70,6 +70,21 @@ public struct FileManagerFeature {
                 guard state.pendingSelectedContentTabClose?.operationID == operationID else { return .none }
                 return requestTopNavigationClose(tabID: tabID, state: &state)
 
+            case let .performSelectedContentTabPinMutation(operationID, tabID, .pin(requestedTabID)):
+                guard requestedTabID == tabID,
+                      state.pendingSelectedContentTabPinMutation?.operationID == operationID,
+                      state.pendingSelectedContentTabPinMutation?.currentTabID == tabID
+                else { return .none }
+                return requestTopNavigationPin(tabID: tabID, state: &state)
+
+            case let .performSelectedContentTabPinMutation(operationID, tabID, .unpin(requestedTabID)):
+                guard requestedTabID == tabID,
+                      state.pendingSelectedContentTabPinMutation?.operationID == operationID,
+                      state.pendingSelectedContentTabPinMutation?.currentTabID == tabID
+                else { return .none }
+                prepareTopNavigationUnpin(tabID: tabID, state: &state)
+                return .none
+
             case let .performSelectedContentTabPinMutation(
                 operationID, tabID, .delegate(.persistPinnedRecord(request)),
             ):

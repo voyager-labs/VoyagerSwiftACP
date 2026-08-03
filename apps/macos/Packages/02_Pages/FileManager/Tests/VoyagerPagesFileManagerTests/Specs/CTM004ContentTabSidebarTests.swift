@@ -544,6 +544,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     func testWindowAppearanceLoadsFixedLocationsOnceUntilDisappear() async {
         let requestID = UUID()
         let loadCount = LockIsolated(0)
+        let preparedPaths = LockIsolated<[[String]]>([])
         let sourceLocations = Self.fixedLocationClient().loadLocations(.testValue)
         let projectedLocations = FileManagerHomeDashboardProjection.makeFixedLocations(from: sourceLocations)
         let store = TestStore(initialState: FileManagerFeature.State()) {
@@ -558,7 +559,12 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 loadCount.withValue { $0 += 1 }
                 return sourceLocations
             }
+            $0.workspaceClient.prepareFileIcons = { paths in
+                preparedPaths.withValue { $0.append(paths) }
+                return false
+            }
         }
+        // store.exhaustivity = .off: window 통합 reducer의 관련 없는 bootstrap action은 검증 대상이 아님
         store.exhaustivity = .off
 
         await store.send(.onAppear) {
@@ -568,6 +574,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             $0.fixedLocationsLoadPhase = .loaded
             $0.applyFixedLocationItems(projectedLocations)
         }
+        XCTAssertEqual(preparedPaths.value, [projectedLocations.map(\.path)])
 
         await store.send(.onAppear)
         XCTAssertEqual(loadCount.value, 1)
@@ -583,6 +590,10 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         }
 
         XCTAssertEqual(loadCount.value, 2)
+        XCTAssertEqual(preparedPaths.value, [
+            projectedLocations.map(\.path),
+            projectedLocations.map(\.path),
+        ])
     }
 
     /// CTM-004-sidebar_fixed_locations_visibility: 새 window appearance는 저장된 숨김 설정을 복원함
@@ -3348,7 +3359,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
     /// CTM-004-sidebar_mixed_reorder_surface: top row는 keyboard와 named accessibility action을 같은 adapter에 연결함
     /// pointer overlay 없이 기존 row affordance에 move command modifier가 적용되는 source 계약을 검증한다.
-    /// - 검증 내용: Move Up/Move Down named actions, shared tagged dispatch helper, synchronous final icon lookup
+    /// - 검증 내용: Move Up/Move Down named actions, shared tagged dispatch helper, cache-only icon과 symbol placeholder
     /// - 사전 조건: Task 7 SidebarView production source
     /// - 기대 결과: drag/keyboard/accessibility가 같은 fileManagerTopNavigationReorderRequested route를 사용한다.
     func testTopRowsExposeKeyboardAndAccessibilityMoveCommandsWithoutLocationLifecycleControls() throws {
@@ -3361,11 +3372,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             .appendingPathComponent("Sources/VoyagerPagesFileManager/Sidebar/Ui/SidebarView.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
         let fixedLocationStart = try XCTUnwrap(source.range(of: "private struct FixedLocationButton"))
-        let fixedLocationEnd = try XCTUnwrap(source.range(
-            of: "private struct SidebarCloseButton",
-            range: fixedLocationStart.upperBound ..< source.endIndex,
-        ))
-        let fixedLocationSource = source[fixedLocationStart.lowerBound ..< fixedLocationEnd.lowerBound]
+        let fixedLocationSource = source[fixedLocationStart.lowerBound ..< source.endIndex]
 
         XCTAssertTrue(source.contains(".topNavigationMoveCommands("))
         XCTAssertTrue(source.contains("Text(\"Move Up\")"))
@@ -3373,9 +3380,10 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertTrue(source.contains("[.option, .command]"))
         XCTAssertTrue(source.contains("sendTopNavigationMoveRequest"))
         XCTAssertTrue(fixedLocationSource.contains("workspaceClient.cachedIconForFile(item.path)"))
-        XCTAssertTrue(fixedLocationSource.contains("workspaceClient.iconForFile(item.path)"))
+        XCTAssertFalse(fixedLocationSource.contains("workspaceClient.iconForFile(item.path)"))
+        XCTAssertTrue(fixedLocationSource.contains("Image(systemName: item.iconName)"))
         XCTAssertFalse(fixedLocationSource.contains("@State private var resolvedIcon"))
-        XCTAssertFalse(fixedLocationSource.contains(".task(id: item.path)"))
+        XCTAssertFalse(fixedLocationSource.contains(".task"))
         XCTAssertFalse(fixedLocationSource.contains("SidebarSymbolIcon("))
         XCTAssertFalse(fixedLocationSource.contains("Image(systemName: \"folder\")"))
         XCTAssertFalse(fixedLocationSource.contains("onClose"))
@@ -5968,6 +5976,132 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         var closingState = FileManagerWindowState()
         closingState.isClosing = true
         return [batchState, singleState, teardownState, closingState]
+    }
+
+    /// CTM-004-sidebar_close_selected_content_tabs: hover action은 native row 내부에서 독립 hit target을 소유함
+    /// SwiftUI overlay와 NSViewRepresentable 사이의 hit-test 경쟁 없이 Close/Unpin callback을 실행하는지 검증한다.
+    /// - 검증 내용: trailing NSButton identity, parent activation 격리, 최신 callback, hidden/disabled 갱신
+    /// - 사전 조건: 실제 frame을 가진 ContentTabSidebarButton과 hover-visible trailing action
+    /// - 기대 결과: trailing 위치 hit은 child button이고 click은 action만 한 번 실행하며 disabled/hidden 상태를 준수한다.
+    func testSidebarNativeTrailingActionOwnsHitTargetAndDispatchesCurrentCallback() throws {
+        _ = NSApplication.shared
+        let button = ContentTabSidebarButton(frame: NSRect(x: 0, y: 0, width: 240, height: 28))
+        var activationCount = 0, firstActionCount = 0, latestActionCount = 0
+
+        updateNativeTrailingAction(
+            button,
+            onActivate: { activationCount += 1 },
+            onTrailingAction: { firstActionCount += 1 },
+        )
+        let trailingButton = try XCTUnwrap(
+            button.subviews.compactMap { $0 as? ContentTabSidebarTrailingActionButton }.first,
+        )
+        let hitPoint = trailingButton.convert(
+            NSPoint(x: trailingButton.bounds.midX, y: trailingButton.bounds.midY),
+            to: button,
+        )
+        XCTAssertIdentical(button.hitTest(hitPoint), trailingButton)
+        trailingButton.performClick(nil)
+        XCTAssertEqual(firstActionCount, 1)
+        XCTAssertEqual(activationCount, 0)
+
+        updateNativeTrailingAction(
+            button,
+            onActivate: { activationCount += 1 },
+            onTrailingAction: { latestActionCount += 1 },
+        )
+        trailingButton.performClick(nil)
+        XCTAssertEqual(firstActionCount, 1)
+        XCTAssertEqual(latestActionCount, 1)
+        XCTAssertEqual(activationCount, 0)
+
+        updateNativeTrailingAction(
+            button,
+            isActionEnabled: false,
+            onActivate: { activationCount += 1 },
+            onTrailingAction: { latestActionCount += 1 },
+        )
+        trailingButton.performClick(nil)
+        XCTAssertEqual(latestActionCount, 1)
+
+        updateNativeTrailingAction(
+            button,
+            showsAction: false,
+            onActivate: { activationCount += 1 },
+            onTrailingAction: { latestActionCount += 1 },
+        )
+        XCTAssertTrue(trailingButton.isHidden)
+    }
+
+    /// CTM-004-sidebar_close_selected_content_tabs: native trailing action의 Control-click은 context menu로 라우팅됨
+    /// child hit target이 Close/Unpin을 실행하지 않고 row context menu 요청만 전달하는지 검증한다.
+    /// - 검증 내용: Control-left-click의 context menu 요청 횟수와 activation/trailing callback 격리
+    /// - 사전 조건: context menu와 enabled trailing action이 구성된 ContentTabSidebarButton
+    /// - 기대 결과: menu 요청만 한 번 발생하고 activation과 trailing action은 실행되지 않는다.
+    func testSidebarNativeTrailingActionRoutesControlClickToContextMenu() throws {
+        _ = NSApplication.shared
+        let button = ContentTabSidebarButton(frame: NSRect(x: 0, y: 0, width: 240, height: 28))
+        var activationCount = 0, trailingActionCount = 0, contextMenuRequestCount = 0
+        updateNativeTrailingAction(
+            button,
+            onActivate: { activationCount += 1 },
+            onTrailingAction: { trailingActionCount += 1 },
+        )
+        let trailingButton = try XCTUnwrap(
+            button.subviews.compactMap { $0 as? ContentTabSidebarTrailingActionButton }.first,
+        )
+        XCTAssertNotNil(trailingButton.menu)
+        trailingButton.onContextMenuRequested = { _ in contextMenuRequestCount += 1 }
+
+        try trailingButton.mouseDown(with: makeControlClickEvent())
+
+        XCTAssertEqual(contextMenuRequestCount, 1)
+        XCTAssertEqual(trailingActionCount, 0)
+        XCTAssertEqual(activationCount, 0)
+    }
+
+    private func updateNativeTrailingAction(
+        _ button: ContentTabSidebarButton,
+        showsAction: Bool = true,
+        isActionEnabled: Bool = true,
+        onActivate: @escaping () -> Void,
+        onTrailingAction: @escaping () -> Void,
+    ) {
+        button.update(
+            rootView: AnyView(Color.clear.frame(height: 24)),
+            accessibilityLabel: "Content Tab",
+            accessibilityValue: "Selected",
+            duplicateAccessibilityIdentifier: "duplicate-content-tab",
+            isPinned: false,
+            isEnabled: true,
+            reorderDragSource: nil,
+            onActivate: onActivate,
+            onToggleSelection: {},
+            onSelectRange: {},
+            onDuplicate: {},
+            onPin: {},
+            onUnpin: {},
+            onClose: {},
+            showsTrailingAction: showsAction,
+            trailingActionSystemName: "xmark",
+            isTrailingActionEnabled: isActionEnabled,
+            onTrailingAction: onTrailingAction,
+        )
+        button.layoutSubtreeIfNeeded()
+    }
+
+    private func makeControlClickEvent() throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: .zero,
+            modifierFlags: .control,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1,
+        ))
     }
 
     // MARK: - CTM-004-sidebar_close_selected_content_tabs
