@@ -136,20 +136,22 @@ final class EntryListCoordinatorProjectionSession {
     private(set) var renderedProjectionRevision: Int?
     private(set) var isApplyingStoreProjection = false
     private(set) var pendingProjection: EntryListOutlineProjection?
+    private var renderedProjection: EntryListOutlineProjection?
 
     func reset() {
         renderedProjectionRevision = nil
         isApplyingStoreProjection = false
         pendingProjection = nil
+        renderedProjection = nil
     }
 
     func apply(
         _ projection: EntryListOutlineProjection,
         perform: (EntryListOutlineProjection, [EntryListOutlineItem]) -> Void,
     ) {
-        guard renderedProjectionRevision.map({ projection.revision > $0 }) ?? true else { return }
+        guard shouldReplace(projection, current: renderedProjection) else { return }
         guard !isApplyingStoreProjection else {
-            if pendingProjection.map({ projection.revision > $0.revision }) ?? true {
+            if shouldReplace(projection, current: pendingProjection ?? renderedProjection) {
                 pendingProjection = projection
             }
             return
@@ -157,6 +159,7 @@ final class EntryListCoordinatorProjectionSession {
 
         isApplyingStoreProjection = true
         renderedProjectionRevision = projection.revision
+        renderedProjection = projection
         perform(projection, Self.makeOutlineItems(from: projection))
         isApplyingStoreProjection = false
 
@@ -164,6 +167,17 @@ final class EntryListCoordinatorProjectionSession {
             self.pendingProjection = nil
             apply(pendingProjection, perform: perform)
         }
+    }
+
+    private func shouldReplace(
+        _ projection: EntryListOutlineProjection,
+        current: EntryListOutlineProjection?,
+    ) -> Bool {
+        guard let current else { return true }
+        guard projection.revision == current.revision else {
+            return projection.revision > current.revision
+        }
+        return !projection.hasSameStructure(as: current)
     }
 
     func accept(_ intent: EntryListCoordinatorProjectionIntent) -> EntryListCoordinatorAcceptedIntent? {
