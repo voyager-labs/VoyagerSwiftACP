@@ -606,6 +606,7 @@ struct SidebarView: View {
             validSelectedTabIDs: interactionStore.validSelectedTabIDs,
             isEnabled: interactionStore.isCloseEnabled,
         )
+        let trailingAction = ContentTabSidebarTrailingAction(isPinned: item.isPinned)
         return ContentTabSidebarRow(
             item: item,
             reorderDragSource: reorderDragSource,
@@ -641,6 +642,9 @@ struct SidebarView: View {
             } : nil,
             onClose: {
                 sidebarStore.send(.delegate(.closeContentTab(item.id)))
+            },
+            onTrailingAction: {
+                sidebarStore.send(.delegate(trailingAction.delegateAction(tabID: item.id)))
             },
             onContextMenuClose: {
                 sidebarStore.send(.delegate(closePresentation.delegateAction))
@@ -933,6 +937,33 @@ private struct ContentTabDropDelegate: DropDelegate {
     }
 }
 
+enum ContentTabSidebarTrailingAction: Equatable {
+    case unpin
+    case close
+
+    var systemName: String {
+        switch self {
+        case .unpin:
+            "minus"
+        case .close:
+            "xmark"
+        }
+    }
+
+    init(isPinned: Bool) {
+        self = isPinned ? .unpin : .close
+    }
+
+    func delegateAction(tabID: ContentTabID) -> FileManagerSidebarAction.Delegate {
+        switch self {
+        case .unpin:
+            .unpinContentTab(tabID)
+        case .close:
+            .closeContentTab(tabID)
+        }
+    }
+}
+
 private struct ContentTabSidebarRow: View {
     let item: ContentTabProjection.ContentTabSidebarItem
     let reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration?
@@ -952,6 +983,7 @@ private struct ContentTabSidebarRow: View {
     let onPin: (() -> Void)?
     let onUnpin: (() -> Void)?
     let onClose: () -> Void
+    let onTrailingAction: () -> Void
     let onContextMenuClose: () -> Void
     let onMove: (UUID) -> Void
     let onHover: (Bool) -> Void
@@ -965,6 +997,7 @@ private struct ContentTabSidebarRow: View {
     @ObserveInjection private var injection
 
     var body: some View {
+        let trailingAction = ContentTabSidebarTrailingAction(isPinned: item.isPinned)
         ContentTabSidebarButtonHost(
             item: item,
             reorderDragSource: reorderDragSource,
@@ -984,7 +1017,7 @@ private struct ContentTabSidebarRow: View {
             usesUnpinCommand: pinPresentation.usesUnpinCommand,
             showsCloseCommand: !closePresentation.usesUnpinCommand,
             showsTrailingAction: isHovered,
-            trailingActionSystemName: item.isPinned ? "minus" : "xmark",
+            trailingActionSystemName: trailingAction.systemName,
             isTrailingActionEnabled: closePresentation.isEnabled,
             onActivate: handlePrimaryAction,
             onToggleSelection: handleToggleSelection,
@@ -993,7 +1026,7 @@ private struct ContentTabSidebarRow: View {
             onPin: onPin,
             onUnpin: onUnpin,
             onClose: onContextMenuClose,
-            onTrailingAction: onClose,
+            onTrailingAction: onTrailingAction,
             onMove: onMove,
         )
         .frame(maxWidth: .infinity)
@@ -1149,6 +1182,32 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
 @MainActor
 final class ContentTabSidebarTrailingActionButton: NSButton {
     var onContextMenuRequested: (NSEvent) -> Void = { _ in }
+    private var isPointerHovered = false
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+        ))
+    }
+
+    override func mouseEntered(with _: NSEvent) {
+        isPointerHovered = true
+        updateHoverBackground()
+    }
+
+    override func mouseExited(with _: NSEvent) {
+        isPointerHovered = false
+        updateHoverBackground()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateHoverBackground()
+    }
 
     override func mouseDown(with event: NSEvent) {
         guard event.buttonNumber == 0, event.modifierFlags.contains(.control) else {
@@ -1156,6 +1215,29 @@ final class ContentTabSidebarTrailingActionButton: NSButton {
             return
         }
         onContextMenuRequested(event)
+    }
+
+    func updateInteraction(isVisible: Bool, isEnabled: Bool) {
+        isHidden = !isVisible
+        self.isEnabled = isEnabled
+        if !isVisible || !isEnabled {
+            isPointerHovered = false
+        }
+        updateHoverBackground()
+    }
+
+    private func updateHoverBackground() {
+        guard isPointerHovered, !isHidden, isEnabled else {
+            layer?.backgroundColor = NSColor.clear.cgColor
+            return
+        }
+        let color = switch effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) {
+        case .darkAqua:
+            NSColor.white.withAlphaComponent(0.08)
+        default:
+            NSColor.black.withAlphaComponent(0.06)
+        }
+        layer?.backgroundColor = color.cgColor
     }
 }
 
@@ -1287,9 +1369,14 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         self.isCloseEnabled = isCloseEnabled ?? isEnabled
         self.usesUnpinCommand = usesUnpinCommand ?? isPinned
         self.showsCloseCommand = showsCloseCommand ?? !isPinned
-        trailingActionButton.image = NSImage(systemSymbolName: trailingActionSystemName, accessibilityDescription: nil)
-        trailingActionButton.isHidden = !showsTrailingAction
-        trailingActionButton.isEnabled = isTrailingActionEnabled
+        trailingActionButton.image = NSImage(
+            systemSymbolName: trailingActionSystemName,
+            accessibilityDescription: nil,
+        )?.withSymbolConfiguration(.init(pointSize: 10, weight: .medium))
+        trailingActionButton.updateInteraction(
+            isVisible: showsTrailingAction,
+            isEnabled: isTrailingActionEnabled,
+        )
         self.isPinned = isPinned
         self.isEnabled = isEnabled
         presentationView.rootView = rootView
@@ -1392,8 +1479,11 @@ final class ContentTabSidebarButton: NSButton, NSDraggingSource {
         trailingActionButton.translatesAutoresizingMaskIntoConstraints = false
         trailingActionButton.isBordered = false
         trailingActionButton.imagePosition = .imageOnly
+        trailingActionButton.imageScaling = .scaleNone
         trailingActionButton.contentTintColor = .secondaryLabelColor
         trailingActionButton.focusRingType = .none
+        trailingActionButton.wantsLayer = true
+        trailingActionButton.layer?.cornerRadius = 4
         trailingActionButton.target = self
         trailingActionButton.action = #selector(performTrailingAction)
         trailingActionButton.onContextMenuRequested = { [weak self] event in

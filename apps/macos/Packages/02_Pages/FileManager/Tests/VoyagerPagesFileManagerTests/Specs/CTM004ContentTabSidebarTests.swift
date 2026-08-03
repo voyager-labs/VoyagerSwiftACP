@@ -6060,6 +6060,60 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(activationCount, 0)
     }
 
+    /// CTM-004-sidebar_close_selected_content_tabs: trailing glyph는 row pin 상태에 맞는 단일 동작을 표시함
+    /// pinned row의 minus가 Close가 아니라 단일 Unpin 의미를 유지하는지 검증한다.
+    /// - 검증 내용: pinned/ordinary 상태별 typed trailing action과 SF Symbol
+    /// - 사전 조건: pinned 또는 ordinary Content Tab row
+    /// - 기대 결과: pinned는 Unpin/minus, ordinary는 Close/xmark로 매핑된다.
+    func testSidebarTrailingActionMapsPinnedToUnpinAndOrdinaryToClose() {
+        let tabID = ContentTabID(rawValue: "trailing-action-tab")
+        let pinnedAction = ContentTabSidebarTrailingAction(isPinned: true)
+        let ordinaryAction = ContentTabSidebarTrailingAction(isPinned: false)
+
+        XCTAssertEqual(pinnedAction, .unpin)
+        XCTAssertEqual(pinnedAction.systemName, "minus")
+        XCTAssertEqual(ordinaryAction, .close)
+        XCTAssertEqual(ordinaryAction.systemName, "xmark")
+        guard case let .unpinContentTab(pinnedTabID) = pinnedAction.delegateAction(tabID: tabID) else {
+            return XCTFail("Pinned trailing action must preserve the tab and unpin it")
+        }
+        XCTAssertEqual(pinnedTabID, tabID)
+        guard case let .closeContentTab(ordinaryTabID) = ordinaryAction.delegateAction(tabID: tabID) else {
+            return XCTFail("Ordinary trailing action must close the tab")
+        }
+        XCTAssertEqual(ordinaryTabID, tabID)
+    }
+
+    /// CTM-004-sidebar_close_selected_content_tabs: native trailing action은 hover 배경을 복원함
+    /// SwiftUI overlay 제거 뒤에도 기존 X/− hover affordance가 유지되는지 검증한다.
+    /// - 검증 내용: corner radius, light appearance hover alpha, exit와 disabled 초기화
+    /// - 사전 조건: Aqua appearance의 visible/enabled native trailing action
+    /// - 기대 결과: enter 시 배경이 나타나고 exit 또는 disable 시 투명해진다.
+    func testSidebarNativeTrailingActionRestoresHoverBackground() throws {
+        _ = NSApplication.shared
+        let button = ContentTabSidebarButton(frame: NSRect(x: 0, y: 0, width: 240, height: 28))
+        updateNativeTrailingAction(button, onActivate: {}, onTrailingAction: {})
+        let trailingButton = try XCTUnwrap(
+            button.subviews.compactMap { $0 as? ContentTabSidebarTrailingActionButton }.first,
+        )
+        trailingButton.appearance = NSAppearance(named: .aqua)
+
+        try trailingButton.mouseEntered(with: makeControlClickEvent())
+        XCTAssertEqual(trailingButton.layer?.cornerRadius, 4)
+        XCTAssertEqual(trailingButton.layer?.backgroundColor?.alpha ?? -1, 0.06, accuracy: 0.001)
+
+        try trailingButton.mouseExited(with: makeControlClickEvent())
+        XCTAssertEqual(trailingButton.layer?.backgroundColor?.alpha ?? -1, 0, accuracy: 0.001)
+        try trailingButton.mouseEntered(with: makeControlClickEvent())
+        updateNativeTrailingAction(
+            button,
+            isActionEnabled: false,
+            onActivate: {},
+            onTrailingAction: {},
+        )
+        XCTAssertEqual(trailingButton.layer?.backgroundColor?.alpha ?? -1, 0, accuracy: 0.001)
+    }
+
     private func updateNativeTrailingAction(
         _ button: ContentTabSidebarButton,
         showsAction: Bool = true,
