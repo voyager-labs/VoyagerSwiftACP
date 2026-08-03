@@ -42,6 +42,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             $0.shouldScrollToSelection = false
             $0.outlineProjectionRevision = 1
             $0.lastVisibleSelectableEntryIDs = Set(["/root/a"])
+            $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
         }
     }
 
@@ -114,6 +115,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             $0.shouldScrollToSelection = false
             $0.outlineProjectionRevision = 1
             $0.lastVisibleSelectableEntryIDs = Set(["/root/a"])
+            $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
         }
     }
 
@@ -173,6 +175,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             $0.shouldScrollToSelection = false
             $0.outlineProjectionRevision = 1
             $0.lastVisibleSelectableEntryIDs = Set(["/root/a"])
+            $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
         }
     }
 

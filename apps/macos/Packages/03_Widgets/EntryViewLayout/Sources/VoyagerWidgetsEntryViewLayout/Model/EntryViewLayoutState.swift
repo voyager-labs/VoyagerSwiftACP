@@ -117,6 +117,12 @@ public struct EntryViewLayoutState: Equatable {
         outlineProjection(isNormalDirectoryPage: isNormalDirectoryPage).visibleSelectableEntries
     }
 
+    /// 현재 상태 기준 outline projection을 반환한다.
+    /// 테스트에서 reconcile 후 lastReconciledOutlineProjection 기대값을 생성할 때 사용한다.
+    func currentOutlineProjection() -> EntryListOutlineProjection {
+        outlineProjection(isNormalDirectoryPage: selectionProjectionIsHierarchyEnabled)
+    }
+
     mutating func synchronizeEntries(_ entries: [EntryModel]) {
         self.entries = entries
         presentationSections = [.ungrouped(items: entries)]
@@ -187,7 +193,10 @@ public struct EntryViewLayoutState: Equatable {
             advanceOutlineProjectionRevision()
         }
         lastVisibleSelectableEntryIDs = remainingIds
-        lastReconciledOutlineProjection = currentProjection
+        // revision bump 이후 projection을 재생성해 캐시와 카운터가 일치하도록 보존한다.
+        // 구조가 동일하므로 hasSameStructure 비교에는 영향을 주지 않는다.
+        lastReconciledOutlineProjection =
+            outlineProjection(isNormalDirectoryPage: selectionProjectionIsHierarchyEnabled)
 
         guard !selectedIds.isEmpty else {
             lastSelectedId = nil

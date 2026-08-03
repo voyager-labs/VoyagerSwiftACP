@@ -213,6 +213,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             $0.hierarchy.foldersByID[collapsed.id] = .init(phase: .idle, generation: 5)
             $0.outlineProjectionRevision = 2
             $0.lastVisibleSelectableEntryIDs = Set(["/root/collapsed", "/root/expanded"])
+            $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
         }
         await store.receive(\.delegate.expandRequested)
         await store.receive(\.internal.reconcileHierarchySelection)
@@ -502,6 +503,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             $0.hierarchy.foldersByID[folder.id]?.children = [first, patchedSecond]
             $0.outlineProjectionRevision = 1
             $0.lastVisibleSelectableEntryIDs = Set([folder.id, second.id, first.id])
+            $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
         }
         XCTAssertEqual(store.state.hierarchy.foldersByID[folder.id]?.children.map(\.id), [first.id, second.id])
         let projection = EntryListOutlineProjection(
@@ -538,6 +540,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         ))) {
             $0.hierarchy.foldersByID[folder.id]?.phase = .failed(.permissionDenied)
             $0.outlineProjectionRevision = 2
+            $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
         }
     }
 
