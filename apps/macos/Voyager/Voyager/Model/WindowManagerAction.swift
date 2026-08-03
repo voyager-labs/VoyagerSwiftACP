@@ -347,6 +347,12 @@ enum WindowManagerAction: CasePathable {
         attempt: ExternalOpenActivationAttempt,
         result: FileManagerWindowActivationResult,
     )
+    case contentTabMoveRequest(ContentTabMoveRequest)
+    case contentTabMoveActivationResult(
+        attempt: ContentTabMoveActivationAttempt,
+        result: FileManagerWindowActivationResult,
+    )
+    case refreshContentTabMoveTargets
     case windows(IdentifiedActionOf<WindowSessionFeature>)
 
     @CasePathable

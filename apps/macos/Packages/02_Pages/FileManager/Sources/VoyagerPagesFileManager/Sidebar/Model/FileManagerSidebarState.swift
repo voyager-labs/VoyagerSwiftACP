@@ -10,6 +10,9 @@ public struct FileManagerSidebarState: Equatable {
     var hiddenFixedLocationItemIDs: Set<FileManagerFixedLocationItem.ID> = []
     var contentTabSidebarItems: [ContentTabProjection.ContentTabSidebarItem] = ContentTabProjection
         .sidebarItems(from: .withHomeTab())
+    public var currentWindowID: UUID?
+    public var contentTabMoveTargets: [ContentTabMoveTarget] = []
+    public var pendingContentTabMoveRequest: ContentTabMoveRequest?
 
     mutating func setFixedLocationItems(
         _ items: [FileManagerFixedLocationItem],

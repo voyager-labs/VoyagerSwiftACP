@@ -4608,7 +4608,7 @@ extension CTM005IndependentContentTabSessionTests {
         state.content.navigation.navigationState = .aiChatSessions(currentSessionID)
         state.content.aiChat.mode = .sessions
         state.content.aiChat.sessionID = currentAiSessionID
-        state.content.aiChat.sessionStatus = .active
+        state.content.aiChat.sessionStatus = .restoring
         state.content.aiChat.restoreSessionID = selectedAiSessionID
         state.content.aiChat.sessionList.selectedSessionID = selectedAiSessionID
         state.tabContentStates = [tabID: state.content]
@@ -4685,6 +4685,7 @@ extension CTM005IndependentContentTabSessionTests {
         state.content.navigation.navigationState = .aiChatSessions(sessionID.rawValue.uuidString)
         state.content.aiChat.mode = .sessions
         state.content.aiChat.restoreSessionID = sessionID
+        state.content.aiChat.sessionStatus = .restoring
         state.content.aiChat.sessionList.replaceRow(promotedSummary)
         state.content.aiChat.sessionList.selectedSessionID = sessionID
         state.content.aiChat.backgroundExecutionPhases[promotedLock.requestID] = .completed(promotedLock)

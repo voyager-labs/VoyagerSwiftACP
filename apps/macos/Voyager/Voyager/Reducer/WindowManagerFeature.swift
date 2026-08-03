@@ -56,6 +56,8 @@ struct WindowManagerFeature {
     private var fileManagerFavoritesClient
     @Dependency(\.entryLoadingClient)
     private var entryLoadingClient
+    @Dependency(\.fileOperationUndoManagerClient)
+    var fileOperationUndoManagerClient
     @Dependency(\.userDefaultsClient)
     private var userDefaultsClient
     @Dependency(\.metricsClient)
@@ -228,6 +230,7 @@ struct WindowManagerFeature {
                 else { return .none }
                 state.focusedWindowID = id
                 state.moveWindowToMRUFront(id)
+                state.refreshContentTabMoveTargets()
                 return .none
 
             case let .event(.windowResignedKey(id)):
@@ -250,6 +253,7 @@ struct WindowManagerFeature {
                     )
                 }
                 state.pendingWindowOpenIDs.remove(id)
+                state.refreshContentTabMoveTargets()
                 guard shouldBootstrapDefaultWindow else { return .none }
                 return defaultWindowBootstrapEffectIfNeeded(for: id, state: &state)
 
@@ -264,12 +268,16 @@ struct WindowManagerFeature {
             case let .event(.windowClosed(id)):
                 let wasFocused = state.focusedWindowID == id
                 state.windows.remove(id: id)
+                state.pendingWindowOpenIDs.remove(id)
+                state.closingWindowIDs.remove(id)
+                state.invalidatingWindowIDs.remove(id)
                 state.lastUsedWindowIDs.removeAll { $0 == id }
                 state.defaultWindowBootstrapWindowIDs.remove(id)
                 state.externalWindowBatchIDs[id] = nil
                 if wasFocused {
                     state.focusedWindowID = state.lastUsedWindowIDs.first(where: { state.windows[id: $0] != nil })
                 }
+                state.refreshContentTabMoveTargets()
                 guard state.defaultWindowBootstrapWindowIDs.isEmpty,
                       state.defaultWindowBootstrapRequestID != nil
                 else { return .none }
@@ -336,6 +344,43 @@ struct WindowManagerFeature {
                     state.externalOpenActivationAttempt = nil
                     return .send(.delegate(.externalOpenActivationCompleted(batchID: attempt.batchID)))
                 }
+
+            case let .contentTabMoveRequest(request):
+                return handleContentTabMoveRequest(request, state: &state)
+
+            case let .contentTabMoveActivationResult(attempt, _):
+                guard state.contentTabMoveActivationAttempts[attempt.requestID] == attempt else {
+                    return .none
+                }
+                state.contentTabMoveActivationAttempts[attempt.requestID] = nil
+                return .none
+
+            case .refreshContentTabMoveTargets:
+                state.refreshContentTabMoveTargets()
+                return .none
+
+            case let .windows(.element(
+                id: targetWindowID,
+                action: .window(.delegate(.receiveContentTabDrag(payload))),
+            )):
+                guard ContentTabDragPayload.isSupported(schemaVersion: payload.schemaVersion),
+                      payload.sourceWindowID != targetWindowID,
+                      isWindowReady(payload.sourceWindowID, state: state),
+                      state.windows[id: targetWindowID] != nil
+                else { return .none }
+                return .send(.windows(.element(
+                    id: payload.sourceWindowID,
+                    action: .window(.sidebar(.view(.moveContentTab(
+                        tabID: payload.tabID,
+                        targetWindowID: targetWindowID,
+                    )))),
+                )))
+
+            case let .windows(.element(
+                id: _,
+                action: .window(.delegate(.requestContentTabMove(request))),
+            )):
+                return .send(.contentTabMoveRequest(request))
 
             case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewWindow(path))))):
                 return .send(.file(.newWindow(path: path)))
@@ -429,6 +474,12 @@ struct WindowManagerFeature {
             case .windows(.element(id: _, action: .window(.delegate(.openAISettings)))):
                 return .send(.delegate(.openAISettings))
 
+            case .windows(.element(id: _, action: .window(.contentTabs))),
+                 .windows(.element(id: _, action: .window(.internal(.aiChatTabTitleUpdated)))),
+                 .windows(.element(id: _, action: .window(.tabContent(tabID: _, action: .aiChat)))),
+                 .windows(.element(id: _, action: .window(.inspector(.aiChat)))):
+                return .send(.refreshContentTabMoveTargets)
+
             case .delegate, .windows:
                 return .none
             }
@@ -468,6 +519,7 @@ extension WindowManagerFeature {
         }
 
         state.windows = application.windows
+        state.refreshContentTabMoveTargets()
         retainExternalOpenPlacementOwnership(plan.batchID, application.newWindowIDs, state: &state)
         for windowID in application.newWindowIDs {
             state.externalWindowBatchIDs[windowID] = plan.batchID
@@ -785,6 +837,7 @@ extension WindowManagerFeature {
             let windowState = FileManagerWindowFeature.State.makeInitial(
                 path: path,
                 selectEntryID: selectEntryID,
+                windowID: id,
             )
             return .init(id: id, window: windowState)
         }
@@ -795,6 +848,7 @@ extension WindowManagerFeature {
         let windowState = FileManagerWindowFeature.State.makeInitial(
             path: nil,
             selectEntryID: selectEntryID,
+            windowID: id,
         )
         return .init(id: id, window: windowState)
     }

@@ -1,10 +1,13 @@
 import ComposableArchitecture
+import CoreServices
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
@@ -109,6 +112,27 @@ private enum PinnedRecordTerminalOrder {
 /// 윈도우 관리자 계약 — 포커스 윈도우로의 명령 팬아웃과 미사용 시 no-op를 검증.
 private func pinnedTabIDs(_ contentTabs: ContentTabState?) -> [String] {
     contentTabs?.tabs.filter(\.isPinned).map(\.id.rawValue) ?? []
+}
+
+private enum ContentTabObservationRebindEvent: Equatable {
+    case stop
+    case start
+    case apply
+}
+
+private func contentTabObservationRebindEvent(
+    _ action: FileManagerContentAction,
+) -> ContentTabObservationRebindEvent? {
+    switch action {
+    case .internal(.stopObservingSystemNotifications):
+        .stop
+    case .internal(.startObservingSystemNotifications):
+        .start
+    case .internal(.applyNavigationState):
+        .apply
+    default:
+        nil
+    }
 }
 
 @MainActor
@@ -2520,6 +2544,2342 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertFalse(tabs?.contains(where: \.isPinned) ?? true)
     }
 
+    // MARK: - CTM-001-move_content_tab_to_another_window
+
+    /// CTM-001-move_content_tab_to_another_window: 두 registry child를 한 action에서 함께 commit한다.
+    /// source delegate request가 source 제거와 target 삽입을 원자적으로 완료하는지 검증한다.
+    /// - 검증 내용: source/target tab 수와 source pending terminal
+    /// - 사전 조건: 서로 다른 두 live window와 source pending request가 존재한다.
+    /// - 기대 결과: source tab은 제거되고 target에는 동일 tab이 정확히 하나 존재한다.
+    func testContentTabMoveCommitsSourceAndTargetAtomically() async throws {
+        let sourceWindowID = UUID()
+        let targetWindowID = UUID()
+        let movedTabID = ContentTabID(rawValue: "atomic-moved-tab")
+        let targetTabID = ContentTabID(rawValue: "atomic-target-tab")
+        let request = ContentTabMoveRequest(
+            requestID: UUID(),
+            sourceWindowID: sourceWindowID,
+            tabID: movedTabID,
+            targetWindowID: targetWindowID,
+        )
+        var source = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(
+            reservations: [.init(id: movedTabID, anchor: .directory(path: "/source"))],
+            windowID: sourceWindowID,
+        ))
+        source.sidebar.pendingContentTabMoveRequest = request
+        let target = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(
+            reservations: [.init(id: targetTabID, anchor: .directory(path: "/target"))],
+            windowID: targetWindowID,
+        ))
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            .init(id: sourceWindowID, window: source),
+            .init(id: targetWindowID, window: target),
+        ]
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
+            $0.fileManagerWindowClient.activate = { _ in .discarded }
+            $0.fileManagerWindowClient.close = { _ in }
+            $0.fileOperationUndoManagerClient.moveScope = { _, _, _ in .moved }
+            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+        }
+        // store.exhaustivity = .off: post-commit lifecycle effect보다 registry의 원자적 결과를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: sourceWindowID,
+            action: .window(.delegate(.requestContentTabMove(request))),
+        )))
+        await store.receive(\.contentTabMoveRequest, request)
+        await store.skipReceivedActions()
+
+        await store.finish()
+
+        XCTAssertEqual(store.state.windows[id: sourceWindowID]?.window.contentTabs.tabs.count, 0)
+        XCTAssertTrue(store.state.closingWindowIDs.contains(sourceWindowID))
+        XCTAssertEqual(
+            store.state.windows[id: targetWindowID]?.window.contentTabs.tabs.count(where: { $0.id == movedTabID }),
+            1,
+        )
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: native undo scope 이전 실패는 logical transfer를 commit하지 않는다.
+    /// synchronous precondition 실패 뒤 source/target state와 native window effect가 그대로인지 검증한다.
+    /// - 검증 내용: source tab/pending failure, target 부재, terminal rejection, activate/close 호출 횟수
+    /// - 사전 조건: source에는 이동 tab과 잔여 tab이 있고 undo registry가 source missing을 반환한다.
+    /// - 기대 결과: 탭은 source에 남고 target에 추가되지 않으며 window activate/close effect가 실행되지 않는다.
+    func testContentTabMoveUndoScopeFailureRejectsBeforeStateCommitAndEffects() async throws {
+        let sourceID = UUID()
+        let targetID = UUID()
+        let movedTabID = ContentTabID(rawValue: "undo-failure-moved")
+        let request = ContentTabMoveRequest(
+            requestID: UUID(),
+            sourceWindowID: sourceID,
+            tabID: movedTabID,
+            targetWindowID: targetID,
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [
+                (movedTabID, "/undo-failure/moved"),
+                (ContentTabID(rawValue: "undo-failure-remainder"), "/undo-failure/remainder"),
+            ],
+        )
+        source.window.sidebar.pendingContentTabMoveRequest = request
+        let target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(ContentTabID(rawValue: "undo-failure-target"), "/undo-failure/target")],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        let moveCalls = LockIsolated<[(UndoManagerScope, UndoManagerScope)]>([])
+        let activatedIDs = LockIsolated<[UUID]>([])
+        let closedIDs = LockIsolated<[UUID]>([])
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
+            $0.fileOperationUndoManagerClient.moveScope = { source, target, _ in
+                moveCalls.withValue { $0.append((source, target)) }
+                return .sourceMissing
+            }
+            $0.fileManagerWindowClient.activate = { id in
+                activatedIDs.withValue { $0.append(id) }
+                return .discarded
+            }
+            $0.fileManagerWindowClient.close = { id in closedIDs.withValue { $0.append(id) } }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveRequest(request))
+
+        XCTAssertEqual(moveCalls.value.count, 1)
+        XCTAssertNotNil(store.state.windows[id: sourceID]?.window.contentTabs.tabs[id: movedTabID])
+        XCTAssertNil(store.state.windows[id: targetID]?.window.contentTabs.tabs[id: movedTabID])
+        XCTAssertEqual(
+            store.state.windows[id: sourceID]?.window.contentTabMoveFailurePresentation?.category,
+            .unavailable,
+        )
+        XCTAssertEqual(
+            store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome,
+            .rejected(.unavailable),
+        )
+        XCTAssertTrue(activatedIDs.value.isEmpty)
+        XCTAssertTrue(closedIDs.value.isEmpty)
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: normal window bootstrap과 Sidebar intent가 manager transfer까지 연결된다.
+    /// live `.file(.newWindow...)` composition에서 synchronous identity, restored target owner, nested request routing을
+    /// 검증한다.
+    /// - 검증 내용: 두 child identity, bootstrap pinned owner, Sidebar delegate/request chain, atomic source/target commit과
+    /// owner rebind
+    /// - 사전 조건: deterministic UUID 네 개, source explicit-path window, target default window의 restored Directory pin
+    /// - 기대 결과: terminal success, source에서 tab 제거, target 단일 copy, moved owner의 window/composer context가 target이다.
+    func testNormalWindowsMoveContentTabFromSidebarThroughManagerTransfer() async throws {
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000004501"))
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000004502"))
+        let bootstrapRequestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000004503"))
+        let sourceAppearRequestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000004504"))
+        let targetAppearRequestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000004505"))
+        let moveRequestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000004506"))
+        let generatedUUIDs = LockIsolated([
+            sourceWindowID,
+            targetWindowID,
+            bootstrapRequestID,
+            sourceAppearRequestID,
+            targetAppearRequestID,
+            moveRequestID,
+        ])
+        let restoredTargetTabID = ContentTabID(rawValue: "restored-target-pin")
+        let restoredTargetPath = "/Users/test/TargetPinned"
+        let pinnedStore = ContentTabPinnedRecordStore(records: [
+            ContentTabPinnedRecord(
+                id: restoredTargetTabID.rawValue,
+                page: .directory,
+                anchor: .directory(path: restoredTargetPath),
+                title: "Target Pinned",
+                iconName: "folder",
+                pinnedAt: Date(timeIntervalSince1970: 450),
+            ),
+        ])
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = UUIDGenerator {
+                generatedUUIDs.withValue { values in
+                    guard !values.isEmpty else {
+                        XCTFail("예상보다 많은 UUID가 요청됨")
+                        return UUID(4599)
+                    }
+                    return values.removeFirst()
+                }
+            }
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in pinnedStore }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+            $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
+                guard path == restoredTargetPath else { return false }
+                isDirectory?.pointee = ObjCBool(true)
+                return true
+            }
+            $0.fileManagerLocationsClient.loadLocations = { _ in [] }
+            $0.fileManagerFavoritesClient.loadFavorites = { _, _ in [] }
+            $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [sourceWindowID, targetWindowID] }
+            $0.fileManagerWindowClient.activate = { _ in .discarded }
+            $0.fileManagerWindowClient.close = { _ in }
+            $0.fileOperationUndoManagerClient.moveScope = { _, _, _ in .moved }
+            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+        }
+        // store.exhaustivity = .off: production composition의 lifecycle/app-preference action보다 move terminal과 registry
+        // commit을 검증함
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: "/Users/test/Source")))
+        XCTAssertEqual(store.state.windows[id: sourceWindowID]?.window.windowID, sourceWindowID)
+        await store.skipReceivedActions()
+
+        await store.send(.file(.newWindow(path: nil)))
+        XCTAssertEqual(store.state.windows[id: targetWindowID]?.window.windowID, targetWindowID)
+        await store.receive(\.defaultWindowBootstrapCompleted)
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.applyPinnedContentTabs(contentTabs)),
+            )) = action else { return false }
+            return id == targetWindowID && contentTabs.tabs[id: restoredTargetTabID] != nil
+        }
+
+        let sourceInitialTabID = try XCTUnwrap(store.state.windows[id: sourceWindowID]?.window.contentTabs.activeTabID)
+        await store.send(.windows(.element(
+            id: sourceWindowID,
+            action: .window(.contentTabs(.open(.directory(path: "/Users/test/Source/Remainder")))),
+        )))
+        await store.skipReceivedActions()
+        XCTAssertNotEqual(
+            store.state.windows[id: sourceWindowID]?.window.contentTabs.activeTabID,
+            sourceInitialTabID,
+        )
+
+        await store.send(.windows(.element(id: sourceWindowID, action: .window(.onAppear))))
+        await store.send(.windows(.element(id: targetWindowID, action: .window(.onAppear))))
+        await store.skipReceivedActions()
+
+        let request = ContentTabMoveRequest(
+            requestID: moveRequestID,
+            sourceWindowID: sourceWindowID,
+            tabID: sourceInitialTabID,
+            targetWindowID: targetWindowID,
+        )
+        await store.send(.windows(.element(
+            id: sourceWindowID,
+            action: .window(.sidebar(.view(.moveContentTab(
+                tabID: sourceInitialTabID,
+                targetWindowID: targetWindowID,
+            )))),
+        )))
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.sidebar(.delegate(.requestContentTabMove(receivedRequest)))),
+            )) = action else { return false }
+            return id == sourceWindowID && receivedRequest == request
+        }
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.delegate(.requestContentTabMove(receivedRequest))),
+            )) = action else { return false }
+            return id == sourceWindowID && receivedRequest == request
+        }
+        await store.receive(\.contentTabMoveRequest, request)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let sourceWindow = try XCTUnwrap(store.state.windows[id: sourceWindowID]?.window)
+        let targetWindow = try XCTUnwrap(store.state.windows[id: targetWindowID]?.window)
+        XCTAssertNil(sourceWindow.contentTabs.tabs[id: sourceInitialTabID])
+        XCTAssertEqual(targetWindow.contentTabs.tabs.count(where: { $0.id == sourceInitialTabID }), 1)
+        XCTAssertEqual(
+            targetWindow.tabContentStates[sourceInitialTabID]?.entryViewLayout.entryOperations.windowID,
+            targetWindowID,
+        )
+        XCTAssertEqual(targetWindow.tabContentStates[sourceInitialTabID]?.composer.cancellationOwnerID, targetWindowID)
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[moveRequestID]?.outcome, .succeeded)
+        XCTAssertNil(sourceWindow.sidebar.pendingContentTabMoveRequest)
+        XCTAssertEqual(generatedUUIDs.value, [])
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: app-global pinned projection을 menu로 이동한 뒤 store 재동기화가
+    /// source에 재삽입하지 않는다.
+    /// source의 exact runtime work unit이 passive target projection을 대체하고 window-local suppression이 sync 경계를 지키는지 검증한다.
+    /// - 검증 내용: Sidebar menu 전체 chain, same-ID pinned adoption, source suppression, store resync 후 단일 소유권
+    /// - 사전 조건: 두 window에 같은 durable pinned record가 projection되고 source runtime title만 변경되어 있다.
+    /// - 기대 결과: 이동과 재동기화 후 source에는 tab이 없고 target에는 source runtime title의 단일 pinned tab이 남는다.
+    func testPinnedContentTabMoveSuppressesSourceProjectionAcrossStoreResync() async throws {
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000004507"))
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000004508"))
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000004509"))
+        let pinnedTabID = ContentTabID(rawValue: "global-pinned-move")
+        let record = ContentTabPinnedRecord(
+            id: pinnedTabID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/global/pinned"),
+            title: "Durable Projection",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 450),
+        )
+        let pinnedStore = ContentTabPinnedRecordStore(records: [record])
+        let undoRegistry = FileOperationUndoManagerRegistry()
+        let undoClient = FileOperationUndoManagerClient.live(registry: undoRegistry)
+        let sourceUndoScope = UndoManagerScope(windowID: sourceWindowID, contentTabID: pinnedTabID.rawValue)
+        let targetUndoScope = UndoManagerScope(windowID: targetWindowID, contentTabID: pinnedTabID.rawValue)
+        let sourceUndoManager = try XCTUnwrap(undoClient.activate(sourceUndoScope))
+        let replacedTargetUndoManager = try XCTUnwrap(undoClient.activate(targetUndoScope))
+        let sourceUndoGeneration = try XCTUnwrap(undoClient.generation(sourceUndoScope))
+        let sourceUndoRecord = EntryActionRecord(operationKind: .rename, targets: [])
+        XCTAssertTrue(undoClient.registerUndo(sourceUndoScope, sourceUndoGeneration, sourceUndoRecord))
+        let restoredPinnedState = ContentTabState.restoringPinnedRecords(
+            from: pinnedStore,
+            isRestorableAnchor: { _ in true },
+        ).state
+        var source = FileManagerWindowFeature.State.makeInitial(
+            path: "/source/remainder",
+            windowID: sourceWindowID,
+        )
+        var target = FileManagerWindowFeature.State.makeInitial(
+            path: "/target/remainder",
+            windowID: targetWindowID,
+        )
+        source.applyPinnedContentTabs(restoredPinnedState)
+        target.applyPinnedContentTabs(restoredPinnedState)
+        source.contentTabs.tabs[id: pinnedTabID]?.title = "Source Runtime"
+
+        let request = ContentTabMoveRequest(
+            requestID: requestID,
+            sourceWindowID: sourceWindowID,
+            tabID: pinnedTabID,
+            targetWindowID: targetWindowID,
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            .init(id: sourceWindowID, window: source),
+            .init(id: targetWindowID, window: target),
+        ]
+        initialState.refreshContentTabMoveTargets()
+
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(requestID)
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in pinnedStore }
+            $0.fileManagerWindowClient.activate = { _ in .discarded }
+            $0.fileOperationUndoManagerClient = undoClient
+            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+        }
+        // store.exhaustivity = .off: post-commit runtime effect보다 registry commit과 pinned-store 재동기화 결과를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: sourceWindowID,
+            action: .window(.sidebar(.view(.moveContentTab(
+                tabID: pinnedTabID,
+                targetWindowID: targetWindowID,
+            )))),
+        )))
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.sidebar(.delegate(.requestContentTabMove(receivedRequest)))),
+            )) = action else { return false }
+            return id == sourceWindowID && receivedRequest == request
+        }
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.delegate(.requestContentTabMove(receivedRequest))),
+            )) = action else { return false }
+            return id == sourceWindowID && receivedRequest == request
+        }
+        await store.receive(\.contentTabMoveRequest, request)
+        await store.skipReceivedActions()
+
+        XCTAssertNil(store.state.windows[id: sourceWindowID]?.window.contentTabs.tabs[id: pinnedTabID])
+        XCTAssertEqual(
+            store.state.windows[id: sourceWindowID]?.window.suppressedPinnedTabIDs,
+            [pinnedTabID],
+        )
+        XCTAssertEqual(
+            store.state.windows[id: targetWindowID]?.window.contentTabs.tabs[id: pinnedTabID]?.title,
+            "Source Runtime",
+        )
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[requestID]?.outcome, .succeeded)
+
+        await store.send(.pinnedContentTabsStoreChanged)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertNil(store.state.windows[id: sourceWindowID]?.window.contentTabs.tabs[id: pinnedTabID])
+        XCTAssertEqual(
+            store.state.windows[id: sourceWindowID]?.window.suppressedPinnedTabIDs,
+            [pinnedTabID],
+        )
+        XCTAssertEqual(
+            store.state.windows[id: targetWindowID]?.window.contentTabs.tabs.count(where: { $0.id == pinnedTabID }),
+            1,
+        )
+        XCTAssertEqual(
+            store.state.windows[id: targetWindowID]?.window.contentTabs.tabs[id: pinnedTabID]?.title,
+            "Source Runtime",
+        )
+        XCTAssertEqual(
+            store.state.windows[id: targetWindowID]?.window.suppressedPinnedTabIDs,
+            [],
+        )
+        let removedSourceUndoManager = await undoClient.undoManager(sourceUndoScope)
+        let movedTargetUndoManagerValue = await undoClient.undoManager(targetUndoScope)
+        let movedTargetUndoManager = try XCTUnwrap(movedTargetUndoManagerValue)
+        XCTAssertNil(removedSourceUndoManager)
+        XCTAssertIdentical(sourceUndoManager, movedTargetUndoManager)
+        XCTAssertNotIdentical(replacedTargetUndoManager, movedTargetUndoManager)
+        XCTAssertEqual(undoClient.generation(targetUndoScope), sourceUndoGeneration)
+        XCTAssertEqual(
+            undoClient.performUndoRedo(targetUndoScope, sourceUndoGeneration, .undo, sourceUndoRecord.id),
+            .applied,
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: target drop delegate가 source-owned request와 atomic transfer를 구동한다.
+    /// drag payload는 locator로만 사용되고 target window ID는 nested identified action에서 도출되는 전체 chain을 검증한다.
+    /// - 검증 내용: target delegate, source Sidebar 기존 move action, source UUID/pending, request, atomic terminal success.
+    /// - 사전 조건: source에 moved/remainder tab, target에 기존 tab, stale하지 않은 target projection이 있다.
+    /// - 기대 결과: source에서 moved tab이 제거되고 target에 정확히 한 copy와 success terminal이 남는다.
+    func testContentTabDropRoutesToSourceOwnedAtomicMovePipeline() async throws {
+        let sourceWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000004511"))
+        let targetWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000004512"))
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000004513"))
+        let movedTabID = ContentTabID(rawValue: "drop-chain-moved")
+        let remainderTabID = ContentTabID(rawValue: "drop-chain-remainder")
+        let targetTabID = ContentTabID(rawValue: "drop-chain-target")
+        let payload = ContentTabDragPayload(
+            schemaVersion: ContentTabDragPayload.supportedSchemaVersion,
+            sourceWindowID: sourceWindowID,
+            tabID: movedTabID,
+        )
+        let request = ContentTabMoveRequest(
+            requestID: requestID,
+            sourceWindowID: sourceWindowID,
+            tabID: movedTabID,
+            targetWindowID: targetWindowID,
+        )
+        let source = try Self.makeContentTabMoveWindow(
+            id: sourceWindowID,
+            tabs: [(movedTabID, "/drop/source"), (remainderTabID, "/drop/remainder")],
+        )
+        let target = try Self.makeContentTabMoveWindow(
+            id: targetWindowID,
+            tabs: [(targetTabID, "/drop/target")],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        initialState.refreshContentTabMoveTargets()
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(requestID)
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
+            $0.fileManagerLocationsClient.loadLocations = { _ in [] }
+            $0.fileManagerFavoritesClient.loadFavorites = { _, _ in [] }
+            $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
+            $0.fileManagerWindowClient.activate = { _ in .discarded }
+            $0.fileOperationUndoManagerClient.moveScope = { _, _, _ in .moved }
+            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+        }
+        // store.exhaustivity = .off: post-commit lifecycle보다 drop routing 경계와 atomic registry 결과를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(id: sourceWindowID, action: .window(.onAppear))))
+        await store.send(.windows(.element(id: targetWindowID, action: .window(.onAppear))))
+        await store.skipReceivedActions()
+
+        await assertContentTabDropRoute(store, payload: payload, request: request)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertNil(store.state.windows[id: sourceWindowID]?.window.contentTabs.tabs[id: movedTabID])
+        XCTAssertEqual(
+            store.state.windows[id: targetWindowID]?.window.contentTabs.tabs.count(where: { $0.id == movedTabID }),
+            1,
+        )
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[requestID]?.outcome, .succeeded)
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: app Info.plist는 drag payload UTI를 public.json으로 export한다.
+    /// 코드의 Transferable UTI와 LaunchServices bundle declaration이 동일한 계약을 제공하는지 검증한다.
+    /// - 검증 내용: identifier, public.json 단일 conformance, filename/MIME tag 부재.
+    /// - 사전 조건: Voyager app target의 canonical Config/Info.plist를 읽을 수 있다.
+    /// - 기대 결과: matching exported declaration이 있고 tag specification은 존재하지 않는다.
+    func testContentTabDragUTIDeclarationExportsPublicJSONWithoutFilenameOrMIMETags() throws {
+        let voyagerProjectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let infoPlistURL = voyagerProjectRoot.appendingPathComponent("Voyager/Config/Info.plist")
+        let data = try Data(contentsOf: infoPlistURL)
+        let plist = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+        )
+        let declarations = try XCTUnwrap(plist["UTExportedTypeDeclarations"] as? [[String: Any]])
+        let declaration = try XCTUnwrap(declarations.first {
+            $0["UTTypeIdentifier"] as? String == "com.voyager.app.content-tab-drag-payload"
+        })
+
+        XCTAssertEqual(declaration["UTTypeConformsTo"] as? [String], ["public.json"])
+        XCTAssertNil(declaration["UTTypeTagSpecification"])
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: pending duplicate와 committed repeat drop은 request/copy를 추가하지 않는다.
+    /// source Sidebar의 single pending ownership과 source tab 소멸 후 locator 무효화를 각각 검증한다.
+    /// - 검증 내용: pending request identity 보존, terminal/effect 미생성, committed target copy count 유지.
+    /// - 사전 조건: matching pending source 상태와 이미 moved tab이 target에만 있는 post-commit 상태를 각각 구성한다.
+    /// - 기대 결과: 두 callback 모두 source move action 이후 no-op이며 새 request UUID나 copy가 생기지 않는다.
+    func testContentTabDropDuplicateWhilePendingAndRepeatAfterCommitAreNoOps() async throws {
+        let sourceWindowID = UUID()
+        let targetWindowID = UUID()
+        let movedTabID = ContentTabID(rawValue: "drop-duplicate-moved")
+        let remainderTabID = ContentTabID(rawValue: "drop-duplicate-remainder")
+        let targetTabID = ContentTabID(rawValue: "drop-duplicate-target")
+        let payload = ContentTabDragPayload(
+            schemaVersion: ContentTabDragPayload.supportedSchemaVersion,
+            sourceWindowID: sourceWindowID,
+            tabID: movedTabID,
+        )
+        let pendingRequest = ContentTabMoveRequest(
+            requestID: UUID(),
+            sourceWindowID: sourceWindowID,
+            tabID: movedTabID,
+            targetWindowID: targetWindowID,
+        )
+
+        try await assertPendingContentTabDropIsNoOp(
+            payload: payload,
+            pendingRequest: pendingRequest,
+            remainderTabID: remainderTabID,
+            targetTabID: targetTabID,
+        )
+        try await assertCommittedContentTabDropIsNoOp(
+            payload: payload,
+            targetWindowID: targetWindowID,
+            remainderTabID: remainderTabID,
+            targetTabID: targetTabID,
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: stale projection의 closing target drop은 기존 unavailable 실패를 표시한다.
+    /// target delegate와 source-owned request를 거쳐 manager live/closing preflight가 terminal을 소유하는지 검증한다.
+    /// - 검증 내용: source tab 보존, target copy 미생성, matching pending clear, unavailable presentation/ledger.
+    /// - 사전 조건: target은 registry에 있으나 closing set에 있고 source projection만 stale target을 유지한다.
+    /// - 기대 결과: atomic mutation 없이 기존 unavailable failure presentation이 source에 남는다.
+    func testContentTabDropWithClosingTargetReusesUnavailableFailurePresentation() async throws {
+        let sourceWindowID = UUID()
+        let targetWindowID = UUID()
+        let requestID = UUID()
+        let movedTabID = ContentTabID(rawValue: "drop-closing-moved")
+        let remainderTabID = ContentTabID(rawValue: "drop-closing-remainder")
+        let targetTabID = ContentTabID(rawValue: "drop-closing-target")
+        let payload = ContentTabDragPayload(
+            schemaVersion: ContentTabDragPayload.supportedSchemaVersion,
+            sourceWindowID: sourceWindowID,
+            tabID: movedTabID,
+        )
+        let request = ContentTabMoveRequest(
+            requestID: requestID,
+            sourceWindowID: sourceWindowID,
+            tabID: movedTabID,
+            targetWindowID: targetWindowID,
+        )
+        let source = try Self.makeContentTabMoveWindow(
+            id: sourceWindowID,
+            tabs: [(movedTabID, "/drop/closing/moved"), (remainderTabID, "/drop/closing/remainder")],
+        )
+        let target = try Self.makeContentTabMoveWindow(
+            id: targetWindowID,
+            tabs: [(targetTabID, "/drop/closing/target")],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        initialState.closingWindowIDs = [targetWindowID]
+        initialState.windows[id: sourceWindowID]?.window.sidebar.currentWindowID = sourceWindowID
+        initialState.windows[id: sourceWindowID]?.window.sidebar.contentTabMoveTargets = [
+            ContentTabMoveTarget(windowID: targetWindowID, displayTitle: "Closing"),
+        ]
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(requestID)
+        }
+        // store.exhaustivity = .off: drop chain 내부 action보다 unavailable terminal 결과를 검증한다.
+        store.exhaustivity = .off
+
+        await assertContentTabDropRoute(store, payload: payload, request: request)
+        await store.finish()
+
+        XCTAssertNotNil(store.state.windows[id: sourceWindowID]?.window.contentTabs.tabs[id: movedTabID])
+        XCTAssertNil(store.state.windows[id: targetWindowID]?.window.contentTabs.tabs[id: movedTabID])
+        XCTAssertNil(store.state.windows[id: sourceWindowID]?.window.sidebar.pendingContentTabMoveRequest)
+        XCTAssertEqual(
+            store.state.windows[id: sourceWindowID]?.window.contentTabMoveFailurePresentation,
+            .init(requestID: requestID, category: .unavailable),
+        )
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[requestID]?.outcome, .rejected(.unavailable))
+    }
+
+    private func assertContentTabDropRoute(
+        _ store: TestStoreOf<WindowManagerFeature>,
+        payload: ContentTabDragPayload,
+        request: ContentTabMoveRequest,
+    ) async {
+        await store.send(.windows(.element(
+            id: request.targetWindowID,
+            action: .window(.delegate(.receiveContentTabDrag(payload))),
+        )))
+        await store.receive {
+            Self.isContentTabDropSourceMove($0, request: request)
+        }
+        XCTAssertEqual(
+            store.state.windows[id: request.sourceWindowID]?.window.sidebar.pendingContentTabMoveRequest,
+            request,
+        )
+        await store.receive {
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.sidebar(.delegate(.requestContentTabMove(receivedRequest)))),
+            )) = $0 else { return false }
+            return id == request.sourceWindowID && receivedRequest == request
+        }
+        await store.receive {
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.delegate(.requestContentTabMove(receivedRequest))),
+            )) = $0 else { return false }
+            return id == request.sourceWindowID && receivedRequest == request
+        }
+        await store.receive(\.contentTabMoveRequest, request)
+    }
+
+    private func assertPendingContentTabDropIsNoOp(
+        payload: ContentTabDragPayload,
+        pendingRequest: ContentTabMoveRequest,
+        remainderTabID: ContentTabID,
+        targetTabID: ContentTabID,
+    ) async throws {
+        var source = try Self.makeContentTabMoveWindow(
+            id: pendingRequest.sourceWindowID,
+            tabs: [(payload.tabID, "/drop/duplicate/moved"), (remainderTabID, "/drop/duplicate/remainder")],
+        )
+        source.window.sidebar.pendingContentTabMoveRequest = pendingRequest
+        let target = try Self.makeContentTabMoveWindow(
+            id: pendingRequest.targetWindowID,
+            tabs: [(targetTabID, "/drop/duplicate/target")],
+        )
+        var state = WindowManagerFeature.State()
+        state.windows = [source, target]
+        state.refreshContentTabMoveTargets()
+        state.windows[id: pendingRequest.sourceWindowID]?.window.sidebar.pendingContentTabMoveRequest = pendingRequest
+        let store = TestStore(initialState: state) { WindowManagerFeature() }
+
+        await store.send(.windows(.element(
+            id: pendingRequest.targetWindowID,
+            action: .window(.delegate(.receiveContentTabDrag(payload))),
+        )))
+        await store.receive { Self.isContentTabDropSourceMove($0, request: pendingRequest) }
+        await store.finish()
+        XCTAssertEqual(
+            store.state.windows[id: pendingRequest.sourceWindowID]?.window.sidebar.pendingContentTabMoveRequest,
+            pendingRequest,
+        )
+        XCTAssertTrue(store.state.contentTabMoveTerminalRecords.isEmpty)
+        XCTAssertNil(store.state.windows[id: pendingRequest.targetWindowID]?.window.contentTabs.tabs[id: payload.tabID])
+    }
+
+    private func assertCommittedContentTabDropIsNoOp(
+        payload: ContentTabDragPayload,
+        targetWindowID: UUID,
+        remainderTabID: ContentTabID,
+        targetTabID: ContentTabID,
+    ) async throws {
+        let source = try Self.makeContentTabMoveWindow(
+            id: payload.sourceWindowID,
+            tabs: [(remainderTabID, "/drop/committed/remainder")],
+        )
+        let target = try Self.makeContentTabMoveWindow(
+            id: targetWindowID,
+            tabs: [(targetTabID, "/drop/committed/target"), (payload.tabID, "/drop/committed/moved")],
+        )
+        var state = WindowManagerFeature.State()
+        state.windows = [source, target]
+        state.refreshContentTabMoveTargets()
+        let store = TestStore(initialState: state) { WindowManagerFeature() }
+        let request = ContentTabMoveRequest(
+            requestID: UUID(),
+            sourceWindowID: payload.sourceWindowID,
+            tabID: payload.tabID,
+            targetWindowID: targetWindowID,
+        )
+
+        await store.send(.windows(.element(
+            id: targetWindowID,
+            action: .window(.delegate(.receiveContentTabDrag(payload))),
+        )))
+        await store.receive { Self.isContentTabDropSourceMove($0, request: request) }
+        await store.finish()
+        XCTAssertTrue(store.state.contentTabMoveTerminalRecords.isEmpty)
+        XCTAssertEqual(
+            store.state.windows[id: targetWindowID]?.window.contentTabs.tabs.count(where: { $0.id == payload.tabID }),
+            1,
+        )
+    }
+
+    private static func isContentTabDropSourceMove(
+        _ action: WindowManagerFeature.Action,
+        request: ContentTabMoveRequest,
+    ) -> Bool {
+        guard case let .windows(.element(
+            id: id,
+            action: .window(.sidebar(.view(.moveContentTab(tabID: tabID, targetWindowID: targetID)))),
+        )) = action else { return false }
+        return id == request.sourceWindowID && tabID == request.tabID && targetID == request.targetWindowID
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: live MRU와 registry fallback으로 target projection을 만든다.
+    /// focus callback 뒤 모든 live child가 동일한 canonical 순서를 투영하는지 검증한다.
+    /// - 검증 내용: source 제외 target ID 순서와 중복 title 구분
+    /// - 사전 조건: 같은 title의 세 live File Manager window가 존재한다.
+    /// - 기대 결과: MRU 우선 순서와 안정적 registry fallback이 각 source projection에 반영된다.
+    func testContentTabMoveTargetsUseLiveMRUThenRegistryFallback() async throws {
+        let firstID = UUID()
+        let secondID = UUID()
+        let thirdID = UUID()
+        let firstTabID = ContentTabID(rawValue: "projection-first")
+        let secondTabID = ContentTabID(rawValue: "projection-second")
+        let thirdTabID = ContentTabID(rawValue: "projection-third")
+        var first = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(
+            reservations: [.init(id: firstTabID, anchor: .directory(path: "/shared"))],
+            windowID: firstID,
+        ))
+        var second = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(
+            reservations: [.init(id: secondTabID, anchor: .directory(path: "/shared"))],
+            windowID: secondID,
+        ))
+        var third = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(
+            reservations: [.init(id: thirdTabID, anchor: .directory(path: "/shared"))],
+            windowID: thirdID,
+        ))
+        first.contentTabs.tabs[id: firstTabID]?.title = "Shared"
+        second.contentTabs.tabs[id: secondTabID]?.title = "Shared"
+        third.contentTabs.tabs[id: thirdTabID]?.title = "Shared"
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            .init(id: firstID, window: first),
+            .init(id: secondID, window: second),
+            .init(id: thirdID, window: third),
+        ]
+        initialState.lastUsedWindowIDs = [thirdID]
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        }
+
+        await store.send(.event(.windowBecameKey(secondID))) {
+            $0.focusedWindowID = secondID
+            $0.lastUsedWindowIDs = [secondID, thirdID]
+            $0.refreshContentTabMoveTargets()
+        }
+
+        XCTAssertEqual(
+            store.state.windows[id: firstID]?.window.sidebar.contentTabMoveTargets.map(\.windowID),
+            [secondID, thirdID],
+        )
+        XCTAssertEqual(
+            store.state.windows[id: firstID]?.window.sidebar.contentTabMoveTargets.map(\.displayTitle),
+            ["Shared — Window 1", "Shared — Window 2"],
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: projection 뒤 사라진 target은 unavailable로 종료한다.
+    /// - 검증 내용: source semantic state 보존, matching pending terminal, rejection ledger
+    /// - 사전 조건: source가 stale target을 가리키는 matching pending request를 보유한다.
+    /// - 기대 결과: tab registry는 불변이고 source에 unavailable presentation만 남는다.
+    func testContentTabMoveRejectsStaleTargetWithoutSemanticMutation() async throws {
+        let sourceID = UUID()
+        let staleTargetID = UUID()
+        let tabID = ContentTabID(rawValue: "stale-target-tab")
+        let request = ContentTabMoveRequest(
+            requestID: UUID(),
+            sourceWindowID: sourceID,
+            tabID: tabID,
+            targetWindowID: staleTargetID,
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(tabID, "/stale/source")],
+        )
+        source.window.sidebar.pendingContentTabMoveRequest = request
+        let originalTabs = source.window.contentTabs.tabs
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source]
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() }
+        // store.exhaustivity = .off: rejection의 semantic state와 terminal 결과만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveRequest(request))
+
+        XCTAssertEqual(store.state.windows[id: sourceID]?.window.contentTabs.tabs, originalTabs)
+        XCTAssertNil(store.state.windows[id: sourceID]?.window.sidebar.pendingContentTabMoveRequest)
+        XCTAssertEqual(
+            store.state.windows[id: sourceID]?.window.contentTabMoveFailurePresentation,
+            .init(requestID: request.requestID, category: .unavailable),
+        )
+        XCTAssertEqual(
+            store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome,
+            .rejected(.unavailable),
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: stale request는 newer pending identity를 지우지 않는다.
+    /// - 검증 내용: full request identity 재검증과 stale presentation 차단
+    /// - 사전 조건: source pending request ID가 전달된 request와 다르다.
+    /// - 기대 결과: newer pending은 유지되고 stale request만 ledger에 unavailable로 기록된다.
+    func testContentTabMovePreservesNewerPendingIdentityOnStaleRequest() async throws {
+        let sourceID = UUID()
+        let targetID = UUID()
+        let tabID = ContentTabID(rawValue: "stale-pending-tab")
+        let staleRequest = ContentTabMoveRequest(
+            requestID: UUID(),
+            sourceWindowID: sourceID,
+            tabID: tabID,
+            targetWindowID: targetID,
+        )
+        let currentRequest = ContentTabMoveRequest(
+            requestID: UUID(),
+            sourceWindowID: sourceID,
+            tabID: tabID,
+            targetWindowID: targetID,
+        )
+        var source = try Self.makeContentTabMoveWindow(id: sourceID, tabs: [(tabID, "/pending/source")])
+        source.window.sidebar.pendingContentTabMoveRequest = currentRequest
+        let target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(ContentTabID(rawValue: "pending-target"), "/pending/target")],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() }
+
+        await store.send(.contentTabMoveRequest(staleRequest)) {
+            $0.recordContentTabMoveTerminal(.init(
+                requestID: staleRequest.requestID,
+                sourceWindowID: sourceID,
+                tabID: tabID,
+                targetWindowID: targetID,
+                outcome: .rejected(.unavailable),
+            ))
+        }
+
+        XCTAssertEqual(store.state.windows[id: sourceID]?.window.sidebar.pendingContentTabMoveRequest, currentRequest)
+        XCTAssertNil(store.state.windows[id: sourceID]?.window.contentTabMoveFailurePresentation)
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: Task 2 rejection을 네 presentation category로 제한한다.
+    /// - 검증 내용: capacity, busy, generic mapping과 terminal ledger
+    /// - 사전 조건: full target, pending pin source, target tab collision을 각각 구성한다.
+    /// - 기대 결과: invariant identifier를 노출하지 않고 지정된 category만 전달한다.
+    func testContentTabMoveMapsStructuredRejectionsToPresentationCategories() async throws {
+        let movedTabID = ContentTabID(rawValue: "mapped-rejection-tab")
+
+        func assertRejection(
+            source: WindowSessionState,
+            target: WindowSessionState,
+            category: ContentTabMoveFailurePresentation.Category,
+        ) async {
+            let request = ContentTabMoveRequest(
+                requestID: UUID(),
+                sourceWindowID: source.id,
+                tabID: movedTabID,
+                targetWindowID: target.id,
+            )
+            var source = source
+            source.window.sidebar.pendingContentTabMoveRequest = request
+            let sourceBefore = source.window
+            let targetBefore = target.window
+            var initialState = WindowManagerFeature.State()
+            initialState.windows = [source, target]
+            let store = TestStore(initialState: initialState) { WindowManagerFeature() }
+            // store.exhaustivity = .off: presentation terminal과 semantic atomicity만 검증한다.
+            store.exhaustivity = .off
+
+            await store.send(.contentTabMoveRequest(request))
+
+            var expectedSource = sourceBefore
+            expectedSource.sidebar.pendingContentTabMoveRequest = nil
+            expectedSource.contentTabMoveFailurePresentation = .init(
+                requestID: request.requestID,
+                category: category,
+            )
+            XCTAssertEqual(store.state.windows[id: source.id]?.window, expectedSource)
+            XCTAssertEqual(store.state.windows[id: target.id]?.window, targetBefore)
+            XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .rejected(category))
+        }
+
+        let capacitySource = try Self.makeContentTabMoveWindow(
+            id: UUID(),
+            tabs: [(movedTabID, "/mapping/capacity/source")],
+        )
+        let fullTabs = (0 ..< ContentTabConstants.maxTabs).map { index in
+            (ContentTabID(rawValue: "mapping-capacity-\(index)"), "/mapping/capacity/\(index)")
+        }
+        let capacityTarget = try Self.makeContentTabMoveWindow(id: UUID(), tabs: fullTabs)
+        await assertRejection(source: capacitySource, target: capacityTarget, category: .capacity)
+
+        var busySource = try Self.makeContentTabMoveWindow(
+            id: UUID(),
+            tabs: [(movedTabID, "/mapping/busy/source")],
+        )
+        busySource.window.contentTabs.pendingPinnedRecordIDs = [movedTabID]
+        let busyTarget = try Self.makeContentTabMoveWindow(
+            id: UUID(),
+            tabs: [(ContentTabID(rawValue: "mapping-busy-target"), "/mapping/busy/target")],
+        )
+        await assertRejection(source: busySource, target: busyTarget, category: .busy)
+
+        let restoringSessionID = AiChatSessionID(rawValue: UUID())
+        var restoringSource = try Self.makeContentTabMoveWindow(
+            id: UUID(),
+            tabs: [(movedTabID, "/mapping/restoring/source")],
+        )
+        restoringSource.window.content.aiChat.sessionID = restoringSessionID
+        restoringSource.window.content.aiChat.restoreSessionID = restoringSessionID
+        restoringSource.window.content.aiChat.sessionStatus = .restoring
+        restoringSource.window.tabContentStates[movedTabID] = restoringSource.window.content
+        let restoringTarget = try Self.makeContentTabMoveWindow(
+            id: UUID(),
+            tabs: [(ContentTabID(rawValue: "mapping-restoring-target"), "/mapping/restoring/target")],
+        )
+        await assertRejection(source: restoringSource, target: restoringTarget, category: .busy)
+
+        var composerBusySource = try Self.makeContentTabMoveWindow(
+            id: UUID(),
+            tabs: [(movedTabID, "/mapping/composer/source")],
+        )
+        composerBusySource.window.content.composer.activeSearchRequestID = UUID()
+        composerBusySource.window.content.composer.isLoadingSearch = true
+        composerBusySource.window.tabContentStates[movedTabID] = composerBusySource.window.content
+        let composerBusyTarget = try Self.makeContentTabMoveWindow(
+            id: UUID(),
+            tabs: [(ContentTabID(rawValue: "mapping-composer-target"), "/mapping/composer/target")],
+        )
+        await assertRejection(source: composerBusySource, target: composerBusyTarget, category: .busy)
+
+        let inspectorBusySource = try Self.makeContentTabMoveWindow(
+            id: UUID(),
+            tabs: [(movedTabID, "/mapping/inspector/source")],
+        )
+        let inspectorBusyTargetID = ContentTabID(rawValue: "mapping-inspector-target")
+        var inspectorBusyTarget = try Self.makeContentTabMoveWindow(
+            id: UUID(),
+            tabs: [(inspectorBusyTargetID, "/mapping/inspector/target")],
+        )
+        inspectorBusyTarget.window.inspector.aiChat.modelListRequestID = UUID()
+        inspectorBusyTarget.window.tabInspectorStates[inspectorBusyTargetID] = inspectorBusyTarget.window.inspector
+            .tabSnapshot()
+        await assertRejection(source: inspectorBusySource, target: inspectorBusyTarget, category: .busy)
+
+        var malformedSource = try Self.makeContentTabMoveWindow(
+            id: UUID(),
+            tabs: [(movedTabID, "/mapping/malformed/source")],
+        )
+        malformedSource.window.content.pendingSelectEntryID = "ambiguous-live-owner"
+        let malformedTarget = try Self.makeContentTabMoveWindow(
+            id: UUID(),
+            tabs: [(ContentTabID(rawValue: "mapping-malformed-target"), "/mapping/malformed/target")],
+        )
+        await assertRejection(source: malformedSource, target: malformedTarget, category: .generic)
+
+        let genericSource = try Self.makeContentTabMoveWindow(
+            id: UUID(),
+            tabs: [(movedTabID, "/mapping/generic/source")],
+        )
+        let genericTarget = try Self.makeContentTabMoveWindow(
+            id: UUID(),
+            tabs: [(movedTabID, "/mapping/generic/target")],
+        )
+        await assertRejection(source: genericSource, target: genericTarget, category: .generic)
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: 다른 창의 전역 pin 저장 중에는 이동을 busy로 거부한다.
+    /// mutation source가 이동 source와 달라도 같은 tab의 authoritative store sync race를 차단하는지 검증한다.
+    /// - 검증 내용: upsert/remove별 source/target/owner/global mutation 보존과 move/activate/close 미호출
+    /// - 사전 조건: 별도 owner window가 이동 tab과 같은 ID의 전역 pinned record mutation을 소유한다.
+    /// - 기대 결과: move는 busy로 reject되고 pending/presentation/terminal 외 semantic state와 effect는 변하지 않는다.
+    func testContentTabMoveRejectsWhenSameTabPinnedRecordMutationIsInFlightInAnyWindow() async throws {
+        let movedTabID = ContentTabID(rawValue: "global-pin-mutation-moved")
+        let pinnedRecord = ContentTabPinnedRecord(
+            id: movedTabID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/global-pin-mutation/moved"),
+            title: "Moved",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 450),
+        )
+        let mutations: [ContentTabPinnedRecordMutation] = [
+            .upsert(pinnedRecord),
+            .remove(recordID: movedTabID.rawValue),
+        ]
+
+        for mutation in mutations {
+            let sourceID = UUID()
+            let targetID = UUID()
+            let mutationOwnerID = UUID()
+            let mutationID = UUID()
+            let request = ContentTabMoveRequest(
+                requestID: UUID(),
+                sourceWindowID: sourceID,
+                tabID: movedTabID,
+                targetWindowID: targetID,
+            )
+            var source = try Self.makeContentTabMoveWindow(
+                id: sourceID,
+                tabs: [(movedTabID, "/global-pin-mutation/moved")],
+            )
+            source.window.contentTabs.tabs[id: movedTabID]?.isPinned = true
+            source.window.sidebar.pendingContentTabMoveRequest = request
+            let target = try Self.makeContentTabMoveWindow(
+                id: targetID,
+                tabs: [(ContentTabID(rawValue: "global-pin-mutation-target"), "/global-pin-mutation/target")],
+            )
+            var mutationOwner = try Self.makeContentTabMoveWindow(
+                id: mutationOwnerID,
+                tabs: [(movedTabID, "/global-pin-mutation/moved")],
+            )
+            mutationOwner.window.contentTabs.tabs[id: movedTabID]?.isPinned = true
+            let intentID = mutationOwner.window.contentTabs.markLatestPinnedRecordPersistenceIntent(for: movedTabID)
+            let persistenceRequest = ContentTabPinnedRecordPersistenceRequest(
+                mutationID: mutationID,
+                tabID: movedTabID,
+                intentID: intentID,
+                mutation: mutation,
+                rollback: ContentTabPinnedRecordRollbackSnapshot(
+                    previousIsPinned: true,
+                    previousPinnedRecord: pinnedRecord,
+                    previousTabIndex: 0,
+                ),
+            )
+            let inFlightMutation = WindowManagerInFlightPinnedRecordMutation(
+                sourceWindowID: mutationOwnerID,
+                request: FileManagerPinnedRecordPersistenceRequest(request: persistenceRequest, route: .single),
+                generation: ContentTabPinnedRecordMutationGeneration(tabID: movedTabID),
+            )
+            let sourceBefore = source.window
+            let targetBefore = target.window
+            let mutationOwnerBefore = mutationOwner.window
+            var initialState = WindowManagerFeature.State()
+            initialState.windows = [source, target, mutationOwner]
+            initialState.inFlightPinnedRecordMutations[mutationID] = inFlightMutation
+            let moveCalls = LockIsolated(0)
+            let activatedIDs = LockIsolated<[UUID]>([])
+            let closedIDs = LockIsolated<[UUID]>([])
+            let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
+                $0.fileOperationUndoManagerClient.moveScope = { _, _, _ in
+                    moveCalls.withValue { $0 += 1 }
+                    return .moved
+                }
+                $0.fileManagerWindowClient.activate = { id in
+                    activatedIDs.withValue { $0.append(id) }
+                    return .discarded
+                }
+                $0.fileManagerWindowClient.close = { id in closedIDs.withValue { $0.append(id) } }
+            }
+            // store.exhaustivity = .off: global mutation gate의 semantic atomicity와 effect 미호출만 검증한다.
+            store.exhaustivity = .off
+
+            await store.send(.contentTabMoveRequest(request))
+
+            var expectedSource = sourceBefore
+            expectedSource.sidebar.pendingContentTabMoveRequest = nil
+            expectedSource.contentTabMoveFailurePresentation = .init(
+                requestID: request.requestID,
+                category: .busy,
+            )
+            XCTAssertEqual(store.state.windows[id: sourceID]?.window, expectedSource)
+            XCTAssertEqual(store.state.windows[id: targetID]?.window, targetBefore)
+            XCTAssertEqual(store.state.windows[id: mutationOwnerID]?.window, mutationOwnerBefore)
+            XCTAssertEqual(store.state.inFlightPinnedRecordMutations, [mutationID: inFlightMutation])
+            XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .rejected(.busy))
+            XCTAssertEqual(moveCalls.value, 0)
+            XCTAssertTrue(activatedIDs.value.isEmpty)
+            XCTAssertTrue(closedIDs.value.isEmpty)
+        }
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: destination ambiguous AI provenance는 generic으로 종료한다.
+    /// destination mutation 전에 window-wide provenance를 검증하고 app terminal 계약으로 매핑하는지 검증한다.
+    /// - 검증 내용: generic presentation/ledger와 source/target semantic snapshot equality
+    /// - 사전 조건: destination의 두 open tab이 같은 processing background AI session을 소유한다.
+    /// - 기대 결과: move는 reject되고 source pending/presentation/ledger 외 semantic state는 변경되지 않는다.
+    func testContentTabMoveMapsAmbiguousDestinationAiProvenanceToGenericWithoutMutation() async throws {
+        let sourceID = UUID(4501)
+        let targetID = UUID(4502)
+        let movedTabID = ContentTabID(rawValue: "destination-provenance-source")
+        let firstTargetID = ContentTabID(rawValue: "destination-provenance-first")
+        let secondTargetID = ContentTabID(rawValue: "destination-provenance-second")
+        let request = ContentTabMoveRequest(
+            requestID: UUID(4503),
+            sourceWindowID: sourceID,
+            tabID: movedTabID,
+            targetWindowID: targetID,
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(movedTabID, "/provenance/source")],
+        )
+        source.window.sidebar.pendingContentTabMoveRequest = request
+        var target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [
+                (firstTargetID, "/provenance/target/first"),
+                (secondTargetID, "/provenance/target/second"),
+            ],
+        )
+        let sessionID = AiChatSessionID(rawValue: UUID(4504))
+        target.window.tabContentStates[firstTargetID]?.aiChat.sessionID = sessionID
+        target.window.tabContentStates[secondTargetID]?.aiChat.sessionID = sessionID
+        target.window.content = try XCTUnwrap(target.window.tabContentStates[firstTargetID])
+        var background = FileManagerContentFeature.State.initialContent(
+            for: .aiChat(sessionID: sessionID.rawValue.uuidString),
+        )
+        background.aiChat.streamingAssistantDraft = "processing"
+        target.window.backgroundAiChatStates[sessionID] = background
+        let sourceBefore = source.window
+        let targetBefore = target.window
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() }
+        // store.exhaustivity = .off: app terminal mapping과 semantic atomicity만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveRequest(request))
+
+        var expectedSource = sourceBefore
+        expectedSource.sidebar.pendingContentTabMoveRequest = nil
+        expectedSource.contentTabMoveFailurePresentation = .init(requestID: request.requestID, category: .generic)
+        XCTAssertEqual(store.state.windows[id: sourceID]?.window, expectedSource)
+        XCTAssertEqual(store.state.windows[id: targetID]?.window, targetBefore)
+        XCTAssertEqual(
+            store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome,
+            .rejected(.generic),
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: pending final snapshot은 busy로 종료하고 semantic state를 보존한다.
+    /// persistence terminal이 이전 source path로 돌아오기 전에 tab 소유권이 이동하지 않도록 app mapping을 검증한다.
+    /// - 검증 내용: pending AI eligibility의 busy presentation/ledger와 source/target 전체 semantic snapshot equality
+    /// - 사전 조건: source active content의 completed request lock에 final snapshot이 남아 있다.
+    /// - 기대 결과: move는 busy로 reject되고 pending/presentation/ledger 외 source와 target state는 변하지 않는다.
+    func testContentTabMoveMapsCompletedFinalSnapshotToBusyWithoutSemanticMutation() async throws {
+        let sourceID = UUID(4505)
+        let targetID = UUID(4506)
+        let movedTabID = ContentTabID(rawValue: "final-snapshot-source")
+        let targetTabID = ContentTabID(rawValue: "final-snapshot-target")
+        let sessionID = AiChatSessionID(rawValue: UUID(4507))
+        let modelHandle = AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini")
+        let modelRow = AiModelCatalogRow(
+            handle: modelHandle,
+            displayName: "GPT-4.1 Mini",
+            authMethod: .apiKey,
+            sortOrder: 10,
+        )
+        let requestID = AiChatRequestID(rawValue: UUID(4508))
+        let runID = AiChatRunID(rawValue: UUID(4509))
+        let context = AiChatRequestContextSnapshot(
+            sessionID: sessionID,
+            requestID: requestID,
+            runID: runID,
+            provider: .openai,
+            model: modelHandle,
+            selectedModel: AiProviderModel(
+                id: modelHandle,
+                provider: .openai,
+                rawModelID: "gpt-4.1-mini",
+                displayName: "GPT-4.1 Mini",
+                providerDisplayName: "OpenAI",
+                thinkingCapability: .unknown(reason: .init(message: "Not loaded")),
+            ),
+            selectedModelRow: modelRow,
+            sessionStatus: .active,
+            promptSummary: "persist before move",
+            submittedAtMs: 0,
+        )
+        let lock = AiChatRequestLock(
+            kind: .submit,
+            requestID: requestID,
+            runID: runID,
+            context: context,
+            request: AiChatRequest(
+                context: context,
+                messages: [AiChatMessage(role: .user, content: "persist before move")],
+            ),
+            selectedModelHandle: modelHandle,
+            selectedModelRow: modelRow,
+            assistantReplacementIndex: nil,
+        )
+        let completedLock = lock.recordingFinalSnapshot(AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: .openai,
+            model: modelHandle,
+            transcriptHistory: lock.request.messages + [AiChatMessage(role: .assistant, content: "done")],
+            lastRequestID: requestID,
+            lastRunID: runID,
+            updatedAtMs: 1_234_567_891_000,
+        ))
+        let request = ContentTabMoveRequest(
+            requestID: UUID(4510),
+            sourceWindowID: sourceID,
+            tabID: movedTabID,
+            targetWindowID: targetID,
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(movedTabID, "/snapshot/source")],
+        )
+        source.window.content.aiChat.sessionID = sessionID
+        source.window.content.aiChat.executionPhase = .completed(completedLock)
+        source.window.tabContentStates[movedTabID] = source.window.content
+        source.window.sidebar.pendingContentTabMoveRequest = request
+        let target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(targetTabID, "/snapshot/target")],
+        )
+        let sourceBefore = source.window
+        let targetBefore = target.window
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() }
+        // store.exhaustivity = .off: app terminal mapping과 양 window semantic atomicity만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveRequest(request))
+
+        var expectedSource = sourceBefore
+        expectedSource.sidebar.pendingContentTabMoveRequest = nil
+        expectedSource.contentTabMoveFailurePresentation = .init(requestID: request.requestID, category: .busy)
+        XCTAssertEqual(store.state.windows[id: sourceID]?.window, expectedSource)
+        XCTAssertEqual(store.state.windows[id: targetID]?.window, targetBefore)
+        XCTAssertEqual(
+            store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome,
+            .rejected(.busy),
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: cross-window move는 양 active destination observation을 rebind한다.
+    /// old source/target watcher를 window-scoped cancellation으로 supersede하고 post-commit route를 다시 적용한다.
+    /// - 검증 내용: source fallback/target moved stop-start-apply, old interest 제거, new interest event 전달
+    /// - 사전 조건: source moved/fallback과 target previous-active가 모두 directory watcher를 가진다.
+    /// - 기대 결과: old interest 2개가 제거되고 새 두 route가 등록되어 각 tab으로 filesystem event를 전달한다.
+    func testContentTabMoveRebindsSourceFallbackAndTargetMovedObservation() async throws {
+        let sourceID = UUID(4511)
+        let targetID = UUID(4512)
+        let movedTabID = ContentTabID(rawValue: "watcher-moved")
+        let fallbackTabID = ContentTabID(rawValue: "watcher-fallback")
+        let previousTargetTabID = ContentTabID(rawValue: "watcher-target-previous")
+        let movedPath = "/watch/source-moved"
+        let fallbackPath = "/watch/source-fallback"
+        let previousTargetPath = "/watch/target-previous"
+        let request = ContentTabMoveRequest(
+            requestID: UUID(4513),
+            sourceWindowID: sourceID,
+            tabID: movedTabID,
+            targetWindowID: targetID,
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(movedTabID, movedPath), (fallbackTabID, fallbackPath)],
+        )
+        source.window.contentTabs.activeTabID = movedTabID
+        source.window.contentTabs.previousActiveTabID = fallbackTabID
+        source.window.content = try XCTUnwrap(source.window.tabContentStates[movedTabID])
+        source.window.inspector = try XCTUnwrap(source.window.tabInspectorStates[movedTabID])
+        source.window.sidebar.pendingContentTabMoveRequest = request
+        let target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(previousTargetTabID, previousTargetPath)],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+
+        let allInterests = LockIsolated<[FileChangeWatchInterest]>([])
+        let pendingInterests = LockIsolated<[FileChangeWatchInterest]>([])
+        let removedInterestIDs = LockIsolated<Set<String>>([])
+        let eventContinuations = LockIsolated<[String: [AsyncStream<[FileChangeGatewayEvent]>.Continuation]]>([:])
+        let notificationStarts = LockIsolated(0)
+        let notificationStops = LockIsolated(0)
+        let observedStreamStarts = LockIsolated(0)
+        let initialWatchersRegistered = expectation(description: "initial source and target watchers")
+        initialWatchersRegistered.expectedFulfillmentCount = 2
+        let initialNotificationsStopped = expectation(description: "initial source and target notifications stopped")
+        initialNotificationsStopped.expectedFulfillmentCount = 2
+        let reboundWatchersRegistered = expectation(description: "source fallback and target moved watchers")
+        reboundWatchersRegistered.expectedFulfillmentCount = 2
+        let reboundStreamsStarted = expectation(description: "source fallback and target moved streams")
+        reboundStreamsStarted.expectedFulfillmentCount = 2
+        let sourceEventReceived = expectation(description: "source fallback event")
+        let targetEventReceived = expectation(description: "target moved event")
+        let activationCalled = expectation(description: "target activation")
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    guard case let .windows(.element(
+                        id: windowID,
+                        action: .window(.tabContent(tabID: tabID, action: .externalFileSystemChanged(paths))),
+                    )) = action else { return .none }
+                    if windowID == sourceID, tabID == fallbackTabID, paths == ["\(fallbackPath)/changed"] {
+                        sourceEventReceived.fulfill()
+                    }
+                    if windowID == targetID, tabID == movedTabID, paths == ["\(movedPath)/changed"] {
+                        targetEventReceived.fulfill()
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
+            $0.entryLoadingClient.loadItems = { _, _ in [] }
+            $0.fileChangeGatewayClient.updateInterests = { interests in
+                pendingInterests.withValue { $0.append(contentsOf: interests) }
+                let count = allInterests.withValue { recorded in
+                    recorded.append(contentsOf: interests)
+                    return recorded.count
+                }
+                if count <= 2 {
+                    initialWatchersRegistered.fulfill()
+                } else {
+                    reboundWatchersRegistered.fulfill()
+                }
+            }
+            $0.fileChangeGatewayClient.removeInterests = { ids in
+                removedInterestIDs.withValue { $0.formUnion(ids) }
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                let interest = pendingInterests.withValue { $0.removeFirst() }
+                let root = interest.roots[0]
+                let streamStart = observedStreamStarts.withValue { count in
+                    count += 1
+                    return count
+                }
+                return AsyncStream { continuation in
+                    eventContinuations.withValue { $0[root, default: []].append(continuation) }
+                    if streamStart > 2 {
+                        reboundStreamsStarted.fulfill()
+                    }
+                }
+            }
+            $0.notificationCenterClient.notifications = { _, _ in
+                let generation = notificationStarts.withValue { starts in
+                    starts += 1
+                    return starts
+                }
+                return AsyncStream { continuation in
+                    continuation.onTermination = { _ in
+                        notificationStops.withValue { $0 += 1 }
+                        if generation <= 2 {
+                            initialNotificationsStopped.fulfill()
+                        }
+                    }
+                }
+            }
+            $0.fileManagerWindowClient.activate = { _ in
+                activationCalled.fulfill()
+                return .discarded
+            }
+            $0.fileOperationUndoManagerClient.moveScope = { _, _, _ in .moved }
+        }
+        // store.exhaustivity = .off: long-lived watcher 내부 action보다 lifecycle supersession과 event route를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: sourceID,
+            action: .window(.tabContent(
+                tabID: movedTabID,
+                action: .internal(.startObservingSystemNotifications),
+            )),
+        )))
+        await store.send(.windows(.element(
+            id: sourceID,
+            action: .window(.tabContent(
+                tabID: movedTabID,
+                action: .internal(.applyNavigationState(.folder(movedPath))),
+            )),
+        )))
+        await store.send(.windows(.element(
+            id: targetID,
+            action: .window(.tabContent(
+                tabID: previousTargetTabID,
+                action: .internal(.startObservingSystemNotifications),
+            )),
+        )))
+        await store.send(.windows(.element(
+            id: targetID,
+            action: .window(.tabContent(
+                tabID: previousTargetTabID,
+                action: .internal(.applyNavigationState(.folder(previousTargetPath))),
+            )),
+        )))
+        await fulfillment(of: [initialWatchersRegistered], timeout: 1)
+        let oldInterestIDs = Set(allInterests.value.prefix(2).map(\.id))
+
+        await store.send(.contentTabMoveRequest(request))
+        await fulfillment(
+            of: [
+                reboundWatchersRegistered,
+                reboundStreamsStarted,
+                initialNotificationsStopped,
+                activationCalled,
+            ],
+            timeout: 1,
+        )
+
+        XCTAssertEqual(allInterests.value.map(\.roots), [
+            [movedPath],
+            [previousTargetPath],
+            [fallbackPath],
+            [movedPath],
+        ])
+        XCTAssertTrue(oldInterestIDs.isSubset(of: removedInterestIDs.value))
+        XCTAssertEqual(notificationStarts.value, 4)
+        XCTAssertGreaterThanOrEqual(notificationStops.value, 2)
+
+        eventContinuations.value[fallbackPath]?.last?.yield([
+            FileChangeGatewayEvent(
+                path: "\(fallbackPath)/changed",
+                flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified),
+            ),
+        ])
+        eventContinuations.value[movedPath]?.last?.yield([
+            FileChangeGatewayEvent(
+                path: "\(movedPath)/changed",
+                flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified),
+            ),
+        ])
+        await fulfillment(of: [sourceEventReceived, targetEventReceived], timeout: 1)
+
+        await store.send(.windows(.element(
+            id: sourceID,
+            action: .window(.tabContent(
+                tabID: fallbackTabID,
+                action: .internal(.stopObservingSystemNotifications),
+            )),
+        )))
+        await store.send(.windows(.element(
+            id: targetID,
+            action: .window(.tabContent(
+                tabID: movedTabID,
+                action: .internal(.stopObservingSystemNotifications),
+            )),
+        )))
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
+    func testContentTabMoveCancelsExactOutgoingOwnersBeforeObservationRebind() async throws {
+        let sourceID = UUID(4521)
+        let targetID = UUID(4522)
+        let movedTabID = ContentTabID(rawValue: "teardown-moved")
+        let fallbackTabID = ContentTabID(rawValue: "teardown-fallback")
+        let targetOutgoingTabID = ContentTabID(rawValue: "teardown-target-outgoing")
+        let sourceLoadingWindowID = sourceID
+        let sourceLoadingOwnerID = UUID(4524)
+        let sourceComposerOwnerID = UUID(4525)
+        let targetLoadingWindowID = targetID
+        let targetLoadingOwnerID = UUID(4527)
+        let targetComposerOwnerID = UUID(4528)
+        let sourceProbeRequestID = UUID(4530)
+        let targetProbeRequestID = UUID(4531)
+        let request = ContentTabMoveRequest(
+            requestID: UUID(4529),
+            sourceWindowID: sourceID,
+            tabID: movedTabID,
+            targetWindowID: targetID,
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(movedTabID, "/teardown/moved"), (fallbackTabID, "/teardown/fallback")],
+        )
+        source.window.contentTabs.activeTabID = movedTabID
+        source.window.contentTabs.previousActiveTabID = fallbackTabID
+        source.window.content = try XCTUnwrap(source.window.tabContentStates[movedTabID])
+        source.window.inspector = try XCTUnwrap(source.window.tabInspectorStates[movedTabID])
+        var movedContent = source.window.content
+        movedContent.entryViewLayout.entryOperations.windowID = sourceLoadingWindowID
+        movedContent.entryViewLayout.entryOperations.loadingCancellationOwnerID = sourceLoadingOwnerID
+        movedContent.composer.cancellationOwnerID = sourceComposerOwnerID
+        source.window.tabContentStates[movedTabID] = movedContent
+        if source.window.contentTabs.activeTabID == movedTabID {
+            source.window.content = movedContent
+        }
+        source.window.sidebar.pendingContentTabMoveRequest = request
+        var target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(targetOutgoingTabID, "/teardown/target")],
+        )
+        target.window.content.entryViewLayout.entryOperations.windowID = targetLoadingWindowID
+        target.window.content.entryViewLayout.entryOperations.loadingCancellationOwnerID = targetLoadingOwnerID
+        target.window.content.composer.cancellationOwnerID = targetComposerOwnerID
+        target.window.tabContentStates[targetOutgoingTabID] = target.window.content
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+
+        let events = LockIsolated<[String]>([])
+        let probesStarted = expectation(description: "outgoing lifecycle probes started")
+        probesStarted.expectedFulfillmentCount = 6
+        let probesCancelled = expectation(description: "outgoing lifecycle probes cancelled")
+        probesCancelled.expectedFulfillmentCount = 6
+        let rebindCompleted = expectation(description: "observation rebind completed")
+
+        func probe(id: some Hashable & Sendable, event: String) -> Effect<WindowManagerAction> {
+            .run { _ in
+                probesStarted.fulfill()
+                try await withTaskCancellationHandler {
+                    try await Task.sleep(for: .seconds(60))
+                } onCancel: {
+                    events.withValue { $0.append(event) }
+                    probesCancelled.fulfill()
+                }
+            }
+            .cancellable(id: id)
+        }
+
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case let .windows(.element(
+                        id: windowID,
+                        action: .window(.view(.dismissContentTabMoveFailure(requestID: probeRequestID))),
+                    )) = action {
+                        if windowID == sourceID, probeRequestID == sourceProbeRequestID {
+                            return .merge(
+                                probe(
+                                    id: EntryOperationsLoadingCancelID.loadItems(
+                                        windowID: sourceLoadingWindowID,
+                                        ownerID: sourceLoadingOwnerID,
+                                    ),
+                                    event: "cancel-source-loading",
+                                ),
+                                probe(
+                                    id: ComposerFeature.CancelID.search(ownerID: sourceComposerOwnerID),
+                                    event: "cancel-source-search",
+                                ),
+                                probe(
+                                    id: ComposerFeature.CancelID.filters(ownerID: sourceComposerOwnerID),
+                                    event: "cancel-source-filters",
+                                ),
+                            )
+                        }
+                        if windowID == targetID, probeRequestID == targetProbeRequestID {
+                            return .merge(
+                                probe(
+                                    id: EntryOperationsLoadingCancelID.loadItems(
+                                        windowID: targetLoadingWindowID,
+                                        ownerID: targetLoadingOwnerID,
+                                    ),
+                                    event: "cancel-target-loading",
+                                ),
+                                probe(
+                                    id: ComposerFeature.CancelID.search(ownerID: targetComposerOwnerID),
+                                    event: "cancel-target-search",
+                                ),
+                                probe(
+                                    id: ComposerFeature.CancelID.filters(ownerID: targetComposerOwnerID),
+                                    event: "cancel-target-filters",
+                                ),
+                            )
+                        }
+                    }
+                    guard case let .windows(.element(
+                        id: windowID,
+                        action: .window(.tabContent(tabID: tabID, action: contentAction)),
+                    )) = action else { return .none }
+                    if windowID == sourceID,
+                       tabID == fallbackTabID,
+                       case .internal(.stopObservingSystemNotifications) = contentAction
+                    {
+                        events.withValue { $0.append("rebind-start") }
+                    }
+                    if windowID == targetID,
+                       tabID == movedTabID,
+                       case .internal(.applyNavigationState) = contentAction
+                    {
+                        events.withValue { $0.append("rebind-complete") }
+                        rebindCompleted.fulfill()
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
+            $0.entryLoadingClient.loadItems = { _, _ in [] }
+            $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
+            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+            $0.fileManagerWindowClient.activate = { _ in .discarded }
+            $0.fileOperationUndoManagerClient.moveScope = { _, _, _ in .moved }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: sourceID,
+            action: .window(.view(.dismissContentTabMoveFailure(requestID: sourceProbeRequestID))),
+        )))
+        await store.send(.windows(.element(
+            id: targetID,
+            action: .window(.view(.dismissContentTabMoveFailure(requestID: targetProbeRequestID))),
+        )))
+        await fulfillment(of: [probesStarted], timeout: 1)
+
+        await store.send(.contentTabMoveRequest(request))
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
+        await fulfillment(of: [probesCancelled, rebindCompleted], timeout: 1)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(events.value, [
+            "cancel-source-loading",
+            "cancel-source-search",
+            "cancel-source-filters",
+            "cancel-target-loading",
+            "cancel-target-search",
+            "cancel-target-filters",
+            "rebind-start",
+            "rebind-complete",
+        ])
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: inactive move는 source active lifecycle을 rebind하지 않는다.
+    /// source active tab이 유지되면 loading과 navigation observation을 그대로 두고 target outgoing owner만 teardown해야 한다.
+    /// - 검증 내용: source active loading cancellation과 stop/start/apply action 0회, target outgoing cancellation과 moved
+    /// rebind
+    /// - 사전 조건: source moved tab은 inactive이고 별도 active tab과 target outgoing tab이 각 loading owner를 가진다.
+    /// - 기대 결과: source active lifecycle은 유지되고 target outgoing probe는 취소되며 target moved apply가 전달된다.
+    func testContentTabMoveInactiveTabSkipsSourceActiveLifecycleAndRebindsTarget() async throws {
+        let sourceID = UUID(4532)
+        let targetID = UUID(4533)
+        let movedTabID = ContentTabID(rawValue: "inactive-lifecycle-moved")
+        let sourceActiveTabID = ContentTabID(rawValue: "inactive-lifecycle-active")
+        let targetOutgoingTabID = ContentTabID(rawValue: "inactive-lifecycle-target")
+        let sourceActiveLoadingOwnerID = UUID(4534)
+        let targetLoadingOwnerID = UUID(4535)
+        let sourceProbeRequestID = UUID(4536)
+        let targetProbeRequestID = UUID(4537)
+        let cleanupRequestID = UUID(4538)
+        let request = ContentTabMoveRequest(
+            requestID: UUID(4539),
+            sourceWindowID: sourceID,
+            tabID: movedTabID,
+            targetWindowID: targetID,
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [
+                (movedTabID, "/inactive/moved"),
+                (sourceActiveTabID, "/inactive/active"),
+            ],
+        )
+        source.window.contentTabs.activeTabID = sourceActiveTabID
+        source.window.content = try XCTUnwrap(source.window.tabContentStates[sourceActiveTabID])
+        source.window.inspector = try XCTUnwrap(source.window.tabInspectorStates[sourceActiveTabID])
+        source.window.content.entryViewLayout.entryOperations.windowID = sourceID
+        source.window.content.entryViewLayout.entryOperations.loadingCancellationOwnerID = sourceActiveLoadingOwnerID
+        source.window.tabContentStates[sourceActiveTabID] = source.window.content
+        source.window.sidebar.pendingContentTabMoveRequest = request
+
+        var target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(targetOutgoingTabID, "/inactive/target")],
+        )
+        target.window.content.entryViewLayout.entryOperations.windowID = targetID
+        target.window.content.entryViewLayout.entryOperations.loadingCancellationOwnerID = targetLoadingOwnerID
+        target.window.tabContentStates[targetOutgoingTabID] = target.window.content
+
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        let sourceActiveCancellationCount = LockIsolated(0)
+        let sourceActiveNavigationActionCount = LockIsolated(0)
+        let targetCancellationCount = LockIsolated(0)
+        let targetRebindActions = LockIsolated<[ContentTabObservationRebindEvent]>([])
+        let probesStarted = expectation(description: "source active and target outgoing probes started")
+        probesStarted.expectedFulfillmentCount = 2
+        let targetCancelled = expectation(description: "target outgoing loading cancelled")
+        let sourceCleanup = expectation(description: "source active loading cleanup")
+        let targetRebindCompleted = expectation(description: "target moved observation rebound")
+
+        func probe(
+            id: EntryOperationsLoadingCancelID,
+            onCancel: @escaping @Sendable () -> Void,
+        ) -> Effect<WindowManagerAction> {
+            .run { _ in
+                probesStarted.fulfill()
+                try await withTaskCancellationHandler {
+                    try await Task.sleep(for: .seconds(60))
+                } onCancel: {
+                    onCancel()
+                }
+            }
+            .cancellable(id: id)
+        }
+
+        let sourceCancelID = EntryOperationsLoadingCancelID.loadItems(
+            windowID: sourceID,
+            ownerID: sourceActiveLoadingOwnerID,
+        )
+        let targetCancelID = EntryOperationsLoadingCancelID.loadItems(
+            windowID: targetID,
+            ownerID: targetLoadingOwnerID,
+        )
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case let .windows(.element(
+                        id: windowID,
+                        action: .window(.view(.dismissContentTabMoveFailure(requestID: probeRequestID))),
+                    )) = action {
+                        if windowID == sourceID, probeRequestID == sourceProbeRequestID {
+                            return probe(id: sourceCancelID) {
+                                sourceActiveCancellationCount.withValue { $0 += 1 }
+                                sourceCleanup.fulfill()
+                            }
+                        }
+                        if windowID == targetID, probeRequestID == targetProbeRequestID {
+                            return probe(id: targetCancelID) {
+                                targetCancellationCount.withValue { $0 += 1 }
+                                targetCancelled.fulfill()
+                            }
+                        }
+                        if windowID == sourceID, probeRequestID == cleanupRequestID {
+                            return .cancel(id: sourceCancelID)
+                        }
+                    }
+                    guard case let .windows(.element(
+                        id: windowID,
+                        action: .window(.tabContent(tabID: tabID, action: contentAction)),
+                    )) = action else { return .none }
+                    guard let rebindEvent = contentTabObservationRebindEvent(contentAction) else {
+                        return .none
+                    }
+                    if windowID == sourceID, tabID == sourceActiveTabID {
+                        sourceActiveNavigationActionCount.withValue { $0 += 1 }
+                    }
+                    if windowID == targetID, tabID == movedTabID {
+                        targetRebindActions.withValue { $0.append(rebindEvent) }
+                        if rebindEvent == .apply { targetRebindCompleted.fulfill() }
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
+            $0.entryLoadingClient.loadItems = { _, _ in [] }
+            $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
+            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+            $0.fileManagerWindowClient.activate = { _ in .discarded }
+            $0.fileOperationUndoManagerClient.moveScope = { _, _, _ in .moved }
+        }
+        // store.exhaustivity = .off: long-lived probe 내부 action보다 source lifecycle 무효과와 target teardown/rebind를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: sourceID,
+            action: .window(.view(.dismissContentTabMoveFailure(requestID: sourceProbeRequestID))),
+        )))
+        await store.send(.windows(.element(
+            id: targetID,
+            action: .window(.view(.dismissContentTabMoveFailure(requestID: targetProbeRequestID))),
+        )))
+        await fulfillment(of: [probesStarted], timeout: 1)
+
+        await store.send(.contentTabMoveRequest(request))
+        await fulfillment(of: [targetCancelled, targetRebindCompleted], timeout: 1)
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
+        XCTAssertEqual(sourceActiveCancellationCount.value, 0)
+        XCTAssertEqual(sourceActiveNavigationActionCount.value, 0)
+        XCTAssertEqual(targetCancellationCount.value, 1)
+        XCTAssertEqual(targetRebindActions.value, [.stop, .start, .apply])
+
+        await store.send(.windows(.element(
+            id: sourceID,
+            action: .window(.view(.dismissContentTabMoveFailure(requestID: cleanupRequestID))),
+        )))
+        await fulfillment(of: [sourceCleanup], timeout: 1)
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
+    func testContentTabMovePreservesSharedSiblingComposerEffects() async throws {
+        let sourceID = UUID(4541)
+        let targetID = UUID(4542)
+        let movedTabID = ContentTabID(rawValue: "shared-effect-moved")
+        let sourceActiveTabID = ContentTabID(rawValue: "shared-effect-source-active")
+        let targetOutgoingTabID = ContentTabID(rawValue: "shared-effect-target-outgoing")
+        let targetInactiveTabID = ContentTabID(rawValue: "shared-effect-target-inactive")
+        let sourceProbeRequestID = UUID(4543)
+        let targetProbeRequestID = UUID(4544)
+        let cleanupRequestID = UUID(4545)
+        let request = ContentTabMoveRequest(
+            requestID: UUID(4546),
+            sourceWindowID: sourceID,
+            tabID: movedTabID,
+            targetWindowID: targetID,
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [
+                (movedTabID, "/shared-effect/source/moved"),
+                (sourceActiveTabID, "/shared-effect/source/active"),
+            ],
+        )
+        source.window.contentTabs.activeTabID = sourceActiveTabID
+        source.window.content = try XCTUnwrap(source.window.tabContentStates[sourceActiveTabID])
+        source.window.inspector = try XCTUnwrap(source.window.tabInspectorStates[sourceActiveTabID])
+        source.window.content.composer.activeSearchRequestID = UUID(4547)
+        source.window.content.composer.isLoadingSearch = true
+        source.window.tabContentStates[sourceActiveTabID] = source.window.content
+        source.window.sidebar.pendingContentTabMoveRequest = request
+
+        var target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [
+                (targetOutgoingTabID, "/shared-effect/target/outgoing"),
+                (targetInactiveTabID, "/shared-effect/target/inactive"),
+            ],
+        )
+        target.window.contentTabs.activeTabID = targetOutgoingTabID
+        target.window.content = try XCTUnwrap(target.window.tabContentStates[targetOutgoingTabID])
+        target.window.inspector = try XCTUnwrap(target.window.tabInspectorStates[targetOutgoingTabID])
+        target.window.tabContentStates[targetInactiveTabID]?.composer.activeSearchRequestID = UUID(4548)
+        target.window.tabContentStates[targetInactiveTabID]?.composer.isLoadingSearch = true
+
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        let cancellationCount = LockIsolated(0)
+        let probesStarted = expectation(description: "shared sibling composer probes started")
+        probesStarted.expectedFulfillmentCount = 2
+        let cleanupCompleted = expectation(description: "shared sibling composer probes cleaned up")
+        cleanupCompleted.expectedFulfillmentCount = 2
+        let rebindCompleted = expectation(description: "shared sibling move rebind completed")
+
+        func probe(ownerID: UUID) -> Effect<WindowManagerAction> {
+            .run { _ in
+                probesStarted.fulfill()
+                try await withTaskCancellationHandler {
+                    try await Task.sleep(for: .seconds(60))
+                } onCancel: {
+                    cancellationCount.withValue { $0 += 1 }
+                    cleanupCompleted.fulfill()
+                }
+            }
+            .cancellable(id: ComposerFeature.CancelID.search(ownerID: ownerID))
+        }
+
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case let .windows(.element(
+                        id: windowID,
+                        action: .window(.view(.dismissContentTabMoveFailure(requestID: probeRequestID))),
+                    )) = action {
+                        if windowID == sourceID, probeRequestID == sourceProbeRequestID {
+                            return probe(ownerID: sourceID)
+                        }
+                        if windowID == targetID, probeRequestID == targetProbeRequestID {
+                            return probe(ownerID: targetID)
+                        }
+                        if windowID == sourceID, probeRequestID == cleanupRequestID {
+                            return .merge(
+                                .cancel(id: ComposerFeature.CancelID.search(ownerID: sourceID)),
+                                .cancel(id: ComposerFeature.CancelID.search(ownerID: targetID)),
+                            )
+                        }
+                    }
+                    if case let .windows(.element(
+                        id: windowID,
+                        action: .window(.tabContent(tabID: tabID, action: .internal(.applyNavigationState))),
+                    )) = action,
+                        windowID == targetID,
+                        tabID == movedTabID
+                    {
+                        rebindCompleted.fulfill()
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
+            $0.entryLoadingClient.loadItems = { _, _ in [] }
+            $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
+            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+            $0.fileManagerWindowClient.activate = { _ in .discarded }
+            $0.fileOperationUndoManagerClient.moveScope = { _, _, _ in .moved }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: sourceID,
+            action: .window(.view(.dismissContentTabMoveFailure(requestID: sourceProbeRequestID))),
+        )))
+        await store.send(.windows(.element(
+            id: targetID,
+            action: .window(.view(.dismissContentTabMoveFailure(requestID: targetProbeRequestID))),
+        )))
+        await fulfillment(of: [probesStarted], timeout: 1)
+
+        await store.send(.contentTabMoveRequest(request))
+        await fulfillment(of: [rebindCompleted], timeout: 1)
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[request.requestID]?.outcome, .succeeded)
+        XCTAssertEqual(cancellationCount.value, 0)
+
+        await store.send(.windows(.element(
+            id: sourceID,
+            action: .window(.view(.dismissContentTabMoveFailure(requestID: cleanupRequestID))),
+        )))
+        await fulfillment(of: [cleanupCompleted], timeout: 1)
+        await store.skipReceivedActions()
+        await store.finish()
+        XCTAssertEqual(cancellationCount.value, 2)
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: 동일 request ID 재전달은 모든 effect와 mutation을 차단한다.
+    /// - 검증 내용: target copy, activation/close/undo/observation/persistence 호출 횟수
+    /// - 사전 조건: source에는 이동 후에도 남을 두 번째 tab이 존재한다.
+    /// - 기대 결과: 첫 commit만 실행되고 duplicate request는 완전한 no-op이다.
+    func testContentTabMoveDuplicateRequestIsEffectFreeNoOp() async throws {
+        let sourceID = UUID()
+        let targetID = UUID()
+        let movedTabID = ContentTabID(rawValue: "duplicate-moved")
+        let sourceRemainderID = ContentTabID(rawValue: "duplicate-source-remainder")
+        let targetTabID = ContentTabID(rawValue: "duplicate-target")
+        let request = ContentTabMoveRequest(
+            requestID: UUID(),
+            sourceWindowID: sourceID,
+            tabID: movedTabID,
+            targetWindowID: targetID,
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(movedTabID, "/duplicate/moved"), (sourceRemainderID, "/duplicate/remainder")],
+        )
+        source.window.sidebar.pendingContentTabMoveRequest = request
+        let target = try Self.makeContentTabMoveWindow(id: targetID, tabs: [(targetTabID, "/duplicate/target")])
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        let activatedIDs = LockIsolated<[UUID]>([])
+        let closedIDs = LockIsolated<[UUID]>([])
+        let movedUndoScopes = LockIsolated<[(UndoManagerScope, UndoManagerScope)]>([])
+        let notificationStarts = LockIsolated(0)
+        let pinnedStoreCalls = LockIsolated(0)
+        let activationCalled = expectation(description: "target activation")
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
+            $0.fileManagerWindowClient.activate = { id in
+                activatedIDs.withValue { $0.append(id) }
+                activationCalled.fulfill()
+                return .discarded
+            }
+            $0.fileManagerWindowClient.close = { id in closedIDs.withValue { $0.append(id) } }
+            $0.fileOperationUndoManagerClient.moveScope = { source, target, _ in
+                movedUndoScopes.withValue { $0.append((source, target)) }
+                return .moved
+            }
+            $0.notificationCenterClient.notifications = { _, _ in
+                notificationStarts.withValue { $0 += 1 }
+                return AsyncStream { $0.finish() }
+            }
+            $0.contentTabPinnedRecordClient.loadStore = { _ in
+                pinnedStoreCalls.withValue { $0 += 1 }
+                return .init()
+            }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in
+                pinnedStoreCalls.withValue { $0 += 1 }
+            }
+        }
+        // store.exhaustivity = .off: unordered post-commit effect의 호출 횟수와 최종 registry만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveRequest(request))
+        await fulfillment(of: [activationCalled], timeout: 1)
+        await store.skipReceivedActions()
+        let stateAfterFirstCommit = store.state
+        let notificationStartsAfterFirstCommit = notificationStarts.value
+
+        await store.send(.contentTabMoveRequest(request))
+
+        XCTAssertEqual(store.state, stateAfterFirstCommit)
+        XCTAssertEqual(
+            store.state.windows[id: targetID]?.window.contentTabs.tabs.count(where: { $0.id == movedTabID }),
+            1,
+        )
+        XCTAssertEqual(activatedIDs.value, [targetID])
+        XCTAssertTrue(closedIDs.value.isEmpty)
+        XCTAssertEqual(movedUndoScopes.value.map(\.0), [
+            UndoManagerScope(windowID: sourceID, contentTabID: movedTabID.rawValue),
+        ])
+        XCTAssertEqual(movedUndoScopes.value.map(\.1), [
+            UndoManagerScope(windowID: targetID, contentTabID: movedTabID.rawValue),
+        ])
+        XCTAssertEqual(notificationStarts.value, notificationStartsAfterFirstCommit)
+        XCTAssertEqual(pinnedStoreCalls.value, 0)
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: 다른 request ID의 동일 tab 재요청은 missing으로 거절한다.
+    /// - 검증 내용: source failure terminal과 target 단일 copy
+    /// - 사전 조건: moved tab은 target에만 있고 source는 matching second pending을 보유한다.
+    /// - 기대 결과: unavailable rejection이며 target 중복은 생성되지 않는다.
+    func testContentTabMoveDifferentRequestAfterSuccessRejectsMissingSourceTab() async throws {
+        let sourceID = UUID()
+        let targetID = UUID()
+        let movedTabID = ContentTabID(rawValue: "different-request-moved")
+        let secondRequest = ContentTabMoveRequest(
+            requestID: UUID(),
+            sourceWindowID: sourceID,
+            tabID: movedTabID,
+            targetWindowID: targetID,
+        )
+        var source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(ContentTabID(rawValue: "different-request-source"), "/different/source")],
+        )
+        source.window.sidebar.pendingContentTabMoveRequest = secondRequest
+        let target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [
+                (ContentTabID(rawValue: "different-request-target"), "/different/target"),
+                (movedTabID, "/different/moved"),
+            ],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveRequest(secondRequest))
+
+        XCTAssertEqual(
+            store.state.windows[id: targetID]?.window.contentTabs.tabs.count(where: { $0.id == movedTabID }),
+            1,
+        )
+        XCTAssertEqual(
+            store.state.windows[id: sourceID]?.window.contentTabMoveFailurePresentation?.category,
+            .unavailable,
+        )
+        XCTAssertEqual(
+            store.state.contentTabMoveTerminalRecords[secondRequest.requestID]?.outcome,
+            .rejected(.unavailable),
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: terminal ledger는 256 FIFO 상한을 지킨다.
+    /// - 검증 내용: 257번째 기록 후 oldest eviction과 newer outcome 보존
+    /// - 사전 조건: 서로 다른 request ID 257개를 순서대로 기록한다.
+    /// - 기대 결과: 첫 ID만 제거되고 마지막 256개가 순서대로 남는다.
+    func testContentTabMoveTerminalLedgerEvictsOldestAtLimit() throws {
+        let requestIDs = (0 ... WindowManagerState.contentTabMoveTerminalLimit).map { UUID($0 + 1) }
+        var state = WindowManagerFeature.State()
+
+        for (index, requestID) in requestIDs.enumerated() {
+            state.recordContentTabMoveTerminal(.init(
+                requestID: requestID,
+                sourceWindowID: UUID(1000 + index),
+                tabID: ContentTabID(rawValue: "ledger-\(index)"),
+                targetWindowID: UUID(2000 + index),
+                outcome: index.isMultiple(of: 2) ? .succeeded : .rejected(.busy),
+            ))
+        }
+
+        XCTAssertEqual(state.contentTabMoveTerminalRequestIDs.count, 256)
+        XCTAssertEqual(state.contentTabMoveTerminalRecords.count, 256)
+        XCTAssertNil(state.contentTabMoveTerminalRecords[requestIDs[0]])
+        XCTAssertEqual(state.contentTabMoveTerminalRequestIDs.first, requestIDs[1])
+        XCTAssertEqual(try state.contentTabMoveTerminalRecords[XCTUnwrap(requestIDs.last)]?.outcome, .succeeded)
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: full/closing/source를 projection에서 제외한다.
+    /// - 검증 내용: MRU 우선, registry fallback, capacity와 closing exclusion
+    /// - 사전 조건: source, live target, full target, closing target이 registry에 존재한다.
+    /// - 기대 결과: source projection에는 live target 하나만 노출된다.
+    func testContentTabMoveProjectionExcludesSourceClosingAndFullWindows() async throws {
+        let sourceID = UUID()
+        let liveID = UUID()
+        let fullID = UUID()
+        let closingID = UUID()
+        let source = try Self.makeContentTabMoveWindow(
+            id: sourceID,
+            tabs: [(ContentTabID(rawValue: "projection-source"), "/projection/source")],
+        )
+        let live = try Self.makeContentTabMoveWindow(
+            id: liveID,
+            tabs: [(ContentTabID(rawValue: "projection-live"), "/projection/live")],
+        )
+        let fullTabs = (0 ..< ContentTabConstants.maxTabs).map { index in
+            (ContentTabID(rawValue: "projection-full-\(index)"), "/projection/full/\(index)")
+        }
+        let full = try Self.makeContentTabMoveWindow(id: fullID, tabs: fullTabs)
+        let closing = try Self.makeContentTabMoveWindow(
+            id: closingID,
+            tabs: [(ContentTabID(rawValue: "projection-closing"), "/projection/closing")],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, full, closing, live]
+        initialState.lastUsedWindowIDs = [fullID, liveID]
+        initialState.closingWindowIDs = [closingID]
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() }
+        store.exhaustivity = .off
+
+        await store.send(.refreshContentTabMoveTargets)
+
+        XCTAssertEqual(
+            store.state.windows[id: sourceID]?.window.sidebar.contentTabMoveTargets.map(\.windowID),
+            [liveID],
+        )
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: full target은 passive same-ID pinned projection 교체에만 노출된다.
+    /// capacity 증가 없는 pinned 이동은 메뉴·drag source route에서 도달 가능하고 다른 tab에는 숨겨지는지 검증한다.
+    /// - 검증 내용: tab-aware full-target projection과 row별 acceptance
+    /// - 사전 조건: source/target에 같은 passive pinned ID가 있고 target은 다른 tab을 포함해 maxTabs로 가득 참
+    /// - 기대 결과: pinned source tab에는 target이 허용되고 unrelated source tab에는 허용되지 않음
+    func testContentTabMoveProjectionAllowsFullTargetOnlyForPassivePinnedReplacement() throws {
+        let sourceID = UUID()
+        let targetID = UUID()
+        let pinnedTabID = ContentTabID(rawValue: "projection-full-pinned")
+        let unrelatedTabID = ContentTabID(rawValue: "projection-full-unrelated")
+        let pinnedRecord = ContentTabPinnedRecord(
+            id: pinnedTabID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/projection/pinned"),
+            title: "Pinned",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 451),
+        )
+        let restored = ContentTabState.restoringPinnedRecords(
+            from: ContentTabPinnedRecordStore(records: [pinnedRecord]),
+            isRestorableAnchor: { _ in true },
+        ).state
+        var source = FileManagerWindowFeature.State.makeInitial(path: "/source", windowID: sourceID)
+        source.applyPinnedContentTabs(restored)
+        source.contentTabs.tabs.append(.init(
+            id: unrelatedTabID,
+            page: .directory,
+            anchor: .directory(path: "/source/unrelated"),
+            isPinned: false,
+            title: "Unrelated",
+            iconName: "folder",
+        ))
+        source.tabContentStates[unrelatedTabID] = FileManagerContentFeature.State.initialContent(
+            for: .directory(path: "/source/unrelated"),
+            inheritingWindowContextFrom: source.content,
+        )
+        source.tabInspectorStates[unrelatedTabID] = FileManagerInspectorFeature.State().tabSnapshot()
+
+        var target = FileManagerWindowFeature.State.makeInitial(path: "/target", windowID: targetID)
+        target.applyPinnedContentTabs(restored)
+        let remainingCapacity = ContentTabConstants.maxTabs - target.contentTabs.tabs.count
+        for index in 0 ..< remainingCapacity {
+            let tabID = ContentTabID(rawValue: "projection-full-filler-\(index)")
+            let anchor = ContentTabPageAnchor.directory(path: "/target/filler/\(index)")
+            target.contentTabs.tabs.append(.init(
+                id: tabID,
+                page: .directory,
+                anchor: anchor,
+                isPinned: false,
+                title: "Filler \(index)",
+                iconName: "folder",
+            ))
+            target.tabContentStates[tabID] = FileManagerContentFeature.State.initialContent(
+                for: anchor,
+                inheritingWindowContextFrom: target.content,
+            )
+            target.tabInspectorStates[tabID] = FileManagerInspectorFeature.State().tabSnapshot()
+        }
+        var state = WindowManagerFeature.State()
+        state.windows = [
+            .init(id: sourceID, window: source),
+            .init(id: targetID, window: target),
+        ]
+
+        state.refreshContentTabMoveTargets()
+
+        let projectedTarget = try XCTUnwrap(
+            state.windows[id: sourceID]?.window.sidebar.contentTabMoveTargets.first(where: {
+                $0.windowID == targetID
+            }),
+        )
+        XCTAssertFalse(projectedTarget.acceptsNewTabs)
+        XCTAssertTrue(projectedTarget.accepts(tabID: pinnedTabID))
+        XCTAssertFalse(projectedTarget.accepts(tabID: unrelatedTabID))
+        let sourceTargets = try XCTUnwrap(
+            state.windows[id: sourceID]?.window.sidebar.contentTabMoveTargets,
+        )
+        let pinnedTargetIDs = ContentTabMoveProjection.availableTargets(
+            sourceTargets,
+            currentWindowID: sourceID,
+            tabID: pinnedTabID,
+        )
+        .map(\.windowID)
+        XCTAssertEqual(pinnedTargetIDs, [targetID])
+        let unrelatedTargets = ContentTabMoveProjection.availableTargets(
+            sourceTargets,
+            currentWindowID: sourceID,
+            tabID: unrelatedTabID,
+        )
+        XCTAssertTrue(unrelatedTargets.isEmpty)
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: last-tab commit은 source를 tombstone으로 전환한다.
+    /// - 검증 내용: exact close/activate ID, logical commit, focus callback ownership, late close idempotency
+    /// - 사전 조건: focused source에 tab 하나, target에 tab 하나가 존재한다.
+    /// - 기대 결과: source는 closing tombstone으로 유지되고 native callback 전 focus는 해제된다.
+    func testContentTabMoveLastTabUsesExactCloseAndCallbackOwnedFocus() async throws {
+        let sourceID = UUID()
+        let targetID = UUID()
+        let movedTabID = ContentTabID(rawValue: "last-tab-moved")
+        let request = ContentTabMoveRequest(
+            requestID: UUID(),
+            sourceWindowID: sourceID,
+            tabID: movedTabID,
+            targetWindowID: targetID,
+        )
+        var source = try Self.makeContentTabMoveWindow(id: sourceID, tabs: [(movedTabID, "/last/source")])
+        source.window.sidebar.pendingContentTabMoveRequest = request
+        let target = try Self.makeContentTabMoveWindow(
+            id: targetID,
+            tabs: [(ContentTabID(rawValue: "last-target"), "/last/target")],
+        )
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [source, target]
+        initialState.focusedWindowID = sourceID
+        initialState.lastUsedWindowIDs = [sourceID, targetID]
+        let activatedIDs = LockIsolated<[UUID]>([])
+        let closedIDs = LockIsolated<[UUID]>([])
+        let notificationStarts = LockIsolated(0)
+        let registry = FileOperationUndoManagerRegistry()
+        let undoClient = FileOperationUndoManagerClient.live(registry: registry)
+        let sourceScope = UndoManagerScope(windowID: sourceID, contentTabID: movedTabID.rawValue)
+        let targetScope = UndoManagerScope(windowID: targetID, contentTabID: movedTabID.rawValue)
+        let sourceUndoManager = try XCTUnwrap(undoClient.activate(sourceScope))
+        let activationCalled = expectation(description: "last-tab target activation")
+        let closeCalled = expectation(description: "last-tab source close")
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 450))
+            $0.fileManagerWindowClient.activate = { id in
+                activatedIDs.withValue { $0.append(id) }
+                activationCalled.fulfill()
+                return .discarded
+            }
+            $0.fileManagerWindowClient.close = { id in
+                closedIDs.withValue { $0.append(id) }
+                closeCalled.fulfill()
+            }
+            $0.fileOperationUndoManagerClient = undoClient
+            $0.notificationCenterClient.notifications = { _, _ in
+                notificationStarts.withValue { $0 += 1 }
+                return AsyncStream { $0.finish() }
+            }
+        }
+        // store.exhaustivity = .off: native activate/close의 상대 완료 순서는 계약이 아니다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabMoveRequest(request))
+        await fulfillment(of: [activationCalled, closeCalled], timeout: 1)
+
+        XCTAssertEqual(store.state.windows[id: sourceID]?.window.contentTabs.tabs.count, 0)
+        XCTAssertTrue(store.state.closingWindowIDs.contains(sourceID))
+        XCTAssertNil(store.state.focusedWindowID)
+        XCTAssertEqual(
+            store.state.windows[id: targetID]?.window.contentTabs.tabs.count(where: { $0.id == movedTabID }),
+            1,
+        )
+        XCTAssertEqual(activatedIDs.value, [targetID])
+        XCTAssertEqual(closedIDs.value, [sourceID])
+        XCTAssertEqual(notificationStarts.value, 1)
+        let removedSourceUndoManager = await undoClient.undoManager(sourceScope)
+        let movedTargetUndoManagerValue = await undoClient.undoManager(targetScope)
+        let movedTargetUndoManager = try XCTUnwrap(movedTargetUndoManagerValue)
+        XCTAssertNil(removedSourceUndoManager)
+        XCTAssertIdentical(sourceUndoManager, movedTargetUndoManager)
+
+        await store.send(.event(.windowClosed(sourceID)))
+        await store.send(.event(.windowClosed(sourceID)))
+
+        XCTAssertFalse(store.state.closingWindowIDs.contains(sourceID))
+        XCTAssertNil(store.state.focusedWindowID)
+        XCTAssertEqual(closedIDs.value, [sourceID])
+    }
+
+    /// CTM-001-move_content_tab_to_another_window: discarded와 late mismatched activation은 logical commit을 뒤집지 않는다.
+    /// - 검증 내용: attempt equality cleanup과 target 단일 copy 보존
+    /// - 사전 조건: logical success 뒤 matching attempt가 registry에 존재한다.
+    /// - 기대 결과: mismatched callback은 no-op, matching discarded는 attempt만 제거한다.
+    func testContentTabMoveActivationDiscardAndLateMismatchNeverRollback() async throws {
+        let sourceID = UUID()
+        let targetID = UUID()
+        let movedTabID = ContentTabID(rawValue: "discarded-moved")
+        let requestID = UUID()
+        let attempt = ContentTabMoveActivationAttempt(requestID: requestID, targetWindowID: targetID)
+        let mismatched = ContentTabMoveActivationAttempt(requestID: requestID, targetWindowID: UUID())
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = try [
+            Self.makeContentTabMoveWindow(
+                id: sourceID,
+                tabs: [(ContentTabID(rawValue: "discarded-source"), "/discarded/source")],
+            ),
+            Self.makeContentTabMoveWindow(
+                id: targetID,
+                tabs: [(movedTabID, "/discarded/moved")],
+            ),
+        ]
+        initialState.contentTabMoveActivationAttempts[requestID] = attempt
+        initialState.recordContentTabMoveTerminal(.init(
+            requestID: requestID,
+            sourceWindowID: sourceID,
+            tabID: movedTabID,
+            targetWindowID: targetID,
+            outcome: .succeeded,
+        ))
+        let store = TestStore(initialState: initialState) { WindowManagerFeature() }
+
+        await store.send(.contentTabMoveActivationResult(attempt: mismatched, result: .becameKey))
+        await store.send(.contentTabMoveActivationResult(attempt: attempt, result: .discarded)) {
+            $0.contentTabMoveActivationAttempts[requestID] = nil
+        }
+        await store.send(.contentTabMoveActivationResult(attempt: attempt, result: .becameKey))
+
+        XCTAssertEqual(
+            store.state.windows[id: targetID]?.window.contentTabs.tabs.count(where: { $0.id == movedTabID }),
+            1,
+        )
+        XCTAssertNil(store.state.windows[id: sourceID]?.window.contentTabs.tabs[id: movedTabID])
+        XCTAssertEqual(store.state.contentTabMoveTerminalRecords[requestID]?.outcome, .succeeded)
+    }
+
     // MARK: - External Open Placement
 
     /// key/resign/close/new-window lifecycle에서 focused state와 runtime MRU가 서로 다른 계약을 유지한다.
@@ -3532,7 +5892,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             store.state.windows[id: existingWindowID]?.window.contentTabs.tabs.map(\.id),
             originalExistingTabIDs + [existingTabID],
         )
-        XCTAssertEqual(store.state.windows[id: unrelatedWindowID]?.window, unrelatedWindow)
+        var normalizedUnrelatedWindow = store.state.windows[id: unrelatedWindowID]?.window
+        normalizedUnrelatedWindow?.sidebar.currentWindowID = nil
+        normalizedUnrelatedWindow?.sidebar.contentTabMoveTargets = []
+        XCTAssertEqual(normalizedUnrelatedWindow, unrelatedWindow)
         XCTAssertEqual(store.state.externalWindowBatchIDs, [unrelatedWindowID: otherBatchID])
         XCTAssertNil(store.state.retainedExternalOpenPlacementOwnership)
         XCTAssertEqual(store.state.defaultWindowBootstrapRequestID, unrelatedBootstrapRequestID)
@@ -3728,6 +6091,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.event(.windowBecameKey(finalWindowID))) {
             $0.focusedWindowID = finalWindowID
             $0.lastUsedWindowIDs = [finalWindowID]
+            $0.refreshContentTabMoveTargets()
         }
         await store.send(.event(.windowResignedKey(finalWindowID))) {
             $0.focusedWindowID = nil
@@ -3735,6 +6099,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.event(.windowBecameKey(firstWindowID))) {
             $0.focusedWindowID = firstWindowID
             $0.lastUsedWindowIDs = [firstWindowID, finalWindowID]
+            $0.refreshContentTabMoveTargets()
         }
 
         await store.send(.externalOpenActivationResult(attempt: attempt, result: .becameKey)) {
@@ -3832,6 +6197,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.event(.windowClosed(finalWindowID))) {
             $0.windows.remove(id: finalWindowID)
             $0.externalWindowBatchIDs[finalWindowID] = nil
+            $0.refreshContentTabMoveTargets()
         }
         tracker.discard(finalWindowID)
         await finalRequestGate.open()
@@ -3927,6 +6293,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.event(.windowClosed(finalWindowID))) {
             $0.windows.remove(id: finalWindowID)
             $0.externalWindowBatchIDs[finalWindowID] = nil
+            $0.refreshContentTabMoveTargets()
         }
         finalGate.continuation.yield(.becameKey)
         finalGate.continuation.finish()
@@ -4269,6 +6636,20 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             tabs: .init(uniqueElements: tabs),
             activeTabID: tabs.first?.id,
         )
+        return WindowSessionState(id: id, window: window)
+    }
+
+    private static func makeContentTabMoveWindow(
+        id: UUID,
+        tabs: [(ContentTabID, String)],
+    ) throws -> WindowSessionState {
+        let reservations = tabs.map { tabID, path in
+            ExternalContentTabReservation(id: tabID, anchor: .directory(path: path))
+        }
+        let window = try XCTUnwrap(FileManagerWindowFeature.State.makeExternalInitial(
+            reservations: reservations,
+            windowID: id,
+        ))
         return WindowSessionState(id: id, window: window)
     }
 

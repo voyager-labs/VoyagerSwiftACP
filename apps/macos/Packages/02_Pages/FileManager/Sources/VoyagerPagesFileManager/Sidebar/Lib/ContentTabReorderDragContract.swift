@@ -21,8 +21,28 @@ struct ContentTabReorderDragPayload: Codable, Equatable {
 }
 
 struct ContentTabReorderDragSourceConfiguration {
-    let payload: ContentTabReorderDragPayload
+    let payload: ContentTabReorderDragPayload?
+    let movePayload: ContentTabDragPayload?
     let sessionStore: ContentTabReorderLocalSessionStore
+
+    init(
+        payload: ContentTabReorderDragPayload,
+        sessionStore: ContentTabReorderLocalSessionStore,
+        movePayload: ContentTabDragPayload? = nil,
+    ) {
+        self.payload = payload
+        self.movePayload = movePayload
+        self.sessionStore = sessionStore
+    }
+
+    init(
+        movePayload: ContentTabDragPayload,
+        sessionStore: ContentTabReorderLocalSessionStore,
+    ) {
+        payload = nil
+        self.movePayload = movePayload
+        self.sessionStore = sessionStore
+    }
 }
 
 extension UTType {
@@ -40,6 +60,7 @@ extension UTType {
 extension NSPasteboard.PasteboardType {
     static let contentTabReorder = Self(UTType.contentTabReorder.identifier)
     static let contentTabReorderLocal = Self(UTType.contentTabReorderLocal.identifier)
+    static let contentTabMove = Self(ContentTabDragPayload.contentType.identifier)
 }
 
 struct ContentTabReorderLocalToken: Equatable {
@@ -128,25 +149,52 @@ final class ContentTabReorderLocalSessionStore {
 }
 
 final class ContentTabReorderPasteboardWriter: NSObject, NSPasteboardWriting {
-    let token: ContentTabReorderLocalToken
+    let token: ContentTabReorderLocalToken?
 
-    private let payloadData: Data
+    private let reorderPayloadData: Data?
+    private let movePayloadData: Data?
     private let sessionStore: ContentTabReorderLocalSessionStore
 
     @MainActor
-    init(
+    convenience init(
         payload: ContentTabReorderDragPayload,
         sessionStore: ContentTabReorderLocalSessionStore,
         token: ContentTabReorderLocalToken = ContentTabReorderLocalToken(rawValue: UUID()),
     ) throws {
-        payloadData = try JSONEncoder().encode(payload)
-        self.sessionStore = sessionStore
-        self.token = sessionStore.begin(payload: payload, token: token)
+        try self.init(
+            configuration: ContentTabReorderDragSourceConfiguration(
+                payload: payload,
+                sessionStore: sessionStore,
+            ),
+            token: token,
+        )
+    }
+
+    @MainActor
+    init(
+        configuration: ContentTabReorderDragSourceConfiguration,
+        token: ContentTabReorderLocalToken = ContentTabReorderLocalToken(rawValue: UUID()),
+    ) throws {
+        reorderPayloadData = try configuration.payload.map(JSONEncoder().encode)
+        movePayloadData = try configuration.movePayload.map(JSONEncoder().encode)
+        sessionStore = configuration.sessionStore
+        if let payload = configuration.payload {
+            self.token = sessionStore.begin(payload: payload, token: token)
+        } else {
+            self.token = nil
+        }
         super.init()
     }
 
     func writableTypes(for _: NSPasteboard) -> [NSPasteboard.PasteboardType] {
-        [.contentTabReorder, .contentTabReorderLocal]
+        var types: [NSPasteboard.PasteboardType] = []
+        if reorderPayloadData != nil {
+            types.append(contentsOf: [.contentTabReorder, .contentTabReorderLocal])
+        }
+        if movePayloadData != nil {
+            types.append(.contentTabMove)
+        }
+        return types
     }
 
     func writingOptions(
@@ -159,9 +207,11 @@ final class ContentTabReorderPasteboardWriter: NSObject, NSPasteboardWriting {
     func pasteboardPropertyList(forType type: NSPasteboard.PasteboardType) -> Any? {
         switch type {
         case .contentTabReorder:
-            payloadData
+            reorderPayloadData
         case .contentTabReorderLocal:
-            token.data
+            token?.data
+        case .contentTabMove:
+            movePayloadData
         default:
             nil
         }
@@ -169,6 +219,7 @@ final class ContentTabReorderPasteboardWriter: NSObject, NSPasteboardWriting {
 
     @MainActor
     func cleanupOwnedToken() {
+        guard let token else { return }
         sessionStore.clear(token: token)
     }
 }

@@ -26,6 +26,8 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
             targetID: ContentTabID,
             placement: ContentTabReorderPlacement,
         )
+        case moveContentTab(tabID: ContentTabID, targetWindowID: UUID)
+        case receiveContentTabDrag(ContentTabDragPayload)
     }
 
     @CasePathable
@@ -49,6 +51,8 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
             targetID: ContentTabID,
             placement: ContentTabReorderPlacement,
         )
+        case requestContentTabMove(ContentTabMoveRequest)
+        case receiveContentTabDrag(ContentTabDragPayload)
     }
 
     @CasePathable
