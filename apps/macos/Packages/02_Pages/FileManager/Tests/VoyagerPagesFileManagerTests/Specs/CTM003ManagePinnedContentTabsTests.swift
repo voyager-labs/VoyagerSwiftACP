@@ -6787,6 +6787,41 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
     }
 
+    /// CTM-003-pin_selected_content_tabs: 선택 일괄 작업은 Sidebar에 표시된 pinned 순서를 동결한다.
+    /// 저장 배열과 표시 순서가 달라도 dormant slot과 후속 영속화가 사용자 순서를 따르는지 검증한다.
+    /// - 검증 내용: coordinator의 frozen ordered IDs
+    /// - 사전 조건: 저장 순서 `[A, B]`, 표시 순서 `[B, A]`, 두 pinned tab 선택
+    /// - 기대 결과: selected Pin/Unpin 대상이 표시 순서 `[B, A]`로 동결됨
+    func testSelectedPinMutationFreezesDisplayedPinnedOrder() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 15))
+        let fixture = allPinnedSelectedPinMutationFixture()
+        let firstID = fixture.orderedIDs[0]
+        let secondID = fixture.orderedIDs[1]
+        var state = fixture.state
+        state.optimisticTopNavigationOrder = .init(items: [
+            .contentTab(secondID),
+            .contentTab(firstID),
+        ])
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.uuid = .constant(operationID)
+        }
+        // store.exhaustivity = .off: request 시점에 동결되는 표시 순서만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.requestSelectedContentTabPinMutation(target: .unpinned)) {
+            $0.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+                operationID: operationID,
+                target: .unpinned,
+                orderedTargetIDs: [secondID, firstID],
+            )
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
     /// CTM-003-pin_selected_content_tabs: all-unpinned Pin을 기존 single persistence terminal로 직렬 완료한다.
     /// wrapper가 child reducer를 한 번씩 실행하고 정상 completion count invariant와 state preservation을 지키는지 검증한다.
     /// - 검증 내용: 두 Pin success, total=count invariant, aggregate sync 없음, selection/owner snapshot 보존

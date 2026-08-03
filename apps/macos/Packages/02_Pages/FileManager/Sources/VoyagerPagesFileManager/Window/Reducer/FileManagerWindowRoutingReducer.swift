@@ -1690,7 +1690,8 @@ private extension FileManagerWindowRoutingReducer {
         state: inout State,
     ) -> Effect<Action> {
         guard state.canStartSelectedContentTabPinMutation else { return .none }
-        let orderedTargetIDs = state.contentTabs.orderedValidSelectedTabIDs
+        let orderedTargetIDs = state.contentTabSelectionOrderedIDs
+            .filter(state.contentTabs.selectedTabIDs.contains)
         guard orderedTargetIDs.count >= 2 else { return .none }
 
         let operationID = uuid()
