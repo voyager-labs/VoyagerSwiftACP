@@ -63,6 +63,17 @@ public struct EntryListOutlineProjection: Equatable, Sendable {
     public let visibleRows: [ItemID]
     public let visibleSelectableEntryIDs: [EntryModel.ID]
 
+    /// revision은 순서 메타데이터이지 projection 내용의 일부가 아니다.
+    /// 동등성 비교에서 제외하면 selection-only 변경이나 외부 revision bump가
+    /// 구조적 차이로 오인되지 않는다.
+    public static func == (lhs: EntryListOutlineProjection, rhs: EntryListOutlineProjection) -> Bool {
+        lhs.rootItemIDs == rhs.rootItemIDs
+            && lhs.childrenByParent == rhs.childrenByParent
+            && lhs.itemPayloads == rhs.itemPayloads
+            && lhs.visibleRows == rhs.visibleRows
+            && lhs.visibleSelectableEntryIDs == rhs.visibleSelectableEntryIDs
+    }
+
     public var visibleSelectableEntries: [EntryModel] {
         visibleRows.compactMap { itemID in
             guard case let .entry(entry, _) = itemPayloads[itemID] else { return nil }

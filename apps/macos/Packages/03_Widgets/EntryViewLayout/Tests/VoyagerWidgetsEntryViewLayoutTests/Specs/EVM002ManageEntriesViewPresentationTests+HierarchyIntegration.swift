@@ -281,6 +281,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 3)
             $0.outlineProjectionRevision = 2
             $0.lastVisibleSelectableEntryIDs = [folder.id]
+            $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
         }
         await store.receive(\.delegate.expandRequested, folder.id)
     }
@@ -318,6 +319,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             $0.hierarchy.foldersByID[folder.id] = .init(phase: .loading, generation: 3)
             $0.outlineProjectionRevision = 2
             $0.lastVisibleSelectableEntryIDs = [folder.id]
+            $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
         }
         await store.receive(\.delegate.expandRequested, folder.id)
     }

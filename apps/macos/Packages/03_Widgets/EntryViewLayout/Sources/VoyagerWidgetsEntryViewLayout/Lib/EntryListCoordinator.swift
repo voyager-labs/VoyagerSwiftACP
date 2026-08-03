@@ -152,6 +152,7 @@ public final class EntryListCoordinator: NSObject {
     var outlineItems: [OutlineItem] = []
     var entryItemsByID: [EntryModel.ID: [OutlineItem]] = [:]
     var outlineItemByID: [String: OutlineItem] = [:]
+    var entryItemById: [EntryModel.ID: OutlineItem] = [:]
     var groupItemByName: [String: OutlineItem] = [:]
     let projectionSession = EntryListCoordinatorProjectionSession()
     var lastAppliedVisibleRows: [EntryListOutlineProjection.ItemID] = []
@@ -485,6 +486,10 @@ public final class EntryListCoordinator: NSObject {
             itemsByID[element.0, default: []].append(element.1)
         }
         outlineItemByID = Dictionary(uniqueKeysWithValues: outlineItems.flatMap { $0.flattenItems() })
+        entryItemById = Dictionary(
+            outlineItems.flatMap { $0.flattenEntries() },
+            uniquingKeysWith: { first, _ in first },
+        )
         groupItemByName = Dictionary(uniqueKeysWithValues: outlineItems.compactMap { item in
             if case let .group(name, _, _) = item.kind {
                 return (name, item)
