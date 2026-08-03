@@ -256,6 +256,31 @@ public struct AiChatFeature {
             case .backToSessionsTapped:
                 return handleBackToSessionsTapped(state: &state)
 
+            case .transcriptSearchOpened:
+                state.transcriptSearch.isPresented = true
+                state.transcriptSearch.focusRevision &+= 1
+                return .none
+
+            case .transcriptSearchClosed:
+                state.transcriptSearch.reset()
+                return .none
+
+            case let .transcriptSearchQueryChanged(query):
+                state.transcriptSearch.updateQuery(query)
+                return .none
+
+            case let .transcriptSearchMatchCountChanged(projection):
+                state.transcriptSearch.updateMatchCount(projection)
+                return .none
+
+            case .transcriptSearchNextTapped:
+                state.transcriptSearch.selectNextMatch()
+                return .none
+
+            case .transcriptSearchPreviousTapped:
+                state.transcriptSearch.selectPreviousMatch()
+                return .none
+
             case let .sessionSearchQueryChanged(query):
                 state.sessionList.updateQuery(query)
                 return .none

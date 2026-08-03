@@ -470,6 +470,7 @@ struct FileManagerWindowCommandRoutingReducer {
 
         case .saveCollection,
              .saveCollectionAs,
+             .find,
              .toggleComposer,
              .newChat,
              .showChatHistory:
@@ -478,11 +479,7 @@ struct FileManagerWindowCommandRoutingReducer {
         case .goBack,
              .goForward,
              .goToEnclosingDirectory:
-            if state.pendingContentTabClose != nil {
-                .none
-            } else {
-                handleNavigationRequest(command)
-            }
+            handleNavigationRequestIfAllowed(command, state: state)
 
         case .toggleSidebar,
              .setViewLayout,
@@ -672,6 +669,24 @@ struct FileManagerWindowCommandRoutingReducer {
         }
     }
 
+    private func handleFindRequest(state: State) -> Effect<Action> {
+        if state.inspector.inspectorVisible,
+           state.inspector.activeMode == .chat,
+           state.inspector.aiChat.mode == .chat
+        {
+            return .send(.inspector(.aiChat(.transcriptSearchOpened)))
+        }
+
+        if let activeTabID = state.contentTabs.activeTabID,
+           case .aiChat = state.contentTabs.tabs[id: activeTabID]?.anchor,
+           state.content.aiChat.mode == .chat
+        {
+            return .send(.tabContent(tabID: activeTabID, action: .aiChat(.transcriptSearchOpened)))
+        }
+
+        return .send(.request(.toggleComposer))
+    }
+
     private func handleComposerRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
         switch command {
         case .saveCollection:
@@ -679,6 +694,9 @@ struct FileManagerWindowCommandRoutingReducer {
 
         case .saveCollectionAs:
             .send(.content(.composer(.saveCollectionAs)))
+
+        case .find:
+            handleFindRequest(state: state)
 
         case .toggleComposer:
             .send(.content(.composer(.setPresented(!state.content.composer.isPresented))))
@@ -731,6 +749,14 @@ struct FileManagerWindowCommandRoutingReducer {
         }
 
         return .merge(effects)
+    }
+
+    private func handleNavigationRequestIfAllowed(
+        _ command: Action.WindowCommand,
+        state: State,
+    ) -> Effect<Action> {
+        guard state.pendingContentTabClose == nil else { return .none }
+        return handleNavigationRequest(command)
     }
 
     private func refreshPendingAiChatProviderAuthority(

@@ -550,6 +550,70 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         await store.finish()
     }
 
+    // MARK: - VOY-637-transcript_search_command
+
+    /// VOY-637-transcript_search_command: `.chat` mode의 focused AiChat이 transcript search action을 단독 처리한다.
+    /// FileManager window command router가 empty New Chat에도 session/history 조건 없이 local search를 연다.
+    /// - 검증 내용: `.request(.find)`가 AiChat `.transcriptSearchOpened` 하나만 방출하는지 확인
+    /// - 사전 조건: inspector AiChat이 표시 중이고 mode가 `.chat`이며 transcript는 비어 있음
+    /// - 기대 결과: local transcript search action 1회, composer fallback action 0회
+    func testFindRequestInChatRoutesTranscriptSearchWithoutFallback() async {
+        var state = FileManagerWindowState.makeInitial(path: "/Users/test/Documents")
+        state.inspector.inspectorVisible = true
+        state.inspector.activeMode = .chat
+        state.inspector.aiChat.mode = .chat
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.find))
+        await store.receive(\.inspector.aiChat.transcriptSearchOpened)
+        await store.finish()
+    }
+
+    /// VOY-637-transcript_search_command: active AiChat content tab의 `.chat` mode가 transcript search를 단독 처리한다.
+    /// inspector가 표시되지 않을 때 active content-tab command route가 local search action을 전달한다.
+    /// - 검증 내용: `.request(.find)`가 active tab ID의 `.tabContent(... .transcriptSearchOpened)` 하나만 방출하는지 확인
+    /// - 사전 조건: active content tab anchor가 `.aiChat`이고 content AiChat mode가 `.chat`임
+    /// - 기대 결과: content-tab transcript search action 1회, composer fallback action 0회
+    func testFindRequestInActiveAiChatContentTabRoutesTranscriptSearchWithoutFallback() async {
+        var state = FileManagerWindowState.makeInitial(path: "/Users/test/Documents")
+        guard let activeTabID = state.contentTabs.activeTabID else {
+            XCTFail("Expected an active content tab")
+            return
+        }
+        state.contentTabs.tabs[id: activeTabID]?.anchor = .aiChat(
+            sessionID: "00000000-0000-0000-0000-000000000637",
+        )
+        state.content.aiChat.mode = .chat
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.find))
+        await store.receive { action in
+            guard case let .tabContent(tabID: tabID, action: .aiChat(.transcriptSearchOpened)) = action else {
+                return false
+            }
+            return tabID == activeTabID
+        }
+        await store.finish()
+    }
+
+    /// VOY-637-transcript_search_command: `.sessions` mode의 AiChat은 기존 Collection Filter Composer로 fallback한다.
+    /// transcript가 표시되지 않는 session list에서는 FileManager의 기존 composer route를 그대로 재사용한다.
+    /// - 검증 내용: `.request(.find)`가 `.request(.toggleComposer)`와 composer presentation action을 각 1회 방출
+    /// - 사전 조건: inspector AiChat이 표시 중이고 mode가 `.sessions`임
+    /// - 기대 결과: transcript open 없이 composer fallback이 정확히 한 번 실행됨
+    func testFindRequestInSessionsRoutesComposerFallbackOnce() async {
+        var state = FileManagerWindowState.makeInitial(path: "/Users/test/Documents")
+        state.inspector.inspectorVisible = true
+        state.inspector.activeMode = .chat
+        state.inspector.aiChat.mode = .sessions
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.find))
+        await store.receive(\.request.toggleComposer)
+        await store.receive(\.content.composer.view.setPresented)
+        await store.finish()
+    }
+
     // MARK: - FMW-001-open_new_file_manager_window
 
     /// FMW-001-open_new_file_manager_window: makeInitial 기본 상태의 windowID 없음

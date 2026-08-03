@@ -125,3 +125,24 @@ private struct AssistantMarkdownBlockParser {
         codeLines.removeAll()
     }
 }
+
+extension AssistantMarkdownBlock {
+    var renderedText: String {
+        switch self {
+        case let .heading(_, text), let .paragraph(text), let .bullet(text), let .numbered(_, text):
+            renderedInlineMarkdown(text)
+        case let .code(text):
+            text
+        }
+    }
+
+    private func renderedInlineMarkdown(_ text: String) -> String {
+        guard let attributedText = try? AttributedString(
+            markdown: text,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace),
+        ) else {
+            return text
+        }
+        return String(attributedText.characters)
+    }
+}

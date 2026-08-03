@@ -44,13 +44,18 @@ struct AiChatStateDisplayModelBuilder {
 
     var chatInputDisplayModel: AiChatInputDisplayModel {
         let stopEnabled = isVisibleRequestProcessing && (cancelAffordance?.isEnabled ?? false)
+        let submitHelp = "Enter to send, Shift+Enter for new line"
         return AiChatInputDisplayModel(
             placeholder: "Ask anything…",
+            inputAccessibilityLabel: "Chat message",
+            inputAccessibilityHint: submitHelp,
             contextAffordanceLabel: "+",
             modelLabel: chatInputModelLabel,
             effortLabel: chatInputThinkingLabel,
             submitAccessibilityLabel: "Send",
             stopAccessibilityLabel: "Stop",
+            submitHelp: submitHelp,
+            stopHelp: "Stop generating response",
             isSubmitVisible: !isVisibleRequestProcessing,
             isStopVisible: isVisibleRequestProcessing,
             canSubmit: canSubmit,
