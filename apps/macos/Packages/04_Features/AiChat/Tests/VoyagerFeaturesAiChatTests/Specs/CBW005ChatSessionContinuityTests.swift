@@ -1,5 +1,7 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
+import SwiftUI
 import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
@@ -48,7 +50,213 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(store.state.sessionStatusText, "Restored session")
     }
 
+    /// CBW-005-restore_chat_conversation_session: 사용자가 다른 session을 선택하면 stale transcript 검색 상태를 초기화한다.
+    /// session row 전환의 기존 restore 흐름을 유지하면서 이전 transcript query와 ordinal이 새 session으로 누출되지 않는지 검증합니다.
+    /// - 검증 내용: 다른 session row 선택과 restore 완료 이후 transcript search state reset을 확인합니다.
+    /// - 사전 조건: 현재 session에는 열린 검색과 2/2 match가 있고 history에는 다른 persisted session이 있습니다.
+    /// - 기대 결과: 기존 session restore/navigation은 완료되고 transcript 검색 상태는 기본값으로 초기화됩니다.
+    func testRestoreChatConversationSessionResetsStaleTranscriptSearchAfterUserTransition() async {
+        let sourceSessionID = makeCBW005SessionID("55555555-5555-5555-5555-555555555551")
+        let targetSessionID = makeCBW005SessionID("55555555-5555-5555-5555-555555555552")
+        let targetRow = makeCBW005SessionSummary(sessionID: targetSessionID)
+        let targetSnapshot = makeCBW005Snapshot(
+            sessionID: targetSessionID,
+            transcriptHistory: restoredTranscript,
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionList: .init(allRows: [targetRow], rows: [targetRow]),
+            sessionID: sourceSessionID,
+            transcriptSearch: .init(
+                isPresented: true,
+                query: "stale",
+                matchCount: 2,
+                currentMatchOrdinal: 2,
+                status: .matches,
+            ),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in targetSnapshot }
+        }
+        // store.exhaustivity = .off: session 전환 seam의 transcript search reset만 단일 소유합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.sessionRowTapped(targetSessionID))
+        await store.receive(\.restoreOutcome)
+
+        XCTAssertEqual(store.state.transcriptSearch, .init())
+        await store.finish()
+    }
+
+    /// CBW-005-restore_chat_conversation_session: current session route는 identity가 같으므로 transcript search를 보존한다.
+    /// 동일 active session으로의 no-op route가 사용자의 local transcript search lifecycle을 지우지 않는지 검증합니다.
+    /// - 검증 내용: current session route 이후 query, count, ordinal, presentation 상태 보존을 확인합니다.
+    /// - 사전 조건: active chat identity와 route target이 같고 2/2 transcript search가 열려 있습니다.
+    /// - 기대 결과: route presentation은 완료되지만 transcript search state는 변경되지 않습니다.
+    func testCurrentSessionRoutePreservesTranscriptSearch() async {
+        let sessionID = makeCBW005SessionID("55555555-5555-5555-5555-555555555553")
+        let search = makeCBW005ActiveTranscriptSearch()
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            transcriptSearch: search,
+        )) { AiChatFeature() }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.routeToChatSession(sessionID))
+
+        XCTAssertEqual(store.state.transcriptSearch, search)
+    }
+
+    /// CBW-005-restore_chat_conversation_session: direct persisted route는 다른 session identity로 전환하기 전에 search를 초기화한다.
+    /// 직접 route와 restore completion 사이에 이전 session 검색 상태가 target transcript로 누출되지 않는지 검증합니다.
+    /// - 검증 내용: route 요청 직후와 restore outcome 이후 transcript search reset을 확인합니다.
+    /// - 사전 조건: source chat에 2/2 검색이 열려 있고 다른 persisted target row와 snapshot이 존재합니다.
+    /// - 기대 결과: target restore lifecycle은 유지되고 두 시점 모두 transcript search는 기본값입니다.
+    func testDirectSessionRouteResetsTranscriptSearch() async {
+        let sourceID = makeCBW005SessionID("55555555-5555-5555-5555-555555555554")
+        let targetID = makeCBW005SessionID("55555555-5555-5555-5555-555555555555")
+        let targetSnapshot = makeCBW005Snapshot(sessionID: targetID, transcriptHistory: restoredTranscript)
+        let targetRow = makeCBW005SessionSummary(sessionID: targetID)
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionList: .init(allRows: [targetRow], rows: [targetRow]),
+            sessionID: sourceID,
+            transcriptSearch: makeCBW005ActiveTranscriptSearch(),
+        )) { AiChatFeature() } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in targetSnapshot }
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.routeToChatSession(targetID))
+        XCTAssertEqual(store.state.transcriptSearch, .init())
+        await store.receive(\.restoreOutcome)
+        XCTAssertEqual(store.state.transcriptSearch, .init())
+        await store.finish()
+    }
+
+    /// CBW-005-restore_chat_conversation_session: content-tab sessions route가 active identity를 바꾸면 search를 초기화한다.
+    /// content-tab presentation이 sessionID를 직접 교체할 때도 row route와 동일한 검색 lifecycle 정책을 적용하는지 검증합니다.
+    /// - 검증 내용: showSessionsForChat 이후 active session identity와 transcript search reset을 확인합니다.
+    /// - 사전 조건: source chat에 열린 검색이 있고 content-tab target은 다른 session ID입니다.
+    /// - 기대 결과: active identity는 target으로 바뀌고 이전 transcript search는 기본값으로 초기화됩니다.
+    func testContentTabSessionsRouteResetsTranscriptSearchOnIdentityChange() async {
+        let sourceID = makeCBW005SessionID("55555555-5555-5555-5555-555555555556")
+        let targetID = makeCBW005SessionID("55555555-5555-5555-5555-555555555557")
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sourceID,
+            transcriptSearch: makeCBW005ActiveTranscriptSearch(),
+        )) { AiChatFeature() }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.showSessionsForChat(targetID))
+
+        XCTAssertEqual(store.state.sessionID, targetID)
+        XCTAssertEqual(store.state.transcriptSearch, .init())
+    }
+
+    /// CBW-005-restore_chat_conversation_session: accepted setup과 new-session restore만 실제 identity 변경 시 search를 초기화한다.
+    /// setup no-op, setup identity 교체, accepted missing-record fallback의 reset 경계를 한 계약으로 검증합니다.
+    /// - 검증 내용: 동일 setup 보존, 다른 setup reset, accepted new-session restore reset을 확인합니다.
+    /// - 사전 조건: source 검색 상태와 서로 다른 setup target, restore target, fallback session ID가 준비되어 있습니다.
+    /// - 기대 결과: 동일 identity에서는 검색이 보존되고 실제 setup/restore identity 교체에서만 기본값으로 초기화됩니다.
+    func testSetupAndNewSessionRestoreResetTranscriptSearchOnlyForAcceptedIdentityChanges() async {
+        let sourceID = makeCBW005SessionID("55555555-5555-5555-5555-555555555561")
+        let setupTargetID = makeCBW005SessionID("55555555-5555-5555-5555-555555555562")
+        let restoreTargetID = makeCBW005SessionID("55555555-5555-5555-5555-555555555563")
+        let fallbackID = makeCBW005SessionID("55555555-5555-5555-5555-555555555564")
+        let search = makeCBW005ActiveTranscriptSearch()
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sourceID,
+            transcriptSearch: search,
+        )) { AiChatFeature() }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.setup(.init(sessionID: sourceID, mode: .chat, sessionStatus: .active)))
+        XCTAssertEqual(store.state.transcriptSearch, search)
+        await store.send(.setup(.init(sessionID: setupTargetID, mode: .chat, sessionStatus: .active)))
+        XCTAssertEqual(store.state.transcriptSearch, .init())
+
+        let fallback = makeCBW005Snapshot(sessionID: fallbackID, transcriptHistory: [])
+        let restoreStore = TestStore(initialState: AiChatFeature.State(
+            restoreSessionID: restoreTargetID,
+            mode: .chat,
+            sessionID: setupTargetID,
+            transcriptSearch: makeCBW005ActiveTranscriptSearch(),
+        )) { AiChatFeature() }
+        restoreStore.exhaustivity = .off(showSkippedAssertions: false)
+
+        await restoreStore.send(.restoreOutcome(
+            requestedSessionID: restoreTargetID,
+            .newSession(snapshot: fallback),
+            restoreFailure: .missingRecord,
+        ))
+        XCTAssertEqual(restoreStore.state.sessionID, fallbackID)
+        XCTAssertEqual(restoreStore.state.transcriptSearch, .init())
+    }
+
+    private func makeCBW005ActiveTranscriptSearch() -> AiChatTranscriptSearchState {
+        .init(
+            isPresented: true,
+            query: "stale",
+            matchCount: 2,
+            currentMatchOrdinal: 2,
+            status: .matches,
+        )
+    }
+
     // MARK: - CBW-005-start_chat_conversation_session
+
+    /// CBW-005-start_chat_conversation_session: durable New Chat identity는 이전 transcript search를 초기화한다.
+    /// 새 durable draft 생성과 persistence acknowledgment가 이전 session 검색 상태를 계승하지 않는지 검증합니다.
+    /// - 검증 내용: New Chat 시작 직후와 newChatCreated 이후 transcript search reset을 확인합니다.
+    /// - 사전 조건: 기존 active session에 열린 2/2 검색이 있고 새 draft 저장 client가 성공합니다.
+    /// - 기대 결과: 새 session identity와 저장 완료 상태 모두 transcript search 기본값을 유지합니다.
+    func testDurableNewChatResetsTranscriptSearch() async {
+        let sourceID = makeCBW005SessionID("55555555-5555-5555-5555-555555555558")
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sourceID,
+            transcriptSearch: makeCBW005ActiveTranscriptSearch(),
+        )) { AiChatFeature() } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+            $0.aiChatSessionPersistenceClient.saveSession = { $0 }
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.newChatTapped)
+        XCTAssertEqual(store.state.transcriptSearch, .init())
+        await store.receive(\.newChatCreated)
+        XCTAssertEqual(store.state.transcriptSearch, .init())
+        await store.finish()
+    }
+
+    /// CBW-005-start_chat_conversation_session: transient New Chat identity도 이전 transcript search를 초기화한다.
+    /// persistence 이전의 explicit transient identity 교체도 durable New Chat과 같은 검색 reset 정책을 따르는지 검증합니다.
+    /// - 검증 내용: prepareTransientNewChat 이후 sessionID 교체와 transcript search reset을 확인합니다.
+    /// - 사전 조건: source active session에 열린 검색이 있고 다른 explicit transient session ID가 주어집니다.
+    /// - 기대 결과: active identity는 transient target으로 바뀌고 이전 검색 상태는 남지 않습니다.
+    func testTransientNewChatResetsTranscriptSearch() async {
+        let sourceID = makeCBW005SessionID("55555555-5555-5555-5555-555555555559")
+        let targetID = makeCBW005SessionID("55555555-5555-5555-5555-555555555560")
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sourceID,
+            transcriptSearch: makeCBW005ActiveTranscriptSearch(),
+        )) { AiChatFeature() }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.prepareTransientNewChat(sessionID: targetID, seed: nil))
+
+        XCTAssertEqual(store.state.sessionID, targetID)
+        XCTAssertEqual(store.state.transcriptSearch, .init())
+    }
 
     /// CBW-005-start_chat_conversation_session: 유효한 window-last 선택은 persisted default보다 우선한다.
     /// 새 대화 seed가 가장 최근 window 선택을 먼저 복원하는 precedence를 검증합니다.
@@ -183,6 +391,460 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             modelHandle: models[0].id,
             selectedThinking: nil,
         ))
+    }
+
+    /// CBW-005-start_chat_conversation_session: unavailable window-last는 available persisted default로 fallback한다.
+    /// 같은 handle이 catalog에 있어도 선택 불가능하면 window 우선순위를 얻지 못하는지 검증합니다.
+    /// - 검증 내용: window availability 검증과 persisted fallback precedence
+    /// - 사전 조건: window 후보 모델은 unavailable이고 persisted 후보 모델은 available입니다.
+    /// - 기대 결과: persisted 모델과 normalized thinking이 new-chat seed로 반환됩니다.
+    func testNewChatSelectionSeedFallsBackFromUnavailableWindowToAvailablePersistedDefault() {
+        let models = makeThinkingCapableProviderModels()
+        let unavailableWindowModel = AiProviderModel(
+            id: models[0].id,
+            provider: models[0].provider,
+            rawModelID: models[0].rawModelID,
+            displayName: models[0].displayName,
+            providerDisplayName: models[0].providerDisplayName,
+            thinkingCapability: models[0].thinkingCapability,
+            supportsThinkingNone: models[0].supportsThinkingNone,
+            unavailableReason: .init(message: "Model is temporarily unavailable."),
+        )
+        let windowCandidate = AiChatNewChatSelectionCandidate(
+            modelHandle: unavailableWindowModel.id,
+            selectedThinking: .effort(.high),
+        )
+        let persistedCandidate = makePersistedSelectionCandidate(
+            model: models[1],
+            thinking: .effort("low"),
+        )
+
+        let seed = AiChatNewChatSelectionSeedResolver.resolve(
+            windowLast: windowCandidate,
+            persistedDefault: persistedCandidate,
+            catalog: [unavailableWindowModel, models[1]],
+        )
+
+        XCTAssertEqual(seed, AiChatNewChatSelectionSeed(
+            modelHandle: models[1].id,
+            selectedThinking: .effort(.low),
+        ))
+    }
+
+    /// CBW-005-start_chat_conversation_session: unavailable persisted default는 new-chat seed가 되지 않는다.
+    /// 저장된 handle의 존재만으로 선택 불가능한 모델이 새 draft에 복원되지 않는지 검증합니다.
+    /// - 검증 내용: persisted candidate의 canonical availability 검증
+    /// - 사전 조건: window 후보는 없고 persisted 후보와 같은 handle의 catalog 모델은 unavailable입니다.
+    /// - 기대 결과: resolver는 nil을 반환하고 새 대화 선택을 만들지 않습니다.
+    func testNewChatSelectionSeedRejectsUnavailablePersistedDefault() {
+        let model = makeThinkingCapableProviderModels()[0]
+        let unavailableModel = AiProviderModel(
+            id: model.id,
+            provider: model.provider,
+            rawModelID: model.rawModelID,
+            displayName: model.displayName,
+            providerDisplayName: model.providerDisplayName,
+            thinkingCapability: model.thinkingCapability,
+            supportsThinkingNone: model.supportsThinkingNone,
+            unavailableReason: .init(message: "Model is temporarily unavailable."),
+        )
+        let persistedCandidate = makePersistedSelectionCandidate(
+            model: model,
+            thinking: .effort("medium"),
+        )
+
+        let seed = AiChatNewChatSelectionSeedResolver.resolve(
+            windowLast: nil,
+            persistedDefault: persistedCandidate,
+            catalog: [unavailableModel],
+        )
+
+        XCTAssertNil(seed)
+    }
+
+    /// CBW-005-start_chat_conversation_session: resolver 이후 stale unavailable seed도 적용 경계에서 거부한다.
+    /// 비동기 seed resolution 뒤 catalog availability가 바뀌어도 새 runtime/snapshot에 승격되지 않는지 검증합니다.
+    /// - 검증 내용: public new-chat seed action의 current-catalog 재검증
+    /// - 사전 조건: seed handle과 같은 loaded model이 action 적용 시점에는 unavailable입니다.
+    /// - 기대 결과: 새 chat은 unselected이며 저장 snapshot에도 provider/model/thinking이 없습니다.
+    func testDurableNewChatRejectsStaleUnavailableSelectionSeed() async {
+        let model = makeThinkingCapableProviderModels()[0]
+        let unavailableModel = AiProviderModel(
+            id: model.id,
+            provider: model.provider,
+            rawModelID: model.rawModelID,
+            displayName: model.displayName,
+            providerDisplayName: model.providerDisplayName,
+            thinkingCapability: model.thinkingCapability,
+            supportsThinkingNone: model.supportsThinkingNone,
+            unavailableReason: .init(message: "Model is temporarily unavailable."),
+        )
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: model.id,
+            selectedThinking: .effort(.high),
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            catalogRows: [makeCatalogRows()[0]],
+            modelListState: .loaded([unavailableModel]),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs))
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: stale seed의 runtime/persistence 차단만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.newChatTapped(seed: seed))
+        await store.skipReceivedActions()
+
+        XCTAssertNil(store.state.selectedModelHandle)
+        XCTAssertNil(store.state.selectedThinking)
+        XCTAssertEqual(savedSnapshots.value.count, 1)
+        XCTAssertNil(savedSnapshots.value.first?.provider)
+        XCTAssertNil(savedSnapshots.value.first?.model)
+        XCTAssertNil(savedSnapshots.value.first?.selectedThinking)
+    }
+
+    /// CBW-005-start_chat_conversation_session: durable New Chat은 known-disconnected provider seed를 제거한다.
+    /// 연결 authority가 provider 부재를 확정하면 catalog 미완료 seed가 snapshot에 승격되지 않는지 검증합니다.
+    /// - 검증 내용: generated session identity, unselected runtime/snapshot, save 1회
+    /// - 사전 조건: OpenAI seed와 Anthropic만 포함한 known 연결 목록이 있습니다.
+    /// - 기대 결과: 새 durable session은 유지되지만 model/thinking seed는 runtime과 snapshot에서 제거됩니다.
+    func testDurableNewChatRejectsKnownDisconnectedProviderSelectionSeed() async {
+        let selectedModel = makeThinkingCapableProviderModels()[0]
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: selectedModel.id,
+            selectedThinking: .effort(.high),
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            modelListState: .loading,
+            providerConnectionSnapshot: .known([.anthropic]),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs + 10))
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: known-disconnected durable seed의 제거와 snapshot 경계만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.newChatTapped(seed: seed))
+        await store.skipReceivedActions()
+
+        let sessionID = try? XCTUnwrap(store.state.sessionID)
+        XCTAssertEqual(store.state.mode, .chat)
+        XCTAssertNil(store.state.selectedModelHandle)
+        XCTAssertNil(store.state.selectedThinking)
+        XCTAssertEqual(savedSnapshots.value.count, 1)
+        XCTAssertEqual(savedSnapshots.value.first?.sessionID, sessionID)
+        XCTAssertNil(savedSnapshots.value.first?.provider)
+        XCTAssertNil(savedSnapshots.value.first?.model)
+        XCTAssertNil(savedSnapshots.value.first?.selectedThinking)
+    }
+
+    /// CBW-005-start_chat_conversation_session: explicit-ID transient는 known-disconnected provider seed를 제거한다.
+    /// transient identity와 provenance를 유지하면서 authoritative provider absence만 selection에 반영하는지 검증합니다.
+    /// - 검증 내용: explicit ID, prepared marker, current provenance, unselected runtime, save 0회
+    /// - 사전 조건: current provenance와 OpenAI seed, Anthropic만 포함한 known 연결 목록이 있습니다.
+    /// - 기대 결과: transient는 명시 ID로 준비되고 seed는 제거되며 persistence는 호출되지 않습니다.
+    func testExplicitIDTransientNewChatRejectsKnownDisconnectedProviderSelectionSeed() async {
+        let selectedModel = makeThinkingCapableProviderModels()[0]
+        let sessionID = makeCBW005SessionID("86868686-8686-8686-8686-868686868686")
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: selectedModel.id,
+            selectedThinking: .effort(.high),
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            modelListState: .loading,
+            providerConnectionSnapshot: .known([.anthropic]),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: known-disconnected transient seed와 zero-save 경계만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        let provenance = store.state.newChatPreparationProvenance
+        await store.send(.prepareTransientNewChatIfCurrent(
+            sessionID: sessionID,
+            provenance: provenance,
+            seed: seed,
+        ))
+
+        XCTAssertEqual(store.state.sessionID, sessionID)
+        XCTAssertEqual(store.state.preparedTransientSessionID, sessionID)
+        XCTAssertNil(store.state.selectedModelHandle)
+        XCTAssertNil(store.state.selectedThinking)
+        XCTAssertNil(store.state.unavailableSelectedModelHandle)
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+    }
+
+    /// CBW-005-start_chat_conversation_session: seed-only completion은 known-disconnected provider seed를 거부한다.
+    /// touched transient의 payload와 identity를 보존하면서 authoritative provider absence를 no-op으로 처리하는지 검증합니다.
+    /// - 검증 내용: 전체 state/provenance/context/attachment equality와 save 0회
+    /// - 사전 조건: touched transient와 current provenance, OpenAI seed, Anthropic만 포함한 known 연결 목록이 있습니다.
+    /// - 기대 결과: seed-only application은 전체 state를 변경하지 않고 persistence를 호출하지 않습니다.
+    func testSeedOnlyCompletionRejectsKnownDisconnectedProviderSelectionSeed() async {
+        let selectedModel = makeThinkingCapableProviderModels()[0]
+        let sessionID = makeCBW005SessionID("87878787-8787-8787-8787-878787878787")
+        let context = makeContextSnapshot(summary: "Known disconnected context")
+        let attachment = makeCBW005Attachment(path: "/tmp/Known-disconnected.txt")
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: selectedModel.id,
+            selectedThinking: .effort(.high),
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            preparedTransientSessionID: sessionID,
+            currentContext: context,
+            addedAttachments: [attachment],
+            draftText: "Known disconnected draft",
+            modelListState: .loading,
+            providerConnectionSnapshot: .known([.anthropic]),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        let provenance = store.state.newChatPreparationProvenance
+        let stateBeforeApplication = store.state
+
+        await store.send(.applyNewChatSelectionSeedIfCurrent(
+            provenance: provenance,
+            seed: seed,
+        ))
+
+        XCTAssertEqual(store.state, stateBeforeApplication)
+        XCTAssertEqual(store.state.newChatPreparationProvenance, provenance)
+        XCTAssertEqual(store.state.sessionID, sessionID)
+        XCTAssertEqual(store.state.currentContext, context)
+        XCTAssertEqual(store.state.addedAttachments, [attachment])
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+    }
+
+    /// CBW-005-start_chat_conversation_session: durable New Chat은 unknown catalog authority에서 resolved seed를 보존한다.
+    /// loading과 selected-provider failure는 unavailable 확정이 아니므로 frozen seed를 durable snapshot에 유지하는지 검증합니다.
+    /// - 검증 내용: loading/failure authority에서 runtime selection과 persisted snapshot seed 보존
+    /// - 사전 조건: OpenAI resolved seed와 unresolved loading 또는 OpenAI failure + Anthropic success aggregate가 있습니다.
+    /// - 기대 결과: 두 경우 모두 원래 model/thinking이 적용되고 snapshot은 한 번 저장됩니다.
+    func testDurableNewChatPreservesResolvedSeedWhenCatalogAuthorityIsUnknown() async {
+        let models = makeThinkingCapableProviderModels()
+        let selectedModel = models[0]
+        let otherProviderModel = models[1]
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: selectedModel.id,
+            selectedThinking: .effort(.high),
+        )
+        let failure = AiModelListFailure(message: "OpenAI model list request failed.")
+        let states = [
+            AiChatFeature.State(
+                mode: .sessions,
+                catalogRows: makeCatalogRows(),
+                modelListState: .loading,
+                modelListProviderOrder: [.openai],
+                modelListPendingProviders: [.openai],
+                providerConnectionSnapshot: .unknown,
+            ),
+            AiChatFeature.State(
+                mode: .sessions,
+                catalogRows: makeCatalogRows(),
+                modelListState: .loaded([otherProviderModel]),
+                modelListFailedProviders: [.openai: failure],
+                providerConnectionSnapshot: .unknown,
+                availableModelsByProvider: [.openai: [], .anthropic: [otherProviderModel]],
+            ),
+        ]
+
+        for (index, initialState) in states.enumerated() {
+            let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+            let store = TestStore(initialState: initialState) {
+                AiChatFeature()
+            } withDependencies: {
+                $0.uuid = .incrementing
+                $0.date = .constant(makeFixedDate(milliseconds: self.fixedTimestampMs + Int64(index)))
+                $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
+                }
+            }
+            // store.exhaustivity = .off: unknown authority별 durable seed와 snapshot 보존만 선별 검증합니다.
+            store.exhaustivity = .off(showSkippedAssertions: false)
+
+            await store.send(.newChatTapped(seed: seed))
+            await store.skipReceivedActions()
+
+            XCTAssertEqual(store.state.selectedModelHandle, seed.modelHandle, "scenario \(index)")
+            XCTAssertEqual(store.state.selectedThinking, seed.selectedThinking, "scenario \(index)")
+            XCTAssertEqual(savedSnapshots.value.count, 1, "scenario \(index)")
+            XCTAssertEqual(savedSnapshots.value.first?.model, seed.modelHandle, "scenario \(index)")
+            XCTAssertEqual(savedSnapshots.value.first?.selectedThinking, seed.selectedThinking, "scenario \(index)")
+        }
+    }
+
+    /// CBW-005-start_chat_conversation_session: explicit-ID transient는 unknown catalog authority에서 resolved seed를 보존한다.
+    /// loading과 selected-provider failure 중에도 explicit session identity와 zero-save semantics를 유지하는지 검증합니다.
+    /// - 검증 내용: guarded transient의 seed, explicit ID, prepared marker, persistence 0회
+    /// - 사전 조건: current provenance와 unresolved loading 또는 OpenAI failure + Anthropic success aggregate가 있습니다.
+    /// - 기대 결과: 두 경우 모두 frozen seed가 적용되고 명시 ID로 transient가 준비됩니다.
+    func testExplicitIDTransientNewChatPreservesResolvedSeedWhenCatalogAuthorityIsUnknown() async {
+        let models = makeThinkingCapableProviderModels()
+        let selectedModel = models[0]
+        let otherProviderModel = models[1]
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: selectedModel.id,
+            selectedThinking: .effort(.high),
+        )
+        let failure = AiModelListFailure(message: "OpenAI model list request failed.")
+        let states = [
+            AiChatFeature.State(
+                mode: .sessions,
+                catalogRows: makeCatalogRows(),
+                modelListState: .loading,
+                modelListProviderOrder: [.openai],
+                modelListPendingProviders: [.openai],
+                providerConnectionSnapshot: .unknown,
+            ),
+            AiChatFeature.State(
+                mode: .sessions,
+                catalogRows: makeCatalogRows(),
+                modelListState: .loaded([otherProviderModel]),
+                modelListFailedProviders: [.openai: failure],
+                providerConnectionSnapshot: .unknown,
+                availableModelsByProvider: [.openai: [], .anthropic: [otherProviderModel]],
+            ),
+        ]
+
+        for (index, initialState) in states.enumerated() {
+            let sessionID = AiChatSessionID(rawValue: makeUUID(
+                index == 0
+                    ? "84848484-8484-8484-8484-848484848480"
+                    : "84848484-8484-8484-8484-848484848481",
+            ))
+            let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+            let store = TestStore(initialState: initialState) {
+                AiChatFeature()
+            } withDependencies: {
+                $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
+                }
+            }
+            // store.exhaustivity = .off: unknown authority별 explicit-ID seed와 zero-save 경계만 선별 검증합니다.
+            store.exhaustivity = .off(showSkippedAssertions: false)
+
+            let provenance = store.state.newChatPreparationProvenance
+            await store.send(.prepareTransientNewChatIfCurrent(
+                sessionID: sessionID,
+                provenance: provenance,
+                seed: seed,
+            ))
+
+            XCTAssertEqual(store.state.sessionID, sessionID, "scenario \(index)")
+            XCTAssertEqual(store.state.preparedTransientSessionID, sessionID, "scenario \(index)")
+            XCTAssertEqual(store.state.selectedModelHandle, seed.modelHandle, "scenario \(index)")
+            XCTAssertEqual(store.state.selectedThinking, seed.selectedThinking, "scenario \(index)")
+            XCTAssertNil(store.state.emptyDraftSessionID, "scenario \(index)")
+            XCTAssertTrue(savedSnapshots.value.isEmpty, "scenario \(index)")
+        }
+    }
+
+    /// CBW-005-start_chat_conversation_session: seed-only completion은 unknown catalog authority에서 resolved seed를 보존한다.
+    /// loading과 selected-provider failure 중에도 touched payload를 유지하며 frozen seed만 적용하는지 검증합니다.
+    /// - 검증 내용: seed-only model/thinking 적용과 session/context/attachment/draft/provenance owner 보존
+    /// - 사전 조건: touched transient와 unresolved loading 또는 OpenAI failure + Anthropic success aggregate가 있습니다.
+    /// - 기대 결과: 두 경우 모두 payload와 identity는 유지되고 frozen seed가 적용되며 save는 없습니다.
+    func testSeedOnlyCompletionPreservesResolvedSeedWhenCatalogAuthorityIsUnknown() async {
+        let models = makeThinkingCapableProviderModels()
+        let selectedModel = models[0]
+        let otherProviderModel = models[1]
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: selectedModel.id,
+            selectedThinking: .effort(.high),
+        )
+        let failure = AiModelListFailure(message: "OpenAI model list request failed.")
+        let sessionID = makeCBW005SessionID("85858585-8585-8585-8585-858585858585")
+        let context = makeContextSnapshot(summary: "Unknown authority context")
+        let attachment = makeCBW005Attachment(path: "/tmp/Unknown-authority.txt")
+        let states = [
+            AiChatFeature.State(
+                mode: .chat,
+                sessionID: sessionID,
+                currentContext: context,
+                addedAttachments: [attachment],
+                draftText: "Unknown authority draft",
+                catalogRows: makeCatalogRows(),
+                modelListState: .loading,
+                modelListProviderOrder: [.openai],
+                modelListPendingProviders: [.openai],
+                providerConnectionSnapshot: .unknown,
+            ),
+            AiChatFeature.State(
+                mode: .chat,
+                sessionID: sessionID,
+                currentContext: context,
+                addedAttachments: [attachment],
+                draftText: "Unknown authority draft",
+                catalogRows: makeCatalogRows(),
+                modelListState: .loaded([otherProviderModel]),
+                modelListFailedProviders: [.openai: failure],
+                providerConnectionSnapshot: .unknown,
+                availableModelsByProvider: [.openai: [], .anthropic: [otherProviderModel]],
+            ),
+        ]
+
+        for (index, initialState) in states.enumerated() {
+            let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+            let store = TestStore(initialState: initialState) {
+                AiChatFeature()
+            } withDependencies: {
+                $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    return snapshot
+                }
+            }
+            let provenance = store.state.newChatPreparationProvenance
+
+            await store.send(.applyNewChatSelectionSeedIfCurrent(
+                provenance: provenance,
+                seed: seed,
+            )) { state in
+                state.selectedModelHandle = seed.modelHandle
+                state.selectedThinking = seed.selectedThinking
+            }
+
+            XCTAssertEqual(store.state.sessionID, sessionID, "scenario \(index)")
+            XCTAssertEqual(store.state.currentContext, context, "scenario \(index)")
+            XCTAssertEqual(store.state.addedAttachments, [attachment], "scenario \(index)")
+            XCTAssertEqual(store.state.draftText, "Unknown authority draft", "scenario \(index)")
+            XCTAssertEqual(store.state.selectedModelHandle, seed.modelHandle, "scenario \(index)")
+            XCTAssertEqual(store.state.selectedThinking, seed.selectedThinking, "scenario \(index)")
+            XCTAssertNil(store.state.unavailableSelectedModelHandle, "scenario \(index)")
+            XCTAssertTrue(savedSnapshots.value.isEmpty, "scenario \(index)")
+        }
     }
 
     /// CBW-005-start_chat_conversation_session: 후보가 없으면 catalog의 default/recommended model도 자동 선택하지 않는다.
@@ -344,6 +1006,116 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(savedSnapshots.value.count, 1)
         XCTAssertEqual(savedSnapshots.value.first?.sessionID, sessionID)
         stream.finish()
+    }
+
+    /// CBW-005-start_chat_conversation_session: guarded explicit-ID transient는 stale unavailable seed를 거부한다.
+    /// 비동기 seed resolution 뒤 catalog availability가 바뀐 application boundary를 검증합니다.
+    /// - 검증 내용: current provenance 재검증 뒤 stale seed 거부, explicit ID와 prepared marker 보존, save 0회
+    /// - 사전 조건: valid provenance와 seed handle이 unavailable인 loaded catalog가 있다.
+    /// - 기대 결과: transient chat은 unselected이며 explicit ID로 준비되고 persistence는 호출되지 않는다.
+    func testGuardedExplicitIDTransientNewChatRejectsStaleUnavailableSelectionSeed() async {
+        let model = makeThinkingCapableProviderModels()[0]
+        let unavailableModel = AiProviderModel(
+            id: model.id,
+            provider: model.provider,
+            rawModelID: model.rawModelID,
+            displayName: model.displayName,
+            providerDisplayName: model.providerDisplayName,
+            thinkingCapability: model.thinkingCapability,
+            supportsThinkingNone: model.supportsThinkingNone,
+            unavailableReason: .init(message: "Model is temporarily unavailable."),
+        )
+        let sessionID = makeCBW005SessionID("74747474-7474-7474-7474-747474747474")
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: model.id,
+            selectedThinking: .effort(.high),
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            catalogRows: [makeCatalogRows()[0]],
+            modelListState: .loaded([unavailableModel]),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        // store.exhaustivity = .off: stale transient seed의 application boundary와 zero-save만 선별 검증합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        let provenance = store.state.newChatPreparationProvenance
+        await store.send(.prepareTransientNewChatIfCurrent(
+            sessionID: sessionID,
+            provenance: provenance,
+            seed: seed,
+        ))
+
+        XCTAssertEqual(store.state.sessionID, sessionID)
+        XCTAssertNil(store.state.selectedModelHandle)
+        XCTAssertNil(store.state.selectedThinking)
+        XCTAssertEqual(store.state.preparedTransientSessionID, sessionID)
+        XCTAssertNil(store.state.emptyDraftSessionID)
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
+    }
+
+    /// CBW-005-start_chat_conversation_session: seed-only completion은 stale unavailable seed를 거부한다.
+    /// current provenance여도 비동기 resolution 뒤 unavailable이 된 seed가 runtime state로 승격되지 않는지 검증합니다.
+    /// - 검증 내용: payload/identity/provenance 보존, model/thinking/unavailable presentation nil, save 0회
+    /// - 사전 조건: touched transient와 current provenance, seed handle이 unavailable인 loaded catalog가 있다.
+    /// - 기대 결과: seed-only application은 전체 state를 변경하지 않고 persistence를 호출하지 않는다.
+    func testGuardedSeedOnlyCompletionRejectsStaleUnavailableSelectionSeed() async {
+        let model = makeThinkingCapableProviderModels()[0]
+        let unavailableModel = AiProviderModel(
+            id: model.id,
+            provider: model.provider,
+            rawModelID: model.rawModelID,
+            displayName: model.displayName,
+            providerDisplayName: model.providerDisplayName,
+            thinkingCapability: model.thinkingCapability,
+            supportsThinkingNone: model.supportsThinkingNone,
+            unavailableReason: .init(message: "Model is temporarily unavailable."),
+        )
+        let sessionID = makeCBW005SessionID("75757575-7575-7575-7575-757575757575")
+        let context = makeContextSnapshot(summary: "Touched context")
+        let attachment = makeCBW005Attachment(path: "/tmp/Touched.txt")
+        let seed = AiChatNewChatSelectionSeed(
+            modelHandle: model.id,
+            selectedThinking: .effort(.high),
+        )
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionID: sessionID,
+            currentContext: context,
+            addedAttachments: [attachment],
+            draftText: "Touched question",
+            catalogRows: [makeCatalogRows()[0]],
+            modelListState: .loaded([unavailableModel]),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+                return snapshot
+            }
+        }
+        let provenance = store.state.newChatPreparationProvenance
+        let stateBeforeApplication = store.state
+
+        await store.send(.applyNewChatSelectionSeedIfCurrent(
+            provenance: provenance,
+            seed: seed,
+        ))
+
+        XCTAssertEqual(store.state, stateBeforeApplication)
+        XCTAssertEqual(store.state.newChatPreparationProvenance, provenance)
+        XCTAssertNil(store.state.selectedModelHandle)
+        XCTAssertNil(store.state.selectedThinking)
+        XCTAssertNil(store.state.unavailableSelectedModelHandle)
+        XCTAssertTrue(savedSnapshots.value.isEmpty)
     }
 
     /// CBW-005-start_chat_conversation_session: seed-only completion은 touched transient payload와 identity를 보존한다.
@@ -1475,6 +2247,81 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
     }
 
     // MARK: - CBW-005-show_chat_session_list
+
+    /// CBW-005-show_chat_session_list: Inspector session row는 rest에서 clear이고 Home과 같은 hover feedback을 사용한다.
+    /// session 목록을 탐색할 때 지속 배경 없이 pointer가 있는 row만 기존 Home interaction token으로 강조하는지 검증합니다.
+    /// - 검증 내용: row modifier의 local hover state, shared fill, control radius, continuous style, 0.14초 ease-out
+    /// - 사전 조건: 일반 row와 rename row가 같은 sessionRow 경계를 사용하고 기존 navigation/activity/actions sibling 구조가 존재한다.
+    /// - 기대 결과: rest fill은 clear이고 hover 시 shared token으로 전환되며 기존 sibling target 구조는 별도 회귀 테스트로 보존된다.
+    func testSessionRowsUseHomeHoverBackgroundContract() throws {
+        let source = try String(contentsOf: aiChatSessionsViewSourceURL, encoding: .utf8)
+        XCTAssertTrue(source
+            .contains(
+                "sessionRow(row)\n                                        .modifier(AiChatSessionRowHoverEffect())",
+            ))
+
+        let hoverEffect = try sourceSection(
+            in: source,
+            from: "private struct AiChatSessionRowHoverEffect",
+            to: "private struct AiChatProcessingRowTextEffect",
+        )
+
+        XCTAssertTrue(hoverEffect.contains("@Environment(\\.colorScheme)"))
+        XCTAssertTrue(hoverEffect.contains("@State private var isHovered = false"))
+        XCTAssertTrue(hoverEffect.contains("VoyagerDS.Radius.control, style: .continuous"))
+        XCTAssertTrue(hoverEffect.contains("isHovered ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear"))
+        XCTAssertTrue(hoverEffect.contains(".animation(.easeOut(duration: 0.14), value: isHovered)"))
+        XCTAssertTrue(hoverEffect.contains(".onHover { isHovered = $0 }"))
+    }
+
+    /// CBW-005-show_chat_session_list: session row의 navigation 영역은 카드 padding을 포함하고 보조 target과 분리된다.
+    /// 실제 source 구조가 Button semantics를 유지하면서 빈 행 영역까지 hit target으로 확장되는지 검증합니다.
+    /// - 검증 내용: max-width label, row text와 Spacer, 내부 padding, Rectangle content shape, sibling activity/menu
+    /// - 사전 조건: display row는 rename row가 아닌 일반 session row이다.
+    /// - 기대 결과: navigation Button이 남은 행 폭을 소유하고 activity와 actions menu는 Button 뒤의 독립 sibling이다.
+    func testSessionRowNavigationOwnsVisiblePaddingAndKeepsSiblingTargets() throws {
+        let source = try String(contentsOf: aiChatSessionsViewSourceURL, encoding: .utf8)
+        let displayRow = try sourceSection(
+            in: source,
+            from: "    private func displayRow",
+            to: "    @ViewBuilder\n    private func rowActivityIndicator",
+        )
+
+        XCTAssertTrue(displayRow.contains("Button {"))
+        XCTAssertTrue(displayRow.contains("rowText(row)\n                    Spacer(minLength: 0)"))
+        XCTAssertTrue(displayRow.contains(".padding(.leading, 10)"))
+        XCTAssertTrue(displayRow.contains(".padding(.vertical, 8)"))
+        XCTAssertTrue(displayRow.contains(".frame(maxWidth: .infinity, alignment: .leading)"))
+        XCTAssertTrue(displayRow.contains(".contentShape(Rectangle())"))
+        XCTAssertFalse(displayRow.contains(".onTapGesture"))
+
+        let buttonIndex = try XCTUnwrap(displayRow.range(of: "Button {")?.lowerBound)
+        let activityIndex = try XCTUnwrap(displayRow.range(of: "rowActivityIndicator(row)")?.lowerBound)
+        let actionsIndex = try XCTUnwrap(displayRow.range(of: "AiChatSessionActionsMenuButton(")?.lowerBound)
+        XCTAssertLessThan(buttonIndex, activityIndex)
+        XCTAssertLessThan(activityIndex, actionsIndex)
+        XCTAssertTrue(displayRow.contains(".padding(.trailing, 10)"))
+    }
+
+    /// CBW-005-show_chat_session_list: actions menu는 명시적인 button 접근성 metadata와 focus ring을 제공한다.
+    /// NSHostingView가 representable의 실제 makeNSView를 실행해 만든 AppKit button 계약을 검증합니다.
+    /// - 검증 내용: accessibility label, button role, focus ring, actions button 단일 AppKit target
+    /// - 사전 조건: 일반 session row의 actions representable을 24pt frame으로 host한다.
+    /// - 기대 결과: VoiceOver가 목적과 role을 읽고 keyboard focus indication이 억제되지 않는다.
+    func testSessionActionsMenuButtonExposesAccessibilityAndFocusRing() throws {
+        _ = NSApplication.shared
+        let hostedView = NSHostingView(rootView: AiChatSessionActionsMenuButton(
+            onRename: {},
+            onDelete: {},
+        ).frame(width: 24, height: 24))
+        hostedView.frame = NSRect(x: 0, y: 0, width: 24, height: 24)
+        hostedView.layoutSubtreeIfNeeded()
+
+        let button = try XCTUnwrap(firstSubview(of: NSButton.self, in: hostedView))
+        XCTAssertEqual(button.accessibilityLabel(), "Session actions")
+        XCTAssertEqual(button.accessibilityRole(), .button)
+        XCTAssertNotEqual(button.focusRingType, .none)
+    }
 
     /// CBW-005-show_chat_session_list: Sessions view는 durable session summary를 불러와 표시한다.
     /// sessionsAppeared가 persistence list를 호출하고 rows/loading/error state를 갱신하는지 검증합니다.
@@ -6293,6 +7140,36 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(store.state.mode, AiChatMode.chat)
         XCTAssertEqual(store.state.sessionID, targetSessionID)
         XCTAssertEqual(store.state.sessionList.selectedSessionID, targetSessionID)
+    }
+
+    private var aiChatSessionsViewSourceURL: URL {
+        var packageRoot = URL(fileURLWithPath: #filePath)
+        for _ in 0 ..< 4 {
+            packageRoot.deleteLastPathComponent()
+        }
+        return packageRoot
+            .appendingPathComponent("Sources")
+            .appendingPathComponent("VoyagerFeaturesAiChat")
+            .appendingPathComponent("Ui")
+            .appendingPathComponent("AiChatSessionsView.swift")
+    }
+
+    private func sourceSection(in source: String, from start: String, to end: String) throws -> String {
+        let startIndex = try XCTUnwrap(source.range(of: start)?.lowerBound)
+        let endIndex = try XCTUnwrap(source.range(of: end, range: startIndex ..< source.endIndex)?.lowerBound)
+        return String(source[startIndex ..< endIndex])
+    }
+
+    private func firstSubview<View: NSView>(of _: View.Type, in root: NSView) -> View? {
+        if let root = root as? View {
+            return root
+        }
+        for subview in root.subviews {
+            if let match = firstSubview(of: View.self, in: subview) {
+                return match
+            }
+        }
+        return nil
     }
 }
 

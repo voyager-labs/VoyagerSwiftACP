@@ -23,9 +23,11 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !store.allFixedLocationItems.isEmpty {
+            Spacer()
+                .frame(height: windowControlsTopInset)
+
+            if store.shouldShowFixedLocationSection {
                 fixedLocationsGrid
-                    .padding(.top, 50)
             }
 
             ScrollView {
@@ -54,6 +56,13 @@ struct SidebarView: View {
                 }
             }
             .clipped()
+            .contextMenu {
+                if !store.shouldShowFixedLocationSection,
+                   !store.allFixedLocationItems.isEmpty
+                {
+                    fixedLocationsVisibilityMenu
+                }
+            }
         }
         .background(Color.clear)
         .navigationSplitViewColumnWidth(ideal: store.sidebarWidth)
@@ -67,45 +76,34 @@ struct SidebarView: View {
         store.contentTabSidebarItems.filter { !$0.isPinned }
     }
 
-    @ViewBuilder
     private var fixedLocationsGrid: some View {
-        if store.fixedLocationItems.isEmpty {
-            Color.clear
-                .frame(height: fixedLocationGridHeight(for: 1))
-                .contentShape(Rectangle())
-                .contextMenu { fixedLocationsVisibilityMenu }
-                .padding(.horizontal, fixedLocationGridHorizontalPadding)
-                .padding(.vertical, fixedLocationGridVerticalPadding)
-                .padding(.bottom, fixedLocationGridBottomSpacing)
-        } else {
-            GeometryReader { proxy in
-                let metrics = fixedLocationGridMetrics(for: proxy.size.width)
+        GeometryReader { proxy in
+            let metrics = fixedLocationGridMetrics(for: proxy.size.width)
 
-                LazyVGrid(columns: metrics.columns, alignment: .leading, spacing: fixedLocationGridGap) {
-                    ForEach(store.fixedLocationItems) { item in
-                        FixedLocationButton(
-                            item: item,
-                            workspaceClient: workspaceClient,
-                            width: metrics.cellWidth,
-                            height: fixedLocationCellHeight,
-                            isHovered: fixedLocationHoveredItemID == item.id,
-                            onSelect: {
-                                store.send(.delegate(.selectFixedLocation(item.id)))
-                            },
-                            onHover: { isHovered in
-                                fixedLocationHoveredItemID = isHovered ? item.id : nil
-                            },
-                        )
-                    }
+            LazyVGrid(columns: metrics.columns, alignment: .leading, spacing: fixedLocationGridGap) {
+                ForEach(store.fixedLocationItems) { item in
+                    FixedLocationButton(
+                        item: item,
+                        workspaceClient: workspaceClient,
+                        width: metrics.cellWidth,
+                        height: fixedLocationCellHeight,
+                        isHovered: fixedLocationHoveredItemID == item.id,
+                        onSelect: {
+                            store.send(.delegate(.selectFixedLocation(item.id)))
+                        },
+                        onHover: { isHovered in
+                            fixedLocationHoveredItemID = isHovered ? item.id : nil
+                        },
+                    )
                 }
-                .padding(.horizontal, fixedLocationGridHorizontalPadding)
-                .padding(.vertical, fixedLocationGridVerticalPadding)
             }
-            .frame(height: fixedLocationGridHeight(for: store.fixedLocationItems.count))
-            .padding(.bottom, fixedLocationGridBottomSpacing)
-            .contentShape(Rectangle())
-            .contextMenu { fixedLocationsVisibilityMenu }
+            .padding(.horizontal, fixedLocationGridHorizontalPadding)
+            .padding(.vertical, fixedLocationGridVerticalPadding)
         }
+        .frame(height: fixedLocationGridHeight(for: store.fixedLocationItems.count))
+        .padding(.bottom, fixedLocationGridBottomSpacing)
+        .contentShape(Rectangle())
+        .contextMenu { fixedLocationsVisibilityMenu }
     }
 
     @ViewBuilder
@@ -135,6 +133,10 @@ struct SidebarView: View {
                 }
             }
         }
+    }
+
+    private var windowControlsTopInset: CGFloat {
+        50
     }
 
     private var fixedLocationGridGap: CGFloat {

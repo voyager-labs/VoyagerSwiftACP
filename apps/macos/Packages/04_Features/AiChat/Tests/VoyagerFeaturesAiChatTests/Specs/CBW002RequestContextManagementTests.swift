@@ -992,6 +992,219 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         XCTAssertEqual(completedDisplayModel.currentContext?.title, "LiveOnly.txt")
         XCTAssertEqual(completedDisplayModel.addedAttachments.map(\.title), ["LiveOnly.txt"])
     }
+
+    // MARK: - CBW-002-change_context_folder_structure_mode
+
+    /// CBW-002-change_context_folder_structure_mode: native menu folder projection은 두 mode를 고정 순서로 제공한다.
+    /// menu item이 display title이 아닌 mode enum을 identity로 사용하고 current-context/attachment target을 포함하지 않는지 검증합니다.
+    /// - 검증 내용: fixed option order, mode identity, single selection, accessibility value, target identity exclusion
+    /// - 사전 조건: includeSubfolders가 선택된 folder structure menu projection입니다.
+    /// - 기대 결과: 두 항목만 고정 순서로 생성되고 selected는 하나이며 item 저장 필드에 target identity가 없습니다.
+    func testNativeMenuFolderProjectionProvidesTwoTargetAgnosticOptions() {
+        let items = AiChatFolderStructureMenuItemDisplayModel.items(selectedMode: .includeSubfolders)
+
+        XCTAssertEqual(items.map(\.mode), [.currentFolderOnly, .includeSubfolders])
+        XCTAssertEqual(items.map(\.title), ["Current folder only", "Include subfolders"])
+        XCTAssertEqual(items.filter(\.isSelected).map(\.mode), [.includeSubfolders])
+        XCTAssertEqual(items.map(\.accessibilityLabel), ["Current folder only", "Include subfolders"])
+        XCTAssertEqual(items.map(\.accessibilityValue), ["Not selected", "Selected"])
+        XCTAssertTrue(items.allSatisfy(\.isEnabled))
+
+        let storedFieldNames = Set(items.flatMap { item in
+            Mirror(reflecting: item).children.compactMap(\.label)
+        })
+        XCTAssertEqual(storedFieldNames, Set([
+            "mode",
+            "title",
+            "isSelected",
+            "isEnabled",
+            "accessibilityLabel",
+            "accessibilityValue",
+        ]))
+    }
+}
+
+extension CBW002RequestContextManagementTests {
+    /// CBW-002-change_context_folder_structure_mode: current context mode 변경은 attachment mode를 변경하지 않는다.
+    /// current context aggregate target이 added attachment의 독립 metadata까지 확장되지 않는지 검증합니다.
+    /// - 검증 내용: current context folder mode 변경 후 두 attachment의 metadata 불변을 확인합니다.
+    /// - 사전 조건: current folder context와 서로 다른 mode를 가진 folder attachment 두 개가 있습니다.
+    /// - 기대 결과: current context만 includeSubfolders가 되고 attachment mode는 기존 값을 유지합니다.
+    func testFolderStructureModeCurrentContextPreservesAttachmentModes() async {
+        let folderPath = URL(filePath: "/tmp/Projects", directoryHint: .isDirectory).standardizedFileURL
+            .path(percentEncoded: false)
+        let folderKey = makeCBW002FolderKey(.reference, folderPath)
+        let firstAttachment = makeCBW002FolderDraftAttachment(
+            id: "first-folder",
+            title: "First",
+            path: "/tmp/First",
+            mode: .currentFolderOnly,
+        )
+        let secondAttachment = makeCBW002FolderDraftAttachment(
+            id: "second-folder",
+            title: "Second",
+            path: "/tmp/Second",
+            mode: .includeSubfolders,
+        )
+        let attachments = [firstAttachment, secondAttachment]
+        let store = TestStore(initialState: AiChatFeature.State(
+            currentContext: makeCBW002FolderContext(summary: "Projects", folderPath: folderPath),
+            addedAttachments: attachments,
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.folderStructureModeChanged(.currentContext, .includeSubfolders)) { state in
+            state.currentContextFolderStructureModes = [folderKey: .includeSubfolders]
+            state.currentContext = makeCBW002FolderContext(
+                summary: "Projects",
+                folderPath: folderPath,
+                mode: .includeSubfolders,
+            )
+        }
+
+        XCTAssertEqual(store.state.addedAttachments, attachments)
+    }
+
+    /// CBW-002-change_context_folder_structure_mode: attachment mode 변경은 exact attachment ID만 갱신한다.
+    /// attachment target action이 current context 또는 다른 attachment로 번지지 않는지 검증합니다.
+    /// - 검증 내용: matching ID metadata 변경과 current context/other attachment 불변을 확인합니다.
+    /// - 사전 조건: current folder context와 folder attachment 두 개가 모두 currentFolderOnly입니다.
+    /// - 기대 결과: 선택한 attachment만 includeSubfolders로 변경됩니다.
+    func testFolderStructureModeAttachmentTargetsExactID() async {
+        let currentContext = makeCBW002FolderContext(
+            summary: "Projects",
+            folderPath: "/tmp/Projects",
+            mode: .currentFolderOnly,
+        )
+        let target = makeCBW002FolderDraftAttachment(
+            id: "target-folder",
+            title: "Target",
+            path: "/tmp/Target",
+            mode: .currentFolderOnly,
+        )
+        let other = makeCBW002FolderDraftAttachment(
+            id: "other-folder",
+            title: "Other",
+            path: "/tmp/Other",
+            mode: .currentFolderOnly,
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            currentContext: currentContext,
+            addedAttachments: [target, other],
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.folderStructureModeChanged(.attachment(target.id), .includeSubfolders)) { state in
+            state.addedAttachments[0] = makeCBW002FolderDraftAttachment(
+                id: "target-folder",
+                title: "Target",
+                path: "/tmp/Target",
+                mode: .includeSubfolders,
+            )
+        }
+
+        XCTAssertEqual(store.state.currentContext, currentContext)
+        XCTAssertEqual(store.state.addedAttachments[1], other)
+    }
+
+    /// CBW-002-change_context_folder_structure_mode: 제거된 attachment의 stale mode action은 no-op이다.
+    /// menu 생성 뒤 chip이 제거된 race에서 이전 ID가 다른 target으로 fallback되지 않는지 검증합니다.
+    /// - 검증 내용: stale attachment ID action 이후 current context와 remaining attachment 불변을 확인합니다.
+    /// - 사전 조건: current folder context와 removed/remaining folder attachment가 있고 removed를 먼저 삭제합니다.
+    /// - 기대 결과: stale mode action은 crash 없이 상태를 변경하지 않습니다.
+    func testFolderStructureModeRemovedAttachmentActionIsNoOp() async {
+        let currentContext = makeCBW002FolderContext(
+            summary: "Projects",
+            folderPath: "/tmp/Projects",
+            mode: .currentFolderOnly,
+        )
+        let removed = makeCBW002FolderDraftAttachment(
+            id: "removed-folder",
+            title: "Removed",
+            path: "/tmp/Removed",
+            mode: .currentFolderOnly,
+        )
+        let remaining = makeCBW002FolderDraftAttachment(
+            id: "remaining-folder",
+            title: "Remaining",
+            path: "/tmp/Remaining",
+            mode: .currentFolderOnly,
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            currentContext: currentContext,
+            addedAttachments: [removed, remaining],
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.removeAddedAttachment(removed.id)) { state in
+            state.addedAttachments = [remaining]
+        }
+        await store.send(.folderStructureModeChanged(.attachment(removed.id), .includeSubfolders))
+
+        XCTAssertEqual(store.state.currentContext, currentContext)
+        XCTAssertEqual(store.state.addedAttachments, [remaining])
+    }
+
+    /// CBW-002-change_context_folder_structure_mode: 동일·중첩 path attachment도 ID별 mode를 유지한다.
+    /// path 관계가 attachment target identity를 합치거나 nested de-dup으로 오인되지 않는지 검증합니다.
+    /// - 검증 내용: 동일 path 두 target과 child path target의 metadata를 ID별로 확인합니다.
+    /// - 사전 조건: distinct ID의 same-path attachment 둘과 nested-path attachment 하나가 있습니다.
+    /// - 기대 결과: 각 action의 exact ID만 변경되고 동일·중첩 path의 다른 target은 유지됩니다.
+    func testFolderStructureModeSameAndNestedPathsRemainIndependent() async {
+        let sharedPath = "/tmp/Projects"
+        let firstSamePath = makeCBW002FolderDraftAttachment(
+            id: "same-path-first",
+            title: "Projects A",
+            path: sharedPath,
+            mode: .currentFolderOnly,
+        )
+        let secondSamePath = makeCBW002FolderDraftAttachment(
+            id: "same-path-second",
+            title: "Projects B",
+            path: sharedPath,
+            mode: .currentFolderOnly,
+        )
+        let nestedPath = makeCBW002FolderDraftAttachment(
+            id: "nested-path",
+            title: "Feature",
+            path: "\(sharedPath)/Feature",
+            mode: .currentFolderOnly,
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            addedAttachments: [firstSamePath, secondSamePath, nestedPath],
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.folderStructureModeChanged(.attachment(firstSamePath.id), .includeSubfolders)) { state in
+            state.addedAttachments[0] = makeCBW002FolderDraftAttachment(
+                id: "same-path-first",
+                title: "Projects A",
+                path: sharedPath,
+                mode: .includeSubfolders,
+            )
+        }
+        await store.send(.folderStructureModeChanged(.attachment(nestedPath.id), .includeSubfolders)) { state in
+            state.addedAttachments[2] = makeCBW002FolderDraftAttachment(
+                id: "nested-path",
+                title: "Feature",
+                path: "\(sharedPath)/Feature",
+                mode: .includeSubfolders,
+            )
+        }
+
+        XCTAssertEqual(
+            store.state.addedAttachments.map { $0.metadata["folderStructureMode"] },
+            [
+                AiChatFolderStructureMode.includeSubfolders.rawValue,
+                AiChatFolderStructureMode.currentFolderOnly.rawValue,
+                AiChatFolderStructureMode.includeSubfolders.rawValue,
+            ],
+        )
+    }
 }
 
 private extension CBW002RequestContextManagementTests {
@@ -1178,6 +1391,25 @@ private func makeCBW002DraftAttachment(
         displayTitle: title,
         sourceLocation: AiChatAttachmentSourceLocation(filePath: filePath),
         currentStatus: status,
+    )
+}
+
+private func makeCBW002FolderDraftAttachment(
+    id: String,
+    title: String,
+    path: String,
+    mode: AiChatFolderStructureMode,
+) -> AiChatAttachmentDraft {
+    let folderURL = URL(filePath: path, directoryHint: .isDirectory).standardizedFileURL
+    return AiChatAttachmentDraft(
+        id: AiChatAttachmentID(rawValue: id),
+        source: .folder,
+        displayTitle: title,
+        sourceLocation: AiChatAttachmentSourceLocation(
+            fileURL: folderURL,
+            filePath: folderURL.path(percentEncoded: false),
+        ),
+        metadata: ["folderStructureMode": mode.rawValue],
     )
 }
 

@@ -108,6 +108,7 @@ struct MenuCommandsFeature {
         switch command {
         case .requestUndo: .send(.delegate(.windowManager(.edit(.requestUndo))))
         case .requestRedo: .send(.delegate(.windowManager(.edit(.requestRedo))))
+        case .find: .send(.delegate(.windowManager(.edit(.find))))
         case .toggleComposer: .send(.delegate(.windowManager(.edit(.toggleComposer))))
         case .cut: .send(.delegate(.windowManager(.edit(.cut))))
         case .copy: .send(.delegate(.windowManager(.edit(.copy))))

@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Perception
 import SwiftUI
 import VoyagerEntitiesAi
+import VoyagerShared
 
 public struct AiChatView: View {
     let store: StoreOf<AiChatFeature>
@@ -14,10 +15,10 @@ public struct AiChatView: View {
 
     @State private var isChatInputFocused = false
     @State private var chatInputTextHeight = Self.chatInputMinTextHeight
-    @State private var isModelSelectorPopoverPresented = false
-    @State private var isThinkingSelectorPresented = false
     @State private var transcriptScrollRestoreRequest: AiChatTranscriptScrollRestoreRequest?
     @State private var transcriptScrollRestoreSequence = 0
+    @State private var shouldRestoreChatInputFocusAfterSearch = false
+    @StateObject private var transcriptSearchProjection = AiChatTranscriptSearchProjectionModel()
 
     public init(
         store: StoreOf<AiChatFeature>,
@@ -31,97 +32,154 @@ public struct AiChatView: View {
 
     public var body: some View {
         WithPerceptionTracking {
-            let state = store.state
-            let builder = AiChatStateDisplayModelBuilder(state: state)
-            let skeleton = state.skeletonDisplayModel
-            let requestContext = builder.requestContextDisplayModel
-            let sessions = AiChatSessionsDisplayModel(
-                rows: state.sessionList.rows,
-                now: Date(),
-                query: state.sessionList.query,
-                totalRowCount: state.sessionList.allRows.count,
-                processingSessionID: state.executionPhase.processingSessionID,
-                unreadCompletedSessionIDs: state.sessionList.unreadCompletedSessionIDs,
-                hiddenSessionIDs: state.hiddenEmptyDraftSessionIDs,
-            )
+            aiChatContent(state: store.state)
+        }
+    }
 
-            Group {
-                if state.mode == .sessions {
-                    AiChatSessionsView(
-                        store: store,
-                        state: state,
-                        displayModel: sessions,
-                        onSessionSelected: onSessionSelected,
-                    )
-                } else if let centeredEmptyContent, isCenteredEmptyChat(state: state) {
-                    centeredEmptyChatView(
-                        centeredEmptyContent: centeredEmptyContent,
-                        state: state,
-                        skeleton: skeleton,
-                        requestContext: requestContext,
-                    )
-                } else {
-                    ScrollViewReader { scrollProxy in
-                        VStack(spacing: 0) {
-                            ScrollView {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    AiChatConversationSurface(
-                                        state: state,
-                                        skeleton: skeleton,
-                                        onOpenSettings: { store.send(.openSettingsTapped) },
-                                        onErrorRecovery: { store.send(.errorRecoveryTapped) },
-                                        onRegenerate: { store.send(.regenerateTapped) },
-                                        onRebindContext: { store.send(.rebindContextTapped) },
-                                        onStartNewChatFromRebind: { store.send(.startNewChatFromRebindTapped) },
-                                    )
-                                    Color.clear
-                                        .frame(height: 0)
-                                        .background(
-                                            AiChatTranscriptScrollObserver(
-                                                sessionID: state.sessionID,
-                                                restoreRequest: transcriptScrollRestoreRequest,
-                                                onScrollOffsetChanged: { offsetY, sessionID in
-                                                    guard let sessionID else { return }
-                                                    store.send(.transcriptScrollOffsetChanged(sessionID, offsetY))
-                                                },
-                                            ),
-                                        )
+    @ViewBuilder
+    private func aiChatContent(state: AiChatState) -> some View {
+        let skeleton = state.skeletonDisplayModel
+        let requestContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel
+        let searchRequest = transcriptSearchProjection.request(for: state)
+        let searchContext = transcriptSearchProjection.renderContext(
+            for: searchRequest,
+            currentMatchOrdinal: state.transcriptSearch.currentMatchOrdinal,
+        )
+        let sessions = Self.sessionsDisplayModel(for: state)
 
-                                    Color.clear
-                                        .frame(height: 1)
-                                        .id(Self.transcriptBottomAnchorID)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 10)
-                                .padding(.top, 10)
-                                .padding(.bottom, 8)
-                            }
-                            .onAppear {
-                                requestTranscriptScrollOffsetRestore(for: state)
-                            }
-                            .onChange(of: state.sessionID) { _ in
-                                requestTranscriptScrollOffsetRestore(for: state)
-                            }
-                            .onChange(of: state.transcriptAutoScrollVersion) { _ in
-                                scrollTranscriptToBottom(scrollProxy)
-                            }
+        Group {
+            if state.mode == .sessions {
+                AiChatSessionsView(
+                    store: store,
+                    state: state,
+                    displayModel: sessions,
+                    onSessionSelected: onSessionSelected,
+                )
+            } else if let centeredEmptyContent, isCenteredEmptyChat(state: state) {
+                centeredEmptyChatView(
+                    centeredEmptyContent: centeredEmptyContent,
+                    state: state,
+                    skeleton: skeleton,
+                    requestContext: requestContext,
+                )
+            } else {
+                conversationView(
+                    state: state,
+                    skeleton: skeleton,
+                    requestContext: requestContext,
+                    searchPresentation: searchContext.presentation,
+                    currentSearchMatch: searchContext.currentMatch,
+                )
+            }
+        }
+        .onAppear {
+            store.send(.onAppear)
+        }
+        .task(id: searchRequest) {
+            await transcriptSearchProjection.update(searchRequest)
+        }
+        .onChange(of: searchContext.matchCountProjection) { projection in
+            guard state.transcriptSearch.isPresented, let projection else { return }
+            store.send(.transcriptSearchMatchCountChanged(projection))
+        }
+        .onChange(of: state.transcriptSearch.isPresented) { isPresented in
+            guard isPresented else { return }
+            shouldRestoreChatInputFocusAfterSearch = isChatInputFocused
+        }
+    }
 
-                            inputBar(
-                                state: state,
-                                input: skeleton.chatInput,
-                                requestContext: requestContext,
-                            )
-                            .padding(.horizontal, 10)
-                            .padding(.top, 8)
-                            .padding(.bottom, 10)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    }
+    private func conversationView(
+        state: AiChatState,
+        skeleton: AiChatSkeletonDisplayModel,
+        requestContext: AiChatRequestContextDisplayModel,
+        searchPresentation: AiChatTranscriptSearchPresentation,
+        currentSearchMatch: AiChatRenderedTextMatchDescriptor?,
+    ) -> some View {
+        ScrollViewReader { scrollProxy in
+            VStack(spacing: 0) {
+                if state.transcriptSearch.isPresented {
+                    transcriptSearchBar(state: state)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 10)
+                        .padding(.bottom, 2)
                 }
+
+                transcriptScrollView(
+                    state: state,
+                    skeleton: skeleton,
+                    searchPresentation: searchPresentation,
+                    currentSearchMatch: currentSearchMatch,
+                )
+                .onAppear {
+                    requestTranscriptScrollOffsetRestore(for: state)
+                }
+                .onChange(of: state.sessionID) { _ in
+                    requestTranscriptScrollOffsetRestore(for: state)
+                }
+                .onChange(of: state.transcriptAutoScrollVersion) { _ in
+                    guard Self.shouldAutoScrollToBottom(transcriptSearch: state.transcriptSearch) else { return }
+                    scrollTranscriptToBottom(scrollProxy)
+                }
+                .onChange(of: state.transcriptSearch.navigationRevision) { _ in
+                    navigateToCurrentSearchMatch(
+                        presentation: searchPresentation,
+                        currentMatch: currentSearchMatch,
+                        proxy: scrollProxy,
+                    )
+                }
+                inputBar(
+                    state: state,
+                    input: skeleton.chatInput,
+                    requestContext: requestContext,
+                )
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
+                .padding(.bottom, 10)
             }
-            .onAppear {
-                store.send(.onAppear)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    private func transcriptScrollView(
+        state: AiChatState,
+        skeleton: AiChatSkeletonDisplayModel,
+        searchPresentation: AiChatTranscriptSearchPresentation,
+        currentSearchMatch: AiChatRenderedTextMatchDescriptor?,
+    ) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                AiChatConversationSurface(
+                    state: state,
+                    skeleton: skeleton,
+                    searchPresentation: searchPresentation,
+                    currentSearchMatch: currentSearchMatch,
+                    onOpenSettings: { store.send(.openSettingsTapped) },
+                    onErrorRecovery: { store.send(.errorRecoveryTapped) },
+                    onRegenerate: { store.send(.regenerateTapped) },
+                    onRebindContext: { store.send(.rebindContextTapped) },
+                    onStartNewChatFromRebind: { store.send(.startNewChatFromRebindTapped) },
+                )
+                Color.clear
+                    .frame(height: 0)
+                    .background(
+                        AiChatTranscriptScrollObserver(
+                            sessionID: state.sessionID,
+                            restoreRequest: transcriptScrollRestoreRequest,
+                            onScrollOffsetChanged: { offsetY, sessionID in
+                                guard let sessionID else { return }
+                                store.send(.transcriptScrollOffsetChanged(sessionID, offsetY))
+                            },
+                        ),
+                    )
+
+                Color.clear
+                    .frame(height: 1)
+                    .id(Self.transcriptBottomAnchorID)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
         }
     }
 
@@ -138,19 +196,27 @@ public struct AiChatView: View {
         skeleton: AiChatSkeletonDisplayModel,
         requestContext: AiChatRequestContextDisplayModel,
     ) -> some View {
-        VStack(spacing: 20) {
-            Spacer(minLength: 0)
-            centeredEmptyContent
-            compactConnectionCTA(for: skeleton.surface)
-            inputBar(
-                state: state,
-                input: skeleton.chatInput,
-                requestContext: requestContext,
-            )
-            Spacer(minLength: 0)
+        VStack(spacing: 0) {
+            if state.transcriptSearch.isPresented {
+                transcriptSearchBar(state: state)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 10)
+            }
+
+            VStack(spacing: 20) {
+                Spacer(minLength: 0)
+                centeredEmptyContent
+                compactConnectionCTA(for: skeleton.surface)
+                inputBar(
+                    state: state,
+                    input: skeleton.chatInput,
+                    requestContext: requestContext,
+                )
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 40)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.vertical, 40)
     }
 
     @ViewBuilder
@@ -229,6 +295,71 @@ public struct AiChatView: View {
         )
     }
 
+    private func transcriptSearchBar(state: AiChatState) -> some View {
+        AiChatTranscriptSearchBar(
+            search: state.transcriptSearch,
+            focusRevision: state.transcriptSearch.focusRevision,
+            onQueryChanged: { store.send(.transcriptSearchQueryChanged($0)) },
+            onPrevious: { store.send(.transcriptSearchPreviousTapped) },
+            onNext: { store.send(.transcriptSearchNextTapped) },
+            onClose: closeTranscriptSearch,
+        )
+    }
+
+    private func closeTranscriptSearch() {
+        let shouldRestoreChatInputFocus = shouldRestoreChatInputFocusAfterSearch
+        shouldRestoreChatInputFocusAfterSearch = false
+        store.send(.transcriptSearchClosed)
+        guard shouldRestoreChatInputFocus else { return }
+        DispatchQueue.main.async {
+            isChatInputFocused = true
+        }
+    }
+
+    private func navigateToCurrentSearchMatch(
+        presentation: AiChatTranscriptSearchPresentation,
+        currentMatch: AiChatRenderedTextMatchDescriptor?,
+        proxy: ScrollViewProxy,
+    ) {
+        guard let target = Self.searchNavigationTarget(
+            presentation: presentation,
+            currentMatch: currentMatch,
+        ) else { return }
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.18)) {
+                proxy.scrollTo(target.scrollID, anchor: target.relativeAnchor)
+            }
+        }
+    }
+
+    static func searchNavigationTarget(
+        presentation: AiChatTranscriptSearchPresentation,
+        currentMatch: AiChatRenderedTextMatchDescriptor?,
+    ) -> AiChatTranscriptMatchScrollTarget? {
+        guard let currentMatch else { return nil }
+        return presentation.scrollTarget(for: currentMatch)
+    }
+
+    private static func sessionsDisplayModel(for state: AiChatState) -> AiChatSessionsDisplayModel {
+        AiChatSessionsDisplayModel(
+            rows: state.sessionList.rows,
+            now: Date(),
+            query: state.sessionList.query,
+            totalRowCount: state.sessionList.allRows.count,
+            processingSessionID: state.executionPhase.processingSessionID,
+            unreadCompletedSessionIDs: state.sessionList.unreadCompletedSessionIDs,
+            hiddenSessionIDs: state.hiddenEmptyDraftSessionIDs,
+        )
+    }
+
+    static func transcriptSearchCountText(_ search: AiChatTranscriptSearchState) -> String {
+        "\(search.currentMatchOrdinal ?? 0)/\(search.matchCount ?? 0)"
+    }
+
+    static func shouldAutoScrollToBottom(transcriptSearch: AiChatTranscriptSearchState) -> Bool {
+        !transcriptSearch.isPresented || transcriptSearch.navigationRevision == 0
+    }
+
     private func inputBar(
         state: AiChatState,
         input: AiChatInputDisplayModel,
@@ -242,8 +373,6 @@ public struct AiChatView: View {
             colorScheme: colorScheme,
             isChatInputFocused: $isChatInputFocused,
             chatInputTextHeight: $chatInputTextHeight,
-            isModelSelectorPopoverPresented: $isModelSelectorPopoverPresented,
-            isThinkingSelectorPresented: $isThinkingSelectorPresented,
         )
     }
 
@@ -270,7 +399,225 @@ public struct AiChatView: View {
 
     static let transcriptBottomAnchorID = "ai-chat-transcript-bottom"
     static let chatInputMinTextHeight: CGFloat = 46
-    static let chatInputMaxTextHeight: CGFloat = 96
+    static let chatInputMaxTextHeight: CGFloat = 160
+}
+
+struct AiChatTranscriptSearchButtonStyle {
+    let size: CGFloat = 26
+    let symbolSize: CGFloat = 11
+    let symbolWeight: Font.Weight = .semibold
+    let cornerRadius: CGFloat = VoyagerDS.Radius.control
+
+    func hoverFill(
+        isHovered: Bool,
+        isEnabled: Bool,
+        colorScheme: ColorScheme,
+    ) -> Color? {
+        guard isHovered, isEnabled else { return nil }
+        return VoyagerDS.Interaction.controlHoverFill(for: colorScheme)
+    }
+}
+
+private struct AiChatTranscriptSearchButtonLabel: View {
+    let systemName: String
+
+    @Environment(\.isEnabled)
+    private var isEnabled
+    @Environment(\.colorScheme)
+    private var colorScheme
+    @State private var isHovered = false
+
+    private let style = AiChatTranscriptSearchButtonStyle()
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: style.symbolSize, weight: style.symbolWeight))
+            .accessibilityHidden(true)
+            .frame(width: style.size, height: style.size)
+            .background {
+                if let hoverFill = style.hoverFill(
+                    isHovered: isHovered,
+                    isEnabled: isEnabled,
+                    colorScheme: colorScheme,
+                ) {
+                    RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
+                        .fill(hoverFill)
+                }
+            }
+            .contentShape(Rectangle())
+            .onHover { isHovered = $0 }
+    }
+}
+
+private struct AiChatTranscriptSearchBar: View {
+    let search: AiChatTranscriptSearchState
+    let focusRevision: UInt64
+    let onQueryChanged: (String) -> Void
+    let onPrevious: () -> Void
+    let onNext: () -> Void
+    let onClose: () -> Void
+
+    @FocusState private var isSearchFieldFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            searchField
+            if !search.query.isEmpty {
+                searchCount
+            }
+            searchButton(
+                systemName: "chevron.up",
+                accessibilityLabel: "Previous search result",
+                isDisabled: search.status != .matches,
+                action: onPrevious,
+            )
+            searchButton(
+                systemName: "chevron.down",
+                accessibilityLabel: "Next search result",
+                isDisabled: search.status != .matches,
+                action: onNext,
+            )
+            searchButton(
+                systemName: "xmark",
+                accessibilityLabel: "Close conversation search",
+                isDisabled: false,
+                action: onClose,
+            )
+        }
+        .onAppear { isSearchFieldFocused = true }
+        .onChange(of: focusRevision) { _ in isSearchFieldFocused = true }
+        .onExitCommand(perform: onClose)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            TextField(
+                "Find in conversation",
+                text: Binding(get: { search.query }, set: { onQueryChanged($0) }),
+            )
+            .textFieldStyle(.plain)
+            .font(.system(size: 12))
+            .focused($isSearchFieldFocused)
+            .accessibilityLabel("Find in conversation")
+            .onSubmit(onNext)
+        }
+        .padding(.horizontal, 9)
+        .frame(minHeight: 28)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor)),
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1),
+        )
+    }
+
+    private var searchCount: some View {
+        let countText = AiChatView.transcriptSearchCountText(search)
+        return VStack(alignment: .trailing, spacing: 1) {
+            Text(countText)
+                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                .foregroundStyle(.secondary)
+            if search.status == .noResults {
+                Text("No results")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Conversation search results")
+        .accessibilityValue(search.status == .noResults ? "0 of 0, no results" : countText)
+    }
+
+    private func searchButton(
+        systemName: String,
+        accessibilityLabel: String,
+        isDisabled: Bool,
+        action: @escaping () -> Void,
+    ) -> some View {
+        Button(action: action) {
+            AiChatTranscriptSearchButtonLabel(systemName: systemName)
+        }
+        .buttonStyle(.borderless)
+        .disabled(isDisabled)
+        .accessibilityLabel(accessibilityLabel)
+        .help(accessibilityLabel)
+    }
+}
+
+private struct AiChatTranscriptSearchRenderContext {
+    let presentation: AiChatTranscriptSearchPresentation
+    let currentMatch: AiChatRenderedTextMatchDescriptor?
+    let matchCountProjection: AiChatTranscriptSearchMatchCountProjection?
+}
+
+@MainActor
+private final class AiChatTranscriptSearchProjectionModel: ObservableObject {
+    @Published private var projectionResult: AiChatTranscriptSearchProjectionResult?
+
+    private let projector = AiChatTranscriptSearchProjector()
+    private var requestCache = AiChatTranscriptSearchRequestCache()
+    private var generation: UInt64 = 0
+
+    func request(for state: AiChatState) -> AiChatTranscriptSearchProjectionRequest {
+        requestCache.request(
+            isPresented: state.transcriptSearch.isPresented,
+            query: state.transcriptSearch.query,
+            source: AiChatTranscriptSearchRequestSource(
+                sessionToken: state.sessionID?.rawValue,
+                messages: state.transcriptHistory,
+                streamingAssistantContent: state.streamingAssistantDisplayModel?.content,
+                transcriptRevision: state.transcriptHistoryMutationTracker.value,
+                streamingRevision: state.streamingAssistantDraftMutationTracker.value,
+            ),
+        )
+    }
+
+    func renderContext(
+        for request: AiChatTranscriptSearchProjectionRequest,
+        currentMatchOrdinal: Int?,
+    ) -> AiChatTranscriptSearchRenderContext {
+        let currentResult = projectionResult.flatMap { result in
+            result.request == request ? result : nil
+        }
+        let presentation = currentResult?.presentation ?? .empty(query: request.query)
+        return AiChatTranscriptSearchRenderContext(
+            presentation: presentation,
+            currentMatch: presentation.descriptor(atOrdinal: currentMatchOrdinal),
+            matchCountProjection: currentResult?.presentation.matchCountProjection,
+        )
+    }
+
+    func update(_ request: AiChatTranscriptSearchProjectionRequest) async {
+        generation &+= 1
+        let requestedGeneration = generation
+        await projector.invalidate(generation: requestedGeneration)
+
+        guard request.requiresWork else {
+            projectionResult = nil
+            _ = try? await projector.project(request, generation: requestedGeneration)
+            return
+        }
+
+        do {
+            let result = try await projector.project(request, generation: requestedGeneration)
+            try Task.checkCancellation()
+            guard requestedGeneration == generation,
+                  result.isCurrent(request: request, generation: requestedGeneration)
+            else { return }
+            projectionResult = result
+        } catch is CancellationError {
+            // 대체된 projection은 결과를 게시하지 않고 종료합니다.
+        } catch {
+            // Projection 실패는 기존 검색 상태에 합성 오류를 추가하지 않습니다.
+        }
+    }
 }
 
 private struct AiChatTranscriptScrollRestoreRequest: Equatable {

@@ -44,6 +44,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let editCases: [(MenuCommandItem.EditCommand, WindowManagerAction)] = [
             (.cut, .edit(.cut)),
             (.copy, .edit(.copy)),
+            (.find, .edit(.find)),
             (.openChat, .edit(.openChat)),
             (.showChatHistory, .edit(.showChatHistory)),
             (.paste, .edit(.paste)),
@@ -121,6 +122,22 @@ final class MenuCommandsFeatureTests: XCTestCase {
             canHandleByTextResponder: false,
             canPerformEntryCommands: false,
         ))
+    }
+
+    /// VOY-637-collection_filter_composer_title: Collection Filter Composer 상태별 Edit 메뉴 제목
+    /// Composer 표시 상태가 제품 SSOT의 Open/Close 제목으로 투영되는지 검증한다.
+    /// - 검증 내용: 닫힘/열림 상태의 순수 제목 정책
+    /// - 사전 조건: Composer 표시 여부 false/true
+    /// - 기대 결과: Open Collection Filter Composer / Close Collection Filter Composer
+    func testCollectionFilterComposerTitleReflectsPresentationState() {
+        XCTAssertEqual(
+            EditMenuCommands.collectionFilterComposerTitle(isPresented: false),
+            "Open Collection Filter Composer",
+        )
+        XCTAssertEqual(
+            EditMenuCommands.collectionFilterComposerTitle(isPresented: true),
+            "Close Collection Filter Composer",
+        )
     }
 
     /// VOY-165-undo_fallback: 빈 text responder에서도 FileManager Undo capability 유지
@@ -405,6 +422,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
             switch (action, expected) {
             case (.edit(.cut), .edit(.cut)),
                  (.edit(.copy), .edit(.copy)),
+                 (.edit(.find), .edit(.find)),
                  (.edit(.openChat), .edit(.openChat)),
                  (.edit(.showChatHistory), .edit(.showChatHistory)),
                  (.edit(.paste), .edit(.paste)),

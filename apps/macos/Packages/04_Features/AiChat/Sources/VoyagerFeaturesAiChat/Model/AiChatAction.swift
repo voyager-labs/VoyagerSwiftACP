@@ -72,6 +72,12 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case renameSessionConfirmed
     case renameSessionCancelled
     case backToSessionsTapped
+    case transcriptSearchOpened
+    case transcriptSearchClosed
+    case transcriptSearchQueryChanged(String)
+    case transcriptSearchMatchCountChanged(AiChatTranscriptSearchMatchCountProjection)
+    case transcriptSearchNextTapped
+    case transcriptSearchPreviousTapped
     case sessionSearchQueryChanged(String)
     case sessionListLoaded([AiChatSessionSummary])
     case sessionListFailed(String)
@@ -96,11 +102,10 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case newChatFailed(String)
     case setup(AiChatSetupState)
     case providerConnectionsUpdated(AIConnectionsFile)
+    case providerConnectionAuthorityUpdated([AiProvider])
     case modelListLoading(requestID: UUID, provider: AiProvider, credential: StoredCredentialPayload?)
     case modelListLoaded(requestID: UUID, provider: AiProvider, models: [AiProviderModel])
     case modelListLoadFailed(requestID: UUID, provider: AiProvider, failure: AiModelListFailure)
-    case modelSelectorTapped
-    case modelSelectorDismissed
     case selectedModelChanged(AiModelHandle?)
     case selectedThinkingChanged(AiThinkingSelection?)
     case currentContextChanged(AiChatCurrentContextSnapshot)

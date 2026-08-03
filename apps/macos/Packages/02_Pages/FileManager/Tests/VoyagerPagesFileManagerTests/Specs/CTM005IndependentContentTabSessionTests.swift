@@ -3675,25 +3675,67 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
-    /// CTM-005-ai_chat_provider_forwarding: Inspector가 보이지 않고 active tab이 .aiChat이 아닌 경우 전송 없음
-    /// ContentPane과 Inspector 모두 forwarding 조건을 만족하지 않을 때 효과가 발생하지 않는지 검증한다.
-    func testNoForwardingWhenInspectorNotOpenAndActiveTabNotAiChat() async {
-        let connectionsFile = AIConnectionsFile.empty()
+    /// CTM-005-ai_chat_provider_forwarding: pending dormant owner만 최신 provider authority를 수신한다.
+    /// 비활성 owner의 lifecycle 안전성을 보존하면서 unrelated dormant owner의 catalog를 시작하지 않는지 검증한다.
+    /// - 검증 내용: 네 owner collection의 pending snapshot 갱신과 pending 없는 snapshot의 보존
+    /// - 사전 조건: active tab은 Home이고 Inspector는 닫혀 있으며 각 dormant collection에 pending owner가 있음
+    /// - 기대 결과: pending owner는 provider 제거를 반영하고 unrelated dormant owner는 기존 snapshot을 유지함
+    func testPendingDormantOwnersRefreshProviderAuthorityWithoutFullForwarding() async throws {
+        let pendingTabID = ContentTabID()
+        let dormantContentTabID = ContentTabID()
+        let dormantInspectorTabID = ContentTabID()
+        let dormantContentSessionID = AiChatSessionID(rawValue: UUID())
+        let dormantInspectorSessionID = AiChatSessionID(rawValue: UUID())
+        let fixture = try makePendingProviderAuthorityFixture()
+        var dormantContent = FileManagerContentFeature.State()
+        dormantContent.aiChat.providerConnectionSnapshot = .known([.openai])
+        var dormantInspector = FileManagerInspectorFeature.State()
+        dormantInspector.aiChat.providerConnectionSnapshot = .known([.openai])
+
         var state = FileManagerFeature.State()
         state.inspector.inspectorVisible = false
-        state.syncContentTabSidebarItems()
+        state.tabContentStates[pendingTabID] = fixture.content
+        state.tabContentStates[dormantContentTabID] = dormantContent
+        state.tabInspectorStates[pendingTabID] = fixture.inspector
+        state.tabInspectorStates[dormantInspectorTabID] = dormantInspector
+        state.backgroundAiChatStates[fixture.sessionID] = fixture.content
+        state.backgroundAiChatStates[dormantContentSessionID] = dormantContent
+        state.backgroundInspectorAiChatStates[fixture.sessionID] = fixture.inspector
+        state.backgroundInspectorAiChatStates[dormantInspectorSessionID] = dormantInspector
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
+        // Window warm-up fire-and-forget effect는 dormant owner authority 계약의 검증 대상이 아니다.
         store.exhaustivity = .off
 
-        await store.send(.aiConnectionsFileUpdated(connectionsFile))
+        await store.send(.aiConnectionsFileUpdated(.empty()))
 
-        // ContentPane AI Chat forwarding이 발생하지 않음
-        // Inspector forwarding도 발생하지 않음 (inspectorVisible == false)
+        XCTAssertEqual(
+            store.state.tabContentStates[pendingTabID]?.aiChat.providerConnectionSnapshot,
+            AiChatProviderConnectionSnapshot.known([]),
+        )
+        XCTAssertEqual(
+            store.state.tabInspectorStates[pendingTabID]?.aiChat.providerConnectionSnapshot,
+            AiChatProviderConnectionSnapshot.known([]),
+        )
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[fixture.sessionID]?.aiChat.providerConnectionSnapshot,
+            AiChatProviderConnectionSnapshot.known([]),
+        )
+        XCTAssertEqual(
+            store.state.backgroundInspectorAiChatStates[fixture.sessionID]?.aiChat.providerConnectionSnapshot,
+            AiChatProviderConnectionSnapshot.known([]),
+        )
+        assertDormantProviderAuthorityUnchanged(
+            state: store.state,
+            contentTabID: dormantContentTabID,
+            inspectorTabID: dormantInspectorTabID,
+            contentSessionID: dormantContentSessionID,
+            inspectorSessionID: dormantInspectorSessionID,
+        )
         await store.finish()
     }
 
@@ -6812,6 +6854,167 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    /// CTM-005-ai_chat_provider_forwarding: active content authority는 forwarding effect보다 먼저 갱신된다.
+    /// Parent reducer가 full forwarding effect를 실행하지 않아도 late completion을 안전하게 거부하는지 검증한다.
+    /// - 검증 내용: canonical content와 active-tab snapshot의 동기 authority 및 lock 미생성
+    /// - 사전 조건: active AI Chat content에 stale listing marker와 OpenAI pending request가 있음
+    /// - 기대 결과: provider 제거 직후 두 snapshot이 갱신되고 late completion은 request를 시작하지 않음
+    func testActiveContentRejectsLateCompletionBeforeProviderForwardingEffectRuns() throws {
+        let aiChatTabID = ContentTabID()
+        let homeTabID = ContentTabID()
+        let fixture = try makePendingProviderAuthorityFixture()
+        var state = makePendingAiChatTabState(
+            aiChatTabID: aiChatTabID,
+            homeTabID: homeTabID,
+            fixture: fixture,
+        )
+        state.syncActiveTabContentState()
+
+        let resolvedContext = AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: [])
+        withDependencies {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.aiChatExecutionClient.execute = { _, _ in AsyncStream { $0.finish() } }
+        } operation: {
+            _ = FileManagerFeature().reduce(into: &state, action: .aiConnectionsFileUpdated(.empty()))
+
+            XCTAssertEqual(state.content.aiChat.providerConnectionSnapshot, .known([]))
+            XCTAssertEqual(state.tabContentStates[aiChatTabID]?.aiChat.providerConnectionSnapshot, .known([]))
+
+            _ = FileManagerFeature().reduce(
+                into: &state,
+                action: .tabContent(
+                    tabID: aiChatTabID,
+                    action: .aiChat(.requestContextResolved(fixture.resolutionID, resolvedContext)),
+                ),
+            )
+        }
+
+        XCTAssertNil(state.content.aiChat.executionPhase.lock)
+        XCTAssertNil(state.tabContentStates[aiChatTabID]?.aiChat.executionPhase.lock)
+    }
+
+    /// CTM-005-ai_chat_provider_forwarding: active Inspector authority는 visibility와 무관하게 동기 갱신된다.
+    /// Visible forwarding effect를 실행하지 않은 경우와 hidden forwarding이 없는 경우를 함께 검증한다.
+    /// - 검증 내용: visible/hidden canonical Inspector와 active-tab snapshot의 authority 및 lock 미생성
+    /// - 사전 조건: active directory Inspector에 stale listing failure와 OpenAI pending request가 있음
+    /// - 기대 결과: 두 visibility 조건 모두 provider 제거 직후 late completion을 거부함
+    func testActiveInspectorRejectsLateCompletionBeforeOrWithoutProviderForwarding() throws {
+        for inspectorVisible in [true, false] {
+            let tabID = ContentTabID()
+            let fixture = try makePendingProviderAuthorityFixture()
+            var state = makePendingCanonicalInspectorState(
+                tabID: tabID,
+                fixture: fixture,
+                inspectorVisible: inspectorVisible,
+            )
+
+            let resolvedContext = AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: [])
+            withDependencies {
+                $0.uuid = .incrementing
+                $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+                $0.aiChatExecutionClient.execute = { _, _ in AsyncStream { $0.finish() } }
+            } operation: {
+                _ = FileManagerFeature().reduce(into: &state, action: .aiConnectionsFileUpdated(.empty()))
+
+                XCTAssertEqual(state.inspector.aiChat.providerConnectionSnapshot, .known([]))
+                XCTAssertEqual(state.tabInspectorStates[tabID]?.aiChat.providerConnectionSnapshot, .known([]))
+
+                _ = FileManagerFeature().reduce(
+                    into: &state,
+                    action: .inspector(.aiChat(.requestContextResolved(fixture.resolutionID, resolvedContext))),
+                )
+            }
+
+            XCTAssertNil(state.inspector.aiChat.executionPhase.lock)
+        }
+    }
+
+    /// CTM-005-ai_chat_provider_forwarding: inactive pending owner는 최신 provider authority를 사용한다.
+    /// 탭 전환 뒤 provider가 제거된 경우 late context completion이 stale request를 시작하지 않는지 검증한다.
+    /// - 검증 내용: inactive tab 및 background owner의 pending completion이 request lock을 생성하지 않음
+    /// - 사전 조건: Tab A에 OpenAI pending request가 있고 Tab B로 전환한 뒤 OpenAI 연결이 제거됨
+    /// - 기대 결과: late completion 후 foreground/background processing lock이 모두 존재하지 않음
+    func testInactivePendingAiChatRejectsLateCompletionAfterProviderRemoval() async throws {
+        let aiChatTabID = ContentTabID()
+        let homeTabID = ContentTabID()
+        let fixture = try makePendingProviderAuthorityFixture()
+        let state = makePendingAiChatTabState(
+            aiChatTabID: aiChatTabID,
+            homeTabID: homeTabID,
+            fixture: fixture,
+        )
+
+        let store: TestStore<FileManagerFeature.State, FileManagerWindowAction> = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.aiChatExecutionClient.execute = { _, _ in AsyncStream { $0.finish() } }
+        }
+        // Window 통합 reducer의 탭 전환 및 warm-up 후속 action은 이 authority 시나리오의 검증 대상이 아니다.
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(homeTabID)))
+        await store.skipReceivedActions()
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[fixture.sessionID]?.aiChat.pendingRequestStart?.resolutionID,
+            fixture.resolutionID,
+        )
+
+        await store.send(.aiConnectionsFileUpdated(.empty()))
+        let resolvedContext = AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: [])
+        await store.send(.tabContent(
+            tabID: aiChatTabID,
+            action: .aiChat(.requestContextResolved(fixture.resolutionID, resolvedContext)),
+        ))
+
+        XCTAssertNil(store.state.tabContentStates[aiChatTabID]?.aiChat.executionPhase.lock)
+        XCTAssertNil(store.state.backgroundAiChatStates[fixture.sessionID]?.aiChat.executionPhase.lock)
+        XCTAssertNil(store.state.backgroundAiChatStates[fixture.sessionID])
+        await store.finish()
+    }
+
+    /// CTM-005-ai_chat_provider_forwarding: inactive/background Inspector도 최신 provider authority를 사용한다.
+    /// Inspector 전용 routing 경로의 late completion이 제거된 provider로 request를 시작하지 않는지 검증한다.
+    /// - 검증 내용: inactive Inspector와 background Inspector completion의 request lock 미생성
+    /// - 사전 조건: 두 Inspector owner에 OpenAI pending request가 있고 completion 전에 연결이 제거됨
+    /// - 기대 결과: 두 owner 모두 processing lock 없이 pending lifecycle을 종료함
+    func testPendingInspectorOwnersRejectLateCompletionAfterProviderRemoval() async throws {
+        let homeTabID = ContentTabID()
+        let directoryTabID = ContentTabID()
+        let inactiveFixture = try makePendingProviderAuthorityFixture()
+        let backgroundFixture = try makePendingProviderAuthorityFixture()
+        var state = makeInspectorProviderAuthorityState(
+            homeTabID: homeTabID,
+            directoryTabID: directoryTabID,
+            inactiveFixture: inactiveFixture,
+            backgroundFixture: backgroundFixture,
+        )
+        state.inspector.inspectorVisible = false
+
+        let store: TestStore<FileManagerFeature.State, FileManagerWindowAction> = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.aiChatExecutionClient.execute = { _, _ in AsyncStream { $0.finish() } }
+        }
+        // Window warm-up effect는 Inspector pending authority 계약의 검증 대상이 아니다.
+        store.exhaustivity = .off
+
+        await store.send(.aiConnectionsFileUpdated(.empty()))
+        let resolvedContext = AiChatResolvedRequestContext(currentContext: .init(), addedAttachments: [], parts: [])
+        await store.send(.inspector(.aiChat(.requestContextResolved(inactiveFixture.resolutionID, resolvedContext))))
+        await store.send(.inspector(.aiChat(.requestContextResolved(backgroundFixture.resolutionID, resolvedContext))))
+
+        XCTAssertNil(store.state.tabInspectorStates[directoryTabID]?.aiChat.executionPhase.lock)
+        XCTAssertNil(store.state.backgroundInspectorAiChatStates[backgroundFixture.sessionID]?.aiChat.executionPhase
+            .lock)
+        XCTAssertNil(store.state.backgroundInspectorAiChatStates[backgroundFixture.sessionID])
+        await store.finish()
+    }
+
     func testAiChatTabSwitchPreservesBackgroundPendingRequestOwner() async throws {
         let aiChatTabID = ContentTabID()
         let homeTabID = ContentTabID()
@@ -7316,7 +7519,11 @@ extension CTM005IndependentContentTabSessionTests {
         )
         var backgroundContent = FileManagerContentFeature.State()
         backgroundContent.aiChat.sessionID = aliasSessionID
+        backgroundContent.aiChat.sessionStatus = .active
         backgroundContent.aiChat.backgroundPendingRequestStarts[resolutionID] = pendingRequest
+        backgroundContent.aiChat.modelListState = .loaded([selectedModel])
+        backgroundContent.aiChat.selectedModelHandle = selectedModel.id
+        backgroundContent.aiChat.providerConnectionSnapshot = .known([.openai])
 
         var state = FileManagerFeature.State()
         state.backgroundAiChatStates[aliasSessionID] = backgroundContent
@@ -10990,6 +11197,176 @@ private extension CTM005IndependentContentTabSessionTests {
             selectedModelRow: catalogRow,
             assistantReplacementIndex: nil,
         )
+    }
+
+    struct PendingProviderAuthorityFixture {
+        let sessionID: AiChatSessionID
+        let resolutionID: UUID
+        let content: FileManagerContentFeature.State
+        let inspector: FileManagerInspectorFeature.State
+    }
+
+    func makePendingProviderAuthorityFixture() throws -> PendingProviderAuthorityFixture {
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: sessionID)
+        let selectedModel = try XCTUnwrap(requestLock.context.selectedModel)
+        let resolutionID = UUID()
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: resolutionID,
+            kind: .submit,
+            sessionID: sessionID,
+            selectedModel: selectedModel,
+            selectedRow: requestLock.selectedModelRow,
+            preparedRequest: AiChatPreparedRequest(
+                prompt: "test",
+                messages: requestLock.request.messages,
+                assistantReplacementIndex: nil,
+                historyTruncation: AiChatHistoryTruncationMetadata(
+                    includedMessageCount: requestLock.request.messages.count,
+                    excludedMessageCount: 0,
+                    budget: 24000,
+                    truncationReason: nil,
+                ),
+            ),
+        )
+        var content = FileManagerContentFeature.State()
+        content.aiChat.sessionID = sessionID
+        content.aiChat.sessionStatus = .active
+        content.aiChat.pendingRequestStart = pendingRequest
+        content.aiChat.modelListState = .loaded([selectedModel])
+        content.aiChat.modelListPendingProviders = [.openai]
+        content.aiChat.selectedModelHandle = selectedModel.id
+        content.aiChat.providerConnectionSnapshot = .known([.openai])
+        var inspector = FileManagerInspectorFeature.State()
+        inspector.aiChat.pendingRequestStart = pendingRequest
+        inspector.aiChat.modelListFailedProviders = [.openai: .init(message: "Stale OpenAI listing failure")]
+        inspector.aiChat.providerConnectionSnapshot = .known([.openai])
+        return PendingProviderAuthorityFixture(
+            sessionID: sessionID,
+            resolutionID: resolutionID,
+            content: content,
+            inspector: inspector,
+        )
+    }
+
+    func makePendingAiChatTabState(
+        aiChatTabID: ContentTabID,
+        homeTabID: ContentTabID,
+        fixture: PendingProviderAuthorityFixture,
+    ) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: aiChatTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: fixture.sessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "message",
+                ),
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: aiChatTabID,
+            recentlyClosed: nil,
+        )
+        state.content = fixture.content
+        state.tabContentStates = [homeTabID: FileManagerContentFeature.State()]
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    func makePendingCanonicalInspectorState(
+        tabID: ContentTabID,
+        fixture: PendingProviderAuthorityFixture,
+        inspectorVisible: Bool,
+    ) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Documents"),
+                    isPinned: false,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.inspector = fixture.inspector
+        state.inspector.inspectorVisible = inspectorVisible
+        state.inspector.inspectorPaneExists = true
+        state.inspector.activeMode = .chat
+        state.syncActiveTabInspectorState()
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    func makeInspectorProviderAuthorityState(
+        homeTabID: ContentTabID,
+        directoryTabID: ContentTabID,
+        inactiveFixture: PendingProviderAuthorityFixture,
+        backgroundFixture: PendingProviderAuthorityFixture,
+    ) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: directoryTabID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Documents"),
+                    isPinned: false,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: homeTabID,
+            recentlyClosed: nil,
+        )
+        state.tabInspectorStates[directoryTabID] = inactiveFixture.inspector
+        state.backgroundInspectorAiChatStates[backgroundFixture.sessionID] = backgroundFixture.inspector
+        state.syncContentTabSidebarItems()
+        return state
+    }
+
+    func assertDormantProviderAuthorityUnchanged(
+        state: FileManagerFeature.State,
+        contentTabID: ContentTabID,
+        inspectorTabID: ContentTabID,
+        contentSessionID: AiChatSessionID,
+        inspectorSessionID: AiChatSessionID,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        let expectedSnapshot = AiChatProviderConnectionSnapshot.known([.openai])
+        let dormantStates = [
+            state.tabContentStates[contentTabID]?.aiChat,
+            state.tabInspectorStates[inspectorTabID]?.aiChat,
+            state.backgroundAiChatStates[contentSessionID]?.aiChat,
+            state.backgroundInspectorAiChatStates[inspectorSessionID]?.aiChat,
+        ]
+        for dormantState in dormantStates {
+            XCTAssertEqual(dormantState?.providerConnectionSnapshot, expectedSnapshot, file: file, line: line)
+            XCTAssertNil(dormantState?.modelListRequestID, file: file, line: line)
+        }
     }
 
     func makeTestStore(

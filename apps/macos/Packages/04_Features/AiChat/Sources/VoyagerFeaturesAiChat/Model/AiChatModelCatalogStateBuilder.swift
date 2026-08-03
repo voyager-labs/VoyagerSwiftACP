@@ -10,18 +10,31 @@ struct AiChatModelCatalogStateBuilder {
         let lockedModel = lockedModelDisplayModel
         let selectedHandle = selectedModel?.handle
         let lockedHandle = lockedModel?.handle
+        let modelsByHandle = Dictionary(uniqueKeysWithValues: availableModels.map { ($0.id, $0) })
         let rows: [AiChatModelCatalogRowDisplayModel] = switch state.modelListState {
         case .loaded:
             state.catalogRows.map { row in
                 let label = aiChatModelLabel(for: row)
+                let disabledReason = modelsByHandle[row.handle]?.unavailableReason?.message
+                let isEnabled = disabledReason == nil
+                let isSelected = isEnabled && row.handle == selectedHandle
+                let accessibilityValue = if let disabledReason {
+                    "Unavailable: \(disabledReason)"
+                } else {
+                    isSelected ? "Selected" : "Available"
+                }
                 return AiChatModelCatalogRowDisplayModel(
                     handle: row.handle,
                     label: label,
                     providerBadge: label.subtitle,
-                    isSelected: row.handle == selectedHandle,
+                    isSelected: isSelected,
                     isLocked: row.handle == lockedHandle,
                     isDefault: row.isDefault,
                     isRecommended: row.isRecommended,
+                    isEnabled: isEnabled,
+                    disabledReason: disabledReason,
+                    accessibilityLabel: label.title,
+                    accessibilityValue: accessibilityValue,
                 )
             }
         case .idle, .loading, .empty, .failed:
@@ -71,7 +84,7 @@ struct AiChatModelCatalogStateBuilder {
     var modelSelectorIsDisabled: Bool {
         switch modelSelectorContentState {
         case .empty:
-            true
+            false
         case let .loaded(sections):
             sections.isEmpty
         case .loading, .failed, .unsupported:

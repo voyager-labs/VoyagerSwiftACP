@@ -268,6 +268,7 @@ final class EntitlementAccessFlowTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             AppLifecycleFeature()
         } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
             $0.helperAppClient.start = {}
             $0.helperAppClient.stop = {}
             $0.helperAppClient.terminationEvents = {
